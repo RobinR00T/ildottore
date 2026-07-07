@@ -3,6 +3,29 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State — 2026-07-08 01:00 CEST — 🎉 MVP‑1 CODE COMPLETE
+
+- **All 6 waves DONE. All 15 units built.** ✅ W0 `5c86bfc` · W1 `c33e7a1` · W2 `1a8dff9` ·
+  W3 `8c87487` · W4 `61d24cd` · W5 `280794c`.
+- **Merge gate GREEN:** full test suite passes; import-linter **4/4 contracts kept, 0 broken**;
+  ruff + ruff-format clean (229 files); **mypy clean on 116 source modules**; `dottore --help`
+  + all commands work; **E2E `dottore run --quick` executes the 20-spec T0 battery** against
+  MockTarget and produces a valid JSON/summary report (all INCONCLUSIVE — correct for a bare
+  mock with no scenario). 122 src files, 167 test files.
+- **Stage‑6 finding #1 (FIXED):** `run` default `specs/` discovery found 0 specs because the
+  loader only recurses into *spec packs*. Fixed data-only by adding `specs/pack.yaml` — now the
+  built-in battery is discovered out of the box (20 specs).
+- **Pending / carryover:**
+  - `git push` + create private repo `RobinR00T/ildottore` — **blocked on `gh auth login`** (6+
+    local commits waiting). Commits are UNSIGNED (gpg-agent locked) — re-sign before public.
+  - OD‑11 (ship `DL-PII-ELICIT-001`?) — still human-pending; defaulted disabled/policy-gated.
+  - Stage‑6 deeper pass: run against a real model (staging key) to see real pass/fail, review a
+    sample of findings + evidence; wire more mock scenarios so goldens exercise pass/fail paths.
+  - MVP‑2 backlog per `docs/12` (RAG/agent depth, membership inference, embeddings, adversarial
+    suffixes, SARIF polish, baseline/drift, coverage metric).
+
+---
+
 ## State — 2026-07-07 20:48 CEST
 
 - **Stage 3 Execute — 3 of 6 waves done.** ✅ W0 u00 (`5c86bfc`) · ✅ W1 u01/u02/u05/u07
