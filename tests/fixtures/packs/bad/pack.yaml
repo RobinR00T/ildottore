@@ -1,0 +1,7 @@
+# A pack with deliberate lint violations (all schema-valid so the linter, not the schema,
+# catches them): fixtures don't prove detection + missing test_only on a flagged family.
+id: bad-pack
+pack_version: "1.0"
+name: Bad fixtures pack (lint violations)
+specs:
+  - JB-NODETECT-001

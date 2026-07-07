@@ -1,0 +1,42 @@
+{
+  "cells": {
+    "DL-DEMO-002|claude-y": {
+      "band": "info",
+      "repro": 0.0,
+      "conf": 0.4
+    },
+    "DL-DEMO-002|gpt-x": {
+      "band": "low",
+      "repro": 0.5,
+      "conf": 0.6
+    },
+    "PI-DEMO-001|claude-y": {
+      "band": "info",
+      "repro": 0.0,
+      "conf": 0.95
+    },
+    "PI-DEMO-001|gpt-x": {
+      "band": "critical",
+      "repro": 1.0,
+      "conf": 0.9
+    }
+  },
+  "spec_ids": [
+    "DL-DEMO-002",
+    "PI-DEMO-001"
+  ],
+  "target_ids": [
+    "claude-y",
+    "gpt-x"
+  ],
+  "category_rollups": {
+    "LLM01": {
+      "critical": 1,
+      "info": 1
+    },
+    "LLM02": {
+      "low": 1,
+      "info": 1
+    }
+  }
+}

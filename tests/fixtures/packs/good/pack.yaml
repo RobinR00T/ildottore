@@ -1,0 +1,10 @@
+# A well-formed spec pack: valid manifest, specs that prove detection, and a suite that
+# references only known ids. `dottore lint` must exit 0 on this tree.
+id: good-pack
+pack_version: "1.0"
+name: Good fixtures pack (self-proving)
+specs:
+  - JB-REFUSAL-001
+  - DL-CANARY-001
+suites:
+  - good-baseline

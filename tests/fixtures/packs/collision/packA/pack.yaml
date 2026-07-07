@@ -1,0 +1,5 @@
+id: pack-a
+pack_version: "1.0"
+name: Collision pack A
+specs:
+  - COLLIDE-001

@@ -1,0 +1,7 @@
+# A malicious YAML fixture: a python-object tag that yaml.safe_load MUST refuse, plus a
+# recursive anchor/alias "billion laughs" style bomb. safe_load rejects the !!python tag
+# with a ConstructorError; no code runs and no import is triggered.
+id: EVIL-001
+payload: !!python/object/apply:os.system ["echo pwned"]
+bomb: &a ["x", "x", "x", "x", "x", "x", "x", "x", "x"]
+more: [*a, *a, *a, *a, *a, *a, *a, *a, *a]

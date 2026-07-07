@@ -1,0 +1,39 @@
+{
+  "total": 4,
+  "by_status": {
+    "fail": 2,
+    "pass": 1,
+    "inconclusive": 1
+  },
+  "by_band": {
+    "critical": 1,
+    "info": 2,
+    "low": 1
+  },
+  "by_category": {
+    "owasp": {
+      "LLM01": 2,
+      "LLM02": 2
+    },
+    "atlas": {
+      "AML.TA0001": 2,
+      "AML.TA0002": 2
+    },
+    "nist": {
+      "MEASURE": 2,
+      "MANAGE": 2
+    }
+  },
+  "repro_dist": {
+    "count": 4.0,
+    "min": 0.0,
+    "max": 1.0,
+    "mean": 0.375
+  },
+  "conf_dist": {
+    "count": 4.0,
+    "min": 0.4,
+    "max": 0.95,
+    "mean": 0.7125
+  }
+}

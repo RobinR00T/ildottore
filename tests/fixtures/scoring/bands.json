@@ -1,0 +1,17 @@
+{
+  "_doc": "Golden banding table (contract §7 / docs/05 §3). Bands on the raw float risk before rounding (OD-6). Every boundary case maps to the exact band + SARIF level.",
+  "cases": [
+    { "risk": 0.0,  "band": "info",     "sarif_level": "note" },
+    { "risk": 1.0,  "band": "low",      "sarif_level": "note" },
+    { "risk": 3.0,  "band": "low",      "sarif_level": "note" },
+    { "risk": 4.0,  "band": "medium",   "sarif_level": "warning" },
+    { "risk": 7.0,  "band": "medium",   "sarif_level": "warning" },
+    { "risk": 8.0,  "band": "high",     "sarif_level": "error" },
+    { "risk": 11.0, "band": "high",     "sarif_level": "error" },
+    { "risk": 12.0, "band": "critical", "sarif_level": "error" },
+    { "risk": 16.0, "band": "critical", "sarif_level": "error" },
+    { "risk": 0.5,  "band": "info",     "sarif_level": "note" },
+    { "risk": 3.999,"band": "low",      "sarif_level": "note" },
+    { "risk": 11.9, "band": "high",     "sarif_level": "error" }
+  ]
+}

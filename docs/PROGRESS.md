@@ -3,6 +3,19 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State — 2026-07-07 17:15 CEST
+
+- **Stage 3 Execute in progress.** W0 `u00-shared-models` **DONE** (commit `5c86bfc`) — PITV
+  2 iters, independently re-verified: 63 tests, 100% coverage on shared, ruff+mypy clean.
+  The interface registry (models/protocols/enums/schema_export) is live and committed.
+- **W1 launched** (`wou73jr5p`): u01 config/scope/policy/redactor · u02 registry/linter ·
+  u05 mutators · u07 scoring — parallel PITV loops against installed u00.
+- Also committed: agentic-extortion spec family (`bc4db46`).
+- **Decision defaults locked** this block (OD-2/4/5/6/8/9/10/12/13/15) — see 00-INDEX ledger.
+  OD-11 (PII elicitation) still human-pending.
+
+---
+
 ## State — 2026-07-07 16:22 CEST
 
 - **Stage:** 1 ✅ · 2 Specify **✅** (15 contracts + consistency gate reconciled) · 3 Execute ⬜ (starting W0).

@@ -1,0 +1,9 @@
+# A suite referencing only known spec ids, in declared order.
+id: good-baseline
+suite_version: "1.0"
+name: Good baseline suite
+specs:
+  - spec_id: DL-CANARY-001
+  - spec_id: JB-REFUSAL-001
+default_runs: 3
+tags: [baseline]
