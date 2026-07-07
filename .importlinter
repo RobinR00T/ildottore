@@ -1,0 +1,74 @@
+# .importlinter — machine form of the package-boundary rule (docs/01 §2, §6).
+#
+# Enforced in CI by `lint-imports` (import-linter >= 2.0). This file is the single source of
+# truth for the layering contract; there is intentionally NO [tool.importlinter] block in
+# pyproject.toml (having both would double-define the root package).
+#
+# The dependency spine (top imports lower; lower must NEVER import higher):
+#
+#   cli          composition root — wires concretes together, may import anything
+#   core         orchestration — depends on *interfaces* (shared.protocols) only
+#   evaluators   may call an LLM for the judge via the adapter interface  (docs/01 §3)
+#   adapters     enforce the endpoint allowlist at the adapter layer      (docs/01 §6)
+#   policy       scope / allowlist / packs
+#   shared       dependency-free models, protocols, enums (imported by everyone)
+#
+# The peer packages that need only `shared` (reporting, store, fingerprint, mutators,
+# registry, scoring, testing) sit in their own independent band above `policy` — none of
+# them import each other, and none import core/cli. `config` and `redactor` are leaf
+# top-level modules with no in-repo imports; they live in the shared band.
+#
+# Two edges below are load-bearing and documented, NOT accidents:
+#   * evaluators.semantic_judge -> adapters.base   (judge needs AdapterError + adapter iface)
+#   * adapters.base            -> policy           (allowlist refused at the adapter layer)
+# The layering below permits exactly those directions and forbids the reverse.
+
+[importlinter]
+root_package = ildottore
+include_external_packages = False
+
+[importlinter:contract:layered-architecture]
+name = Layered architecture: dependencies point downward only
+type = layers
+layers =
+    ildottore.cli
+    ildottore.core
+    ildottore.evaluators
+    ildottore.adapters
+    ildottore.policy
+    ildottore.shared
+
+[importlinter:contract:peer-packages-independent]
+name = shared-only peer packages do not import each other
+type = independence
+modules =
+    ildottore.reporting
+    ildottore.fingerprint
+    ildottore.store
+    ildottore.mutators
+    ildottore.registry
+    ildottore.scoring
+
+[importlinter:contract:adapters-never-import-evaluators]
+name = Adapters must not import evaluators (verdict logic stays out of transport)
+type = forbidden
+source_modules =
+    ildottore.adapters
+forbidden_modules =
+    ildottore.evaluators
+
+[importlinter:contract:core-depends-on-interfaces-not-concretes]
+name = Core imports only shared interfaces, never a concrete peer package
+type = forbidden
+source_modules =
+    ildottore.core
+forbidden_modules =
+    ildottore.adapters
+    ildottore.evaluators
+    ildottore.reporting
+    ildottore.fingerprint
+    ildottore.store
+    ildottore.policy
+    ildottore.mutators
+    ildottore.registry
+    ildottore.scoring

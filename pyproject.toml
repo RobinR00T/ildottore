@@ -95,22 +95,6 @@ asyncio_mode = "auto"
 source = ["src/ildottore"]
 branch = true
 
-# Package-boundary contract (docs/01 §2). Enforced by `lint-imports`.
-[tool.importlinter]
-root_package = "ildottore"
-
-[[tool.importlinter.contracts]]
-name = "Layered architecture: core depends on interfaces, not concretes"
-type = "layers"
-layers = [
-  "ildottore.cli",
-  "ildottore.core",
-  "ildottore.evaluators | ildottore.adapters | ildottore.reporting | ildottore.fingerprint | ildottore.store | ildottore.policy | ildottore.mutators | ildottore.registry | ildottore.scoring",
-  "ildottore.shared",
-]
-
-[[tool.importlinter.contracts]]
-name = "Adapters must not import evaluators"
-type = "forbidden"
-source_modules = ["ildottore.adapters"]
-forbidden_modules = ["ildottore.evaluators"]
+# Package-boundary contract (docs/01 §2, §6) lives in the standalone `.importlinter` file
+# (owned by u14-self-validation-ci). It is intentionally NOT duplicated here — having both a
+# `[tool.importlinter]` block and a `.importlinter` file double-defines the root package.

@@ -1,0 +1,100 @@
+# audit — proactive nightly validator + regression / metamorphic run (docs/07 §5, contract §5.4).
+#
+# CI (ci.yml) is the per-PR merge gate. This workflow is the *proactive* layer: it runs the full
+# regression golden-run snapshot and the metamorphic suite (validation-plan layers 16 & 18) on a
+# nightly cron, plus a weekly deeper sweep, so drift is caught between merges rather than only at
+# PR time. It also re-runs the whole gate stack so a dependency/toolchain change that slips past
+# a quiet week still trips an alarm.
+#
+# NOTE (open decision OD, contract §9): this workflow requests **read-only** permissions by
+# default. Any write action (e.g. auto-filing a regression issue) is left OPERATOR-PENDING — a
+# maintainer must opt in via Settings → Actions → Workflow permissions. We do not silently grant
+# write.
+
+name: audit
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # nightly 03:00 UTC — regression + metamorphic
+    - cron: "0 5 * * 1" # weekly Monday 05:00 UTC — deeper full-suite sweep
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONHASHSEED: "0" # determinism-replay stability (layer 9)
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  regression:
+    name: nightly regression + metamorphic (layers 16, 18)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install (editable + dev)
+        run: python -m pip install -e ".[dev]"
+
+      # Layer 16 — golden-run regression snapshot. A frozen reference run must produce a stable
+      # report; the snapshot diff is conductor-reviewed (OD, contract §9 → tests/golden-run/).
+      - name: "Regression · golden-run snapshot"
+        run: pytest -q tests/reporting/test_golden_snapshot.py
+
+      # Layer 18 — metamorphic: a semantics-preserving mutation must not change the verdict;
+      # a strictly-stronger attack must not reduce detection.
+      - name: "Metamorphic · verdict invariance"
+        run: pytest -q tests/evaluators/test_deterministic.py
+
+      # Full determinism replay at a fixed seed (layer 9) — the nightly canary for flakiness.
+      - name: "Determinism · replay at fixed seed"
+        run: pytest -q tests/core/test_determinism.py tests/core/test_reproduce.py
+
+      - name: "Self-scan · dogfood the judge (layer 17)"
+        run: python -m tests.selfscan.run --out reports/self-scan.sarif.json
+
+  full-sweep:
+    name: weekly full gate sweep
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 5 * * 1' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install (editable + dev)
+        run: python -m pip install -e ".[dev]"
+
+      - name: Static (ruff · format · mypy · import-linter)
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+          mypy src
+          lint-imports
+
+      - name: Spec lint (layers 1–2)
+        run: dottore lint specs/attacks
+
+      - name: Full suite + coverage gate (core ≥ 85%)
+        run: |
+          pytest -q \
+            --cov=src/ildottore \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/coverage.xml \
+            --cov-fail-under=85
+
+      - name: Upload sweep artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-reports
+          path: reports/
+          if-no-files-found: warn

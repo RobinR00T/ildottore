@@ -1,0 +1,80 @@
+# Dependabot — grouped, weekly dependency scan (contract u14 §5.5).
+#
+# Two ecosystems: Python deps (pip / pyproject) and the GitHub Actions we pin in the workflows.
+# Updates are GROUPED so a week's bumps arrive as one reviewable PR per ecosystem rather than a
+# swarm. Licensing discipline (AGENTS.md §3 — permissive only, no copyleft/source-available) is
+# enforced at review time via CODEOWNERS + the SBOM; Dependabot itself only proposes version
+# bumps, so no dep is auto-merged.
+#
+# NOTE: the `ignore:` block is intentionally non-empty — an empty `ignore: []` array is rejected
+# by the Dependabot schema (minItems: 1). We pin major bumps of the two runtime pillars behind a
+# manual review so a breaking Pydantic/Typer major never lands unattended.
+
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      python-runtime:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "pytest*"
+          - "ruff"
+          - "mypy"
+          - "hypothesis"
+          - "respx"
+          - "coverage"
+          - "import-linter"
+          - "types-*"
+      python-dev:
+        applies-to: version-updates
+        patterns:
+          - "pytest*"
+          - "ruff"
+          - "mypy"
+          - "hypothesis"
+          - "respx"
+          - "coverage"
+          - "import-linter"
+          - "types-*"
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # Gate major bumps of the runtime pillars behind manual review (breaking-change risk).
+      - dependency-name: pydantic
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typer
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(ci)"
+    ignore:
+      # actions/checkout is pinned deliberately; review majors by hand.
+      - dependency-name: actions/checkout
+        update-types: ["version-update:semver-major"]
