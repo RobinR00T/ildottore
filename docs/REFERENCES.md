@@ -45,3 +45,11 @@ six-stage method, PITV harness, contract anatomy and operating discipline in `AG
 - Cognition — Don't Build Multi-Agents — https://cognition.com/blog/dont-build-multi-agents
 - Thoughtworks — Exploring Generative AI — https://martinfowler.com/articles/exploring-gen-ai.html
 - Addy Osmani — The 70% Problem (https://addyo.substack.com) · Chip Huyen — AI Engineering / EDD (https://huyenchip.com)
+
+## Agentic-abuse / LLM-driven threats (docs/13)
+- Sysdig — JADEPUFFER: agentic ransomware for automated database extortion (2026) — https://www.sysdig.com/blog/jadepuffer-agentic-ransomware-for-automated-database-extortion
+- The Register — first end-to-end agentic ransomware attack (2026-07) — https://www.theregister.com/security/2026/07/02/smooth-ai-criminal-drives-first-end-to-end-agentic-ransomware-attack/
+- Anthropic — Detecting and countering misuse of AI, Aug 2025 ("vibe hacking" extortion) — https://www.anthropic.com/news/detecting-countering-misuse-aug-2025
+- Anthropic — Disrupting the first reported AI-orchestrated cyber-espionage campaign (Nov 2025) — https://www.anthropic.com/news/disrupting-AI-espionage
+- ESET / NYU — PromptLock (AI ransomware PoC); PROMPTFLUX / PROMPTSTEAL LLM-embedded malware
+- CVE-2025-3248 (Langflow unauth RCE) — JadePuffer initial access

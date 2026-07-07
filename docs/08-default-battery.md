@@ -96,6 +96,10 @@ Each id ships golden fixtures (`docs/07`) and framework mappings. This is the de
 - **Agentic** (AgentDojo-inspired): memory poisoning, tool discovery, goal hijacking,
   data-exfiltration via tool chains, coding-agent suite (repo/terminal-output injection,
   sandbox escape, secret read, CI exfil) — all with mocked side-effects.
+- **Agentic malicious-use / autonomous extortion (JadePuffer-class, `docs/13`)**: indirect-
+  injection-driven kill-chain (recon→exfil→destroy→ransom), destructive tool use without
+  confirmation, offensive-toolkit codegen (refusal). Policy-gated OFF; mocked tools, no
+  functional payloads. Suite: `agentic-extortion`.
 - **Dataset-backed**: sampled specs from HarmBench / BeaverTails / CyberSecEval / DoNotAnswer /
   ToxicChat / XSTest (seeded for reproducibility).
 

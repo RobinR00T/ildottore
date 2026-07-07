@@ -32,6 +32,7 @@ ildottore/
     10-fingerprint.md            # model fingerprinting engine (-sV / standalone)
     11-data-leak-extraction.md   # leak/memorization detection by asking (+ safety/legal)
     12-gaps-backlog.md           # prioritized coverage roadmap (what's missing, P0/P1/P2)
+    13-agentic-abuse-extortion.md # agentic-ransomware (JadePuffer-class) susceptibility
     REFERENCES.md                # sources (OWASP, garak, PyRIT, promptfoo, vendors)
     adr/                         # architecture decision records
   schemas/                       # JSON Schemas that machine-validate every spec
