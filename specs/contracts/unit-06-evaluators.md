@@ -38,7 +38,8 @@ required `inconclusive` ⇒ aggregate `inconclusive` (never coerced). Full spec:
 
 ## §6 Data/wire shapes
 `Verdict = {status: "pass"|"fail"|"inconclusive", confidence: float[0,1], reasoning: str,
-matched: list[str], evaluator_type: str}`. Judge raw+parsed output persisted to evidence
+matched: list[str], evaluator_type: str, inconclusive_reason: InconclusiveReason|None}` (set
+`inconclusive_reason` whenever status is `inconclusive`; closed StrEnum per u00/ADR-0006). Judge raw+parsed output persisted to evidence
 (masked). PII/secret hits stored **typed + masked/hashed only** (`docs/11 §5`).
 
 ## §7 Acceptance criteria (machine-checkable)

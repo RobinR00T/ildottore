@@ -3,6 +3,24 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State — 2026-07-07 16:22 CEST
+
+- **Stage:** 1 ✅ · 2 Specify **✅** (15 contracts + consistency gate reconciled) · 3 Execute ⬜ (starting W0).
+- Repo bootstrap complete + first commit (37 files, **unsigned** — gpg-agent locked non-interactively).
+- **Stage 2 done via workflow** (`wpzv95kk4`, 15 agents, ~981k tok): 14 unit contracts written +
+  cross-unit consistency review. The gate caught **3 blocking issues** at the TestPlan/planner
+  seam (u08↔u09) + missing schemas → **resolved by ADR-0006** (TestPlan+ModelFingerprint in
+  u00; plan-builder is u08-only; Pydantic-first schemas). Non-blocking drifts fixed (Verdict
+  `inconclusive_reason`, docs/01 Mutator, `dott` alias). OD-6..OD-15 rolled into the INDEX ledger
+  with decisions.
+- **⚠️ Only human-pending decision:** OD-11 — whether `DL-PII-ELICIT-001` ships in MVP-1.
+  Defaulted **disabled/policy-gated** (legal-safe) until Daniel signs off.
+
+### Next
+- Stage 3 Execute: PITV build wave-by-wave from `00-INDEX` (W0 `u00-shared-models` first).
+
+---
+
 ## State — 2026-07-07 16:08 CEST
 
 - **Stage:** 1 Understand ✅ · 2 Specify 🟡 (INDEX + 1 of 15 contracts) · 3 Execute ⬜ (not started)

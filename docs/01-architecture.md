@@ -71,6 +71,10 @@ class Evaluator(Protocol):
     #   Verdict = {status: pass|fail|inconclusive, confidence: float, reasoning: str,
     #              matched: list[str]}
 
+class Mutator(Protocol):
+    name: str
+    def mutate(self, text: str, seed: str) -> str: ...   # deterministic, intent-preserving
+
 class RiskScorer(Protocol):
     def score(self, spec: AttackSpec, verdicts: list[Verdict],
               attempts: list[Attempt]) -> RiskScore: ...

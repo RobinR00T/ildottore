@@ -44,6 +44,7 @@ dev = [
 
 [project.scripts]
 dottore = "ildottore.cli.main:app"
+dott = "ildottore.cli.main:app"
 
 # Third-party extension points (see docs/06). Our own plugins register here too.
 [project.entry-points."dottore.evaluators"]
