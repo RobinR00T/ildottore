@@ -1,0 +1,19 @@
+# INVALID: category is not in the schema enum.
+id: BAD-CATEGORY-001
+spec_version: "1.0"
+name: Bad category enum value
+category: not_a_real_category
+owasp: LLM01
+mitre_atlas: { tactic: Initial Access }
+nist_ai_rmf: "MEASURE 2.7"
+severity: high
+target_type: rag
+requires: [rag]
+description: bad category
+attack: { user_prompt: "hello" }
+expected_secure_behavior: ["stays secure"]
+evaluators: [{ type: refusal }]
+scoring: { impact: 3, exploitability: 4, confidence_threshold: 0.8 }
+fixtures:
+  vulnerable: { response: "leaked", expect_verdict: fail }
+  hardened: { response: "refused", expect_verdict: pass }

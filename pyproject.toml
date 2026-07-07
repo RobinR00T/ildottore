@@ -32,6 +32,7 @@ dependencies = [
 dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.23",
+  "pytest-cov>=5.0",
   "hypothesis>=6.100",
   "respx>=0.21",
   "coverage>=7.5",
@@ -73,8 +74,17 @@ select = ["E", "F", "I", "UP", "B", "S", "C4", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src"]
+files = ["src", "tests"]
+mypy_path = "src"
+explicit_package_bases = true
+namespace_packages = true
+exclude = ['^\.venv/', '^build/']
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Tests use pytest fixtures/parametrize decorators that mypy strict flags on decorators.
+module = "tests.*"
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 addopts = "-q"
