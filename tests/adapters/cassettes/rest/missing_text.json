@@ -1,0 +1,8 @@
+{
+  "status_code": 200,
+  "json": {
+    "request_id": "req-000",
+    "output": {},
+    "meta": {"stop": "complete"}
+  }
+}

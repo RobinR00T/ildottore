@@ -1,0 +1,16 @@
+{
+  "status_code": 200,
+  "json": {
+    "id": "chatcmpl-nolp",
+    "object": "chat.completion",
+    "model": "gpt-4o-mini",
+    "choices": [
+      {
+        "index": 0,
+        "message": {"role": "assistant", "content": "No logprobs here."},
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {"prompt_tokens": 5, "completion_tokens": 4, "total_tokens": 9}
+  }
+}

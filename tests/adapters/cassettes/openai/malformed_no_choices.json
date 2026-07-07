@@ -1,0 +1,9 @@
+{
+  "status_code": 200,
+  "json": {
+    "id": "chatcmpl-broken",
+    "object": "chat.completion",
+    "model": "gpt-4o-mini",
+    "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1}
+  }
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "token": "Hi",
+    "logprob": -0.05,
+    "top": [["Hi", -0.05], ["Hello", -3.1]]
+  },
+  {
+    "token": " there",
+    "logprob": -0.5,
+    "top": [[" there", -0.5], [" everyone", -2.2]]
+  },
+  {
+    "token": "!",
+    "logprob": -0.01,
+    "top": [["!", -0.01]]
+  }
+]

@@ -1,0 +1,9 @@
+{
+  "status_code": 200,
+  "json": {
+    "request_id": "req-987",
+    "output": {"answer": "Generic REST reply."},
+    "meta": {"stop": "complete"},
+    "usage": {"tokens": 7}
+  }
+}

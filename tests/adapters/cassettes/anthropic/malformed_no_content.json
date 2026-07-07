@@ -1,0 +1,10 @@
+{
+  "status_code": 200,
+  "json": {
+    "id": "msg_bad",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-5-sonnet-20241022",
+    "stop_reason": "end_turn"
+  }
+}

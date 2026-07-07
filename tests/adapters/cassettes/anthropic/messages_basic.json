@@ -1,0 +1,15 @@
+{
+  "status_code": 200,
+  "json": {
+    "id": "msg_01XYZ",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-5-sonnet-20241022",
+    "content": [
+      {"type": "text", "text": "The answer is 4."}
+    ],
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {"input_tokens": 12, "output_tokens": 6}
+  }
+}

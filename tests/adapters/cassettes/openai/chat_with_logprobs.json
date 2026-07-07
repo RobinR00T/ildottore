@@ -1,0 +1,47 @@
+{
+  "status_code": 200,
+  "json": {
+    "id": "chatcmpl-abc123",
+    "object": "chat.completion",
+    "model": "gpt-4o-mini",
+    "system_fingerprint": "fp_44709d6fcb",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Hi there!"
+        },
+        "finish_reason": "stop",
+        "logprobs": {
+          "content": [
+            {
+              "token": "Hi",
+              "logprob": -0.05,
+              "top_logprobs": [
+                {"token": "Hi", "logprob": -0.05},
+                {"token": "Hello", "logprob": -3.1}
+              ]
+            },
+            {
+              "token": " there",
+              "logprob": -0.5,
+              "top_logprobs": [
+                {"token": " there", "logprob": -0.5},
+                {"token": " everyone", "logprob": -2.2}
+              ]
+            },
+            {
+              "token": "!",
+              "logprob": -0.01,
+              "top_logprobs": [
+                {"token": "!", "logprob": -0.01}
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "usage": {"prompt_tokens": 9, "completion_tokens": 3, "total_tokens": 12}
+  }
+}
