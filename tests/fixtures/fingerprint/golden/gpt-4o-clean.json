@@ -1,0 +1,143 @@
+{
+  "target_id": "golden-target",
+  "family": {
+    "guess": "openai-gpt",
+    "confidence": 0.677419,
+    "cutoff_hint": null
+  },
+  "version": {
+    "guess": "gpt-4o",
+    "confidence": 0.439394,
+    "cutoff_hint": "2023-10"
+  },
+  "capability_guess": {
+    "tools": true,
+    "json_mode": true,
+    "vision": false,
+    "streaming": true,
+    "seed": false,
+    "rag": false,
+    "memory": false,
+    "logprobs": false
+  },
+  "guardrails": {
+    "input_filter": false,
+    "moderation_latency_ms": null,
+    "output_filter": true,
+    "refusal_style": "polite-explain"
+  },
+  "evidence": [
+    {
+      "layer": "metadata",
+      "signal": "family=openai-gpt|version=gpt-4o|metadata tells ['system_fingerprint', 'finish_reason', 'model=gpt']",
+      "weight": 0.4
+    },
+    {
+      "layer": "metadata",
+      "signal": "family=openai-gpt|version=gpt-4-turbo|metadata tells ['system_fingerprint', 'finish_reason', 'model=gpt']",
+      "weight": 0.4
+    },
+    {
+      "layer": "metadata",
+      "signal": "family=meta-llama|version=llama-3.1-70b|metadata tells ['finish_reason=stop']",
+      "weight": 0.2
+    },
+    {
+      "layer": "metadata",
+      "signal": "family=meta-llama|version=llama-3-8b|metadata tells ['finish_reason=stop']",
+      "weight": 0.2
+    },
+    {
+      "layer": "capability",
+      "signal": "family=anthropic-claude|capability tells ['streaming=true']",
+      "weight": 0.1
+    },
+    {
+      "layer": "capability",
+      "signal": "family=anthropic-claude|capability tells ['streaming=true']",
+      "weight": 0.1
+    },
+    {
+      "layer": "capability",
+      "signal": "family=openai-gpt|capability tells ['tools=true']",
+      "weight": 0.1
+    },
+    {
+      "layer": "capability",
+      "signal": "family=openai-gpt|capability tells ['tools=true']",
+      "weight": 0.1
+    },
+    {
+      "layer": "capability",
+      "signal": "family=meta-llama|capability tells ['streaming=true']",
+      "weight": 0.1
+    },
+    {
+      "layer": "capability",
+      "signal": "family=meta-llama|capability tells ['streaming=true']",
+      "weight": 0.1
+    },
+    {
+      "layer": "behavioral",
+      "signal": "family=openai-gpt|self_report",
+      "weight": 0.15
+    },
+    {
+      "layer": "behavioral",
+      "signal": "family=openai-gpt|version=gpt-4o|behavioral tells ['i am chatgpt', 'gpt-4o']",
+      "weight": 0.2
+    },
+    {
+      "layer": "behavioral",
+      "signal": "family=openai-gpt|version=gpt-4-turbo|behavioral tells ['i am chatgpt']",
+      "weight": 0.1
+    },
+    {
+      "layer": "tokenizer",
+      "signal": "family=openai-gpt|version=gpt-4o|tokenizer tells ['solidgoldmagikarp-artifact']",
+      "weight": 0.25
+    },
+    {
+      "layer": "tokenizer",
+      "signal": "family=openai-gpt|version=gpt-4-turbo|tokenizer tells ['solidgoldmagikarp-artifact']",
+      "weight": 0.25
+    },
+    {
+      "layer": "guardrail",
+      "signal": "guardrail_profile={\"input_filter\": false, \"moderation_latency_ms\": null, \"output_filter\": true, \"refusal_style\": \"polite-explain\"}",
+      "weight": 0.0
+    },
+    {
+      "layer": "guardrail",
+      "signal": "family=anthropic-claude|version=claude-opus-4.x|guardrail tells [\"i can't help with that\"]",
+      "weight": 0.1
+    },
+    {
+      "layer": "guardrail",
+      "signal": "family=anthropic-claude|version=claude-sonnet-4.x|guardrail tells [\"i can't help with that\"]",
+      "weight": 0.1
+    },
+    {
+      "layer": "guardrail",
+      "signal": "family=openai-gpt|version=gpt-4o|guardrail tells [\"i'm sorry, but i can't help with that\"]",
+      "weight": 0.1
+    },
+    {
+      "layer": "guardrail",
+      "signal": "family=openai-gpt|version=gpt-4-turbo|guardrail tells [\"i'm sorry, but i can't help with that\"]",
+      "weight": 0.1
+    },
+    {
+      "layer": "statistical",
+      "signal": "family=openai-gpt|version=gpt-4-turbo|nn-dist 0.0",
+      "weight": 0.5
+    },
+    {
+      "layer": "statistical",
+      "signal": "family=openai-gpt|version=gpt-4o|nn-dist 0.0",
+      "weight": 0.5
+    }
+  ],
+  "spoofing_flags": [],
+  "recommended_plan_ref": null
+}

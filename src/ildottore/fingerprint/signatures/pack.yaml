@@ -1,0 +1,175 @@
+pack_version: 1
+name: ildottore-mvp1
+entries:
+- family: anthropic-claude
+  version: claude-opus-4.x
+  cutoff_hint: 2025-03
+  signals:
+    metadata: &id001
+    - stop_reason
+    - role=assistant
+    - model=claude
+    capability: &id002
+    - multimodal=true
+    - streaming=true
+    behavioral:
+    - i am claude
+    - made by anthropic
+    - opus
+    tokenizer: &id003
+    - claude-bpe-repair
+    guardrail: &id004
+    - i can't help with that
+    - i'd be glad to help another way
+  weights: &id005
+    metadata: 0.4
+    capability: 0.2
+    behavioral: 0.3
+    tokenizer: 0.25
+    guardrail: 0.2
+    statistical: 0.5
+  stat:
+    centroid: &id006
+    - 0.305
+    - 0.375
+    - 0.125
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.3075
+    - 0.125
+    - 0.125
+    - 0.0
+    - 0.0
+    - 0.25
+    - 0.5475
+    - 0.25
+    - 0.125
+    - 0.0
+    - 0.0
+    - 1.0
+- family: anthropic-claude
+  version: claude-sonnet-4.x
+  cutoff_hint: 2025-03
+  signals:
+    metadata: *id001
+    capability: *id002
+    behavioral:
+    - i am claude
+    - made by anthropic
+    - sonnet
+    tokenizer: *id003
+    guardrail: *id004
+  weights: *id005
+  stat:
+    centroid: *id006
+- family: openai-gpt
+  version: gpt-4o
+  cutoff_hint: 2023-10
+  signals:
+    metadata: &id007
+    - system_fingerprint
+    - finish_reason
+    - model=gpt
+    capability: &id008
+    - tools=true
+    - logprobs=true
+    behavioral:
+    - i am chatgpt
+    - i'm a large language model trained by openai
+    - gpt-4o
+    tokenizer: &id009
+    - solidgoldmagikarp-artifact
+    guardrail: &id010
+    - i'm sorry, but i can't help with that
+    - as an ai
+  weights: *id005
+  stat:
+    centroid: &id011
+    - 0.08
+    - 0.25
+    - 0.125
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0525
+    - 0.125
+    - 0.375
+    - 0.0
+    - 0.5
+    - 0.0
+    - 0.4425
+    - 0.875
+    - 0.5
+    - 0.1694915254237288
+    - 0.16666666666666666
+    - 0.0
+- family: openai-gpt
+  version: gpt-4-turbo
+  cutoff_hint: 2023-12
+  signals:
+    metadata: *id007
+    capability: *id008
+    behavioral:
+    - i am chatgpt
+    - i'm a large language model trained by openai
+    - gpt-4 turbo
+    tokenizer: *id009
+    guardrail: *id010
+  weights: *id005
+  stat:
+    centroid: *id011
+- family: meta-llama
+  version: llama-3.1-70b
+  cutoff_hint: 2023-12
+  signals:
+    metadata: &id012
+    - finish_reason=stop
+    - model=llama
+    capability: &id013
+    - tools=false
+    - streaming=true
+    behavioral:
+    - i am llama
+    - meta ai
+    - llama-3.1-70b
+    tokenizer: &id014
+    - llama-sentencepiece-tell
+    guardrail: &id015
+    - i cannot assist with that request
+  weights: *id005
+  stat:
+    centroid: &id016
+    - 0.045
+    - 0.25
+    - 0.125
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.045
+    - 0.125
+    - 0.125
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.1875
+    - 0.25
+    - 0.125
+    - 0.0
+    - 0.0
+    - 0.0
+- family: meta-llama
+  version: llama-3-8b
+  cutoff_hint: 2023-03
+  signals:
+    metadata: *id012
+    capability: *id013
+    behavioral:
+    - i am llama
+    - meta ai
+    - llama-3-8b
+    tokenizer: *id014
+    guardrail: *id015
+  weights: *id005
+  stat:
+    centroid: *id016

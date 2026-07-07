@@ -1,0 +1,243 @@
+cases:
+- case_id: claude-opus-4.x-clean
+  family: anthropic-claude
+  version: claude-opus-4.x
+  responses:
+    stat_greeting: Hello! I'm happy to help you with whatever you need today. Just
+      let me know what you're working on and we can get started.
+    stat_list: The three primary colors are typically red, blue, and yellow, though
+      this can vary depending on the color model being used.
+    stat_explain: A hash function generally takes some input and produces a fixed-size
+      output. It often maps data of any length to a short digest, and it is typically
+      designed so that small changes perhaps produce very different outputs.
+    self_id: i am claude. specifically opus.
+    cutoff: 2025-03
+    refusal_style: i can't help with that
+    tokenizer_glitch: claude-bpe-repair
+    guardrail_nudge: i can't help with that
+  metadata: &id001
+    raw: stop_reason role=assistant model=claude
+  finish_reason: stop
+- case_id: claude-opus-4.x-noisy
+  family: anthropic-claude
+  version: claude-opus-4.x
+  responses:
+    stat_greeting: 'Hello! I''m happy to help you with whatever you need today. Just
+      let me know what you''re working on and we can get started.  '
+    stat_list: 'The three primary colors are typically red, blue, and yellow, though
+      this can vary depending on the color model being used.  '
+    stat_explain: 'A hash function generally takes some input and produces a fixed-size
+      output. It often maps data of any length to a short digest, and it is typically
+      designed so that small changes perhaps produce very different outputs.  '
+    self_id: i am claude. specifically opus.
+    cutoff: 2025-03
+    refusal_style: i can't help with that
+    tokenizer_glitch: claude-bpe-repair
+    guardrail_nudge: i can't help with that
+  metadata: *id001
+  finish_reason: stop
+- case_id: claude-sonnet-4.x-clean
+  family: anthropic-claude
+  version: claude-sonnet-4.x
+  responses:
+    stat_greeting: Hello! I'm happy to help you with whatever you need today. Just
+      let me know what you're working on and we can get started.
+    stat_list: The three primary colors are typically red, blue, and yellow, though
+      this can vary depending on the color model being used.
+    stat_explain: A hash function generally takes some input and produces a fixed-size
+      output. It often maps data of any length to a short digest, and it is typically
+      designed so that small changes perhaps produce very different outputs.
+    self_id: i am claude. specifically sonnet.
+    cutoff: 2025-03
+    refusal_style: i can't help with that
+    tokenizer_glitch: claude-bpe-repair
+    guardrail_nudge: i can't help with that
+  metadata: &id002
+    raw: stop_reason role=assistant model=claude
+  finish_reason: stop
+- case_id: claude-sonnet-4.x-noisy
+  family: anthropic-claude
+  version: claude-sonnet-4.x
+  responses:
+    stat_greeting: 'Hello! I''m happy to help you with whatever you need today. Just
+      let me know what you''re working on and we can get started.  '
+    stat_list: 'The three primary colors are typically red, blue, and yellow, though
+      this can vary depending on the color model being used.  '
+    stat_explain: 'A hash function generally takes some input and produces a fixed-size
+      output. It often maps data of any length to a short digest, and it is typically
+      designed so that small changes perhaps produce very different outputs.  '
+    self_id: i am claude. specifically sonnet.
+    cutoff: 2025-03
+    refusal_style: i can't help with that
+    tokenizer_glitch: claude-bpe-repair
+    guardrail_nudge: i can't help with that
+  metadata: *id002
+  finish_reason: stop
+- case_id: gpt-4o-clean
+  family: openai-gpt
+  version: gpt-4o
+  responses:
+    stat_greeting: Hello! How can I help you today?
+    stat_list: '- Red
+
+      - Blue
+
+      - Yellow'
+    stat_explain: 'A hash function is a process that takes an input and returns a
+      fixed-length string.
+
+
+      1. It accepts data.
+
+      2. It computes a digest.
+
+      3. The same input always gives the same output.'
+    self_id: i am chatgpt. specifically gpt-4o.
+    cutoff: 2023-10
+    refusal_style: i'm sorry, but i can't help with that
+    tokenizer_glitch: solidgoldmagikarp-artifact
+    guardrail_nudge: i'm sorry, but i can't help with that
+  metadata: &id003
+    raw: system_fingerprint finish_reason model=gpt
+  finish_reason: stop
+- case_id: gpt-4o-noisy
+  family: openai-gpt
+  version: gpt-4o
+  responses:
+    stat_greeting: 'Hello! How can I help you today?  '
+    stat_list: '- Red
+
+      - Blue
+
+      - Yellow  '
+    stat_explain: 'A hash function is a process that takes an input and returns a
+      fixed-length string.
+
+
+      1. It accepts data.
+
+      2. It computes a digest.
+
+      3. The same input always gives the same output.  '
+    self_id: i am chatgpt. specifically gpt-4o.
+    cutoff: 2023-10
+    refusal_style: i'm sorry, but i can't help with that
+    tokenizer_glitch: solidgoldmagikarp-artifact
+    guardrail_nudge: i'm sorry, but i can't help with that
+  metadata: *id003
+  finish_reason: stop
+- case_id: gpt-4-turbo-clean
+  family: openai-gpt
+  version: gpt-4-turbo
+  responses:
+    stat_greeting: Hello! How can I help you today?
+    stat_list: '- Red
+
+      - Blue
+
+      - Yellow'
+    stat_explain: 'A hash function is a process that takes an input and returns a
+      fixed-length string.
+
+
+      1. It accepts data.
+
+      2. It computes a digest.
+
+      3. The same input always gives the same output.'
+    self_id: i am chatgpt. specifically gpt-4 turbo.
+    cutoff: 2023-12
+    refusal_style: i'm sorry, but i can't help with that
+    tokenizer_glitch: solidgoldmagikarp-artifact
+    guardrail_nudge: i'm sorry, but i can't help with that
+  metadata: &id004
+    raw: system_fingerprint finish_reason model=gpt
+  finish_reason: stop
+- case_id: gpt-4-turbo-noisy
+  family: openai-gpt
+  version: gpt-4-turbo
+  responses:
+    stat_greeting: 'Hello! How can I help you today?  '
+    stat_list: '- Red
+
+      - Blue
+
+      - Yellow  '
+    stat_explain: 'A hash function is a process that takes an input and returns a
+      fixed-length string.
+
+
+      1. It accepts data.
+
+      2. It computes a digest.
+
+      3. The same input always gives the same output.  '
+    self_id: i am chatgpt. specifically gpt-4 turbo.
+    cutoff: 2023-12
+    refusal_style: i'm sorry, but i can't help with that
+    tokenizer_glitch: solidgoldmagikarp-artifact
+    guardrail_nudge: i'm sorry, but i can't help with that
+  metadata: *id004
+  finish_reason: stop
+- case_id: llama-3.1-70b-clean
+  family: meta-llama
+  version: llama-3.1-70b
+  responses:
+    stat_greeting: Hello. I can help.
+    stat_list: Red, blue, yellow.
+    stat_explain: A hash function maps input to a fixed size output. Same input, same
+      output.
+    self_id: i am llama. specifically llama-3.1-70b.
+    cutoff: 2023-12
+    refusal_style: i cannot assist with that request
+    tokenizer_glitch: llama-sentencepiece-tell
+    guardrail_nudge: i cannot assist with that request
+  metadata: &id005
+    raw: finish_reason=stop model=llama
+  finish_reason: stop
+- case_id: llama-3.1-70b-noisy
+  family: meta-llama
+  version: llama-3.1-70b
+  responses:
+    stat_greeting: 'Hello. I can help.  '
+    stat_list: 'Red, blue, yellow.  '
+    stat_explain: 'A hash function maps input to a fixed size output. Same input,
+      same output.  '
+    self_id: i am llama. specifically llama-3.1-70b.
+    cutoff: 2023-12
+    refusal_style: i cannot assist with that request
+    tokenizer_glitch: llama-sentencepiece-tell
+    guardrail_nudge: i cannot assist with that request
+  metadata: *id005
+  finish_reason: stop
+- case_id: llama-3-8b-clean
+  family: meta-llama
+  version: llama-3-8b
+  responses:
+    stat_greeting: Hello. I can help.
+    stat_list: Red, blue, yellow.
+    stat_explain: A hash function maps input to a fixed size output. Same input, same
+      output.
+    self_id: i am llama. specifically llama-3-8b.
+    cutoff: 2023-03
+    refusal_style: i cannot assist with that request
+    tokenizer_glitch: llama-sentencepiece-tell
+    guardrail_nudge: i cannot assist with that request
+  metadata: &id006
+    raw: finish_reason=stop model=llama
+  finish_reason: stop
+- case_id: llama-3-8b-noisy
+  family: meta-llama
+  version: llama-3-8b
+  responses:
+    stat_greeting: 'Hello. I can help.  '
+    stat_list: 'Red, blue, yellow.  '
+    stat_explain: 'A hash function maps input to a fixed size output. Same input,
+      same output.  '
+    self_id: i am llama. specifically llama-3-8b.
+    cutoff: 2023-03
+    refusal_style: i cannot assist with that request
+    tokenizer_glitch: llama-sentencepiece-tell
+    guardrail_nudge: i cannot assist with that request
+  metadata: *id006
+  finish_reason: stop

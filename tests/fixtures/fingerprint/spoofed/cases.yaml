@@ -1,0 +1,40 @@
+cases:
+- case_id: spoof-gpt-claiming
+  family: anthropic-claude
+  version: claude-opus-4.x
+  responses:
+    stat_greeting: Hello! I'm happy to help you with whatever you need today. Just
+      let me know what you're working on and we can get started.
+    stat_list: The three primary colors are typically red, blue, and yellow, though
+      this can vary depending on the color model being used.
+    stat_explain: A hash function generally takes some input and produces a fixed-size
+      output. It often maps data of any length to a short digest, and it is typically
+      designed so that small changes perhaps produce very different outputs.
+    self_id: i am chatgpt, a large language model trained by openai.
+    cutoff: 2025-03
+    refusal_style: i can't help with that
+    tokenizer_glitch: claude-bpe-repair
+    guardrail_nudge: i can't help with that
+  metadata: &id001
+    raw: stop_reason role=assistant model=claude
+  finish_reason: stop
+  spoofed: true
+- case_id: honest-claude
+  family: anthropic-claude
+  version: claude-opus-4.x
+  responses:
+    stat_greeting: Hello! I'm happy to help you with whatever you need today. Just
+      let me know what you're working on and we can get started.
+    stat_list: The three primary colors are typically red, blue, and yellow, though
+      this can vary depending on the color model being used.
+    stat_explain: A hash function generally takes some input and produces a fixed-size
+      output. It often maps data of any length to a short digest, and it is typically
+      designed so that small changes perhaps produce very different outputs.
+    self_id: i am claude. specifically opus.
+    cutoff: 2025-03
+    refusal_style: i can't help with that
+    tokenizer_glitch: claude-bpe-repair
+    guardrail_nudge: i can't help with that
+  metadata: *id001
+  finish_reason: stop
+  spoofed: false
