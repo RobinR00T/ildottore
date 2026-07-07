@@ -1,0 +1,145 @@
+{#
+  Il Dottore HTML report (u11 §5 step 6). Autoescape is ON (the reporter forces it).
+  `reasoning` and evidence excerpts arrive already masked (base pre-pass). When
+  `unsafe_render` is true a warning banner is shown and reasoning is emitted with `|safe`
+  (raw HTML) — hard-gated opt-in only (OD-12).
+#}
+<article class="dottore-report">
+  <header>
+    <h1>Il Dottore — Security Scan Report</h1>
+    <dl class="run-meta">
+      <dt>Run</dt><dd>{{ run_id }}</dd>
+      {% if suite_ref %}<dt>Suite</dt><dd>{{ suite_ref }}</dd>{% endif %}
+      {% if started_at %}<dt>Started</dt><dd>{{ started_at }}</dd>{% endif %}
+      {% if finished_at %}<dt>Finished</dt><dd>{{ finished_at }}</dd>{% endif %}
+    </dl>
+  </header>
+
+  {% if unsafe_render %}
+  <div class="unsafe-banner" role="alert">{{ unsafe_banner }}</div>
+  {% endif %}
+
+  <section class="targets">
+    <h2>Targets</h2>
+    <ul>
+      {% for t in targets %}
+      <li><code>{{ t.id }}</code> — {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="summary">
+    <h2>Summary</h2>
+    <p>
+      Total findings: <strong>{{ summary.total }}</strong> ·
+      Confirmed: <strong>{{ summary.confirmed_count }}</strong> ·
+      Needs review: <strong>{{ summary.needs_review_count }}</strong>
+    </p>
+
+    <h3>By status</h3>
+    <table class="counts"><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>
+      {% for k, v in summary.by_status.items() %}
+      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+
+    <h3>By band</h3>
+    <table class="counts"><thead><tr><th>Band</th><th>Count</th></tr></thead><tbody>
+      {% for k, v in summary.by_band.items() %}
+      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+
+    <h3>By framework</h3>
+    <div class="framework-rollup">
+      <table class="counts"><caption>OWASP LLM</caption><tbody>
+        {% for k, v in summary.by_framework.owasp.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+      <table class="counts"><caption>MITRE ATLAS</caption><tbody>
+        {% for k, v in summary.by_framework.atlas.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+      <table class="counts"><caption>NIST AI-RMF</caption><tbody>
+        {% for k, v in summary.by_framework.nist.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+
+  {% if has_comparison %}
+  <section class="model-comparison">
+    <h2>Model comparison</h2>
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>Spec</th>
+          {% for tid in comparison.target_ids %}<th>{{ tid }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for sid in comparison.spec_ids %}
+        <tr>
+          <th>{{ sid }}</th>
+          {% for tid in comparison.target_ids %}
+          {% set cell = comparison.cells | selectattr('spec_id', 'equalto', sid) | selectattr('target_id', 'equalto', tid) | first %}
+          <td>{% if cell %}{{ cell.band }} (r={{ '%.2f' | format(cell.reproducibility) }}, c={{ '%.2f' | format(cell.confidence) }}){% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% macro finding_card(f) %}
+  <li class="finding band-{{ f.band }} status-{{ f.status }}">
+    <h4><code>{{ f.spec_id }}</code>{% if f.name %} — {{ f.name }}{% endif %}</h4>
+    <p class="scores">
+      target <code>{{ f.target_id }}</code> ·
+      status <strong>{{ f.status }}</strong> ·
+      band <strong>{{ f.band }}</strong> ·
+      risk {{ '%.1f' | format(f.risk) }} ·
+      confidence {{ '%.2f' | format(f.confidence) }} ·
+      state {{ f.state }}
+    </p>
+    <p class="frameworks">OWASP {{ f.owasp }} · ATLAS {{ f.atlas }} · NIST {{ f.nist }}</p>
+    {% if f.reasoning %}
+    <div class="reasoning">
+      {% if unsafe_render %}{{ f.reasoning | safe }}{% else %}{{ f.reasoning }}{% endif %}
+    </div>
+    {% endif %}
+    {% if f.evidence %}
+    <details class="evidence">
+      <summary>Evidence ({{ f.evidence | length }})</summary>
+      <ul>
+        {% for ev in f.evidence %}
+        <li>
+          <code>{{ ev.uri }}</code>
+          {% if ev.sha256 %}<span class="sha">sha256:{{ ev.sha256 }}</span>{% endif %}
+          <span class="attempt">attempt {{ ev.attempt_id }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </li>
+  {% endmacro %}
+
+  <section class="findings-confirmed">
+    <h2>Confirmed findings ({{ confirmed | length }})</h2>
+    <ul class="findings">
+      {% for f in confirmed %}{{ finding_card(f) }}{% endfor %}
+    </ul>
+  </section>
+
+  <section class="findings-needs-review">
+    <h2>Needs review ({{ needs_review | length }})</h2>
+    <ul class="findings">
+      {% for f in needs_review %}{{ finding_card(f) }}{% endfor %}
+    </ul>
+  </section>
+</article>

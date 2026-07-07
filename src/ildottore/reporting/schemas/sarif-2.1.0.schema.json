@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ildottore.dev/schemas/sarif-2.1.0.schema.json",
+  "title": "Static Analysis Results Interchange Format (SARIF) Version 2.1.0",
+  "description": "A structurally faithful subset of the SARIF 2.1.0 JSON Schema (OASIS, rtm.5) covering the constructs Il Dottore emits. Vendored so validation is offline and deterministic (contract u11 §7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "runs"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri"
+    },
+    "version": {
+      "description": "The SARIF format version of this log file.",
+      "const": "2.1.0"
+    },
+    "runs": {
+      "description": "The set of runs contained in this log file.",
+      "type": "array",
+      "minItems": 0,
+      "items": { "$ref": "#/definitions/run" }
+    }
+  },
+  "definitions": {
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool"],
+      "properties": {
+        "tool": { "$ref": "#/definitions/tool" },
+        "results": {
+          "type": ["array", "null"],
+          "items": { "$ref": "#/definitions/result" }
+        },
+        "columnKind": {
+          "enum": ["utf16CodeUnits", "unicodeCodePoints"]
+        },
+        "properties": { "$ref": "#/definitions/propertyBag" }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["driver"],
+      "properties": {
+        "driver": { "$ref": "#/definitions/toolComponent" }
+      }
+    },
+    "toolComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "semanticVersion": { "type": "string" },
+        "informationUri": { "type": "string", "format": "uri" },
+        "organization": { "type": "string" },
+        "shortDescription": { "$ref": "#/definitions/multiformatMessageString" },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/reportingDescriptor" }
+        }
+      }
+    },
+    "reportingDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "shortDescription": { "$ref": "#/definitions/multiformatMessageString" },
+        "fullDescription": { "$ref": "#/definitions/multiformatMessageString" },
+        "helpUri": { "type": "string", "format": "uri" },
+        "defaultConfiguration": { "$ref": "#/definitions/reportingConfiguration" },
+        "properties": { "$ref": "#/definitions/propertyBag" }
+      }
+    },
+    "reportingConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "level": { "$ref": "#/definitions/level" },
+        "rank": { "type": "number", "minimum": -1.0, "maximum": 100.0 }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "ruleId": { "type": "string" },
+        "ruleIndex": { "type": "integer", "minimum": -1 },
+        "level": { "$ref": "#/definitions/level" },
+        "kind": {
+          "enum": ["notApplicable", "pass", "fail", "review", "open", "informational"]
+        },
+        "message": { "$ref": "#/definitions/message" },
+        "locations": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/location" }
+        },
+        "partialFingerprints": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "properties": { "$ref": "#/definitions/propertyBag" }
+      }
+    },
+    "level": {
+      "default": "warning",
+      "enum": ["none", "note", "warning", "error"]
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "physicalLocation": { "$ref": "#/definitions/physicalLocation" },
+        "logicalLocations": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/logicalLocation" }
+        },
+        "message": { "$ref": "#/definitions/message" }
+      }
+    },
+    "physicalLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactLocation"],
+      "properties": {
+        "artifactLocation": { "$ref": "#/definitions/artifactLocation" }
+      }
+    },
+    "artifactLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uri": { "type": "string" },
+        "uriBaseId": { "type": "string" }
+      }
+    },
+    "logicalLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "fullyQualifiedName": { "type": "string" },
+        "kind": { "type": "string" }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [{ "required": ["text"] }, { "required": ["id"] }],
+      "properties": {
+        "text": { "type": "string" },
+        "markdown": { "type": "string" },
+        "id": { "type": "string" }
+      }
+    },
+    "multiformatMessageString": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" },
+        "markdown": { "type": "string" }
+      }
+    },
+    "propertyBag": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

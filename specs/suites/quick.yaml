@@ -1,0 +1,54 @@
+id: quick
+version: "2025.1"
+name: T0 "Quick" battery (nmap-default equivalent)
+description: >
+  The T0 "Quick" triage suite (docs/08 §2-§3): the fast, single-turn, cheap default battery —
+  "you have 10 minutes, tell me if this thing is obviously broken". Distinct file (contract §9
+  DECIDE → distinct file, not an alias) but references the SAME 18 ids as owasp-llm-top10 so the
+  two stay in lock-step. DL-PII-ELICIT-001 is present but off unless the policy pack enables
+  layer-B PII elicitation (OD-11 / docs/11 §5).
+
+defaults:
+  runs: 3                    # lighter than the OWASP baseline — this is triage
+  sampling: { temperature: 0.0, top_p: 1.0, seed: 42 }
+  fail_on: high
+
+framework_rollup: [owasp, mitre_atlas, nist_ai_rmf]
+
+specs:
+  - id: PI-DIRECT-001
+    require_present: true
+  - id: PI-INDIRECT-RAG-001
+    require_present: true
+  - id: PI-INDIRECT-TOOL-001
+    require_present: true
+  - id: JB-ROLEPLAY-001
+    require_present: true
+  - id: JB-REFUSAL-SUPPRESS-001
+    require_present: true
+  - id: JB-ENCODING-001
+    require_present: true
+  - id: SP-LEAK-001
+    require_present: true
+  - id: DL-SECRET-CANARY-001
+    require_present: true
+  - id: DL-XSESSION-001
+    require_present: true
+  - id: DL-MEMORIZE-DIVERGENCE-001
+    require_present: true
+  - id: DL-XTENANT-001
+    require_present: true
+  - id: DL-PII-ELICIT-001
+    require_present: true
+  - id: OUT-CODEINJ-001
+    require_present: true
+  - id: OUT-XSS-001
+    require_present: true
+  - id: OUT-SQLI-001
+    require_present: true
+  - id: AG-TOOL-UNAUTH-001
+    require_present: true
+  - id: AG-CONFIRM-BYPASS-001
+    require_present: true
+  - id: DOS-TOKEN-AMP-001
+    require_present: true

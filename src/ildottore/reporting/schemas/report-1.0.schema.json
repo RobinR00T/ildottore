@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ildottore.dev/schemas/report-1.0.schema.json",
+  "title": "Il Dottore canonical report (u11 §6)",
+  "description": "Lossless canonical JSON report: the run, its findings and the aggregated summary. All strings are redactor-masked before serialization (u11 §2).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run", "findings", "summary"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "run": { "type": "object" },
+    "findings": { "type": "array", "items": { "type": "object" } },
+    "summary": { "$ref": "#/definitions/runSummary" }
+  },
+  "definitions": {
+    "runSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "by_status",
+        "by_band",
+        "by_framework",
+        "repro_distribution",
+        "confidence_distribution",
+        "confirmed_count",
+        "needs_review_count"
+      ],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "by_status": { "$ref": "#/definitions/countMap" },
+        "by_band": { "$ref": "#/definitions/countMap" },
+        "by_framework": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["owasp", "atlas", "nist"],
+          "properties": {
+            "owasp": { "$ref": "#/definitions/countMap" },
+            "atlas": { "$ref": "#/definitions/countMap" },
+            "nist": { "$ref": "#/definitions/countMap" }
+          }
+        },
+        "model_comparison": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["spec_ids", "target_ids", "cells", "category_rollups"],
+          "properties": {
+            "spec_ids": { "type": "array", "items": { "type": "string" } },
+            "target_ids": { "type": "array", "items": { "type": "string" } },
+            "cells": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["spec_id", "target_id", "band", "reproducibility", "confidence"],
+                "properties": {
+                  "spec_id": { "type": "string" },
+                  "target_id": { "type": "string" },
+                  "band": { "type": "string" },
+                  "reproducibility": { "type": "number" },
+                  "confidence": { "type": "number" }
+                }
+              }
+            },
+            "category_rollups": { "type": "object" }
+          }
+        },
+        "repro_distribution": { "$ref": "#/definitions/distribution" },
+        "confidence_distribution": { "$ref": "#/definitions/distribution" },
+        "confirmed_count": { "type": "integer", "minimum": 0 },
+        "needs_review_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "countMap": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "min", "max", "mean"],
+      "properties": {
+        "count": { "type": "number" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "mean": { "type": "number" }
+      }
+    }
+  }
+}

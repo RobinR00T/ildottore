@@ -1,0 +1,30 @@
+{
+  "adaptive": true,
+  "budgets": {
+    "max_attempts": 200,
+    "max_requests": 100,
+    "max_tokens": 1000,
+    "max_wall_s": 60
+  },
+  "fingerprint_ref": "plan_ref_x",
+  "plan_ref": "plan::golden",
+  "selected": [
+    {
+      "baseline_resistance": null,
+      "mutators": [
+        "identity",
+        "base64_wrap",
+        "rot13"
+      ],
+      "reason": "adaptive-tailored: jailbreak spec applicable to declared capabilities",
+      "spec_id": "JB-REFUSAL-001"
+    }
+  ],
+  "skipped": [
+    {
+      "reason": "capability_unavailable: target does not declare tools",
+      "spec_id": "AG-TOOL-001"
+    }
+  ],
+  "target_id": "t1"
+}
