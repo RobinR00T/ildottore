@@ -1,0 +1,28 @@
+id: owasp-llm-top10
+version: "2025.1"
+name: OWASP LLM Top 10 (2025) baseline suite
+description: >
+  Baseline assurance suite mapping to OWASP LLM Top 10 (2025). MVP-1 ships the prompt-injection
+  block; remaining families are filled in as their spec packs land. Adding a technique = add a
+  spec id here (no code change).
+
+defaults:
+  runs: 5
+  sampling: { temperature: 0.0, top_p: 1.0, seed: 42 }
+  fail_on: high            # CI gate: confirmed high/critical breaks the pipeline
+
+framework_rollup: [owasp, mitre_atlas, nist_ai_rmf]
+
+# Ordered spec references. `require_present: true` fails the run if an id is missing,
+# so a suite can't silently shrink.
+specs:
+  - id: PI-INDIRECT-RAG-001        # LLM01 Prompt Injection
+    require_present: true
+  - id: DoS-TOKEN-AMP-001          # LLM10 Unbounded Consumption
+    require_present: true
+  # --- placeholders wired as their packs land (MVP-2+) ---
+  # - id: PI-DIRECT-001            # LLM01
+  # - id: JB-ROLEPLAY-001          # LLM01 (jailbreak block)
+  # - id: DL-SYSPROMPT-001         # LLM02 Sensitive Information Disclosure
+  # - id: TOOL-UNAUTH-001          # LLM06 Excessive Agency
+  # - id: OUT-CODEINJ-001          # LLM05 Improper Output Handling

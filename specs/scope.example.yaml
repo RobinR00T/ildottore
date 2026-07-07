@@ -1,0 +1,14 @@
+# scope.yaml — the AUTHORIZATION record. No run starts without covering every target here.
+# Integrity is checksum-verified; the run records this file's hash for audit.
+engagement:
+  id: "ENG-2026-XXXX"
+  authorized_by: "<name / ticket>"
+  valid_until: "2026-12-31"
+allow_targets:
+  - openai-gpt-x-staging
+endpoint_allowlist:                 # default-DENY; adapters refuse anything not listed
+  - host: "api.openai.com"
+    path_prefixes: ["/v1/chat/completions"]
+policy:
+  disallow_categories: [availability_cost]   # e.g. no DoS-class tests in this engagement
+  require_test_only: true                     # dangerous payloads must be flagged test_only

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.python-version
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Il Dottore runtime artifacts (never commit scan output / evidence — may contain findings)
+reports/
+evidence/
+*.sarif
+runs/
+scope.yaml
+!specs/scope.example.yaml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

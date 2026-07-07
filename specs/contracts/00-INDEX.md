@@ -1,0 +1,65 @@
+# 00-INDEX — Contract master index & program ledger
+
+Stage-2 (Specify) output. The authoritative unit list, **dependency DAG**, **single-executor
+ledger** and **open-decisions rollup** for MVP‑1. The PITV orchestrator (`docs/00 §3–§4`)
+schedules from this graph: independent chains parallel, dependents gated, same-file units
+serialized. **One owner per unit, no double-edits.**
+
+## Units
+
+| Unit | Owns (src/ildottore/…) | Depends on | Wave |
+|------|------------------------|------------|------|
+| `u00-shared-models` | `shared/` (models, protocols, enums) | — | W0 |
+| `u01-config-scope-policy` | `policy/`, `config.py`, `redactor.py` | u00 | W1 |
+| `u02-spec-registry-linter` | `registry/`, `cli/lint.py` | u00 | W1 |
+| `u05-prompt-mutator` | `mutators/` | u00 | W1 |
+| `u07-scoring` | `scoring/` | u00 | W1 |
+| `u03-mock-target-golden-harness` | `adapters/mock.py`, `testing/golden.py` | u00, u01 | W2 |
+| `u04-target-adapters` | `adapters/{base,openai,anthropic,rest}.py` | u00, u01 | W2 |
+| `u10-evidence-run-store` | `store/` | u00, u01 | W2 |
+| `u06-evaluators` | `evaluators/` | u00, u04 | W3 |
+| `u09-fingerprint-engine` | `fingerprint/` | u00, u04 | W3 |
+| `u08-execution-engine` | `core/` (runner, planner, budgets) | u00,u01,u02,u04,u05,u06,u07 | W4 |
+| `u11-reporting` | `reporting/` | u00, u07, u10 | W4 |
+| `u13-attack-specs-battery` | `specs/attacks/*`, `specs/suites/*`, fixtures | u02, u03 | W4 |
+| `u12-cli` | `cli/` (composition root, commands) | all above | W5 |
+| `u14-self-validation-ci` | `tests/`, `.github/workflows/`, `.importlinter` | all above | W5 |
+
+## Dependency DAG (build order)
+
+```
+W0: u00
+W1: u01  u02  u05  u07                 (need only u00)
+W2: u03  u04  u10                       (u04 → unlocks u06,u09; u01 shared → serialize policy edits)
+W3: u06  u09                            (need u04)
+W4: u08  u11  u13                       (u08 gates on the whole middle tier)
+W5: u12  u14                            (integration + validation last)
+```
+
+Parallel chains per wave run concurrently; a unit starts only when every dep is DONE.
+
+## Shared interface registry (serialize DECISIONS, not just files)
+
+The stable contracts every unit codes against — changing any is a program-level open decision,
+not a unit-local choice:
+
+- `shared.models`: `AttackSpec, Target, Capabilities, TestRun, Attempt, Verdict, Finding,
+  Evidence, RiskScore, ModelFingerprint` (must validate vs `schemas/`).
+- `shared.protocols`: `TargetAdapter, Evaluator, Mutator, RiskScorer, EvidenceStore, RunStore,
+  Reporter` (`docs/01 §3`).
+- Verdict polarity is fixed repo-wide: `pass` = secure, `fail` = exploited (`docs/04`).
+
+## Program ledger — open decisions (rolled up from unit §9)
+
+| OD | Unit | Decision | Owner | Status |
+|----|------|----------|-------|--------|
+| OD-1 | u04 | Anthropic vs OpenAI logprobs shape → common `TokenLogprob` model | ADR-0005 | open |
+| OD-2 | u01 | scope.yaml signing: checksum now, sigstore later? | human | open |
+| OD-3 | u06 | judge model default (own-hosted vs API) + 2nd judge for self-consistency | human | open |
+| OD-4 | u10 | evidence at-rest encryption in MVP‑1 or MVP‑2? | human | open |
+| OD-5 | u08 | adaptive planner default ON with `-sV`, or opt-in? | human | open |
+
+## Merge gate
+
+After all units DONE: run the full `docs/07` taxonomy + import-linter + self-scan on the
+**combined** tree (not per-unit only). Green = MVP‑1 candidate → Stage 6 human finish.

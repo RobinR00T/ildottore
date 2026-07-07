@@ -1,0 +1,105 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ildottore"
+version = "0.0.1"
+description = "Il Dottore — spec-driven security scanner for LLMs and AI applications (nmap-for-AI)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Synapsys Cybersecurity S.L. (Zynap)" }]
+keywords = ["llm", "security", "red-team", "owasp-llm", "mitre-atlas", "prompt-injection", "ai-security"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Security",
+]
+dependencies = [
+  "pydantic>=2.6",
+  "pyyaml>=6.0",
+  "jsonschema>=4.21",
+  "httpx>=0.27",
+  "jinja2>=3.1",
+  "typer>=0.12",
+  "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "hypothesis>=6.100",
+  "respx>=0.21",
+  "coverage>=7.5",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "import-linter>=2.0",
+  "types-PyYAML",
+  "types-jsonschema",
+]
+
+[project.scripts]
+dottore = "ildottore.cli.main:app"
+
+# Third-party extension points (see docs/06). Our own plugins register here too.
+[project.entry-points."dottore.evaluators"]
+[project.entry-points."dottore.mutators"]
+[project.entry-points."dottore.adapters"]
+
+[project.urls]
+Homepage = "https://github.com/RobinR00T/ildottore"
+Documentation = "https://github.com/RobinR00T/ildottore/tree/main/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ildottore"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "C4", "SIM", "RUF"]
+# S101 (assert) allowed in tests; handled per-file below.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src/ildottore"]
+branch = true
+
+# Package-boundary contract (docs/01 §2). Enforced by `lint-imports`.
+[tool.importlinter]
+root_package = "ildottore"
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture: core depends on interfaces, not concretes"
+type = "layers"
+layers = [
+  "ildottore.cli",
+  "ildottore.core",
+  "ildottore.evaluators | ildottore.adapters | ildottore.reporting | ildottore.fingerprint | ildottore.store | ildottore.policy | ildottore.mutators | ildottore.registry | ildottore.scoring",
+  "ildottore.shared",
+]
+
+[[tool.importlinter.contracts]]
+name = "Adapters must not import evaluators"
+type = "forbidden"
+source_modules = ["ildottore.adapters"]
+forbidden_modules = ["ildottore.evaluators"]

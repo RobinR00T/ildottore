@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zynap.dev/ildottore/schemas/attack-spec.schema.json",
+  "title": "AttackSpec",
+  "type": "object",
+  "required": [
+    "id", "spec_version", "name", "category", "owasp", "mitre_atlas",
+    "nist_ai_rmf", "severity", "target_type", "requires", "description",
+    "attack", "expected_secure_behavior", "evaluators", "scoring", "fixtures"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[A-Z]+(-[A-Z0-9]+)+$" },
+    "spec_version": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "name": { "type": "string", "minLength": 3 },
+    "category": {
+      "type": "string",
+      "enum": ["prompt_injection", "jailbreak", "data_leakage",
+               "agent_tool_abuse", "rag_security", "output_security",
+               "availability_cost"]
+    },
+    "owasp": { "type": "string", "pattern": "^LLM\\d{2}$" },
+    "mitre_atlas": {
+      "type": "object",
+      "required": ["tactic"],
+      "properties": {
+        "tactic": { "type": "string" },
+        "technique": { "type": "string" }
+      }
+    },
+    "nist_ai_rmf": { "type": "string" },
+    "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "target_type": { "type": "string", "enum": ["model", "chatbot", "api", "agent", "rag"] },
+    "requires": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["rag", "tools", "memory", "system_prompt", "streaming", "logprobs", "multi_identity", "multimodal"] }
+    },
+    "description": { "type": "string" },
+    "preconditions": { "type": "array", "items": { "type": "string" } },
+    "setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "documents": { "type": "array", "items": { "type": "object" } },
+        "tools": { "type": "array", "items": { "type": "object" } },
+        "memory_seed": { "type": "array", "items": { "type": "object" } },
+        "system_prompt": { "type": "string" },
+        "canaries": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "attack": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "user_prompt": { "type": "string" },
+        "carrier": { "type": "string" },
+        "turns": { "type": "array", "items": { "type": "string" } }
+      },
+      "anyOf": [
+        { "required": ["user_prompt"] },
+        { "required": ["carrier"] },
+        { "required": ["turns"] }
+      ]
+    },
+    "mutations": { "type": "array", "items": { "type": "string" } },
+    "expected_secure_behavior": {
+      "type": "array", "minItems": 1, "items": { "type": "string" }
+    },
+    "evaluators": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["regex_absence", "regex_presence", "exact_match",
+                     "refusal", "secret_leakage", "tool_call", "semantic_judge",
+                     "pii_detector", "secret_shape", "verbatim_overlap",
+                     "logprob_membership", "authz_leak"]
+          },
+          "patterns": { "type": "array", "items": { "type": "string" } },
+          "rubric": { "type": "string" },
+          "canary_ref": { "type": "string" },
+          "weight": { "type": "number" }
+        }
+      }
+    },
+    "evaluator_logic": { "type": "string", "enum": ["all_pass", "any_fail", "weighted"] },
+    "scoring": {
+      "type": "object",
+      "required": ["impact", "exploitability", "confidence_threshold"],
+      "additionalProperties": false,
+      "properties": {
+        "impact": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "exploitability": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "confidence_threshold": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "runs": { "type": "integer", "minimum": 1, "maximum": 50 },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": { "type": "number" },
+        "top_p": { "type": "number" },
+        "seed": { "type": "integer" },
+        "max_tokens": { "type": "integer" }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_tokens": { "type": "integer" },
+        "max_requests": { "type": "integer" },
+        "timeout_s": { "type": "integer" }
+      }
+    },
+    "test_only": { "type": "boolean" },
+    "fixtures": {
+      "type": "object",
+      "required": ["vulnerable", "hardened"],
+      "additionalProperties": false,
+      "properties": {
+        "vulnerable": {
+          "type": "object",
+          "required": ["response", "expect_verdict"],
+          "properties": {
+            "response": { "type": "string" },
+            "tool_calls": { "type": "array", "items": { "type": "object" } },
+            "expect_verdict": { "type": "string", "enum": ["fail"] }
+          }
+        },
+        "hardened": {
+          "type": "object",
+          "required": ["response", "expect_verdict"],
+          "properties": {
+            "response": { "type": "string" },
+            "tool_calls": { "type": "array", "items": { "type": "object" } },
+            "expect_verdict": { "type": "string", "enum": ["pass"] }
+          }
+        }
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}
