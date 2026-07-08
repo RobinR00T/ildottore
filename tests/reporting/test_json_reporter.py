@@ -70,6 +70,21 @@ def test_no_model_comparison_single_target() -> None:
     assert "model_comparison" not in doc["summary"]
 
 
+def test_coverage_in_output_and_schema_valid() -> None:
+    specs = {"PI-DEMO-001": make_spec(owasp="LLM01")}
+    run = make_run(findings=[make_finding()])
+    doc = json.loads(JsonReporter(specs=specs).render(run, list(run.findings)))
+    jsonschema.validate(doc, _report_schema())
+    coverage = doc["summary"]["coverage"]
+    assert coverage["owasp"]["total"] == 10
+    assert coverage["owasp"]["exercised"] == 1
+    assert coverage["owasp"]["pct"] == 0.1
+    assert coverage["owasp"]["categories"] == ["LLM01"]
+    assert coverage["specs"]["run"] == 1
+    assert coverage["specs"]["fail"] == 1
+    assert set(coverage) == {"owasp", "atlas", "specs"}
+
+
 def test_trailing_newline() -> None:
     run = make_run(findings=[make_finding()])
     out = JsonReporter().render(run, list(run.findings))

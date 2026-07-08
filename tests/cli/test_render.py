@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from ildottore.cli.render import (
     ProgressPrinter,
+    coverage_lines,
     progress_line,
     summary_rows,
     summary_table,
@@ -80,6 +81,16 @@ def test_progress_printer_prints_when_not_quiet() -> None:
     assert "PI-1" in cap.get()
 
 
+def test_coverage_lines_report_surface_and_disposition() -> None:
+    specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
+    lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], specs)
+    assert len(lines) == 2
+    assert "OWASP LLM Top 10: 1/10 (10%)" in lines[0]
+    assert "MITRE ATLAS tactics:" in lines[0]
+    assert "Specs run: 1" in lines[1]
+    assert "fail 1" in lines[1]
+
+
 def test_progress_printer_summary_always_prints() -> None:
     printer = ProgressPrinter(quiet=True, no_color=True)
     specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
@@ -87,3 +98,4 @@ def test_progress_printer_summary_always_prints() -> None:
         printer.summary([make_finding("PI-1", band=ScanBand.HIGH)], specs)
     out = cap.get()
     assert "LLM01" in out
+    assert "Coverage — OWASP LLM Top 10:" in out

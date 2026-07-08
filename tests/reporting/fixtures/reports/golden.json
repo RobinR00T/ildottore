@@ -278,6 +278,30 @@
       "min": 0.92
     },
     "confirmed_count": 1,
+    "coverage": {
+      "atlas": {
+        "exercised": 0,
+        "pct": 0.0,
+        "tactics": [],
+        "total": 14
+      },
+      "owasp": {
+        "categories": [
+          "LLM01",
+          "LLM02"
+        ],
+        "exercised": 2,
+        "pct": 0.2,
+        "total": 10
+      },
+      "specs": {
+        "fail": 1,
+        "inconclusive": 0,
+        "pass": 1,
+        "run": 2,
+        "total": 2
+      }
+    },
     "model_comparison": {
       "category_rollups": {
         "LLM01": {

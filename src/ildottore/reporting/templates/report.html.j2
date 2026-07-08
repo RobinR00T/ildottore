@@ -50,6 +50,30 @@
       {% endfor %}
     </tbody></table>
 
+    <h3>Coverage</h3>
+    <div class="coverage">
+      <p>
+        OWASP LLM Top 10:
+        <strong>{{ summary.coverage.owasp.exercised }}/{{ summary.coverage.owasp.total }}</strong>
+        ({{ '%.0f' | format(summary.coverage.owasp.pct * 100) }}%) ·
+        MITRE ATLAS tactics:
+        <strong>{{ summary.coverage.atlas.exercised }}/{{ summary.coverage.atlas.total }}</strong>
+        ({{ '%.0f' | format(summary.coverage.atlas.pct * 100) }}%)
+      </p>
+      <p class="coverage-specs">
+        Specs run: <strong>{{ summary.coverage.specs.run }}</strong> ·
+        pass {{ summary.coverage.specs.pass }} ·
+        fail {{ summary.coverage.specs.fail }} ·
+        inconclusive {{ summary.coverage.specs.inconclusive }}
+      </p>
+      {% if summary.coverage.owasp.categories %}
+      <p class="coverage-owasp">OWASP exercised: {{ summary.coverage.owasp.categories | join(', ') }}</p>
+      {% endif %}
+      {% if summary.coverage.atlas.tactics %}
+      <p class="coverage-atlas">ATLAS exercised: {{ summary.coverage.atlas.tactics | join(', ') }}</p>
+      {% endif %}
+    </div>
+
     <h3>By framework</h3>
     <div class="framework-rollup">
       <table class="counts"><caption>OWASP LLM</caption><tbody>

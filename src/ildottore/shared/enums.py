@@ -54,7 +54,7 @@ class VerdictStatus(StrEnum):
 
 
 class EvaluatorType(StrEnum):
-    """The 12 MVP evaluator types (schema ``evaluators.items.type`` enum)."""
+    """The MVP evaluator types (schema ``evaluators.items.type`` enum)."""
 
     REGEX_ABSENCE = "regex_absence"
     REGEX_PRESENCE = "regex_presence"
@@ -68,6 +68,7 @@ class EvaluatorType(StrEnum):
     VERBATIM_OVERLAP = "verbatim_overlap"
     LOGPROB_MEMBERSHIP = "logprob_membership"
     AUTHZ_LEAK = "authz_leak"
+    KILL_CHAIN_PROGRESSION = "kill_chain_progression"
 
 
 class EvaluatorLogic(StrEnum):

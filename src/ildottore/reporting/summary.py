@@ -22,6 +22,9 @@ from dataclasses import dataclass, field
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
+    "ATLAS_TACTIC_UNIVERSE",
+    "OWASP_LLM_TOTAL",
+    "Coverage",
     "FrameworkCounts",
     "MatrixCell",
     "ModelComparison",
@@ -30,6 +33,31 @@ __all__ = [
 ]
 
 _UNKNOWN = "unknown"
+
+#: OWASP LLM Top 10 (2025) has exactly ten categories (LLM01…LLM10). The denominator for
+#: OWASP surface coverage — a run that exercises 6 distinct categories covers 60%.
+OWASP_LLM_TOTAL = 10
+
+#: The MITRE ATLAS tactic universe (the columns of the ATLAS matrix). Coverage is measured
+#: against this known set so "passed the scan" cannot hide an unexercised tactic. Specs carry
+#: the human-readable tactic name (see ``specs/`` + ``MitreAtlas.tactic``), so the universe is
+#: keyed by name. Update this tuple if ATLAS adds a tactic (``docs/12`` coverage-metric item).
+ATLAS_TACTIC_UNIVERSE: tuple[str, ...] = (
+    "Reconnaissance",
+    "Resource Development",
+    "Initial Access",
+    "ML Model Access",
+    "Execution",
+    "Persistence",
+    "Privilege Escalation",
+    "Defense Evasion",
+    "Credential Access",
+    "Discovery",
+    "Collection",
+    "ML Attack Staging",
+    "Exfiltration",
+    "Impact",
+)
 
 
 @dataclass(frozen=True)
@@ -64,6 +92,36 @@ class ModelComparison:
 
 
 @dataclass(frozen=True)
+class Coverage:
+    """How much of the framework surface a run actually exercised (``docs/12`` P1).
+
+    Coverage answers "passed the scan — of *what*?". It reports the fraction of the OWASP
+    LLM Top 10 and the MITRE ATLAS tactic matrix that the run's specs touched, plus a
+    breakdown of specs run vs. inconclusive/blocked, so a green run over a narrow suite can
+    never masquerade as broad assurance. Percentages are fractions in ``[0, 1]`` (multiply by
+    100 for display); ``unknown`` framework buckets (specs the reporter could not attribute)
+    do **not** count toward the numerator.
+    """
+
+    #: distinct OWASP categories exercised (excludes ``unknown``).
+    owasp_categories: tuple[str, ...]
+    owasp_exercised: int
+    owasp_total: int
+    owasp_pct: float
+    #: distinct *known* ATLAS tactics exercised (excludes ``unknown`` + off-universe names).
+    atlas_tactics: tuple[str, ...]
+    atlas_exercised: int
+    atlas_total: int
+    atlas_pct: float
+    #: spec-execution disposition counts (rolled up from finding verdict status).
+    specs_total: int
+    specs_run: int
+    specs_pass: int
+    specs_fail: int
+    specs_inconclusive: int
+
+
+@dataclass(frozen=True)
 class RunSummary:
     """The aggregate every report embeds (contract §6 ``RunSummary``)."""
 
@@ -75,6 +133,7 @@ class RunSummary:
     confidence_distribution: dict[str, float]
     confirmed_count: int
     needs_review_count: int
+    coverage: Coverage
     model_comparison: ModelComparison | None = None
 
 
@@ -127,6 +186,59 @@ def _build_comparison(
         target_ids=tuple(sorted(target_ids)),
         cells=ordered_cells,
         category_rollups={cat: _sorted_counts(counts) for cat, counts in sorted(rollups.items())},
+    )
+
+
+def _build_coverage(
+    findings: list[Finding],
+    spec_map: dict[str, AttackSpec],
+) -> Coverage:
+    """Compute framework-surface coverage + spec disposition counts (``docs/12`` P1).
+
+    A category/tactic is "exercised" when at least one finding's originating spec maps to it;
+    ``unknown`` (unattributed) findings never contribute. ATLAS tactics count toward coverage
+    only when they are in :data:`ATLAS_TACTIC_UNIVERSE` (an off-universe name is a spec-
+    authoring error, not surface coverage) so ``atlas_pct`` stays in ``[0, 1]``.
+    """
+
+    owasp_seen: set[str] = set()
+    atlas_seen: set[str] = set()
+    specs_pass = 0
+    specs_fail = 0
+    specs_inconclusive = 0
+
+    for finding in findings:
+        status = finding.status.value
+        if status == "pass":
+            specs_pass += 1
+        elif status == "fail":
+            specs_fail += 1
+        else:
+            specs_inconclusive += 1
+        spec = spec_map.get(finding.spec_id)
+        if spec is None:
+            continue
+        owasp_seen.add(spec.owasp)
+        if spec.mitre_atlas.tactic in ATLAS_TACTIC_UNIVERSE:
+            atlas_seen.add(spec.mitre_atlas.tactic)
+
+    owasp_exercised = len(owasp_seen)
+    atlas_exercised = len(atlas_seen)
+    total = len(findings)
+    return Coverage(
+        owasp_categories=tuple(sorted(owasp_seen)),
+        owasp_exercised=owasp_exercised,
+        owasp_total=OWASP_LLM_TOTAL,
+        owasp_pct=owasp_exercised / OWASP_LLM_TOTAL if OWASP_LLM_TOTAL else 0.0,
+        atlas_tactics=tuple(sorted(atlas_seen)),
+        atlas_exercised=atlas_exercised,
+        atlas_total=len(ATLAS_TACTIC_UNIVERSE),
+        atlas_pct=(atlas_exercised / len(ATLAS_TACTIC_UNIVERSE) if ATLAS_TACTIC_UNIVERSE else 0.0),
+        specs_total=total,
+        specs_run=total,
+        specs_pass=specs_pass,
+        specs_fail=specs_fail,
+        specs_inconclusive=specs_inconclusive,
     )
 
 
@@ -187,5 +299,6 @@ def build_run_summary(
         confidence_distribution=_distribution(conf_values),
         confirmed_count=confirmed,
         needs_review_count=needs_review,
+        coverage=_build_coverage(findings, spec_map),
         model_comparison=comparison,
     )

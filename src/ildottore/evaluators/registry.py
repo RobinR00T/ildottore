@@ -23,6 +23,7 @@ from importlib.metadata import entry_points
 
 from ildottore.evaluators.authz_leak import AuthzLeakEvaluator
 from ildottore.evaluators.exact import ExactMatchEvaluator
+from ildottore.evaluators.kill_chain import KillChainEvaluator
 from ildottore.evaluators.logprob_membership import LogprobMembershipEvaluator
 from ildottore.evaluators.pii_detector import PIIDetectorEvaluator
 from ildottore.evaluators.refusal import RefusalEvaluator
@@ -56,6 +57,7 @@ _BUILTINS: tuple[type[Evaluator], ...] = (
     VerbatimOverlapEvaluator,
     LogprobMembershipEvaluator,
     AuthzLeakEvaluator,
+    KillChainEvaluator,
 )
 
 

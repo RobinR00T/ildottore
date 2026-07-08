@@ -14,7 +14,7 @@ from typing import Any
 
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
-from ildottore.reporting.summary import ModelComparison, RunSummary
+from ildottore.reporting.summary import Coverage, ModelComparison, RunSummary
 from ildottore.shared.enums import ReportFormat
 
 __all__ = ["JsonReporter", "summary_to_wire"]
@@ -40,6 +40,30 @@ def _comparison_to_wire(comparison: ModelComparison) -> dict[str, Any]:
     }
 
 
+def _coverage_to_wire(coverage: Coverage) -> dict[str, Any]:
+    return {
+        "owasp": {
+            "categories": list(coverage.owasp_categories),
+            "exercised": coverage.owasp_exercised,
+            "total": coverage.owasp_total,
+            "pct": coverage.owasp_pct,
+        },
+        "atlas": {
+            "tactics": list(coverage.atlas_tactics),
+            "exercised": coverage.atlas_exercised,
+            "total": coverage.atlas_total,
+            "pct": coverage.atlas_pct,
+        },
+        "specs": {
+            "total": coverage.specs_total,
+            "run": coverage.specs_run,
+            "pass": coverage.specs_pass,
+            "fail": coverage.specs_fail,
+            "inconclusive": coverage.specs_inconclusive,
+        },
+    }
+
+
 def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
     """Serialize a :class:`RunSummary` to the JSON wire shape (contract §6)."""
 
@@ -56,6 +80,7 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
         "confidence_distribution": summary.confidence_distribution,
         "confirmed_count": summary.confirmed_count,
         "needs_review_count": summary.needs_review_count,
+        "coverage": _coverage_to_wire(summary.coverage),
     }
     if summary.model_comparison is not None:
         wire["model_comparison"] = _comparison_to_wire(summary.model_comparison)

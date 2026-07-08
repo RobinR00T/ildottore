@@ -116,9 +116,10 @@ def test_evaluator_type_full_coverage() -> None:
         "verbatim_overlap",
         "logprob_membership",
         "authz_leak",
+        "kill_chain_progression",
     }
     assert {e.value for e in EvaluatorType} == expected
-    assert len(expected) == 12
+    assert len(expected) == 13
 
 
 def test_inconclusive_reason_coverage() -> None:

@@ -19,11 +19,13 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.table import Table
 
+from ildottore.reporting.summary import build_run_summary
 from ildottore.shared.enums import ScanBand
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
     "ProgressPrinter",
+    "coverage_lines",
     "progress_line",
     "summary_rows",
     "summary_table",
@@ -114,6 +116,32 @@ def summary_table(
     return table
 
 
+def coverage_lines(
+    findings: list[Finding],
+    specs: dict[str, AttackSpec] | None = None,
+) -> list[str]:
+    """Format the coverage block for the terminal summary (``docs/12`` P1).
+
+    Reports the fraction of the OWASP LLM Top 10 and MITRE ATLAS tactic matrix the run
+    exercised, plus specs run/pass/fail/inconclusive, so a green run over a narrow suite
+    cannot read as broad assurance. Pure (no TTY); the caller routes it to the console.
+    """
+
+    cov = build_run_summary(findings, specs or {}).coverage
+    return [
+        (
+            f"Coverage — OWASP LLM Top 10: {cov.owasp_exercised}/{cov.owasp_total} "
+            f"({cov.owasp_pct * 100:.0f}%) · "
+            f"MITRE ATLAS tactics: {cov.atlas_exercised}/{cov.atlas_total} "
+            f"({cov.atlas_pct * 100:.0f}%)"
+        ),
+        (
+            f"Specs run: {cov.specs_run} · pass {cov.specs_pass} · "
+            f"fail {cov.specs_fail} · inconclusive {cov.specs_inconclusive}"
+        ),
+    ]
+
+
 def _band_style(band: str) -> str:
     return {
         ScanBand.CRITICAL.value: "bold red",
@@ -148,6 +176,8 @@ class ProgressPrinter:
         self._console.print(progress_line(index, total, spec_id, finding))
 
     def summary(self, findings: list[Finding], specs: dict[str, AttackSpec] | None = None) -> None:
-        """Print the summary table (always shown, even under ``-q``)."""
+        """Print the summary table + coverage block (always shown, even under ``-q``)."""
 
         self._console.print(summary_table(findings, specs))
+        for line in coverage_lines(findings, specs):
+            self._console.print(line)

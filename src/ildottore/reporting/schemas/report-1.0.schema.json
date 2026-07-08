@@ -24,7 +24,8 @@
         "repro_distribution",
         "confidence_distribution",
         "confirmed_count",
-        "needs_review_count"
+        "needs_review_count",
+        "coverage"
       ],
       "properties": {
         "total": { "type": "integer", "minimum": 0 },
@@ -68,7 +69,41 @@
         "repro_distribution": { "$ref": "#/definitions/distribution" },
         "confidence_distribution": { "$ref": "#/definitions/distribution" },
         "confirmed_count": { "type": "integer", "minimum": 0 },
-        "needs_review_count": { "type": "integer", "minimum": 0 }
+        "needs_review_count": { "type": "integer", "minimum": 0 },
+        "coverage": { "$ref": "#/definitions/coverage" }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owasp", "atlas", "specs"],
+      "properties": {
+        "owasp": { "$ref": "#/definitions/frameworkCoverage" },
+        "atlas": { "$ref": "#/definitions/frameworkCoverage" },
+        "specs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "run", "pass", "fail", "inconclusive"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "run": { "type": "integer", "minimum": 0 },
+            "pass": { "type": "integer", "minimum": 0 },
+            "fail": { "type": "integer", "minimum": 0 },
+            "inconclusive": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "frameworkCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exercised", "total", "pct"],
+      "properties": {
+        "categories": { "type": "array", "items": { "type": "string" } },
+        "tactics": { "type": "array", "items": { "type": "string" } },
+        "exercised": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "pct": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "countMap": {

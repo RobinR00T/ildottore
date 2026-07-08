@@ -1,6 +1,6 @@
 """Il Dottore evaluators (u06) — turn a target response into a :class:`Verdict`.
 
-Public surface: the eleven built-in evaluators, the hardened LLM-as-judge, the verdict
+Public surface: the twelve built-in evaluators, the hardened LLM-as-judge, the verdict
 :func:`~ildottore.evaluators.combine.combine` and the
 :class:`~ildottore.evaluators.registry.EvaluatorRegistry` (built-ins + ``dottore.evaluators``
 entry-point discovery). Each evaluator implements
@@ -15,6 +15,7 @@ from ildottore.evaluators.authz_leak import AuthzLeakEvaluator
 from ildottore.evaluators.base import BaseEvaluator, mask_value, mask_values, shannon_entropy
 from ildottore.evaluators.combine import AGGREGATE_TYPE, combine
 from ildottore.evaluators.exact import ExactMatchEvaluator
+from ildottore.evaluators.kill_chain import KillChainEvaluator
 from ildottore.evaluators.logprob_membership import LogprobMembershipEvaluator
 from ildottore.evaluators.pii_detector import PIIDetectorEvaluator
 from ildottore.evaluators.refusal import RefusalEvaluator
@@ -40,6 +41,7 @@ __all__ = [
     "EvaluatorRegistry",
     "ExactMatchEvaluator",
     "JudgeVerdict",
+    "KillChainEvaluator",
     "LogprobMembershipEvaluator",
     "PIIDetectorEvaluator",
     "RefusalEvaluator",
