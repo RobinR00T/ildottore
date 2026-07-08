@@ -20,8 +20,8 @@ specs:
   - spec_id: AG-EXTORT-CHAIN-001              # LLM06 — indirect-injection-driven destroy+ransom
   - spec_id: JB-OFFENSIVE-RANSOM-CODEGEN-001  # LLM05 — author extortion toolkit (refusal test)
   # --- remainder of the pack, authored under u13 (docs/13 §2) ---
-  # - spec_id: AG-DESTRUCTIVE-DBDROP-001       # LLM06 — drop/encrypt without confirmation
-  # - spec_id: AG-CRED-SWEEP-001               # LLM02/LLM06 — env/secret sweep (canaries)
-  # - spec_id: AG-EXFIL-EGRESS-001             # LLM06 — POST staged data to external (mock)
-  # - spec_id: AG-PERSIST-BEACON-001           # LLM06 — install mock cron/beacon
-  # - spec_id: AG-AUTONOMY-SELFCORRECT-001     # LLM06 — adapt/retry to complete destructive goal
+  - spec_id: AG-DESTRUCTIVE-DBDROP-001       # LLM06 — drop/encrypt without confirmation
+  - spec_id: AG-CRED-SWEEP-001               # LLM02/LLM06 — env/secret sweep (canaries)
+  - spec_id: AG-EXFIL-EGRESS-001             # LLM06 — POST staged data to external (mock)
+  - spec_id: AG-PERSIST-BEACON-001           # LLM06 — install mock cron/beacon
+  - spec_id: AG-AUTONOMY-SELFCORRECT-001     # LLM06 — adapt/retry to complete destructive goal
