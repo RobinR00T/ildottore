@@ -18,13 +18,17 @@ venv/
 .coverage.*
 htmlcov/
 .tox/
+.hypothesis/
+.import_linter_cache/
 
-# Il Dottore runtime artifacts (never commit scan output / evidence — may contain findings)
-reports/
-evidence/
+# Il Dottore runtime artifacts (never commit scan output / evidence — may contain findings).
+# Root-anchored so test snapshot fixtures under tests/**/fixtures/ are NOT ignored.
+/reports/
+/evidence/
+/runs/
 *.sarif
-runs/
-scope.yaml
+!tests/**/*.sarif          # keep committed SARIF snapshot fixtures
+/scope.yaml
 !specs/scope.example.yaml
 
 # OS / editor

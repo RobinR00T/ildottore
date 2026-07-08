@@ -1,0 +1,115 @@
+{
+  "$schema": "https://ildottore.dev/schemas/sarif-2.1.0.schema.json",
+  "runs": [
+    {
+      "columnKind": "utf16CodeUnits",
+      "properties": {
+        "run_id": "golden-1"
+      },
+      "results": [
+        {
+          "kind": "fail",
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "resource",
+                  "name": "t-a"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "PI-DEMO-001 against t-a: fail (band=critical, risk=12, state=confirmed)"
+          },
+          "properties": {
+            "band": "critical",
+            "confidence": 0.92,
+            "exploitability": 3,
+            "impact": 4,
+            "reproducibility": 1.0,
+            "risk_score": 12.0,
+            "state": "confirmed",
+            "status": "fail",
+            "target_id": "t-a"
+          },
+          "ruleId": "PI-DEMO-001",
+          "ruleIndex": 0
+        },
+        {
+          "kind": "pass",
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "resource",
+                  "name": "t-b"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "DL-DEMO-002 against t-b: pass (band=medium, risk=12, state=needs_review)"
+          },
+          "properties": {
+            "band": "medium",
+            "confidence": 0.92,
+            "exploitability": 3,
+            "impact": 4,
+            "reproducibility": 1.0,
+            "risk_score": 12.0,
+            "state": "needs_review",
+            "status": "pass",
+            "target_id": "t-b"
+          },
+          "ruleId": "DL-DEMO-002",
+          "ruleIndex": 1
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/RobinR00T/ildottore",
+          "name": "Il Dottore",
+          "organization": "Synapsys Cybersecurity S.L. (Zynap)",
+          "rules": [
+            {
+              "id": "PI-DEMO-001",
+              "name": "Demo injection spec",
+              "properties": {
+                "tags": [
+                  "owasp:LLM01",
+                  "atlas:AML.TA0000",
+                  "nist:MEASURE",
+                  "category:prompt_injection",
+                  "atlas-technique:AML.T0051"
+                ]
+              },
+              "shortDescription": {
+                "text": "A demo spec for reporting tests."
+              }
+            },
+            {
+              "id": "DL-DEMO-002",
+              "name": "Demo injection spec",
+              "properties": {
+                "tags": [
+                  "owasp:LLM02",
+                  "atlas:AML.TA0000",
+                  "nist:MAP",
+                  "category:prompt_injection",
+                  "atlas-technique:AML.T0051"
+                ]
+              },
+              "shortDescription": {
+                "text": "A demo spec for reporting tests."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
