@@ -3,6 +3,19 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State — 2026-07-08 09:26 CEST — 🟢 CI GREEN on GitHub Actions
+
+- GitHub Actions `ci` is **green** on `main` (run 28925238514). Two CI-only failures found &
+  fixed after the first push (local was green, runner was not):
+  1. `.gitignore` `reports/` + `*.sarif` patterns ate the committed reporting snapshot fixtures
+     (`tests/reporting/fixtures/reports/golden.*`) → Gate 9 FileNotFoundError. Root-anchored the
+     patterns + committed the fixtures (`11d2e3b`).
+  2. rich/Typer `--help` wraps to 80 cols without a TTY → flag substrings truncated → Gate 10.
+     Rendered help wide + ANSI-stripped in the test (`276952f`).
+- Node20-action deprecation is a non-blocking annotation; Dependabot PR to bump actions is open.
+
+---
+
 ## State — 2026-07-08 09:20 CEST — pushed + agentic-extortion pack complete
 
 - **Repo is LIVE (private):** https://github.com/RobinR00T/ildottore — `main` pushed, local ==
