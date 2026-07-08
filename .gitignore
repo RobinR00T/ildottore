@@ -35,3 +35,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Il Dottore default run output (evidence + run db) — never version runtime artifacts
+/.dottore/
