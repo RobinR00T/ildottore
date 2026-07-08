@@ -11,6 +11,9 @@ target?* — with a **default-deny** verdict (``docs/02`` S3/S4/S5, contract §2
 4. dangerous (``test_only``) payload only where the flag surface permits?
 5. layer-B / PII-elicitation specs **off unless the pack enables them**
    (``docs/11`` DL4/DL5).
+6. a spec's declared ``requires_policy`` capabilities all present in the pack's
+   ``enabled_capabilities`` — offensive-simulation / layer-B PII **off by default**
+   (OD-11, ``docs/11 §5`` / ``docs/13 §4``).
 
 Loading a pack performs **no network I/O** (SSRF-safe, ``docs/02 §4``).
 """
@@ -53,6 +56,7 @@ class PolicyPack(BaseModel):
     deny: list[str] = Field(default_factory=list)
     enable_layer_b: bool = False
     allow_pii_elicitation: bool = False
+    enabled_capabilities: list[str] = Field(default_factory=list)
     budgets: dict[str, int] | None = None
 
     def category_enabled(self, category: Category) -> bool:
@@ -176,7 +180,19 @@ class PolicyEngine:
                 f"PII-elicitation spec {spec.id!r} requires pack + --allow-pii-elicitation"
             )
 
-        # 7. dangerous payloads must be flagged test_only (S5). A test_only spec is
+        # 7. declared capability gate (OD-11, docs/11 §5 / docs/13 §4): a spec that
+        #    requires_policy capabilities runs only when the pack explicitly opts into
+        #    every one of them via enabled_capabilities. Default-deny: an empty
+        #    enabled_capabilities blocks any spec that requires a capability, so
+        #    offensive-simulation and layer-B PII specs are OFF unless enabled.
+        missing = [c for c in spec.requires_policy if c not in self._pack.enabled_capabilities]
+        if missing:
+            return _blocked(
+                f"spec {spec.id!r} requires policy capability(ies) {missing!r} "
+                f"not enabled by pack {self._pack.name!r}"
+            )
+
+        # 8. dangerous payloads must be flagged test_only (S5). A test_only spec is
         #    allowed to *run* (execution is mocked); only its raw *rendering* is
         #    gated by --unsafe-render, which u11 enforces. Nothing to block here.
         return _ALLOW

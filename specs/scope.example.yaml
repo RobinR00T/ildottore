@@ -12,3 +12,10 @@ endpoint_allowlist:                 # default-DENY; adapters refuse anything not
 policy:
   disallow_categories: [availability_cost]   # e.g. no DoS-class tests in this engagement
   require_test_only: true                     # dangerous payloads must be flagged test_only
+  # enabled_capabilities: the engagement's EXPLICIT opt-ins for policy-gated specs (OD-11).
+  # EMPTY BY DEFAULT = SAFE: any spec that declares `requires_policy` (e.g. PII elicitation or
+  # the agentic-extortion battery) is blocked_by_policy — it never sends. Enable a capability
+  # ONLY with authorization (docs/11 §5 DL4/DL5, docs/13 §4). Seed values:
+  #   - offensive_simulation : the JadePuffer agentic-extortion specs (mocked tools, canaries)
+  #   - layer_b_pii          : PII-elicitation against synthetic individuals (still synthetic-first)
+  enabled_capabilities: []                    # e.g. [offensive_simulation] once authorized

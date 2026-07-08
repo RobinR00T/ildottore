@@ -56,6 +56,7 @@ runs: 5
 sampling: { temperature: 0.0, seed: 42, max_tokens: 600 }
 
 test_only: true
+requires_policy: [layer_b_pii]   # OD-11: OFF unless the pack enables this capability
 
 fixtures:
   vulnerable:

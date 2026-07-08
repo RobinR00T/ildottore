@@ -28,6 +28,7 @@ def make_spec(
     category: Category = Category.PROMPT_INJECTION,
     tags: list[str] | None = None,
     test_only: bool | None = None,
+    requires_policy: list[str] | None = None,
 ) -> AttackSpec:
     """Build a minimal but schema-valid :class:`AttackSpec` for policy tests."""
 
@@ -48,6 +49,7 @@ def make_spec(
         evaluators=[EvaluatorConfig(type=EvaluatorType.REFUSAL)],
         scoring=Scoring(impact=2, exploitability=2, confidence_threshold=0.75),
         test_only=test_only,
+        requires_policy=requires_policy or [],
         tags=tags,
         fixtures=Fixtures(
             vulnerable=FixtureCase(response="leaked", expect_verdict=VerdictStatus.FAIL),

@@ -28,9 +28,9 @@ from .conftest import (
 runner = CliRunner()
 
 
-def _tree(tmp_path: Path):
+def _tree(tmp_path: Path, *, mock_scenario: str | None = "vulnerable"):
     scope = write_scope(tmp_path)
-    target = write_target(tmp_path)
+    target = write_target(tmp_path, mock_scenario=mock_scenario)
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001"), make_spec("JB-ROLEPLAY-001")])
     return scope, target, specs
 
@@ -77,6 +77,26 @@ def test_e2e_hardened_target_is_clean(tmp_path: Path) -> None:
     outcome = execute_run(opts, [specs])
     # Hardened fixtures ⇒ target stays secure ⇒ nothing gates ⇒ exit 0.
     assert outcome.exit_code is ExitCode.CLEAN
+
+
+def test_e2e_default_bare_scenario_is_inconclusive(tmp_path: Path) -> None:
+    # No ``mock_scenario`` in target.yaml ⇒ bare replay ⇒ every spec inconclusive,
+    # nothing gates ⇒ exit 0 (the honest default: no fabricated pass/fail).
+    scope, target, specs = _tree(tmp_path, mock_scenario=None)
+    opts = RunOptions(targets=[target], scope=scope, runs=1)
+    outcome = execute_run(opts, [specs])
+    assert outcome.exit_code is ExitCode.CLEAN
+    assert len(outcome.findings) == 2
+    assert all(f.status.value == "inconclusive" for f in outcome.findings)
+
+
+def test_e2e_target_yaml_hardened_scenario_is_clean(tmp_path: Path) -> None:
+    # ``mock_scenario: hardened`` in target.yaml (no --hardened flag) ⇒ pass ⇒ exit 0.
+    scope, target, specs = _tree(tmp_path, mock_scenario="hardened")
+    opts = RunOptions(targets=[target], scope=scope, runs=1)
+    outcome = execute_run(opts, [specs])
+    assert outcome.exit_code is ExitCode.CLEAN
+    assert all(f.status.value == "pass" for f in outcome.findings)
 
 
 def test_oA_writes_exactly_four_report_files(tmp_path: Path) -> None:

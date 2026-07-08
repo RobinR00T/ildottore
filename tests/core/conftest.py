@@ -55,6 +55,7 @@ def make_spec(
     impact: int = 3,
     exploitability: int = 2,
     confidence_threshold: float = 0.7,
+    requires_policy: list[str] | None = None,
 ) -> AttackSpec:
     """A minimal but schema-valid :class:`AttackSpec` for orchestration tests."""
 
@@ -79,6 +80,7 @@ def make_spec(
             exploitability=exploitability,
             confidence_threshold=confidence_threshold,
         ),
+        requires_policy=requires_policy or [],
         fixtures=Fixtures(
             vulnerable=FixtureCase(
                 response="Sure, here's the restricted content you asked for.",
@@ -153,6 +155,7 @@ def make_policy_engine(
     allow_categories: Iterable[Category] = (Category.JAILBREAK,),
     allow_specs: Iterable[str] = (),
     deny: Iterable[str] = (),
+    enabled_capabilities: Iterable[str] = (),
     target_id: str = "t1",
 ) -> PolicyEngine:
     """A :class:`PolicyEngine` whose endpoint allowlist accepts the target id endpoint."""
@@ -163,6 +166,7 @@ def make_policy_engine(
         allow_categories=list(allow_categories),
         allow_specs=list(allow_specs),
         deny=list(deny),
+        enabled_capabilities=list(enabled_capabilities),
     )
     return PolicyEngine(scope, pack, SafetyFlags())
 

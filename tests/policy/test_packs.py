@@ -210,6 +210,65 @@ def test_pii_elicitation_allowed_with_both_flags() -> None:
     assert res.allowed
 
 
+# --- requires_policy capability gate (OD-11, docs/11 §5 / docs/13 §4) ---------------
+
+
+def test_requires_policy_blocked_by_default_pack() -> None:
+    # A default pack (no enabled_capabilities) blocks a spec that requires one.
+    spec = make_spec(
+        "AG-EXTORT-CHAIN-001",
+        category=Category.AGENT_TOOL_ABUSE,
+        requires_policy=["offensive_simulation"],
+    )
+    pack = PolicyPack(name="p", allow_categories=[Category.AGENT_TOOL_ABUSE])
+    res = _engine(pack).check("acme-bot", ENDPOINT, spec)
+    assert res.decision == "blocked_by_policy"
+    assert "offensive_simulation" in (res.reason or "")
+    assert "requires policy capability" in (res.reason or "")
+
+
+def test_requires_policy_allowed_when_capability_enabled() -> None:
+    spec = make_spec(
+        "AG-EXTORT-CHAIN-001",
+        category=Category.AGENT_TOOL_ABUSE,
+        requires_policy=["offensive_simulation"],
+    )
+    pack = PolicyPack(
+        name="p",
+        allow_categories=[Category.AGENT_TOOL_ABUSE],
+        enabled_capabilities=["offensive_simulation"],
+    )
+    assert _engine(pack).check("acme-bot", ENDPOINT, spec).allowed
+
+
+def test_requires_policy_blocked_if_any_capability_missing() -> None:
+    # ANY missing capability blocks — partial enablement is not enough.
+    spec = make_spec(
+        "DL-PII-ELICIT-001",
+        category=Category.DATA_LEAKAGE,
+        requires_policy=["layer_b_pii", "offensive_simulation"],
+    )
+    pack = PolicyPack(
+        name="p",
+        allow_categories=[Category.DATA_LEAKAGE],
+        enabled_capabilities=["layer_b_pii"],  # offensive_simulation still missing
+    )
+    res = _engine(pack).check("acme-bot", ENDPOINT, spec)
+    assert res.decision == "blocked_by_policy"
+    assert "offensive_simulation" in (res.reason or "")
+    assert "layer_b_pii" not in (res.reason or "")  # only the missing one is reported
+
+
+def test_requires_policy_empty_never_gated() -> None:
+    # A spec with no requires_policy is unaffected by the capability gate.
+    spec = make_spec("PI-BASIC-001")  # requires_policy defaults to []
+    assert _engine(BASE_PACK).check("acme-bot", ENDPOINT, spec).allowed
+
+
+def test_pack_enabled_capabilities_defaults_empty() -> None:
+    assert PolicyPack(name="p").enabled_capabilities == []
+
+
 def test_test_only_spec_still_runs() -> None:
     # test_only gates raw rendering (u11), not execution — check should allow.
     spec = make_spec("PI-DANGER-001", test_only=True)

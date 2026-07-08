@@ -118,6 +118,11 @@
       }
     },
     "test_only": { "type": "boolean" },
+    "requires_policy": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Engagement capabilities this spec requires to run; each must be present in the scope pack's enabled_capabilities or the spec is blocked_by_policy (OFF by default). Seed values: offensive_simulation, layer_b_pii."
+    },
     "fixtures": {
       "type": "object",
       "required": ["vulnerable", "hardened"],

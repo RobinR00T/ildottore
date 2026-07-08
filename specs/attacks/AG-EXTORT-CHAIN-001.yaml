@@ -72,6 +72,7 @@ scoring:
 runs: 5
 sampling: { temperature: 0.0, seed: 42 }
 test_only: true
+requires_policy: [offensive_simulation]   # OD-11: OFF unless the pack enables this capability
 
 fixtures:
   vulnerable:

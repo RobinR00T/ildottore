@@ -199,6 +199,7 @@ class AttackSpec(_SchemaMirror):
     sampling: Sampling | None = None
     budget: Budget | None = None
     test_only: bool | None = None
+    requires_policy: list[str] = Field(default_factory=list)
     fixtures: Fixtures
     tags: list[str] | None = None
 

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from ildottore.adapters.mock import MockScenario, MockTarget
+from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
 from ildottore.core.runner import CampaignRunner, PolicyGate
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
@@ -44,7 +44,9 @@ from ildottore.shared.protocols import Reporter, TargetAdapter
 from ildottore.store import FsEvidenceStore, SqliteRunStore
 
 __all__ = [
+    "MOCK_SCENARIOS",
     "BuiltRunner",
+    "bare_adapter_factory",
     "build_evidence_store",
     "build_fingerprint_engine",
     "build_permissive_pack",
@@ -55,10 +57,21 @@ __all__ = [
     "build_runner",
     "build_scope",
     "deterministic_clock",
+    "hardened_adapter_factory",
+    "load_mock_scenario",
     "load_target",
     "mock_adapter_factory",
+    "scenario_adapter_factory",
+    "scenario_judge_adapter",
     "scope_endpoint_for",
 ]
+
+#: The offline mock-replay scenarios a ``target.yaml`` may select via ``mock_scenario``.
+#: ``bare`` (default) returns a generic canned response → every spec ``inconclusive``;
+#: ``vulnerable`` replays each spec's ``fixtures.vulnerable`` → ``fail``; ``hardened``
+#: replays ``fixtures.hardened`` → ``pass``. A real over-the-wire adapter (u04) ignores
+#: this — the field only steers the deterministic offline mock (contract §5).
+MOCK_SCENARIOS = ("bare", "vulnerable", "hardened")
 
 
 @dataclass
@@ -225,6 +238,73 @@ def hardened_adapter_factory(target: Target, spec: AttackSpec) -> TargetAdapter:
     return MockTarget(scenario, id=target.id)
 
 
+def bare_adapter_factory(target: Target, _spec: AttackSpec) -> TargetAdapter:
+    """Replay a generic *bare* response (no fixture) → every spec ``inconclusive``.
+
+    This is the honest default when no ``mock_scenario`` is selected: the mock answers
+    with a canned string that matches neither fixture, so no evaluator can decide and
+    the run reports ``inconclusive`` — never a fabricated pass or fail (contract §2).
+    The target's declared capabilities are still carried so capability-gating behaves.
+    """
+
+    return MockTarget(bare_scenario(capabilities=target.capabilities), id=target.id)
+
+
+def scenario_judge_adapter(scenario: str) -> TargetAdapter | None:
+    """A deterministic offline *judge* whose verdict matches the mock scenario.
+
+    The ``semantic_judge`` evaluator is an LLM-as-judge reached via a
+    :class:`TargetAdapter`; offline it would otherwise have no model and abstain
+    (``inconclusive``), sinking every ``weighted``/``any_fail`` aggregate. For a
+    ``vulnerable`` run we replay a canned judge verdict of ``exploited`` and for
+    ``hardened`` one of ``secure`` — so the judge *agrees* with the fixtures and the
+    run demonstrates a decisive ``fail``/``pass``. ``bare`` returns ``None`` (no
+    judge): the judge stays unregistered and abstains, so a bare run remains
+    ``inconclusive`` — the honest default, never a fabricated verdict.
+
+    The canned answer is valid structured JSON with high confidence and no injection
+    tripwire, so it passes every ``docs/04 §4`` mitigation (self-consistency across
+    the two passes is trivially met — the deterministic mock returns identical bytes).
+    """
+
+    if scenario == "vulnerable":
+        verdict = "exploited"
+        reasoning = "offline judge (scenario replay): target exploited by the attack"
+    elif scenario == "hardened":
+        verdict = "secure"
+        reasoning = "offline judge (scenario replay): target remained secure"
+    else:
+        return None
+
+    payload = (
+        f'{{"verdict": "{verdict}", "confidence": 1.0, '
+        f'"reasoning": "{reasoning}", "observed_injection_attempt": false}}'
+    )
+    return MockTarget(MockScenario(response=payload), id="mock-judge")
+
+
+def scenario_adapter_factory(
+    scenario: str,
+) -> Callable[[Target, AttackSpec], TargetAdapter]:
+    """Return the mock ``adapter_factory`` for a ``mock_scenario`` selector.
+
+    ``vulnerable``/``hardened`` replay the spec's own fixtures (so a run demonstrates
+    real ``fail``/``pass``); ``bare`` (the default) returns a generic canned response
+    (``inconclusive``). An unknown selector is rejected — the composition root never
+    silently degrades to a fabricated verdict.
+    """
+
+    if scenario == "vulnerable":
+        return mock_adapter_factory
+    if scenario == "hardened":
+        return hardened_adapter_factory
+    if scenario == "bare":
+        return bare_adapter_factory
+    raise ValueError(
+        f"unknown mock_scenario {scenario!r}; expected one of {', '.join(MOCK_SCENARIOS)}"
+    )
+
+
 # --- target.yaml -------------------------------------------------------------------
 
 
@@ -262,6 +342,29 @@ def load_target(path: Path) -> Target:
     return Target(id=target_id, type=target_type, capabilities=caps, name=name)
 
 
+def load_mock_scenario(path: Path) -> str:
+    """Read the optional ``mock_scenario`` selector from a ``target.yaml``.
+
+    Steers the deterministic offline :class:`MockTarget` only (a real u04 adapter
+    ignores it). Absent ⇒ ``"bare"`` (the honest default: every spec ``inconclusive``).
+    An unknown value is rejected so a typo never silently degrades to a fabricated
+    verdict; the runtime :class:`Target` model is unchanged (this is composition config).
+    """
+
+    import yaml
+
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} must be a mapping at top level")
+    scenario = raw.get("mock_scenario", "bare")
+    if not isinstance(scenario, str) or scenario not in MOCK_SCENARIOS:
+        raise ValueError(
+            f"target file {path} has invalid mock_scenario {scenario!r}; "
+            f"expected one of {', '.join(MOCK_SCENARIOS)}"
+        )
+    return scenario
+
+
 # --- the runner --------------------------------------------------------------------
 
 
@@ -277,22 +380,34 @@ def build_runner(
     timeout_s: float | None = None,
     n: int = 5,
     hardened: bool = False,
+    mock_scenario: str | None = None,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
     Every concrete is built here and injected through a ``shared.protocols`` seam;
-    ``core`` sees only interfaces. ``hardened=True`` swaps in the hardened-fixture
-    adapter factory (a clean target) — handy for a green smoke run.
+    ``core`` sees only interfaces. The offline mock's replay is chosen by
+    ``mock_scenario`` (``bare`` | ``vulnerable`` | ``hardened``): ``vulnerable``
+    replays each spec's ``fixtures.vulnerable`` (real ``fail`` findings), ``hardened``
+    its ``fixtures.hardened`` (real ``pass``), ``bare`` a generic response
+    (``inconclusive``). When ``mock_scenario`` is ``None`` the legacy ``hardened`` flag
+    decides (``True`` ⇒ hardened, ``False`` ⇒ vulnerable) — preserving prior behavior.
     """
 
     resolved_pack = pack if pack is not None else build_permissive_pack(specs)
     policy = build_policy_engine(scope, resolved_pack, safety=safety)
     mutators = build_mutator_registry()
-    evaluators = build_evaluator_registry()
+    # Resolve the effective offline scenario (mock_scenario wins; else the legacy
+    # hardened flag maps to hardened/vulnerable) so the deterministic judge below
+    # agrees with the fixtures being replayed.
+    effective_scenario = mock_scenario or ("hardened" if hardened else "vulnerable")
+    evaluators = build_evaluator_registry(judge=scenario_judge_adapter(effective_scenario))
     scorer = DefaultRiskScorer()
     evidence = build_evidence_store(evidence_root)
     runs = build_run_store(run_db)
-    factory = hardened_adapter_factory if hardened else mock_adapter_factory
+    if mock_scenario is not None:
+        factory = scenario_adapter_factory(mock_scenario)
+    else:
+        factory = hardened_adapter_factory if hardened else mock_adapter_factory
 
     # PolicyEngine structurally satisfies the runner's PolicyGate protocol (its
     # ``check`` returns a CheckResult with ``.allowed``/``.reason``); the cast makes

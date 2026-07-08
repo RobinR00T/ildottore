@@ -39,9 +39,18 @@ from ildottore.shared.models import (
 )
 
 __all__ = [
+    "BARE_RESPONSE",
     "MockScenario",
     "MockTarget",
+    "bare_scenario",
 ]
+
+#: The canned answer a *bare* mock returns when no fixture scenario is selected. It
+#: is deliberately generic — it matches neither a spec's ``vulnerable`` nor its
+#: ``hardened`` fixture, so every evaluator abstains and the run stays
+#: ``inconclusive`` (the current default behavior, made explicit). Selecting the
+#: ``vulnerable`` / ``hardened`` scenario replays the spec's own fixtures instead.
+BARE_RESPONSE = "(mock target: no scenario configured — bare canned response)"
 
 
 class MockScenario(BaseModel):
@@ -94,6 +103,20 @@ class MockScenario(BaseModel):
             logprobs=logprobs,
             capabilities=capabilities if capabilities is not None else Capabilities(),
             finish_reason=finish_reason,
+        )
+
+    @classmethod
+    def bare(cls, *, capabilities: Capabilities | None = None) -> MockScenario:
+        """A *bare* scenario: one generic canned response, no fixture, no tool calls.
+
+        Neither fixture pattern matches :data:`BARE_RESPONSE`, so a run against a bare
+        mock yields ``inconclusive`` for every spec — the honest default when no
+        scenario is chosen (no fabricated pass, no fabricated fail).
+        """
+
+        return cls(
+            response=BARE_RESPONSE,
+            capabilities=capabilities if capabilities is not None else Capabilities(),
         )
 
     def _responses(self) -> list[str]:
@@ -194,3 +217,9 @@ class MockTarget:
 
         attempt = self._attempt_index(request)
         return self._build_response(attempt)
+
+
+def bare_scenario(*, capabilities: Capabilities | None = None) -> MockScenario:
+    """Module-level alias for :meth:`MockScenario.bare` (composition-root convenience)."""
+
+    return MockScenario.bare(capabilities=capabilities)

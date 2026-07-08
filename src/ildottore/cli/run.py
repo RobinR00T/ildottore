@@ -240,6 +240,9 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     all_findings: list[Finding] = []
     for target_path in opts.targets:
         target = wiring.load_target(target_path)
+        # --hardened forces the hardened replay; otherwise the target.yaml's
+        # ``mock_scenario`` selects the offline mock replay (default: bare).
+        mock_scenario = "hardened" if opts.hardened else wiring.load_mock_scenario(target_path)
         result = _run_one_target(
             target=target,
             scope=scope,
@@ -249,7 +252,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             concurrency=timing.concurrency,
             timeout_s=timing.timeout_s,
             n=opts.runs,
-            hardened=opts.hardened,
+            mock_scenario=mock_scenario,
         )
         results.append(result)
         _print_progress(printer, selected, result.findings)
@@ -283,7 +286,7 @@ def _run_one_target(
     concurrency: int,
     timeout_s: float,
     n: int,
-    hardened: bool,
+    mock_scenario: str,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion."""
 
@@ -295,7 +298,7 @@ def _run_one_target(
         concurrency=concurrency,
         timeout_s=timeout_s,
         n=n,
-        hardened=hardened,
+        mock_scenario=mock_scenario,
     )
     run_id = f"run-{uuid.uuid4().hex[:12]}"
     return asyncio.run(built.runner.run(run_id=run_id, target=target, specs=specs))

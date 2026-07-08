@@ -160,12 +160,24 @@ def write_scope(tmp_path: Path, *, target_id: str = "mock-target") -> Path:
     return path
 
 
-def write_target(tmp_path: Path, *, target_id: str = "mock-target") -> Path:
-    """Write a valid ``target.yaml`` and return its path."""
+def write_target(
+    tmp_path: Path,
+    *,
+    target_id: str = "mock-target",
+    mock_scenario: str | None = None,
+) -> Path:
+    """Write a valid ``target.yaml`` and return its path.
 
+    ``mock_scenario`` (``bare`` | ``vulnerable`` | ``hardened``) selects the offline
+    mock replay; omit it to exercise the default (``bare`` ⇒ every spec inconclusive).
+    """
+
+    scenario_line = f"mock_scenario: {mock_scenario}\n" if mock_scenario is not None else ""
     path = tmp_path / "target.yaml"
     path.write_text(
-        f"id: {target_id}\ntype: chatbot\ncapabilities:\n  tools: false\n  rag: false\n",
+        f"id: {target_id}\ntype: chatbot\n"
+        f"{scenario_line}"
+        "capabilities:\n  tools: false\n  rag: false\n",
         encoding="utf-8",
     )
     return path
