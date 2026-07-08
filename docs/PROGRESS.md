@@ -3,6 +3,23 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State — 2026-07-08 12:18 CEST — MVP-2 wave 1 + first real safeguard block
+
+- **MVP-2 w1 landed** (`7dceb9a`): **coverage metric** (% OWASP/ATLAS exercised + run/skip/block
+  counts in summary + JSON/HTML/terminal) and **`kill_chain_progression` evaluator** (JadePuffer
+  chain-depth scoring over mocked traces; fail only on exfil/destroy/ransom; FP-disciplined;
+  wired into AG-EXTORT-CHAIN + AG-DESTRUCTIVE-DBDROP). Full suite green, lint OK, mypy 117.
+- **⚠️ First real Anthropic safeguard block:** the automated adversarial-validator + one impl
+  sub-agent for kill_chain were blocked 3× ('flagged for a cybersecurity topic', Opus 4.8;
+  req_011CcpPiPD5JcrF26mwMTWs5 +2). Code (impl it1) + its 20-test FP/harmful suite had already
+  landed → gate stayed green; conductor did **manual** senior validation. Did NOT circumvent.
+  Logged to ~/AI projects/ildottore-anthropic-safeguard-log.md; exemption: claude.com/form/cyber-use-case.
+- **RESPONSIBLE-USE.md** charter added (`80d574f`). Dependabot actions-bump merged earlier.
+- Carryover: MVP-2 w2 (baseline/drift, adversarial-suffix, multilingual, embeddings); GPG re-sign
+  + history scrub of old `.dottore/` artifacts before public flip.
+
+---
+
 ## State — 2026-07-08 09:26 CEST — 🟢 CI GREEN on GitHub Actions
 
 - GitHub Actions `ci` is **green** on `main` (run 28925238514). Two CI-only failures found &

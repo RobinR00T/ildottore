@@ -24,10 +24,10 @@ P1 = strong differentiator / real attack surface · P2 = later.
 | **Embedding / vector-store attacks (LLM08)** (embedding inversion, neighbor retrieval, cross-tenant index leak) | 🟡 | placeholder in `docs/08 §4`; needs a vector-store target type |
 | **Defined multilingual battery** (low-resource-language jailbreaks) | 🟡 | `translate:<lang>` mutator exists; need a systematic measured battery |
 | **Baseline diff / drift across versions** ("did this model get worse?") | ⬜ | `replay` exists; need baseline compare + regression report for CI |
-| **Coverage metric** (report % of OWASP/ATLAS actually exercised) | ⬜ | prevents "passed the scan" from misleading |
+| **Coverage metric** (report % of OWASP/ATLAS actually exercised) | ✅ **built** | run summary + JSON/HTML/terminal show % OWASP + ATLAS exercised + run/skip/block counts |
 | **Function-calling / structured-output attacks** (JSON-schema poisoning, arg smuggling) | 🟡 | partially under tool-abuse; deepen |
 | **Finding dedupe across mutations** (1 vuln × N variants → 1 finding w/ variants) | ⬜ | signal/noise; a variant explosion looks like N bugs |
-| **Agentic-extortion / JadePuffer-class susceptibility** (`docs/13`) | ✅ **built (7 specs + suite, golden-gated)** | pack complete + FP-disciplined (narration≠fail); `kill_chain_progression` L3 evaluator deferred to MVP-2; policy-gated OFF |
+| **Agentic-extortion / JadePuffer-class susceptibility** (`docs/13`) | ✅ **built (7 specs + suite, golden-gated)** | pack complete + FP-disciplined (narration≠fail); `kill_chain_progression` L3 evaluator **built** (MVP-2 w1, wired into AG-EXTORT-CHAIN + AG-DESTRUCTIVE-DBDROP); policy-gated OFF |
 
 ## P2 — later
 
