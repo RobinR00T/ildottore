@@ -7,6 +7,7 @@ nothing). Also covers spec-selection precedence in :func:`run.select_specs`.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -19,16 +20,25 @@ from .conftest import make_spec, write_scope, write_spec_tree, write_target
 
 runner = CliRunner()
 
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _help_text(args: list[str]) -> str:
+    """Rich/Typer help rendered wide + ANSI-stripped, so substring checks are independent of
+    the runner's terminal width (CI has no TTY → rich wraps to 80 cols and truncates flags)."""
+    res = runner.invoke(app, args, env={"COLUMNS": "200", "TERM": "dumb"})
+    assert res.exit_code == 0
+    return _ANSI.sub("", res.stdout)
+
 
 def _dry(args: list[str]) -> int:
     return runner.invoke(app, args).exit_code
 
 
 def test_root_help_lists_all_commands() -> None:
-    res = runner.invoke(app, ["--help"])
-    assert res.exit_code == 0
+    out = _help_text(["--help"])
     for cmd in ("run", "fingerprint", "lint", "registry", "describe", "new-spec", "replay"):
-        assert cmd in res.stdout
+        assert cmd in out
 
 
 def test_version_flag() -> None:
@@ -38,10 +48,9 @@ def test_version_flag() -> None:
 
 
 def test_run_help_exposes_nmap_style_flags() -> None:
-    res = runner.invoke(app, ["run", "--help"])
-    assert res.exit_code == 0
+    out = _help_text(["run", "--help"])
     for flag in ("-sV", "-A", "--quick", "--deep", "-T", "--suite", "--scope", "-oJ", "--fail-on"):
-        assert flag in res.stdout
+        assert flag in out
 
 
 def test_cheatsheet_quick_scan_dry_run(tmp_path: Path) -> None:
