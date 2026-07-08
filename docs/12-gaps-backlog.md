@@ -21,9 +21,9 @@ P1 = strong differentiator / real attack surface · P2 = later.
 |-----|--------|------|
 | **Adversarial-suffix / transfer attacks** (GCG-style, black-box transferable jailbreaks) | ⬜ | state-of-the-art automated jailbreak; today only hand-authored variants |
 | **Guardrail / moderation-layer evasion** as its own target | 🟡 | fingerprint detects the filter (`docs/10`); need specs that attack the filter, in+out |
-| **Embedding / vector-store attacks (LLM08)** (embedding inversion, neighbor retrieval, cross-tenant index leak) | 🟡 | placeholder in `docs/08 §4`; needs a vector-store target type |
+| **Embedding / vector-store attacks (LLM08)** (embedding inversion, neighbor retrieval, cross-tenant index leak) | ✅ **built** (3 specs + suite) | placeholder in `docs/08 §4`; needs a vector-store target type |
 | **Defined multilingual battery** (low-resource-language jailbreaks) | 🟡 | `translate:<lang>` mutator exists; need a systematic measured battery |
-| **Baseline diff / drift across versions** ("did this model get worse?") | ⬜ | `replay` exists; need baseline compare + regression report for CI |
+| **Baseline diff / drift across versions** ("did this model get worse?") | ✅ **built** (`dottore diff`) | `replay` exists; need baseline compare + regression report for CI |
 | **Coverage metric** (report % of OWASP/ATLAS actually exercised) | ✅ **built** | run summary + JSON/HTML/terminal show % OWASP + ATLAS exercised + run/skip/block counts |
 | **Function-calling / structured-output attacks** (JSON-schema poisoning, arg smuggling) | 🟡 | partially under tool-abuse; deepen |
 | **Finding dedupe across mutations** (1 vuln × N variants → 1 finding w/ variants) | ⬜ | signal/noise; a variant explosion looks like N bugs |
