@@ -1,5 +1,9 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`): `suite_version`,
+# ordered `specs: [{spec_id}]`, `default_runs`, `tags`. Entries are require-present by
+# default (SuiteEntry.enabled=true). Suite-level `sampling`/`fail_on` defaults are MVP-2
+# (not yet modeled); kept as comments so intent survives (docs/03 §5).
 id: quick
-version: "2025.1"
+suite_version: "2025.1"
 name: T0 "Quick" battery (nmap-default equivalent)
 description: >
   The T0 "Quick" triage suite (docs/08 §2-§3): the fast, single-turn, cheap default battery —
@@ -8,47 +12,26 @@ description: >
   two stay in lock-step. DL-PII-ELICIT-001 is present but off unless the policy pack enables
   layer-B PII elicitation (OD-11 / docs/11 §5).
 
-defaults:
-  runs: 3                    # lighter than the OWASP baseline — this is triage
-  sampling: { temperature: 0.0, top_p: 1.0, seed: 42 }
-  fail_on: high
-
-framework_rollup: [owasp, mitre_atlas, nist_ai_rmf]
+default_runs: 3               # lighter than the OWASP baseline — this is triage
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, top_p: 1.0, seed: 42 }; fail_on: high
+tags: [owasp, mitre-atlas, nist-ai-rmf]
 
 specs:
-  - id: PI-DIRECT-001
-    require_present: true
-  - id: PI-INDIRECT-RAG-001
-    require_present: true
-  - id: PI-INDIRECT-TOOL-001
-    require_present: true
-  - id: JB-ROLEPLAY-001
-    require_present: true
-  - id: JB-REFUSAL-SUPPRESS-001
-    require_present: true
-  - id: JB-ENCODING-001
-    require_present: true
-  - id: SP-LEAK-001
-    require_present: true
-  - id: DL-SECRET-CANARY-001
-    require_present: true
-  - id: DL-XSESSION-001
-    require_present: true
-  - id: DL-MEMORIZE-DIVERGENCE-001
-    require_present: true
-  - id: DL-XTENANT-001
-    require_present: true
-  - id: DL-PII-ELICIT-001
-    require_present: true
-  - id: OUT-CODEINJ-001
-    require_present: true
-  - id: OUT-XSS-001
-    require_present: true
-  - id: OUT-SQLI-001
-    require_present: true
-  - id: AG-TOOL-UNAUTH-001
-    require_present: true
-  - id: AG-CONFIRM-BYPASS-001
-    require_present: true
-  - id: DOS-TOKEN-AMP-001
-    require_present: true
+  - spec_id: PI-DIRECT-001
+  - spec_id: PI-INDIRECT-RAG-001
+  - spec_id: PI-INDIRECT-TOOL-001
+  - spec_id: JB-ROLEPLAY-001
+  - spec_id: JB-REFUSAL-SUPPRESS-001
+  - spec_id: JB-ENCODING-001
+  - spec_id: SP-LEAK-001
+  - spec_id: DL-SECRET-CANARY-001
+  - spec_id: DL-XSESSION-001
+  - spec_id: DL-MEMORIZE-DIVERGENCE-001
+  - spec_id: DL-XTENANT-001
+  - spec_id: DL-PII-ELICIT-001
+  - spec_id: OUT-CODEINJ-001
+  - spec_id: OUT-XSS-001
+  - spec_id: OUT-SQLI-001
+  - spec_id: AG-TOOL-UNAUTH-001
+  - spec_id: AG-CONFIRM-BYPASS-001
+  - spec_id: DOS-TOKEN-AMP-001

@@ -15,6 +15,17 @@ The carryover ledger. Every agent session updates this so context survives even 
 - **Stage‑6 finding #1 (FIXED):** `run` default `specs/` discovery found 0 specs because the
   loader only recurses into *spec packs*. Fixed data-only by adding `specs/pack.yaml` — now the
   built-in battery is discovered out of the box (20 specs).
+- **Stage‑6 finding #2 (FIXED):** `dottore lint specs/` still exited 1 (u02 §7 / u14 §7 criterion)
+  because the 3 shipped `specs/suites/*.yaml` were authored to the u02 §6 design sketch
+  (`{id, version, spec_ids, defaults}`) instead of the enforced canonical `Suite` model
+  (`suite_version` / `specs:[{spec_id}]`), which the fixture, tests, linter and registry all
+  speak. Fixed data-only (u13): conformed the 3 suite files to the model (`version`→`suite_version`,
+  `id`→`spec_id`, `defaults.runs`→`default_runs`, `framework_rollup`→`tags`; unmodeled MVP‑2
+  `sampling`/`fail_on`/`requires_policy` kept as comments). Updated `tests/battery` (`entry["id"]`
+  →`entry["spec_id"]`) and restored the u14 CI gate to `dottore lint specs/` (was `specs/attacks`
+  + informational warning). `dottore lint specs/` now exits 0 (20 specs, 3 suites, 1 pack); full
+  suite green. Note: `dottore lint specs/suites` alone still exits 1 by design — a bare dir with no
+  `pack.yaml` loads as a loose *attack-spec* tree, so suite files fail attack-spec validation.
 - **Pending / carryover:**
   - `git push` + create private repo `RobinR00T/ildottore` — **blocked on `gh auth login`** (6+
     local commits waiting). Commits are UNSIGNED (gpg-agent locked) — re-sign before public.

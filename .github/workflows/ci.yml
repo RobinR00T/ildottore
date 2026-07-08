@@ -67,16 +67,11 @@ jobs:
         run: python -m pip install -e ".[dev]"
 
       # ---- Gate 1 — spec lint: schema + static checks (layers 1–2) -------------------------
-      # The shipped attack-spec tree must lint clean. (Bare `specs/` is a known cross-unit
-      # discovery defect escalated to u02/u13 — see the informational step below.)
+      # The shipped spec pack must lint clean end-to-end (u02 §7 / u14 §7). `specs/` resolves
+      # as a pack via `specs/pack.yaml`, so discovery loads attacks/ + suites/ and skips the
+      # loose scope/target example YAMLs.
       - name: "Gate 1 · spec lint (schema + static)"
-        run: dottore lint specs/attacks
-      - name: "Gate 1b · spec lint on bare specs/ (informational — escalated defect)"
-        continue-on-error: true
-        run: |
-          dottore lint specs/ \
-            || echo "::warning title=lint specs/::bare specs/ tree does not lint clean (loose \
-            suite/scope/target YAMLs mis-classified) — escalated to u02/u13; gate uses specs/attacks"
+        run: dottore lint specs/
 
       # ---- Gate 2 — import-boundary contract (layer 14) ------------------------------------
       - name: "Gate 2 · import-boundary contract"

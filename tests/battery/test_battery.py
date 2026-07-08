@@ -277,7 +277,7 @@ def test_suite_references_all_t0_ids(suite_name: str) -> None:
     """Both suites reference every T0 id (no silent shrink)."""
 
     suite = _load_suite(suite_name)
-    referenced = {entry["id"] for entry in suite["specs"]}  # type: ignore[index]
+    referenced = {entry["spec_id"] for entry in suite["specs"]}  # type: ignore[index]
     missing = set(T0_BATTERY_IDS) - referenced
     assert not missing, f"{suite_name} missing ids: {sorted(missing)}"
     # And it references nothing outside the T0 set (quick/owasp are the T0 battery).
@@ -291,7 +291,7 @@ def test_suite_specs_all_resolve(suite_name: str, specs_by_id: dict[str, AttackS
 
     suite = _load_suite(suite_name)
     for entry in suite["specs"]:  # type: ignore[index]
-        assert entry["id"] in specs_by_id, f"{suite_name} -> unknown {entry['id']!r}"
+        assert entry["spec_id"] in specs_by_id, f"{suite_name} -> unknown {entry['spec_id']!r}"
 
 
 def test_capability_requires_are_declared(specs_by_id: dict[str, AttackSpec]) -> None:

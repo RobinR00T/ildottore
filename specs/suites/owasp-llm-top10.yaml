@@ -1,5 +1,9 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`): `suite_version`,
+# ordered `specs: [{spec_id}]`, `default_runs`, `tags`. Entries are require-present by
+# default (SuiteEntry.enabled=true) — a suite can't silently shrink. Suite-level
+# `sampling`/`fail_on` defaults are MVP-2 (not yet modeled); kept as comments (docs/03 §5).
 id: owasp-llm-top10
-version: "2025.1"
+suite_version: "2025.1"
 name: OWASP LLM Top 10 (2025) baseline suite
 description: >
   Baseline assurance suite mapping to OWASP LLM Top 10 (2025). Ships the full T0 "Quick" battery
@@ -8,56 +12,35 @@ description: >
   here (no code change). DL-PII-ELICIT-001 is present but off unless the policy pack enables
   layer-B PII elicitation (OD-11 / docs/11 §5).
 
-defaults:
-  runs: 5
-  sampling: { temperature: 0.0, top_p: 1.0, seed: 42 }
-  fail_on: high            # CI gate: confirmed high/critical breaks the pipeline
+default_runs: 5
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, top_p: 1.0, seed: 42 }; fail_on: high
+#   (CI gate: confirmed high/critical breaks the pipeline)
+tags: [owasp, mitre-atlas, nist-ai-rmf]
 
-framework_rollup: [owasp, mitre_atlas, nist_ai_rmf]
-
-# Ordered spec references. `require_present: true` fails the run if an id is missing,
-# so a suite can't silently shrink.
+# Ordered spec references (declared order == run order).
 specs:
   # --- LLM01 Prompt Injection ---
-  - id: PI-DIRECT-001               # direct instruction override
-    require_present: true
-  - id: PI-INDIRECT-RAG-001         # indirect via retrieved document
-    require_present: true
-  - id: PI-INDIRECT-TOOL-001        # indirect via tool/function output
-    require_present: true
+  - spec_id: PI-DIRECT-001               # direct instruction override
+  - spec_id: PI-INDIRECT-RAG-001         # indirect via retrieved document
+  - spec_id: PI-INDIRECT-TOOL-001        # indirect via tool/function output
   # --- LLM01 Jailbreak block ---
-  - id: JB-ROLEPLAY-001             # roleplay / persona (DAN-class)
-    require_present: true
-  - id: JB-REFUSAL-SUPPRESS-001     # refusal-suppression prefix
-    require_present: true
-  - id: JB-ENCODING-001             # base64 / rot13 / leetspeak encoding bypass
-    require_present: true
+  - spec_id: JB-ROLEPLAY-001             # roleplay / persona (DAN-class)
+  - spec_id: JB-REFUSAL-SUPPRESS-001     # refusal-suppression prefix
+  - spec_id: JB-ENCODING-001             # base64 / rot13 / leetspeak encoding bypass
   # --- LLM07 System Prompt Leakage ---
-  - id: SP-LEAK-001                 # system prompt extraction
-    require_present: true
+  - spec_id: SP-LEAK-001                 # system prompt extraction
   # --- LLM02 Sensitive Information Disclosure ---
-  - id: DL-SECRET-CANARY-001        # secret/canary leakage
-    require_present: true
-  - id: DL-XSESSION-001             # cross-session / cross-user leakage
-    require_present: true
-  - id: DL-MEMORIZE-DIVERGENCE-001  # training-data regurgitation (requires logprobs)
-    require_present: true
-  - id: DL-XTENANT-001              # cross-tenant leak (requires multi_identity)
-    require_present: true
-  - id: DL-PII-ELICIT-001           # PII elicitation (test_only; off by default, OD-11)
-    require_present: true
+  - spec_id: DL-SECRET-CANARY-001        # secret/canary leakage
+  - spec_id: DL-XSESSION-001             # cross-session / cross-user leakage
+  - spec_id: DL-MEMORIZE-DIVERGENCE-001  # training-data regurgitation (requires logprobs)
+  - spec_id: DL-XTENANT-001              # cross-tenant leak (requires multi_identity)
+  - spec_id: DL-PII-ELICIT-001           # PII elicitation (test_only; off by default, OD-11)
   # --- LLM05 Improper Output Handling ---
-  - id: OUT-CODEINJ-001             # insecure code generation
-    require_present: true
-  - id: OUT-XSS-001                 # XSS / unescaped HTML
-    require_present: true
-  - id: OUT-SQLI-001                # unsafe SQL generation
-    require_present: true
+  - spec_id: OUT-CODEINJ-001             # insecure code generation
+  - spec_id: OUT-XSS-001                 # XSS / unescaped HTML
+  - spec_id: OUT-SQLI-001                # unsafe SQL generation
   # --- LLM06 Excessive Agency ---
-  - id: AG-TOOL-UNAUTH-001          # unauthorized / over-permissioned tool call
-    require_present: true
-  - id: AG-CONFIRM-BYPASS-001       # destructive action without confirmation
-    require_present: true
+  - spec_id: AG-TOOL-UNAUTH-001          # unauthorized / over-permissioned tool call
+  - spec_id: AG-CONFIRM-BYPASS-001       # destructive action without confirmation
   # --- LLM10 Unbounded Consumption ---
-  - id: DOS-TOKEN-AMP-001           # token amplification / unbounded output
-    require_present: true
+  - spec_id: DOS-TOKEN-AMP-001           # token amplification / unbounded output
