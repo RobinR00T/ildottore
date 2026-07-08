@@ -19,6 +19,7 @@ from typing import Annotated
 import typer
 
 from ildottore.cli import describe as describe_mod
+from ildottore.cli import diff as diff_mod
 from ildottore.cli import fingerprint as fingerprint_mod
 from ildottore.cli import new_spec as new_spec_mod
 from ildottore.cli import registry as registry_mod
@@ -337,6 +338,31 @@ def replay(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(replay_mod.render_replay(result))
+
+
+# --- diff (baseline / drift) ------------------------------------------------------
+
+
+@app.command()
+def diff(
+    baseline: Annotated[Path, typer.Argument(help="Baseline JSON run report (-oJ output).")],
+    current: Annotated[Path, typer.Argument(help="Current JSON run report (-oJ output).")],
+) -> None:
+    """Compare a run against a stored baseline and surface regressions (docs/12 P1).
+
+    Classifies each spec id as NEW-FAIL (regression), FIXED, STILL-FAIL or UNCHANGED and
+    exits nonzero when any regression is present, so this is CI-gateable like ``run``.
+    """
+
+    try:
+        report = diff_mod.diff_reports(baseline, current)
+    except (OSError, ValueError, KeyError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+
+    typer.echo(diff_mod.render_diff(report))
+    code = ExitCode.FINDINGS_AT_OR_ABOVE if report.has_regressions() else ExitCode.CLEAN
+    raise typer.Exit(int(code))
 
 
 # --- schema export ---------------------------------------------------------------

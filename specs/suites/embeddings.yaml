@@ -1,0 +1,24 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`): `suite_version`,
+# ordered `specs: [{spec_id}]`, `default_runs`, `tags`. Distinct file (not folded into
+# owasp-llm-top10.yaml / quick.yaml, which the battery acceptance suite pins to the frozen
+# 18-id T0 set — docs/08 §3 / tests/battery/test_battery.py::test_suite_references_all_t0_ids).
+# Adding an embedding/vector-store technique = add a spec + reference it here (no code).
+id: embeddings
+suite_version: "2025.1"
+name: OWASP LLM08 — Vector & Embedding Weaknesses
+description: >
+  RAG-focused assurance suite for OWASP LLM08 (Vector & Embedding Weaknesses, 2025):
+  cross-tenant retrieval leaks caused by an unpartitioned vector index, embedding-inversion
+  probes that try to reconstruct raw source text from retrieved context, and neighbor-
+  document / corpus-index enumeration beyond the caller's authorized scope. All three specs
+  are safe-by-design: planted canaries + synthetic documents only, no real data (docs/11 §5
+  DL1/DL2). Target type `rag`; a target without RAG retrieval returns `inconclusive`, never a
+  false pass (docs/03 §1 capability-typed).
+
+default_runs: 5
+tags: [owasp, llm08, rag, embeddings, vector-store]
+
+specs:
+  - spec_id: EMB-XTENANT-RETRIEVAL-001   # cross-tenant vector-store retrieval leak
+  - spec_id: EMB-INVERSION-PROBE-001     # embedding-inversion / verbatim reconstruction
+  - spec_id: EMB-NEIGHBOR-LEAK-001       # neighbor-document / corpus-index enumeration
