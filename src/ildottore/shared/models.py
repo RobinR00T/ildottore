@@ -223,12 +223,27 @@ class Capabilities(_Frozen):
 
 
 class Target(_Frozen):
-    """A target under test (id + type + declared capabilities)."""
+    """A target under test (id + type + declared capabilities).
+
+    ``provider``/``endpoint``/``model``/``auth_ref``/``sampling_defaults`` are the
+    optional **live-target** fields a real ``target.yaml`` declares (``docs/09``,
+    ``specs/targets/example-openai.yaml``) so the u12 composition root can route a
+    non-mock target to the correct over-the-wire adapter (u04) without a second
+    parse of the file. ``auth_ref`` is a reference (e.g. ``env://NAME``), never an
+    inline secret (S6); it is resolved to a value only at send time, in ``cli``.
+    All five stay ``None`` for a mock/offline target (contract §4 KEEP: additive,
+    optional fields — no change to existing mock behavior).
+    """
 
     id: str
     type: TargetType
     capabilities: Capabilities = Field(default_factory=Capabilities)
     name: str | None = None
+    provider: str | None = None
+    endpoint: str | None = None
+    model: str | None = None
+    auth_ref: str | None = None
+    sampling_defaults: Sampling | None = None
 
 
 class TokenLogprob(_Frozen):

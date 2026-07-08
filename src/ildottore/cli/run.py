@@ -240,9 +240,19 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     all_findings: list[Finding] = []
     for target_path in opts.targets:
         target = wiring.load_target(target_path)
-        # --hardened forces the hardened replay; otherwise the target.yaml's
-        # ``mock_scenario`` selects the offline mock replay (default: bare).
-        mock_scenario = "hardened" if opts.hardened else wiring.load_mock_scenario(target_path)
+        # --hardened always forces the offline hardened replay (a mock-only flag);
+        # otherwise a target with no ``mock_scenario`` and a real, non-``mock://``
+        # ``endpoint`` routes to the live provider adapter (u04) — anything else
+        # (including every existing mock-only target.yaml, which never declares an
+        # endpoint) keeps resolving to the offline mock, unchanged (contract §5).
+        mock_scenario: str | None
+        real_target: Target | None
+        if opts.hardened or wiring.target_uses_mock(target_path):
+            mock_scenario = "hardened" if opts.hardened else wiring.load_mock_scenario(target_path)
+            real_target = None
+        else:
+            mock_scenario = None
+            real_target = target
         result = _run_one_target(
             target=target,
             scope=scope,
@@ -253,6 +263,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             timeout_s=timing.timeout_s,
             n=opts.runs,
             mock_scenario=mock_scenario,
+            real_target=real_target,
         )
         results.append(result)
         _print_progress(printer, selected, result.findings)
@@ -286,9 +297,15 @@ def _run_one_target(
     concurrency: int,
     timeout_s: float,
     n: int,
-    mock_scenario: str,
+    mock_scenario: str | None,
+    real_target: Target | None = None,
 ) -> CampaignResult:
-    """Assemble a runner for one target and drive one campaign to completion."""
+    """Assemble a runner for one target and drive one campaign to completion.
+
+    ``real_target`` (set only for a non-mock ``target.yaml``, see :func:`execute_run`)
+    routes the campaign through :func:`wiring.real_adapter_factory` instead of the
+    offline mock; ``mock_scenario`` is ``None`` in that case.
+    """
 
     built = wiring.build_runner(
         scope=scope,
@@ -299,6 +316,7 @@ def _run_one_target(
         timeout_s=timeout_s,
         n=n,
         mock_scenario=mock_scenario,
+        real_target=real_target,
     )
     run_id = f"run-{uuid.uuid4().hex[:12]}"
     return asyncio.run(built.runner.run(run_id=run_id, target=target, specs=specs))

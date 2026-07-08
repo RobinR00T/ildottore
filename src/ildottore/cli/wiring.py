@@ -17,11 +17,14 @@ is swapped in here without touching ``core``.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
+from urllib.parse import urlsplit
 
+from ildottore.adapters import AnthropicAdapter, OpenAIAdapter, RestAdapter, RestTemplate
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
 from ildottore.core.runner import CampaignRunner, PolicyGate
@@ -39,7 +42,7 @@ from ildottore.registry import Registry, load_paths
 from ildottore.reporting import get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.enums import Category, TargetType
-from ildottore.shared.models import AttackSpec, Capabilities, Target
+from ildottore.shared.models import AttackSpec, Capabilities, Sampling, Target
 from ildottore.shared.protocols import Reporter, TargetAdapter
 from ildottore.store import FsEvidenceStore, SqliteRunStore
 
@@ -51,6 +54,7 @@ __all__ = [
     "build_fingerprint_engine",
     "build_permissive_pack",
     "build_policy_engine",
+    "build_real_adapter",
     "build_registry",
     "build_reporter",
     "build_run_store",
@@ -61,9 +65,12 @@ __all__ = [
     "load_mock_scenario",
     "load_target",
     "mock_adapter_factory",
+    "real_adapter_factory",
+    "resolve_auth_ref",
     "scenario_adapter_factory",
     "scenario_judge_adapter",
     "scope_endpoint_for",
+    "target_uses_mock",
 ]
 
 #: The offline mock-replay scenarios a ``target.yaml`` may select via ``mock_scenario``.
@@ -305,23 +312,126 @@ def scenario_adapter_factory(
     )
 
 
+# --- real (over-the-wire) adapters --------------------------------------------------
+
+
+def resolve_auth_ref(auth_ref: str | None) -> str | None:
+    """Resolve a target's ``auth_ref`` **reference** to its secret value (S6).
+
+    Only the ``env://NAME`` scheme is supported in MVP-1 (matches every
+    ``auth_ref`` in ``specs/targets/``); the environment is read here, at send-time
+    construction — never earlier, and the resolved value is never logged (the
+    caller passes it straight into the adapter's ``api_key``, which itself never
+    appears in evidence: the redactor masks ``raw_ids``, and the value never enters
+    a ``ModelRequest``/``ModelResponse``). ``None`` in ⇒ ``None`` out (no auth
+    configured). An unsupported scheme (e.g. ``vault://``, deferred) raises rather
+    than silently sending an unauthenticated request.
+    """
+
+    if auth_ref is None:
+        return None
+    if auth_ref.startswith("env://"):
+        name = auth_ref.removeprefix("env://")
+        return os.environ.get(name)
+    raise ValueError(f"unsupported auth_ref scheme in {auth_ref!r}; only 'env://NAME' is supported")
+
+
+def build_real_adapter(
+    target: Target,
+    allowlist: EndpointAllowlist,
+    *,
+    api_key: str | None,
+) -> TargetAdapter:
+    """Construct the concrete over-the-wire adapter for ``target`` (contract §5).
+
+    Routes on ``target.provider``: ``openai`` → :class:`OpenAIAdapter`,
+    ``anthropic`` → :class:`AnthropicAdapter`, anything else → the generic
+    :class:`RestAdapter` (the long-tail escape hatch, ADR-0002). ``target.endpoint``
+    is the **full** request URL (``specs/targets/example-openai.yaml``); its origin
+    becomes the adapter's ``base_url`` and its path is either the adapter's own
+    fixed ``_endpoint_path`` (openai/anthropic) or the ``RestTemplate.path`` (rest) —
+    either way ``adapter._full_url()`` reconstructs the declared endpoint exactly, so
+    the allowlist gate (built from the same scope) authorizes the identical URL the
+    adapter will call.
+    """
+
+    parts = urlsplit(target.endpoint or "")
+    origin = f"{parts.scheme}://{parts.netloc}"
+    provider = (target.provider or "").strip().lower()
+
+    if provider == "openai":
+        return OpenAIAdapter(
+            id=target.id, base_url=origin, allowlist=allowlist, api_key=api_key, model=target.model
+        )
+    if provider == "anthropic":
+        return AnthropicAdapter(
+            id=target.id, base_url=origin, allowlist=allowlist, api_key=api_key, model=target.model
+        )
+    template = RestTemplate(path=parts.path or "/")
+    return RestAdapter(
+        id=target.id,
+        base_url=origin,
+        allowlist=allowlist,
+        api_key=api_key,
+        model=target.model,
+        template=template,
+    )
+
+
+def real_adapter_factory(
+    scope: Scope,
+    target: Target,
+) -> Callable[[Target, AttackSpec], TargetAdapter]:
+    """Build the ``adapter_factory`` for a **real**, non-mock target (contract §5).
+
+    One concrete adapter is constructed up front (a real target's wire shape does
+    not vary per spec, unlike the mock's fixture replay) and returned for every
+    spec. Its :class:`EndpointAllowlist` is built from the *scope's* declared
+    endpoints for this target id — the same allowlist the policy gate already
+    checked in :meth:`~ildottore.core.runner.CampaignRunner._run_spec` before the
+    adapter was even constructed — so an out-of-scope/off-allowlist target is
+    blocked twice over: once by the policy gate (zero adapter build) and again,
+    defense-in-depth, inside :meth:`BaseAdapter.send` itself (contract §4 KEEP). A
+    target absent from scope gets an empty allowlist (default-deny).
+    """
+
+    scope_target = scope.target(target.id)
+    allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
+    api_key = resolve_auth_ref(target.auth_ref)
+    adapter = build_real_adapter(target, allowlist, api_key=api_key)
+
+    def _factory(_target: Target, _spec: AttackSpec) -> TargetAdapter:
+        return adapter
+
+    return _factory
+
+
 # --- target.yaml -------------------------------------------------------------------
 
 
-def load_target(path: Path) -> Target:
-    """Load a ``target.yaml`` into a :class:`~ildottore.shared.models.Target`.
-
-    The file declares ``id``/``type`` and an optional ``capabilities`` map; secrets
-    are **never** read here (``auth_ref`` is a reference resolved elsewhere, S6).
-    Unknown top-level keys (provider/endpoint/model/auth_ref/sampling_defaults …) are
-    ignored — this loader only extracts what the runtime :class:`Target` model needs.
-    """
+def _read_target_yaml(path: Path) -> dict[str, Any]:
+    """Parse a ``target.yaml`` into a raw mapping (shared by every reader below)."""
 
     import yaml
 
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} must be a mapping at top level")
+    return raw
+
+
+def load_target(path: Path) -> Target:
+    """Load a ``target.yaml`` into a :class:`~ildottore.shared.models.Target`.
+
+    The file declares ``id``/``type`` and an optional ``capabilities`` map, plus the
+    optional **live-target** fields ``provider``/``endpoint``/``model``/``auth_ref``/
+    ``sampling_defaults`` (``specs/targets/example-openai.yaml``) that
+    :func:`real_adapter_factory` routes on. ``auth_ref`` is carried as the bare
+    reference string (e.g. ``env://NAME``) — the secret itself is **never** read
+    here (S6); it is resolved only at send time via :func:`resolve_auth_ref`.
+    """
+
+    raw = _read_target_yaml(path)
     target_id = raw.get("id")
     if not isinstance(target_id, str) or not target_id:
         raise ValueError(f"target file {path} is missing a string 'id'")
@@ -339,7 +449,29 @@ def load_target(path: Path) -> Target:
     known = set(Capabilities.model_fields)
     caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
     name = raw.get("name") if isinstance(raw.get("name"), str) else None
-    return Target(id=target_id, type=target_type, capabilities=caps, name=name)
+
+    provider = raw.get("provider") if isinstance(raw.get("provider"), str) else None
+    endpoint = raw.get("endpoint") if isinstance(raw.get("endpoint"), str) else None
+    model = raw.get("model") if isinstance(raw.get("model"), str) else None
+    auth_ref = raw.get("auth_ref") if isinstance(raw.get("auth_ref"), str) else None
+    sampling_raw = raw.get("sampling_defaults")
+    sampling = None
+    if sampling_raw is not None:
+        if not isinstance(sampling_raw, dict):
+            raise ValueError(f"target file {path} 'sampling_defaults' must be a mapping")
+        sampling = Sampling.model_validate(sampling_raw)
+
+    return Target(
+        id=target_id,
+        type=target_type,
+        capabilities=caps,
+        name=name,
+        provider=provider,
+        endpoint=endpoint,
+        model=model,
+        auth_ref=auth_ref,
+        sampling_defaults=sampling,
+    )
 
 
 def load_mock_scenario(path: Path) -> str:
@@ -351,11 +483,7 @@ def load_mock_scenario(path: Path) -> str:
     verdict; the runtime :class:`Target` model is unchanged (this is composition config).
     """
 
-    import yaml
-
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        raise ValueError(f"target file {path} must be a mapping at top level")
+    raw = _read_target_yaml(path)
     scenario = raw.get("mock_scenario", "bare")
     if not isinstance(scenario, str) or scenario not in MOCK_SCENARIOS:
         raise ValueError(
@@ -363,6 +491,27 @@ def load_mock_scenario(path: Path) -> str:
             f"expected one of {', '.join(MOCK_SCENARIOS)}"
         )
     return scenario
+
+
+def target_uses_mock(path: Path) -> bool:
+    """True when ``target.yaml`` at ``path`` should route through the offline mock.
+
+    A target is a mock target when it declares an explicit ``mock_scenario``
+    selector, or its ``endpoint`` is absent/empty, or that endpoint uses the
+    ``mock://`` scheme. Anything else — a real ``provider`` + non-``mock://``
+    ``endpoint`` and no ``mock_scenario`` — is a **real** over-the-wire target
+    and routes through :func:`real_adapter_factory` instead (contract §5 acceptance:
+    existing mock-only ``target.yaml`` files, which never set ``endpoint``, are
+    completely unaffected by this — they keep resolving here to ``True``).
+    """
+
+    raw = _read_target_yaml(path)
+    if "mock_scenario" in raw:
+        return True
+    endpoint = raw.get("endpoint")
+    if not isinstance(endpoint, str) or not endpoint:
+        return True
+    return endpoint.startswith("mock://")
 
 
 # --- the runner --------------------------------------------------------------------
@@ -381,6 +530,7 @@ def build_runner(
     n: int = 5,
     hardened: bool = False,
     mock_scenario: str | None = None,
+    real_target: Target | None = None,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -391,23 +541,34 @@ def build_runner(
     its ``fixtures.hardened`` (real ``pass``), ``bare`` a generic response
     (``inconclusive``). When ``mock_scenario`` is ``None`` the legacy ``hardened`` flag
     decides (``True`` ⇒ hardened, ``False`` ⇒ vulnerable) — preserving prior behavior.
+
+    ``real_target`` (u04, contract §5 acceptance) overrides all of the above with
+    :func:`real_adapter_factory`: the campaign sends real requests to ``real_target``'s
+    declared provider/endpoint. There is no offline fixture to replay for a live
+    target, so the ``semantic_judge`` evaluator stays unregistered — it abstains
+    (``inconclusive``) rather than fabricate a verdict (contract §4 KEEP), exactly the
+    same honest default a ``bare`` mock run gets.
     """
 
     resolved_pack = pack if pack is not None else build_permissive_pack(specs)
     policy = build_policy_engine(scope, resolved_pack, safety=safety)
     mutators = build_mutator_registry()
-    # Resolve the effective offline scenario (mock_scenario wins; else the legacy
-    # hardened flag maps to hardened/vulnerable) so the deterministic judge below
-    # agrees with the fixtures being replayed.
-    effective_scenario = mock_scenario or ("hardened" if hardened else "vulnerable")
-    evaluators = build_evaluator_registry(judge=scenario_judge_adapter(effective_scenario))
     scorer = DefaultRiskScorer()
     evidence = build_evidence_store(evidence_root)
     runs = build_run_store(run_db)
-    if mock_scenario is not None:
-        factory = scenario_adapter_factory(mock_scenario)
+    if real_target is not None:
+        evaluators = build_evaluator_registry(judge=None)
+        factory = real_adapter_factory(scope, real_target)
     else:
-        factory = hardened_adapter_factory if hardened else mock_adapter_factory
+        # Resolve the effective offline scenario (mock_scenario wins; else the legacy
+        # hardened flag maps to hardened/vulnerable) so the deterministic judge below
+        # agrees with the fixtures being replayed.
+        effective_scenario = mock_scenario or ("hardened" if hardened else "vulnerable")
+        evaluators = build_evaluator_registry(judge=scenario_judge_adapter(effective_scenario))
+        if mock_scenario is not None:
+            factory = scenario_adapter_factory(mock_scenario)
+        else:
+            factory = hardened_adapter_factory if hardened else mock_adapter_factory
 
     # PolicyEngine structurally satisfies the runner's PolicyGate protocol (its
     # ``check`` returns a CheckResult with ``.allowed``/``.reason``); the cast makes
