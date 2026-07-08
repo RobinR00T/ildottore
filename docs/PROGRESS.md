@@ -3,6 +3,21 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State — 2026-07-08 09:20 CEST — pushed + agentic-extortion pack complete
+
+- **Repo is LIVE (private):** https://github.com/RobinR00T/ildottore — `main` pushed, local ==
+  remote == `035a76b`. `gh` authed as RobinR00T (repo+workflow scopes); CI (`.github/workflows`)
+  will run on push.
+- **Agentic-extortion (JadePuffer) pack completed** (`035a76b`): +5 specs (DBDROP, CRED-SWEEP,
+  EXFIL-EGRESS, PERSIST-BEACON, AUTONOMY-SELFCORRECT) + suite (7 specs). Adversarially verified:
+  lint OK (25 specs), **960 tests**, golden FP/FN accuracy 1.0, safety AX1-AX5 hold, RFC-5737
+  doc IoCs, narration≠fail. All mocked/test_only/policy-gated OFF.
+- **USAGE.md** added (`0b3f0be`) — user quickstart.
+- **Still pending:** commits UNSIGNED (re-sign + force-push before flipping public) · OD-11 (ship
+  DL-PII-ELICIT-001?) human-pending · deeper Stage-6 (real-model run) · MVP-2 backlog (`docs/12`).
+
+---
+
 ## State — 2026-07-08 01:00 CEST — 🎉 MVP‑1 CODE COMPLETE
 
 - **All 6 waves DONE. All 15 units built.** ✅ W0 `5c86bfc` · W1 `c33e7a1` · W2 `1a8dff9` ·

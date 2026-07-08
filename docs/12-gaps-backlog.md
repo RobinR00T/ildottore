@@ -27,7 +27,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 | **Coverage metric** (report % of OWASP/ATLAS actually exercised) | ⬜ | prevents "passed the scan" from misleading |
 | **Function-calling / structured-output attacks** (JSON-schema poisoning, arg smuggling) | 🟡 | partially under tool-abuse; deepen |
 | **Finding dedupe across mutations** (1 vuln × N variants → 1 finding w/ variants) | ⬜ | signal/noise; a variant explosion looks like N bugs |
-| **Agentic-extortion / JadePuffer-class susceptibility** (`docs/13`) | ✅ specced (2 specs + suite) | full `agentic-extortion` pack (7 specs) + `kill_chain_progression` L3 evaluator = build under u13/u06; policy-gated OFF |
+| **Agentic-extortion / JadePuffer-class susceptibility** (`docs/13`) | ✅ **built (7 specs + suite, golden-gated)** | pack complete + FP-disciplined (narration≠fail); `kill_chain_progression` L3 evaluator deferred to MVP-2; policy-gated OFF |
 
 ## P2 — later
 
