@@ -68,6 +68,26 @@ Full method: `docs/00-ai-build-playbook.md`.
 - **Provably correct:** machine-checkable acceptance criteria + adversarial tests + human
   sign-off on every fork. "Done" means proven.
 
+### Robustness anti-patterns (from the ElSereno audit, 2026-08-29 — apply to ANY code we write)
+
+- **Bound every untrusted read.** Never read a request body, stream or file of attacker-
+  controlled size without a cap; reject over-limit input, do not truncate and forward it.
+- **Gates fail closed.** A classifier, evaluator or policy check that cannot parse its input
+  refuses or scores conservatively; it never falls through to "allow" / "clean".
+- **Detectors must match the real format, not the spec-book.** A verdict engine that only
+  recognises the tidy encoding goes blind to what targets actually send. Test against real
+  payloads, not just canonical examples.
+- **Paginate on the raw upstream count, not the post-filter count.** Dropping a few unparseable
+  rows must not look like end-of-data and truncate the sweep.
+- **Shared state across threads/async needs a lock.** "Read it only after the worker finishes"
+  is not synchronisation: join or guard it. Never close a queue/channel a producer can still
+  write to.
+- **No secrets via argv or plain env** (they leak via ps / /proc/<pid> / shell history): take
+  them from a 0600 file or stdin.
+- **Validate archive member names on extraction** (reject `..`), even for authenticated archives.
+- **Verify protocol/format constants against the normative source, not memory**, and skip any
+  per-variant prefix before parsing the body.
+
 ## 4. Stack, commands & conventions
 
 - **Python 3.11+** (dev env is 3.14). `src/` layout, single distribution `ildottore`,
