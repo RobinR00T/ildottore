@@ -3,6 +3,61 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-08-31, first real over-the-wire scans (Ollama + a vulnerable chatbot)
+
+- **Ran Il Dottore against real targets for the first time** (local, no API key): a raw
+  Ollama model and a local reproduction of aira-security/Vulnerable-AI-Chatbot (its pins
+  don't install on py3.12/3.14, so a faithful stdlib shim reproduces its documented
+  "forget your rules -> reveal secret" policy bypass, backed by Ollama).
+- **Result:** Il Dottore found a **critical, reproducible (5/5)** prompt-injection ->
+  secret-leak on the chatbot (risk 16.0), and returned decisive PASS on 7 other attack
+  classes once the judge was wired. Reports in `ildottore-realtest/aira/`.
+- **`--judge` shipped** (`cli/app.py` / `cli/run.py` / `cli/wiring.build_judge_adapter`):
+  supplies an LLM-as-judge (a local llama3.2:3b here) so `semantic_judge` decides on live
+  scans instead of abstaining. Test in `tests/cli/test_wiring.py`.
+- **Two real bugs the mock never exercised, fixed with regression tests:** (1) live
+  multi-turn to Anthropic 400'd on an OpenAI-shaped `tool_calls` field (adapter now projects
+  to `{role, content}`); (2) the evidence store refused every live write because a numeric
+  logprob matched the phone/card shapes in flat-text scanning (guard now scans string leaves
+  only). Plus a zero-width mutator property-test input-scoping fix. Suite: **1080 passed**.
+- **Both follow-ups then done (same session):** (1) evidence redaction is seeded from the
+  scan's known secrets (`wiring.planted_secrets` -> the store masks each spec's canaries +
+  `secret_leakage` refs; validated: the leaked AIRA secret is now `«REDACTED:canary»` at
+  rest, 0 in clear); (2) a *consulted* judge that abstains is dropped so the deterministic
+  arbiter carries, while an *unconsulted* judge (capability_unavailable) and deterministic
+  abstentions still dominate (bare mode stays inconclusive).
+- **Fleet config + `dottore fleet`** added: one `fleet.yaml` lists every LLM/URL/MCP target
+  to validate and expands to `scope.yaml` + per-target files (`--run` scans them all). Keys
+  by env reference only; provider inferred from the endpoint path; `kind: mcp` recorded as
+  skipped (adapter pending). Example `specs/fleet.example.yaml`. Suite: **1089 passed**.
+- **MCP adapter is the natural next build** (the one skipped fleet kind). Still **not committed**.
+
+---
+
+## State, 2026-08-30, DeepTeam gap analysis executed (multi-turn engine + 3 families)
+
+- **Driver:** `docs/14` (DeepTeam coverage-map, no dependency). Whole roadmap built in one pass.
+- **P0 multi-turn engine** (`core/conversation.py` + runner `_is_multi_turn` branch): pinned
+  attacker ladders threaded as `messages`, final turn scored, transcript persisted. Backward-
+  compatible, the 6 existing `turns` specs now execute as real conversations offline with the
+  same verdicts (mock replays the fixture as the final reply); against a live target they now
+  actually escalate instead of sending only turn 0. Unit tests `tests/core/test_conversation.py`
+  (6) + runner e2e `test_multi_turn_spec_runs_as_a_conversation`.
+- **Specs added (19):** 5 multi-turn jailbreaks, 7 access-control, 5 agentic (OWASP-Agents-2026),
+  `JB-MULTILINGUAL`, `RECON-SYSTEM`. **Suites added (4):** `multi-turn`, `access-control`,
+  `agentic-owasp2026`, `obfuscation-enhancers`. Battery: **47 specs / 8 suites**.
+- **Mutators:** 12 → **18** (leetspeak, adversarial_poetry, math_problem, gray_box,
+  linguistic_confusion, context_poisoning) + golden fixtures; wired into the jailbreak specs.
+- **Gates all green:** ruff, mypy (125 files), import-linter (4/4), `dottore lint` (0/0),
+  pytest **1077 passed**, and an offline E2E `dottore run` of the multi-turn + access-control
+  suites (vulnerable ⇒ fail, hardened ⇒ clean, transcript present in the JSON report).
+- **Deferred by design (docs/14):** adaptive Tree search (shipped as pinned breadth ladder),
+  systematic per-language multilingual battery (needs mutation parameters), Responsible-AI /
+  Safety / Business content packs (don't fit the security `category` enum; `docs/12` = optional).
+- **Not committed**, working tree only; GPG signing is the owner's.
+
+---
+
 ## State — 2026-07-08 18:06 CEST — MVP-2 waves 1-2 shipped
 
 - Repo `main` == origin `734217f`, **24 commits**, GitHub CI green; all gates green

@@ -1,0 +1,48 @@
+# Example: gate YOUR AI application's pipeline on Il Dottore findings.
+#
+# Drop this in .github/workflows/ of the app you want to keep safe. It scans a target on
+# every PR and fails the build when a confirmed high/critical finding is present, uploads a
+# SARIF log to GitHub code-scanning, and (optionally) blocks regressions against a baseline.
+name: llm-security
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write        # to upload SARIF to code-scanning
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install Il Dottore
+        run: pip install ildottore            # or: pip install git+https://…/ildottore
+
+      - name: Scan (fail the build on confirmed high/critical)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # matches target auth_ref
+        run: |
+          dottore run --suite owasp:llm \
+            -t ci/target.yaml \
+            --scope ci/scope.yaml \
+            --fail-on high \
+            -oS ildottore.sarif -oJ ildottore.json
+
+      - name: Upload findings to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ildottore.sarif
+
+      # Optional: block only NEW regressions vs a committed baseline run.
+      # `dottore diff` exits nonzero when any spec flips to NEW-FAIL.
+      - name: Regression gate vs baseline
+        if: always()
+        run: dottore diff ci/baseline.json ildottore.json

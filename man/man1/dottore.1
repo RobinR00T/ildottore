@@ -1,0 +1,166 @@
+.TH DOTTORE 1 "2026" "Il Dottore" "User Commands"
+.SH NAME
+dottore \- spec-driven security scanner for LLMs and AI applications (nmap-for-AI)
+.SH SYNOPSIS
+.B dottore
+.I run
+[\fIOPTIONS\fR] [\fITARGET\fR...] \fB--scope\fR \fIscope.yaml\fR
+.br
+.B dottore
+.I fingerprint
+\fITARGET\fR \fB--scope\fR \fIscope.yaml\fR
+.br
+.B dottore
+.I fleet
+\fIfleet.yaml\fR [\fB--run\fR] [\fB--judge\fR \fIjudge.yaml\fR]
+.br
+.B dottore
+.I "lint | describe | registry | new-spec | replay | diff | schema"
+[\fIARGS\fR]
+.SH DESCRIPTION
+.B dottore
+(alias
+.BR dott )
+examines an AI endpoint, diagnoses its security weaknesses against a declarative attack
+battery aligned to the OWASP LLM Top 10, MITRE ATLAS and NIST AI 600-1, and issues a
+reproducible, evidence-backed report mapped to operational risk.
+.PP
+It is a defensive tool. It scans nothing without a signed
+.I scope.yaml
+(endpoint allowlist, default-deny), never performs real destructive actions or
+exfiltration (mocked tools and planted canaries), and redacts secrets and PII at rest.
+.SH COMMANDS
+.TP
+.B run
+Run a campaign against one or more targets (the default command).
+.TP
+.B fingerprint
+Identify the model and guardrails behind an endpoint; attack nothing.
+.TP
+.B fleet
+Expand a fleet.yaml into an authorization scope plus one target file per model; with
+.B --run
+scan them all.
+.TP
+.B lint
+Schema, policy and fixtures-prove-detection lint of the specs.
+.TP
+.B describe
+Show one spec's detail card.
+.TP
+.B registry ls
+List the attack-spec catalogue (filter by --category, --owasp, --tag, --suite).
+.TP
+.B new-spec
+Scaffold a new attack spec and empty fixtures.
+.TP
+.B replay
+Re-read a run from stored evidence, sending nothing.
+.TP
+.B diff
+Compare a run against a baseline and surface regressions (CI-gateable).
+.TP
+.B schema export
+Print the JSON Schemas that validate every spec.
+.SH "RUN OPTIONS"
+.TP
+.B --scope \fIPATH\fR
+REQUIRED authorization record. Never bypassable.
+.TP
+.B -t, --target \fIPATH\fR
+Target file(s); repeatable. Targets may also be positional.
+.TP
+.B --judge \fIPATH\fR
+Judge model target.yaml (LLM-as-judge for the semantic_judge evaluator on live scans).
+.TP
+.B --suite \fITEXT\fR
+Suite id or alias: owasp:llm, quick, multi-turn, access-control, agentic-owasp2026,
+obfuscation-enhancers, embeddings, agentic-extortion.
+.TP
+.B -p, --categories \fITEXT\fR
+Comma-separated categories: pi, jailbreak, leakage, tool, rag, output, dos.
+.TP
+.B --spec \fITEXT\fR, --exclude \fITEXT\fR
+Run or skip specific spec ids or globs (e.g. PI-*); repeatable.
+.TP
+.B --quick, --deep
+T0 minimum battery / T2 deep-agentic suite.
+.TP
+.B -sn, -sV, -A
+Discovery only / fingerprint first / aggressive (-sV + deep + adaptive).
+.TP
+.B --runs \fIN\fR
+Reproducibility runs (default 5).
+.TP
+.B -T \fI0..5\fR
+Timing template (default 3); higher is faster and louder.
+.TP
+.B --dry-run
+Resolve and validate the plan; send nothing.
+.TP
+.B --compare
+Model-comparison matrix across targets.
+.TP
+.B -oJ, -oH, -oS, -oX \fIPATH\fR; -oA \fIPREFIX\fR
+Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.*.
+.TP
+.B --fail-on \fIBAND\fR
+CI gate on confirmed findings: low|medium|high|critical (default high).
+.TP
+.B --include-needs-review
+Also gate low-confidence findings.
+.SH "EXIT STATUS"
+.TP
+.B 0
+Clean: no gated finding at or above --fail-on.
+.TP
+.B 1
+Findings present but all below --fail-on.
+.TP
+.B 2
+At least one gated finding at or above --fail-on.
+.TP
+.B 3
+Operational error (bad scope, unknown suite, I/O).
+.PP
+Only an exploited (fail) finding trips the gate; pass and inconclusive never do.
+.SH FILES
+.TP
+.I scope.yaml
+Authorization record: version and targets (each with base_url, endpoints, identities). See
+.BR dottore-scope (5).
+.TP
+.I target.yaml
+The target: id, type, provider, endpoint, model, auth_ref, capabilities.
+.TP
+.I fleet.yaml
+Many targets in one file; expanded by
+.B dottore fleet.
+.TP
+.I .dottore/
+Evidence store and run database (runtime artifacts; do not commit).
+.SH EXAMPLES
+.PP
+Quick triage, all report formats:
+.PP
+.RS
+.B dottore run --quick -t target.yaml --scope scope.yaml -oA report
+.RE
+.PP
+OWASP LLM Top 10, fingerprint first, gate CI on high/critical:
+.PP
+.RS
+.B dottore run --suite owasp:llm -sV --fail-on high -t target.yaml --scope scope.yaml
+.RE
+.PP
+Scan a local model with an LLM judge (no API key):
+.PP
+.RS
+.B dottore run --quick -t local.yaml --judge judge.yaml --scope scope.yaml
+.RE
+.SH "SEE ALSO"
+.BR dottore-scope (5)
+.PP
+USAGE.md, docs/MANUAL.md, docs/FAQ.md and examples/ in the source tree.
+.SH AUTHOR
+Il Dottore. Authorized security testing only; see docs/RESPONSIBLE-USE.md.

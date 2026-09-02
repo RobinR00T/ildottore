@@ -1,0 +1,9 @@
+id: local-mcp
+type: api                            # an MCP server is a tool provider, not a chat model
+provider: mcp                        # routes to the read-only MCP adapter (discovery only)
+endpoint: "http://localhost:3000/mcp"   # the MCP Streamable-HTTP endpoint (POST target)
+capabilities:
+  tools: true
+# The MCP adapter does initialize + tools/resources/prompts list and renders the advertised
+# metadata; it never calls a tool. Scan it with the `mcp` suite:
+#   dottore run --suite mcp -t examples/target.mcp.yaml --scope examples/scope.mcp.yaml

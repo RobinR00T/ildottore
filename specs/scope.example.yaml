@@ -1,21 +1,21 @@
 # scope.yaml — the AUTHORIZATION record. No run starts without covering every target here.
-# Integrity is checksum-verified; the run records this file's hash for audit.
-engagement:
-  id: "ENG-2026-XXXX"
-  authorized_by: "<name / ticket>"
-  valid_until: "2026-12-31"
-allow_targets:
-  - openai-gpt-x-staging
-endpoint_allowlist:                 # default-DENY; adapters refuse anything not listed
-  - host: "api.openai.com"
-    path_prefixes: ["/v1/chat/completions"]
-policy:
-  disallow_categories: [availability_cost]   # e.g. no DoS-class tests in this engagement
-  require_test_only: true                     # dangerous payloads must be flagged test_only
-  # enabled_capabilities: the engagement's EXPLICIT opt-ins for policy-gated specs (OD-11).
-  # EMPTY BY DEFAULT = SAFE: any spec that declares `requires_policy` (e.g. PII elicitation or
-  # the agentic-extortion battery) is blocked_by_policy — it never sends. Enable a capability
-  # ONLY with authorization (docs/11 §5 DL4/DL5, docs/13 §4). Seed values:
-  #   - offensive_simulation : the JadePuffer agentic-extortion specs (mocked tools, canaries)
-  #   - layer_b_pii          : PII-elicitation against synthetic individuals (still synthetic-first)
-  enabled_capabilities: []                    # e.g. [offensive_simulation] once authorized
+# Default-DENY: adapters refuse any host or path not listed under a target's `endpoints`.
+# Plain http is allowed ONLY to loopback (localhost, 127.0.0.1, ::1); everything else https.
+# An optional top-level `checksum:` (sha256 of the body) makes the scope tamper-evident:
+# when present it is verified on load and the run records the hash for audit.
+version: "1.0"
+targets:
+  - id: openai-gpt-x-staging          # must match the target file's id (see targets/example-openai.yaml)
+    base_url: "https://api.openai.com/v1/chat/completions"
+    endpoints:                        # host + allowed path prefixes (default-deny)
+      - host: "api.openai.com"
+        path_prefixes: ["/v1/chat/completions"]
+    identities:                       # >=1; auth by reference only, never a secret value
+      - name: default
+        auth_ref: "env://OPENAI_API_KEY"
+# checksum: "<sha256 of the body above>"   # optional, tamper-evident
+#
+# Policy-gated specs (those declaring `requires_policy`, e.g. PII elicitation or the
+# agentic-extortion battery) are gated by the run's POLICY PACK, not by this file: the
+# default CLI pack enables no capabilities, so such specs are reported `blocked_by_policy`
+# with zero sends until a pack deliberately opts in.

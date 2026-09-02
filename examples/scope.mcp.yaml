@@ -1,0 +1,11 @@
+# Authorization for the MCP-server scenario. Default-deny; plain http to loopback only.
+version: "1.0"
+targets:
+  - id: local-mcp                   # must match target.mcp.yaml's id
+    base_url: "http://localhost:3000/mcp"
+    endpoints:
+      - host: "localhost"
+        path_prefixes: ["/mcp"]
+    identities:
+      - name: default
+        auth_ref: "env://NONE"      # a local MCP server usually needs no key
