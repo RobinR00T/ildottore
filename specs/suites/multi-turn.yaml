@@ -1,0 +1,23 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`): `suite_version`,
+# ordered `specs: [{spec_id}]`, `default_runs`, `tags`. Multi-turn jailbreak families
+# (docs/14), the pinned-ladder conversation engine (core.conversation). All test_only.
+id: multi-turn
+suite_version: "2026.1"
+name: Multi-turn adaptive jailbreak battery (pinned ladders)
+description: >
+  The multi-turn jailbreak families that only succeed across conversational turns
+  (Crescendo, Linear refinement, Sequential decomposition, Bad-Likert-Judge, Tree-of-attacks
+  breadth). Technique taxonomy mapped from DeepTeam (Apache-2.0) and re-authored as pinned,
+  reproducible attacker ladders so the run stays byte-stable (docs/14). Every spec is
+  test_only (flagged jailbreak family).
+
+default_runs: 5
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, seed: 42 }; fail_on: high
+tags: [owasp, mitre-atlas, nist-ai-rmf, multi-turn]
+
+specs:
+  - spec_id: JB-CRESCENDO-001
+  - spec_id: JB-LINEAR-001
+  - spec_id: JB-SEQUENTIAL-001
+  - spec_id: JB-LIKERT-001
+  - spec_id: JB-TREE-001

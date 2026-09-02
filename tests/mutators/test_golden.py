@@ -32,12 +32,20 @@ EXPECTED_BUILTINS = {
     "markdown_comment_carrier",
     "payload_splitting",
     "refusal_suppression_prefix",
+    # docs/14 DeepTeam-mapped enhancers
+    "leetspeak",
+    "adversarial_poetry",
+    "math_problem",
+    "gray_box",
+    "linguistic_confusion",
+    "context_poisoning",
+    "adversarial_suffix",
 }
 
 
-def test_all_twelve_builtins_present() -> None:
+def test_all_builtins_present() -> None:
     assert set(_NAMES) == EXPECTED_BUILTINS
-    assert len(_NAMES) == 12
+    assert len(_NAMES) == 19
 
 
 def test_every_builtin_has_a_golden_fixture() -> None:

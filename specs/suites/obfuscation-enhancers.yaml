@@ -1,0 +1,20 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`). Obfuscation / encoding
+# enhancer coverage (docs/14). The DeepTeam-mapped enhancer mutators (leetspeak,
+# adversarial_poetry, math_problem, gray_box, linguistic_confusion, context_poisoning) are
+# wired into the jailbreak specs' `mutations`; this suite groups the specs that lean on them.
+id: obfuscation-enhancers
+suite_version: "2026.1"
+name: Obfuscation & multilingual enhancer battery
+description: >
+  Groups the specs that exercise the obfuscation/framing enhancer mutators (docs/14): the
+  encoding spec (base64 / rot13 / leetspeak) and the multilingual spec (translate). The
+  crescendo/linear/sequential/likert/tree multi-turn specs also carry the enhancer mutations
+  in their `mutations` lists. All test_only (jailbreak family).
+
+default_runs: 5
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, seed: 42 }; fail_on: high
+tags: [owasp, mitre-atlas, nist-ai-rmf, obfuscation]
+
+specs:
+  - spec_id: JB-ENCODING-001
+  - spec_id: JB-MULTILINGUAL-001

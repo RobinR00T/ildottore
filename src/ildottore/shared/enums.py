@@ -29,6 +29,11 @@ class Category(StrEnum):
     RAG_SECURITY = "rag_security"
     OUTPUT_SECURITY = "output_security"
     AVAILABILITY_COST = "availability_cost"
+    # Responsible-AI families (adjacent to security; NIST AI RMF, docs/12 P2). Optional pack,
+    # not part of the OWASP-security core: safety = harmful-content generation on a direct ask;
+    # bias_fairness = demographic bias / stereotyping / unfair differential treatment.
+    SAFETY_CONTENT = "safety_content"
+    BIAS_FAIRNESS = "bias_fairness"
 
 
 class TargetType(StrEnum):

@@ -39,6 +39,10 @@ class Identity(BaseModel):
 
     name: str
     auth_ref: str
+    # The tenant-scoped canary this identity legitimately owns (audit M14, multi_identity).
+    # A `{{run_id}}` placeholder is substituted per run. If this canary reaches ANOTHER
+    # identity's response, authz_leak flags a confirmed cross-tenant leak.
+    canary: str | None = None
 
 
 class ScopeTarget(BaseModel):
@@ -50,6 +54,10 @@ class ScopeTarget(BaseModel):
     base_url: str
     endpoints: list[Endpoint] = Field(default_factory=list)
     identities: list[Identity] = Field(min_length=1)
+    # Authorized stdio MCP command lines (exact match). Default-deny: a stdio MCP target is
+    # launched only if its command line appears here, mirroring the endpoint allowlist for the
+    # over-the-wire transports.
+    commands: list[str] = Field(default_factory=list)
 
     @property
     def multi_identity(self) -> bool:

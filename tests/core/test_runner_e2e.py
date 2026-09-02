@@ -128,3 +128,35 @@ async def test_run_summary_counts_by_status(evaluators, mutators, scorer, stores
     )
     result = await runner.run(run_id="r1", target=make_target(), specs=[make_spec()])
     assert result.run.summary.by_status.get("fail") == 1
+
+
+async def test_multi_turn_spec_runs_as_a_conversation(evaluators, mutators, scorer, stores) -> None:
+    """A ≥2-turn spec routes through the multi-turn engine: one attempt per repro run, with
+    the full transcript persisted, and the FINAL turn's reply is what gets scored."""
+
+    from ildottore.shared.models import Attack
+
+    scenario = make_scenario(VULNERABLE_RESPONSE)
+    spec = make_spec().model_copy(
+        update={
+            "attack": Attack(
+                turns=[
+                    "A benign opening question to set context.",
+                    "The escalation turn that asks for the restricted content.",
+                ]
+            )
+        }
+    )
+    runner = _runner(
+        scenario, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores, n=3
+    )
+    result = await runner.run(run_id="r1", target=make_target(), specs=[spec])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.FAIL
+    # A conversation is ONE attempt (not one per turn): 3 repro runs ⇒ 3 attempts.
+    assert len(finding.attempts) == 3
+    # The persisted attempt carries the full 2-turn transcript (user/assistant interleaved).
+    messages = finding.attempts[0].request.messages
+    assert messages is not None
+    assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]

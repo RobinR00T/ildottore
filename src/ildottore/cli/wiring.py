@@ -24,10 +24,16 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from ildottore.adapters import AnthropicAdapter, OpenAIAdapter, RestAdapter, RestTemplate
+from ildottore.adapters import (
+    AnthropicAdapter,
+    MCPAdapter,
+    OpenAIAdapter,
+    RestAdapter,
+    RestTemplate,
+)
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
-from ildottore.core.runner import CampaignRunner, PolicyGate
+from ildottore.core.runner import CampaignRunner, IdentityProbe, PolicyGate
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
 from ildottore.fingerprint import FingerprintEngine
 from ildottore.mutators import build_default_registry as build_mutator_registry
@@ -52,6 +58,7 @@ __all__ = [
     "bare_adapter_factory",
     "build_evidence_store",
     "build_fingerprint_engine",
+    "build_judge_adapter",
     "build_permissive_pack",
     "build_policy_engine",
     "build_real_adapter",
@@ -65,6 +72,7 @@ __all__ = [
     "load_mock_scenario",
     "load_target",
     "mock_adapter_factory",
+    "planted_secrets",
     "real_adapter_factory",
     "resolve_auth_ref",
     "scenario_adapter_factory",
@@ -148,6 +156,36 @@ def build_evidence_store(
     return FsEvidenceStore(root, planted_canaries=planted_canaries)
 
 
+def planted_secrets(specs: list[AttackSpec]) -> list[str]:
+    """Secret literals the scan knows about, to mask at rest even if a target leaks them (DL2).
+
+    Collects each spec's ``setup.canaries`` and its ``secret_leakage`` ``canary_ref`` values.
+    A templated canary (``ZYNAP_CANARY_{{run_id}}``) cannot match a substituted value
+    verbatim, so its stable stem (before ``{{``) is registered instead, the evidence
+    redactor then masks the concrete token. This closes the gap where a leaked engagement
+    secret (a shape the built-in patterns don't know) persisted in clear in evidence.
+    """
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(value: str | None) -> None:
+        if not value:
+            return
+        stem = value.split("{{", 1)[0].rstrip("_") if "{{" in value else value
+        if stem and stem not in seen:
+            seen.add(stem)
+            out.append(stem)
+
+    for spec in specs:
+        if spec.setup is not None and spec.setup.canaries:
+            for canary in spec.setup.canaries:
+                _add(canary)
+        for cfg in spec.evaluators:
+            _add(cfg.canary_ref)
+    return out
+
+
 def build_run_store(db_path: Path) -> SqliteRunStore:
     """Idempotent SQLite run store at ``db_path`` (u10)."""
 
@@ -226,6 +264,10 @@ def scope_endpoint_for(scope: Scope) -> Callable[[Target, AttackSpec], str]:
     base_by_id = {t.id: t.base_url for t in scope.targets}
 
     def _endpoint(target: Target, _spec: AttackSpec) -> str:
+        # A stdio MCP target has no request URL: authorize it by its command line, which the
+        # gate exact-matches against the scope's `commands` allowlist (see PolicyEngine.check).
+        if (target.transport or "").strip().lower() == "stdio" and target.command:
+            return "stdio://" + " ".join(target.command)
         return base_by_id.get(target.id, target.id)
 
     return _endpoint
@@ -341,12 +383,14 @@ def build_real_adapter(
     allowlist: EndpointAllowlist,
     *,
     api_key: str | None,
+    authorized_commands: tuple[str, ...] = (),
 ) -> TargetAdapter:
     """Construct the concrete over-the-wire adapter for ``target`` (contract §5).
 
     Routes on ``target.provider``: ``openai`` → :class:`OpenAIAdapter`,
-    ``anthropic`` → :class:`AnthropicAdapter`, anything else → the generic
-    :class:`RestAdapter` (the long-tail escape hatch, ADR-0002). ``target.endpoint``
+    ``anthropic`` → :class:`AnthropicAdapter`, ``mcp`` → the read-only
+    :class:`MCPAdapter` (Model Context Protocol server discovery), anything else → the
+    generic :class:`RestAdapter` (the long-tail escape hatch, ADR-0002). ``target.endpoint``
     is the **full** request URL (``specs/targets/example-openai.yaml``); its origin
     becomes the adapter's ``base_url`` and its path is either the adapter's own
     fixed ``_endpoint_path`` (openai/anthropic) or the ``RestTemplate.path`` (rest) —
@@ -359,6 +403,29 @@ def build_real_adapter(
     origin = f"{parts.scheme}://{parts.netloc}"
     provider = (target.provider or "").strip().lower()
 
+    if provider == "mcp":
+        if (target.transport or "http").strip().lower() == "stdio":
+            # A local MCP server launched as a subprocess. Spawning is gated by the scope's
+            # authorized command list (exact match); base_url is a non-network placeholder.
+            return MCPAdapter(
+                id=target.id,
+                base_url="stdio://local",
+                allowlist=allowlist,
+                api_key=api_key,
+                model=target.model,
+                transport="stdio",
+                command=tuple(target.command or ()),
+                authorized_commands=authorized_commands,
+            )
+        # MCP posts JSON-RPC to the endpoint PATH itself (e.g. /mcp), so the adapter keeps the
+        # full URL as base_url (unlike openai/anthropic, whose path is a fixed _endpoint_path).
+        return MCPAdapter(
+            id=target.id,
+            base_url=target.endpoint or origin,
+            allowlist=allowlist,
+            api_key=api_key,
+            model=target.model,
+        )
     if provider == "openai":
         return OpenAIAdapter(
             id=target.id, base_url=origin, allowlist=allowlist, api_key=api_key, model=target.model
@@ -376,6 +443,50 @@ def build_real_adapter(
         model=target.model,
         template=template,
     )
+
+
+def _authorized_api_key(scope: Scope, target: Target) -> str | None:
+    """Resolve ``target.auth_ref`` only if the SCOPE authorized that exact credential.
+
+    Defense-in-depth (audit low): the credential the adapter sends must be one the scope's
+    authorization record declared for this target (an identity ``auth_ref``), so a hostile
+    ``target.yaml`` cannot make the scanner read an arbitrary local env var (e.g.
+    ``env://AWS_SECRET_ACCESS_KEY``) and send it to a merely-allowlisted host. ``None`` auth_ref
+    (no credential) is always fine.
+    """
+
+    if target.auth_ref is None:
+        return None
+    scope_target = scope.target(target.id)
+    # A target absent from scope is already default-denied by the empty endpoint allowlist
+    # (zero egress), so credential authorization is moot there, let that gate handle it. When
+    # the target IS in scope, the credential must be one the scope declared for it.
+    if scope_target is not None:
+        authorized = {i.auth_ref for i in scope_target.identities}
+        if target.auth_ref not in authorized:
+            raise ValueError(
+                f"target {target.id!r} auth_ref {target.auth_ref!r} is not authorized by the "
+                f"scope (declared: {sorted(authorized)}); refusing to read an unauthorized "
+                "credential"
+            )
+    return resolve_auth_ref(target.auth_ref)
+
+
+def build_judge_adapter(scope: Scope, judge_target: Target) -> TargetAdapter:
+    """Build the over-the-wire adapter for the ``--judge`` model (contract §5, ADR-0002).
+
+    The ``semantic_judge`` evaluator reaches its LLM-as-judge only through a
+    :class:`TargetAdapter`; this constructs one for ``judge_target`` (which must be in the
+    same ``scope`` so its endpoint is allowlisted) so a live scan can arbitrate semantic
+    verdicts instead of abstaining. A judge target absent from scope gets an empty
+    allowlist (default-deny), so a misconfigured judge is refused rather than silently
+    sending to an unauthorized endpoint.
+    """
+
+    scope_target = scope.target(judge_target.id)
+    allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
+    api_key = _authorized_api_key(scope, judge_target)
+    return build_real_adapter(judge_target, allowlist, api_key=api_key)
 
 
 def real_adapter_factory(
@@ -397,13 +508,42 @@ def real_adapter_factory(
 
     scope_target = scope.target(target.id)
     allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
-    api_key = resolve_auth_ref(target.auth_ref)
-    adapter = build_real_adapter(target, allowlist, api_key=api_key)
+    api_key = _authorized_api_key(scope, target)
+    commands = tuple(scope_target.commands) if scope_target is not None else ()
+    adapter = build_real_adapter(target, allowlist, api_key=api_key, authorized_commands=commands)
 
     def _factory(_target: Target, _spec: AttackSpec) -> TargetAdapter:
         return adapter
 
     return _factory
+
+
+def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
+    """Per-identity adapters for a multi_identity scan (audit M14, authz_leak).
+
+    One :class:`IdentityProbe` per identity the scope declares for this target: an adapter
+    carrying that identity's own resolved credential, plus the tenant-scoped canary it owns.
+    The runner sends the attack as each identity and flags a canary reaching a non-owner
+    identity. Fewer than two identities yields an empty list (authz_leak stays
+    capability_unavailable). The credentials come from the scope's own identity records, so no
+    unauthorized env var is read (S6).
+    """
+
+    scope_target = scope.target(target.id)
+    if scope_target is None or len(scope_target.identities) < 2:
+        return []
+    allowlist = EndpointAllowlist(scope_target.endpoints)
+    commands = tuple(scope_target.commands)
+    probes: list[IdentityProbe] = []
+    for ident in scope_target.identities:
+        adapter = build_real_adapter(
+            target,
+            allowlist,
+            api_key=resolve_auth_ref(ident.auth_ref),
+            authorized_commands=commands,
+        )
+        probes.append(IdentityProbe(identity_id=ident.name, adapter=adapter, canary=ident.canary))
+    return probes
 
 
 # --- target.yaml -------------------------------------------------------------------
@@ -461,6 +601,14 @@ def load_target(path: Path) -> Target:
             raise ValueError(f"target file {path} 'sampling_defaults' must be a mapping")
         sampling = Sampling.model_validate(sampling_raw)
 
+    transport = raw.get("transport") if isinstance(raw.get("transport"), str) else None
+    command_raw = raw.get("command")
+    command: list[str] | None = None
+    if command_raw is not None:
+        if not (isinstance(command_raw, list) and all(isinstance(c, str) for c in command_raw)):
+            raise ValueError(f"target file {path} 'command' must be a list of strings")
+        command = command_raw
+
     return Target(
         id=target_id,
         type=target_type,
@@ -471,6 +619,8 @@ def load_target(path: Path) -> Target:
         model=model,
         auth_ref=auth_ref,
         sampling_defaults=sampling,
+        transport=transport,
+        command=command,
     )
 
 
@@ -508,6 +658,12 @@ def target_uses_mock(path: Path) -> bool:
     raw = _read_target_yaml(path)
     if "mock_scenario" in raw:
         return True
+    # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real
+    # over-the-wire (subprocess) target even though it declares no ``endpoint``.
+    provider = str(raw.get("provider") or "").strip().lower()
+    transport = str(raw.get("transport") or "").strip().lower()
+    if provider == "mcp" and transport == "stdio" and raw.get("command"):
+        return False
     endpoint = raw.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint:
         return True
@@ -531,6 +687,7 @@ def build_runner(
     hardened: bool = False,
     mock_scenario: str | None = None,
     real_target: Target | None = None,
+    judge_target: Target | None = None,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -554,17 +711,25 @@ def build_runner(
     policy = build_policy_engine(scope, resolved_pack, safety=safety)
     mutators = build_mutator_registry()
     scorer = DefaultRiskScorer()
-    evidence = build_evidence_store(evidence_root)
+    evidence = build_evidence_store(evidence_root, planted_canaries=planted_secrets(specs))
     runs = build_run_store(run_db)
+    # A live judge model (--judge) supplies semantic_judge for real runs (and overrides
+    # the deterministic scenario-judge offline if given). Absent one, a live run leaves
+    # semantic_judge unregistered (it abstains) and an offline run uses the scenario judge.
+    judge_adapter = build_judge_adapter(scope, judge_target) if judge_target is not None else None
+
     if real_target is not None:
-        evaluators = build_evaluator_registry(judge=None)
+        evaluators = build_evaluator_registry(judge=judge_adapter)
         factory = real_adapter_factory(scope, real_target)
     else:
         # Resolve the effective offline scenario (mock_scenario wins; else the legacy
         # hardened flag maps to hardened/vulnerable) so the deterministic judge below
         # agrees with the fixtures being replayed.
         effective_scenario = mock_scenario or ("hardened" if hardened else "vulnerable")
-        evaluators = build_evaluator_registry(judge=scenario_judge_adapter(effective_scenario))
+        offline_judge = judge_adapter
+        if offline_judge is None:
+            offline_judge = scenario_judge_adapter(effective_scenario)
+        evaluators = build_evaluator_registry(judge=offline_judge)
         if mock_scenario is not None:
             factory = scenario_adapter_factory(mock_scenario)
         else:
@@ -573,6 +738,12 @@ def build_runner(
     # PolicyEngine structurally satisfies the runner's PolicyGate protocol (its
     # ``check`` returns a CheckResult with ``.allowed``/``.reason``); the cast makes
     # that explicit for the type checker (the runner's own docstring asserts this).
+    # Multi-identity execution (authz_leak, audit M14) is a live-target capability: for a real
+    # target the runner sends the attack as each scope identity and collects the responses.
+    identity_adapters: Callable[[Target], list[IdentityProbe]] | None = None
+    if real_target is not None:
+        identity_adapters = lambda t: build_identity_probes(scope, t)  # noqa: E731
+
     policy_gate: PolicyGate = cast(PolicyGate, policy)
     runner = CampaignRunner(
         policy=policy_gate,
@@ -583,6 +754,7 @@ def build_runner(
         run_store=runs,
         adapter_factory=factory,
         endpoint_for=scope_endpoint_for(scope),
+        identity_adapters=identity_adapters,
         now=deterministic_clock(),
         n=n,
         concurrency=concurrency,

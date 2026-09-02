@@ -153,10 +153,17 @@ class PolicyEngine:
         if target is None:
             return _blocked(f"target {target_id!r} not in scope")
 
-        # 2. endpoint on the allowlist? (S3 default-deny)
-        allowlist = EndpointAllowlist.from_target(target)
-        if not allowlist.is_allowed(endpoint):
-            return _blocked(f"endpoint {endpoint!r} not on allowlist for {target_id!r}")
+        # 2. authorized to reach this target? (S3 default-deny)
+        #    A stdio MCP target has no request URL: authorize by exact command line against the
+        #    scope's `commands` allowlist. Every other transport authorizes by endpoint URL.
+        if endpoint.startswith("stdio://"):
+            command = endpoint[len("stdio://") :]
+            if command not in target.commands:
+                return _blocked(f"stdio command not authorized for {target_id!r}")
+        else:
+            allowlist = EndpointAllowlist.from_target(target)
+            if not allowlist.is_allowed(endpoint):
+                return _blocked(f"endpoint {endpoint!r} not on allowlist for {target_id!r}")
 
         # 3. explicit deny always wins.
         if self._pack.is_denied(spec.id, spec.category):

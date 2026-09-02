@@ -90,11 +90,15 @@ async def test_resume_skips_completed_attempts(evaluators, mutators, scorer, sto
     # No completed attempt id was re-executed by the resume adapter (fresh send count
     # equals only the remaining attempts).
     assert adapter2.sends == 5 - len(completed_ids)
-    # The resumed run only holds the freshly-executed remaining attempts.
-    assert resumed_ids == {f"JB-REFUSAL-001::identity#{i}" for i in range(5)} - completed_ids
-    # And every attempt id is unique (no duplicates).
+    # The resumed finding MERGES the prior completed attempts with the fresh ones, so it covers
+    # the FULL run (all 5), not just the remainder (audit M11, previously it dropped the prior).
+    assert resumed_ids == {f"JB-REFUSAL-001::identity#{i}" for i in range(5)}
+    # A vulnerable target exploited on every run ⇒ reproducibility 5/5, not undercounted.
+    assert resumed.findings[0].risk.reproducibility == 1.0
+    # And every attempt id is unique (no duplicates from the merge).
     all_ids = [a.attempt_id for f in resumed.findings for a in f.attempts]
     assert len(all_ids) == len(set(all_ids))
+    assert len(all_ids) == 5
 
 
 async def test_resume_without_prior_run_is_full(evaluators, mutators, scorer, stores) -> None:

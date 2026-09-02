@@ -19,9 +19,17 @@ from ildottore.mutators import (
     Rot13Mutator,
     ZeroWidthInjectMutator,
 )
-from ildottore.mutators.zero_width_inject import strip_zero_width
+from ildottore.mutators.zero_width_inject import ZERO_WIDTH_CHARS, strip_zero_width
 
 _text = st.text(min_size=1, max_size=200)
+# For the zero-width round-trip, the property is only well-defined when the payload does not
+# already contain zero-width codepoints (otherwise strip_zero_width removes the originals too).
+# Exclude them from the generated alphabet rather than filtering (efficient, no rejected draws).
+_text_no_zw = st.text(
+    alphabet=st.characters(exclude_characters="".join(ZERO_WIDTH_CHARS)),
+    min_size=1,
+    max_size=200,
+)
 SEED = "SPEC:x"
 
 
@@ -39,7 +47,7 @@ def test_base64_wrap_payload_decodes_back(text: str) -> None:
     assert base64.b64decode(blob).decode("utf-8") == text
 
 
-@given(text=_text)
+@given(text=_text_no_zw)
 def test_zero_width_strips_back_to_original(text: str) -> None:
     out = ZeroWidthInjectMutator().mutate(text, SEED)
     assert strip_zero_width(out) == text

@@ -297,6 +297,17 @@ def test_target_uses_mock_true_when_endpoint_absent(tmp_path: Path) -> None:
     assert wiring.target_uses_mock(path) is True
 
 
+def test_stdio_mcp_target_is_real_despite_no_endpoint(tmp_path: Path) -> None:
+    """A stdio MCP target authorizes by command, not endpoint, so it is a real target."""
+    path = tmp_path / "target.yaml"
+    path.write_text(
+        "id: local-mcp\ntype: api\nprovider: mcp\ntransport: stdio\n"
+        'command: ["python", "server.py"]\n',
+        encoding="utf-8",
+    )
+    assert wiring.target_uses_mock(path) is False
+
+
 def test_target_uses_mock_false_for_real_endpoint_without_mock_scenario(tmp_path: Path) -> None:
     path = _write_real_target(tmp_path)
     assert wiring.target_uses_mock(path) is False

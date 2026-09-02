@@ -15,13 +15,20 @@ from __future__ import annotations
 
 from importlib.metadata import entry_points
 
+from ildottore.mutators.adversarial_poetry import AdversarialPoetryMutator
+from ildottore.mutators.adversarial_suffix import AdversarialSuffixMutator
 from ildottore.mutators.base import Mutator
 from ildottore.mutators.base64_wrap import Base64WrapMutator
 from ildottore.mutators.comment_carrier import (
     HtmlCommentCarrierMutator,
     MarkdownCommentCarrierMutator,
 )
+from ildottore.mutators.context_poisoning import ContextPoisoningMutator
+from ildottore.mutators.gray_box import GrayBoxMutator
 from ildottore.mutators.identity import IdentityMutator
+from ildottore.mutators.leetspeak import LeetspeakMutator
+from ildottore.mutators.linguistic_confusion import LinguisticConfusionMutator
+from ildottore.mutators.math_problem import MathProblemMutator
 from ildottore.mutators.nested_instruction import NestedInstructionMutator
 from ildottore.mutators.payload_splitting import PayloadSplittingMutator
 from ildottore.mutators.refusal_suppression_prefix import RefusalSuppressionPrefixMutator
@@ -40,8 +47,9 @@ __all__ = [
 
 ENTRY_POINT_GROUP = "dottore.mutators"
 
-# The 12 built-in strategies (docs/03 §4). ``markdown_comment_carrier`` + ``html_comment_carrier``
-# are the two carriers named in the docs; ``comment_carrier`` is the owning module (contract §1).
+# The 19 built-in strategies (docs/03 §4 + docs/14 enhancers + docs/12 P1 adversarial suffix).
+# ``markdown_comment_carrier`` + ``html_comment_carrier`` are the two carriers named in the
+# docs; ``comment_carrier`` is the owning module (contract §1).
 _BUILTINS: tuple[type[Mutator], ...] = (
     IdentityMutator,
     TranslateMutator,
@@ -55,6 +63,13 @@ _BUILTINS: tuple[type[Mutator], ...] = (
     MarkdownCommentCarrierMutator,
     PayloadSplittingMutator,
     RefusalSuppressionPrefixMutator,
+    LeetspeakMutator,
+    AdversarialPoetryMutator,
+    AdversarialSuffixMutator,
+    MathProblemMutator,
+    GrayBoxMutator,
+    LinguisticConfusionMutator,
+    ContextPoisoningMutator,
 )
 
 

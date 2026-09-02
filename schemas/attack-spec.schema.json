@@ -17,9 +17,9 @@
       "type": "string",
       "enum": ["prompt_injection", "jailbreak", "data_leakage",
                "agent_tool_abuse", "rag_security", "output_security",
-               "availability_cost"]
+               "availability_cost", "safety_content", "bias_fairness"]
     },
-    "owasp": { "type": "string", "pattern": "^LLM\\d{2}$" },
+    "owasp": { "type": "string", "pattern": "^(LLM|RAI)\\d{2}$" },
     "mitre_atlas": {
       "type": "object",
       "required": ["tactic"],
@@ -80,6 +80,7 @@
                      "logprob_membership", "authz_leak", "kill_chain_progression"]
           },
           "patterns": { "type": "array", "items": { "type": "string" } },
+          "forbidden_args": { "type": "array", "items": { "type": "string" } },
           "rubric": { "type": "string" },
           "canary_ref": { "type": "string" },
           "weight": { "type": "number" }

@@ -18,9 +18,11 @@ from typing import Annotated
 
 import typer
 
+from ildottore.cli import calibrate as calibrate_mod
 from ildottore.cli import describe as describe_mod
 from ildottore.cli import diff as diff_mod
 from ildottore.cli import fingerprint as fingerprint_mod
+from ildottore.cli import fleet as fleet_mod
 from ildottore.cli import new_spec as new_spec_mod
 from ildottore.cli import registry as registry_mod
 from ildottore.cli import replay as replay_mod
@@ -81,6 +83,13 @@ def run(
         list[Path] | None,
         typer.Argument(help="Target(s) as positional args (url/model-id/target.yaml)."),
     ] = None,
+    judge: Annotated[
+        Path | None,
+        typer.Option(
+            "--judge",
+            help="Judge model target.yaml (LLM-as-judge for semantic_judge on live scans).",
+        ),
+    ] = None,
     scope: Annotated[
         Path | None,
         typer.Option("--scope", help="REQUIRED authorization record (scope.yaml)."),
@@ -122,6 +131,12 @@ def run(
     runs: Annotated[int, typer.Option("--runs", help="Reproducibility runs (default 5).")] = 5,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Resolve + validate; send nothing.")
+    ] = False,
+    estimate: Annotated[
+        bool,
+        typer.Option(
+            "--estimate", help="Print a pre-run cost estimate (requests + tokens); no sends."
+        ),
     ] = False,
     fail_on: Annotated[
         str, typer.Option("--fail-on", help="CI gate band (low|medium|high|critical).")
@@ -176,6 +191,7 @@ def run(
     opts = RunOptions(
         targets=targets,
         scope=scope,
+        judge=judge,
         suite=suite,
         categories=[c.strip() for c in categories.split(",")] if categories else [],
         spec_globs=list(spec_glob or []),
@@ -187,6 +203,7 @@ def run(
         timeout_s=timeout_s,
         runs=runs,
         dry_run=dry_run,
+        estimate=estimate,
         fail_on=fail_on,
         include_needs_review=include_needs_review,
         compare=compare,
@@ -212,8 +229,72 @@ def run(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
-    if outcome.dry_run:
+    if outcome.dry_run and not outcome.estimated:
         typer.echo("dry-run: resolved plan; sent nothing.")
+    raise typer.Exit(int(outcome.exit_code))
+
+
+# --- fleet -----------------------------------------------------------------------
+
+
+@app.command()
+def fleet(
+    config: Annotated[
+        Path, typer.Argument(help="fleet.yaml declaring every LLM/URL/MCP target to validate.")
+    ],
+    out: Annotated[
+        Path, typer.Option("--out", help="Output dir for the generated scope + target files.")
+    ] = Path(".dottore/fleet"),
+    run_now: Annotated[
+        bool, typer.Option("--run", help="Scan every expanded target immediately.")
+    ] = False,
+    judge: Annotated[
+        Path | None, typer.Option("--judge", help="Judge model target.yaml (for semantic_judge).")
+    ] = None,
+    runs: Annotated[int, typer.Option("--runs", help="Reproducibility runs (default 5).")] = 5,
+    categories: Annotated[
+        str | None, typer.Option("-p", "--categories", help="Comma-separated categories.")
+    ] = None,
+    no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,
+) -> None:
+    """Expand a fleet.yaml into an authorization scope + one target file per model.
+
+    Declares the whole set of targets to validate in one place (hosted LLMs by API-key env
+    reference, a local model, a raw URL, or an MCP server). Keys are never written, each
+    entry references an env var. With ``--run`` it scans every expanded target right away.
+    """
+
+    try:
+        cfg = fleet_mod.load_fleet(config)
+        materialized = fleet_mod.materialize_fleet(cfg, out)
+    except (ValueError, OSError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+
+    typer.echo(f"scope:   {materialized.scope_path}")
+    for path in materialized.target_paths:
+        typer.echo(f"target:  {path}")
+    for target_id, reason in materialized.skipped:
+        typer.echo(f"skipped: {target_id} ({reason})")
+
+    if not run_now:
+        joined = " ".join(f'"{p}"' for p in materialized.target_paths)
+        typer.echo(f'\nRun it:\n  dottore run {joined} --scope "{materialized.scope_path}"')
+        raise typer.Exit(ExitCode.CLEAN)
+
+    opts = RunOptions(
+        targets=list(materialized.target_paths),
+        scope=materialized.scope_path,
+        judge=judge,
+        categories=[c.strip() for c in categories.split(",")] if categories else [],
+        runs=runs,
+        no_color=no_color,
+    )
+    try:
+        outcome = run_mod.execute_run(opts, _spec_paths(None))
+    except (ScopeRequiredError, PolicyError, ValueError, OSError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
     raise typer.Exit(int(outcome.exit_code))
 
 
@@ -363,6 +444,27 @@ def diff(
     typer.echo(diff_mod.render_diff(report))
     code = ExitCode.FINDINGS_AT_OR_ABOVE if report.has_regressions() else ExitCode.CLEAN
     raise typer.Exit(int(code))
+
+
+@app.command()
+def calibrate(
+    report: Annotated[Path, typer.Argument(help="A JSON run report (-oJ output).")],
+    labels: Annotated[Path, typer.Argument(help="Operator labels file (spec_id -> pass|fail).")],
+) -> None:
+    """Compare a run's findings against operator labels (human-in-the-loop, docs/12 P2).
+
+    Reports agreement plus precision/recall (fail = positive). Read-only: it consumes operator
+    verdicts to measure the scanner and its judge; it changes nothing and sends nothing.
+    """
+
+    try:
+        result = calibrate_mod.calibrate_reports(report, labels)
+    except (OSError, ValueError, KeyError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+
+    typer.echo(calibrate_mod.render_calibration(result))
+    raise typer.Exit(ExitCode.CLEAN)
 
 
 # --- schema export ---------------------------------------------------------------
