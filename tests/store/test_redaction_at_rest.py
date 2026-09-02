@@ -150,3 +150,33 @@ def test_write_is_fail_closed_when_redaction_incomplete(store_root: Path) -> Non
         es.put("run-1", _seeded_attempt())
     # Nothing persisted.
     assert not any(store_root.rglob("*.json"))
+
+
+def test_numeric_logprob_does_not_false_trip_the_guard(store_root: Path) -> None:
+    """A real logprob float must not be mistaken for PII by the no-leak guard (DL2).
+
+    Regression: a value like ``-0.013113695196807384`` matches the phone/card shapes
+    when the whole JSON is scanned as flat text, but it is a number, not a secret. The
+    fixed-point guard scans string leaves only, so evidence carrying real logprobs
+    (as returned by a live target) persists instead of being refused."""
+
+    from ildottore.shared.models import TokenLogprob
+
+    attempt = Attempt(
+        attempt_id="a-logprob",
+        spec_id="JB-ROLEPLAY-001",
+        request=ModelRequest(prompt="probe"),
+        response=ModelResponse(
+            text="I can't help with that.",
+            logprobs=[
+                TokenLogprob(token="Here", logprob=-0.013113695196807384),
+                TokenLogprob(token="are", logprob=-9.059946933120955e-06),
+            ],
+            usage={"prompt_tokens": 40, "completion_tokens": 144, "total_tokens": 184},
+            raw_ids={"id": "chatcmpl-416", "model": "llama3.2:1b"},
+        ),
+    )
+    es = FsEvidenceStore(store_root)
+    ref = es.put("run-lp", attempt)  # must not raise
+    assert ref.sha256 is not None
+    assert (store_root / Path(ref.uri)).exists()

@@ -113,7 +113,9 @@ def test_register_custom_pattern_runs_first() -> None:
 def test_high_entropy_fallback_masks_unknown_shape() -> None:
     r = Redactor(salt="s", entropy_threshold=3.5, entropy_min_len=20)
     token = "Zk9Qw3Xr7Lm2Vt8Np5Bd6Yc4Hs1Gf0"  # high-entropy, no known prefix
-    out = r.redact_text(f"token={token}")
+    # No secret label around it, so the labelled-secret heuristic does not fire first,
+    # this exercises the pure high-entropy fallback path.
+    out = r.redact_text(f"opaque {token} value")
     assert token not in out
     assert "«REDACTED:high_entropy:" in out
 
@@ -205,3 +207,38 @@ def test_property_idempotent(secret: str) -> None:
     r = Redactor(salt="prop")
     once = r.redact_text(f"x {secret} y")
     assert r.redact_text(once) == once
+
+
+# --- audit regressions (2026-09-01) ------------------------------------------
+
+
+def test_labeled_secret_value_is_masked() -> None:
+    r = Redactor()
+    for text, secret in [
+        ("the api secret is AIRA_SECRET_KEY_20250901xy", "AIRA_SECRET_KEY_20250901xy"),
+        ("password: a1b2c3d4e5f6g7h8", "a1b2c3d4e5f6g7h8"),
+        ("the password is Hunter2Password!", "Hunter2Password!"),
+    ]:
+        assert secret not in r.redact_text(text)
+
+
+def test_labeled_secret_does_not_over_redact_prose() -> None:
+    r = Redactor()
+    for prose in ["the password strength is low", "please reset your password now"]:
+        assert r.redact_text(prose) == prose
+
+
+def test_slack_user_token_masked() -> None:
+    r = Redactor()
+    tok = "xoxp-123456789012-123456789012-abcdef"
+    assert tok not in r.redact_text(f"here is {tok}")
+
+
+def test_pem_detector_has_no_redos_without_end_marker() -> None:
+    import time
+
+    r = Redactor()
+    payload = "-----BEGIN PRIVATE KEY-----x " * 16000  # ~464 KB, no END marker
+    start = time.perf_counter()
+    r.redact_text(payload)
+    assert (time.perf_counter() - start) < 1.0  # was ~19s before the precheck

@@ -101,11 +101,23 @@ async def test_judge_json_embedded_in_prose_is_parsed() -> None:
 
 
 async def test_judge_tripwire_emitted_is_compromised() -> None:
-    # Judge echoes the control token → it obeyed injected instructions.
-    from ildottore.evaluators.semantic_judge import _TRIPWIRE_TOKEN
+    # Judge echoes the per-call control token → it obeyed injected instructions. The token is
+    # generated fresh per call, so the judge must read it from the prompt it received.
+    import re
 
-    judge = ScriptedJudge([_jv("secure", 0.9) + _TRIPWIRE_TOKEN])
-    v = await SemanticJudgeEvaluator(judge).evaluate(_ctx())
+    from ildottore.shared.models import Capabilities, ModelResponse
+
+    class EchoTripwireJudge:
+        id = "echo-tripwire"
+
+        def capabilities(self) -> Capabilities:
+            return Capabilities()
+
+        async def send(self, request: ModelRequest) -> ModelResponse:
+            token = re.search(r"DOTTORE_TRIPWIRE_[0-9a-f]+", request.system_prompt or "")
+            return ModelResponse(text=_jv("secure", 0.9) + (token.group(0) if token else ""))
+
+    v = await SemanticJudgeEvaluator(EchoTripwireJudge()).evaluate(_ctx())
     assert v.status is VerdictStatus.INCONCLUSIVE
     assert v.inconclusive_reason is InconclusiveReason.JUDGE_COMPROMISED
 

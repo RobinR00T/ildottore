@@ -131,3 +131,45 @@ def test_repro_all_pass_is_zero() -> None:
 def test_repro_rejects_zero_n() -> None:
     with pytest.raises(ValueError, match="n must be"):
         repro_from_verdicts([], 0)
+
+
+async def test_max_tokens_is_a_pre_spend_reservation() -> None:
+    """M12: a request's max_tokens is reserved BEFORE the send, so the token ceiling is a
+    hard pre-spend cap, a send that would breach it never reaches the adapter."""
+
+    from ildottore.core.budgets import BudgetExhausted, BudgetLedger
+
+    class SpyTarget:
+        id = "spy"
+
+        def __init__(self) -> None:
+            self.sends = 0
+
+        async def send(self, request):
+            self.sends += 1
+            from ildottore.shared.models import ModelResponse
+
+            return ModelResponse(text="ok")
+
+        def capabilities(self):
+            from ildottore.shared.models import Capabilities
+
+            return Capabilities()
+
+    spy = SpyTarget()
+    ledger = BudgetLedger(max_tokens=100)
+    req = ModelRequest(prompt="hi", sampling=Sampling(temperature=0.0, max_tokens=200))
+    try:
+        await reproduce(
+            spy,
+            req,
+            spec_id="S",
+            mutation="identity",
+            sampling=req.sampling,
+            ledger=ledger,
+            n=1,
+        )
+        raise AssertionError("expected BudgetExhausted before any send")
+    except BudgetExhausted as exc:
+        assert exc.axis == "max_tokens"
+    assert spy.sends == 0  # the cap was enforced before the provider was ever called

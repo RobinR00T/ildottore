@@ -76,7 +76,12 @@ class FsEvidenceStore:
         same ref (same content → same hash → same path).
         """
 
-        redacted = self._redactor.redact(attempt.model_dump(mode="json"))
+        # Value-redact the dump with the injected redactor, then mask dict KEYS separately
+        # so a secret in a key (e.g. a model-controlled tool-call argument name) is masked
+        # too (DL2). Keys are masked here but VALUES are left to ``redactor.redact``, so an
+        # incomplete object-redactor still leaves a raw value for the fail-closed guard to
+        # catch (the guard re-scans keys and values independently).
+        redacted = self._mask_keys(self._redactor.redact(attempt.model_dump(mode="json")))
         payload = _canonical_json(redacted)
         self._assert_no_leak(payload)
 
@@ -97,13 +102,55 @@ class FsEvidenceStore:
     def _assert_no_leak(self, payload: str) -> None:
         """Fail-closed: refuse the write if redaction is not a fixed point.
 
-        The redactor is idempotent, so a fully-redacted payload must equal its
-        own re-redaction. Any difference means a raw secret/PII shape survived
-        the first pass — refuse rather than persist it (DL2).
+        Re-scans the payload's **string leaves** with ``redact_text`` (independent of
+        the object-level ``redact`` that produced it, so an incomplete object-redactor
+        is still caught, DL2). Numeric JSON literals are left untouched: a value like a
+        logprob float (``-0.0131136…``) or a latency reading is not PII, yet its bare
+        digit run matches the phone/card shapes when the whole JSON is scanned as flat
+        text. Scanning the parsed structure (strings only) keeps the fixed-point
+        guarantee for real secrets without false-positiving on numbers, so evidence from
+        a live target, which carries real logprobs/usage/latency, persists correctly.
         """
 
-        if self._redactor.redact_text(payload) != payload:
+        if _canonical_json(self._rescan_strings(json.loads(payload))) != payload:
             raise RedactionLeakError("unredacted secret/PII shape survived; write refused (DL2)")
+
+    def _mask_keys(self, obj: object) -> object:
+        """Mask dict KEYS via ``redact_text`` (recursively), leaving values untouched.
+
+        Values are already handled by the injected ``redactor.redact``; this only closes
+        the secret-in-a-key vector without hiding an incomplete value-redaction from the
+        fail-closed guard.
+        """
+
+        if isinstance(obj, dict):
+            return {
+                self._redactor.redact_text(str(key)): self._mask_keys(value)
+                for key, value in obj.items()
+            }
+        if isinstance(obj, list):
+            return [self._mask_keys(item) for item in obj]
+        return obj
+
+    def _rescan_strings(self, obj: object) -> object:
+        """Apply ``redact_text`` to every string leaf; leave numbers/None as-is.
+
+        Deliberately walks the structure directly (not via ``redactor.redact``) so the
+        check stays independent of the object-redaction that produced the payload.
+        """
+
+        if isinstance(obj, str):
+            return self._redactor.redact_text(obj)
+        if isinstance(obj, dict):
+            # Re-scan KEYS as well as values: a secret in a dict key must be caught by the
+            # fail-closed guard, not just masked in values (DL2).
+            return {
+                self._redactor.redact_text(str(key)): self._rescan_strings(value)
+                for key, value in obj.items()
+            }
+        if isinstance(obj, list):
+            return [self._rescan_strings(item) for item in obj]
+        return obj
 
     def _atomic_write(self, target: Path, payload: str) -> None:
         """Write via a temp file in the same dir + ``os.replace`` (atomic rename).

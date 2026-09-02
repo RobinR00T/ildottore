@@ -257,8 +257,15 @@ class BaseAdapter(ABC):
         attempts = self.retry.max_retries + 1
         for attempt in range(attempts):
             try:
+                # follow_redirects=False per call, defense-in-depth: even if an injected
+                # client enabled redirects, a 3xx to an off-allowlist host is NOT followed
+                # (the allowlist gate runs once, before the loop, audit low).
                 response = await client.post(
-                    url, json=body, headers=headers, timeout=self.retry.timeout_s
+                    url,
+                    json=body,
+                    headers=headers,
+                    timeout=self.retry.timeout_s,
+                    follow_redirects=False,
                 )
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_env_detail = f"{type(exc).__name__}: {exc}"

@@ -66,3 +66,32 @@ def test_trailing_slash_prefix_normalized() -> None:
     al = EndpointAllowlist([Endpoint(host="api.acme.test", path_prefixes=["/v1/"])])
     assert al.is_allowed("https://api.acme.test/v1/chat")
     assert al.is_allowed("https://api.acme.test/v1")
+
+
+# --- audit regressions (2026-09-01) ------------------------------------------
+
+
+def test_dot_segment_traversal_is_denied(allowlist: EndpointAllowlist) -> None:
+    """C1: a ``..`` path that httpx would collapse past the allowed prefix is denied."""
+
+    assert allowlist.is_allowed("https://api.acme.test/v1/chat") is True
+    assert allowlist.is_allowed("https://api.acme.test/v1/../admin/keys") is False
+    assert allowlist.is_allowed("https://api.acme.test/v1/../../internal") is False
+    assert allowlist.is_allowed("https://api.acme.test/v1/./chat") is True  # bare '.' is fine
+
+
+def test_pinned_port_rejects_other_ports() -> None:
+    """M4: an allowed host that pins a port refuses egress to other ports on that host."""
+
+    pinned = EndpointAllowlist([Endpoint(host="api.acme.test:443", path_prefixes=["/v1"])])
+    assert pinned.is_allowed("https://api.acme.test/v1/x") is True  # implicit 443
+    assert pinned.is_allowed("https://api.acme.test:2375/v1/x") is False  # Docker daemon port
+
+
+def test_cleartext_http_denied_except_loopback() -> None:
+    """Low: http to a remote host is denied (no bearer in cleartext); loopback is allowed."""
+
+    remote = EndpointAllowlist([Endpoint(host="api.acme.test", path_prefixes=["/v1"])])
+    assert remote.is_allowed("http://api.acme.test/v1/x") is False
+    local = EndpointAllowlist([Endpoint(host="localhost", path_prefixes=["/v1"])])
+    assert local.is_allowed("http://localhost:11434/v1/chat/completions") is True

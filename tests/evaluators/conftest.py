@@ -78,6 +78,7 @@ def make_ctx(
     config: EvaluatorConfig | None = None,
     canaries: list[str] | None = None,
     identities: dict[str, ModelResponse] | None = None,
+    canary_owners: dict[str, str] | None = None,
     expected_secure: list[str] | None = None,
     confidence_threshold: float = 0.75,
     setup_tools: list[JsonDict] | None = None,
@@ -98,6 +99,7 @@ def make_ctx(
         config=cfg,
         canaries=canaries or [],
         identities=identities,
+        canary_owners=canary_owners or {},
     )
 
 
