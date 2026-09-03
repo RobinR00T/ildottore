@@ -9,7 +9,7 @@ description = "Il Dottore — spec-driven security scanner for LLMs and AI appli
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Synapsys Cybersecurity S.L. (Zynap)" }]
+authors = [{ name = "Dani Solis", email = "daniel.solis@zynap.com" }]
 keywords = ["llm", "security", "red-team", "owasp-llm", "mitre-atlas", "prompt-injection", "ai-security"]
 classifiers = [
   "Development Status :: 3 - Alpha",

@@ -17,8 +17,7 @@ value proposition is *reproducibility + evidence + risk mapping*, i.e. producing
 assurance report, not offensive capability.
 
 ## 2. Who & authorization
-- **Owner:** Synapsys Cybersecurity S.L. (**Zynap**), a Barcelona-based preemptive-cybersecurity
-  company. Sponsor: Daniel Solís, CEO & co-founder.
+- **Owner:** Dani Solis <daniel.solis@zynap.com> (a personal open-source project).
 - **Context:** authorized product development and security research. License **MIT**.
 - **Operating rule (enforced in code):** the tool refuses to scan any target that is not
   covered by a signed `scope.yaml` authorization record with an endpoint allowlist

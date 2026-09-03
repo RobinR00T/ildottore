@@ -151,7 +151,7 @@ class SarifReporter(BaseReporter):
                         "driver": {
                             "name": _TOOL_NAME,
                             "informationUri": _TOOL_URI,
-                            "organization": "Synapsys Cybersecurity S.L. (Zynap)",
+                            "organization": "Dani Solis",
                             "rules": rules,
                         }
                     },
