@@ -165,3 +165,25 @@ def test_capabilities_logprobs_false_seed_false(anthropic_allowlist: EndpointAll
         multi_identity=False,
         multimodal=True,
     )
+
+
+def test_multimodal_media_builds_image_block(anthropic_allowlist: EndpointAllowlist) -> None:
+    """A single-turn request with media sends a text + base64 image content block."""
+
+    req = ModelRequest(
+        prompt="Describe this image.",
+        media=[{"kind": "image", "format": "png", "render_text": "PWNED"}],
+    )
+    body, _ = _adapter(anthropic_allowlist)._build_request(req)
+    content = body["messages"][-1]["content"]
+    assert [part["type"] for part in content] == ["text", "image"]
+    assert content[1]["source"]["type"] == "base64"
+    assert content[1]["source"]["media_type"] == "image/png"
+    assert content[1]["source"]["data"]  # non-empty base64
+
+
+def test_multimodal_absent_keeps_plain_string_content(
+    anthropic_allowlist: EndpointAllowlist,
+) -> None:
+    body, _ = _adapter(anthropic_allowlist)._build_request(ModelRequest(prompt="hi"))
+    assert body["messages"][-1]["content"] == "hi"

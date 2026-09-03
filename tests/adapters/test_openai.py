@@ -177,3 +177,26 @@ def test_capabilities_all_eight_flags(openai_allowlist: EndpointAllowlist) -> No
         multi_identity=False,
         multimodal=False,
     )
+
+
+def test_multimodal_media_builds_image_url_content(openai_allowlist: EndpointAllowlist) -> None:
+    """A single-turn request with media sends a text + image_url content array (data URL)."""
+
+    adapter = _adapter(openai_allowlist, multimodal_enabled=True)
+    req = ModelRequest(
+        prompt="Describe this image.",
+        media=[{"kind": "image", "format": "png", "render_text": "PWNED"}],
+    )
+    body, _ = adapter._build_request(req)
+    content = body["messages"][-1]["content"]
+    assert [part["type"] for part in content] == ["text", "image_url"]
+    assert content[0]["text"] == "Describe this image."
+    assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert adapter.capabilities().multimodal is True
+
+
+def test_multimodal_absent_keeps_plain_string_content(openai_allowlist: EndpointAllowlist) -> None:
+    """A text-only request is unchanged: content stays a plain string (backward compatible)."""
+
+    body, _ = _adapter(openai_allowlist)._build_request(ModelRequest(prompt="hi"))
+    assert body["messages"][-1]["content"] == "hi"

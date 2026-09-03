@@ -6,6 +6,30 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Multimodal attacks: visual / typographic prompt injection (docs/12 P0, MVP-3 phase)**. A spec
+  can carry a payload in an image via `attack.media` (a declarative part, e.g.
+  `{kind: image, format: png, render_text: "..."}`). `shared/media.py` renders it to a byte-stable
+  PNG with a dependency-free stdlib encoder (zlib + a 5x7 bitmap font): no Pillow, no binary in the
+  spec, so the carrier is reproducible and replays identically. The openai and anthropic adapters
+  attach the rendered image to the user turn as the provider image content block; the runner keeps
+  the declarative part on the request. New `MM-IMG-PROMPTINJECT-001` spec + `multimodal` suite: the
+  user's turn asks only to describe the image while an override instruction rendered inside it
+  demands a planted canary, so a successful visual injection is a decisive leak. A second spec,
+  `MM-IMG-DOC-INJECT-001`, covers the indirect variant: the user asks to summarize a business-memo
+  image whose body hides a "note to the assistant" (the multimodal analogue of PI-INDIRECT-RAG). A
+  third, `MM-IMG-HARMFUL-001` (`safety_content`), checks whether the safety guardrail still refuses
+  a disallowed request when it arrives as an image rather than as text (a non-operational
+  placeholder payload, `test_only`, mirroring SAFETY-HARMFUL-001). All three are gated on
+  `capabilities.multimodal` (a text-only target skips them, never a false pass). `attack.media` /
+  `ModelRequest.media` are additive optional fields. Battery is now 56 specs / 12 suites. Audio is
+  deferred: a faithful audio carrier needs speech (a TTS dependency or a pinned recorded clip), not
+  stdlib synthesis, so it is not shipped as a fake carrier; non-image document (PDF/HTML text)
+  injection is already covered by the retrieval path (PI-INDIRECT-RAG-001). Chain of custody: a
+  multimodal request records the SHA-256 of each rendered carrier under `metadata.media_sha256`, so
+  a run's evidence proves exactly which image bytes were sent and an auditor re-renders to verify.
+  A new `dottore render-media <spec-id> --out <dir>` command renders a multimodal spec's carrier(s)
+  to disk (read-only, sends nothing) and prints each path, size and SHA-256, so an operator can see
+  exactly what image a scan will send before running it.
 - **MCP adapter (`provider: mcp`) + `mcp` suite**: scan a Model Context Protocol server as a
   target. `adapters/mcp.py` speaks JSON-RPC over Streamable HTTP: it performs the `initialize`
   handshake and lists `tools`/`resources`/`prompts`, then renders that advertised metadata as

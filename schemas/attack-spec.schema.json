@@ -54,7 +54,24 @@
       "properties": {
         "user_prompt": { "type": "string" },
         "carrier": { "type": "string" },
-        "turns": { "type": "array", "items": { "type": "string" } }
+        "turns": { "type": "array", "items": { "type": "string" } },
+        "media": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["image"] },
+              "format": { "type": "string", "enum": ["png"] },
+              "render_text": { "type": "string" },
+              "data_b64": { "type": "string" },
+              "scale": { "type": "integer", "minimum": 1 },
+              "columns": { "type": "integer", "minimum": 1 },
+              "alt": { "type": "string" }
+            }
+          }
+        }
       },
       "anyOf": [
         { "required": ["user_prompt"] },

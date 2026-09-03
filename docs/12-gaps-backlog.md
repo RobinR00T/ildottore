@@ -31,7 +31,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 | **PII / secret-shape evaluators with FP control** (Luhn, IBAN mod-97, key prefixes, entropy; hallucination ≠ leak) | ✅ | `docs/04`, `docs/11 §4` | MVP‑1 |
 | **Logprobs capture in adapters** (membership inference, confidence side-channels) | ✅ | `docs/00` (stack + Phase D), `docs/01 §3` | capture MVP‑1 · membership MVP‑2 |
 | **Multi-identity / cross-tenant harness** (authz_leak evaluator, ≥2 identities in scope) | ✅ | `docs/00` (Phase A), `docs/01 §6`, `docs/11 §3` | MVP‑1 |
-| **Multimodal** (image/audio/document injection; visual/typographic PI) | ✅ (own phase) | `docs/00` (Phase G) | MVP‑3 (highest cost, highest differentiator) |
+| **Multimodal** (image/audio/document injection; visual/typographic PI) | 🟡 **image injection built** (2026-09-03) | `shared/media.py` | visual prompt injection via text rendered into an image: a direct override (`MM-IMG-PROMPTINJECT-001`) and an indirect injection embedded in a document image (`MM-IMG-DOC-INJECT-001`, the multimodal analogue of PI-INDIRECT-RAG), in the `multimodal` suite. `attack.media` carries a declarative part; `shared/media.py` renders it to a byte-stable PNG with a dependency-free stdlib encoder + 5x7 font (reproducible, no Pillow); the openai/anthropic adapters emit the provider image block. Gated on `capabilities.multimodal`. **Audio deferred with reason:** a faithful spoken carrier needs speech (a TTS dependency or a pinned recording), not stdlib synthesis, so it is not shipped as a carrier no model would transcribe. Non-image **document** injection (PDF/HTML text) is already covered by the retrieval path (`PI-INDIRECT-RAG-001`) |
 
 ## P1 — MVP‑2
 
