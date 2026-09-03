@@ -88,6 +88,48 @@ Full method: `docs/00-ai-build-playbook.md`.
 - **Verify protocol/format constants against the normative source, not memory**, and skip any
   per-variant prefix before parsing the body.
 
+### Workflow & verification lessons (Il Dottore build, 2026-09-02: hard-won, do not relearn)
+
+- **The session cwd is NOT this repo.** A session can start in an unrelated sandbox path (e.g. a
+  `~/Downloads/...` folder); this repo lives at an absolute path under `~/AI projects/`. Shell
+  state does not persist between tool calls (cwd resets after each one), so `cd` into the
+  absolute repo root in EVERY command, and when reporting state (branch, hashes, "done") name the
+  absolute repo path explicitly so the reader never has to guess where the work landed. If in
+  doubt, confirm with `pwd` + `git rev-parse --show-toplevel` before asserting anything.
+- **Run the WHOLE gate wall, never a subset.** `ruff check` is NOT `ruff format --check`, and
+  neither is the coverage gate. A "all green" claim is only true after `make gates` (the
+  Makefile mirrors `.github/workflows/ci.yml` one-for-one). Twice a green claim was wrong
+  because only `ruff check` had been run.
+- **Detect em/en dashes with Python, never a zsh `grep` using a `$'..'` glyph pattern** (in zsh
+  that silently matches nothing and reports a false "0 dashes"). House rule: no em dash or en
+  dash in ANY produced text (code, comments, docs, commit messages); substitute a colon, comma,
+  period or parentheses. Scan the added diff lines, not whole files (pre-existing repo dashes
+  are not ours to rewrite).
+- **Validate every example/config against the REAL loader, not by eye.** `specs/scope.example.yaml`
+  documented a fictional `engagement/allow_targets/endpoint_allowlist/policy` schema that no
+  loader accepts; `dottore lint` skips loose example YAMLs, so it went uncaught and leaked into
+  the docs. Load examples through `load_scope`/`load_target` (or a test) before trusting them.
+- **GPG signing can strand the branch.** `git rebase --exec 'git commit --amend --no-edit -S'
+  <base>` can hang on `pinentry` INSIDE the rebase and leave an interrupted rebase that looks
+  like the fix/docs commits were lost (HEAD sits on the first commit). Recovery: **`git rebase
+  --abort`** (restores the full branch), or reset to the reflog tip. Correct procedure: warm the
+  gpg-agent first in the foreground (`echo warm | gpg --local-user <KEY> --clearsign >/dev/null`)
+  THEN rebase. The conductor signs; the build loop never runs GPG.
+- **zsh does not word-split unquoted vars or `$(...)`** (a multi-file `git restore/add "$LIST"`
+  becomes one bad pathspec). Pipe the list through `xargs`, or use a zsh array.
+- **Rebuilding logical commits without `git add -p`:** split by file. A shared/entangled file
+  (runner, models, wiring) lands in the commit of the feature that introduced it; rebuild via
+  `git reset --mixed main` + re-stage groups; then VERIFY the partition (0 overlaps, union ==
+  `git diff --name-only main...HEAD`). Additive **optional** fields on the frozen u00 pydantic
+  models (Target/EvalContext/ScopeTarget/Identity) are backward-compatible and allowed.
+- **A capability the runner never exercises is a latent gap, not a feature.** `authz_leak` was
+  dormant for months because the runner never populated `EvalContext.identities`. When an
+  evaluator needs cross-attempt or cross-identity context, wire the execution that feeds it (or
+  mark it explicitly latent in `docs/12`), do not ship the evaluator alone and call it done.
+- **New adapters/transports keep the charter.** MCP discovery is read-only (never `tools/call`);
+  stdio spawns only a scope-authorized exact command; both are allowlist-gated. Do not add a
+  capability (real tool invocation, arbitrary subprocess) that breaks safe-by-design/§2.
+
 ## 4. Stack, commands & conventions
 
 - **Python 3.11+** (dev env is 3.14). `src/` layout, single distribution `ildottore`,
@@ -95,13 +137,13 @@ Full method: `docs/00-ai-build-playbook.md`.
 - **Package boundaries (enforced by import-linter):** `shared` ← everyone; `core` depends on
   *interfaces* only; adapters don't import evaluators; composition happens in `cli`/`api`.
   See `docs/01 §2-§3`.
-- **Commands** (once scaffolded):
+- **Commands:**
   - Install: `uv sync` (or `pip install -e ".[dev]"`)
-  - Lint/format/type: `ruff check . && ruff format --check . && mypy src`
-  - Tests: `pytest -q` · coverage gate ≥ 85% core
-  - Spec lint: `dottore lint specs/`
-  - Import contract: `lint-imports`
-  - Self-scan (dogfood): `dottore fingerprint … ` + run suite against our own judge
+  - **The whole wall (do this before claiming green): `make gates`** (mirrors CI exactly)
+    (ruff lint, ruff format check, mypy strict, import-linter, spec lint, tests, coverage ≥85%,
+    self-scan, bandit, pip-audit). `make fix` autofixes format+lint. Do not hand-run a subset.
+  - Individually: `ruff check . && ruff format --check . && mypy src` · `pytest -q` (coverage
+    gate ≥85% core) · `dottore lint specs/` · `lint-imports` · `python -m tests.selfscan.run`
 - **Tests taxonomy:** `docs/07` (schema, unit, property/Hypothesis, adapter cassettes,
   golden-target detection accuracy, evaluator P/R, judge robustness, determinism replay,
   reporting/SARIF, E2E, boundaries, safety-negative, metamorphic).

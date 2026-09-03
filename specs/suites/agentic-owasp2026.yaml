@@ -1,0 +1,23 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`). Broader agentic
+# taxonomy aligned to OWASP Agents 2026 (docs/14): goal theft, recursive hijacking, identity
+# & trust abuse, inter-agent compromise, autonomy drift. All test_only (agent_tool_abuse).
+id: agentic-owasp2026
+suite_version: "2026.1"
+name: Agentic abuse battery (OWASP Agents 2026 coverage)
+description: >
+  Agent-specific abuses beyond the extortion kill-chain: goal theft (objective extraction),
+  recursive hijacking (self-modifying objectives), agent identity & trust abuse, inter-agent
+  communication compromise, and autonomous drift (scope creep). Vulnerability taxonomy mapped
+  from DeepTeam (Apache-2.0) / OWASP Agents 2026, re-authored natively (docs/14). Tools are
+  dry-run mocks; the drift spec exercises the pinned multi-turn engine.
+
+default_runs: 5
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, seed: 42 }; fail_on: high
+tags: [owasp, mitre-atlas, nist-ai-rmf, agentic]
+
+specs:
+  - spec_id: AG-GOAL-THEFT-001
+  - spec_id: AG-RECURSIVE-HIJACK-001
+  - spec_id: AG-IDENTITY-ABUSE-001
+  - spec_id: AG-INTERAGENT-COMPROMISE-001
+  - spec_id: AG-AUTONOMY-DRIFT-001

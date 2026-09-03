@@ -29,6 +29,9 @@ FLAGGED_FAMILIES: frozenset[Category] = frozenset(
         Category.DATA_LEAKAGE,
         Category.AGENT_TOOL_ABUSE,
         Category.AVAILABILITY_COST,
+        # Harmful-content safety probes carry disallowed requests, so they must be test_only
+        # (bias_fairness prompts are benign demographic questions, so they are not flagged).
+        Category.SAFETY_CONTENT,
     }
 )
 

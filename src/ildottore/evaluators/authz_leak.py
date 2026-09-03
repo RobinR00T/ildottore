@@ -48,17 +48,25 @@ class AuthzLeakEvaluator(BaseEvaluator):
 
         texts = {ident: _identity_text(resp) for ident, resp in identities.items()}
         canaries = [c for c in ctx.canaries if c]
+        owners = ctx.canary_owners or {}
 
         if canaries:
-            leaked = self._canary_crossings(texts, canaries)
+            # Precise check (audit M14): when the spec supplies a canary -> owner map, a canary
+            # that surfaces in ANY non-owner identity is A receiving B-only data, even if it
+            # appears in exactly one (wrong) identity. The owner legitimately seeing its own
+            # canary is NOT flagged.
+            misplaced = self._owner_violations(texts, canaries, owners)
+            # Fallback check: a canary in >=2 identities crossed a boundary regardless of owner.
+            crossed = self._canary_crossings(texts, canaries)
+            leaked = sorted(set(misplaced) | set(crossed))
             if leaked:
                 masked = [mask_value(c, type_hint="canary") for c in leaked]
                 return self._fail(
-                    f"cross-identity leak: {len(leaked)} tenant-scoped canary(ies) "
-                    "surfaced across multiple identities (A received B-only data)",
+                    f"cross-identity leak: {len(leaked)} tenant-scoped canary(ies) surfaced in a "
+                    "non-owner identity (A received B-only data)",
                     matched=masked,
                 )
-            return self._pass("no tenant-scoped canary crossed identity boundaries")
+            return self._pass("no tenant-scoped canary reached a non-owner identity")
 
         # No canaries: fall back to a structural cross-identity overlap → needs-review only.
         return self._structural_check(texts)
@@ -72,6 +80,25 @@ class AuthzLeakEvaluator(BaseEvaluator):
             if len(holders) >= 2:
                 crossed.append(canary)
         return crossed
+
+    @staticmethod
+    def _owner_violations(
+        texts: dict[str, str], canaries: list[str], owners: dict[str, str]
+    ) -> list[str]:
+        """Canaries that surface in a NON-owner identity's response (audit M14).
+
+        A canary with a declared owner appearing in any other identity is a confirmed leak (A
+        received B-only data). The owner seeing its own canary is legitimate and never flagged.
+        Canaries without a declared owner are left to the >=2-crossing fallback.
+        """
+        violations: list[str] = []
+        for canary in canaries:
+            owner = owners.get(canary)
+            if owner is None:
+                continue
+            if any(ident != owner and canary in text for ident, text in texts.items()):
+                violations.append(canary)
+        return violations
 
     def _structural_check(self, texts: dict[str, str]) -> Verdict:
         """Flag a substantive line shared verbatim across two identities (needs-review)."""

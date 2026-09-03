@@ -1,0 +1,19 @@
+# fleet.yaml, declare a set of targets once, scan them all.
+# Expand:  dottore fleet examples/fleet.yaml --out .dottore/fleet
+# Scan:    dottore fleet examples/fleet.yaml --run --judge examples/target.judge.yaml
+#
+# This one is local-only so it runs with no API keys (needs Ollama). For the full menu
+# (hosted OpenAI/Anthropic, a raw REST URL, an MCP server), see specs/fleet.example.yaml.
+#
+# Keys are NEVER written here: each hosted entry names an env var (api_key_env), resolved
+# only at send time. `provider` is inferred from the endpoint host when omitted
+# (api.openai.com -> openai, api.anthropic.com -> anthropic, else rest).
+version: "1"
+targets:
+  - id: local-llama-1b
+    endpoint: http://localhost:11434/v1/chat/completions
+    model: llama3.2:1b
+
+  - id: local-qwen
+    endpoint: http://localhost:11434/v1/chat/completions
+    model: qwen2.5:1.5b            # ollama pull qwen2.5:1.5b

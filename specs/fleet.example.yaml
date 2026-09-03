@@ -1,0 +1,37 @@
+# fleet.yaml, declare every LLM / URL / MCP target to validate in ONE place.
+# Expand it with:   dottore fleet specs/fleet.example.yaml --out .dottore/fleet
+# then scan the generated targets, or add --run to scan immediately.
+#
+# API keys are NEVER written here: each entry names an environment variable
+# (api_key_env), resolved only at send time. `provider` is inferred from the endpoint
+# host when omitted (api.openai.com -> openai, api.anthropic.com -> anthropic, else rest).
+version: "1"
+targets:
+  # A hosted OpenAI model (key from $OPENAI_API_KEY).
+  - id: openai-gpt4o
+    endpoint: https://api.openai.com/v1/chat/completions
+    model: gpt-4o
+    api_key_env: OPENAI_API_KEY
+
+  # A hosted Anthropic model (key from $ANTHROPIC_API_KEY).
+  - id: anthropic-haiku
+    endpoint: https://api.anthropic.com/v1/messages
+    model: claude-haiku-4-5-20251001
+    api_key_env: ANTHROPIC_API_KEY
+
+  # A local model via Ollama's OpenAI-compatible endpoint (no key needed).
+  - id: local-ollama
+    endpoint: http://localhost:11434/v1/chat/completions
+    model: llama3.2:1b
+
+  # A raw URL for your own app (generic REST adapter).
+  - id: my-app
+    provider: rest
+    endpoint: https://my-app.example.com/chat
+
+  # A Model Context Protocol server. Routed to the read-only MCP adapter: it discovers the
+  # server's advertised tool/resource/prompt metadata (never calls a tool). Point the `mcp`
+  # suite at it: `dottore run --suite mcp -t target-my-mcp.yaml --scope scope.yaml`.
+  - id: my-mcp
+    kind: mcp
+    endpoint: http://localhost:3000/mcp

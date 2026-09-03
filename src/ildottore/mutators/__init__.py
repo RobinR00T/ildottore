@@ -5,19 +5,27 @@ is a pure function of ``(text, seed)`` — no I/O, no clock, no unseeded RNG —
 the shared :class:`ildottore.shared.protocols.Mutator` protocol. Determinism is seeded by the
 ``(spec.id, mutation.name)`` string the execution engine (u08) passes as ``seed``.
 
-Public surface: the 12 built-in strategy classes, the :class:`MutationResult` shape, and the
-:class:`MutatorRegistry` (built-ins + ``dottore.mutators`` entry-point discovery).
+Public surface: the 18 built-in strategy classes (12 original + 6 DeepTeam-mapped enhancers,
+docs/14), the :class:`MutationResult` shape, and the :class:`MutatorRegistry` (built-ins +
+``dottore.mutators`` entry-point discovery).
 """
 
 from __future__ import annotations
 
+from ildottore.mutators.adversarial_poetry import AdversarialPoetryMutator
+from ildottore.mutators.adversarial_suffix import AdversarialSuffixMutator
 from ildottore.mutators.base import BaseMutator, MutationResult, Mutator, derive_int_seed
 from ildottore.mutators.base64_wrap import Base64WrapMutator
 from ildottore.mutators.comment_carrier import (
     HtmlCommentCarrierMutator,
     MarkdownCommentCarrierMutator,
 )
+from ildottore.mutators.context_poisoning import ContextPoisoningMutator
+from ildottore.mutators.gray_box import GrayBoxMutator
 from ildottore.mutators.identity import IdentityMutator
+from ildottore.mutators.leetspeak import LeetspeakMutator
+from ildottore.mutators.linguistic_confusion import LinguisticConfusionMutator
+from ildottore.mutators.math_problem import MathProblemMutator
 from ildottore.mutators.nested_instruction import NestedInstructionMutator
 from ildottore.mutators.payload_splitting import PayloadSplittingMutator
 from ildottore.mutators.refusal_suppression_prefix import RefusalSuppressionPrefixMutator
@@ -35,11 +43,18 @@ from ildottore.mutators.zero_width_inject import ZeroWidthInjectMutator
 
 __all__ = [
     "ENTRY_POINT_GROUP",
+    "AdversarialPoetryMutator",
+    "AdversarialSuffixMutator",
     "Base64WrapMutator",
     "BaseMutator",
+    "ContextPoisoningMutator",
+    "GrayBoxMutator",
     "HtmlCommentCarrierMutator",
     "IdentityMutator",
+    "LeetspeakMutator",
+    "LinguisticConfusionMutator",
     "MarkdownCommentCarrierMutator",
+    "MathProblemMutator",
     "MutationResult",
     "Mutator",
     "MutatorProtocolError",

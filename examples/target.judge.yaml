@@ -1,0 +1,10 @@
+id: local-judge
+type: model
+provider: openai                     # OpenAI-compatible (Ollama)
+endpoint: "http://localhost:11434/v1/chat/completions"
+model: "llama3.2:3b"                 # `ollama pull llama3.2:3b`, a stronger model judges
+capabilities: { tools: false, rag: false }
+sampling_defaults: { temperature: 0.0 }
+# Passed via `--judge`. It backs the `semantic_judge` secondary evaluator; deterministic
+# evaluators still decide first. The judge is itself hardened against prompt injection
+# (per-call random tripwire): a judge that can be flipped is reported, not trusted.

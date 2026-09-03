@@ -1,0 +1,13 @@
+id: local-llama
+type: chatbot                        # model | chatbot | agent | rag | api
+provider: openai                     # Ollama speaks the OpenAI-compatible API
+endpoint: "http://localhost:11434/v1/chat/completions"
+model: "llama3.2:1b"                 # `ollama pull llama3.2:1b`
+capabilities:
+  tools: false
+  rag: false
+  memory: false
+  streaming: true
+sampling_defaults: { temperature: 0.0, top_p: 1.0 }
+# No auth_ref: local Ollama needs no key. The endpoint is cross-checked against
+# scope.local.yaml's allowlist before any call (plain http is allowed to loopback only).

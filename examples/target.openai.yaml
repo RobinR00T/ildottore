@@ -1,0 +1,17 @@
+id: openai-gpt-staging
+type: model                          # model | chatbot | agent | rag | api
+provider: openai
+endpoint: "https://api.openai.com/v1/chat/completions"
+model: "gpt-4o"                      # provider model id
+auth_ref: "env://OPENAI_API_KEY"     # never inline secrets; vault://... in prod
+capabilities:
+  tools: false
+  rag: false
+  streaming: true
+  seed: true                         # provider supports seed -> determinism recorded
+sampling_defaults: { temperature: 0.0, top_p: 1.0 }
+# To scan this, add a matching target to your scope.yaml:
+#   - id: openai-gpt-staging
+#     base_url: "https://api.openai.com/v1/chat/completions"
+#     endpoints: [{host: "api.openai.com", path_prefixes: ["/v1/chat/completions"]}]
+#     identities: [{name: default, auth_ref: "env://OPENAI_API_KEY"}]

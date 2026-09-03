@@ -110,6 +110,35 @@ def test_allow_in_scope_enabled_category() -> None:
     assert res.allowed is True
 
 
+def _stdio_scope() -> Scope:
+    return Scope(
+        version="1.0",
+        targets=[
+            ScopeTarget(
+                id="local-mcp",
+                base_url="stdio://local",
+                identities=[Identity(name="a", auth_ref="env://NONE")],
+                commands=["python server.py"],
+            )
+        ],
+    )
+
+
+def test_stdio_authorized_command_allows() -> None:
+    """A stdio MCP target is authorized by an exact command match against scope.commands."""
+    eng = PolicyEngine(_stdio_scope(), BASE_PACK)
+    res = eng.check("local-mcp", "stdio://python server.py", make_spec())
+    assert res.allowed
+
+
+def test_stdio_unauthorized_command_blocked() -> None:
+    """A stdio command not on the scope's allowlist is blocked_by_policy (S3 default-deny)."""
+    eng = PolicyEngine(_stdio_scope(), BASE_PACK)
+    res = eng.check("local-mcp", "stdio://python OTHER.py", make_spec())
+    assert not res.allowed
+    assert "stdio command not authorized" in (res.reason or "")
+
+
 def test_blocked_out_of_scope_target() -> None:
     res = _engine(BASE_PACK).check("ghost", ENDPOINT, make_spec())
     assert res.decision == "blocked_by_policy"

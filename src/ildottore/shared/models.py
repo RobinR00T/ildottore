@@ -30,7 +30,9 @@ from ildottore.shared.enums import (
 # id pattern ^[A-Z]+(-[A-Z0-9]+)+$ ; spec_version ^\d+\.\d+$ ; owasp ^LLM\d{2}$
 _ID_PATTERN = r"^[A-Z]+(-[A-Z0-9]+)+$"
 _SPEC_VERSION_PATTERN = r"^\d+\.\d+$"
-_OWASP_PATTERN = r"^LLM\d{2}$"
+# OWASP LLM Top 10 code, or an RAI code for the Responsible-AI pack (docs/12 P2), which has
+# no OWASP-security mapping. The `nist_ai_rmf` field carries its primary framework mapping.
+_OWASP_PATTERN = r"^(LLM|RAI)\d{2}$"
 
 Unit = Annotated[float, Field(ge=0.0, le=1.0)]  # confidence / reproducibility in [0,1]
 Score1to4 = Annotated[int, Field(ge=1, le=4)]  # impact / exploitability 1..4
@@ -108,6 +110,7 @@ class EvaluatorConfig(_SchemaMirror):
 
     type: EvaluatorType
     patterns: list[str] | None = None
+    forbidden_args: list[str] | None = None
     rubric: str | None = None
     canary_ref: str | None = None
     weight: float | None = None
@@ -244,6 +247,11 @@ class Target(_Frozen):
     model: str | None = None
     auth_ref: str | None = None
     sampling_defaults: Sampling | None = None
+    # MCP transport selector (provider "mcp"): "http" (default, over the wire) or "stdio" (a
+    # local server launched as a subprocess). ``command`` is the argv for the stdio case; it
+    # is spawned only if the scope's target authorized that exact command line.
+    transport: str | None = None
+    command: list[str] | None = None
 
 
 class TokenLogprob(_Frozen):
@@ -339,6 +347,10 @@ class EvalContext(_Frozen):
     config: EvaluatorConfig
     canaries: list[str] = Field(default_factory=list)
     identities: dict[str, ModelResponse] | None = None  # for authz_leak (multi_identity)
+    # Optional canary -> owning identity map (audit M14): lets authz_leak flag a canary that
+    # surfaces in a NON-owner identity's response (A receiving B-only data), not just a canary
+    # that crosses >=2 identities. Empty = fall back to the strict >=2-crossing check.
+    canary_owners: dict[str, str] = Field(default_factory=dict)
 
 
 class Attempt(_Frozen):

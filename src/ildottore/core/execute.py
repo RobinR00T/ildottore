@@ -95,8 +95,12 @@ def default_is_env_error(exc: BaseException) -> bool:
         return marker
     if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
         return True
+    # Suffix match, not substring: an *Error whose class name ends with a known env family is
+    # an env error, but a product exception that merely CONTAINS such a word (e.g.
+    # ``PromptTimeoutViolation``) is NOT masked as a flake (audit low). The adapters' own env
+    # errors set the ``is_env_error`` marker above, so this is only a last-resort heuristic.
     name = type(exc).__name__.lower()
-    return any(token in name for token in ("enverror", "timeout", "ratelimit", "rate_limit"))
+    return name.endswith(("enverror", "timeouterror", "ratelimiterror", "ratelimit"))
 
 
 async def execute_attempt(
@@ -128,10 +132,15 @@ async def execute_attempt(
     clock = now if now is not None else asyncio.get_event_loop().time
     errors: list[str] = []
 
+    # Reserve the request's own max_tokens BEFORE the send so the token ceiling is a
+    # pre-spend cap (a breach raises before any provider spend), not a post-hoc tally that a
+    # concurrent burst could overshoot (audit M12). The actual usage is reconciled after.
+    reserved = sampling.max_tokens if sampling is not None and sampling.max_tokens else 0
+
     total_sends = policy.max_retries + 1
     for send_index in range(total_sends):
         # Budget is debited per *send* (retries count) so a storm can't self-DoS.
-        ledger.debit_request()
+        ledger.debit_request(tokens=reserved)
         started = clock()
         try:
             response = await _send_with_timeout(adapter, request, timeout_s, do_sleep)
@@ -159,7 +168,7 @@ async def execute_attempt(
             )
         else:
             latency_ms = max(0.0, (clock() - started) * 1000.0)
-            _reconcile_tokens(ledger, response)
+            _reconcile_tokens(ledger, response, reserved)
             return AttemptResult(
                 attempt=_attempt(
                     attempt_id,
@@ -193,20 +202,21 @@ async def _send_with_timeout(
     return await asyncio.wait_for(adapter.send(request), timeout=timeout_s)
 
 
-def _reconcile_tokens(ledger: BudgetLedger, response: ModelResponse) -> None:
-    """Add the response's reported token usage to the ledger (if any).
+def _reconcile_tokens(ledger: BudgetLedger, response: ModelResponse, reserved: int = 0) -> None:
+    """Reconcile the pre-send ``reserved`` token estimate with the actual reported usage.
 
-    Providers report actual usage only in the response; reconciling keeps the token
-    ceiling honest. A usage value that would breach the ceiling raises
-    :class:`BudgetExhausted` from the ledger (surfaced to the runner).
+    ``reserved`` was already debited before the send (the pre-spend cap). Here we add only the
+    OVERAGE (``actual - reserved``) when the provider reports using more than reserved, so the
+    ledger never under-counts; a response that used fewer than reserved keeps the (conservative)
+    reservation. A breach raises :class:`BudgetExhausted` from the ledger (surfaced to the runner).
     """
 
     usage = response.usage
     if not isinstance(usage, dict):
         return
     total = usage.get("total_tokens")
-    if isinstance(total, int) and not isinstance(total, bool) and total > 0:
-        ledger.add_tokens(total)
+    if isinstance(total, int) and not isinstance(total, bool) and total > reserved:
+        ledger.add_tokens(total - reserved)
 
 
 def _attempt(

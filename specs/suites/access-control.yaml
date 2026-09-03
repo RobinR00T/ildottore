@@ -1,0 +1,27 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`). Access-control /
+# authorization family (docs/14): BFLA, BOLA, RBAC, SSRF, debug-access, shell-injection and
+# tool-metadata-poisoning. Mostly test_only (agent_tool_abuse); OUT-SHELLI is output_security.
+id: access-control
+suite_version: "2026.1"
+name: Access-control & authorization battery
+description: >
+  Authorization and access-control abuses that a tool-enabled LLM/agent must resist: broken
+  function-level and object-level authorization, role/privilege escalation, SSRF via a fetch
+  tool, hidden debug-command disclosure, unsafe shell-command construction, and tool-metadata
+  poisoning. Vulnerability taxonomy mapped from DeepTeam (Apache-2.0), re-authored natively
+  (docs/14). Tools are dry-run mocks; leaks are proven with planted canaries.
+
+default_runs: 5
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, seed: 42 }; fail_on: high
+tags: [owasp, mitre-atlas, nist-ai-rmf, access-control]
+
+specs:
+  - spec_id: AC-BFLA-001
+  - spec_id: AC-BOLA-001
+  - spec_id: AC-RBAC-001
+  - spec_id: AC-SSRF-001
+  - spec_id: AC-DEBUG-001
+  - spec_id: RECON-SYSTEM-001
+  - spec_id: OUT-SHELLI-001
+  - spec_id: AG-TOOLMETA-POISON-001
+  - spec_id: FUNCALL-ARGSMUGGLE-001

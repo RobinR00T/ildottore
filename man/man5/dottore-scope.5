@@ -1,0 +1,98 @@
+.TH DOTTORE-SCOPE 5 "2026" "Il Dottore" "File Formats"
+.SH NAME
+dottore-scope, dottore-target, dottore-fleet \- Il Dottore configuration files
+.SH DESCRIPTION
+Il Dottore reads three YAML files. The
+.I scope
+authorizes a scan; the
+.I target
+describes what is scanned; the
+.I fleet
+declares many targets at once. Secrets are never written into any of them: keys are
+referenced by environment variable and resolved only at send time.
+.SH "SCOPE FILE"
+The authorization record. No scanning command runs without it. Default-deny: any host or
+path not under a target's endpoints is never contacted. An optional top-level checksum
+(sha256 of the body) makes it tamper-evident.
+.PP
+.nf
+version: "1.0"
+targets:
+  - id: my-chatbot
+    base_url: "https://api.example.com/v1/chat/completions"
+    endpoints:
+      - host: "api.example.com"
+        path_prefixes: ["/v1/chat/completions"]
+    identities:
+      - name: default
+        auth_ref: "env://MY_API_KEY"
+# checksum: "<sha256 of the body>"   # optional
+.fi
+.TP
+.B targets
+The authorized targets (>=1). A target whose id is absent is refused. Each has a base_url,
+an endpoints allowlist and >=1 identities.
+.TP
+.B endpoints
+Host plus path_prefixes pairs (default-deny). Plain http is permitted only to loopback
+(localhost, 127.0.0.1, ::1); everything else must be https.
+.TP
+.B identities
+Named auth references (auth_ref, e.g. env://NAME); the scope never carries a secret value. For
+a multi_identity (cross-tenant) scan, list >=2 identities and set each one's optional
+.B canary
+to the tenant-scoped marker it owns; authz_leak flags that canary reaching another identity.
+.TP
+.B commands
+Authorized stdio MCP command lines (exact match). Default-deny: a stdio MCP server is launched
+only if its command line appears here, mirroring the endpoint allowlist for wire transports.
+.PP
+Policy-gated specs (those declaring requires_policy, e.g. PII elicitation or agentic
+extortion) are gated by the run's policy pack, not the scope: the default CLI pack enables no
+capabilities, so such specs are reported blocked_by_policy with zero sends.
+.SH "TARGET FILE"
+.nf
+id: my-chatbot          # must match a target id in the scope's targets
+type: chatbot           # model | chatbot | agent | rag | api
+provider: openai        # openai (and openai-compatible) | anthropic | rest
+endpoint: "https://api.example.com/v1/chat/completions"
+model: "gpt-4o"
+auth_ref: "env://MY_API_KEY"
+capabilities: { tools: false, rag: false, streaming: true }
+sampling_defaults: { temperature: 0.0, top_p: 1.0 }
+.fi
+.PP
+.B id
+and
+.B type
+are required; the rest are needed only for a live scan.
+.B auth_ref
+accepts env://NAME (and vault://... in production); the secret is read at send time and
+never stored. An MCP target sets provider "mcp"; over the wire it gives an endpoint, or as a
+local subprocess it sets transport "stdio" and a command argv (authorized via scope commands).
+.SH "FLEET FILE"
+.nf
+version: "1"
+targets:
+  - id: openai-gpt4o
+    endpoint: https://api.openai.com/v1/chat/completions
+    model: gpt-4o
+    api_key_env: OPENAI_API_KEY
+  - id: local-ollama
+    endpoint: http://localhost:11434/v1/chat/completions
+    model: llama3.2:1b
+  - id: my-mcp
+    kind: mcp        # routed to the read-only MCP adapter (discovery)
+    endpoint: http://localhost:3000/mcp
+.fi
+.PP
+.B provider
+is inferred from the endpoint when omitted: /chat/completions maps to openai, /messages to
+anthropic, otherwise rest.
+.B api_key_env
+names an environment variable, never the key itself.
+.SH "SEE ALSO"
+.BR dottore (1)
+.PP
+Templates: specs/scope.example.yaml, specs/targets/example-openai.yaml,
+specs/fleet.example.yaml.

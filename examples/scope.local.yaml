@@ -1,0 +1,25 @@
+# scope.local.yaml, the AUTHORIZATION record for the local-Ollama scenario.
+#
+# No run starts without covering every target here. Default-DENY: adapters refuse any host
+# or path not listed under a target's `endpoints`. Plain http is allowed ONLY to loopback.
+# An optional top-level `checksum:` (sha256 of the body) makes the scope tamper-evident.
+# See docs/02-threat-model.md.
+version: "1.0"
+targets:
+  - id: local-llama                 # must match target.local.yaml's id
+    base_url: "http://localhost:11434/v1/chat/completions"
+    endpoints:
+      - host: "localhost"
+        path_prefixes: ["/v1/chat/completions"]
+    identities:
+      - name: default
+        auth_ref: "env://NONE"      # local Ollama needs no key
+
+  - id: local-judge                 # must match target.judge.yaml's id
+    base_url: "http://localhost:11434/v1/chat/completions"
+    endpoints:
+      - host: "localhost"
+        path_prefixes: ["/v1/chat/completions"]
+    identities:
+      - name: default
+        auth_ref: "env://NONE"

@@ -55,6 +55,11 @@ CATEGORY_ALIASES: dict[str, Category] = {
     "output_security": Category.OUTPUT_SECURITY,
     "dos": Category.AVAILABILITY_COST,
     "availability_cost": Category.AVAILABILITY_COST,
+    "safety": Category.SAFETY_CONTENT,
+    "safety_content": Category.SAFETY_CONTENT,
+    "bias": Category.BIAS_FAIRNESS,
+    "fairness": Category.BIAS_FAIRNESS,
+    "bias_fairness": Category.BIAS_FAIRNESS,
 }
 
 
@@ -72,6 +77,7 @@ class RunOptions:
 
     targets: list[Path]
     scope: Path | None
+    judge: Path | None = None
     suite: str | None = None
     categories: list[str] = field(default_factory=list)
     spec_globs: list[str] = field(default_factory=list)
@@ -83,6 +89,7 @@ class RunOptions:
     timeout_s: float | None = None
     runs: int = 5
     dry_run: bool = False
+    estimate: bool = False
     fail_on: str = "high"
     include_needs_review: bool = False
     compare: bool = False
@@ -104,6 +111,7 @@ class RunOutcome:
     findings: list[Finding] = field(default_factory=list)
     results: list[CampaignResult] = field(default_factory=list)
     dry_run: bool = False
+    estimated: bool = False
     report_paths: list[Path] = field(default_factory=list)
 
 
@@ -184,6 +192,69 @@ def _top_by_signal(specs: list[AttackSpec], n: int) -> list[AttackSpec]:
 # --- execution ---------------------------------------------------------------------
 
 
+@dataclass
+class PlanEstimate:
+    """A pre-run cost estimate (docs/12 P2): request + token volume, no sends, no fabricated $."""
+
+    specs: int
+    requests: int
+    input_tokens: int
+    output_tokens: int
+    by_category: dict[str, int]
+
+
+def estimate_plan(specs: list[AttackSpec], runs: int) -> PlanEstimate:
+    """Estimate the wire cost of a plan without sending: requests + rough token volume.
+
+    ``requests`` = sum over specs of ``mutations x runs x turns``. Tokens are a deliberately
+    rough gloss (prompt length / 4 for input; the spec's ``sampling.max_tokens`` or 512 for
+    output). No per-model pricing is known, so this reports volume, not a dollar figure.
+    """
+
+    total_requests = 0
+    total_in = 0
+    total_out = 0
+    by_category: dict[str, int] = {}
+    for spec in specs:
+        mutations = spec.mutations or ["identity"]
+        turns = spec.attack.turns
+        n_turns = len(turns) if turns is not None and len(turns) >= 2 else 1
+        requests = len(mutations) * runs * n_turns
+        prompt = spec.attack.user_prompt or spec.attack.carrier or (turns[0] if turns else "")
+        in_tokens = max(1, len(prompt) // 4)
+        out_tokens = (
+            spec.sampling.max_tokens
+            if spec.sampling is not None and spec.sampling.max_tokens
+            else 512
+        )
+        total_requests += requests
+        total_in += requests * in_tokens
+        total_out += requests * out_tokens
+        by_category[spec.category.value] = by_category.get(spec.category.value, 0) + requests
+    return PlanEstimate(
+        specs=len(specs),
+        requests=total_requests,
+        input_tokens=total_in,
+        output_tokens=total_out,
+        by_category=by_category,
+    )
+
+
+def _print_estimate(est: PlanEstimate, *, quiet: bool = False) -> None:
+    """Print the pre-run estimate (skipped under --quiet)."""
+
+    if quiet:
+        return
+    print(f"estimate: {est.specs} specs, {est.requests} requests (no sends made)")
+    print(
+        f"  ~tokens: {est.input_tokens} in + {est.output_tokens} out "
+        f"(~{est.input_tokens + est.output_tokens} total, rough gloss)"
+    )
+    for cat, n in sorted(est.by_category.items(), key=lambda kv: -kv[1]):
+        print(f"  {cat}: {n} requests")
+    print("  no per-model pricing known; multiply by your provider's per-token rate.")
+
+
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     """Run a full campaign for every target and return the aggregate outcome.
 
@@ -200,6 +271,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         )
 
     scope = wiring.build_scope(opts.scope)
+    judge_target = wiring.load_target(opts.judge) if opts.judge is not None else None
     registry = wiring.build_registry(spec_paths)
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
@@ -221,6 +293,12 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         exclude_globs=opts.exclude_globs,
         top_tests=opts.top_tests,
     )
+
+    if opts.estimate:
+        _print_estimate(estimate_plan(selected, opts.runs), quiet=opts.quiet)
+        return RunOutcome(
+            exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True, estimated=True
+        )
 
     if opts.dry_run:
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
@@ -264,6 +342,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             n=opts.runs,
             mock_scenario=mock_scenario,
             real_target=real_target,
+            judge_target=judge_target,
         )
         results.append(result)
         _print_progress(printer, selected, result.findings)
@@ -299,12 +378,15 @@ def _run_one_target(
     n: int,
     mock_scenario: str | None,
     real_target: Target | None = None,
+    judge_target: Target | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
     ``real_target`` (set only for a non-mock ``target.yaml``, see :func:`execute_run`)
     routes the campaign through :func:`wiring.real_adapter_factory` instead of the
-    offline mock; ``mock_scenario`` is ``None`` in that case.
+    offline mock; ``mock_scenario`` is ``None`` in that case. ``judge_target`` (from
+    ``--judge``) supplies the LLM-as-judge model for ``semantic_judge`` so a live scan
+    yields decisive verdicts instead of abstaining.
     """
 
     built = wiring.build_runner(
@@ -317,6 +399,7 @@ def _run_one_target(
         n=n,
         mock_scenario=mock_scenario,
         real_target=real_target,
+        judge_target=judge_target,
     )
     run_id = f"run-{uuid.uuid4().hex[:12]}"
     return asyncio.run(built.runner.run(run_id=run_id, target=target, specs=specs))

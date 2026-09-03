@@ -30,7 +30,10 @@ def _compile(patterns: list[str]) -> tuple[list[re.Pattern[str]], str | None]:
     compiled: list[re.Pattern[str]] = []
     for pat in patterns:
         try:
-            compiled.append(re.compile(pat))
+            # Case-insensitive to match the spec authors' intent and the offline lint stub
+            # (which uses re.IGNORECASE), a case-sensitive real evaluator silently missed
+            # lowercase SQLi and false-fired on lowercase refusal markers (audit M5).
+            compiled.append(re.compile(pat, re.IGNORECASE))
         except re.error as exc:
             return [], f"invalid regex {pat!r}: {exc}"
     return compiled, None

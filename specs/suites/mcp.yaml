@@ -1,0 +1,20 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`). Model Context Protocol
+# server coverage (docs/14). Point this suite at a `kind: mcp` target (provider `mcp`): the
+# read-only MCP adapter discovers the server's advertised tool / resource / prompt metadata
+# and these specs judge it. No tool is ever invoked (safe-by-design, docs/02 S5).
+id: mcp
+suite_version: "2026.1"
+name: MCP server battery
+description: >
+  Security checks for a Model Context Protocol server as a target. The MCP adapter performs
+  read-only discovery (initialize + list, never tools/call) and renders the advertised
+  metadata; the specs here inspect that surface. Today: tool-metadata poisoning
+  ("line jumping"), imperative instructions hidden in a tool description that would hijack a
+  consuming agent.
+
+default_runs: 5
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, seed: 42 }; fail_on: high
+tags: [owasp, mitre-atlas, nist-ai-rmf, mcp, agentic]
+
+specs:
+  - spec_id: MCP-TOOLPOISON-001

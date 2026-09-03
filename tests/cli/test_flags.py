@@ -53,6 +53,32 @@ def test_run_help_exposes_nmap_style_flags() -> None:
         assert flag in out
 
 
+def test_estimate_plan_counts_requests_and_tokens() -> None:
+    """estimate_plan (docs/12 P2) counts requests = specs x runs x mutations x turns."""
+    from ildottore.cli.run import estimate_plan
+
+    specs = [make_spec("PI-DIRECT-001"), make_spec("PI-INDIRECT-RAG-001")]
+    est = estimate_plan(specs, runs=5)
+    assert est.specs == 2
+    assert est.requests == 10  # 2 specs x 5 runs x 1 mutation (identity) x 1 turn
+    assert est.input_tokens > 0 and est.output_tokens > 0
+    assert est.by_category  # populated per category
+
+
+def test_cli_estimate_prints_and_sends_nothing(tmp_path: Path) -> None:
+    """`run --estimate` prints the estimate and makes zero sends (exit 0)."""
+    scope = write_scope(tmp_path)
+    target = write_target(tmp_path)
+    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+    res = runner.invoke(
+        app,
+        ["run", "-t", str(target), "--scope", str(scope), "--spec-path", str(specs), "--estimate"],
+        env={"COLUMNS": "200", "TERM": "dumb"},
+    )
+    assert res.exit_code == 0
+    assert "estimate:" in res.output and "requests" in res.output
+
+
 def test_cheatsheet_quick_scan_dry_run(tmp_path: Path) -> None:
     scope = write_scope(tmp_path)
     target = write_target(tmp_path)

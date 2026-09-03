@@ -110,6 +110,37 @@ async def test_system_placement_top_level(anthropic_allowlist: EndpointAllowlist
 
 
 @respx.mock
+async def test_multi_turn_messages_projected_to_role_content(
+    anthropic_allowlist: EndpointAllowlist,
+) -> None:
+    """A multi-turn transcript is projected to Anthropic-valid {role, content} turns.
+
+    The conversation engine may thread provider-foreign keys (e.g. an OpenAI-shaped
+    ``tool_calls``) into the history; the Messages API rejects unknown fields (HTTP 400),
+    so the adapter must strip them (ADR-0002: the adapter owns the wire shape)."""
+
+    route = respx.post(_URL).mock(return_value=_mock("messages_basic"))
+    req = ModelRequest(
+        messages=[
+            {"role": "user", "content": "benign opener"},
+            {"role": "assistant", "content": "sure", "tool_calls": [{"name": "x"}]},
+            {"role": "user", "content": "the escalation"},
+        ],
+        sampling=Sampling(max_tokens=32),
+    )
+    await _adapter(anthropic_allowlist).send(req)
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["messages"] == [
+        {"role": "user", "content": "benign opener"},
+        {"role": "assistant", "content": "sure"},
+        {"role": "user", "content": "the escalation"},
+    ]
+    # No provider-foreign key leaks into the wire payload.
+    assert all("tool_calls" not in m for m in body["messages"])
+
+
+@respx.mock
 async def test_default_max_tokens_applied(anthropic_allowlist: EndpointAllowlist) -> None:
     """max_tokens is required by the API; a default is supplied when unset."""
 

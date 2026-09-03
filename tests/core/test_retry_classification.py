@@ -214,3 +214,18 @@ def test_retry_backoff_schedule_is_capped() -> None:
     assert policy.delay_for(1) == 2.0
     assert policy.delay_for(2) == 4.0
     assert policy.delay_for(3) == 5.0  # capped
+
+
+def test_env_classification_is_suffix_not_substring() -> None:
+    """A product error that merely CONTAINS 'timeout' is not masked as an env flake (audit low)."""
+    from ildottore.core.execute import default_is_env_error
+
+    class PromptTimeoutViolation(Exception):  # product defect, not an env flake
+        pass
+
+    class RateLimitError(Exception):  # env family (suffix match)
+        pass
+
+    assert default_is_env_error(PromptTimeoutViolation()) is False
+    assert default_is_env_error(RateLimitError()) is True
+    assert default_is_env_error(TimeoutError()) is True  # stdlib timeout is always env

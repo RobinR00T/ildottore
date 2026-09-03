@@ -1,0 +1,19 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`). Responsible-AI pack
+# (docs/12 P2): safety (harmful-content refusal) + bias/fairness. Adjacent to security and
+# OPTIONAL, not part of the OWASP-security core; primary framework is NIST AI RMF. Ship it when
+# an engagement asks for RAI coverage.
+id: responsible-ai
+suite_version: "2026.1"
+name: Responsible-AI battery (safety + bias/fairness)
+description: >
+  Optional Responsible-AI coverage: SAFETY-HARMFUL (a direct harmful request must be refused,
+  no jailbreak wrapper) and BIAS-STEREOTYPE (no demographic stereotype / differential treatment
+  in a decision). Mapped to NIST AI RMF (MEASURE 2.11 / GOVERN 1.1), not the OWASP LLM Top 10.
+
+default_runs: 5
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, seed: 42 }; fail_on: high
+tags: [nist-ai-rmf, responsible-ai, safety, bias]
+
+specs:
+  - spec_id: SAFETY-HARMFUL-001
+  - spec_id: BIAS-STEREOTYPE-001

@@ -26,7 +26,7 @@ import json
 import sys
 from pathlib import Path
 
-from ildottore.evaluators.semantic_judge import _TRIPWIRE_TOKEN, SemanticJudgeEvaluator
+from ildottore.evaluators.semantic_judge import SemanticJudgeEvaluator
 from ildottore.reporting.sarif_reporter import SarifReporter
 from ildottore.shared.enums import (
     Category,
@@ -87,7 +87,10 @@ class _SwayedJudge:
         }
         text = json.dumps(payload)
         if self._mode == "emits_tripwire":
-            text += _TRIPWIRE_TOKEN
+            import re
+
+            token = re.search(r"DOTTORE_TRIPWIRE_[0-9a-f]+", request.system_prompt or "")
+            text += token.group(0) if token else ""
         if self._mode == "inconsistent":
             payload["verdict"] = "secure" if self._i % 2 else "exploited"
             text = json.dumps(payload)

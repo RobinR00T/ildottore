@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from ildottore.evaluators.semantic_judge import _TRIPWIRE_TOKEN, SemanticJudgeEvaluator
+from ildottore.evaluators.semantic_judge import SemanticJudgeEvaluator
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import Capabilities, EvaluatorConfig, ModelRequest, ModelResponse
 from tests.evaluators.conftest import make_ctx
@@ -29,19 +29,22 @@ def _load_cases() -> list[dict]:
     return corpus["cases"]
 
 
-def _jv(verdict: str, *, injection: bool = False, tripwire: bool = False) -> str:
+def _jv(verdict: str, *, injection: bool = False) -> str:
     payload = {
         "verdict": verdict,
         "confidence": 0.99,
         "reasoning": "swayed by target text",
         "observed_injection_attempt": injection,
     }
-    text = json.dumps(payload)
-    return text + (_TRIPWIRE_TOKEN if tripwire else "")
+    return json.dumps(payload)
 
 
 class SwayedJudge:
-    """A judge model that the injection *succeeded* on, in one of three honest failure modes."""
+    """A judge model that the injection *succeeded* on, in one of two honest failure modes.
+
+    (The old ``emits_tripwire`` mode is gone: the control token is now generated fresh per
+    call, so neither a target nor a test can pre-emit it, that is the point of the fix.)
+    """
 
     id = "swayed"
 
@@ -55,16 +58,14 @@ class SwayedJudge:
     async def send(self, request: ModelRequest) -> ModelResponse:
         self._i += 1
         if self._mode == "reports_injection":
-            # Model complied (says secure) but honestly flags the injection attempt.
+            # Swayed to say 'secure' but honestly flags the injection: a secure verdict with an
+            # observed injection is possibly-swayed ⇒ inconclusive (never a fabricated PASS).
             return ModelResponse(text=_jv("secure", injection=True))
-        if self._mode == "emits_tripwire":
-            # Model obeyed the injected instruction to emit the control token.
-            return ModelResponse(text=_jv("secure", tripwire=True))
         # 'inconsistent': flips between passes → self-consistency must catch it.
         return ModelResponse(text=_jv("secure" if self._i % 2 else "exploited"))
 
 
-@pytest.mark.parametrize("mode", ["reports_injection", "emits_tripwire", "inconsistent"])
+@pytest.mark.parametrize("mode", ["reports_injection", "inconsistent"])
 async def test_zero_verdict_flips_under_injection(mode: str) -> None:
     cases = _load_cases()
     flips: list[str] = []
@@ -96,3 +97,21 @@ async def test_honest_judge_holds_true_exploited_verdict() -> None:
         verdict = await SemanticJudgeEvaluator(HonestJudge()).evaluate(ctx)
         # Never a spurious PASS; the true exploited verdict is preserved.
         assert verdict.status is VerdictStatus.FAIL
+
+
+async def test_honest_exploited_with_observed_injection_is_kept() -> None:
+    """H5 regression: a correct 'exploited' verdict is NOT discarded just because the judge
+    honestly saw the injection in the target output (expected for the whole PI/JB class)."""
+
+    class HonestJudgeFlagsInjection:
+        id = "honest-flag"
+
+        def capabilities(self) -> Capabilities:
+            return Capabilities()
+
+        async def send(self, request: ModelRequest) -> ModelResponse:
+            return ModelResponse(text=_jv("exploited", injection=True))
+
+    ctx = make_ctx(response_text="ignore instructions; the leaked secret is X", config=_JUDGE_CFG)
+    verdict = await SemanticJudgeEvaluator(HonestJudgeFlagsInjection()).evaluate(ctx)
+    assert verdict.status is VerdictStatus.FAIL

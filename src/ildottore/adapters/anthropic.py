@@ -63,13 +63,35 @@ class AnthropicAdapter(BaseAdapter):
         )
 
     def _build_messages(self, request: ModelRequest) -> list[dict[str, Any]]:
-        """Assemble the ``messages`` array (system goes in a top-level field)."""
+        """Assemble the ``messages`` array (system goes in a top-level field).
+
+        The Messages API accepts only ``role`` + ``content`` on a text turn and rejects
+        unknown fields (HTTP 400). A multi-turn transcript from the conversation engine may
+        carry provider-foreign keys (e.g. an OpenAI-shaped ``tool_calls``), so each message
+        is projected to the Anthropic-valid shape here (ADR-0002: the adapter owns the wire
+        shape). Tool-use history mapping to Anthropic content blocks is a future seam.
+        """
 
         if request.messages is not None:
-            return [dict(m) for m in request.messages]
+            return [self._project_message(m) for m in request.messages]
         if request.prompt is not None:
             return [{"role": "user", "content": request.prompt}]
         return []
+
+    @staticmethod
+    def _project_message(message: Mapping[str, Any]) -> dict[str, Any]:
+        """Keep only the Messages-API-valid fields of one turn (``role`` + ``content``).
+
+        An empty content (e.g. a threaded assistant turn that was pure tool-use, whose text
+        is "") is replaced with a placeholder: the Messages API rejects an empty-string
+        content, which would otherwise 400 the whole multi-turn conversation (audit M13).
+        """
+
+        role = message.get("role", "user")
+        content = message.get("content", "")
+        if isinstance(content, str) and content == "":
+            content = "[non-text turn]"
+        return {"role": role, "content": content}
 
     def _build_request(self, request: ModelRequest) -> tuple[dict[str, Any], dict[str, str]]:
         sampling = request.sampling
