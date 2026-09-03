@@ -17,7 +17,7 @@ from pathlib import Path
 
 from ildottore.cli import wiring
 from ildottore.registry import SpecNotFoundError
-from ildottore.shared.media import media_digest, render_media_part
+from ildottore.shared.media import MediaError, media_digest, render_media_part
 
 __all__ = ["RenderMediaError", "RenderedCarrier", "render_carrier_report", "render_spec_media"]
 
@@ -38,10 +38,12 @@ class RenderedCarrier:
 
 
 def render_spec_media(spec_paths: list[Path], spec_id: str, out_dir: Path) -> list[RenderedCarrier]:
-    """Render every ``attack.media`` part of ``spec_id`` into ``out_dir`` as PNG files.
+    """Render every ``attack.media`` part of ``spec_id`` into ``out_dir`` (one file per part).
 
-    Raises :class:`RenderMediaError` if the spec is not found or has no media, and lets a
-    :class:`~ildottore.shared.media.MediaError` surface for a malformed part (fail loudly).
+    Each part is written with the extension implied by its rendered MIME type (image/png -> .png,
+    audio/wav -> .wav). Raises :class:`RenderMediaError` if the spec is not found, has no media, or
+    a part cannot be rendered (a :class:`~ildottore.shared.media.MediaError` is wrapped so the CLI
+    reports one clean error).
     """
 
     registry = wiring.build_registry(spec_paths)
@@ -57,8 +59,12 @@ def render_spec_media(spec_paths: list[Path], spec_id: str, out_dir: Path) -> li
     out_dir.mkdir(parents=True, exist_ok=True)
     rendered: list[RenderedCarrier] = []
     for index, part in enumerate(media):
-        mime, raw = render_media_part(part)
-        path = out_dir / f"{spec_id}.media-{index}.png"
+        try:
+            mime, raw = render_media_part(part)
+        except MediaError as exc:
+            raise RenderMediaError(f"attack.media[{index}] is not renderable: {exc}") from exc
+        ext = mime.split("/", 1)[1] if "/" in mime else "bin"  # image/png -> png, audio/wav -> wav
+        path = out_dir / f"{spec_id}.media-{index}.{ext}"
         path.write_bytes(raw)
         rendered.append(
             RenderedCarrier(

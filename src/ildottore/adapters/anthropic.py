@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ildottore.adapters.base import AdapterProductError, BaseAdapter
-from ildottore.shared.media import render_media_part
+from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 
 __all__ = ["AnthropicAdapter"]
@@ -84,11 +84,20 @@ class AnthropicAdapter(BaseAdapter):
 
     @staticmethod
     def _multimodal_content(request: ModelRequest) -> list[dict[str, Any]]:
-        """Build the Anthropic multimodal ``content`` array (text + one image block per part)."""
+        """Build the Anthropic multimodal ``content`` array (text + one image block per part).
+
+        The Messages API accepts image input but not audio, so an audio carrier is refused here
+        (defense-in-depth: the planner already skips an ``audio`` spec on this adapter, which does
+        not declare the capability) rather than sent as a malformed image block the API would 400.
+        """
 
         content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt or ""}]
         for part in request.media or []:
             mime, raw = render_media_part(part)
+            if not mime.startswith("image/"):
+                raise MediaError(
+                    f"Anthropic Messages API does not accept {mime!r} media (image only)"
+                )
             content.append(
                 {
                     "type": "image",

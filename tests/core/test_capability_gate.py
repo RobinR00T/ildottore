@@ -128,3 +128,32 @@ async def test_mixed_specs_partial_skip(evaluators, mutators, scorer, stores) ->
     assert by_id["JB-REFUSAL-001"].status is VerdictStatus.FAIL
     assert by_id["RAG-001"].status is VerdictStatus.INCONCLUSIVE
     assert by_id["RAG-001"].attempts == []
+
+
+async def test_unrenderable_media_is_isolated_not_campaign_abort(
+    evaluators, mutators, scorer, stores
+) -> None:
+    """A malformed media carrier fails ONLY its spec (inconclusive), never aborts the batch."""
+
+    good = make_spec("JB-OK-001", category=Category.JAILBREAK)
+    bad = make_spec(
+        "MM-BAD-001", category=Category.JAILBREAK, requires=[RequiresCapability.MULTIMODAL]
+    )
+    # A schema-valid-but-unrenderable media part (no render_text / data_b64 / asset).
+    bad = bad.model_copy(
+        update={"attack": bad.attack.model_copy(update={"media": [{"kind": "image"}]})}
+    )
+    scenario = make_scenario(VULNERABLE_RESPONSE, capabilities=Capabilities(multimodal=True))
+    runner = _runner(
+        scenario, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(
+        run_id="r1",
+        target=make_target(capabilities=Capabilities(multimodal=True)),
+        specs=[good, bad],
+    )
+    by_id = {f.spec_id: f for f in result.findings}
+    assert set(by_id) == {"JB-OK-001", "MM-BAD-001"}  # both produced a finding; no abort
+    assert by_id["MM-BAD-001"].status is VerdictStatus.INCONCLUSIVE
+    assert "media_error" in by_id["MM-BAD-001"].reasoning
+    assert by_id["MM-BAD-001"].attempts == []  # nothing sent

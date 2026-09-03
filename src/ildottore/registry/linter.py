@@ -20,6 +20,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ildottore.shared import AttackSpec, EvaluatorType, VerdictStatus
+from ildottore.shared.enums import RequiresCapability
+from ildottore.shared.media import MediaError, render_media_part
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
 from .fixtures_engine import DEFAULT_STUB_TABLE, StubEvaluator, evaluate_fixture
@@ -124,6 +126,54 @@ def _check_fixtures(spec: AttackSpec, table: dict[EvaluatorType, StubEvaluator])
     return errors
 
 
+_MEDIA_KIND_CAP = {"image": RequiresCapability.MULTIMODAL, "audio": RequiresCapability.AUDIO}
+
+
+def _check_media(spec: AttackSpec) -> list[LintError]:
+    """A spec with ``attack.media`` must be renderable and declare the matching capability.
+
+    Two guards, both learned from the multimodal audit:
+    * Every media part must actually render (assets are already resolved to bytes at load time), so
+      an unrenderable-but-schema-valid part is caught here instead of crashing the whole run when
+      the runner or an adapter tries to render it.
+    * ``requires`` must include the capability that matches each part's ``kind`` (image ->
+      multimodal, audio -> audio), so the planner can gate it; otherwise the carrier would be sent
+      to a target that never declared the capability.
+    """
+
+    media = spec.attack.media
+    if not media:
+        return []
+    errors: list[LintError] = []
+    requires = {str(getattr(r, "value", r)) for r in spec.requires}
+    for index, part in enumerate(media):
+        try:
+            render_media_part(part)
+        except MediaError as exc:
+            errors.append(
+                LintError(
+                    code=LintCode.ASSET_ERROR,
+                    message=f"attack.media[{index}] is not renderable: {exc}",
+                    spec_id=spec.id,
+                )
+            )
+        kind = part.get("kind") if isinstance(part, dict) else None
+        cap = _MEDIA_KIND_CAP.get(str(kind))
+        if cap is not None and cap.value not in requires:
+            errors.append(
+                LintError(
+                    code=LintCode.SCHEMA,
+                    message=(
+                        f"attack.media[{index}] is {kind!r} but requires does not include "
+                        f"{cap.value!r}; the carrier would run against a target that never "
+                        f"declared the capability"
+                    ),
+                    spec_id=spec.id,
+                )
+            )
+    return errors
+
+
 def _check_suite_refs(pack: LoadedPack, registry: Registry) -> list[LintError]:
     errors: list[LintError] = []
     for suite in pack.suites:
@@ -160,6 +210,7 @@ def lint_packs(
     for spec in _unique_specs(packs):
         findings.extend(_check_test_only(spec))
         findings.extend(_check_framework_map(spec))
+        findings.extend(_check_media(spec))
         findings.extend(_check_fixtures(spec, table))
 
     for pack in packs:

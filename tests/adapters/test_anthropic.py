@@ -187,3 +187,18 @@ def test_multimodal_absent_keeps_plain_string_content(
 ) -> None:
     body, _ = _adapter(anthropic_allowlist)._build_request(ModelRequest(prompt="hi"))
     assert body["messages"][-1]["content"] == "hi"
+
+
+def test_audio_media_is_refused(anthropic_allowlist: EndpointAllowlist) -> None:
+    """Anthropic has no audio input: an audio carrier is refused, not sent as a malformed image."""
+
+    import base64
+
+    from ildottore.shared.media import MediaError
+
+    req = ModelRequest(
+        prompt="listen",
+        media=[{"kind": "audio", "format": "wav", "data_b64": base64.b64encode(b"RIFF").decode()}],
+    )
+    with pytest.raises(MediaError):
+        _adapter(anthropic_allowlist)._build_request(req)

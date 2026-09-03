@@ -68,3 +68,20 @@ def test_render_media_cli_errors_without_media(tmp_path: Path) -> None:
         ["render-media", "PI-DIRECT-001", "--out", str(tmp_path / "o"), "--spec-path", str(specs)],
     )
     assert res.exit_code > 2
+
+
+def test_render_media_audio_uses_wav_extension(tmp_path: Path) -> None:
+    import base64
+
+    part = {"kind": "audio", "format": "wav", "data_b64": base64.b64encode(b"RIFFfake").decode()}
+    spec = make_spec("MM-AUD-TEST-001").model_copy(
+        update={"attack": Attack(user_prompt="listen", media=[part])}
+    )
+    specs = write_spec_tree(tmp_path, [spec])
+    out = tmp_path / "out"
+    carriers = render_media_mod.render_spec_media([specs], "MM-AUD-TEST-001", out)
+    assert (
+        carriers[0].path.suffix == ".wav"
+    )  # extension derived from the audio mime, not hardcoded png
+    assert carriers[0].mime == "audio/wav"
+    assert (out / "MM-AUD-TEST-001.media-0.wav").exists()
