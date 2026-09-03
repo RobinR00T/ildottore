@@ -40,7 +40,7 @@ DEFAULT_SPEC_PATHS = [Path("specs")]
 
 app = typer.Typer(
     name="dottore",
-    help="Il Dottore — nmap-for-AI: a spec-driven security scanner for LLMs and AI apps.",
+    help="Il Dottore, nmap-for-AI: a spec-driven security scanner for LLMs and AI apps.",
     no_args_is_help=True,
     add_completion=False,
 )

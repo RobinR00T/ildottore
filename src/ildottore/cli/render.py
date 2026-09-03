@@ -101,7 +101,7 @@ def summary_table(
 ) -> Table:
     """Build the rich summary :class:`~rich.table.Table` (category x band x repro)."""
 
-    table = Table(title="Il Dottore — scan summary")
+    table = Table(title="Il Dottore: scan summary")
     table.add_column("Category", style="cyan")
     table.add_column("Band")
     table.add_column("Count", justify="right")
