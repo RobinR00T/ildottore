@@ -77,6 +77,11 @@ ildottore/
 **Users** → [`USAGE.md`](USAGE.md), [`docs/MANUAL.md`](docs/MANUAL.md),
 [`docs/FAQ.md`](docs/FAQ.md), [`examples/`](examples/), [`INSTALL.md`](INSTALL.md).
 
+**Project** → [`ROADMAP.md`](ROADMAP.md), [`NON-GOALS.md`](NON-GOALS.md),
+[`CONTRIBUTING.md`](CONTRIBUTING.md), [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md),
+[`SECURITY.md`](SECURITY.md), [`SUPPLY-CHAIN.md`](SUPPLY-CHAIN.md), [`RELEASING.md`](RELEASING.md),
+[`CHANGELOG.md`](CHANGELOG.md).
+
 **Design corpus** (read in order to understand or extend the internals):
 
 ```text
