@@ -72,7 +72,7 @@
         "driver": {
           "informationUri": "https://github.com/RobinR00T/ildottore",
           "name": "Il Dottore",
-          "organization": "Synapsys Cybersecurity S.L. (Zynap)",
+          "organization": "Dani Solis",
           "rules": [
             {
               "id": "PI-DEMO-001",
