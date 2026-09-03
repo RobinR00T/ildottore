@@ -6,10 +6,10 @@ any later pack re-declaring that id without an explicit ``extends`` is an
 (no protocol seam) injected at the composition root (u12).
 
 API (contract §3):
-    * ``list(filter=...)`` — ``category`` | ``owasp`` | ``tag`` | ``pack`` subset.
-    * ``get(id)`` — a single spec by id (``KeyError`` if unknown).
-    * ``resolve(suite_id)`` — the suite's specs in declared order.
-    * ``packs()`` — the loaded packs.
+    * ``list(filter=...)`` - ``category`` | ``owasp`` | ``tag`` | ``pack`` subset.
+    * ``get(id)`` - a single spec by id (``KeyError`` if unknown).
+    * ``resolve(suite_id)`` - the suite's specs in declared order.
+    * ``packs()`` - the loaded packs.
 """
 
 from __future__ import annotations

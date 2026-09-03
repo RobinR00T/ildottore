@@ -1,4 +1,4 @@
-"""Il Dottore evaluators (u06) — turn a target response into a :class:`Verdict`.
+"""Il Dottore evaluators (u06) - turn a target response into a :class:`Verdict`.
 
 Public surface: the twelve built-in evaluators, the hardened LLM-as-judge, the verdict
 :func:`~ildottore.evaluators.combine.combine` and the

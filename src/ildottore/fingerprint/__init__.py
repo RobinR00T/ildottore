@@ -3,11 +3,11 @@
 Standalone recognition: probe an unknown endpoint with **benign** seeded signals
 across six layers (passive/metadata, capability, behavioral, tokenizer, guardrail,
 statistical), fuse the weighted evidence and return a
-:class:`~ildottore.shared.models.ModelFingerprint` — family/version guesses with
+:class:`~ildottore.shared.models.ModelFingerprint` - family/version guesses with
 confidence, a ``capability_guess``, a guardrail profile, the evidence trail and
 honest ``spoofing_flags`` when self-report contradicts the statistical layer.
 
-Per ADR-0006 this unit **produces the fingerprint only** — it does not build a
+Per ADR-0006 this unit **produces the fingerprint only** - it does not build a
 ``TestPlan`` (that is u08's ``core/planner.py``). Consumes the target exclusively
 through the injected :class:`~ildottore.shared.protocols.TargetAdapter`.
 """

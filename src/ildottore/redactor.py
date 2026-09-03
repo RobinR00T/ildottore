@@ -2,8 +2,8 @@
 
 The **single choke point** that masks secrets, keys and PII in logs, console,
 evidence and reports. Deliberately **dependency-free** (stdlib ``re``/``hashlib``
-/``math`` only) and import-cheap so every layer — including the leaf logging
-path — can call it without a dependency cycle.
+/``math`` only) and import-cheap so every layer - including the leaf logging
+path - can call it without a dependency cycle.
 
 Design (contract §4, §6; ``docs/11 §5`` DL2):
 
@@ -63,7 +63,7 @@ class Pattern:
 
 
 def _luhn_ok(digits: str) -> bool:
-    """Luhn checksum (card numbers) — reduces valid-shape false positives."""
+    """Luhn checksum (card numbers) - reduces valid-shape false positives."""
 
     total = 0
     for i, ch in enumerate(reversed(digits)):
@@ -121,7 +121,7 @@ def _default_patterns() -> list[Pattern]:
 
 
 def _shannon_entropy(s: str) -> float:
-    """Shannon entropy (bits/char) of ``s`` — 0.0 for empty strings."""
+    """Shannon entropy (bits/char) of ``s`` - 0.0 for empty strings."""
 
     if not s:
         return 0.0

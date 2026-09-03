@@ -1,4 +1,4 @@
-"""run_sqlite.py — idempotent upserts, queries, finding id derivation."""
+"""run_sqlite.py - idempotent upserts, queries, finding id derivation."""
 
 from __future__ import annotations
 

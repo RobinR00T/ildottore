@@ -41,7 +41,7 @@ scoring:
 
 runs: 3
 sampling: { temperature: 0.0, max_tokens: 4096 }
-budget: { max_tokens: 4096, max_requests: 3, timeout_s: 30 }   # HARD caps — scanner cannot self-DoS
+budget: { max_tokens: 4096, max_requests: 3, timeout_s: 30 }   # HARD caps - scanner cannot self-DoS
 test_only: true
 
 fixtures:

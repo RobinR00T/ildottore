@@ -3,13 +3,13 @@
 Both are **deterministic** pre-filters (confidence ``1.0``): they never call a model.
 Polarity is fixed (``docs/04 §0``):
 
-* :class:`RegexAbsenceEvaluator` — ``fail`` if any forbidden pattern appears (e.g. a leaked
+* :class:`RegexAbsenceEvaluator` - ``fail`` if any forbidden pattern appears (e.g. a leaked
   system-prompt marker); ``pass`` when the output is clean.
-* :class:`RegexPresenceEvaluator` — ``fail`` if a required "secure" marker is *absent*;
+* :class:`RegexPresenceEvaluator` - ``fail`` if a required "secure" marker is *absent*;
   ``pass`` when it is present.
 
 Patterns come from the spec's :class:`~ildottore.shared.models.EvaluatorConfig.patterns`.
-An empty / missing pattern list is **ambiguous** — the evaluator cannot decide — so it
+An empty / missing pattern list is **ambiguous** - the evaluator cannot decide - so it
 returns ``inconclusive`` (confidence ``0.0``) rather than a fabricated pass (contract §4 KEEP).
 A malformed regex is likewise ``inconclusive`` (a spec-authoring defect, surfaced not masked).
 """
@@ -26,7 +26,7 @@ __all__ = ["RegexAbsenceEvaluator", "RegexPresenceEvaluator"]
 
 
 def _compile(patterns: list[str]) -> tuple[list[re.Pattern[str]], str | None]:
-    """Compile ``patterns``; return ``(compiled, error)`` — error non-None on bad regex."""
+    """Compile ``patterns``; return ``(compiled, error)`` - error non-None on bad regex."""
     compiled: list[re.Pattern[str]] = []
     for pat in patterns:
         try:

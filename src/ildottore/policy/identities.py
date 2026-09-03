@@ -1,7 +1,7 @@
-"""Auth-identity resolution (u01) — single + multi-identity to ``auth_ref`` handles.
+"""Auth-identity resolution (u01) - single + multi-identity to ``auth_ref`` handles.
 
 Resolves the identities declared on a scope target to their ``auth_ref``
-**handles** — never to secret values (S6, contract §5 step 5). A target with ≥2
+**handles** - never to secret values (S6, contract §5 step 5). A target with ≥2
 identities enables cross-tenant / authz specs (``multi_identity``,
 ``Capabilities.multi_identity``); a single-identity target makes those specs
 **skip-eligible**, never an error (contract §7, ``docs/11 §3``).

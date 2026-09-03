@@ -29,7 +29,7 @@ class LintCode(StrEnum):
 
 
 class Severity(StrEnum):
-    """Lint finding severity — an ``error`` fails the lint, a ``warning`` does not."""
+    """Lint finding severity - an ``error`` fails the lint, a ``warning`` does not."""
 
     ERROR = "error"
     WARNING = "warning"

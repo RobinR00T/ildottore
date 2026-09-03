@@ -1,4 +1,4 @@
-# scope.yaml — the AUTHORIZATION record. No run starts without covering every target here.
+# scope.yaml - the AUTHORIZATION record. No run starts without covering every target here.
 # Default-DENY: adapters refuse any host or path not listed under a target's `endpoints`.
 # Plain http is allowed ONLY to loopback (localhost, 127.0.0.1, ::1); everything else https.
 # An optional top-level `checksum:` (sha256 of the body) makes the scope tamper-evident:

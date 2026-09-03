@@ -1,7 +1,7 @@
 """Report-side run summary + model-comparison matrix (contract u11 §2, §6; ``docs/05 §4-§5``).
 
 Reporting **reads** scored findings and rolls them into the ``RunSummary`` every format
-embeds; it never computes or re-derives risk/bands/state (that is u07 — contract §8). It
+embeds; it never computes or re-derives risk/bands/state (that is u07 - contract §8). It
 also cannot import ``ildottore.scoring`` (same architecture layer, import-linter forbids
 sibling imports), so the aggregation is re-derived here from the read-only
 :class:`~ildottore.shared.models.Finding` / :class:`~ildottore.shared.models.RiskScore`
@@ -35,7 +35,7 @@ __all__ = [
 _UNKNOWN = "unknown"
 
 #: OWASP LLM Top 10 (2025) has exactly ten categories (LLM01…LLM10). The denominator for
-#: OWASP surface coverage — a run that exercises 6 distinct categories covers 60%.
+#: OWASP surface coverage - a run that exercises 6 distinct categories covers 60%.
 OWASP_LLM_TOTAL = 10
 
 #: The MITRE ATLAS tactic universe (the columns of the ATLAS matrix). Coverage is measured
@@ -95,7 +95,7 @@ class ModelComparison:
 class Coverage:
     """How much of the framework surface a run actually exercised (``docs/12`` P1).
 
-    Coverage answers "passed the scan — of *what*?". It reports the fraction of the OWASP
+    Coverage answers "passed the scan - of *what*?". It reports the fraction of the OWASP
     LLM Top 10 and the MITRE ATLAS tactic matrix that the run's specs touched, plus a
     breakdown of specs run vs. inconclusive/blocked, so a green run over a narrow suite can
     never masquerade as broad assurance. Percentages are fractions in ``[0, 1]`` (multiply by

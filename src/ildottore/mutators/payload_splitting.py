@@ -1,4 +1,4 @@
-"""``payload_splitting`` — split the payload into labeled fragments + a reassembly note.
+"""``payload_splitting`` - split the payload into labeled fragments + a reassembly note.
 
 Intent-preserving (contract §4 KEEP): the fragments concatenate back to the exact payload
 and the wrapper instructs the target to reassemble them in order, so the intent is

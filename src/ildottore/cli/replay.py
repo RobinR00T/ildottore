@@ -1,8 +1,8 @@
-"""``dottore replay <run-id>`` — re-read a run from stored evidence (contract §5.5).
+"""``dottore replay <run-id>`` - re-read a run from stored evidence (contract §5.5).
 
 A thin delegator over the u10 evidence store: reconstruct + hash-verify a run's
 attempts and report reproducibility. It performs **no** re-sending and no scoring
-logic (contract §8) — it reads the immutable, content-addressed evidence and surfaces
+logic (contract §8) - it reads the immutable, content-addressed evidence and surfaces
 what was recorded (a :class:`~ildottore.store.replay.ReplayResult`), so a finding is
 reproducible from disk alone (``docs/07`` determinism-replay).
 """
@@ -20,7 +20,7 @@ def replay(evidence_root: Path, run_id: str) -> ReplayResult:
     """Reconstruct + hash-verify the attempts stored for ``run_id`` (u10).
 
     Raises :class:`~ildottore.store.replay.TamperError` if any artifact's content no
-    longer matches its content-address — a silent pass would hide corruption.
+    longer matches its content-address - a silent pass would hide corruption.
     """
 
     return replay_run(evidence_root, run_id)

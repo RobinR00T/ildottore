@@ -1,4 +1,4 @@
-"""``nested_instruction`` — bury the payload inside an outer meta-instruction.
+"""``nested_instruction`` - bury the payload inside an outer meta-instruction.
 
 Intent-preserving (contract §4 KEEP): the outer wrapper asks the target to process an inner
 task, which is the original payload verbatim; it reassembles to the same intent.

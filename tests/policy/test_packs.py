@@ -271,7 +271,7 @@ def test_requires_policy_allowed_when_capability_enabled() -> None:
 
 
 def test_requires_policy_blocked_if_any_capability_missing() -> None:
-    # ANY missing capability blocks — partial enablement is not enough.
+    # ANY missing capability blocks - partial enablement is not enough.
     spec = make_spec(
         "DL-PII-ELICIT-001",
         category=Category.DATA_LEAKAGE,
@@ -299,7 +299,7 @@ def test_pack_enabled_capabilities_defaults_empty() -> None:
 
 
 def test_test_only_spec_still_runs() -> None:
-    # test_only gates raw rendering (u11), not execution — check should allow.
+    # test_only gates raw rendering (u11), not execution - check should allow.
     spec = make_spec("PI-DANGER-001", test_only=True)
     assert _engine(BASE_PACK).check("acme-bot", ENDPOINT, spec).allowed
 

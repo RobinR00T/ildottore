@@ -3,7 +3,7 @@
 When one suite runs against N targets, "compare models" becomes a first-class output: a
 matrix ``(spec_id, target_id) → {band, repro, conf}`` plus per-category rollups, so the tool
 earns its "benchmark + pentest" claim (``docs/05 §5``). Built from the same
-:class:`~ildottore.shared.models.Finding` list as the run summary. Pure/deterministic — cell
+:class:`~ildottore.shared.models.Finding` list as the run summary. Pure/deterministic - cell
 ordering is sorted so replay is byte-identical (contract §7).
 """
 

@@ -1,7 +1,7 @@
 """Shared builders + fakes for the u12 CLI (composition-root) tests.
 
 The CLI is the composition root, so its tests exercise the *whole* wired system
-against the deterministic :class:`MockTarget` — exactly the E2E the contract §5/§7
+against the deterministic :class:`MockTarget` - exactly the E2E the contract §5/§7
 describes. Helpers here build schema-valid specs, scope + target YAML on disk, and a
 send-counting fake adapter used to prove the scope gate performs **zero** sends.
 """

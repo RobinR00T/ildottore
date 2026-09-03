@@ -1,4 +1,4 @@
-"""Redactor tests (DL2 / S6) — masking, idempotency, structural walk, entropy."""
+"""Redactor tests (DL2 / S6) - masking, idempotency, structural walk, entropy."""
 
 from __future__ import annotations
 

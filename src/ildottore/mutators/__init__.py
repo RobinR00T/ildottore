@@ -1,7 +1,7 @@
 """Prompt Mutator (u05): deterministic, intent-preserving carrier transforms.
 
 Expands one base attack carrier into the declared variants (``docs/03 §4``). Every strategy
-is a pure function of ``(text, seed)`` — no I/O, no clock, no unseeded RNG — and satisfies
+is a pure function of ``(text, seed)`` - no I/O, no clock, no unseeded RNG - and satisfies
 the shared :class:`ildottore.shared.protocols.Mutator` protocol. Determinism is seeded by the
 ``(spec.id, mutation.name)`` string the execution engine (u08) passes as ``seed``.
 

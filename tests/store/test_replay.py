@@ -1,4 +1,4 @@
-"""replay.py — hash-verified reconstruction, tamper detection, repro recompute."""
+"""replay.py - hash-verified reconstruction, tamper detection, repro recompute."""
 
 from __future__ import annotations
 

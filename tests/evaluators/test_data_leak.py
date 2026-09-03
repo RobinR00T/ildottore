@@ -1,7 +1,7 @@
 """Unit tests for the data-leak evaluators (pii, secret_shape, verbatim, logprob, authz).
 
-Focus: the FP discipline (docs/11 §4) — format-valid hits without corroboration are
-needs-review (inconclusive), never confirmed — plus DL2 masking (no raw value survives).
+Focus: the FP discipline (docs/11 §4) - format-valid hits without corroboration are
+needs-review (inconclusive), never confirmed - plus DL2 masking (no raw value survives).
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ async def test_verbatim_overlap_detects_regurgitation() -> None:
         make_ctx(response_text=reference_text, config=cfg)
     )
     assert v.status is VerdictStatus.FAIL
-    # Only hashes are stored — never the reconstructed text.
+    # Only hashes are stored - never the reconstructed text.
     assert all(h in ref_hashes for h in v.matched)
 
 
@@ -204,7 +204,7 @@ async def test_logprob_low_nll_flags_likely_memorized() -> None:
         make_ctx(response_text="memorized text", config=cfg, logprobs=lps)
     )
     assert v.status is VerdictStatus.FAIL
-    # Statistical signal — never a deterministic 1.0.
+    # Statistical signal - never a deterministic 1.0.
     assert v.confidence < 1.0
     assert "likely memorized" in v.reasoning
 

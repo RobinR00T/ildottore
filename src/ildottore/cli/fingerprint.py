@@ -1,8 +1,8 @@
-"""``dottore fingerprint`` (``-sV``) — model + guardrail recognition (contract §5.5).
+"""``dottore fingerprint`` (``-sV``) - model + guardrail recognition (contract §5.5).
 
 A thin delegator: enforce the non-bypassable scope gate, build a target adapter and
 call the u09 :class:`~ildottore.fingerprint.engine.FingerprintEngine`. It adds no
-recognition logic (contract §8) — it wires the engine to an adapter and renders the
+recognition logic (contract §8) - it wires the engine to an adapter and renders the
 returned :class:`~ildottore.shared.models.ModelFingerprint`.
 
 Offline default: fingerprints the deterministic :class:`MockTarget` built from a

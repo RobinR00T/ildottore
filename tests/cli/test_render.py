@@ -1,7 +1,7 @@
 """Terminal rendering (contract §5.4/§6).
 
 Pure rendering functions: a live per-spec progress line and a category x band x repro
-summary. Output prints spec ids/statuses/bands/counts only — never a raw payload.
+summary. Output prints spec ids/statuses/bands/counts only - never a raw payload.
 """
 
 from __future__ import annotations
@@ -98,4 +98,4 @@ def test_progress_printer_summary_always_prints() -> None:
         printer.summary([make_finding("PI-1", band=ScanBand.HIGH)], specs)
     out = cap.get()
     assert "LLM01" in out
-    assert "Coverage — OWASP LLM Top 10:" in out
+    assert "Coverage - OWASP LLM Top 10:" in out

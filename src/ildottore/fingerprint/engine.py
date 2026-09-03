@@ -3,7 +3,7 @@
 Runs the six signal layers against an injected
 :class:`~ildottore.shared.protocols.TargetAdapter`, fuses their evidence
 (:mod:`ildottore.fingerprint.combine`) and assembles a
-:class:`~ildottore.shared.models.ModelFingerprint` — **and stops** (ADR-0006: u09
+:class:`~ildottore.shared.models.ModelFingerprint` - **and stops** (ADR-0006: u09
 produces the fingerprint only; the u08 planner consumes it. There is no
 ``fingerprint/planner.py`` and this engine never builds a ``TestPlan``).
 

@@ -32,7 +32,7 @@ def test_request_ceiling_is_hard() -> None:
     with pytest.raises(BudgetExhausted) as exc:
         ledger.debit_request()
     assert exc.value.axis == "max_requests"
-    # The refused debit did NOT commit — still exactly 3 requests.
+    # The refused debit did NOT commit - still exactly 3 requests.
     assert ledger.snapshot().requests == 3
 
 

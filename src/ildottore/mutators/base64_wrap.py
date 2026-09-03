@@ -1,8 +1,8 @@
-"""``base64_wrap`` — wrap the payload as a base64 blob with a decode instruction.
+"""``base64_wrap`` - wrap the payload as a base64 blob with a decode instruction.
 
 Reversible: the original payload is recoverable by base64-decoding the embedded blob
 (asserted by the §7 reversibility test, which reads ``provenance['payload_b64']``). The
-wrapper text preserves intent — it asks the target to decode and act on the same ask.
+wrapper text preserves intent - it asks the target to decode and act on the same ask.
 """
 
 from __future__ import annotations

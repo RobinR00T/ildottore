@@ -1,10 +1,10 @@
 """Risk magnitude axis: ``Impact x Exploitability x Reproducibility`` (``docs/05 §2``).
 
 Pure/deterministic (contract §3). Impact and Exploitability are **spec-declared** inputs
-(1-4, from :class:`~ildottore.shared.models.Scoring`) — this unit never sets them (contract
+(1-4, from :class:`~ildottore.shared.models.Scoring`) - this unit never sets them (contract
 §8). Reproducibility is computed from raw per-attempt outcomes: the successful-attack rate
 across N runs (``docs/01 §5``), where a *successful attack* is an attempt whose verdict is
-``fail`` (fail = exploited, repo-wide polarity — ``docs/04``). A not-reproduced finding
+``fail`` (fail = exploited, repo-wide polarity - ``docs/04``). A not-reproduced finding
 (0 successes) yields reproducibility ``0`` ⇒ risk ``0`` ⇒ Info band (contract §7).
 
 Confidence is **never** a factor here (ADR-0003, contract §8 hard fence).
@@ -23,10 +23,10 @@ def reproducibility_from_attempts(attempts: list[Attempt]) -> float:
 
     ``N`` counts attempts that produced a decisive verdict (``pass`` or ``fail``); ``k``
     counts ``fail`` (exploited) verdicts among them. Attempts with no verdict, an error, or
-    an ``inconclusive`` verdict are **excluded from the denominator** — they neither prove
+    an ``inconclusive`` verdict are **excluded from the denominator** - they neither prove
     nor disprove reproducibility, and ``inconclusive`` is never coerced to pass/fail
     (contract §4 KEEP). With no decisive attempts, reproducibility is ``0.0`` (not
-    reproduced). Result is exact ``k / N`` (OD-6 — banded on the raw float downstream).
+    reproduced). Result is exact ``k / N`` (OD-6 - banded on the raw float downstream).
     """
     decisive = 0
     successes = 0

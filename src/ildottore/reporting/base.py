@@ -2,14 +2,14 @@
 
 Implements the shared :class:`~ildottore.shared.protocols.Reporter` seam: one reporter per
 format, each exposing ``format: str`` and ``render(run, findings) -> bytes``, pure and
-deterministic (no I/O, no clock, no network — timestamps come from the run; contract §2, §8).
+deterministic (no I/O, no clock, no network - timestamps come from the run; contract §2, §8).
 
 :class:`BaseReporter` centralizes the two cross-cutting concerns every format shares:
 
-* the **mandatory masking pre-pass** — the run + findings are redacted exactly once via
+* the **mandatory masking pre-pass** - the run + findings are redacted exactly once via
   :class:`~ildottore.reporting.masking.MaskingContext` before ``_render`` sees them, so no
   concrete writer can reach around the redactor (contract §4 KEEP);
-* the **framework rollup** — the shared :class:`~ildottore.reporting.summary.RunSummary` is
+* the **framework rollup** - the shared :class:`~ildottore.reporting.summary.RunSummary` is
   built once from the (masked) findings + the injected ``spec_id → AttackSpec`` map.
 
 Concrete reporters implement :meth:`_render(ctx, summary) -> bytes` only. The registry maps a
@@ -38,7 +38,7 @@ __all__ = [
 class BaseReporter(ABC):
     """Shared masking + summary scaffolding for every concrete reporter."""
 
-    #: The format token (matches a :class:`ReportFormat` value) — set by subclasses.
+    #: The format token (matches a :class:`ReportFormat` value) - set by subclasses.
     format: str
 
     def __init__(

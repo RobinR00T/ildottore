@@ -3,7 +3,7 @@
 JSON is the **lossless canonical form**: the whole (masked) ``TestRun``, every ``Finding``
 and the aggregated :class:`~ildottore.reporting.summary.RunSummary`, under a stable
 ``schema_version``. Output is byte-identical across two renders of the same ``(run, findings)``
-— keys are sorted, ``ensure_ascii`` is fixed, and the trailing newline is deterministic
+- keys are sorted, ``ensure_ascii`` is fixed, and the trailing newline is deterministic
 (contract §4 KEEP). The document validates against ``schemas/report-1.0.schema.json`` (§7).
 """
 

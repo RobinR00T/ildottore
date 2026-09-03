@@ -1,4 +1,4 @@
-"""``rot13`` — reversible letter-rotation obfuscation (contract §2, §7 reversibility).
+"""``rot13`` - reversible letter-rotation obfuscation (contract §2, §7 reversibility).
 
 ROT13 is its own inverse, so the original payload is trivially reconstructable from the
 output (asserted by the reversibility test). Non-ASCII-letter codepoints pass through

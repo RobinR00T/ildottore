@@ -1,4 +1,4 @@
-"""``roleplay_wrap`` — wrap the payload in a fictional role-play framing.
+"""``roleplay_wrap`` - wrap the payload in a fictional role-play framing.
 
 Intent-preserving (contract §4 KEEP): the wrapper adds a persona/scene but the embedded
 ask is verbatim, so the same ``expected_secure_behavior`` still applies. Deterministic: the

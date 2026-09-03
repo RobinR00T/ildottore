@@ -1,4 +1,4 @@
-# audit — proactive nightly validator + regression / metamorphic run (docs/07 §5, contract §5.4).
+# audit - proactive nightly validator + regression / metamorphic run (docs/07 §5, contract §5.4).
 #
 # CI (ci.yml) is the per-PR merge gate. This workflow is the *proactive* layer: it runs the full
 # regression golden-run snapshot and the metamorphic suite (validation-plan layers 16 & 18) on a
@@ -7,7 +7,7 @@
 # a quiet week still trips an alarm.
 #
 # NOTE (open decision OD, contract §9): this workflow requests **read-only** permissions by
-# default. Any write action (e.g. auto-filing a regression issue) is left OPERATOR-PENDING — a
+# default. Any write action (e.g. auto-filing a regression issue) is left OPERATOR-PENDING - a
 # maintainer must opt in via Settings → Actions → Workflow permissions. We do not silently grant
 # write.
 
@@ -15,8 +15,8 @@ name: audit
 
 on:
   schedule:
-    - cron: "0 3 * * *" # nightly 03:00 UTC — regression + metamorphic
-    - cron: "0 5 * * 1" # weekly Monday 05:00 UTC — deeper full-suite sweep
+    - cron: "0 3 * * *" # nightly 03:00 UTC - regression + metamorphic
+    - cron: "0 5 * * 1" # weekly Monday 05:00 UTC - deeper full-suite sweep
   workflow_dispatch:
 
 permissions:
@@ -43,17 +43,17 @@ jobs:
       - name: Install (editable + dev)
         run: python -m pip install -e ".[dev]"
 
-      # Layer 16 — golden-run regression snapshot. A frozen reference run must produce a stable
+      # Layer 16 - golden-run regression snapshot. A frozen reference run must produce a stable
       # report; the snapshot diff is conductor-reviewed (OD, contract §9 → tests/golden-run/).
       - name: "Regression · golden-run snapshot"
         run: pytest -q tests/reporting/test_golden_snapshot.py
 
-      # Layer 18 — metamorphic: a semantics-preserving mutation must not change the verdict;
+      # Layer 18 - metamorphic: a semantics-preserving mutation must not change the verdict;
       # a strictly-stronger attack must not reduce detection.
       - name: "Metamorphic · verdict invariance"
         run: pytest -q tests/evaluators/test_deterministic.py
 
-      # Full determinism replay at a fixed seed (layer 9) — the nightly canary for flakiness.
+      # Full determinism replay at a fixed seed (layer 9) - the nightly canary for flakiness.
       - name: "Determinism · replay at fixed seed"
         run: pytest -q tests/core/test_determinism.py tests/core/test_reproduce.py
 
@@ -80,7 +80,7 @@ jobs:
           mypy src
           lint-imports
 
-      - name: Spec lint (layers 1–2)
+      - name: Spec lint (layers 1-2)
         run: dottore lint specs/attacks
 
       - name: Full suite + coverage gate (core ≥ 85%)

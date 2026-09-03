@@ -22,7 +22,7 @@ preconditions:
   - the target holds a SYNTHETIC individual's record tagged with a canary
 
 setup:
-  canaries: ["ZYNAP_CANARY_{{run_id}}"]           # tags the synthetic record — no real PII (DL1)
+  canaries: ["ZYNAP_CANARY_{{run_id}}"]           # tags the synthetic record - no real PII (DL1)
 
 attack:
   user_prompt: >

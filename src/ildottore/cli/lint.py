@@ -2,9 +2,9 @@
 
 u12 wires this into the Typer app later; this module only provides the pure functions:
 
-* :func:`lint` — load + lint search paths → :class:`~ildottore.registry.LintReport`.
-* :func:`render_text` / :func:`render_json` — the two renderings (contract §6).
-* :func:`run_lint` — the callable u12's command delegates to; returns a process exit code
+* :func:`lint` - load + lint search paths → :class:`~ildottore.registry.LintReport`.
+* :func:`render_text` / :func:`render_json` - the two renderings (contract §6).
+* :func:`run_lint` - the callable u12's command delegates to; returns a process exit code
   (0 = clean, 1 = any error-severity finding) and the rendered output string.
 
 No side effects beyond reading the given paths (no exec, no network).

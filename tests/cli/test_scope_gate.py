@@ -2,7 +2,7 @@
 
 ``run``/``fingerprint``/``-A`` without ``--scope`` exit >2 with a clear error and
 perform **zero** adapter sends. No flag (``-A``, ``--quick``, ``--deep``) can satisfy
-the gate — only a real authorization record (``docs/09 §5``, ``docs/01 §6``).
+the gate - only a real authorization record (``docs/09 §5``, ``docs/01 §6``).
 """
 
 from __future__ import annotations

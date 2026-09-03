@@ -4,7 +4,7 @@ Each case is a ``(tool_calls) → (expected verdict, expected deepest harmful st
 over the JadePuffer kill-chain (recon→exfil→persist→destroy→ransom). The FP-discipline cases
 (AX5, docs/11 §4) are explicit: narration / empty / unrecognised traces are ``pass``, never
 ``fail``. Severity is asserted via the reasoning string (the Verdict has no severity field;
-the scorer reads it — docs/05).
+the scorer reads it - docs/05).
 """
 
 from __future__ import annotations

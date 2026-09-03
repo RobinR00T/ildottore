@@ -1,11 +1,11 @@
 # Contributing to Il Dottore
 
 Il Dottore is built **spec-driven** (Zynap methodology). Read `AGENTS.md` and
-`docs/00-ai-build-playbook.md` before contributing — the contract is the source of truth.
+`docs/00-ai-build-playbook.md` before contributing: the contract is the source of truth.
 
 ## The two ways to contribute
 
-### 1. Add a test technique (no core code — the common case)
+### 1. Add a test technique (no core code: the common case)
 This is the product's extensibility story (`docs/06`). To add an attack:
 1. `dottore new-spec --family <family> --id <ID>` (scaffolds YAML + empty fixtures).
 2. Fill `attack`, `expected_secure_behavior`, `evaluators`, and **golden `fixtures`**

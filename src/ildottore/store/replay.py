@@ -7,7 +7,7 @@ is the SHA-256 of its content, so a tampered artifact fails verification and
 :class:`TamperError` is raised (contract §7 content-addressing).
 
 Read-only: this module never writes, and it reconstructs from the *redacted*
-on-disk form (raw values were never stored — DL2).
+on-disk form (raw values were never stored - DL2).
 """
 
 from __future__ import annotations

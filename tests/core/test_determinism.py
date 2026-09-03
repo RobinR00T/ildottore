@@ -28,7 +28,7 @@ def _runner(scenario, *, evaluators, mutators, scorer, stores):
         endpoint_for=lambda _t, _s: "https://api.example.test/v1/chat",
         n=5,
         # Fixed clock so latency_ms is byte-stable across runs (measurement noise
-        # is the only non-determinism the design tolerates — pinned here).
+        # is the only non-determinism the design tolerates - pinned here).
         now=lambda: 0.0,
         sleep=no_sleep,
     )
@@ -45,7 +45,7 @@ async def test_identical_plan_and_findings_across_two_runs(
     )
     result_a = await runner_a.run(run_id="run-x", target=make_target(), specs=specs)
 
-    # A second, independent store set (fresh tmp) — determinism must not depend on it.
+    # A second, independent store set (fresh tmp) - determinism must not depend on it.
     from ildottore.store.evidence_fs import FsEvidenceStore
     from ildottore.store.run_sqlite import SqliteRunStore
 

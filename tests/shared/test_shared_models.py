@@ -37,7 +37,7 @@ SCHEMA_PATH = REPO_ROOT / "schemas" / "attack-spec.schema.json"
 
 
 def test_version() -> None:
-    assert __version__ == "0.0.1"
+    assert __version__ == "0.1.0"
 
 
 # --- AttackSpec: load the canonical YAML and validate ------------------------------
@@ -63,7 +63,7 @@ def test_canonical_spec_round_trips_against_json_schema() -> None:
     """Primary §7 criterion, run **verbatim**: the model dump re-validates vs the schema.
 
     ``AttackSpec.model_validate(y).model_dump(mode="json")`` must satisfy
-    ``schemas/attack-spec.schema.json`` (jsonschema) — no ``exclude_none`` at the call site.
+    ``schemas/attack-spec.schema.json`` (jsonschema) - no ``exclude_none`` at the call site.
     """
     data = yaml.safe_load(CANONICAL_SPEC.read_text())
     schema = json.loads(SCHEMA_PATH.read_text())

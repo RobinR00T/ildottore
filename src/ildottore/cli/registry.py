@@ -1,8 +1,8 @@
-"""``dottore registry ls`` — list registered specs with optional filters (contract §5.5).
+"""``dottore registry ls`` - list registered specs with optional filters (contract §5.5).
 
 A thin delegator over the u02 :class:`~ildottore.registry.Registry`: load the spec
 tree, apply ``--category``/``--owasp``/``--tag``/``--suite`` filters and format a
-compact table. No spec parsing/validation logic lives here — that is u02.
+compact table. No spec parsing/validation logic lives here - that is u02.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def list_specs(
 
     ``--suite`` narrows to a suite's spec set first, then the other filters apply
     (AND semantics, matching the registry's ``list``). An unknown suite yields an
-    empty list rather than raising — ``registry ls`` is a read-only inspection.
+    empty list rather than raising - ``registry ls`` is a read-only inspection.
     """
 
     registry = wiring.build_registry(spec_paths)

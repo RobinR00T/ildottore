@@ -1,4 +1,4 @@
-"""Typer root — the ``dottore`` command surface (contract §1/§5).
+"""Typer root - the ``dottore`` command surface (contract §1/§5).
 
 The composition-root CLI. Every command is a thin wrapper that parses nmap-style
 flags (``docs/09``) into the resolved option objects the ``run``/``fingerprint``/…
@@ -40,7 +40,7 @@ DEFAULT_SPEC_PATHS = [Path("specs")]
 
 app = typer.Typer(
     name="dottore",
-    help="Il Dottore — nmap-for-AI: a spec-driven security scanner for LLMs and AI apps.",
+    help="Il Dottore, nmap-for-AI: a spec-driven security scanner for LLMs and AI apps.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -64,7 +64,7 @@ def _root(
         typer.Option("--version", callback=_version_callback, is_eager=True, help="Show version."),
     ] = False,
 ) -> None:
-    """Il Dottore root — see ``dottore <command> --help`` for each command."""
+    """Il Dottore root - see ``dottore <command> --help`` for each command."""
 
 
 def _spec_paths(spec: list[Path] | None) -> list[Path]:

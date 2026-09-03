@@ -1,4 +1,4 @@
-"""evidence_fs.py — content addressing, dedupe, immutability, atomic write."""
+"""evidence_fs.py - content addressing, dedupe, immutability, atomic write."""
 
 from __future__ import annotations
 

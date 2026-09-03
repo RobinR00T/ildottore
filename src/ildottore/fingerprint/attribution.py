@@ -1,7 +1,7 @@
 """Candidate attribution encoding for fingerprint evidence (u09, internal).
 
 ``shared.models.FingerprintEvidence`` is the stable wire shape ``{layer, signal,
-weight}`` (ADR-0006 / ``docs/10 §2``) — it has no explicit "which candidate does
+weight}`` (ADR-0006 / ``docs/10 §2``) - it has no explicit "which candidate does
 this support" field. Rather than widen the shared model (owned by u00, must-not-touch),
 u09 encodes the supported candidate as a structured, human-readable prefix in the
 ``signal`` string and decodes it in :mod:`ildottore.fingerprint.combine`.
@@ -46,7 +46,7 @@ def parse_signal(signal: str) -> Attribution:
 
     Tolerant: a signal that does not carry the ``family=`` prefix (e.g. a
     hand-written or legacy signal) decodes to an unattributed ``Attribution`` with
-    the whole string as ``detail`` — the combiner then treats it as non-scoring.
+    the whole string as ``detail`` - the combiner then treats it as non-scoring.
     """
 
     parts = signal.split(_FIELD_SEP)

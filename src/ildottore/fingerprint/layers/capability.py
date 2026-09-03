@@ -3,11 +3,11 @@
 Benign feature reflection: reads ``adapter.capabilities()`` (the target-declared
 :class:`~ildottore.shared.models.Capabilities`) and surfaces it as fingerprint
 evidence. Adapters declare capabilities statically (they do **not** probe at send
-time — that is explicitly this layer's job, per ``adapters/base`` docstring), so
+time - that is explicitly this layer's job, per ``adapters/base`` docstring), so
 this layer reflects the declaration into the fingerprint's ``capability_guess``
 via :func:`capability_guess` and emits per-capability evidence.
 
-No adversarial probing — this is a read of the declared surface plus (where the
+No adversarial probing - this is a read of the declared surface plus (where the
 pack declares capability tells) family-attributed evidence when a distinctive
 capability profile matches a signature (e.g. a 200k-context tell).
 """
@@ -32,7 +32,7 @@ def capability_guess(caps: Capabilities) -> JsonDict:
     from the ``Capabilities`` enum (ADR-0006 §4). It mirrors the ``docs/10 §2``
     example keys (``tools``/``json_mode``/``vision``/``streaming``/``seed``/
     ``max_context_tokens``). ``max_context_tokens`` is left unset here (not a
-    declared flag) — the behavioral/statistical layers can fill it when a family
+    declared flag) - the behavioral/statistical layers can fill it when a family
     is recognized; MVP-1 reports the known booleans honestly.
     """
 
@@ -72,7 +72,7 @@ class CapabilityLayer:
                 FingerprintEvidence(
                     layer=_LAYER,
                     # Declared capabilities identify a *family*, not a specific
-                    # version (a 200k-context/tools profile is family-wide) — emit
+                    # version (a 200k-context/tools profile is family-wide) - emit
                     # family-only attribution so a generic ``tools=false`` tell can
                     # never pin a version on an otherwise-blank target.
                     signal=encode_signal(entry.family, None, f"capability tells {hits}"),

@@ -1,4 +1,4 @@
-# 03 — Attack Spec format
+# 03: Attack Spec format
 
 An **attack spec** is a declarative, versioned, machine-validated test. It is the unit of
 reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
@@ -7,7 +7,7 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 
 - **Declarative, not procedural.** A spec describes *what* to attempt and *what secure
   behavior looks like*, never imperative code. New Python is only needed for a genuinely new
-  *evaluator type* or *mutator type* — not for a new test.
+  *evaluator type* or *mutator type*: not for a new test.
 - **Self-proving.** Every spec ships golden fixtures (`fixtures.vulnerable`,
   `fixtures.hardened`) so the scanner can prove the spec detects on a known-bad target and
   passes on a known-good one (see `docs/06`, `docs/07`).
@@ -37,10 +37,10 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 | `expected_secure_behavior` | ✓ | Bulleted description of a passing target (drives judge rubric). |
 | `evaluators` | ✓ | Ordered evaluator configs (`docs/04`). |
 | `evaluator_logic` | | Boolean combination, default `all_pass`. |
-| `scoring` | ✓ | `impact`, `exploitability` (1–4 each) + `confidence_threshold`. |
+| `scoring` | ✓ | `impact`, `exploitability` (1-4 each) + `confidence_threshold`. |
 | `runs` | | N for reproducibility (default from suite/global). |
 | `sampling` | | Pinned `temperature`, `top_p`, `seed`, `max_tokens`. |
-| `budget` | | Hard caps (`max_tokens`, `max_requests`, `timeout_s`) — mandatory for `availability_cost`. |
+| `budget` | | Hard caps (`max_tokens`, `max_requests`, `timeout_s`): mandatory for `availability_cost`. |
 | `test_only` | | `true` for any dangerous payload (default `false`, but linter forces `true` for flagged families). |
 | `fixtures` | ✓ | `vulnerable` and `hardened` canned responses proving the spec works. |
 | `tags` | | Free-form. |

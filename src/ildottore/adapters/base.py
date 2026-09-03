@@ -1,24 +1,24 @@
 """Shared adapter plumbing (u04, contract §5 step 1).
 
 Everything provider-agnostic lives here so each concrete adapter (``openai``,
-``anthropic``, ``rest``) stays thin (ADR-0002 — own the bytes, don't normalize):
+``anthropic``, ``rest``) stays thin (ADR-0002 - own the bytes, don't normalize):
 
-* **Allowlist gate** — every egress is checked against u01's default-deny
+* **Allowlist gate** - every egress is checked against u01's default-deny
   :class:`~ildottore.policy.EndpointAllowlist` **before** the ``httpx`` call is
   issued (contract §4 KEEP: unbypassable by subclasses). Out-of-scope host or
   off-prefix path raises :class:`EndpointNotAllowed`; **zero** requests leave.
-* **Retry / timeout / backoff** — transient statuses (429/502/503/504) and
+* **Retry / timeout / backoff** - transient statuses (429/502/503/504) and
   transport/timeout errors are retried with capped exponential backoff, then the
   attempt is *skipped* by re-raising as :class:`AdapterEnvError` (env, per
   ``AGENTS.md §2``). A malformed 200 body is a **product defect** →
   :class:`AdapterProductError` (never masked as a flake).
-* **Logprob mapping** — :func:`map_logprobs` folds a provider-neutral token list
+* **Logprob mapping** - :func:`map_logprobs` folds a provider-neutral token list
   into :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005 / OD-1).
-* **Redaction** — raw request/response ids are redacted through u01's redactor
+* **Redaction** - raw request/response ids are redacted through u01's redactor
   before they land on :class:`~ildottore.shared.models.ModelResponse.raw_ids`.
 
 Capabilities are **static per adapter+config** (declared, not probed at send
-time — contract §4 KEEP; live probing is u09 fingerprint).
+time - contract §4 KEEP; live probing is u09 fingerprint).
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ class AdapterError(Exception):
 class EndpointNotAllowed(AdapterError):
     """The requested URL is not on the scope allowlist (S3 default-deny).
 
-    Raised **before** any network call — the request never leaves the process.
+    Raised **before** any network call - the request never leaves the process.
     """
 
     def __init__(self, url: str) -> None:
@@ -80,7 +80,7 @@ class AdapterEnvError(AdapterError):
 class AdapterProductError(AdapterError):
     """A real product defect (e.g. a malformed / unparseable success response).
 
-    Per ``AGENTS.md §2`` this is a hard **FAIL** — never masked as a flake.
+    Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
 
 
@@ -137,7 +137,7 @@ def map_logprobs(
     """Map a provider-neutral token list into :class:`TokenLogprob` (ADR-0005).
 
     Each entry is ``{"token": str, "logprob": float, "top_logprobs"?: …}``.
-    Returns ``None`` (not ``[]``) when ``entries`` is ``None`` — so
+    Returns ``None`` (not ``[]``) when ``entries`` is ``None`` - so
     ``logprob_membership`` returns ``inconclusive: capability_unavailable``
     (contract §4 KEEP, ADR-0005). An empty-but-present list stays ``[]``.
     """
@@ -233,7 +233,7 @@ class BaseAdapter(ABC):
         """
 
         url = self._full_url()
-        self._check_allowlist(url)  # BEFORE httpx — unbypassable.
+        self._check_allowlist(url)  # BEFORE httpx - unbypassable.
 
         body, headers = self._build_request(request)
         owns_client = self.client is None
@@ -304,7 +304,7 @@ class BaseAdapter(ABC):
                 raise AdapterProductError(f"{self.id}: success response JSON was not an object")
             return self._parse_response(payload)
 
-        # A non-retryable 4xx (auth, bad request) is a product/config defect —
+        # A non-retryable 4xx (auth, bad request) is a product/config defect -
         # not something a retry will fix, and not to be masked as a flake.
         raise AdapterProductError(
             f"{self.id}: non-retryable HTTP {response.status_code} from {self._endpoint_path}"

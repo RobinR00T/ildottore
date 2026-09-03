@@ -3,13 +3,13 @@
 Consumes the flat :class:`~ildottore.shared.models.FingerprintEvidence` list from
 every layer and fuses it into per-field guesses (contract §5 step 6):
 
-* **family** — sum the (positive) weights of every family-attributed signal per
+* **family** - sum the (positive) weights of every family-attributed signal per
   family; the top family wins; ``confidence`` is its share of the total mass,
   softened so a lone weak signal never reads as certainty (contract §4 KEEP:
   empty/contradictory ⇒ low confidence, never a fabricated guess).
-* **version** — same, restricted to signals that also carry a version, scoped to
+* **version** - same, restricted to signals that also carry a version, scoped to
   the winning family.
-* **spoofing_flags** — if a weak ``self_report`` names a family that disagrees
+* **spoofing_flags** - if a weak ``self_report`` names a family that disagrees
   with the family the *statistical* layer most supports, raise
   ``self_report_conflicts_with_statistical``. The self-report's small weight is
   **excluded** from the family tally on conflict so it can never inflate the guess
@@ -91,7 +91,7 @@ def rank_families(evidence: list[FingerprintEvidence]) -> list[str]:
 
     Exposed for the detection gate's top-k version/family scoring (contract §7).
     The self-report is included here (spoofing exclusion is a fusion-time concern,
-    not a ranking concern) — callers wanting the spoof-safe guess use :func:`combine`.
+    not a ranking concern) - callers wanting the spoof-safe guess use :func:`combine`.
     """
 
     mass = _family_mass(evidence, exclude_self_report=False)

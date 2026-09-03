@@ -1,11 +1,11 @@
 """SQLite :class:`~ildottore.shared.protocols.RunStore` (u10).
 
-Concrete SQLite behind the u00 ``RunStore`` protocol (Postgres seam later —
+Concrete SQLite behind the u00 ``RunStore`` protocol (Postgres seam later -
 contract §9). ``save_run`` / ``save_finding`` are **idempotent upserts** keyed on
 ``(run_id)`` and ``(run_id, finding_id)`` respectively: calling twice yields a
 single row and never a duplicate-key error (contract §7).
 
-Every value written to the DB passes through the u01 redactor first — no raw
+Every value written to the DB passes through the u01 redactor first - no raw
 secret/PII/canary/logprob reaches a cell (``docs/11 §5`` DL2). All writes run in a
 transaction; the connection enforces WAL + foreign keys (``migrations.connect``).
 """

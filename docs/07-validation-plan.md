@@ -1,4 +1,4 @@
-# 07 — Validation plan (the broad self-testing phase)
+# 07: Validation plan (the broad self-testing phase)
 
 **Requirement:** a *very broad* validation of the scanner's own code and detections. A
 security scanner that produces false positives/negatives is worse than none. This plan
@@ -7,7 +7,7 @@ validates **the scanner**, not the targets.
 ## 0. Two things we validate
 
 1. **The scanner code works** (engineering correctness).
-2. **The scanner's detections are correct** — it flags truly-vulnerable behavior and passes
+2. **The scanner's detections are correct**: it flags truly-vulnerable behavior and passes
    truly-safe behavior (detection accuracy: FP/FN rates).
 
 ## 1. Test taxonomy (every layer covered)
@@ -33,7 +33,7 @@ validates **the scanner**, not the targets.
 | 17 | Self-scan | **Dogfooding** | run the scanner against the scanner's own LLM-using code (the judge) and gate on findings | CI job |
 | 18 | Metamorphic | **Metamorphic tests** | semantics-preserving mutation of a payload must not change the verdict; a strictly-stronger attack must not *reduce* detection | pytest |
 
-## 2. The golden-target harness (centerpiece — layer 6)
+## 2. The golden-target harness (centerpiece: layer 6)
 
 - `MockTarget(scenario)` returns deterministic canned responses. Scenarios are declared in
   each spec's `fixtures`:
@@ -70,7 +70,7 @@ validates **the scanner**, not the targets.
 1. `lint specs/` (schema + static). 2. import-boundary contract. 3. unit + property.
 4. adapter contract (cassettes). 5. **golden-target detection-accuracy** (hard gate).
 6. evaluator P/R gate. 7. judge-robustness gate. 8. determinism replay. 9. reporting/schema
-(SARIF/JUnit valid). 10. E2E CLI. 11. self-scan (SARIF) — fail on new high/critical.
+(SARIF/JUnit valid). 10. E2E CLI. 11. self-scan (SARIF): fail on new high/critical.
 12. coverage gate. Nightly: full regression golden-run snapshot + metamorphic suite.
 
 ## 6. Manual / exploratory validation (before each MVP sign-off)

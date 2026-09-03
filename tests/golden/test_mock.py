@@ -1,4 +1,4 @@
-"""u03 :class:`MockTarget` tests — determinism, purity, sequences, capabilities.
+"""u03 :class:`MockTarget` tests - determinism, purity, sequences, capabilities.
 
 Covers contract §7 acceptance:
 * determinism (Hypothesis, 100 repeated ``send`` byte-identical),
@@ -46,7 +46,7 @@ async def test_send_returns_canned_response() -> None:
 
 
 async def test_send_ignores_the_prompt() -> None:
-    """The mock replays the fixture verbatim — it never interprets the attack."""
+    """The mock replays the fixture verbatim - it never interprets the attack."""
 
     target = MockTarget(MockScenario(response="fixed"))
     a = await target.send(ModelRequest(prompt="attack A"))

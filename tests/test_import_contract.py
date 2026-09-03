@@ -42,9 +42,9 @@ def test_importlinter_config_present() -> None:
 
 
 def test_import_contract_holds() -> None:
-    """``lint-imports`` exits 0 — all layering contracts KEPT."""
+    """``lint-imports`` exits 0 - all layering contracts KEPT."""
 
-    result = subprocess.run(  # noqa: S603 — fixed argv, no shell, repo-local binary
+    result = subprocess.run(  # noqa: S603 - fixed argv, no shell, repo-local binary
         _lint_imports_cmd(),
         cwd=_REPO_ROOT,
         capture_output=True,

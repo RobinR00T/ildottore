@@ -1,16 +1,16 @@
-"""Hard campaign budgets — the scanner cannot self-DoS (u08, contract §5.1).
+"""Hard campaign budgets - the scanner cannot self-DoS (u08, contract §5.1).
 
 A :class:`BudgetLedger` is the single source of truth for how much a campaign may
 spend across four independent axes (``docs/08 §1``, contract §4 KEEP):
 
-* **tokens** — provider token usage summed across attempts;
-* **requests** — number of ``TargetAdapter.send`` calls;
-* **wall-clock** — elapsed seconds since the ledger opened;
-* **attempts** — mutated-attack executions, incl. adaptive/escalation retries.
+* **tokens** - provider token usage summed across attempts;
+* **requests** - number of ``TargetAdapter.send`` calls;
+* **wall-clock** - elapsed seconds since the ledger opened;
+* **attempts** - mutated-attack executions, incl. adaptive/escalation retries.
 
 Every ceiling is a **hard cap**: a debit that would cross it is refused *before*
 the spend happens and the runner converts that refusal into a stop-&-escalate halt
-with a partial ``TestRun`` marked ``budget_exhausted`` — never a silent truncation
+with a partial ``TestRun`` marked ``budget_exhausted`` - never a silent truncation
 (``AGENTS.md §2``, contract §2/§4). The ledger is a plain counter with a lock so a
 bounded-concurrency scheduler can debit from several coroutines without a race;
 ``None`` on any axis means *unbounded* on that axis.
@@ -139,7 +139,7 @@ class BudgetLedger:
 
         Checked-then-applied under the lock: if *either* the request axis or the
         token axis would breach, **nothing** is committed and the spend never
-        happens (contract §2 — no masked partial mid-attempt).
+        happens (contract §2 - no masked partial mid-attempt).
         """
 
         if tokens < 0:

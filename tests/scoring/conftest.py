@@ -1,4 +1,4 @@
-"""Shared builders for scoring tests — minimal valid shared-model instances."""
+"""Shared builders for scoring tests - minimal valid shared-model instances."""
 
 from __future__ import annotations
 

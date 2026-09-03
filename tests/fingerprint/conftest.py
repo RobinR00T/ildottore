@@ -1,4 +1,4 @@
-"""Fixtures for the u09 fingerprint suite — offline corpus replay adapter.
+"""Fixtures for the u09 fingerprint suite - offline corpus replay adapter.
 
 No network, no keys: a :class:`CorpusAdapter` replays a labeled
 :class:`~ildottore.fingerprint.signatures.CorpusCase`'s canned responses keyed by

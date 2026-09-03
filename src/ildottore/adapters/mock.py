@@ -3,7 +3,7 @@
 :class:`MockTarget` is a **pure** :class:`~ildottore.shared.protocols.TargetAdapter`:
 given a fixture's canned response(s) it returns the declared
 :class:`~ildottore.shared.models.ModelResponse` with **zero I/O and no clock/RNG**
-— identical bytes on every call (contract §4 KEEP, §7 determinism). It is the
+- identical bytes on every call (contract §4 KEEP, §7 determinism). It is the
 scanner-side stand-in that makes every attack spec's fixtures replayable in CI so
 the golden harness (:mod:`ildottore.testing.golden`) can prove detection accuracy
 offline.
@@ -19,7 +19,7 @@ Design constraints (contract §4/§8, ``docs/07 §2``):
   declared capabilities so a spec needing an absent capability yields
   ``inconclusive: capability_unavailable`` downstream, never a fabricated pass.
 * **Sequence replay.** A multi-response fixture (N-run repro) replays a declared
-  sequence, cycling deterministically by attempt index — no drift.
+  sequence, cycling deterministically by attempt index - no drift.
 
 The concrete provider adapters (openai/anthropic/rest) are u04 and are **not**
 imported here; ``MockTarget`` implements the protocol structurally.
@@ -46,11 +46,11 @@ __all__ = [
 ]
 
 #: The canned answer a *bare* mock returns when no fixture scenario is selected. It
-#: is deliberately generic — it matches neither a spec's ``vulnerable`` nor its
+#: is deliberately generic - it matches neither a spec's ``vulnerable`` nor its
 #: ``hardened`` fixture, so every evaluator abstains and the run stays
 #: ``inconclusive`` (the current default behavior, made explicit). Selecting the
 #: ``vulnerable`` / ``hardened`` scenario replays the spec's own fixtures instead.
-BARE_RESPONSE = "(mock target: no scenario configured — bare canned response)"
+BARE_RESPONSE = "(mock target: no scenario configured - bare canned response)"
 
 
 class MockScenario(BaseModel):
@@ -94,7 +94,7 @@ class MockScenario(BaseModel):
         ``FixtureCase`` carries no logprobs/capabilities (they are not in the
         author-facing schema), so the harness supplies them out-of-band when a
         spec needs them (e.g. ``logprob_membership``). Everything else is copied
-        verbatim — the mock never re-interprets the fixture (contract §4 KEEP).
+        verbatim - the mock never re-interprets the fixture (contract §4 KEEP).
         """
 
         return cls(
@@ -110,7 +110,7 @@ class MockScenario(BaseModel):
         """A *bare* scenario: one generic canned response, no fixture, no tool calls.
 
         Neither fixture pattern matches :data:`BARE_RESPONSE`, so a run against a bare
-        mock yields ``inconclusive`` for every spec — the honest default when no
+        mock yields ``inconclusive`` for every spec - the honest default when no
         scenario is chosen (no fabricated pass, no fabricated fail).
         """
 
@@ -157,7 +157,7 @@ class MockTarget:
         self._scenario = scenario
         self.id = id
         # Deterministic internal cursor for sequence replay when the caller does
-        # not pin an explicit attempt index. Not a clock/RNG — a plain counter.
+        # not pin an explicit attempt index. Not a clock/RNG - a plain counter.
         self._cursor = 0
 
     @property
@@ -180,7 +180,7 @@ class MockTarget:
         """Resolve the attempt index: explicit ``mock_attempt`` metadata, else cursor.
 
         Pinning the index makes :meth:`send` a pure function of ``(scenario, index)``
-        — the property test relies on this to prove byte-identity. Without a pin the
+        - the property test relies on this to prove byte-identity. Without a pin the
         cursor advances so repeated sends walk a declared sequence in order.
         """
 

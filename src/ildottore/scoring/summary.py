@@ -49,7 +49,7 @@ class RunSummary:
 def _distribution(values: list[float]) -> dict[str, float]:
     """Summary stats for a list of ``[0,1]`` rates: min/max/mean/count.
 
-    Empty input yields zeros — an honest "no data" rather than a divide-by-zero or a
+    Empty input yields zeros - an honest "no data" rather than a divide-by-zero or a
     misleading default (``docs/05 §4``).
     """
     if not values:

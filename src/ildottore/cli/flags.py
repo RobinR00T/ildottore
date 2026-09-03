@@ -1,13 +1,13 @@
 """nmap-style flag primitives: the ``-T`` timing template + suite-alias map (contract §5.1).
 
-``core`` never sees these — they are CLI-local value objects the commands resolve
+``core`` never sees these - they are CLI-local value objects the commands resolve
 *before* handing concrete numbers to the engine. Two golden-tested tables live here
 (contract §7):
 
-* :data:`TIMING_TEMPLATES` — ``-T0..-T5`` → ``{rate_rps, concurrency, timeout_s}``.
+* :data:`TIMING_TEMPLATES` - ``-T0..-T5`` → ``{rate_rps, concurrency, timeout_s}``.
   Explicit ``--rate/--concurrency/--timeout`` override the template (see
   :func:`resolve_timing`).
-* :data:`SUITE_ALIASES` — the friendly ``owasp:llm`` ⇄ registered suite id
+* :data:`SUITE_ALIASES` - the friendly ``owasp:llm`` ⇄ registered suite id
   (``owasp-llm-top10``) mapping from ``docs/09 §2``.
 
 Everything here is a pure function of its inputs (no I/O), so the CLI-map and
@@ -50,7 +50,7 @@ TIMING_TEMPLATES: dict[int, Timing] = {
     5: Timing(rate_rps=20.0, concurrency=16, timeout_s=20.0),
 }
 
-#: Default timing template when ``-T`` is not given (``docs/09 §2`` — "default T3").
+#: Default timing template when ``-T`` is not given (``docs/09 §2`` - "default T3").
 DEFAULT_TEMPLATE = 3
 
 #: Friendly suite aliases → the id the registry stores (``docs/09 §2``).

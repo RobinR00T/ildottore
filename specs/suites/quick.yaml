@@ -6,13 +6,13 @@ id: quick
 suite_version: "2025.1"
 name: T0 "Quick" battery (nmap-default equivalent)
 description: >
-  The T0 "Quick" triage suite (docs/08 §2-§3): the fast, single-turn, cheap default battery —
+  The T0 "Quick" triage suite (docs/08 §2-§3): the fast, single-turn, cheap default battery -
   "you have 10 minutes, tell me if this thing is obviously broken". Distinct file (contract §9
   DECIDE → distinct file, not an alias) but references the SAME 18 ids as owasp-llm-top10 so the
   two stay in lock-step. DL-PII-ELICIT-001 is present but off unless the policy pack enables
   layer-B PII elicitation (OD-11 / docs/11 §5).
 
-default_runs: 3               # lighter than the OWASP baseline — this is triage
+default_runs: 3               # lighter than the OWASP baseline - this is triage
 # MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, top_p: 1.0, seed: 42 }; fail_on: high
 tags: [owasp, mitre-atlas, nist-ai-rmf]
 

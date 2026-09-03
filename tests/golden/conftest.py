@@ -1,7 +1,7 @@
 """Shared fixtures for the u03 golden-harness suite.
 
 Provides a trivial in-test stub evaluator (the real evaluator pipeline is u06,
-injected via the :class:`~ildottore.shared.protocols.Evaluator` protocol — contract
+injected via the :class:`~ildottore.shared.protocols.Evaluator` protocol - contract
 §3/§8) and factories for building synthetic :class:`AttackSpec` fixtures. No
 network, no clock, no RNG anywhere.
 """
@@ -34,7 +34,7 @@ class StubEvaluator:
     """A deterministic stand-in for the real evaluator (u06).
 
     Structurally satisfies :class:`~ildottore.shared.protocols.Evaluator`. It flags
-    ``fail`` iff :data:`LEAK_MARKER` appears in the response text, else ``pass`` —
+    ``fail`` iff :data:`LEAK_MARKER` appears in the response text, else ``pass`` -
     just enough signal to prove the harness plumbs verdicts through correctly.
     """
 
@@ -52,7 +52,7 @@ class StubEvaluator:
 
 
 class InvertedStubEvaluator:
-    """A broken evaluator that flips both verdicts — used to force mismatches."""
+    """A broken evaluator that flips both verdicts - used to force mismatches."""
 
     type = "inverted"
 

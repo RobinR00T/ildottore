@@ -6,12 +6,12 @@ one prepared request ``n`` times through :func:`~ildottore.core.execute.execute_
 (pinned sampling, retry/timeout, per-send budget debit), pinning each send's
 ``mock_attempt`` index so a deterministic target (u03) walks a declared response
 sequence in order. It returns the raw per-attempt list so a reader can recompute
-``repro`` — nothing is summarized away.
+``repro`` - nothing is summarized away.
 
 :func:`repro_from_verdicts` computes ``repro = successful_attacks / N`` where a
 "successful attack" is a ``fail`` verdict (polarity is fixed repo-wide: ``fail`` =
-the target was exploited — ``docs/04 §0``). ``inconclusive`` attempts are counted in
-the denominator ``N`` (they were run) but never as successes — an env-skipped attempt
+the target was exploited - ``docs/04 §0``). ``inconclusive`` attempts are counted in
+the denominator ``N`` (they were run) but never as successes - an env-skipped attempt
 is not evidence of resistance *or* exploitation.
 
 Deterministic: same target + same seed + same N ⇒ identical attempts and identical
@@ -35,7 +35,7 @@ __all__ = [
     "reproduce",
 ]
 
-#: Default reproducibility runs (``docs/01 §5``, contract §9 — human-confirmable).
+#: Default reproducibility runs (``docs/01 §5``, contract §9 - human-confirmable).
 DEFAULT_N = 5
 
 #: Request metadata key the deterministic mock (u03) reads to pin its sequence index.
@@ -91,7 +91,7 @@ async def reproduce(
     ``completed`` (optional) is a resume set of attempt ids already persisted; a run
     whose id is in the set is **skipped** (not re-sent) so resume never duplicates a
     completed attempt (contract §7 resume). Skipped runs are simply absent from the
-    returned list — the caller merges them with the persisted attempts.
+    returned list - the caller merges them with the persisted attempts.
     """
 
     if n < 1:
@@ -126,7 +126,7 @@ def repro_from_verdicts(verdicts: list[Verdict], n: int) -> float:
 
     A success is a ``fail`` verdict (target exploited). ``inconclusive`` counts in
     the denominator (the attempt was run) but never as a success. ``n`` is the
-    intended run count, not ``len(verdicts)`` — an attempt that could not be
+    intended run count, not ``len(verdicts)`` - an attempt that could not be
     evaluated still lowers reproducibility rather than being silently excluded.
     """
 

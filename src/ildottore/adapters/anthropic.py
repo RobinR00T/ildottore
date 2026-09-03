@@ -1,14 +1,14 @@
 """Anthropic Messages API adapter over ``httpx`` (u04, contract §5 step 3).
 
 Thin by design (ADR-0002). The Messages API places the system prompt in a
-top-level ``system`` field (not a message role) — we honor that placement
+top-level ``system`` field (not a message role) - we honor that placement
 verbatim and preserve the provider ``stop_reason`` vocabulary
 (``end_turn``/``max_tokens``/``stop_sequence``/``tool_use``) rather than
 translating it.
 
 **OD-1 (ADR-0005):** the public Messages API exposes no usable per-token
 logprobs in MVP-1, so this adapter declares ``Capabilities.logprobs = False`` and
-returns ``ModelResponse.logprobs = None`` — which drives
+returns ``ModelResponse.logprobs = None`` - which drives
 ``logprob_membership`` to ``inconclusive: capability_unavailable``. Revisit for
 MVP-2 if Anthropic ships per-token logprobs.
 """

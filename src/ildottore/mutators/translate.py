@@ -1,4 +1,4 @@
-"""``translate`` — offline, deterministic phrase-map translation (OD-8, contract §9).
+"""``translate`` - offline, deterministic phrase-map translation (OD-8, contract §9).
 
 **Decision (OD-8, index ledger):** ship a small **static offline phrase-map** subset for
 MVP-1 across a fixed language set ``{es, fr, de, zh}``; a pluggable dictionary provider is

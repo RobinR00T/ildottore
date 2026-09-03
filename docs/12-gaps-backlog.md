@@ -1,4 +1,4 @@
-# 12 — Gaps & backlog (prioritized coverage roadmap)
+# 12: Gaps & backlog (prioritized coverage roadmap)
 
 Honest gap analysis of Il Dottore's LLM-security coverage, prioritized. This is the living
 "what's missing" list. **Legend:** P0 = needed for a credible LLM security scanner ·
@@ -23,7 +23,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 > argument-smuggling** detection (`tool_call.forbidden_args` + `FUNCALL-ARGSMUGGLE-001`).
 > Battery is now 53 specs / 11 suites.
 
-## P0 — in scope for MVP‑1 (capabilities are hard to retrofit later)
+## P0: in scope for MVP‑1 (capabilities are hard to retrofit later)
 
 | Gap | Status | Where | Target |
 |-----|--------|-------|--------|
@@ -33,7 +33,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 | **Multi-identity / cross-tenant harness** (authz_leak evaluator, ≥2 identities in scope) | ✅ | `docs/00` (Phase A), `docs/01 §6`, `docs/11 §3` | MVP‑1 |
 | **Multimodal** (image/audio/document injection; visual/typographic PI) | 🟡 **image injection built** (2026-09-03) | `shared/media.py` | visual prompt injection via text rendered into an image: a direct override (`MM-IMG-PROMPTINJECT-001`) and an indirect injection embedded in a document image (`MM-IMG-DOC-INJECT-001`, the multimodal analogue of PI-INDIRECT-RAG), in the `multimodal` suite. `attack.media` carries a declarative part; `shared/media.py` renders it to a byte-stable PNG with a dependency-free stdlib encoder + 5x7 font (reproducible, no Pillow); the openai/anthropic adapters emit the provider image block. Gated on `capabilities.multimodal`. **Audio built** (2026-09-03): `MM-AUD-PROMPTINJECT-001` carries a spoken override in a pinned WAV (`assets/`, referenced by `asset`, resolved to bytes at load time behind a path-traversal guard; gated on the new `audio` capability, OpenAI `input_audio` block). Carrier bytes are elided from evidence (kept: `asset` + `media_sha256`), so a 100 KB clip neither bloats the record nor trips the fail-closed redaction guard. Non-image **document** injection (PDF/HTML text) is already covered by the retrieval path (`PI-INDIRECT-RAG-001`) |
 
-## P1 — MVP‑2
+## P1: MVP‑2
 
 | Gap | Status | Note |
 |-----|--------|------|
@@ -50,7 +50,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 | **Finding dedupe across mutations** (1 vuln × N variants → 1 finding w/ variants) | ✅ **structural** | the runner already emits **one `Finding` per (spec, target)** and folds every mutation variant into that finding's `attempts` (`core/runner._run_spec`), so a mutation sweep never inflates the finding count. Cross-*spec* semantic dedup (merging different specs judged to be the same underlying vuln) stays deferred on purpose: it is a lossy judgment call that can hide real signal, so it is left to the human operator |
 | **Agentic-extortion / JadePuffer-class susceptibility** (`docs/13`) | ✅ **built (7 specs + suite, golden-gated)** | pack complete + FP-disciplined (narration≠fail); `kill_chain_progression` L3 evaluator **built** (MVP-2 w1, wired into AG-EXTORT-CHAIN + AG-DESTRUCTIVE-DBDROP); policy-gated OFF |
 
-## P2 — later
+## P2: later
 
 | Gap | Note |
 |-----|------|

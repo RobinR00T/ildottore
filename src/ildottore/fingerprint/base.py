@@ -3,14 +3,14 @@
 Every signal layer (``metadata``, ``capability``, ``behavioral``, ``tokenizer``,
 ``guardrail``, ``statistical``) implements the local :class:`FingerprintLayer`
 protocol: a stable ``layer`` name and an ``async probe`` that consumes a
-:class:`~ildottore.shared.protocols.TargetAdapter` (via the injected instance —
+:class:`~ildottore.shared.protocols.TargetAdapter` (via the injected instance -
 never a provider SDK, contract §3/§8) plus a :class:`ProbeContext` and returns a
 list of :class:`~ildottore.shared.models.FingerprintEvidence`.
 
 The layer contract is deliberately narrow so the set is *pluggable* (contract §1:
 "registered by name for pluggable extension"): a new layer is a new object with a
 unique ``layer`` name; the engine iterates the registry it is handed. Layers carry
-**no fusion logic** — they only emit weighted evidence; :mod:`ildottore.fingerprint.combine`
+**no fusion logic** - they only emit weighted evidence; :mod:`ildottore.fingerprint.combine`
 fuses them (separation of concerns, ``AGENTS.md §3``).
 
 ``FingerprintEvidence`` (``shared.models``) is intentionally distinct from the
@@ -69,7 +69,7 @@ class FingerprintLayer(Protocol):
 
     Implementations are pure w.r.t. their inputs: given the same adapter responses
     and the same context they emit byte-identical evidence. They perform **benign**
-    probes only (contract §8) — no jailbreak / ``test_only`` payloads.
+    probes only (contract §8) - no jailbreak / ``test_only`` payloads.
     """
 
     layer: str

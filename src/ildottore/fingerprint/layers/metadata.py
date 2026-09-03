@@ -7,7 +7,7 @@ field names and HTTP-ish ids. It matches these textual fragments against each
 signature entry's ``signals["metadata"]`` list and emits weighted
 :class:`~ildottore.shared.models.FingerprintEvidence` per matching candidate.
 
-No model reasoning is exercised — a target that spoofs its ``model`` echo is caught
+No model reasoning is exercised - a target that spoofs its ``model`` echo is caught
 later by the statistical layer, and the contradiction becomes a ``spoofing_flag``
 in :mod:`ildottore.fingerprint.combine` (contract §2: self-report is weak).
 """
@@ -34,8 +34,8 @@ _LAYER = "metadata"
 def envelope_signal(response: ModelResponse) -> str:
     """Flatten a response envelope into one lowercase searchable string.
 
-    Concatenates the passive tells — redacted ids, usage field names, finish
-    reason and tool-call schema keys — so a signature matcher can look for e.g.
+    Concatenates the passive tells - redacted ids, usage field names, finish
+    reason and tool-call schema keys - so a signature matcher can look for e.g.
     ``system_fingerprint`` (OpenAI) vs ``stop_reason`` (Anthropic) without the
     layer hardcoding any single provider (``docs/10 §1``).
     """

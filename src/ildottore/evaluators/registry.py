@@ -2,9 +2,9 @@
 
 Mirrors the L3 plugin pattern (``docs/06 §3``): built-in evaluators register by their ``type``
 string, third-party evaluators are discovered from the ``dottore.evaluators`` entry-point group
-at load. Every candidate — built-in or plugin — is validated against
+at load. Every candidate - built-in or plugin - is validated against
 :class:`ildottore.shared.protocols.Evaluator` at registration; a class that does not satisfy
-the protocol raises :class:`EvaluatorProtocolError` with a clear message (never a silent skip —
+the protocol raises :class:`EvaluatorProtocolError` with a clear message (never a silent skip -
 contract §7 registry test).
 
 Discovery executes no attack and makes no network call: it imports the plugin class and
@@ -121,7 +121,7 @@ class EvaluatorRegistry:
         """Load ``dottore.evaluators`` entry points, validate, and register each.
 
         Returns the list of newly registered plugin types. A plugin that fails protocol
-        validation raises :class:`EvaluatorProtocolError` (never a silent skip — contract §7).
+        validation raises :class:`EvaluatorProtocolError` (never a silent skip - contract §7).
         """
         loaded: list[str] = []
         for ep in entry_points(group=ENTRY_POINT_GROUP):

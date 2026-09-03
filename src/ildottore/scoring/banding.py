@@ -1,7 +1,7 @@
 """Severity banding: ``RiskScore`` float → :class:`ScanBand` → SARIF level.
 
 Bands and cutoffs per ``docs/05 §3`` (contract §4 KEEP). Cutoffs are **policy-tunable**
-(a policy pack may override them) — not hardcoded magic. The default cutoffs are::
+(a policy pack may override them) - not hardcoded magic. The default cutoffs are::
 
     Critical >= 12  (error)
     High      8-11  (error)
@@ -10,7 +10,7 @@ Bands and cutoffs per ``docs/05 §3`` (contract §4 KEEP). Cutoffs are **policy-
     Info      0     (note)
 
 Banding runs on the **raw float** ``risk`` before any rounding (OD-6): a score of ``11.9``
-bands *High*, not *Critical* by rounding up. This module is pure and deterministic — a
+bands *High*, not *Critical* by rounding up. This module is pure and deterministic - a
 function of its inputs only (contract §3), never touching confidence (ADR-0003).
 """
 
@@ -23,7 +23,7 @@ from ildottore.shared.enums import ScanBand
 __all__ = ["BandPolicy", "band_for_risk", "sarif_level_for_band"]
 
 
-# SARIF level per band (``docs/05 §3``). Stable — not policy-tunable.
+# SARIF level per band (``docs/05 §3``). Stable - not policy-tunable.
 _SARIF_LEVEL: dict[ScanBand, str] = {
     ScanBand.CRITICAL: "error",
     ScanBand.HIGH: "error",
@@ -40,7 +40,7 @@ class BandPolicy:
     A risk ``r`` lands in the highest band whose cutoff it meets: ``r >= critical`` →
     Critical, else ``r >= high`` → High, and so on. Anything strictly below ``low`` (i.e.
     a not-reproduced ``0``) is Info. Defaults mirror ``docs/05 §3``; a policy pack may pass
-    its own instance to :func:`band_for_risk` (contract §4 KEEP — tunable, not magic).
+    its own instance to :func:`band_for_risk` (contract §4 KEEP - tunable, not magic).
     """
 
     critical: float = 12.0
@@ -69,7 +69,7 @@ _DEFAULT_POLICY = BandPolicy()
 def band_for_risk(risk: float, policy: BandPolicy | None = None) -> ScanBand:
     """Map a raw ``risk`` float in ``[0, 16]`` to its severity band.
 
-    Bands on the raw float (OD-6) — no rounding. Any risk below the ``low`` cutoff
+    Bands on the raw float (OD-6) - no rounding. Any risk below the ``low`` cutoff
     (canonically a not-reproduced ``0.0``) is :attr:`ScanBand.INFO`.
     """
     active = policy or _DEFAULT_POLICY

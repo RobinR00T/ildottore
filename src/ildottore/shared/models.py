@@ -2,7 +2,7 @@
 
 These mirror ``schemas/attack-spec.schema.json`` (author-facing spec format) and the
 runtime wire/persistence shapes in ``docs/01 §3``, ``docs/04-05``, ``docs/10`` and
-ADR-0005/0006. Models are frozen and JSON-serializable; they carry **no behavior** —
+ADR-0005/0006. Models are frozen and JSON-serializable; they carry **no behavior** -
 no scoring math (u07), no evaluation (u06), no I/O. ``extra="forbid"`` mirrors the
 schema ``additionalProperties: false`` (contract §4 KEEP).
 """
@@ -54,9 +54,9 @@ class _SchemaMirror(_Frozen):
     **no null union** (e.g. ``test_only: boolean``, ``attack.carrier: string``). A plain
     Pydantic dump emits ``null`` for every unset optional, which then fails validation
     against that schema ("None is not of type ..."). These models therefore default
-    ``exclude_none=True`` on dump so that the acceptance criterion — running
+    ``exclude_none=True`` on dump so that the acceptance criterion - running
     ``AttackSpec.model_validate(y).model_dump(mode="json")`` **verbatim** (no explicit
-    ``exclude_none``) — produces schema-valid, byte-stable JSON. Runtime wire models keep
+    ``exclude_none``) - produces schema-valid, byte-stable JSON. Runtime wire models keep
     plain ``_Frozen`` (null-preserving) because ADR-0005 mandates ``logprobs: null`` be
     present when absent.
     """
@@ -71,12 +71,12 @@ class _SchemaMirror(_Frozen):
 
 
 # =============================================================================
-# AttackSpec + nested models — 1:1 with schemas/attack-spec.schema.json
+# AttackSpec + nested models - 1:1 with schemas/attack-spec.schema.json
 # =============================================================================
 
 
 class MitreAtlas(_SchemaMirror):
-    """``mitre_atlas`` — required ``tactic``, optional ``technique``."""
+    """``mitre_atlas`` - required ``tactic``, optional ``technique``."""
 
     tactic: str
     technique: str | None = None
@@ -115,7 +115,7 @@ class Attack(_SchemaMirror):
 
 
 class EvaluatorConfig(_SchemaMirror):
-    """One entry in ``evaluators`` — required ``type`` (contract naming)."""
+    """One entry in ``evaluators`` - required ``type`` (contract naming)."""
 
     type: EvaluatorType
     patterns: list[str] | None = None
@@ -126,7 +126,7 @@ class EvaluatorConfig(_SchemaMirror):
 
 
 class Scoring(_SchemaMirror):
-    """``scoring`` — author-supplied impact/exploitability + confidence threshold."""
+    """``scoring`` - author-supplied impact/exploitability + confidence threshold."""
 
     impact: Score1to4
     exploitability: Score1to4
@@ -143,7 +143,7 @@ class Sampling(_SchemaMirror):
 
 
 class Budget(_SchemaMirror):
-    """Hard caps (``budget``) — mandatory for ``availability_cost`` specs."""
+    """Hard caps (``budget``) - mandatory for ``availability_cost`` specs."""
 
     max_tokens: int | None = None
     max_requests: int | None = None
@@ -170,7 +170,7 @@ class FixtureCase(_SchemaMirror):
 
 
 class Fixtures(_SchemaMirror):
-    """``fixtures`` — self-proving canned responses (``docs/03 §1``).
+    """``fixtures`` - self-proving canned responses (``docs/03 §1``).
 
     ``vulnerable.expect_verdict`` is literally ``fail``; ``hardened`` is ``pass``.
     """
@@ -186,7 +186,7 @@ class Fixtures(_SchemaMirror):
 
 
 class AttackSpec(_SchemaMirror):
-    """A declarative, versioned attack test — mirrors the JSON Schema exactly."""
+    """A declarative, versioned attack test - mirrors the JSON Schema exactly."""
 
     id: str = Field(pattern=_ID_PATTERN)
     spec_version: str = Field(pattern=_SPEC_VERSION_PATTERN)
@@ -217,7 +217,7 @@ class AttackSpec(_SchemaMirror):
 
 
 # =============================================================================
-# Runtime wire shapes — docs/01 §3, docs/04, ADR-0005
+# Runtime wire shapes - docs/01 §3, docs/04, ADR-0005
 # =============================================================================
 
 
@@ -245,7 +245,7 @@ class Target(_Frozen):
     parse of the file. ``auth_ref`` is a reference (e.g. ``env://NAME``), never an
     inline secret (S6); it is resolved to a value only at send time, in ``cli``.
     All five stay ``None`` for a mock/offline target (contract §4 KEEP: additive,
-    optional fields — no change to existing mock behavior).
+    optional fields - no change to existing mock behavior).
     """
 
     id: str
@@ -433,7 +433,7 @@ class TestRun(_Frozen):
 
 
 # =============================================================================
-# Fingerprint + TestPlan — ADR-0006, docs/10
+# Fingerprint + TestPlan - ADR-0006, docs/10
 # =============================================================================
 
 
@@ -480,7 +480,7 @@ class PlanSelection(_Frozen):
 
 
 class PlanSkip(_Frozen):
-    """A skipped spec + reason (nothing is silently dropped — ``docs/10 §3``)."""
+    """A skipped spec + reason (nothing is silently dropped - ``docs/10 §3``)."""
 
     spec_id: str
     reason: str

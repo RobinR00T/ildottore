@@ -56,7 +56,7 @@ async def test_basic_message(anthropic_allowlist: EndpointAllowlist) -> None:
 async def test_logprobs_none_even_with_capability_forced(
     anthropic_allowlist: EndpointAllowlist,
 ) -> None:
-    """logprobs stays None regardless — the Messages body carries none (OD-1)."""
+    """logprobs stays None regardless - the Messages body carries none (OD-1)."""
 
     respx.post(_URL).mock(return_value=_mock("messages_basic"))
     resp = await _adapter(anthropic_allowlist).send(ModelRequest(prompt="hi"))

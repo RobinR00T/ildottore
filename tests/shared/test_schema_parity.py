@@ -129,14 +129,14 @@ def test_field_names_match_schema(name: str) -> None:
     schema_props = set(node.get("properties", {}).keys())
     model_fields = set(model.model_fields.keys())
     assert schema_props == model_fields, (
-        f"{name}: drift — schema-only={schema_props - model_fields} "
+        f"{name}: drift - schema-only={schema_props - model_fields} "
         f"model-only={model_fields - schema_props}"
     )
 
 
 # --- enum parity: model enum values == schema enum values --------------------------
 
-# (schema enum location, StrEnum) — every enumerated field.
+# (schema enum location, StrEnum) - every enumerated field.
 _ENUM_PAIRS: dict[str, tuple[list[str], type[Any]]] = {
     "category": (SCHEMA["properties"]["category"]["enum"], Category),
     "severity": (SCHEMA["properties"]["severity"]["enum"], Severity),
@@ -203,7 +203,7 @@ def test_model_dump_json_excludes_none() -> None:
     data = yaml.safe_load((VALID_DIR / "JB-MULTITURN-001.yaml").read_text())
     spec = AttackSpec.model_validate(data)
     payload = json.loads(spec.model_dump_json())
-    # ``budget`` is unset on this fixture — must be absent, not ``null``.
+    # ``budget`` is unset on this fixture - must be absent, not ``null``.
     assert "budget" not in payload
     # and the JSON string round-trips through the schema
     VALIDATOR.validate(payload)
@@ -229,6 +229,6 @@ def test_required_fields_match_schema_root() -> None:
     schema_required = set(SCHEMA["required"])
     model_required = {n for n, f in AttackSpec.model_fields.items() if f.is_required()}
     assert schema_required == model_required, (
-        f"required drift — schema-only={schema_required - model_required} "
+        f"required drift - schema-only={schema_required - model_required} "
         f"model-only={model_required - schema_required}"
     )

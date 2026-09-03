@@ -1,4 +1,4 @@
-"""Campaign orchestrator — the whole middle tier wired into a run (u08, §5.6).
+"""Campaign orchestrator - the whole middle tier wired into a run (u08, §5.6).
 
 :class:`CampaignRunner` drives ``docs/01 §4`` for a whole campaign against one
 target:
@@ -9,7 +9,7 @@ target:
 Everything downstream is injected through the shared **protocols** (``docs/01 §3``,
 contract §3/§8): the :class:`~ildottore.shared.protocols.TargetAdapter`, the
 evaluator/mutator/scorer/store seams and a small structural :class:`PolicyGate`.
-``core`` imports **no** concrete adapter/evaluator/scorer/store — composition is u12.
+``core`` imports **no** concrete adapter/evaluator/scorer/store - composition is u12.
 
 Discipline the runner enforces (contract §2/§4 KEEP):
 
@@ -19,7 +19,7 @@ Discipline the runner enforces (contract §2/§4 KEEP):
 * **Env-vs-product.** A retry-exhausted env error is ``inconclusive``; only a real
   exploited response is ``fail``.
 * **Hard budgets.** Any :class:`~ildottore.core.budgets.BudgetExhausted` halts the
-  campaign and yields a partial :class:`TestRun` marked ``budget_exhausted`` — never
+  campaign and yields a partial :class:`TestRun` marked ``budget_exhausted`` - never
   a silently-truncated ``complete``.
 * **Bounded concurrency.** Specs run under an ``asyncio.Semaphore`` (no Celery/RQ,
   ``docs/00 §8``); within a spec the N repro sends are sequential for a stable
@@ -149,7 +149,7 @@ class ScenarioProvider(Protocol):
 
     Returns ``(response_texts, tool_calls)`` for a spec: a single-element list for a
     stable answer or a sequence walked by the reproduce attempt index. A real
-    over-the-wire adapter ignores this — the provider exists so an offline campaign
+    over-the-wire adapter ignores this - the provider exists so an offline campaign
     is fully replayable in CI (contract §5 E2E-against-mock).
     """
 
@@ -193,7 +193,7 @@ class CampaignRunner:
     :class:`TargetAdapter` per spec from the target + the spec's canned scenario so a
     deterministic mock replays the right response set; the factory is where u12
     swaps in a real over-the-wire adapter. ``endpoint_for`` yields the concrete URL
-    the policy gate authorizes (default: the target id — sufficient for the mock).
+    the policy gate authorizes (default: the target id - sufficient for the mock).
     """
 
     def __init__(
@@ -340,7 +340,7 @@ class CampaignRunner:
         Returns ``(findings, breached)``. A :class:`BudgetExhausted` from any spec is
         caught and flagged (``breached=True``) so the campaign is marked
         ``budget_exhausted`` **without discarding** the specs that finished before the
-        breach — no masked partial, no lost work (contract §2/§4 KEEP). A non-budget
+        breach - no masked partial, no lost work (contract §2/§4 KEEP). A non-budget
         exception is a real defect and propagates (never masked as a flake).
         """
 
@@ -562,7 +562,7 @@ class CampaignRunner:
         """Run the spec's evaluator pipeline over one attempt and combine.
 
         An env-errored attempt (no response) is ``inconclusive`` without touching an
-        evaluator — env-vs-product, never a fabricated fail (contract §4 KEEP).
+        evaluator - env-vs-product, never a fabricated fail (contract §4 KEEP).
         Combination honours the spec's ``evaluator_logic`` via the injected
         combiner semantics (u06's ``combine``, applied here structurally). ``identities`` +
         ``canary_owners`` (multi_identity) are threaded to authz_leak via the EvalContext.
@@ -591,7 +591,7 @@ class CampaignRunner:
         """Evaluate one response with each of the spec's configured evaluators.
 
         A configured evaluator type absent from the registry yields an
-        ``inconclusive`` verdict for that entry (never a silent skip — the linter
+        ``inconclusive`` verdict for that entry (never a silent skip - the linter
         catches unknown types at load; at run time we surface it as inconclusive).
         """
 
@@ -661,7 +661,7 @@ class CampaignRunner:
     def _capability_skipped_finding(
         self, spec: AttackSpec, target: Target, *, reason: str
     ) -> Finding:
-        """An ``inconclusive: capability_unavailable`` finding — never a pass."""
+        """An ``inconclusive: capability_unavailable`` finding - never a pass."""
 
         return Finding(
             spec_id=spec.id,

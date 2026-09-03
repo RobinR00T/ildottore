@@ -1,4 +1,4 @@
-# INVALID: additionalProperties:false / extra="forbid" — unknown top-level field.
+# INVALID: additionalProperties:false / extra="forbid" - unknown top-level field.
 id: EXTRA-FIELD-001
 spec_version: "1.0"
 name: Unknown extra field

@@ -2,9 +2,9 @@
 
 Detects credential-shaped strings in a target response: API keys (``sk-``, ``ghp_``,
 ``AKIA…``, ``xoxb-``), JWTs and PEM private-key blocks. Detection combines **known key
-prefixes** with a **Shannon-entropy** gate (per-key-type thresholds, OD-3 second bullet —
+prefixes** with a **Shannon-entropy** gate (per-key-type thresholds, OD-3 second bullet -
 proposed per-type) so a low-entropy look-alike (``sk-example``) is not flagged. The value is
-**never logged raw** — it is typed + masked before entering the verdict (``docs/11 §5`` DL2).
+**never logged raw** - it is typed + masked before entering the verdict (``docs/11 §5`` DL2).
 
 **False-positive discipline (``docs/11 §4``, contract §4 KEEP):** a credential *shape* is not
 proof of a real leak. Without corroboration (the detected value contains a planted canary in

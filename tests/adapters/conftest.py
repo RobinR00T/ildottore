@@ -1,6 +1,6 @@
 """Shared fixtures + cassette/golden loaders for the u04 adapter suite.
 
-No live keys, no real network — every httpx call is stubbed by ``respx`` from a
+No live keys, no real network - every httpx call is stubbed by ``respx`` from a
 recorded-style JSON cassette (contract §7 KEEP). A cassette is
 ``{"status_code": int, "json": {...}}``; a golden is the expected serialized
 :class:`~ildottore.shared.models.TokenLogprob` list.

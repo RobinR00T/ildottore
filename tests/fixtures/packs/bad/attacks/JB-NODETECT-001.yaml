@@ -1,6 +1,6 @@
 # Deliberately broken: (1) flagged family 'jailbreak' but test_only omitted →
 # MISSING_TEST_ONLY. (2) the 'vulnerable' fixture reads as a refusal, so the refusal
-# evaluator scores it PASS — the spec fails to prove detection → FIXTURE_NO_DETECT.
+# evaluator scores it PASS - the spec fails to prove detection → FIXTURE_NO_DETECT.
 id: JB-NODETECT-001
 spec_version: "1.0"
 name: Broken jailbreak that does not prove detection

@@ -1,4 +1,4 @@
-"""Root test configuration — shared, cross-unit fixtures and the no-live-socket guard.
+"""Root test configuration - shared, cross-unit fixtures and the no-live-socket guard.
 
 Owned by ``u14-self-validation-ci``. This file provides *only* scaffolding that every unit
 can reuse without colliding with the per-unit ``conftest.py`` files (which own their own
@@ -74,7 +74,7 @@ def load_fixture_json() -> Callable[[str], Any]:
 
 
 class FrozenClock:
-    """A monotonic clock the test advances explicitly — no real time passes.
+    """A monotonic clock the test advances explicitly - no real time passes.
 
     Matches the ``core`` conftest's ``FakeClock`` shape so a wall-budget test can be lifted
     between units unchanged: callable returns the current seconds, ``advance`` moves it.
@@ -163,7 +163,7 @@ def no_live_socket() -> Iterator[None]:
             raise RuntimeError(
                 "No-live-socket guard: an outbound connection to a non-loopback host was "
                 f"attempted during the test run ({address!r}). Tests must use cassettes/"
-                "respx — never a live provider (CI contract §4)."
+                "respx - never a live provider (CI contract §4)."
             )
         return real_connect(self, address)
 

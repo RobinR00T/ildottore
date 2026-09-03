@@ -9,7 +9,7 @@ the document parses as well-formed JUnit XML (contract §7).
 
 Serialization is deterministic: suites are emitted in sorted framework order, testcases in
 (masked) finding order, and the XML declaration + encoding are fixed (contract §4 KEEP).
-Built with the stdlib ``xml.etree.ElementTree`` — the tool only ever serializes data it
+Built with the stdlib ``xml.etree.ElementTree`` - the tool only ever serializes data it
 produced itself, so no untrusted-XML parsing surface is introduced.
 """
 
@@ -64,7 +64,7 @@ class JunitReporter(BaseReporter):
                 case, "skipped", {"message": f"inconclusive: {finding.spec_id}"}
             )
             skipped.text = (finding.reasoning or detail)[:4096]
-        else:  # pass — secure
+        else:  # pass - secure
             system_out = ET.SubElement(case, "system-out")
             system_out.text = detail
         return case

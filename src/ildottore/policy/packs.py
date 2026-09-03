@@ -2,8 +2,8 @@
 
 A **policy pack** declares which attack categories/specs are permitted for an
 engagement (``docs/01 §6``, ``docs/11 §5``). The :class:`PolicyEngine` answers a
-single question per attempt — *may this spec run against this endpoint on this
-target?* — with a **default-deny** verdict (``docs/02`` S3/S4/S5, contract §2):
+single question per attempt - *may this spec run against this endpoint on this
+target?* - with a **default-deny** verdict (``docs/02`` S3/S4/S5, contract §2):
 
 1. target in scope?
 2. endpoint on the allowlist?
@@ -12,7 +12,7 @@ target?* — with a **default-deny** verdict (``docs/02`` S3/S4/S5, contract §2
 5. layer-B / PII-elicitation specs **off unless the pack enables them**
    (``docs/11`` DL4/DL5).
 6. a spec's declared ``requires_policy`` capabilities all present in the pack's
-   ``enabled_capabilities`` — offensive-simulation / layer-B PII **off by default**
+   ``enabled_capabilities`` - offensive-simulation / layer-B PII **off by default**
    (OD-11, ``docs/11 §5`` / ``docs/13 §4``).
 
 Loading a pack performs **no network I/O** (SSRF-safe, ``docs/02 §4``).
@@ -124,7 +124,7 @@ def _is_pii_elicitation(spec: AttackSpec) -> bool:
 
 
 class PolicyEngine:
-    """Central authorization gate — ``check`` returns allow / blocked_by_policy.
+    """Central authorization gate - ``check`` returns allow / blocked_by_policy.
 
     Composes a scope (targets + allowlist), an active :class:`PolicyPack` and the
     run-wide :class:`~ildottore.config.SafetyFlags`. The runner (u08) calls
@@ -212,7 +212,7 @@ class PolicyEngine:
 def enabled_specs(pack: PolicyPack, specs: Iterable[AttackSpec]) -> list[AttackSpec]:
     """Filter ``specs`` to those the pack enables (category/id, not denied).
 
-    A convenience for the planner (u08) — does **not** apply scope/allowlist
+    A convenience for the planner (u08) - does **not** apply scope/allowlist
     (those need a concrete endpoint) nor the layer-B/PII gates.
     """
 

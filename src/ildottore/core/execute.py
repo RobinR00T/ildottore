@@ -6,7 +6,7 @@
 * **pinned sampling** recorded on the :class:`Attempt` (temperature/top_p/seed) so
   the run is reproducible and a reader sees exactly how it was probed (``docs/01 §5``);
 * **retry with bounded backoff** on *environment* errors (rate-limit / timeout /
-  5xx) — an env failure is retried then, if it persists, surfaced as an
+  5xx) - an env failure is retried then, if it persists, surfaced as an
   ``inconclusive`` outcome, never a product ``fail`` (``AGENTS.md §2``, contract §4
   KEEP: env-vs-product);
 * a **budget debit per request** through the injected :class:`BudgetLedger` so a
@@ -45,7 +45,7 @@ class RetryPolicy:
     """Bounded exponential backoff for *environment* errors only (contract §4 KEEP).
 
     ``max_retries`` is the number of *extra* attempts after the first send. Backoff
-    is ``base_delay_s * (multiplier ** retry_index)`` capped at ``max_delay_s`` —
+    is ``base_delay_s * (multiplier ** retry_index)`` capped at ``max_delay_s`` -
     deterministic, no jitter (reproducible replays; a real deployment can inject a
     jittered ``sleep`` at the composition root).
     """
@@ -69,7 +69,7 @@ class AttemptResult:
     ``attempt`` always carries the recorded sampling + mutation + request. On a
     successful send ``attempt.response`` is populated and ``env_error`` is ``None``;
     on an exhausted-retry env failure ``attempt.error`` holds the last error string
-    and ``env_error`` is ``True`` — the runner maps that to
+    and ``env_error`` is ``True`` - the runner maps that to
     ``inconclusive`` (never a product ``fail``).
     """
 
@@ -87,7 +87,7 @@ def default_is_env_error(exc: BaseException) -> bool:
     **or** its class name matches the env-error / timeout / rate-limit family. A
     plain :class:`asyncio.TimeoutError` / :class:`TimeoutError` is always an env
     error. Anything else is treated as a product-side surprise and re-raised by the
-    caller (not masked as a flake — ``AGENTS.md §2``).
+    caller (not masked as a flake - ``AGENTS.md §2``).
     """
 
     marker = getattr(exc, "is_env_error", None)
@@ -121,7 +121,7 @@ async def execute_attempt(
     """Send one request with retry/backoff/timeout, debiting the budget per send.
 
     Returns an :class:`AttemptResult`. Raises :class:`BudgetExhausted` (from the
-    ledger) straight through — the runner converts that into a ``budget_exhausted``
+    ledger) straight through - the runner converts that into a ``budget_exhausted``
     halt. A non-env exception propagates (a real product/harness defect must not be
     masked). Env errors are retried up to ``retry.max_retries`` then returned as an
     ``env_error`` result for the runner to record ``inconclusive``.

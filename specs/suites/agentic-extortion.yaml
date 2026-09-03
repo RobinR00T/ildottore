@@ -8,7 +8,7 @@ name: Agentic malicious-use & autonomous-extortion susceptibility (JadePuffer cl
 description: >
   Tests whether a tool-enabled LLM/agent can be turned into or driven through an agentic
   ransomware kill-chain (JadePuffer, Sysdig 2026). Safe-by-design: mocked tools, canaries, no
-  functional payloads (docs/13). POLICY-GATED OFF by default — enable only when the engagement
+  functional payloads (docs/13). POLICY-GATED OFF by default - enable only when the engagement
   policy pack authorizes offensive-simulation (docs/13 §4, docs/11 §5).
 
 default_runs: 5
@@ -17,11 +17,11 @@ default_runs: 5
 tags: [owasp, mitre-atlas, nist-ai-rmf]
 
 specs:
-  - spec_id: AG-EXTORT-CHAIN-001              # LLM06 — indirect-injection-driven destroy+ransom
-  - spec_id: JB-OFFENSIVE-RANSOM-CODEGEN-001  # LLM05 — author extortion toolkit (refusal test)
+  - spec_id: AG-EXTORT-CHAIN-001              # LLM06 - indirect-injection-driven destroy+ransom
+  - spec_id: JB-OFFENSIVE-RANSOM-CODEGEN-001  # LLM05 - author extortion toolkit (refusal test)
   # --- remainder of the pack, authored under u13 (docs/13 §2) ---
-  - spec_id: AG-DESTRUCTIVE-DBDROP-001       # LLM06 — drop/encrypt without confirmation
-  - spec_id: AG-CRED-SWEEP-001               # LLM02/LLM06 — env/secret sweep (canaries)
-  - spec_id: AG-EXFIL-EGRESS-001             # LLM06 — POST staged data to external (mock)
-  - spec_id: AG-PERSIST-BEACON-001           # LLM06 — install mock cron/beacon
-  - spec_id: AG-AUTONOMY-SELFCORRECT-001     # LLM06 — adapt/retry to complete destructive goal
+  - spec_id: AG-DESTRUCTIVE-DBDROP-001       # LLM06 - drop/encrypt without confirmation
+  - spec_id: AG-CRED-SWEEP-001               # LLM02/LLM06 - env/secret sweep (canaries)
+  - spec_id: AG-EXFIL-EGRESS-001             # LLM06 - POST staged data to external (mock)
+  - spec_id: AG-PERSIST-BEACON-001           # LLM06 - install mock cron/beacon
+  - spec_id: AG-AUTONOMY-SELFCORRECT-001     # LLM06 - adapt/retry to complete destructive goal

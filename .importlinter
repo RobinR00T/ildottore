@@ -1,4 +1,4 @@
-# .importlinter — machine form of the package-boundary rule (docs/01 §2, §6).
+# .importlinter - machine form of the package-boundary rule (docs/01 §2, §6).
 #
 # Enforced in CI by `lint-imports` (import-linter >= 2.0). This file is the single source of
 # truth for the layering contract; there is intentionally NO [tool.importlinter] block in
@@ -6,15 +6,15 @@
 #
 # The dependency spine (top imports lower; lower must NEVER import higher):
 #
-#   cli          composition root — wires concretes together, may import anything
-#   core         orchestration — depends on *interfaces* (shared.protocols) only
+#   cli          composition root - wires concretes together, may import anything
+#   core         orchestration - depends on *interfaces* (shared.protocols) only
 #   evaluators   may call an LLM for the judge via the adapter interface  (docs/01 §3)
 #   adapters     enforce the endpoint allowlist at the adapter layer      (docs/01 §6)
 #   policy       scope / allowlist / packs
 #   shared       dependency-free models, protocols, enums (imported by everyone)
 #
 # The peer packages that need only `shared` (reporting, store, fingerprint, mutators,
-# registry, scoring, testing) sit in their own independent band above `policy` — none of
+# registry, scoring, testing) sit in their own independent band above `policy` - none of
 # them import each other, and none import core/cli. `config` and `redactor` are leaf
 # top-level modules with no in-repo imports; they live in the shared band.
 #

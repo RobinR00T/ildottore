@@ -4,13 +4,13 @@ Renders the human view with Jinja2, **autoescape ON** (``select_autoescape`` for
 ``.j2``), so a payload containing ``<script>`` in a finding's reasoning is escaped, not
 executed. ``--unsafe-render`` (raw HTML passed through in reasoning/evidence) is **OFF by
 default** and is a hard-gated explicit opt-in: enabling it flips a template flag *and* renders
-a prominent warning banner (OD-12 — "present, hard-gated + banner"). It is never a template
+a prominent warning banner (OD-12 - "present, hard-gated + banner"). It is never a template
 default and never silently on.
 
 Evidence is surfaced as **masked excerpt inline + store ref** (OD-12 resolution): the excerpt
 is taken from the already-masked context (the redactor ran in the base pre-pass, so no raw
 secret reaches the template) and the ``EvidenceRef`` uri/sha is shown alongside. Rendering is
-pure/deterministic — no clock, no I/O beyond loading the packaged template (contract §2, §8).
+pure/deterministic - no clock, no I/O beyond loading the packaged template (contract §2, §8).
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ __all__ = ["EVIDENCE_EXCERPT_LEN", "UNSAFE_RENDER_BANNER", "HtmlReporter"]
 
 EVIDENCE_EXCERPT_LEN = 240
 UNSAFE_RENDER_BANNER = (
-    "UNSAFE RENDER ENABLED — raw model output is emitted without HTML escaping. "
+    "UNSAFE RENDER ENABLED - raw model output is emitted without HTML escaping. "
     "Open this report only in a trusted, sandboxed viewer."
 )
 

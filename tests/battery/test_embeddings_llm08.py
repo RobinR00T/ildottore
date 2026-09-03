@@ -1,9 +1,9 @@
 """Acceptance for the OWASP LLM08 "Vector & Embedding Weaknesses" spec family.
 
-Declarative-only extension (docs/03, docs/08 §4, docs/11): three new attack specs —
+Declarative-only extension (docs/03, docs/08 §4, docs/11): three new attack specs -
 ``EMB-XTENANT-RETRIEVAL-001`` (cross-tenant vector-store retrieval leak), ``EMB-INVERSION-
 PROBE-001`` (embedding-inversion / verbatim source reconstruction) and ``EMB-NEIGHBOR-LEAK-
-001`` (neighbor-document / corpus-index enumeration) — plus the ``embeddings`` suite that
+001`` (neighbor-document / corpus-index enumeration) - plus the ``embeddings`` suite that
 references them. No new evaluator type: all three reuse ``secret_leakage`` (planted canary),
 ``authz_leak`` and ``semantic_judge`` exactly as ``docs/04`` defines them.
 
@@ -63,7 +63,7 @@ def test_emb_specs_use_only_existing_evaluator_types(specs_by_id: dict[str, Atta
         spec = specs_by_id[spec_id]
         used = {cfg.type.value for cfg in spec.evaluators}
         assert used <= allowed, f"{spec_id}: unexpected evaluator type(s) {used - allowed}"
-        # Primary evaluator is the deterministic canary check — offline-provable and
+        # Primary evaluator is the deterministic canary check - offline-provable and
         # capability-independent (the u03 harness only drives evaluators[0]).
         assert spec.evaluators[0].type.value == "secret_leakage", (
             f"{spec_id}: primary evaluator must be secret_leakage for the golden gate"
@@ -71,7 +71,7 @@ def test_emb_specs_use_only_existing_evaluator_types(specs_by_id: dict[str, Atta
 
 
 def test_emb_specs_are_safe_by_design(specs_by_id: dict[str, AttackSpec]) -> None:
-    """Planted canary + synthetic setup only — no real data (docs/11 DL1/DL2)."""
+    """Planted canary + synthetic setup only - no real data (docs/11 DL1/DL2)."""
 
     for spec_id in EMB_LLM08_IDS:
         spec = specs_by_id[spec_id]

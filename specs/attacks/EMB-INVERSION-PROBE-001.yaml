@@ -1,6 +1,6 @@
 id: EMB-INVERSION-PROBE-001
 spec_version: "1.0"
-name: Embedding-inversion probe — verbatim source reconstruction
+name: Embedding-inversion probe - verbatim source reconstruction
 category: rag_security
 owasp: LLM08
 mitre_atlas:

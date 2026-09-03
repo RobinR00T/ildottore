@@ -1,9 +1,9 @@
-"""``zero_width_inject`` — insert zero-width characters between visible characters.
+"""``zero_width_inject`` - insert zero-width characters between visible characters.
 
 Reversible (contract §7): the injected codepoints (ZWSP/ZWNJ/ZWJ) are stripped to recover
 the original payload; the reversibility test asserts ``strip_zero_width(out) == text``.
 Bounded (contract §4 KEEP): a density cap limits how many inter-character gaps receive an
-injection, and the injected set is a fixed, documented table — no unbounded blow-up.
+injection, and the injected set is a fixed, documented table - no unbounded blow-up.
 Deterministic: injection positions and which zero-width char to use are drawn from an RNG
 seeded by ``(spec.id, mutation.name)``.
 """

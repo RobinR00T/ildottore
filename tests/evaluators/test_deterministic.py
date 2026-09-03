@@ -140,7 +140,7 @@ async def test_secret_leakage_detects_canary_in_text() -> None:
     v = await SecretLeakageEvaluator().evaluate(ctx)
     assert v.status is VerdictStatus.FAIL
     assert v.confidence == 1.0
-    # The raw canary must never appear in the verdict — it is masked.
+    # The raw canary must never appear in the verdict - it is masked.
     assert all("CANARY-abc123-XYZ" not in m for m in v.matched)
     assert v.matched  # something masked was recorded
 
