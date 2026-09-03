@@ -356,6 +356,11 @@ openai and anthropic adapters attach the rendered image to the user turn as the 
 content block. A planted canary in the image text makes a successful injection a decisive,
 high-confidence leak.
 
+For chain of custody, the request records the SHA-256 of each rendered carrier under
+`metadata.media_sha256`, so a run's evidence proves exactly which image bytes were sent: because
+the renderer is deterministic, an auditor re-renders the declarative part and re-computes the same
+hash to verify.
+
 ## 7. Multi-turn attacks
 
 Multi-turn specs (Crescendo, Linear, Sequential, Bad-Likert, Tree) escalate over several

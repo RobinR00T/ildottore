@@ -25,12 +25,15 @@ filesystem or a subprocess.
 from __future__ import annotations
 
 import base64
+import hashlib
 import struct
 import zlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 __all__ = [
     "MediaError",
+    "media_digest",
+    "media_digests",
     "render_media_part",
     "render_text_png",
 ]
@@ -235,3 +238,21 @@ def render_media_part(part: Mapping[str, object]) -> tuple[str, bytes]:
         return "image/png", render_text_png(render_text, scale=scale, columns=columns)
 
     raise MediaError("image media part needs either 'render_text' or 'data_b64'")
+
+
+def media_digest(part: Mapping[str, object]) -> str:
+    """SHA-256 (hex) of the bytes a declarative media part renders to.
+
+    The digest is the chain-of-custody for a multimodal carrier: recorded on the request, it lets
+    a run's evidence prove exactly which image bytes were sent, and an auditor re-renders the
+    declarative part and re-computes the hash to verify. Because the renderer is deterministic, the
+    digest equals ``sha256`` of what the adapter puts on the wire for the same part.
+    """
+
+    return hashlib.sha256(render_media_part(part)[1]).hexdigest()
+
+
+def media_digests(parts: Sequence[Mapping[str, object]]) -> list[str]:
+    """Per-part :func:`media_digest` for a media list (order preserved)."""
+
+    return [media_digest(part) for part in parts]

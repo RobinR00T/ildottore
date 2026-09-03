@@ -24,7 +24,9 @@ versioning: [SemVer](https://semver.org/).
   `ModelRequest.media` are additive optional fields. Battery is now 56 specs / 12 suites. Audio is
   deferred: a faithful audio carrier needs speech (a TTS dependency or a pinned recorded clip), not
   stdlib synthesis, so it is not shipped as a fake carrier; non-image document (PDF/HTML text)
-  injection is already covered by the retrieval path (PI-INDIRECT-RAG-001).
+  injection is already covered by the retrieval path (PI-INDIRECT-RAG-001). Chain of custody: a
+  multimodal request records the SHA-256 of each rendered carrier under `metadata.media_sha256`, so
+  a run's evidence proves exactly which image bytes were sent and an auditor re-renders to verify.
 - **MCP adapter (`provider: mcp`) + `mcp` suite**: scan a Model Context Protocol server as a
   target. `adapters/mcp.py` speaks JSON-RPC over Streamable HTTP: it performs the `initialize`
   handshake and lists `tools`/`resources`/`prompts`, then renders that advertised metadata as

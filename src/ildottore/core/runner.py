@@ -44,6 +44,7 @@ from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_er
 from ildottore.core.planner import build_plan
 from ildottore.core.reproduce import DEFAULT_N, reproduce
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
+from ildottore.shared.media import media_digests
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -798,15 +799,24 @@ def _base_prompt(spec: AttackSpec) -> str:
 def _build_request(spec: AttackSpec, prompt: str) -> ModelRequest:
     """Build a :class:`ModelRequest` from a spec + mutated prompt (pinned sampling).
 
-    A ``multimodal`` spec's ``attack.media`` rides along as the declarative carrier; the adapter
-    renders it. Core stays render-free (no imaging import), so the request stored in evidence is
-    byte-stable and replays identically.
+    A ``multimodal`` spec's ``attack.media`` rides along as the declarative carrier (the adapter
+    renders it for transport). For evidence, the request also records the SHA-256 of each rendered
+    part under ``metadata.media_sha256`` (chain of custody): the declarative part replays to
+    identical bytes, so the digest proves exactly which image was sent and an auditor can re-derive
+    it. Computing a hash is not transport rendering; the adapter still owns what goes on the wire.
     """
 
     sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
     system_prompt = spec.setup.system_prompt if spec.setup is not None else None
     media = spec.attack.media
-    return ModelRequest(prompt=prompt, system_prompt=system_prompt, sampling=sampling, media=media)
+    metadata = {"media_sha256": media_digests(media)} if media else None
+    return ModelRequest(
+        prompt=prompt,
+        system_prompt=system_prompt,
+        sampling=sampling,
+        media=media,
+        metadata=metadata,
+    )
 
 
 def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec) -> Verdict:

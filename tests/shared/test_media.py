@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import struct
 import zlib
 
 import pytest
 
-from ildottore.shared.media import MediaError, render_media_part, render_text_png
+from ildottore.shared.media import (
+    MediaError,
+    media_digest,
+    media_digests,
+    render_media_part,
+    render_text_png,
+)
 
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
@@ -88,6 +95,25 @@ def test_render_media_part_respects_scale_and_columns() -> None:
     small = render_media_part({"kind": "image", "render_text": "ABC", "scale": 2})[1]
     big = render_media_part({"kind": "image", "render_text": "ABC", "scale": 6})[1]
     assert small != big
+
+
+def test_media_digest_matches_rendered_bytes_and_is_stable() -> None:
+    part = {"kind": "image", "format": "png", "render_text": "PWNED"}
+    _, raw = render_media_part(part)
+    # The recorded digest is exactly sha256 of what the adapter puts on the wire.
+    assert media_digest(part) == hashlib.sha256(raw).hexdigest()
+    # Deterministic: same part -> same digest (chain of custody is reproducible).
+    assert media_digest(part) == media_digest(dict(part))
+    # A different part -> a different digest.
+    assert media_digest({"kind": "image", "render_text": "OTHER"}) != media_digest(part)
+
+
+def test_media_digests_preserves_order() -> None:
+    parts = [
+        {"kind": "image", "render_text": "A"},
+        {"kind": "image", "render_text": "B"},
+    ]
+    assert media_digests(parts) == [media_digest(parts[0]), media_digest(parts[1])]
 
 
 @pytest.mark.parametrize(

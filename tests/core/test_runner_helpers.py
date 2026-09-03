@@ -167,6 +167,24 @@ def test_base_prompt_carrier_and_turns() -> None:
     assert R._base_prompt(turns_spec) == "first"
 
 
+def test_build_request_records_media_digest_for_multimodal() -> None:
+    from ildottore.shared.media import media_digest
+
+    part = {"kind": "image", "format": "png", "render_text": "PWNED"}
+    spec = make_spec().model_copy(
+        update={"attack": Attack(user_prompt="describe this", media=[part])}
+    )
+    req = R._build_request(spec, "describe this")
+    assert req.media == [part]  # the declarative carrier rides on the request
+    assert req.metadata == {"media_sha256": [media_digest(part)]}  # chain of custody recorded
+
+
+def test_build_request_no_media_leaves_metadata_none() -> None:
+    req = R._build_request(make_spec(), "hi")
+    assert req.media is None
+    assert req.metadata is None
+
+
 def test_completed_attempt_ids_reads_responses_and_errors() -> None:
     a1 = Attempt(attempt_id="a1", spec_id="S", request=ModelRequest(prompt="x"), error="boom")
     from ildottore.shared.enums import ScanBand
