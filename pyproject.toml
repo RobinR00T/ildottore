@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ildottore"
-version = "0.0.1"
+version = "0.1.0"
 description = "Il Dottore — spec-driven security scanner for LLMs and AI applications (nmap-for-AI)."
 readme = "README.md"
 requires-python = ">=3.11"

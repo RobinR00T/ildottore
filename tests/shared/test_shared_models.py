@@ -37,7 +37,7 @@ SCHEMA_PATH = REPO_ROOT / "schemas" / "attack-spec.schema.json"
 
 
 def test_version() -> None:
-    assert __version__ == "0.0.1"
+    assert __version__ == "0.1.0"
 
 
 # --- AttackSpec: load the canonical YAML and validate ------------------------------

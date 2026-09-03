@@ -5,6 +5,13 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-03
+
+First public release. The engine is built and self-validating: 57 declarative attack specs across
+12 suites (OWASP LLM Top 10 / MITRE ATLAS / NIST AI), deterministic reproduction with evidence and
+risk mapping, OpenAI / Anthropic / REST / MCP adapters, multi-turn, multi-identity, multimodal
+(image + audio), fleet mode, and a green CI gate wall. See the entries below for the full detail.
+
 ### Added
 - **Multimodal audio: spoken prompt injection carried in an audio clip (docs/12 P0)**. A spec can
   carry a payload in a pinned WAV (`kind: audio`, `format: wav`) referenced by an `asset` path,
