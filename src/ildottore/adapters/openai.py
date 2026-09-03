@@ -9,11 +9,13 @@ map into the common :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005).
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from ildottore.adapters.base import AdapterProductError, BaseAdapter, map_logprobs
+from ildottore.shared.media import render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 
 __all__ = ["OpenAIAdapter"]
@@ -54,16 +56,35 @@ class OpenAIAdapter(BaseAdapter):
         )
 
     def _build_messages(self, request: ModelRequest) -> list[dict[str, Any]]:
-        """Assemble the OpenAI ``messages`` array, system-prompt first (verbatim)."""
+        """Assemble the OpenAI ``messages`` array, system-prompt first (verbatim).
+
+        A single-turn request with ``media`` sends a multimodal user turn: a ``content`` array of
+        one ``text`` part plus one ``image_url`` part per rendered image (data URL). Multi-turn
+        transcripts (``messages``) are passed through unchanged (multimodal multi-turn is a future
+        seam).
+        """
 
         messages: list[dict[str, Any]] = []
         if request.system_prompt is not None:
             messages.append({"role": "system", "content": request.system_prompt})
         if request.messages is not None:
             messages.extend(dict(m) for m in request.messages)
+        elif request.media:
+            messages.append({"role": "user", "content": self._multimodal_content(request)})
         elif request.prompt is not None:
             messages.append({"role": "user", "content": request.prompt})
         return messages
+
+    @staticmethod
+    def _multimodal_content(request: ModelRequest) -> list[dict[str, Any]]:
+        """Build the OpenAI multimodal ``content`` array (text + one image_url per media part)."""
+
+        content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt or ""}]
+        for part in request.media or []:
+            mime, raw = render_media_part(part)
+            data_url = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+            content.append({"type": "image_url", "image_url": {"url": data_url}})
+        return content
 
     def _build_request(self, request: ModelRequest) -> tuple[dict[str, Any], dict[str, str]]:
         body: dict[str, Any] = {

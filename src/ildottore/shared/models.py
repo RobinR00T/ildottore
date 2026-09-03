@@ -93,14 +93,23 @@ class Setup(_SchemaMirror):
 
 
 class Attack(_SchemaMirror):
-    """``attack`` — at least one of ``user_prompt`` / ``carrier`` / ``turns``."""
+    """``attack``: at least one of ``user_prompt`` / ``carrier`` / ``turns``.
+
+    ``media`` is an additive, optional multimodal carrier (``docs/12`` MVP-3): a list of
+    declarative parts (e.g. ``{"kind": "image", "format": "png", "render_text": "..."}``) rendered
+    deterministically at send time (``shared.media``). It accompanies ``user_prompt`` (the text
+    turn) rather than replacing it, and only runs against a target that declares the ``multimodal``
+    capability (the planner gates it like ``multi_identity``).
+    """
 
     user_prompt: str | None = None
     carrier: str | None = None
     turns: list[str] | None = None
+    media: list[JsonDict] | None = None
 
     def model_post_init(self, _context: object) -> None:
-        # Schema anyOf: [user_prompt] | [carrier] | [turns].
+        # Schema anyOf: [user_prompt] | [carrier] | [turns]. `media` is an add-on carrier, not one
+        # of the anyOf alternatives, so it never satisfies the "at least one" requirement alone.
         if self.user_prompt is None and self.carrier is None and self.turns is None:
             raise ValueError("attack requires at least one of: user_prompt, carrier, turns")
 
@@ -266,7 +275,12 @@ class TokenLogprob(_Frozen):
 
 
 class ModelRequest(_Frozen):
-    """A single request to a ``TargetAdapter`` (``docs/01 §3``)."""
+    """A single request to a ``TargetAdapter`` (``docs/01 §3``).
+
+    ``media`` carries the declarative multimodal parts verbatim from ``attack.media`` (additive,
+    optional). It stays declarative on the request so a stored run re-renders to identical bytes
+    on replay; the adapter renders each part (``shared.media``) into the provider image block.
+    """
 
     prompt: str | None = None
     messages: list[JsonDict] | None = None
@@ -274,6 +288,7 @@ class ModelRequest(_Frozen):
     tools: list[JsonDict] | None = None
     sampling: Sampling | None = None
     identity: str | None = None  # for multi_identity authz specs
+    media: list[JsonDict] | None = None  # for multimodal specs (declarative parts)
     metadata: JsonDict | None = None
 
 

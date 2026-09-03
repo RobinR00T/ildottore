@@ -31,7 +31,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 | **PII / secret-shape evaluators with FP control** (Luhn, IBAN mod-97, key prefixes, entropy; hallucination ≠ leak) | ✅ | `docs/04`, `docs/11 §4` | MVP‑1 |
 | **Logprobs capture in adapters** (membership inference, confidence side-channels) | ✅ | `docs/00` (stack + Phase D), `docs/01 §3` | capture MVP‑1 · membership MVP‑2 |
 | **Multi-identity / cross-tenant harness** (authz_leak evaluator, ≥2 identities in scope) | ✅ | `docs/00` (Phase A), `docs/01 §6`, `docs/11 §3` | MVP‑1 |
-| **Multimodal** (image/audio/document injection; visual/typographic PI) | ✅ (own phase) | `docs/00` (Phase G) | MVP‑3 (highest cost, highest differentiator) |
+| **Multimodal** (image/audio/document injection; visual/typographic PI) | 🟡 **image PI built** (2026-09-03) | `shared/media.py` | first increment: visual/typographic prompt injection via text rendered into an image. `attack.media` carries a declarative part; `shared/media.py` renders it to a byte-stable PNG with a dependency-free stdlib encoder + 5x7 font (reproducible, no Pillow); the openai/anthropic adapters emit the provider image block; `MM-IMG-PROMPTINJECT-001` + `multimodal` suite prove it (canary planted in the image). Gated on `capabilities.multimodal`. Audio and document carriers are the next increments |
 
 ## P1 — MVP‑2
 

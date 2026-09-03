@@ -15,11 +15,13 @@ MVP-2 if Anthropic ships per-token logprobs.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from ildottore.adapters.base import AdapterProductError, BaseAdapter
+from ildottore.shared.media import render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 
 __all__ = ["AnthropicAdapter"]
@@ -74,9 +76,30 @@ class AnthropicAdapter(BaseAdapter):
 
         if request.messages is not None:
             return [self._project_message(m) for m in request.messages]
+        if request.media:
+            return [{"role": "user", "content": self._multimodal_content(request)}]
         if request.prompt is not None:
             return [{"role": "user", "content": request.prompt}]
         return []
+
+    @staticmethod
+    def _multimodal_content(request: ModelRequest) -> list[dict[str, Any]]:
+        """Build the Anthropic multimodal ``content`` array (text + one image block per part)."""
+
+        content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt or ""}]
+        for part in request.media or []:
+            mime, raw = render_media_part(part)
+            content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime,
+                        "data": base64.b64encode(raw).decode("ascii"),
+                    },
+                }
+            )
+        return content
 
     @staticmethod
     def _project_message(message: Mapping[str, Any]) -> dict[str, Any]:

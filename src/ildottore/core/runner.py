@@ -796,11 +796,17 @@ def _base_prompt(spec: AttackSpec) -> str:
 
 
 def _build_request(spec: AttackSpec, prompt: str) -> ModelRequest:
-    """Build a :class:`ModelRequest` from a spec + mutated prompt (pinned sampling)."""
+    """Build a :class:`ModelRequest` from a spec + mutated prompt (pinned sampling).
+
+    A ``multimodal`` spec's ``attack.media`` rides along as the declarative carrier; the adapter
+    renders it. Core stays render-free (no imaging import), so the request stored in evidence is
+    byte-stable and replays identically.
+    """
 
     sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
     system_prompt = spec.setup.system_prompt if spec.setup is not None else None
-    return ModelRequest(prompt=prompt, system_prompt=system_prompt, sampling=sampling)
+    media = spec.attack.media
+    return ModelRequest(prompt=prompt, system_prompt=system_prompt, sampling=sampling, media=media)
 
 
 def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec) -> Verdict:

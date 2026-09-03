@@ -6,6 +6,18 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Multimodal attacks: visual / typographic prompt injection (docs/12 P0, MVP-3 phase)**. A spec
+  can carry a payload in an image via `attack.media` (a declarative part, e.g.
+  `{kind: image, format: png, render_text: "..."}`). `shared/media.py` renders it to a byte-stable
+  PNG with a dependency-free stdlib encoder (zlib + a 5x7 bitmap font): no Pillow, no binary in the
+  spec, so the carrier is reproducible and replays identically. The openai and anthropic adapters
+  attach the rendered image to the user turn as the provider image content block; the runner keeps
+  the declarative part on the request. New `MM-IMG-PROMPTINJECT-001` spec + `multimodal` suite: the
+  user's turn asks only to describe the image while an override instruction rendered inside it
+  demands a planted canary, so a successful visual injection is a decisive leak. Gated on
+  `capabilities.multimodal` (a text-only target skips it, never a false pass). `attack.media` /
+  `ModelRequest.media` are additive optional fields. Battery is now 54 specs / 12 suites. Audio and
+  document carriers are the next increments.
 - **MCP adapter (`provider: mcp`) + `mcp` suite**: scan a Model Context Protocol server as a
   target. `adapters/mcp.py` speaks JSON-RPC over Streamable HTTP: it performs the `initialize`
   handshake and lists `tools`/`resources`/`prompts`, then renders that advertised metadata as
