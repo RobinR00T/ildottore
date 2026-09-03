@@ -85,3 +85,40 @@ def test_atomic_write_failure_leaves_no_partial_artifact(
     # No final artifact and no leftover temp file.
     assert list(attempts.glob("*.json")) == []
     assert list(attempts.glob("*.tmp")) == []
+
+
+def test_media_carrier_bytes_are_not_persisted(store_root: Path) -> None:
+    """A multimodal carrier's bytes are elided from evidence (asset + digest kept).
+
+    Storing the raw base64 would bloat evidence and, being high-entropy, could trip the
+    fail-closed redaction guard. The write must succeed and the on-disk artifact must carry the
+    placeholder plus the provenance (asset + media_sha256), never the raw bytes.
+    """
+
+    from ildottore.shared.enums import VerdictStatus
+    from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Verdict
+
+    big_b64 = "QUJD" * 40000  # a large, high-entropy carrier blob
+    request = ModelRequest(
+        prompt="listen",
+        media=[{"kind": "audio", "format": "wav", "asset": "assets/c.wav", "data_b64": big_b64}],
+        metadata={"media_sha256": ["deadbeef"]},
+    )
+    attempt = Attempt(
+        attempt_id="a-mm",
+        spec_id="MM-AUD-PROMPTINJECT-001",
+        mutation="identity",
+        request=request,
+        response=ModelResponse(text="PINEAPPLE"),
+        verdict=Verdict(
+            status=VerdictStatus.FAIL, confidence=0.9, reasoning="x", evaluator_type="regex_absence"
+        ),
+    )
+    store = FsEvidenceStore(store_root)
+    ref = store.put("run-mm", attempt)  # must not raise RedactionLeakError
+
+    on_disk = paths.attempt_path(store_root, "run-mm", ref.sha256).read_text(encoding="utf-8")
+    assert big_b64 not in on_disk  # raw carrier bytes never hit disk
+    assert "<omitted" in on_disk
+    assert "assets/c.wav" in on_disk  # provenance kept
+    assert "deadbeef" in on_disk  # chain-of-custody digest kept

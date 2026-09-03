@@ -33,7 +33,7 @@
     "target_type": { "type": "string", "enum": ["model", "chatbot", "api", "agent", "rag"] },
     "requires": {
       "type": "array",
-      "items": { "type": "string", "enum": ["rag", "tools", "memory", "system_prompt", "streaming", "logprobs", "multi_identity", "multimodal"] }
+      "items": { "type": "string", "enum": ["rag", "tools", "memory", "system_prompt", "streaming", "logprobs", "multi_identity", "multimodal", "audio"] }
     },
     "description": { "type": "string" },
     "preconditions": { "type": "array", "items": { "type": "string" } },
@@ -62,10 +62,11 @@
             "additionalProperties": false,
             "required": ["kind"],
             "properties": {
-              "kind": { "type": "string", "enum": ["image"] },
-              "format": { "type": "string", "enum": ["png"] },
+              "kind": { "type": "string", "enum": ["image", "audio"] },
+              "format": { "type": "string", "enum": ["png", "wav"] },
               "render_text": { "type": "string" },
               "data_b64": { "type": "string" },
+              "asset": { "type": "string" },
               "scale": { "type": "integer", "minimum": 1 },
               "columns": { "type": "integer", "minimum": 1 },
               "alt": { "type": "string" }

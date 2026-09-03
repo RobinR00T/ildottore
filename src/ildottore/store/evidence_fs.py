@@ -29,6 +29,29 @@ class RedactionLeakError(RuntimeError):
     """A raw secret/PII shape survived redaction — the write is refused (DL2)."""
 
 
+def _strip_media_carrier_bytes(dump: object) -> None:
+    """Elide multimodal carrier bytes from a request before it is persisted (in place).
+
+    A carrier (an image or audio ``data_b64`` on ``request.media``) is large binary that is
+    reproducible from its declarative part (``render_text`` / ``asset``) plus the recorded
+    ``metadata.media_sha256`` digest, so the raw bytes are not stored: they would bloat evidence
+    and, being high-entropy, could false-positive the fail-closed redaction guard. Only the bytes
+    are replaced with a size placeholder; ``kind`` / ``format`` / ``asset`` stay for provenance.
+    """
+
+    if not isinstance(dump, dict):
+        return
+    request = dump.get("request")
+    if not isinstance(request, dict):
+        return
+    media = request.get("media")
+    if not isinstance(media, list):
+        return
+    for part in media:
+        if isinstance(part, dict) and isinstance(part.get("data_b64"), str):
+            part["data_b64"] = f"<omitted {len(part['data_b64'])} b64 chars>"
+
+
 def _canonical_json(obj: object) -> str:
     """Deterministic JSON: sorted keys, compact, UTF-8 preserved.
 
@@ -81,7 +104,9 @@ class FsEvidenceStore:
         # too (DL2). Keys are masked here but VALUES are left to ``redactor.redact``, so an
         # incomplete object-redactor still leaves a raw value for the fail-closed guard to
         # catch (the guard re-scans keys and values independently).
-        redacted = self._mask_keys(self._redactor.redact(attempt.model_dump(mode="json")))
+        dump = attempt.model_dump(mode="json")
+        _strip_media_carrier_bytes(dump)
+        redacted = self._mask_keys(self._redactor.redact(dump))
         payload = _canonical_json(redacted)
         self._assert_no_leak(payload)
 

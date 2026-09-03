@@ -200,3 +200,22 @@ def test_multimodal_absent_keeps_plain_string_content(openai_allowlist: Endpoint
 
     body, _ = _adapter(openai_allowlist)._build_request(ModelRequest(prompt="hi"))
     assert body["messages"][-1]["content"] == "hi"
+
+
+def test_audio_media_builds_input_audio_block(openai_allowlist: EndpointAllowlist) -> None:
+    """A single-turn request with audio media sends a text + input_audio content block."""
+
+    import base64
+
+    adapter = _adapter(openai_allowlist, audio_enabled=True)
+    raw = b"RIFFfake-wav-bytes"
+    req = ModelRequest(
+        prompt="Listen to this.",
+        media=[{"kind": "audio", "format": "wav", "data_b64": base64.b64encode(raw).decode()}],
+    )
+    body, _ = adapter._build_request(req)
+    content = body["messages"][-1]["content"]
+    assert [part["type"] for part in content] == ["text", "input_audio"]
+    assert content[1]["input_audio"]["format"] == "wav"
+    assert base64.b64decode(content[1]["input_audio"]["data"]) == raw
+    assert adapter.capabilities().audio is True

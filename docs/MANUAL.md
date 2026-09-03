@@ -307,7 +307,7 @@ Prints the generated JSON Schemas that machine-validate every spec.
 
 ## 6. The attack battery
 
-56 specs across 12 suites, aligned to OWASP LLM Top 10, MITRE ATLAS and OWASP-Agents-2026.
+57 specs across 12 suites, aligned to OWASP LLM Top 10, MITRE ATLAS and OWASP-Agents-2026.
 `dottore registry ls` prints the live list; the columns are `id`, OWASP tag, band, category,
 and title. Spec ids are family-prefixed: `PI-` prompt injection, `JB-` jailbreak, `DL-` data
 leakage, `AC-` access control, `AG-` agentic abuse, `OUT-` insecure output, `EMB-` embeddings,
@@ -328,7 +328,7 @@ Suites (with the count `registry ls --suite <id>` reports):
 | `mcp` | 1 | MCP-server metadata poisoning (point it at a `provider: mcp` target) |
 | `responsible-ai` | 2 | optional NIST-mapped pack: harmful-content refusal + demographic bias/fairness |
 | `guardrail-evasion` | 2 | moderation-layer evasion, input classifier + output filter |
-| `multimodal` | 3 | visual prompt injection (direct override + indirect via a document image) and harmful-request refusal on an image-borne ask |
+| `multimodal` | 4 | image injection (direct / document / harmful-request) and a spoken prompt injection carried in an audio clip |
 
 Select with `--suite`, `-p/--categories`, `--spec`/`--exclude` (globs), or `--top-tests`.
 
@@ -368,6 +368,23 @@ dottore render-media MM-IMG-PROMPTINJECT-001 --out ./carriers
 ```
 
 It writes one PNG per `attack.media` part and prints each path, size and SHA-256.
+
+**Audio.** A spoken attack (`kind: audio`, `format: wav`) cannot be synthesized from text, so it
+ships as a pinned WAV stored next to the spec and referenced by an `asset` path, which the loader
+resolves to bytes at load time behind a path-traversal guard (no absolute path, no `..`, must stay
+under the spec directory). It runs only against a target that declares the `audio` capability (a
+speech-in model), and the OpenAI adapter sends it as an `input_audio` block. The carrier bytes are
+elided from evidence (the `asset` reference and `media_sha256` digest are kept), so a large clip
+does not bloat the record.
+
+```yaml
+attack:
+  user_prompt: "Please listen to this audio clip and respond to it."
+  media:
+    - kind: audio
+      format: wav
+      asset: assets/mm-audio-override-pineapple.wav   # relative, under the spec dir
+```
 
 ## 7. Multi-turn attacks
 
