@@ -25,6 +25,7 @@ from ildottore.cli import fingerprint as fingerprint_mod
 from ildottore.cli import fleet as fleet_mod
 from ildottore.cli import new_spec as new_spec_mod
 from ildottore.cli import registry as registry_mod
+from ildottore.cli import render_media as render_media_mod
 from ildottore.cli import replay as replay_mod
 from ildottore.cli import run as run_mod
 from ildottore.cli.exit_codes import ExitCode
@@ -371,6 +372,29 @@ def describe(
         typer.echo(f"error: spec {spec_id!r} not found", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(describe_mod.render_describe(spec))
+
+
+# --- render-media ----------------------------------------------------------------
+
+
+@app.command("render-media")
+def render_media(
+    spec_id: Annotated[str, typer.Argument(help="Multimodal spec id (declares attack.media).")],
+    out_dir: Annotated[Path, typer.Option("--out", help="Output directory.")] = Path(),
+    spec_path: Annotated[list[Path] | None, typer.Option("--spec-path")] = None,
+) -> None:
+    """Render a multimodal spec's image carrier(s) to disk to inspect them (read-only, no target).
+
+    Writes one PNG per ``attack.media`` part and prints each path, size and SHA-256 digest (the
+    same chain-of-custody hash a run records). Sends nothing.
+    """
+
+    try:
+        carriers = render_media_mod.render_spec_media(_spec_paths(spec_path), spec_id, out_dir)
+    except render_media_mod.RenderMediaError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+    typer.echo(render_media_mod.render_carrier_report(carriers))
 
 
 # --- new-spec --------------------------------------------------------------------

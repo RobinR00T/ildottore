@@ -361,6 +361,14 @@ For chain of custody, the request records the SHA-256 of each rendered carrier u
 the renderer is deterministic, an auditor re-renders the declarative part and re-computes the same
 hash to verify.
 
+To inspect the carrier before a scan, render it to disk (read-only, sends nothing):
+
+```bash
+dottore render-media MM-IMG-PROMPTINJECT-001 --out ./carriers
+```
+
+It writes one PNG per `attack.media` part and prints each path, size and SHA-256.
+
 ## 7. Multi-turn attacks
 
 Multi-turn specs (Crescendo, Linear, Sequential, Bad-Likert, Tree) escalate over several

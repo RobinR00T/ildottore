@@ -27,6 +27,9 @@ versioning: [SemVer](https://semver.org/).
   injection is already covered by the retrieval path (PI-INDIRECT-RAG-001). Chain of custody: a
   multimodal request records the SHA-256 of each rendered carrier under `metadata.media_sha256`, so
   a run's evidence proves exactly which image bytes were sent and an auditor re-renders to verify.
+  A new `dottore render-media <spec-id> --out <dir>` command renders a multimodal spec's carrier(s)
+  to disk (read-only, sends nothing) and prints each path, size and SHA-256, so an operator can see
+  exactly what image a scan will send before running it.
 - **MCP adapter (`provider: mcp`) + `mcp` suite**: scan a Model Context Protocol server as a
   target. `adapters/mcp.py` speaks JSON-RPC over Streamable HTTP: it performs the `initialize`
   handshake and lists `tools`/`resources`/`prompts`, then renders that advertised metadata as
