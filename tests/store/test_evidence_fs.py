@@ -122,3 +122,63 @@ def test_media_carrier_bytes_are_not_persisted(store_root: Path) -> None:
     assert "<omitted" in on_disk
     assert "assets/c.wav" in on_disk  # provenance kept
     assert "deadbeef" in on_disk  # chain-of-custody digest kept
+
+
+def test_media_sha256_digest_survives_redaction(store_root: Path) -> None:
+    """The chain-of-custody digest is exempt from redaction (else the audit trail is destroyed)."""
+
+    from ildottore.shared.enums import VerdictStatus
+    from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Verdict
+
+    digest = "7c7b2bdc" + "ab12" * 14  # a 64-hex sha256-shaped string (high entropy)
+    req = ModelRequest(
+        prompt="x",
+        media=[{"kind": "image", "format": "png", "render_text": "HI"}],
+        metadata={"media_sha256": [digest]},
+    )
+    att = Attempt(
+        attempt_id="a-dig",
+        spec_id="MM",
+        mutation="identity",
+        request=req,
+        response=ModelResponse(text="ok"),
+        verdict=Verdict(
+            status=VerdictStatus.FAIL, confidence=0.9, reasoning="x", evaluator_type="regex_absence"
+        ),
+    )
+    store = FsEvidenceStore(store_root)
+    ref = store.put("run-dig", att)
+    disk = paths.attempt_path(store_root, "run-dig", ref.sha256).read_text(encoding="utf-8")
+    assert digest in disk  # the digest is present verbatim, not masked into oblivion
+
+
+def test_media_carrier_bytes_elided_anywhere_not_only_request_media(store_root: Path) -> None:
+    """The strip is recursive: a carrier in request.messages is elided too (future multi-turn)."""
+
+    import base64
+
+    from ildottore.shared.enums import VerdictStatus
+    from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Verdict
+
+    low = base64.b64encode(
+        b"\x00" * 4000
+    ).decode()  # low-entropy: the entropy fallback won't catch it
+    req = ModelRequest(
+        prompt="x",
+        messages=[{"role": "user", "content": "hi", "data_b64": low}],
+    )
+    att = Attempt(
+        attempt_id="a-msg",
+        spec_id="MM",
+        mutation="identity",
+        request=req,
+        response=ModelResponse(text="ok"),
+        verdict=Verdict(
+            status=VerdictStatus.FAIL, confidence=0.9, reasoning="x", evaluator_type="regex_absence"
+        ),
+    )
+    store = FsEvidenceStore(store_root)
+    ref = store.put("run-msg", att)
+    disk = paths.attempt_path(store_root, "run-msg", ref.sha256).read_text(encoding="utf-8")
+    assert low not in disk  # raw carrier bytes never hit disk, wherever they sit
+    assert "<omitted" in disk

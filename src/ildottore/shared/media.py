@@ -43,6 +43,12 @@ class MediaError(ValueError):
     """A declarative media part could not be rendered (unknown kind/format, bad data)."""
 
 
+# Rendering bounds (memory-amplification guard): a legible carrier needs far less than these.
+_MAX_SCALE = 16
+_MAX_COLUMNS = 256
+_MAX_OUTPUT_PIXELS = 8_000_000  # 8 MP ceiling on the rendered image
+
+
 # --- 5x7 bitmap font (public-domain style dot-matrix) ------------------------------------------
 # Each glyph is 7 rows of 5 columns; "#" is ink, "." is background. Lowercase maps to uppercase;
 # an unknown character renders as a filled box so a missing glyph is visible, never silent.
@@ -146,16 +152,31 @@ def render_text_png(text: str, *, scale: int = 3, columns: int = 32, margin: int
     attempted: a fixed hard wrap keeps the layout byte-stable regardless of locale). ``scale``
     nearest-neighbour-magnifies each pixel so the 5x7 font is legible to a vision model. The
     output is a pure function of ``(text, scale, columns, margin)``.
+
+    ``scale``, ``columns`` and the projected output area are bounded so a spec cannot request a
+    multi-hundred-megapixel image (a memory-amplification DoS at plan/render time).
     """
 
     if scale < 1 or columns < 1 or margin < 0:
         raise MediaError("render_text_png: scale/columns must be >= 1 and margin >= 0")
+    if scale > _MAX_SCALE:
+        raise MediaError(f"render_text_png: scale {scale} exceeds the max of {_MAX_SCALE}")
+    if columns > _MAX_COLUMNS:
+        raise MediaError(f"render_text_png: columns {columns} exceeds the max of {_MAX_COLUMNS}")
 
     lines = _wrap(text, columns)
     cell_w = _GLYPH_COLS + 1  # 1px inter-glyph gap
     cell_h = _GLYPH_ROWS + 1  # 1px inter-line gap
     grid_w = columns * cell_w
     grid_h = max(1, len(lines)) * cell_h
+
+    # Bound the projected output BEFORE allocating any pixel buffer (memory-amplification guard).
+    out_w = grid_w * scale + 2 * margin
+    out_h = grid_h * scale + 2 * margin
+    if out_w * out_h > _MAX_OUTPUT_PIXELS:
+        raise MediaError(
+            f"render_text_png: output {out_w}x{out_h} exceeds the {_MAX_OUTPUT_PIXELS}-pixel cap"
+        )
 
     # 1px-per-unit grid, white (255) background, black (0) ink.
     grid = [[255] * grid_w for _ in range(grid_h)]

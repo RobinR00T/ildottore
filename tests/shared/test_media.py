@@ -69,6 +69,17 @@ def test_render_text_png_rejects_bad_params() -> None:
         render_text_png("x", columns=0)
 
 
+def test_render_text_png_bounds_resource_amplification() -> None:
+    # scale/columns over the cap, and a projected output over the pixel ceiling, must be refused
+    # BEFORE any large buffer is allocated (memory-amplification guard).
+    with pytest.raises(MediaError):
+        render_text_png("HI", scale=99)
+    with pytest.raises(MediaError):
+        render_text_png("HI", columns=9999)
+    with pytest.raises(MediaError):
+        render_text_png("A" * 10000, columns=256, scale=16)  # many lines x max scale, over 8 MP
+
+
 def test_render_media_part_render_text() -> None:
     mime, raw = render_media_part({"kind": "image", "format": "png", "render_text": "PWNED"})
     assert mime == "image/png"

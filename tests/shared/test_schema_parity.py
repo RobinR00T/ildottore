@@ -35,10 +35,12 @@ from ildottore.shared import (
     Severity,
     TargetType,
 )
+from ildottore.shared.enums import Capability
 from ildottore.shared.models import (
     Attack,
     AttackSpec,
     Budget,
+    Capabilities,
     EvaluatorConfig,
     FixtureCase,
     Fixtures,
@@ -152,6 +154,25 @@ _ENUM_PAIRS: dict[str, tuple[list[str], type[Any]]] = {
 def test_enum_values_match_schema(name: str) -> None:
     schema_values, enum_cls = _ENUM_PAIRS[name]
     assert set(schema_values) == {e.value for e in enum_cls}, f"{name}: enum drift"
+
+
+def test_capability_enum_matches_capabilities_model() -> None:
+    """The ``Capability`` enum stays 1:1 with the ``Capabilities`` model fields (no drift).
+
+    The ``requires`` half is guarded above; this guards the target-capability half, so adding a
+    capability (e.g. ``audio``) to one without the other is a test failure (multimodal audit).
+    """
+    assert {c.value for c in Capability} == set(Capabilities.model_fields.keys())
+
+
+def test_requires_to_cap_map_is_complete_and_targets_real_fields() -> None:
+    """Every ``RequiresCapability`` (except the setup-only ``system_prompt``) maps to a real
+    ``Capabilities`` field, so the planner can gate it."""
+    from ildottore.core.planner import _REQUIRES_TO_CAP
+
+    expected = {r for r in RequiresCapability if r is not RequiresCapability.SYSTEM_PROMPT}
+    assert set(_REQUIRES_TO_CAP) == expected
+    assert all(field in Capabilities.model_fields for field in _REQUIRES_TO_CAP.values())
 
 
 def test_fixture_expect_verdict_enums_match_schema() -> None:

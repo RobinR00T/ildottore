@@ -29,27 +29,63 @@ class RedactionLeakError(RuntimeError):
     """A raw secret/PII shape survived redaction — the write is refused (DL2)."""
 
 
-def _strip_media_carrier_bytes(dump: object) -> None:
-    """Elide multimodal carrier bytes from a request before it is persisted (in place).
+def _strip_media_carrier_bytes(obj: object) -> None:
+    """Elide multimodal carrier bytes anywhere in the dumped attempt (in place, recursive).
 
-    A carrier (an image or audio ``data_b64`` on ``request.media``) is large binary that is
-    reproducible from its declarative part (``render_text`` / ``asset``) plus the recorded
-    ``metadata.media_sha256`` digest, so the raw bytes are not stored: they would bloat evidence
-    and, being high-entropy, could false-positive the fail-closed redaction guard. Only the bytes
-    are replaced with a size placeholder; ``kind`` / ``format`` / ``asset`` stay for provenance.
+    A carrier (image/audio ``data_b64``) is large binary that is reproducible from its declarative
+    part (``render_text`` / ``asset``) plus the recorded ``media_sha256`` digest, so the raw bytes
+    are not stored: they would bloat evidence and, being high-entropy, could false-positive the
+    fail-closed redaction guard. Every ``data_b64`` string value is replaced with a size
+    placeholder **wherever it appears** (not only ``request.media``), so a future carrier location
+    (e.g. a multimodal multi-turn message) cannot leak raw bytes past the guard. ``kind`` /
+    ``format`` / ``asset`` stay for provenance.
+    """
+
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key == "data_b64" and isinstance(value, str):
+                obj[key] = f"<omitted {len(value)} b64 chars>"
+            else:
+                _strip_media_carrier_bytes(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            _strip_media_carrier_bytes(item)
+
+
+def _pop_media_digest(dump: object) -> object | None:
+    """Remove and return ``request.metadata.media_sha256`` (the chain-of-custody digest).
+
+    The digest is a SHA-256 hex list: non-sensitive (a one-way hash) and the whole point of the
+    multimodal evidence trail, but its entropy is above the redactor's threshold, so leaving it in
+    would let redaction mask it into oblivion. It is exempted from redaction and restored verbatim
+    after the fail-closed guard runs (see ``put``).
     """
 
     if not isinstance(dump, dict):
-        return
+        return None
     request = dump.get("request")
     if not isinstance(request, dict):
+        return None
+    metadata = request.get("metadata")
+    if not isinstance(metadata, dict) or "media_sha256" not in metadata:
+        return None
+    digest: object = metadata.pop("media_sha256")
+    return digest
+
+
+def _restore_media_digest(redacted: object, digest: object) -> None:
+    """Put the exempted ``media_sha256`` digest back into the redacted request (in place)."""
+
+    if digest is None or not isinstance(redacted, dict):
         return
-    media = request.get("media")
-    if not isinstance(media, list):
+    request = redacted.get("request")
+    if not isinstance(request, dict):
         return
-    for part in media:
-        if isinstance(part, dict) and isinstance(part.get("data_b64"), str):
-            part["data_b64"] = f"<omitted {len(part['data_b64'])} b64 chars>"
+    metadata = request.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        request["metadata"] = metadata
+    metadata["media_sha256"] = digest
 
 
 def _canonical_json(obj: object) -> str:
@@ -106,9 +142,14 @@ class FsEvidenceStore:
         # catch (the guard re-scans keys and values independently).
         dump = attempt.model_dump(mode="json")
         _strip_media_carrier_bytes(dump)
+        # The chain-of-custody media digest is a safe one-way hash but its entropy is above the
+        # redactor's threshold, so exempt it: pop it out before redaction + the fail-closed guard,
+        # then restore it verbatim into the redacted payload that is hashed and written.
+        media_digest = _pop_media_digest(dump)
         redacted = self._mask_keys(self._redactor.redact(dump))
+        self._assert_no_leak(_canonical_json(redacted))
+        _restore_media_digest(redacted, media_digest)
         payload = _canonical_json(redacted)
-        self._assert_no_leak(payload)
 
         digest = paths.content_hash(payload)
         target = paths.attempt_path(self._root, run_id, digest)

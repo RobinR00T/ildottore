@@ -117,6 +117,36 @@ versioning: [SemVer](https://semver.org/).
 - Normalized formatting on the files introduced this cycle so `ruff format --check` (a CI
   gate) is clean.
 
+### Security (multimodal audit remediation, 2026-09-03)
+Four parallel adversarial reviewers audited the multimodal / audio / asset-loading / evidence code
+added this cycle; the path-traversal guard and rendering determinism verified clean, and these
+confirmed findings were fixed (each with a regression test):
+- **Chain-of-custody digest was self-defeating (high)**: `metadata.media_sha256` (a 64-hex hash) was
+  above the redactor's entropy threshold and got masked at rest, silently voiding the multimodal
+  audit trail. The digest is now exempted from redaction (popped before the pass, restored verbatim
+  into the written payload), so it survives while the carrier bytes stay elided.
+- **Carrier-strip widened**: `_strip_media_carrier_bytes` now recurses the whole attempt, eliding
+  any `data_b64` wherever it appears (not only `request.media`), so a future multimodal multi-turn
+  carrier cannot leak raw bytes past the fail-closed guard.
+- **Unrenderable media no longer aborts a run**: a schema-valid-but-unrenderable `attack.media` part
+  is now rejected by a new linter rule (renderability + capability match), and the runner isolates
+  any `MediaError` as a per-spec `inconclusive` finding instead of crashing the whole campaign.
+- **Media capability gating enforced**: the linter requires a spec with media to declare the
+  matching capability (image -> `multimodal`, audio -> `audio`); the Anthropic adapter refuses an
+  audio carrier rather than sending a malformed image block.
+- **Rendering resource cap**: `render_text_png` bounds `scale`/`columns` and the projected output
+  area (schema maxima too), so a spec cannot request a multi-hundred-megapixel image (OOM).
+- **`tool_call` evaluator recursion fixed (medium)**: `forbidden_args`, argument-injection and
+  confirmation-flag detection now recurse into lists of objects, closing a false negative where a
+  smuggled key/marker hid inside an array argument (e.g. `{"recipients": [{"bcc": "..."}]}`).
+- **Asset loading hardened**: a filesystem error while reading a media `asset` becomes a single
+  lint finding (not an unhandled crash of the whole load pass), and an asset over a 25 MB cap is
+  refused before it is read.
+- **`render-media`**: writes each carrier with the extension implied by its MIME type (an audio
+  carrier is `.wav`, not `.png`) and reports an unrenderable part as a clean error.
+- **Parity guard added**: a test now pins the `Capability` enum to the `Capabilities` model fields
+  and the planner's requires-to-capability map, matching the existing `requires`/schema guard.
+
 ### Security (adversarial audit remediation, 2026-09-01)
 - **Allowlist path-traversal bypass (critical) closed**: `is_allowed` now resolves `..`/`.`
   dot-segments to the path the HTTP client actually requests before matching (a

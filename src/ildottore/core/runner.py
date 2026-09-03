@@ -44,7 +44,7 @@ from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_er
 from ildottore.core.planner import build_plan
 from ildottore.core.reproduce import DEFAULT_N, reproduce
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
-from ildottore.shared.media import media_digests
+from ildottore.shared.media import MediaError, media_digests
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -397,39 +397,44 @@ class CampaignRunner:
         multi_turn = _is_multi_turn(spec)
         base_prompt = _base_prompt(spec)
 
-        # Multi-identity specs (authz_leak, audit M14): send the attack once as each authorized
-        # identity and collect {identity_id: response} + the canary -> owner map, so authz_leak
-        # can flag a tenant-scoped canary reaching a non-owner identity. Empty for a single-
-        # identity target, so authz_leak stays honestly capability_unavailable there.
-        identities_map, canary_owners = await self._gather_identities(
-            target, spec, base_prompt, run_id
-        )
-
         # Seed from the prior partial run so completed attempts are merged, not lost.
         attempts: list[Attempt] = list(prior.attempts) if prior is not None else []
         verdicts: list[Verdict] = [a.verdict for a in attempts if a.verdict is not None]
         evidence_refs: list[EvidenceRef] = list(prior.evidence) if prior is not None else []
-        for mutation in mutators:
-            if multi_turn:
-                results = await self._reproduce_multi_turn(
-                    spec, adapter, mutation, ledger, completed
-                )
-            else:
-                results = await self._reproduce_single_turn(
-                    spec, adapter, mutation, base_prompt, ledger, completed
-                )
-            for result in results:
-                verdict = await self._evaluate(
-                    spec,
-                    result.attempt,
-                    env_error=result.env_error,
-                    identities=identities_map,
-                    canary_owners=canary_owners,
-                )
-                stored = result.attempt.model_copy(update={"verdict": verdict})
-                evidence_refs.append(self._evidence.put(run_id, stored))
-                attempts.append(stored)
-                verdicts.append(verdict)
+        try:
+            # Multi-identity specs (authz_leak, audit M14): send the attack once as each authorized
+            # identity and collect {identity_id: response} + the canary -> owner map, so authz_leak
+            # can flag a tenant-scoped canary reaching a non-owner identity. Empty for a single-
+            # identity target, so authz_leak stays honestly capability_unavailable there.
+            identities_map, canary_owners = await self._gather_identities(
+                target, spec, base_prompt, run_id
+            )
+            for mutation in mutators:
+                if multi_turn:
+                    results = await self._reproduce_multi_turn(
+                        spec, adapter, mutation, ledger, completed
+                    )
+                else:
+                    results = await self._reproduce_single_turn(
+                        spec, adapter, mutation, base_prompt, ledger, completed
+                    )
+                for result in results:
+                    verdict = await self._evaluate(
+                        spec,
+                        result.attempt,
+                        env_error=result.env_error,
+                        identities=identities_map,
+                        canary_owners=canary_owners,
+                    )
+                    stored = result.attempt.model_copy(update={"verdict": verdict})
+                    evidence_refs.append(self._evidence.put(run_id, stored))
+                    attempts.append(stored)
+                    verdicts.append(verdict)
+        except MediaError as exc:
+            # A malformed multimodal carrier is an authoring defect (the linter rejects it), but if
+            # one reaches here it must fail THIS spec as inconclusive, never abort the campaign
+            # (per-spec isolation, contract §2/§4). Rendering is deterministic, so no partial send.
+            return self._media_error_finding(spec, target, reason=f"media_error: {exc}")
 
         return self._score_finding(
             spec, target, attempts=attempts, verdicts=verdicts, evidence=evidence_refs
@@ -657,6 +662,25 @@ class CampaignRunner:
         self, spec: AttackSpec, target: Target, *, reason: str
     ) -> Finding:
         """An ``inconclusive: capability_unavailable`` finding — never a pass."""
+
+        return Finding(
+            spec_id=spec.id,
+            target_id=target.id,
+            status=VerdictStatus.INCONCLUSIVE,
+            risk=_zero_risk(spec),
+            confirmed=False,
+            attempts=[],
+            evidence=[],
+            reasoning=reason,
+        )
+
+    def _media_error_finding(self, spec: AttackSpec, target: Target, *, reason: str) -> Finding:
+        """An ``inconclusive`` finding for a spec whose multimodal carrier could not render.
+
+        Defense-in-depth: the linter already rejects an unrenderable ``attack.media`` part, so this
+        is only reachable if that gate was bypassed. It isolates the failure to this one spec
+        (never a pass, never a campaign abort).
+        """
 
         return Finding(
             spec_id=spec.id,

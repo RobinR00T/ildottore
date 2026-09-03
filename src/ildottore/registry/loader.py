@@ -33,6 +33,12 @@ from .schema import SafeLoadError, load_yaml_file, validate_attack_spec_schema
 
 _SYNTHETIC_PACK_ID = "loose-specs"
 
+# Upper bound on a single media asset. A carrier is a short clip/image; anything larger is almost
+# certainly a mistake, and reading it (then base64-encoding it ~1.33x, resident on the registry)
+# would inflate memory during lint/run. Device files and symlinks-out are already refused, so this
+# is bounded by real bytes on disk.
+_MAX_ASSET_BYTES = 25 * 1024 * 1024
+
 
 class _AssetError(ValueError):
     """A media ``asset`` reference could not be safely resolved."""
@@ -44,7 +50,9 @@ def _resolve_asset_bytes(spec_dir: Path, asset: str) -> bytes:
     A binary carrier (an audio clip) is stored as a file next to the spec and referenced by a
     RELATIVE path. This resolves it with strict containment: no absolute path, no ``..`` segment,
     and the resolved real path must stay under ``spec_dir`` (symlinks resolved). That keeps a
-    spec from reading an arbitrary file off disk via its ``asset`` field.
+    spec from reading an arbitrary file off disk via its ``asset`` field. Every failure, including a
+    filesystem error (permission denied, out of memory, oversize), is raised as :class:`_AssetError`
+    so one bad asset becomes a single lint finding rather than crashing the whole load pass.
     """
 
     if asset.startswith("/") or asset.startswith("\\"):
@@ -52,13 +60,23 @@ def _resolve_asset_bytes(spec_dir: Path, asset: str) -> bytes:
     parts = Path(asset).parts
     if ".." in parts or any(p == "" for p in parts):
         raise _AssetError(f"asset path must not contain '..' segments: {asset!r}")
-    base = spec_dir.resolve()
-    resolved = (base / asset).resolve()
-    if not resolved.is_relative_to(base):
-        raise _AssetError(f"asset path escapes the spec directory: {asset!r}")
-    if not resolved.is_file():
-        raise _AssetError(f"asset file not found: {asset!r}")
-    return resolved.read_bytes()
+    try:
+        base = spec_dir.resolve()
+        resolved = (base / asset).resolve()
+        if not resolved.is_relative_to(base):
+            raise _AssetError(f"asset path escapes the spec directory: {asset!r}")
+        if not resolved.is_file():
+            raise _AssetError(f"asset file not found: {asset!r}")
+        size = resolved.stat().st_size
+        if size > _MAX_ASSET_BYTES:
+            raise _AssetError(
+                f"asset {asset!r} is {size} bytes, over the {_MAX_ASSET_BYTES}-byte cap"
+            )
+        return resolved.read_bytes()
+    except _AssetError:
+        raise
+    except (OSError, MemoryError) as exc:
+        raise _AssetError(f"could not read asset {asset!r}: {exc}") from exc
 
 
 def _inline_media_assets(data: dict[str, object], spec_dir: Path) -> None:
