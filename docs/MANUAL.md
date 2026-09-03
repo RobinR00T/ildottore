@@ -307,7 +307,7 @@ Prints the generated JSON Schemas that machine-validate every spec.
 
 ## 6. The attack battery
 
-54 specs across 12 suites, aligned to OWASP LLM Top 10, MITRE ATLAS and OWASP-Agents-2026.
+55 specs across 12 suites, aligned to OWASP LLM Top 10, MITRE ATLAS and OWASP-Agents-2026.
 `dottore registry ls` prints the live list; the columns are `id`, OWASP tag, band, category,
 and title. Spec ids are family-prefixed: `PI-` prompt injection, `JB-` jailbreak, `DL-` data
 leakage, `AC-` access control, `AG-` agentic abuse, `OUT-` insecure output, `EMB-` embeddings,
@@ -328,7 +328,7 @@ Suites (with the count `registry ls --suite <id>` reports):
 | `mcp` | 1 | MCP-server metadata poisoning (point it at a `provider: mcp` target) |
 | `responsible-ai` | 2 | optional NIST-mapped pack: harmful-content refusal + demographic bias/fairness |
 | `guardrail-evasion` | 2 | moderation-layer evasion, input classifier + output filter |
-| `multimodal` | 1 | visual / typographic prompt injection (instruction rendered inside an image) |
+| `multimodal` | 2 | visual prompt injection: a direct override, and an indirect injection embedded in a document image |
 
 Select with `--suite`, `-p/--categories`, `--spec`/`--exclude` (globs), or `--top-tests`.
 

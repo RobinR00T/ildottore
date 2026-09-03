@@ -14,10 +14,14 @@ versioning: [SemVer](https://semver.org/).
   attach the rendered image to the user turn as the provider image content block; the runner keeps
   the declarative part on the request. New `MM-IMG-PROMPTINJECT-001` spec + `multimodal` suite: the
   user's turn asks only to describe the image while an override instruction rendered inside it
-  demands a planted canary, so a successful visual injection is a decisive leak. Gated on
-  `capabilities.multimodal` (a text-only target skips it, never a false pass). `attack.media` /
-  `ModelRequest.media` are additive optional fields. Battery is now 54 specs / 12 suites. Audio and
-  document carriers are the next increments.
+  demands a planted canary, so a successful visual injection is a decisive leak. A second spec,
+  `MM-IMG-DOC-INJECT-001`, covers the indirect variant: the user asks to summarize a business-memo
+  image whose body hides a "note to the assistant" (the multimodal analogue of PI-INDIRECT-RAG).
+  Both are gated on `capabilities.multimodal` (a text-only target skips them, never a false pass).
+  `attack.media` / `ModelRequest.media` are additive optional fields. Battery is now 55 specs / 12
+  suites. Audio and document (PDF) carriers are deferred: a faithful audio carrier needs speech
+  (a TTS dependency or a pinned recorded clip), not stdlib synthesis, so it is not shipped as a
+  fake carrier.
 - **MCP adapter (`provider: mcp`) + `mcp` suite**: scan a Model Context Protocol server as a
   target. `adapters/mcp.py` speaks JSON-RPC over Streamable HTTP: it performs the `initialize`
   handshake and lists `tools`/`resources`/`prompts`, then renders that advertised metadata as

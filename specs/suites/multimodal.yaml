@@ -19,4 +19,5 @@ default_runs: 5
 tags: [owasp, mitre-atlas, nist-ai-rmf, multimodal]
 
 specs:
-  - spec_id: MM-IMG-PROMPTINJECT-001
+  - spec_id: MM-IMG-PROMPTINJECT-001      # direct visual override
+  - spec_id: MM-IMG-DOC-INJECT-001        # indirect: injection embedded in a document image
