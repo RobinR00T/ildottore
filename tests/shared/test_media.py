@@ -108,6 +108,28 @@ def test_media_digest_matches_rendered_bytes_and_is_stable() -> None:
     assert media_digest({"kind": "image", "render_text": "OTHER"}) != media_digest(part)
 
 
+def test_render_audio_part_from_data_b64() -> None:
+    raw = b"RIFF....WAVEfmt fake pcm bytes"
+    part = {"kind": "audio", "format": "wav", "data_b64": base64.b64encode(raw).decode()}
+    mime, out = render_media_part(part)
+    assert mime == "audio/wav"
+    assert out == raw  # pinned bytes pass through verbatim
+    assert media_digest(part) == hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        {"kind": "audio", "format": "mp3", "data_b64": "AAAA"},  # unsupported audio format
+        {"kind": "audio", "format": "wav"},  # audio needs data_b64 (no synthesis)
+        {"kind": "audio", "format": "wav", "data_b64": "@@notb64@@"},  # malformed base64
+    ],
+)
+def test_render_audio_part_rejects_bad_parts(part: dict[str, object]) -> None:
+    with pytest.raises(MediaError):
+        render_media_part(part)
+
+
 def test_media_digests_preserves_order() -> None:
     parts = [
         {"kind": "image", "render_text": "A"},

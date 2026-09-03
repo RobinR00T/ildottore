@@ -207,27 +207,41 @@ def _scale_and_pad(grid: list[list[int]], *, scale: int, margin: int) -> list[li
     return out
 
 
+def _decode_b64(data_b64: str) -> bytes:
+    try:
+        return base64.b64decode(data_b64, validate=True)
+    except ValueError as exc:  # binascii.Error is a ValueError subclass
+        raise MediaError("media data_b64 is not valid base64") from exc
+
+
 def render_media_part(part: Mapping[str, object]) -> tuple[str, bytes]:
     """Resolve one declarative media part to ``(mime_type, raw_bytes)``.
 
-    Supports ``kind == "image"`` with ``format == "png"`` via either ``render_text`` (rendered
-    deterministically here) or ``data_b64`` (pinned bytes). Raises :class:`MediaError` on an
-    unknown kind/format or malformed data, so a bad spec fails loudly, never silently.
+    * ``kind == "image"`` (``format == "png"``): from ``render_text`` (rendered deterministically
+      here) or ``data_b64`` (pinned bytes).
+    * ``kind == "audio"`` (``format == "wav"``): from ``data_b64`` (pinned bytes). Audio cannot be
+      synthesized from text with the stdlib, so an audio carrier is always pinned bytes; the spec
+      declares it as an ``asset`` path that the loader resolves into ``data_b64`` before this runs.
+
+    Raises :class:`MediaError` on an unknown kind/format or malformed data (fail loudly).
     """
 
     kind = part.get("kind")
-    if kind != "image":
-        raise MediaError(f"unsupported media kind {kind!r} (only 'image' in this build)")
+    if kind == "image":
+        return _render_image_part(part)
+    if kind == "audio":
+        return _render_audio_part(part)
+    raise MediaError(f"unsupported media kind {kind!r} (only 'image' / 'audio' in this build)")
+
+
+def _render_image_part(part: Mapping[str, object]) -> tuple[str, bytes]:
     fmt = part.get("format", "png")
     if fmt != "png":
         raise MediaError(f"unsupported image format {fmt!r} (only 'png' in this build)")
 
     data_b64 = part.get("data_b64")
     if isinstance(data_b64, str) and data_b64:
-        try:
-            return "image/png", base64.b64decode(data_b64, validate=True)
-        except ValueError as exc:  # binascii.Error is a ValueError subclass
-            raise MediaError("media data_b64 is not valid base64") from exc
+        return "image/png", _decode_b64(data_b64)
 
     render_text = part.get("render_text")
     if isinstance(render_text, str):
@@ -238,6 +252,16 @@ def render_media_part(part: Mapping[str, object]) -> tuple[str, bytes]:
         return "image/png", render_text_png(render_text, scale=scale, columns=columns)
 
     raise MediaError("image media part needs either 'render_text' or 'data_b64'")
+
+
+def _render_audio_part(part: Mapping[str, object]) -> tuple[str, bytes]:
+    fmt = part.get("format", "wav")
+    if fmt != "wav":
+        raise MediaError(f"unsupported audio format {fmt!r} (only 'wav' in this build)")
+    data_b64 = part.get("data_b64")
+    if isinstance(data_b64, str) and data_b64:
+        return "audio/wav", _decode_b64(data_b64)
+    raise MediaError("audio media part needs 'data_b64' (resolved from its 'asset' by the loader)")
 
 
 def media_digest(part: Mapping[str, object]) -> str:

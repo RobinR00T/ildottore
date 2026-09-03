@@ -6,6 +6,16 @@ versioning: [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Multimodal audio: spoken prompt injection carried in an audio clip (docs/12 P0)**. A spec can
+  carry a payload in a pinned WAV (`kind: audio`, `format: wav`) referenced by an `asset` path,
+  which the loader resolves to bytes at load time behind a strict path-traversal guard (no absolute
+  path, no `..`, the resolved real path must stay under the spec directory). It runs only against a
+  target that declares the new `audio` capability; the OpenAI adapter sends it as an `input_audio`
+  content block. Carrier bytes are elided from persisted evidence (the `asset` reference and the
+  `media_sha256` digest are kept), so a 100 KB clip neither bloats the record nor trips the
+  fail-closed redaction guard. New `MM-AUD-PROMPTINJECT-001` (a spoken override demanding a benign
+  codeword; a compliant model emits it, a secure one does not) in the `multimodal` suite. Battery
+  is now 57 specs / 12 suites.
 - **Multimodal attacks: visual / typographic prompt injection (docs/12 P0, MVP-3 phase)**. A spec
   can carry a payload in an image via `attack.media` (a declarative part, e.g.
   `{kind: image, format: png, render_text: "..."}`). `shared/media.py` renders it to a byte-stable

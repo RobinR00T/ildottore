@@ -38,6 +38,7 @@ class OpenAIAdapter(BaseAdapter):
     memory_enabled: bool = False
     multi_identity_enabled: bool = False
     multimodal_enabled: bool = False
+    audio_enabled: bool = False
 
     @property
     def _endpoint_path(self) -> str:
@@ -53,6 +54,7 @@ class OpenAIAdapter(BaseAdapter):
             logprobs=self.logprobs_enabled,
             multi_identity=self.multi_identity_enabled,
             multimodal=self.multimodal_enabled,
+            audio=self.audio_enabled,
         )
 
     def _build_messages(self, request: ModelRequest) -> list[dict[str, Any]]:
@@ -77,13 +79,25 @@ class OpenAIAdapter(BaseAdapter):
 
     @staticmethod
     def _multimodal_content(request: ModelRequest) -> list[dict[str, Any]]:
-        """Build the OpenAI multimodal ``content`` array (text + one image_url per media part)."""
+        """Build the OpenAI multimodal ``content`` array (text + one block per media part).
+
+        An image part becomes an ``image_url`` data-URL block; an audio part becomes an
+        ``input_audio`` block (base64 + format), the shape the audio-capable chat models accept.
+        """
 
         content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt or ""}]
         for part in request.media or []:
             mime, raw = render_media_part(part)
-            data_url = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
-            content.append({"type": "image_url", "image_url": {"url": data_url}})
+            b64 = base64.b64encode(raw).decode("ascii")
+            if mime.startswith("audio/"):
+                audio_format = mime.split("/", 1)[1]  # "audio/wav" -> "wav"
+                content.append(
+                    {"type": "input_audio", "input_audio": {"data": b64, "format": audio_format}}
+                )
+            else:
+                content.append(
+                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                )
         return content
 
     def _build_request(self, request: ModelRequest) -> tuple[dict[str, Any], dict[str, str]]:

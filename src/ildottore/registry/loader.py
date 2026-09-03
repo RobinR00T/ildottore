@@ -19,6 +19,7 @@ exception, so ``dottore lint`` can itemize *all* problems in one pass.
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,6 +32,56 @@ from .pack import LoadedPack
 from .schema import SafeLoadError, load_yaml_file, validate_attack_spec_schema
 
 _SYNTHETIC_PACK_ID = "loose-specs"
+
+
+class _AssetError(ValueError):
+    """A media ``asset`` reference could not be safely resolved."""
+
+
+def _resolve_asset_bytes(spec_dir: Path, asset: str) -> bytes:
+    """Read a media ``asset`` file, refusing any path that escapes the spec's own directory.
+
+    A binary carrier (an audio clip) is stored as a file next to the spec and referenced by a
+    RELATIVE path. This resolves it with strict containment: no absolute path, no ``..`` segment,
+    and the resolved real path must stay under ``spec_dir`` (symlinks resolved). That keeps a
+    spec from reading an arbitrary file off disk via its ``asset`` field.
+    """
+
+    if asset.startswith("/") or asset.startswith("\\"):
+        raise _AssetError(f"asset path must be relative, not {asset!r}")
+    parts = Path(asset).parts
+    if ".." in parts or any(p == "" for p in parts):
+        raise _AssetError(f"asset path must not contain '..' segments: {asset!r}")
+    base = spec_dir.resolve()
+    resolved = (base / asset).resolve()
+    if not resolved.is_relative_to(base):
+        raise _AssetError(f"asset path escapes the spec directory: {asset!r}")
+    if not resolved.is_file():
+        raise _AssetError(f"asset file not found: {asset!r}")
+    return resolved.read_bytes()
+
+
+def _inline_media_assets(data: dict[str, object], spec_dir: Path) -> None:
+    """Resolve every ``attack.media[*].asset`` into ``data_b64`` in place (safe, load-time).
+
+    Downstream (``shared.media``, adapters) then only sees pinned bytes, so no component needs
+    filesystem access. Raises :class:`_AssetError` on an unsafe or missing asset.
+    """
+
+    attack = data.get("attack")
+    if not isinstance(attack, dict):
+        return
+    media = attack.get("media")
+    if not isinstance(media, list):
+        return
+    for part in media:
+        if not isinstance(part, dict):
+            continue
+        asset = part.get("asset")
+        if isinstance(asset, str) and asset and not part.get("data_b64"):
+            part["data_b64"] = base64.b64encode(_resolve_asset_bytes(spec_dir, asset)).decode(
+                "ascii"
+            )
 
 
 @dataclass(slots=True)
@@ -77,6 +128,16 @@ def _load_attack_spec(path: Path, display_root: Path) -> tuple[AttackSpec | None
         return None, [
             LintError(code=LintCode.SCHEMA, message=msg, path=rel, spec_id=spec_id)
             for msg in schema_errors
+        ]
+
+    # Resolve any media asset references (a binary carrier stored next to the spec) into inline
+    # bytes, refusing a path that escapes the spec directory (a path-traversal guard).
+    try:
+        _inline_media_assets(data, path.parent)
+    except _AssetError as exc:
+        spec_id = data.get("id") if isinstance(data.get("id"), str) else None
+        return None, [
+            LintError(code=LintCode.ASSET_ERROR, message=str(exc), path=rel, spec_id=spec_id)
         ]
 
     # Schema-valid; construct the model. Pydantic post-init invariants (e.g. fixtures

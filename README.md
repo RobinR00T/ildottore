@@ -16,7 +16,7 @@ model DoS). Aligned to **OWASP LLM Top 10 (2025)**, **MITRE ATLAS** and **NIST A
 
 ## What it does
 
-- **56 declarative attack specs across 12 suites** covering the OWASP LLM Top 10, MITRE
+- **57 declarative attack specs across 12 suites** covering the OWASP LLM Top 10, MITRE
   ATLAS and agentic/OWASP-Agents-2026 abuse. `dottore registry ls` lists them all.
 - **Fingerprint** a target's model + guardrails before attacking (`-sV`).
 - **Multi-turn** attacks (Crescendo, Linear, Sequential, Bad-Likert, Tree) whose turns are

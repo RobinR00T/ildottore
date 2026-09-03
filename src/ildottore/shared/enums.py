@@ -100,6 +100,7 @@ class Capability(StrEnum):
     LOGPROBS = "logprobs"
     MULTI_IDENTITY = "multi_identity"
     MULTIMODAL = "multimodal"
+    AUDIO = "audio"
 
 
 class RequiresCapability(StrEnum):
@@ -118,6 +119,7 @@ class RequiresCapability(StrEnum):
     LOGPROBS = "logprobs"
     MULTI_IDENTITY = "multi_identity"
     MULTIMODAL = "multimodal"
+    AUDIO = "audio"
 
 
 class ScanBand(StrEnum):

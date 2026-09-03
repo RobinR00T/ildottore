@@ -232,6 +232,7 @@ class Capabilities(_Frozen):
     logprobs: bool = False
     multi_identity: bool = False
     multimodal: bool = False
+    audio: bool = False
 
 
 class Target(_Frozen):
