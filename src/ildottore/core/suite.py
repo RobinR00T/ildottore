@@ -1,13 +1,13 @@
 """Suite → spec-set resolution (u08, contract §5.2).
 
 A **suite** is a named, ordered set of attack specs (a framework preset like
-``owasp:llm`` or a hand-authored engagement suite — ``docs/08 §6``). Resolution is
+``owasp:llm`` or a hand-authored engagement suite - ``docs/08 §6``). Resolution is
 delegated to the injected Spec Registry (u02) via a narrow structural protocol
 (:class:`SuiteResolver`) so ``core`` never imports the registry concrete
-(contract §3/§8 — interfaces only, composition is u12).
+(contract §3/§8 - interfaces only, composition is u12).
 
 Preset ids carry a colon (``owasp:llm``); the registry stores them verbatim, so
-resolution is a straight lookup — this module normalizes the id and surfaces a
+resolution is a straight lookup - this module normalizes the id and surfaces a
 typed :class:`SuiteResolutionError` when a suite is unknown, rather than leaking
 the registry's ``KeyError`` into the runner. Order is preserved (the registry
 returns specs in declared order) because determinism depends on a stable spec
@@ -35,7 +35,7 @@ class SuiteResolutionError(KeyError):
 class SuiteResolver(Protocol):
     """The slice of the Spec Registry (u02) the suite resolver needs.
 
-    Structurally satisfied by :class:`ildottore.registry.Registry` — ``core``
+    Structurally satisfied by :class:`ildottore.registry.Registry` - ``core``
     codes against this Protocol, never the concrete (contract §8).
     """
 
@@ -48,7 +48,7 @@ def resolve_suite(resolver: SuiteResolver, suite_id: str) -> list[AttackSpec]:
     """Resolve ``suite_id`` to its ordered spec set via the registry.
 
     Raises :class:`SuiteResolutionError` when the suite is unknown **or** resolves
-    to zero specs — an empty campaign is almost always an operator error (a typo in
+    to zero specs - an empty campaign is almost always an operator error (a typo in
     the suite id or an unloaded pack), so it fails loud rather than running nothing.
     """
 

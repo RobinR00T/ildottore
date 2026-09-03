@@ -1,7 +1,7 @@
 """Thin-delegator commands (contract §5.5): fingerprint, registry, describe,
 new-spec, replay, lint, schema export.
 
-Each command wires an upstream unit and renders — it holds no business logic. These
+Each command wires an upstream unit and renders - it holds no business logic. These
 tests assert the wiring + I/O behave, not the upstream logic (owned elsewhere).
 """
 

@@ -1,14 +1,14 @@
 """Filesystem :class:`~ildottore.shared.protocols.EvidenceStore` (u10).
 
 ``put(run_id, attempt)`` redacts the attempt (u01 redactor, the only masking
-choke point — contract §3/§8), serializes it to canonical JSON, content-addresses
+choke point - contract §3/§8), serializes it to canonical JSON, content-addresses
 it by SHA-256 and writes it **atomically** and **immutably** under the run's
 ``attempts/`` directory. Identical attempts dedupe to one file / one ref; differing
-content yields a new hash (never overwrites) — contract §4 KEEP.
+content yields a new hash (never overwrites) - contract §4 KEEP.
 
 Redaction is **fail-closed** (contract §4 KEEP, ``docs/11 §5`` DL2): the redacted
 payload is re-scanned and if any secret/PII shape survives the write is refused and
-:class:`RedactionLeakError` raised — no raw secret/PII/canary ever touches disk.
+:class:`RedactionLeakError` raised - no raw secret/PII/canary ever touches disk.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from ildottore.store import paths
 
 
 class RedactionLeakError(RuntimeError):
-    """A raw secret/PII shape survived redaction — the write is refused (DL2)."""
+    """A raw secret/PII shape survived redaction - the write is refused (DL2)."""
 
 
 def _strip_media_carrier_bytes(obj: object) -> None:
@@ -91,7 +91,7 @@ def _restore_media_digest(redacted: object, digest: object) -> None:
 def _canonical_json(obj: object) -> str:
     """Deterministic JSON: sorted keys, compact, UTF-8 preserved.
 
-    Determinism is what makes content addressing meaningful — the same logical
+    Determinism is what makes content addressing meaningful - the same logical
     attempt always serializes to the same bytes and therefore the same hash.
     """
 
@@ -103,7 +103,7 @@ class FsEvidenceStore:
 
     ``root`` comes from config (contract §4 KEEP: never hardcoded); ``planted``
     is an optional list of engagement canary values that must never appear
-    verbatim on disk — they are redacted as an extra fail-closed guard even
+    verbatim on disk - they are redacted as an extra fail-closed guard even
     though DL1 canaries are synthetic.
     """
 

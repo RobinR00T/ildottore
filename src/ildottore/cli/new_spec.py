@@ -1,4 +1,4 @@
-"""``dottore new-spec`` — scaffold a new attack spec + empty fixtures (contract §5.5).
+"""``dottore new-spec`` - scaffold a new attack spec + empty fixtures (contract §5.5).
 
 Produces a schema-shaped starter YAML the author fills in ("write a spec == write an
 NSE script", ``docs/09 §1``). It emits **text** (or writes it to an operator-chosen
@@ -89,7 +89,7 @@ def write_scaffold(
     """Write the scaffold to ``out_dir/<spec_id>.yaml`` and return the path.
 
     Refuses to overwrite an existing file (a scaffold never clobbers real work) and
-    never targets the repo ``specs/`` tree — the operator chooses ``out_dir``.
+    never targets the repo ``specs/`` tree - the operator chooses ``out_dir``.
     """
 
     out_dir.mkdir(parents=True, exist_ok=True)

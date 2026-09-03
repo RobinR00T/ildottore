@@ -14,7 +14,7 @@ mismatch (:meth:`GoldenReport.ok`).
 Injection seams (contract §3/§8):
 
 * the **evaluator** is injected via the :class:`~ildottore.shared.protocols.Evaluator`
-  protocol — no concrete evaluator (u06) is imported here. In this unit's own tests a
+  protocol - no concrete evaluator (u06) is imported here. In this unit's own tests a
   trivial stub evaluator stands in; u12 wires the real pipeline.
 * the **policy engine** (u01) gates ``test_only`` fixtures: a scenario whose spec is
   ``test_only`` runs only when the active pack permits it, and the skip reason is
@@ -22,7 +22,7 @@ Injection seams (contract §3/§8):
 
 Capability honesty (contract §3): if a spec ``requires`` a target capability the
 :class:`~ildottore.adapters.mock.MockTarget` does not declare, the scenario yields
-``inconclusive: capability_unavailable`` — never a fabricated ``pass``.
+``inconclusive: capability_unavailable`` - never a fabricated ``pass``.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ Scenario = Literal["vulnerable", "hardened"]
 
 # Spec-level ``requires`` → target ``Capabilities`` field. ``system_prompt`` is a
 # setup prerequisite (not a target capability) and ``seed`` is a sampling capability
-# absent from ``requires`` — neither participates in capability-gating here
+# absent from ``requires`` - neither participates in capability-gating here
 # (contract §3: ``requires`` ⊇ ``Capabilities`` + ``{system_prompt, seed}``).
 _REQUIRES_TO_CAPABILITY: dict[RequiresCapability, str] = {
     RequiresCapability.RAG: "rag",
@@ -104,7 +104,7 @@ class ScenarioResult(BaseModel):
         """True when the verdict matches the fixture's declared expectation.
 
         A skipped scenario (policy-gated ``test_only``) is **not** counted as a
-        mismatch — it is excluded from the accuracy denominator entirely.
+        mismatch - it is excluded from the accuracy denominator entirely.
         """
 
         return self.verdict.status is self.expected
@@ -136,7 +136,7 @@ class GoldenReport(BaseModel):
     """Aggregate spec detection accuracy + per-family FP/FN (contract §6, ``docs/07 §2``).
 
     ``accuracy`` = ``correct / total`` over all **non-skipped** fixtures. The gate is
-    100% (fixtures are ground truth): :meth:`ok` is the CI exit signal — false ⇒ the
+    100% (fixtures are ground truth): :meth:`ok` is the CI exit signal - false ⇒ the
     runner exits non-zero with a populated :attr:`mismatches` diff.
     """
 
@@ -169,7 +169,7 @@ class GoldenReport(BaseModel):
             return ""
         lines = [
             f"golden accuracy {self.accuracy:.4f} "
-            f"({self.correct}/{self.total} fixtures, {self.skipped} skipped) — "
+            f"({self.correct}/{self.total} fixtures, {self.skipped} skipped) - "
             f"{len(self.mismatches)} mismatch(es):"
         ]
         for miss in self.mismatches:
@@ -191,7 +191,7 @@ def _scenario_from_case(spec: AttackSpec, case: FixtureCase) -> MockScenario:
     hardened fixture that *should* exercise a capability declares it; a spec that
     requires a capability its fixtures do not model then surfaces as
     ``capability_unavailable`` (see :func:`run_spec`). The mock replays the fixture
-    verbatim — no attack interpretation (contract §4 KEEP).
+    verbatim - no attack interpretation (contract §4 KEEP).
     """
 
     caps_kwargs = {
@@ -208,7 +208,7 @@ def load_fixtures(spec: AttackSpec) -> FixturePair:
     OD-u03-a / OD-7 (00-INDEX): the schema supports both inline ``fixtures:`` and
     sidecar files; MVP-1 resolves **inline-first**. The u00 :class:`AttackSpec`
     already carries the inline block, so this consumes it directly. Sidecar
-    resolution is a future seam (contract §9) — not this unit's call to author.
+    resolution is a future seam (contract §9) - not this unit's call to author.
     """
 
     return FixturePair(
@@ -338,7 +338,7 @@ async def _as_coro(awaitable: Awaitable[Verdict]) -> Verdict:
 def assert_flags_vulnerable(spec: AttackSpec, evaluator: Evaluator) -> Verdict:
     """Assert the scanner FLAGS (``fail``) the vulnerable fixture. Returns the verdict.
 
-    Raises :class:`AssertionError` with a spec-scoped message on any other status —
+    Raises :class:`AssertionError` with a spec-scoped message on any other status -
     this is the per-spec form of the 100% gate.
     """
 
@@ -453,7 +453,7 @@ async def run_all_async(
     *,
     test_only_gate: TestOnlyGate | None = None,
 ) -> GoldenReport:
-    """Async core of :func:`run_all` — score every spec's two fixtures into a report."""
+    """Async core of :func:`run_all` - score every spec's two fixtures into a report."""
 
     gate = test_only_gate if test_only_gate is not None else _default_test_only_gate
     report = GoldenReport()
@@ -491,7 +491,7 @@ def run_all(
     ``test_only_gate`` decides whether a ``test_only`` spec runs (u01 policy in
     production; defaults to allow-all for unit tests). The caller (CLI/CI) inspects
     :meth:`GoldenReport.ok` and exits non-zero with :meth:`GoldenReport.diff` on any
-    mismatch — the 100% merge gate (``docs/07 §3``).
+    mismatch - the 100% merge gate (``docs/07 §3``).
     """
 
     return asyncio.run(run_all_async(specs, evaluator, test_only_gate=test_only_gate))

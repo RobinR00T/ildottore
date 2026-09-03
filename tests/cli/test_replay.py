@@ -1,7 +1,7 @@
 """``dottore replay`` (contract §5.5).
 
 Replay re-reads a run from the content-addressed evidence store and reports
-reproducibility — no re-sending. We first drive a real campaign (which writes
+reproducibility - no re-sending. We first drive a real campaign (which writes
 evidence) then replay by run id.
 """
 

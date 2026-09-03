@@ -114,7 +114,7 @@ async def test_requires_policy_blocked_by_default_zero_sends(
     )
     result = await runner.run(run_id="r1", target=make_target(), specs=[spec])
 
-    assert adapter.sends == 0  # zero egress — the capability gate refused first
+    assert adapter.sends == 0  # zero egress - the capability gate refused first
     finding = result.findings[0]
     assert finding.status is VerdictStatus.INCONCLUSIVE
     assert "blocked_by_policy" in finding.reasoning

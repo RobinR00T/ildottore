@@ -1,7 +1,7 @@
 """Base-adapter plumbing: allowlist gate, retry/error classification, logprobs.
 
 Every httpx call is stubbed by respx; the allowlist-refusal tests assert respx
-registered **zero** calls (the request never left the process — contract §7).
+registered **zero** calls (the request never left the process - contract §7).
 """
 
 from __future__ import annotations
@@ -193,7 +193,7 @@ async def test_injected_client_is_not_closed(openai_allowlist: EndpointAllowlist
 
 
 def test_map_logprobs_none_stays_none() -> None:
-    """Absent logprobs map to None (not []) — capability_unavailable path."""
+    """Absent logprobs map to None (not []) - capability_unavailable path."""
 
     assert map_logprobs(None) is None
 

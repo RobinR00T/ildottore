@@ -1,4 +1,4 @@
-"""Tests for verdict combination (evaluator_logic) — docs/04 §2."""
+"""Tests for verdict combination (evaluator_logic) - docs/04 §2."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def test_inconclusive_dominates_all_pass() -> None:
 
 def test_inconclusive_dominates_any_fail() -> None:
     v = combine([_v(VerdictStatus.FAIL), _v(VerdictStatus.INCONCLUSIVE)], EvaluatorLogic.ANY_FAIL)
-    # Required inconclusive is never coerced — even a fail cannot override it.
+    # Required inconclusive is never coerced - even a fail cannot override it.
     assert v.status is VerdictStatus.INCONCLUSIVE
 
 

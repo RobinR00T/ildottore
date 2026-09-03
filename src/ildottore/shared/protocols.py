@@ -1,6 +1,6 @@
 """Runtime ``Protocol`` seams that ``core`` codes against (``docs/01 §3``).
 
-Interfaces only — no concretes. Concretes are injected at the composition root
+Interfaces only - no concretes. Concretes are injected at the composition root
 (``cli``/``api``). Signatures are verbatim from ``docs/01 §3`` (``Mutator`` per
 ``docs/03 §4``).
 """

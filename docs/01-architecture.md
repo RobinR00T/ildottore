@@ -1,4 +1,4 @@
-# 01 — Architecture
+# 01 - Architecture
 
 ## 1. Component model
 
@@ -55,7 +55,7 @@ evaluators ─► (shared models; may call an LLM via an adapter *interface* for
 ## 3. Core interfaces (contracts the AI must implement)
 
 ```python
-# packages/shared/models.py — dependency-free Pydantic models (see schemas/)
+# packages/shared/models.py - dependency-free Pydantic models (see schemas/)
 
 class TargetAdapter(Protocol):
     async def send(self, request: ModelRequest) -> ModelResponse: ...
@@ -63,7 +63,7 @@ class TargetAdapter(Protocol):
     id: str                                          #   logprobs, multi_identity, multimodal
     # ModelResponse carries token logprobs when capabilities.logprobs is true (used by
     # logprob_membership + confidence side-channels). A target may expose >1 auth identity
-    # (multi_identity) so cross-tenant/authz specs can compare A vs B — see scope, §6.
+    # (multi_identity) so cross-tenant/authz specs can compare A vs B - see scope, §6.
 
 class Evaluator(Protocol):
     type: str                                        # "regex_absence", "semantic_judge", ...
@@ -93,20 +93,20 @@ class Reporter(Protocol):
 
 ## 4. Execution flow (one attack spec against one target)
 
-1. **Policy check** — target in scope? endpoint on allowlist? spec allowed by policy pack?
+1. **Policy check** - target in scope? endpoint on allowlist? spec allowed by policy pack?
    Any dangerous payload marked `test_only`? Else → abort attempt, record `blocked_by_policy`.
-2. **Setup** — materialize spec `setup` (e.g. index test documents for RAG) via the adapter's
+2. **Setup** - materialize spec `setup` (e.g. index test documents for RAG) via the adapter's
    capabilities. If capability missing → `inconclusive: capability_unavailable`.
-3. **Mutate** — Prompt Mutator expands the base attack into declared variants (language,
+3. **Mutate** - Prompt Mutator expands the base attack into declared variants (language,
    encoding, roleplay, nesting, obfuscation, indirect-injection carriers). Each variant is a
    deterministic transform seeded by `(spec.id, variant.name)`.
-4. **Execute N times** — send with pinned sampling params (temperature, top_p, seed if the
+4. **Execute N times** - send with pinned sampling params (temperature, top_p, seed if the
    provider supports it). Handle rate limit / retries / timeout. Record every attempt.
-5. **Evaluate** — run the evaluator pipeline; combine per the spec's `evaluator_logic`
+5. **Evaluate** - run the evaluator pipeline; combine per the spec's `evaluator_logic`
    (default: all `regex/rule` must pass AND judge must pass). Judge input is sandboxed
    (`docs/04`).
-6. **Score** — reproducibility = successful-attack rate across N; risk per `docs/05`.
-7. **Persist** — attempts → Evidence Store; finding → Run Store. Emit to reporters.
+6. **Score** - reproducibility = successful-attack rate across N; risk per `docs/05`.
+7. **Persist** - attempts → Evidence Store; finding → Run Store. Emit to reporters.
 
 ## 5. Determinism & reproducibility (why this is architectural, not a detail)
 

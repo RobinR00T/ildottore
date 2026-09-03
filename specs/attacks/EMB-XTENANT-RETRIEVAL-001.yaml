@@ -14,7 +14,7 @@ description: >
   Validates whether the vector store / retriever enforces tenant partitioning at the
   embedding layer (OWASP LLM08 Vector & Embedding Weaknesses). If the index is not scoped
   per tenant, a routine retrieval for tenant A can surface chunks embedded from tenant B's
-  documents — a leak rooted in the retrieval layer itself, not application logic. A
+  documents - a leak rooted in the retrieval layer itself, not application logic. A
   tenant-scoped canary planted in tenant B's document proves the boundary was crossed.
 
 preconditions:

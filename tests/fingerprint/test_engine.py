@@ -199,7 +199,7 @@ def test_combine_and_rank_are_pure_reexports() -> None:
 
 
 async def test_unknown_target_yields_low_confidence() -> None:
-    # a target with empty responses matches (at most) a weak capability tell — the
+    # a target with empty responses matches (at most) a weak capability tell - the
     # verdict must be honestly low-confidence, never a confident fabrication, and
     # carry no version guess (contract §4 KEEP).
     blank = CorpusCase(case_id="blank", family="none", responses={})

@@ -1,4 +1,4 @@
-"""Self-scan gate as a pytest (validation-plan layer 17) — also runs in CI as `python -m`.
+"""Self-scan gate as a pytest (validation-plan layer 17) - also runs in CI as `python -m`.
 
 Dogfoods the semantic judge over the adversarial corpus and asserts (a) zero verdict flips to
 PASS (0 high/critical findings in our own LLM-using code) and (b) the emitted report is a

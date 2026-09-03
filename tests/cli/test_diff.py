@@ -1,4 +1,4 @@
-"""``dottore diff`` — baseline/drift comparison (docs/12 P1).
+"""``dottore diff`` - baseline/drift comparison (docs/12 P1).
 
 Builds two synthetic JSON run reports (baseline / current) and asserts the drift
 classification (NEW-FAIL regression / FIXED / STILL-FAIL / UNCHANGED) and the CLI exit

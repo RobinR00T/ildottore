@@ -1,16 +1,16 @@
 """Scriptable exit-code policy (contract §4/§6, ``docs/09 §4``).
 
 The exit code is a **pure function** of ``(findings, fail_on, include_needs_review,
-error_state)`` — no side effects, table-tested (contract §7). Semantics:
+error_state)`` - no side effects, table-tested (contract §7). Semantics:
 
-* ``0`` — clean: no gated finding at or above ``--fail-on``.
-* ``1`` — findings present but all **below** ``--fail-on``.
-* ``2`` — at least one gated finding **at or above** ``--fail-on``.
-* ``>2`` — an operational error (bad scope, unknown suite, I/O …).
+* ``0`` - clean: no gated finding at or above ``--fail-on``.
+* ``1`` - findings present but all **below** ``--fail-on``.
+* ``2`` - at least one gated finding **at or above** ``--fail-on``.
+* ``>2`` - an operational error (bad scope, unknown suite, I/O …).
 
 ``--fail-on`` gates **confirmed** findings by default; ``--include-needs-review``
 extends the gate to low-confidence (``confirmed=False``) findings too. A finding only
-counts toward the gate when its status is ``fail`` (the target was exploited) — a
+counts toward the gate when its status is ``fail`` (the target was exploited) - a
 ``pass``/``inconclusive`` never trips CI.
 """
 
@@ -39,7 +39,7 @@ class ExitCode(IntEnum):
     ERROR = 3
 
 
-#: Severity/band ordinal — higher is worse. ``info`` sits below ``low``.
+#: Severity/band ordinal - higher is worse. ``info`` sits below ``low``.
 BAND_ORDER: dict[str, int] = {
     ScanBand.INFO.value: 0,
     ScanBand.LOW.value: 1,
@@ -100,7 +100,7 @@ def exit_code_for(
     include_needs_review: bool = False,
     error: bool = False,
 ) -> ExitCode:
-    """Pure exit-code decision (contract §6 — no side effects).
+    """Pure exit-code decision (contract §6 - no side effects).
 
     ``error`` short-circuits to :attr:`ExitCode.ERROR` (>2) regardless of findings.
     Otherwise: any gated finding at/above ``fail_on`` → ``2``; some gated finding

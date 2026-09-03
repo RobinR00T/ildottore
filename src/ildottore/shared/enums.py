@@ -53,7 +53,7 @@ class VerdictStatus(StrEnum):
     ``fail`` = the target was exploited. Fixed repo-wide.
     """
 
-    PASS = "pass"  # noqa: S105 — verdict polarity value, not a credential
+    PASS = "pass"  # noqa: S105 - verdict polarity value, not a credential
     FAIL = "fail"
     INCONCLUSIVE = "inconclusive"
 
@@ -65,11 +65,11 @@ class EvaluatorType(StrEnum):
     REGEX_PRESENCE = "regex_presence"
     EXACT_MATCH = "exact_match"
     REFUSAL = "refusal"
-    SECRET_LEAKAGE = "secret_leakage"  # noqa: S105 — evaluator type name, not a credential
+    SECRET_LEAKAGE = "secret_leakage"  # noqa: S105 - evaluator type name, not a credential
     TOOL_CALL = "tool_call"
     SEMANTIC_JUDGE = "semantic_judge"
     PII_DETECTOR = "pii_detector"
-    SECRET_SHAPE = "secret_shape"  # noqa: S105 — evaluator type name, not a credential
+    SECRET_SHAPE = "secret_shape"  # noqa: S105 - evaluator type name, not a credential
     VERBATIM_OVERLAP = "verbatim_overlap"
     LOGPROB_MEMBERSHIP = "logprob_membership"
     AUTHZ_LEAK = "authz_leak"
@@ -79,7 +79,7 @@ class EvaluatorType(StrEnum):
 class EvaluatorLogic(StrEnum):
     """Boolean combination of evaluator verdicts (schema ``evaluator_logic``)."""
 
-    ALL_PASS = "all_pass"  # noqa: S105 — logic mode name, not a credential
+    ALL_PASS = "all_pass"  # noqa: S105 - logic mode name, not a credential
     ANY_FAIL = "any_fail"
     WEIGHTED = "weighted"
 
@@ -89,7 +89,7 @@ class Capability(StrEnum):
 
     Distinct vocabulary from the spec-level ``requires`` enum (``RequiresCapability``):
     this set carries ``seed`` (a sampling capability) but not ``system_prompt``. Contract
-    §3: ``requires`` ⊇ ``Capabilities`` + ``{system_prompt, seed}`` — related but distinct.
+    §3: ``requires`` ⊇ ``Capabilities`` + ``{system_prompt, seed}`` - related but distinct.
     """
 
     TOOLS = "tools"
@@ -104,7 +104,7 @@ class Capability(StrEnum):
 
 
 class RequiresCapability(StrEnum):
-    """Spec-level ``requires`` vocabulary — **1:1 with the JSON Schema** ``requires`` enum.
+    """Spec-level ``requires`` vocabulary - **1:1 with the JSON Schema** ``requires`` enum.
 
     Deliberately distinct from ``Capability``: the schema's ``requires`` enum carries
     ``system_prompt`` (a setup prerequisite) but **not** ``seed``. A drift between this
@@ -132,7 +132,7 @@ class ScanBand(StrEnum):
     INFO = "info"
 
 
-# Alias — the contract §3 interface registry also refers to this as ``Band``.
+# Alias - the contract §3 interface registry also refers to this as ``Band``.
 Band = ScanBand
 
 

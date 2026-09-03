@@ -1,6 +1,6 @@
 """Shared fixtures for the T0 attack-spec battery acceptance suite (u13).
 
-The battery unit owns *data* — the ~18 T0 attack specs (``docs/08 §3``), the two
+The battery unit owns *data* - the ~18 T0 attack specs (``docs/08 §3``), the two
 suites and the golden fixtures. This conftest wires the **real** engine pieces the
 unit depends on (u02 registry linter, u03 golden harness + :class:`MockTarget`, u06
 evaluators) so the acceptance test can prove, end-to-end and offline, that every spec:
@@ -65,7 +65,7 @@ class PrimaryEvaluatorDispatcher:
     The golden harness (:func:`ildottore.testing.golden.run_spec`) drives one injected
     evaluator against ``spec.evaluators[0]`` (the *primary* arbiter). Different specs
     declare different primary types, so this dispatcher looks up the real u06 evaluator
-    for ``ctx.config.type`` and delegates — turning the harness's single-evaluator seam
+    for ``ctx.config.type`` and delegates - turning the harness's single-evaluator seam
     into "run each spec's declared primary evaluator". No new engine logic: it is a thin
     router over the real :class:`~ildottore.evaluators.registry.EvaluatorRegistry`.
     """

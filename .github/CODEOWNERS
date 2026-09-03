@@ -1,7 +1,7 @@
 # Default owner for everything (adjust when the Zynap team is added).
 *       @RobinR00T
 
-# The spec package and methodology are the source of truth — review carefully.
+# The spec package and methodology are the source of truth - review carefully.
 /docs/            @RobinR00T
 /schemas/         @RobinR00T
 /specs/contracts/ @RobinR00T

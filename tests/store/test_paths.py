@@ -1,4 +1,4 @@
-"""paths.py — id validation, traversal guard, deterministic layout."""
+"""paths.py - id validation, traversal guard, deterministic layout."""
 
 from __future__ import annotations
 

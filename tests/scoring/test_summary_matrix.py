@@ -34,7 +34,7 @@ def _finding(
 
 
 def _multi_target_suite() -> tuple[list[Finding], dict[str, object]]:
-    """Two specs x two targets — the canonical benchmark scenario."""
+    """Two specs x two targets - the canonical benchmark scenario."""
     specs = {
         "PI-DEMO-001": make_spec("PI-DEMO-001", owasp="LLM01", tactic="AML.TA0001", nist="MEASURE"),
         "DL-DEMO-002": make_spec("DL-DEMO-002", owasp="LLM02", tactic="AML.TA0002", nist="MANAGE"),

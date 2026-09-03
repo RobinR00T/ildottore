@@ -1,4 +1,4 @@
-"""Composition root (contract §1/§5.2) — the **only** place concretes meet interfaces.
+"""Composition root (contract §1/§5.2) - the **only** place concretes meet interfaces.
 
 ``wiring`` builds every concrete implementation (adapters, evaluators, mutators,
 scorer, stores, reporters, spec registry, fingerprint engine) from resolved config
@@ -85,7 +85,7 @@ __all__ = [
 #: ``bare`` (default) returns a generic canned response → every spec ``inconclusive``;
 #: ``vulnerable`` replays each spec's ``fixtures.vulnerable`` → ``fail``; ``hardened``
 #: replays ``fixtures.hardened`` → ``pass``. A real over-the-wire adapter (u04) ignores
-#: this — the field only steers the deterministic offline mock (contract §5).
+#: this - the field only steers the deterministic offline mock (contract §5).
 MOCK_SCENARIOS = ("bare", "vulnerable", "hardened")
 
 
@@ -105,7 +105,7 @@ class BuiltRunner:
 def build_registry(spec_paths: list[Path]) -> Registry:
     """Load + merge every spec/pack under ``spec_paths`` into a :class:`Registry`.
 
-    No code execution, no network — the loader (u02) only walks the filesystem and
+    No code execution, no network - the loader (u02) only walks the filesystem and
     ``yaml.safe_load``s. Load errors are surfaced by ``dottore lint``; here we build
     the queryable registry from whatever parsed.
     """
@@ -123,7 +123,7 @@ def build_permissive_pack(specs: list[AttackSpec], *, name: str = "cli-default")
     ``run`` needs a :class:`PolicyPack` to authorize categories; when the operator
     does not supply one we enable exactly the categories the selected specs use.
     Layer-B / PII-elicitation stay **off** (their extra gates are unchanged), so this
-    is permissive for ordinary categories only — never a safety bypass (contract §8).
+    is permissive for ordinary categories only - never a safety bypass (contract §8).
     """
 
     categories = sorted({spec.category for spec in specs}, key=lambda c: c.value)
@@ -220,7 +220,7 @@ def mock_adapter_factory(target: Target, spec: AttackSpec) -> TargetAdapter:
     the full detect→score→report loop against real declared responses (contract §5
     acceptance). The target's declared capabilities are carried onto the scenario so
     capability-gated specs behave honestly (never a fabricated pass). A real adapter
-    (u04) replaces this factory in a live engagement — ``core`` is unchanged.
+    (u04) replaces this factory in a live engagement - ``core`` is unchanged.
     """
 
     scenario = MockScenario.from_fixture(
@@ -236,7 +236,7 @@ def deterministic_clock() -> Callable[[], float]:
     The MockTarget performs no I/O, so a wall clock would inject non-reproducible
     (and, worse, arbitrarily-shaped) latency floats into stored evidence. This clock
     steps by exactly ``1.0`` per read, so each attempt records a clean, round
-    ``latency_ms`` — byte-stable across replays and never colliding with the
+    ``latency_ms`` - byte-stable across replays and never colliding with the
     redactor's numeric patterns. A live engagement (real adapter) would pass the wall
     clock instead; the seam is here in the composition root.
     """
@@ -256,7 +256,7 @@ def scope_endpoint_for(scope: Scope) -> Callable[[Target, AttackSpec], str]:
     The policy gate authorizes a concrete request **URL** against the scope's
     allowlist (host + path prefix). We map a target to the ``base_url`` the scope
     declares for it, so an in-scope target passes the allowlist and an out-of-scope
-    target (or one whose base_url is off-allowlist) is blocked — the gate stays the
+    target (or one whose base_url is off-allowlist) is blocked - the gate stays the
     single authority (contract §4 KEEP). A target absent from scope falls back to its
     id, which never parses to an allowlisted host ⇒ default-deny.
     """
@@ -292,7 +292,7 @@ def bare_adapter_factory(target: Target, _spec: AttackSpec) -> TargetAdapter:
 
     This is the honest default when no ``mock_scenario`` is selected: the mock answers
     with a canned string that matches neither fixture, so no evaluator can decide and
-    the run reports ``inconclusive`` — never a fabricated pass or fail (contract §2).
+    the run reports ``inconclusive`` - never a fabricated pass or fail (contract §2).
     The target's declared capabilities are still carried so capability-gating behaves.
     """
 
@@ -306,14 +306,14 @@ def scenario_judge_adapter(scenario: str) -> TargetAdapter | None:
     :class:`TargetAdapter`; offline it would otherwise have no model and abstain
     (``inconclusive``), sinking every ``weighted``/``any_fail`` aggregate. For a
     ``vulnerable`` run we replay a canned judge verdict of ``exploited`` and for
-    ``hardened`` one of ``secure`` — so the judge *agrees* with the fixtures and the
+    ``hardened`` one of ``secure`` - so the judge *agrees* with the fixtures and the
     run demonstrates a decisive ``fail``/``pass``. ``bare`` returns ``None`` (no
     judge): the judge stays unregistered and abstains, so a bare run remains
-    ``inconclusive`` — the honest default, never a fabricated verdict.
+    ``inconclusive`` - the honest default, never a fabricated verdict.
 
     The canned answer is valid structured JSON with high confidence and no injection
     tripwire, so it passes every ``docs/04 §4`` mitigation (self-consistency across
-    the two passes is trivially met — the deterministic mock returns identical bytes).
+    the two passes is trivially met - the deterministic mock returns identical bytes).
     """
 
     if scenario == "vulnerable":
@@ -339,7 +339,7 @@ def scenario_adapter_factory(
 
     ``vulnerable``/``hardened`` replay the spec's own fixtures (so a run demonstrates
     real ``fail``/``pass``); ``bare`` (the default) returns a generic canned response
-    (``inconclusive``). An unknown selector is rejected — the composition root never
+    (``inconclusive``). An unknown selector is rejected - the composition root never
     silently degrades to a fabricated verdict.
     """
 
@@ -362,7 +362,7 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
 
     Only the ``env://NAME`` scheme is supported in MVP-1 (matches every
     ``auth_ref`` in ``specs/targets/``); the environment is read here, at send-time
-    construction — never earlier, and the resolved value is never logged (the
+    construction - never earlier, and the resolved value is never logged (the
     caller passes it straight into the adapter's ``api_key``, which itself never
     appears in evidence: the redactor masks ``raw_ids``, and the value never enters
     a ``ModelRequest``/``ModelResponse``). ``None`` in ⇒ ``None`` out (no auth
@@ -393,7 +393,7 @@ def build_real_adapter(
     generic :class:`RestAdapter` (the long-tail escape hatch, ADR-0002). ``target.endpoint``
     is the **full** request URL (``specs/targets/example-openai.yaml``); its origin
     becomes the adapter's ``base_url`` and its path is either the adapter's own
-    fixed ``_endpoint_path`` (openai/anthropic) or the ``RestTemplate.path`` (rest) —
+    fixed ``_endpoint_path`` (openai/anthropic) or the ``RestTemplate.path`` (rest) -
     either way ``adapter._full_url()`` reconstructs the declared endpoint exactly, so
     the allowlist gate (built from the same scope) authorizes the identical URL the
     adapter will call.
@@ -498,9 +498,9 @@ def real_adapter_factory(
     One concrete adapter is constructed up front (a real target's wire shape does
     not vary per spec, unlike the mock's fixture replay) and returned for every
     spec. Its :class:`EndpointAllowlist` is built from the *scope's* declared
-    endpoints for this target id — the same allowlist the policy gate already
+    endpoints for this target id - the same allowlist the policy gate already
     checked in :meth:`~ildottore.core.runner.CampaignRunner._run_spec` before the
-    adapter was even constructed — so an out-of-scope/off-allowlist target is
+    adapter was even constructed - so an out-of-scope/off-allowlist target is
     blocked twice over: once by the policy gate (zero adapter build) and again,
     defense-in-depth, inside :meth:`BaseAdapter.send` itself (contract §4 KEEP). A
     target absent from scope gets an empty allowlist (default-deny).
@@ -567,7 +567,7 @@ def load_target(path: Path) -> Target:
     optional **live-target** fields ``provider``/``endpoint``/``model``/``auth_ref``/
     ``sampling_defaults`` (``specs/targets/example-openai.yaml``) that
     :func:`real_adapter_factory` routes on. ``auth_ref`` is carried as the bare
-    reference string (e.g. ``env://NAME``) — the secret itself is **never** read
+    reference string (e.g. ``env://NAME``) - the secret itself is **never** read
     here (S6); it is resolved only at send time via :func:`resolve_auth_ref`.
     """
 
@@ -648,11 +648,11 @@ def target_uses_mock(path: Path) -> bool:
 
     A target is a mock target when it declares an explicit ``mock_scenario``
     selector, or its ``endpoint`` is absent/empty, or that endpoint uses the
-    ``mock://`` scheme. Anything else — a real ``provider`` + non-``mock://``
-    ``endpoint`` and no ``mock_scenario`` — is a **real** over-the-wire target
+    ``mock://`` scheme. Anything else - a real ``provider`` + non-``mock://``
+    ``endpoint`` and no ``mock_scenario`` - is a **real** over-the-wire target
     and routes through :func:`real_adapter_factory` instead (contract §5 acceptance:
     existing mock-only ``target.yaml`` files, which never set ``endpoint``, are
-    completely unaffected by this — they keep resolving here to ``True``).
+    completely unaffected by this - they keep resolving here to ``True``).
     """
 
     raw = _read_target_yaml(path)
@@ -697,12 +697,12 @@ def build_runner(
     replays each spec's ``fixtures.vulnerable`` (real ``fail`` findings), ``hardened``
     its ``fixtures.hardened`` (real ``pass``), ``bare`` a generic response
     (``inconclusive``). When ``mock_scenario`` is ``None`` the legacy ``hardened`` flag
-    decides (``True`` ⇒ hardened, ``False`` ⇒ vulnerable) — preserving prior behavior.
+    decides (``True`` ⇒ hardened, ``False`` ⇒ vulnerable) - preserving prior behavior.
 
     ``real_target`` (u04, contract §5 acceptance) overrides all of the above with
     :func:`real_adapter_factory`: the campaign sends real requests to ``real_target``'s
     declared provider/endpoint. There is no offline fixture to replay for a live
-    target, so the ``semantic_judge`` evaluator stays unregistered — it abstains
+    target, so the ``semantic_judge`` evaluator stays unregistered - it abstains
     (``inconclusive``) rather than fabricate a verdict (contract §4 KEEP), exactly the
     same honest default a ``bare`` mock run gets.
     """

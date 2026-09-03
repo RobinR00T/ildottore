@@ -1,7 +1,7 @@
-"""Endpoint allowlist — host + path-prefix **default-deny** matcher (u01, S3).
+"""Endpoint allowlist - host + path-prefix **default-deny** matcher (u01, S3).
 
 Adapters (u04) call this to refuse any host/path not explicitly authorized by the
-scope. The default answer is always **deny** — an unknown host, an unlisted path,
+scope. The default answer is always **deny** - an unknown host, an unlisted path,
 or an empty allowlist all return ``False`` (contract §4 KEEP). No network I/O:
 matching is pure string/URL parsing.
 """
@@ -72,7 +72,7 @@ def _host_matches(candidate: str, candidate_port: int | None, allowed: str) -> b
 def _path_allowed(path: str, prefixes: Iterable[str]) -> bool:
     """True if ``path`` lies under any allowed prefix (segment-aware).
 
-    ``/v1`` allows ``/v1`` and ``/v1/chat`` but **not** ``/v1beta`` — a prefix
+    ``/v1`` allows ``/v1`` and ``/v1/chat`` but **not** ``/v1beta`` - a prefix
     only matches on a segment boundary, closing the ``/adminx`` bypass.
     """
 
@@ -100,8 +100,8 @@ class EndpointAllowlist:
 
     def is_allowed(self, url: str) -> bool:
         """True only if ``url``'s host is allowlisted **and** its path is under an
-        allowed prefix. Everything else — unknown host, off-prefix path, empty
-        allowlist, unparseable URL — is denied (S3 default-deny).
+        allowed prefix. Everything else - unknown host, off-prefix path, empty
+        allowlist, unparseable URL - is denied (S3 default-deny).
         """
 
         parts = urlsplit(url)

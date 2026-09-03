@@ -1,12 +1,12 @@
-# Dependabot — grouped, weekly dependency scan (contract u14 §5.5).
+# Dependabot - grouped, weekly dependency scan (contract u14 §5.5).
 #
 # Two ecosystems: Python deps (pip / pyproject) and the GitHub Actions we pin in the workflows.
 # Updates are GROUPED so a week's bumps arrive as one reviewable PR per ecosystem rather than a
-# swarm. Licensing discipline (AGENTS.md §3 — permissive only, no copyleft/source-available) is
+# swarm. Licensing discipline (AGENTS.md §3 - permissive only, no copyleft/source-available) is
 # enforced at review time via CODEOWNERS + the SBOM; Dependabot itself only proposes version
 # bumps, so no dep is auto-merged.
 #
-# NOTE: the `ignore:` block is intentionally non-empty — an empty `ignore: []` array is rejected
+# NOTE: the `ignore:` block is intentionally non-empty - an empty `ignore: []` array is rejected
 # by the Dependabot schema (minItems: 1). We pin major bumps of the two runtime pillars behind a
 # manual review so a breaking Pydantic/Typer major never lands unattended.
 

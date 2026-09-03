@@ -1,7 +1,7 @@
 """Shared builders + fakes for the u08 execution-engine tests.
 
 These fixtures import the real concretes (mock adapter, registries, policy engine,
-scorer, stores) and inject them through the shared protocols — exactly how the
+scorer, stores) and inject them through the shared protocols - exactly how the
 composition root (u12) will wire the runner. The tests exercise the full loop
 end-to-end against :class:`MockTarget` (contract §5/§7).
 """

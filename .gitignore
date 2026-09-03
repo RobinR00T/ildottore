@@ -21,7 +21,7 @@ htmlcov/
 .hypothesis/
 .import_linter_cache/
 
-# Il Dottore runtime artifacts (never commit scan output / evidence — may contain findings).
+# Il Dottore runtime artifacts (never commit scan output / evidence - may contain findings).
 # Root-anchored so test snapshot fixtures under tests/**/fixtures/ are NOT ignored.
 /reports/
 /evidence/
@@ -36,5 +36,5 @@ htmlcov/
 .idea/
 .vscode/
 
-# Il Dottore default run output (evidence + run db) — never version runtime artifacts
+# Il Dottore default run output (evidence + run db) - never version runtime artifacts
 /.dottore/

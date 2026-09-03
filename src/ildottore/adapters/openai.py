@@ -1,7 +1,7 @@
 """OpenAI chat/completions adapter over ``httpx`` (u04, contract §5 step 2).
 
 Thin by design (ADR-0002): we build the ``/v1/chat/completions`` request
-ourselves — system-prompt placement, message roles and pinned sampling params
+ourselves - system-prompt placement, message roles and pinned sampling params
 (``temperature``/``top_p``/``seed``) are preserved verbatim; no SDK, no
 normalization. Token logprobs (``logprobs.content[].logprob`` + ``top_logprobs``)
 map into the common :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005).
@@ -177,7 +177,7 @@ class OpenAIAdapter(BaseAdapter):
     def _extract_logprobs(self, choice: Mapping[str, Any]) -> list[Any] | None:
         """Fold ``choice.logprobs.content[]`` into the common TokenLogprob shape.
 
-        Returns ``None`` when the provider omitted logprobs entirely (ADR-0005) —
+        Returns ``None`` when the provider omitted logprobs entirely (ADR-0005) -
         distinct from an empty list.
         """
 

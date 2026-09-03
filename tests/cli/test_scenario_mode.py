@@ -17,7 +17,7 @@ from ildottore.cli.run import RunOptions, execute_run
 from ildottore.shared.enums import ScanBand, VerdictStatus
 
 # Real, shipped T0 specs that are ``weighted`` + not ``test_only`` + require no target
-# capability the mock must fake — so the deterministic evaluators decide even though
+# capability the mock must fake - so the deterministic evaluators decide even though
 # each spec also lists a ``semantic_judge`` (which abstains offline).
 _SPECS_DIR = Path(__file__).resolve().parents[2] / "specs"
 _T0_GLOBS = ["PI-DIRECT-001", "OUT-XSS-001", "OUT-SQLI-001", "OUT-CODEINJ-001"]
@@ -72,7 +72,7 @@ def test_vulnerable_scenario_yields_real_fail_findings(tmp_path: Path) -> None:
     outcome = _run(tmp_path, mock_scenario="vulnerable")
 
     assert len(outcome.findings) == len(_T0_GLOBS)
-    # Every finding is a decisive FAIL — not info/inconclusive.
+    # Every finding is a decisive FAIL - not info/inconclusive.
     assert all(f.status is VerdictStatus.FAIL for f in outcome.findings)
     assert all(f.status is not VerdictStatus.INCONCLUSIVE for f in outcome.findings)
     # Real risk bands (above INFO), and the high-severity specs gate the run.

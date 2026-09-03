@@ -4,14 +4,14 @@ Combines the per-evaluator :class:`~ildottore.shared.models.Verdict` list for on
 single aggregate verdict, honouring the spec's
 :class:`~ildottore.shared.enums.EvaluatorLogic`:
 
-* ``all_pass`` (default) — aggregate ``pass`` only if **every** evaluator passed.
-* ``any_fail`` — aggregate ``fail`` if **any** evaluator failed.
-* ``weighted`` — a weighted vote (per-evaluator ``config.weight``, default ``1.0``) over the
+* ``all_pass`` (default) - aggregate ``pass`` only if **every** evaluator passed.
+* ``any_fail`` - aggregate ``fail`` if **any** evaluator failed.
+* ``weighted`` - a weighted vote (per-evaluator ``config.weight``, default ``1.0``) over the
   pass/fail axis, with a 0.5 threshold; used when judge + rules may disagree.
 
 **Inconclusive is first-class and never coerced** (``docs/04 §2``, contract §2): if any
 *required* evaluator is ``inconclusive``, the aggregate is ``inconclusive`` (unless a fallback
-is declared — MVP-1 treats all listed evaluators as required, so any inconclusive dominates for
+is declared - MVP-1 treats all listed evaluators as required, so any inconclusive dominates for
 ``all_pass``/``any_fail``). For ``weighted``, inconclusive verdicts are excluded from the vote
 but, if *all* verdicts are inconclusive, the aggregate is inconclusive. The aggregate verdict's
 ``evaluator_type`` is ``"aggregate"`` and its ``matched`` is the union of contributing matches.
@@ -89,7 +89,7 @@ def combine(
 
 
 def _combine_boolean(verdicts: list[Verdict], mode: EvaluatorLogic) -> Verdict:
-    """``all_pass`` / ``any_fail`` — inconclusive in any required evaluator dominates."""
+    """``all_pass`` / ``any_fail`` - inconclusive in any required evaluator dominates."""
     inconclusive = [v for v in verdicts if v.status is VerdictStatus.INCONCLUSIVE]
     if inconclusive:
         return _aggregate(

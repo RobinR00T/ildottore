@@ -5,7 +5,7 @@ characteristic echo/repair behavior when asked to repeat a specific benign strin
 (GPT-family ``SolidGoldMagikarp``-style artifacts vs Claude vs Llama tokenization).
 The probe is **benign** (a plain "repeat this token" request, no payload) and
 seeded. The response is matched against each entry's ``signals["tokenizer"]``
-fragments — e.g. a family that reliably mangles a given token leaves a stable tell.
+fragments - e.g. a family that reliably mangles a given token leaves a stable tell.
 
 Kept deterministic + offline-replayable: the layer sends one seeded benign probe
 and matches textual tells; no live-tokenizer dependency (no heavy dep, ``AGENTS.md §3``).

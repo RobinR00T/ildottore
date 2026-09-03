@@ -2,7 +2,7 @@
 
 The default scorer is always available under the name ``"default"``. Third-party scorers may
 register via the ``dottore.scorers`` entry-point group and are validated against the
-:class:`~ildottore.shared.protocols.RiskScorer` protocol at load time — an object that does
+:class:`~ildottore.shared.protocols.RiskScorer` protocol at load time - an object that does
 not satisfy the protocol is rejected with a clear error, never silently skipped (``docs/06``).
 
 Discovery executes no network calls and, beyond importing the registered callable, no side
@@ -29,7 +29,7 @@ _loaded_plugins = False
 def register_scorer(name: str, factory: type[RiskScorer]) -> None:
     """Register a scorer factory under ``name`` (later ids never silently override).
 
-    A duplicate ``name`` is a hard error (``docs/06 §2`` — id collisions are not silent).
+    A duplicate ``name`` is a hard error (``docs/06 §2`` - id collisions are not silent).
     """
     if name in _FACTORIES:
         raise ValueError(f"scorer id already registered: {name!r}")

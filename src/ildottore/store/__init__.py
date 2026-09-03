@@ -2,10 +2,10 @@
 
 Two concrete stores behind the u00 protocols (``shared.protocols``):
 
-* :class:`~ildottore.store.evidence_fs.FsEvidenceStore` — content-addressed,
+* :class:`~ildottore.store.evidence_fs.FsEvidenceStore` - content-addressed,
   immutable, redact-at-rest filesystem ``EvidenceStore``.
-* :class:`~ildottore.store.run_sqlite.SqliteRunStore` — idempotent SQLite
-  ``RunStore`` (Postgres seam later — contract §9).
+* :class:`~ildottore.store.run_sqlite.SqliteRunStore` - idempotent SQLite
+  ``RunStore`` (Postgres seam later - contract §9).
 
 Redaction (u01) is applied before every write; raw secrets/PII/canaries never
 touch disk or DB (``docs/11 §5`` DL2, fail-closed). :mod:`ildottore.store.replay`

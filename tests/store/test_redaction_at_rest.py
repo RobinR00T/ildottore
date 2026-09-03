@@ -1,4 +1,4 @@
-"""Redaction-at-rest leak test (DL2, gating — contract §7).
+"""Redaction-at-rest leak test (DL2, gating - contract §7).
 
 Seeds attempts + findings with planted canaries, secret-shaped strings and
 synthetic PII, runs the full write path (fs + sqlite), then greps EVERY on-disk
@@ -93,7 +93,7 @@ def _all_db_text(db_path: Path) -> str:
             for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         ]
         for table in tables:
-            for row in conn.execute(f"SELECT * FROM {table}").fetchall():  # noqa: S608 — table names from schema
+            for row in conn.execute(f"SELECT * FROM {table}").fetchall():  # noqa: S608 - table names from schema
                 cells.extend(str(v) for v in row)
         return "\n".join(cells)
     finally:

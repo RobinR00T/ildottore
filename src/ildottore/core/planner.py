@@ -1,24 +1,24 @@
-"""The plan-builder — the sole owner of ``build_plan`` (u08, ADR-0006).
+"""The plan-builder - the sole owner of ``build_plan`` (u08, ADR-0006).
 
 ``build_plan(specs, fingerprint, capabilities) -> TestPlan`` turns an ordered spec
 set + the target's declared :class:`Capabilities` (+ an optional
 :class:`ModelFingerprint`) into the canonical reviewable :class:`TestPlan`
 (ADR-0006 §3, ``docs/10 §3``):
 
-1. **Capability filter** — a spec whose ``requires`` names a capability the target
+1. **Capability filter** - a spec whose ``requires`` names a capability the target
    does not declare is **skipped with an explicit reason** (never silently dropped;
    at run time the same gap yields ``inconclusive: capability_unavailable``).
-2. **Per-spec mutator selection** — the spec's declared ``mutations`` (``identity``
+2. **Per-spec mutator selection** - the spec's declared ``mutations`` (``identity``
    is always included as the baseline carrier), ordered family-effectively when a
    fingerprint is supplied.
-3. **Baseline resistance** — when a fingerprint is present, records the family's
+3. **Baseline resistance** - when a fingerprint is present, records the family's
    known resistance so a result is scored *relative to expectation* (``docs/10 §3``).
-4. **Explicit, byte-stable output** — deterministic ordering (specs in input order,
+4. **Explicit, byte-stable output** - deterministic ordering (specs in input order,
    skips in input order) so the same inputs produce a byte-identical plan
    (contract §7 determinism replay).
 
 ``--no-adaptive`` (``adaptive=False``) is a **pass-through**: no fingerprint
-tailoring, no baseline resistance, mutator order is the spec's declared order — the
+tailoring, no baseline resistance, mutator order is the spec's declared order - the
 full selected suite runs for apples-to-apples benchmark parity (``docs/10 §3``).
 
 Pure and side-effect-free: no I/O, no clock, no RNG. ``core`` imports only shared
@@ -49,7 +49,7 @@ __all__ = [
 IDENTITY_MUTATOR = "identity"
 
 #: Conservative default per-campaign hard budgets (contract §9; human-confirmable).
-#: Surfaced here so a plan is never budget-less — the runner turns these into a
+#: Surfaced here so a plan is never budget-less - the runner turns these into a
 #: :class:`~ildottore.core.budgets.BudgetLedger`.
 DEFAULT_PLAN_BUDGETS = PlanBudgets(
     max_tokens=500_000,
@@ -85,7 +85,7 @@ def _missing_capabilities(spec: AttackSpec, capabilities: Capabilities) -> list[
     for req in spec.requires:
         field = _REQUIRES_TO_CAP.get(req)
         if field is None:
-            continue  # system_prompt — always satisfiable via setup
+            continue  # system_prompt - always satisfiable via setup
         if not getattr(capabilities, field):
             missing.append(field)
     return missing
@@ -115,10 +115,10 @@ def _order_family_effective(mutations: list[str], fingerprint: ModelFingerprint)
     """Stable family-effective ordering of a spec's declared mutations.
 
     Fingerprints may carry a per-family ``effective_mutators`` hint in
-    ``capability_guess`` (a free-shaped probe result — ADR-0006 §3). Named
+    ``capability_guess`` (a free-shaped probe result - ADR-0006 §3). Named
     mutators that the hint lists as historically effective sort first (in the
     hint's order); the rest follow in their declared order. Absent a hint, the
-    declared order is preserved — never a silent reshuffle (``docs/10 §3``).
+    declared order is preserved - never a silent reshuffle (``docs/10 §3``).
     """
 
     hint = fingerprint.capability_guess.get("effective_mutators")
@@ -139,7 +139,7 @@ def _baseline_resistance(
 
     Read from the fingerprint's ``guardrails.baseline_resistance`` map keyed by the
     spec's ``category`` (``docs/10 §3``). Only populated in adaptive mode with a
-    fingerprint present — benchmark-parity runs score absolutely, not relative.
+    fingerprint present - benchmark-parity runs score absolutely, not relative.
     """
 
     if not adaptive or fingerprint is None:
@@ -217,7 +217,7 @@ def build_plan(
 
 
 def _selection_reason(spec: AttackSpec, *, adaptive: bool) -> str:
-    """Human-readable reason a spec was selected (reviewable plan — docs/10 §3)."""
+    """Human-readable reason a spec was selected (reviewable plan - docs/10 §3)."""
 
     mode = "adaptive-tailored" if adaptive else "full-suite (benchmark parity)"
     return f"{mode}: {spec.category.value} spec applicable to declared capabilities"

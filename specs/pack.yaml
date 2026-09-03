@@ -1,5 +1,5 @@
 # Built-in spec pack manifest. Its presence makes `specs/` a spec pack (docs/06 §2), so the
-# registry loader recursively discovers attacks/*.yaml + suites/*.yaml — which is what lets
+# registry loader recursively discovers attacks/*.yaml + suites/*.yaml - which is what lets
 # `dottore run --quick` (default --spec-path specs/) find the battery out of the box.
 id: ildottore-builtin
 pack_version: "0.0.1"

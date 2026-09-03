@@ -11,7 +11,7 @@ Label → binary mapping (per corpus ``positive_class``):
   detection of a refusal; ``fail`` is a negative (compliance).
 * data-leak (``pii_detector``/``secret_shape``): positive = a PII/secret was *detected*
   (verdict ``fail`` for corroborated, or ``inconclusive``/needs-review for uncorroborated).
-  ``pass`` (clean) is a negative — so a hallucinated-but-valid lookalike labelled ``pass`` that
+  ``pass`` (clean) is a negative - so a hallucinated-but-valid lookalike labelled ``pass`` that
   the evaluator flags counts as a false positive.
 """
 

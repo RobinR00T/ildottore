@@ -1,4 +1,4 @@
-# ADR-0006 — TestPlan/planner seam & Pydantic-first schemas
+# ADR-0006 - TestPlan/planner seam & Pydantic-first schemas
 
 - **Status:** Accepted
 - **Date:** 2026-07-07
@@ -15,10 +15,10 @@ exist while every unit declares `schemas/` must-not-touch.
 1. **`TestPlan` and `ModelFingerprint` are shared wire models → owned by u00** (`shared.models`)
    and listed in the `00-INDEX` interface registry. They are cross-unit shapes (produced by one
    unit, consumed by others), so they belong with the other shared models.
-2. **The plan-builder lives in exactly one place: u08** — `core/planner.py`,
+2. **The plan-builder lives in exactly one place: u08** - `core/planner.py`,
    `build_plan(specs, fingerprint: ModelFingerprint | None, capabilities) -> TestPlan`
    (capability filtering, family-effective mutator weighting, skip reasons, budgets).
-   **u09 does NOT build a TestPlan** — it only produces `ModelFingerprint` and feeds it to the
+   **u09 does NOT build a TestPlan** - it only produces `ModelFingerprint` and feeds it to the
    u08 planner. `src/ildottore/fingerprint/planner.py` is removed from u09's scope.
 3. **Canonical `TestPlan` shape** (the richer u08 form):
    `{plan_ref, target_id, adaptive: bool, fingerprint_ref: str | None,
@@ -35,7 +35,7 @@ exist while every unit declares `schemas/` must-not-touch.
    three files as frozen upstream oracles. This resolves OD-14 (schema ownership = u00).
 
 ## Consequences
-- (+) One `TestPlan`, one builder, one owner — the u08/u09 fixtures can't diverge.
+- (+) One `TestPlan`, one builder, one owner - the u08/u09 fixtures can't diverge.
 - (+) No hand-maintained schema drift; the model is the single source of truth.
 - (−) u09 loses its own planner module (net simpler). Contracts u00/u08/u09 carry a
   reconciliation note pointing here; INDEX registry updated.

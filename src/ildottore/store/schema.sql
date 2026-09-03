@@ -1,4 +1,4 @@
--- Il Dottore RunStore schema (u10) — SQLite concrete, Postgres seam later.
+-- Il Dottore RunStore schema (u10) - SQLite concrete, Postgres seam later.
 -- Forward-only. The current version lives in `migrations.py` (SCHEMA_VERSION);
 -- `schema_version` records the applied version. All DDL is idempotent so a
 -- re-run on an already-migrated DB is a no-op (contract §7 migration round-trip).

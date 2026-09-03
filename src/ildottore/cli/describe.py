@@ -1,4 +1,4 @@
-"""``dottore describe <spec-id>`` — show one spec's detail (contract §5.5).
+"""``dottore describe <spec-id>`` - show one spec's detail (contract §5.5).
 
 A thin delegator over the u02 registry: look a spec up by id and render its
 human-readable card (id, name, category, OWASP/ATLAS/NIST mapping, severity, requires,

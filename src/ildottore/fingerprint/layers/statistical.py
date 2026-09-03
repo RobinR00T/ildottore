@@ -1,7 +1,7 @@
 """Statistical (LLMmap-style) signal layer (u09, contract §5 step 5, OD-9).
 
 Runs the fixed statistical query battery, turns each response into a small
-**deterministic response feature vector** (no embedder — OD-9 resolved to a
+**deterministic response feature vector** (no embedder - OD-9 resolved to a
 response feature-vector nearest-neighbor to avoid a heavy/ambiguous-license dep,
 ``AGENTS.md §3``), concatenates them into one fingerprint vector, and finds the
 nearest signature-pack centroid by Euclidean distance. The closest entry emits
@@ -12,7 +12,7 @@ The feature set is intentionally shallow + robust (length, sentence/line/list
 structure, markdown/hedge markers, digit ratio) so it is stable across benign
 paraphrase yet separates families whose style differs. Because it is derived only
 from response *structure*, a target that spoofs its self-reported identity cannot
-spoof this layer — which is exactly why a contradiction here becomes a
+spoof this layer - which is exactly why a contradiction here becomes a
 ``spoofing_flag`` (contract §2, ``docs/10 §5``).
 """
 
@@ -51,7 +51,7 @@ def featurize(text: str) -> list[float]:
     """Extract a fixed-length, deterministic feature vector from one response.
 
     All features are normalized to roughly ``[0,1]`` so Euclidean distance is not
-    dominated by raw length. Pure — same text ⇒ same vector (contract §7 replay).
+    dominated by raw length. Pure - same text ⇒ same vector (contract §7 replay).
     """
 
     stripped = text.strip()

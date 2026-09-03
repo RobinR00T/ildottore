@@ -2,14 +2,14 @@
 
 Runs over a loaded pack set + the merged registry and emits a :class:`LintReport`. Rules:
 
-* **SCHEMA / PARSE_ERROR** — surfaced by the loader (invalid YAML / schema breach).
-* **ID_COLLISION** — a later pack re-declares an existing id (from the registry merge).
-* **MISSING_TEST_ONLY** — a spec in a flagged family lacks ``test_only: true``.
-* **UNKNOWN_EVALUATOR_TYPE** — a declared evaluator type the engine can't satisfy.
-* **MISSING_FRAMEWORK_MAP** — an owasp/mitre/nist mapping is blank.
-* **FIXTURE_NO_DETECT** — ``fixtures.vulnerable`` does not yield a fail.
-* **FIXTURE_HARDENED_FAIL** — ``fixtures.hardened`` does not all-pass.
-* **UNKNOWN_SPEC_REF** — a suite references a spec id absent from the registry.
+* **SCHEMA / PARSE_ERROR** - surfaced by the loader (invalid YAML / schema breach).
+* **ID_COLLISION** - a later pack re-declares an existing id (from the registry merge).
+* **MISSING_TEST_ONLY** - a spec in a flagged family lacks ``test_only: true``.
+* **UNKNOWN_EVALUATOR_TYPE** - a declared evaluator type the engine can't satisfy.
+* **MISSING_FRAMEWORK_MAP** - an owasp/mitre/nist mapping is blank.
+* **FIXTURE_NO_DETECT** - ``fixtures.vulnerable`` does not yield a fail.
+* **FIXTURE_HARDENED_FAIL** - ``fixtures.hardened`` does not all-pass.
+* **UNKNOWN_SPEC_REF** - a suite references a spec id absent from the registry.
 
 The linter runs **no code and opens no socket**: it consumes already-parsed models and the
 offline stub evaluator table.

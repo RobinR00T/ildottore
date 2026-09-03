@@ -1,4 +1,4 @@
-"""``refusal_suppression_prefix`` — prepend a refusal-suppression preamble.
+"""``refusal_suppression_prefix`` - prepend a refusal-suppression preamble.
 
 Intent-preserving (contract §4 KEEP): the original ask follows the preamble verbatim; the
 preamble only tries to suppress a refusal, it does not change what is being asked.

@@ -6,7 +6,7 @@ arbitrary JSON REST endpoint and pulls the answer back out with a small dotted
 JSON-path extractor (list indices supported, e.g. ``choices.0.text``).
 
 Defaults are deliberately conservative: ``logprobs=None`` and ``seed=False``
-(contract §5 step 4) — the long tail rarely exposes either, and we never
+(contract §5 step 4) - the long tail rarely exposes either, and we never
 fabricate them. Auth is **header-only** in MVP-1 to shrink the secret-leak
 surface (contract §9); query/body-templated tokens are deferred pending sign-off.
 """
@@ -54,13 +54,13 @@ def _get_path(payload: Any, path: str) -> Any:
 class RestTemplate:
     """Declarative request/response mapping for a generic REST endpoint.
 
-    * ``path`` — endpoint path appended to ``base_url``.
-    * ``prompt_field`` — dotted location in the request body to inject the prompt
+    * ``path`` - endpoint path appended to ``base_url``.
+    * ``prompt_field`` - dotted location in the request body to inject the prompt
       (default ``prompt``). System prompt goes to ``system_field`` if set.
-    * ``text_path`` — dotted path to the answer text in the response.
-    * ``finish_path`` / ``id_path`` / ``usage_path`` — optional response paths.
-    * ``static_body`` — fields merged into every request (e.g. ``model``).
-    * ``static_headers`` — headers merged into every request.
+    * ``text_path`` - dotted path to the answer text in the response.
+    * ``finish_path`` / ``id_path`` / ``usage_path`` - optional response paths.
+    * ``static_body`` - fields merged into every request (e.g. ``model``).
+    * ``static_headers`` - headers merged into every request.
     """
 
     path: str = "/"

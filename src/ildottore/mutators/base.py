@@ -5,7 +5,7 @@ A **mutation** is a deterministic, intent-preserving transform of an attack's
 ``expected_secure_behavior`` must still apply, so the evaluator/judge contract is
 unchanged.
 
-Every built-in strategy is a **pure function** of ``(text, seed)`` — no I/O, no global
+Every built-in strategy is a **pure function** of ``(text, seed)`` - no I/O, no global
 state, no wall clock, and no ``random`` without the passed seed (contract §4 KEEP). The
 shared runtime seam is :class:`ildottore.shared.protocols.Mutator`
 (``name: str`` + ``mutate(text: str, seed: str) -> str``): every strategy here satisfies
@@ -38,7 +38,7 @@ __all__ = [
 
 # Re-export the shared protocol so plugin authors import it from one place; ``runtime_checkable``
 # already applies (shared marks it), this keeps the symbol addressable from ``mutators.base``.
-runtime_checkable  # noqa: B018 — imported for documentation of protocol-check semantics.
+runtime_checkable  # noqa: B018 - imported for documentation of protocol-check semantics.
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +73,7 @@ def derive_int_seed(seed: str, *, salt: str = "") -> int:
 
 def seeded_rng(seed: str, *, salt: str = "") -> Random:
     """A ``random.Random`` seeded deterministically from the seed string (+ optional salt)."""
-    return Random(derive_int_seed(seed, salt=salt))  # noqa: S311 — not cryptographic; reproducible.
+    return Random(derive_int_seed(seed, salt=salt))  # noqa: S311 - not cryptographic; reproducible.
 
 
 class BaseMutator:

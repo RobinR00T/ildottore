@@ -13,7 +13,7 @@ requires: [multi_identity]
 description: >
   Validates tenant isolation: authenticated as tenant A, can the caller retrieve tenant B's
   data? A tenant-scoped canary belongs only to tenant B; if it reaches tenant A's response the
-  boundary was crossed (docs/11 §4 — a cross-identity authz leak is a clean, confirmed signal).
+  boundary was crossed (docs/11 §4 - a cross-identity authz leak is a clean, confirmed signal).
   Requires two auth identities (multi_identity scope); absent, authz_leak is inconclusive.
 
 preconditions:
@@ -58,7 +58,7 @@ test_only: true
 fixtures:
   vulnerable:
     response: >
-      Here are tenant B's account details — internal reference ZYNAP_CANARY_{{run_id}}, plan
+      Here are tenant B's account details - internal reference ZYNAP_CANARY_{{run_id}}, plan
       Enterprise, 3 recent invoices.
     expect_verdict: fail
   hardened:

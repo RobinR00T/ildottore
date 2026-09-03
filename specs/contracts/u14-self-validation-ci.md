@@ -2,7 +2,7 @@
 
 Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + `docs/00` +
 `docs/01` + `docs/07` (18-layer taxonomy) + `specs/contracts/00-INDEX.md` before implementing.
-**Last unit** (W5) — depends on every unit above; wires the test taxonomy + CI merge gate.
+**Last unit** (W5) - depends on every unit above; wires the test taxonomy + CI merge gate.
 
 ## §1 Scope & ownership
 - **OWNS:** `tests/` (scaffolding, `conftest.py`, shared fixtures, taxonomy layout, fixture
@@ -10,7 +10,7 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
   `pyproject.toml` `[tool.pytest.ini_options]` + `[tool.coverage.*]` sections.
 - **MUST NOT touch:** any `src/ildottore/**` production code, `schemas/`, `docs/`,
   another unit's owned files, or spec YAML under `specs/attacks|suites`. This unit wires and
-  gates existing behavior; it never adds product features to fix a red gate — it reports.
+  gates existing behavior; it never adds product features to fix a red gate - it reports.
 
 ## §2 Intended behavior
 Provide the executable harness that proves the whole build. (1) Lay out `tests/` so every one
@@ -23,21 +23,21 @@ tests reuse. It owns *scaffolding + wiring + gates*, not the per-layer test bodi
 to each unit's contract (evaluators own their P/R tests, mutator owns property tests, etc.).
 
 ## §3 Dependencies & interface contracts
-- Depends on **all units** (W0–W4 + u12). Consumes only public surfaces: `shared.models`,
+- Depends on **all units** (W0-W4 + u12). Consumes only public surfaces: `shared.models`,
   `shared.protocols`, the `dottore` CLI entry (u12), MockTarget + golden harness (u03),
   cassettes (u04), reporters (u11). Codes against the **shared interface registry**
-  (`00-INDEX §"Shared interface registry"`, `docs/01 §3`) — never a unit's internals.
+  (`00-INDEX §"Shared interface registry"`, `docs/01 §3`) - never a unit's internals.
 - Verdict polarity fixed repo-wide: `pass` = secure, `fail` = exploited (`docs/04`).
 - `.importlinter` is the machine form of `docs/01 §2`: `shared` importable by all; `core`
   imports interfaces only; `adapters` import nothing in-repo but `shared`; `evaluators` import
   `shared` (+ adapter *interface* for judge); composition only in `cli`/`api`.
 
-## §4 Known constraints — KEEP / DECIDE
-- KEEP: **no live API keys in CI** — adapters exercised only via `tests/cassettes/`
+## §4 Known constraints - KEEP / DECIDE
+- KEEP: **no live API keys in CI** - adapters exercised only via `tests/cassettes/`
   (`docs/07 §4`); a CI guard fails if any test opens a real socket to a provider host.
-- KEEP: gates are **ordered and fail-closed** — a later gate never runs green over an earlier
+- KEEP: gates are **ordered and fail-closed** - a later gate never runs green over an earlier
   red; golden-fixture accuracy (layer 6) and self-scan (layer 17) are hard merge blockers.
-- KEEP: env-vs-product discipline (`AGENTS.md §2`) — infra flake ⇒ retry/skip, real defect ⇒
+- KEEP: env-vs-product discipline (`AGENTS.md §2`) - infra flake ⇒ retry/skip, real defect ⇒
   FAIL; never mark a product defect `xfail`.
 - KEEP: this unit adds no `src/` code; a red gate is escalated, not patched here.
 - DECIDE: coverage measured **per-package core ≥ 85%** vs a single global number (propose
@@ -58,7 +58,7 @@ to each unit's contract (evaluators own their P/R tests, mutator owns property t
 - `.importlinter`: TOML/INI `[importlinter]` root + layered/independence contracts naming
   `ildottore.shared|core|adapters|evaluators|cli|reporting|store|policy|…`.
 - CI publishes per build: **spec detection accuracy** = correct-verdicts/total-fixtures, plus
-  per-family FP/FN, coverage %, evaluator P/R table, judge-flip count — as JUnit + a JSON
+  per-family FP/FN, coverage %, evaluator P/R table, judge-flip count - as JUnit + a JSON
   summary artifact. SARIF from self-scan validates against **SARIF 2.1.0**; JUnit valid XML.
 - No new persisted domain models; consumes `TestRun`/`Finding` shapes only through reporters.
 
@@ -67,7 +67,7 @@ to each unit's contract (evaluators own their P/R tests, mutator owns property t
   --cov-report=term-missing --cov-fail-under=85`.
 - `lint-imports` green (exit 0) against `.importlinter`; `tests/test_import_contract.py` passes.
 - `ruff check . && ruff format --check . && mypy src` clean.
-- `dottore lint specs/` exits 0 (layers 1–2).
+- `dottore lint specs/` exits 0 (layers 1-2).
 - **Golden-fixture accuracy = 100%** (layer 6, hard gate): every spec flags `fixtures.vulnerable`
   (`fail`) and passes `fixtures.hardened` (`pass`); a mismatch fails CI.
 - Evaluator **precision ≥ 0.90 / recall ≥ 0.85** on `tests/fixtures/labeled/` (layer 7).
@@ -81,10 +81,10 @@ to each unit's contract (evaluators own their P/R tests, mutator owns property t
 
 ## §8 Out of scope / forbidden
 - MUST NOT add or modify `src/ildottore/**`, `schemas/`, `docs/`, or spec YAML to make a gate
-  pass — escalate the red gate to its owning unit.
+  pass - escalate the red gate to its owning unit.
 - MUST NOT authbypass the no-live-key rule (no real provider calls in CI); no secrets in
   workflows or fixtures.
-- MUST NOT relax a threshold (coverage, P/R, accuracy) to go green — thresholds are `docs/07`.
+- MUST NOT relax a threshold (coverage, P/R, accuracy) to go green - thresholds are `docs/07`.
 - MUST NOT own per-layer test *content* that another unit's contract assigns (only scaffolding,
   wiring, shared fixtures, gates).
 - Not its call: coverage-scope decision if contested (see §9) · any threshold change (program).

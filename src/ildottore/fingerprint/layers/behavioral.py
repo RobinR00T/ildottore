@@ -3,12 +3,12 @@
 Runs the small fixed **benign** behavioral battery (seeded) and matches the
 responses against each signature entry's ``signals["behavioral"]`` fragments:
 self-identification phrasing, knowledge-cutoff answers, refusal-style phrasing and
-formatting idioms — the family "tells" (``docs/10 §1``).
+formatting idioms - the family "tells" (``docs/10 §1``).
 
 Self-identification is a **weak** signal (contract §2, ``docs/10 §5``). This layer
 additionally emits a distinct ``self_report`` evidence carrying the family the
 target *claims*; the combiner compares that against the statistical verdict and
-raises ``self_report_conflicts_with_statistical`` when they disagree — the
+raises ``self_report_conflicts_with_statistical`` when they disagree - the
 self-report is never allowed to silently win (contract §7 spoofing honesty).
 """
 
@@ -96,7 +96,7 @@ class BehavioralLayer:
         claimed = self_reported_family(self_id.text)
         if claimed is None:
             return []
-        # Weight is deliberately small — a self-report is a *weak* signal (docs/10 §5).
+        # Weight is deliberately small - a self-report is a *weak* signal (docs/10 §5).
         return [
             FingerprintEvidence(
                 layer=_LAYER,

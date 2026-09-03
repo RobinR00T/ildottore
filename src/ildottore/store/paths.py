@@ -1,6 +1,6 @@
 """Deterministic on-disk layout + id derivation for the evidence store (u10).
 
-Every path is derived from the configured **store root** plus a ``run_id`` — the
+Every path is derived from the configured **store root** plus a ``run_id`` - the
 store never hardcodes a location and never writes outside the root (contract §4
 KEEP). Ids and file names are computed, not chosen, so two writers agree on the
 same path for the same content:
@@ -39,7 +39,7 @@ def validate_run_id(run_id: str) -> str:
     """Return ``run_id`` if it is a safe single path segment, else raise.
 
     Rejects empty ids, separators, ``.`` / ``..`` traversal and anything with a
-    NUL or exotic character — the id becomes a directory name verbatim.
+    NUL or exotic character - the id becomes a directory name verbatim.
     """
 
     if not _RUN_ID_PATTERN.match(run_id) or run_id in {".", ".."}:

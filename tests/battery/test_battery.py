@@ -1,23 +1,23 @@
-"""u13 acceptance — the T0 attack-spec battery FP/FN gate (contract §7).
+"""u13 acceptance - the T0 attack-spec battery FP/FN gate (contract §7).
 
-This is the unit's oracle. It imports the **real** engine seams the battery consumes —
+This is the unit's oracle. It imports the **real** engine seams the battery consumes -
 the u02 registry linter (:mod:`ildottore.registry`), the u03 golden harness
 (:mod:`ildottore.testing.golden`) + :class:`~ildottore.adapters.mock.MockTarget`, and the
-u06 evaluators (:mod:`ildottore.evaluators`) — and asserts, offline and deterministically:
+u06 evaluators (:mod:`ildottore.evaluators`) - and asserts, offline and deterministically:
 
-1. **Lint clean** — every shipped spec is schema-valid, framework-mapped, fixtures-prove
+1. **Lint clean** - every shipped spec is schema-valid, framework-mapped, fixtures-prove
    under the offline stub table, and flagged ``test_only`` where its family demands it
    (``dottore lint`` gate = 0 errors).
-2. **Golden FP/FN gate** — for **every** T0 spec the primary evaluator FLAGS the
+2. **Golden FP/FN gate** - for **every** T0 spec the primary evaluator FLAGS the
    ``vulnerable`` fixture (``fail``) and PASSES the ``hardened`` fixture (``pass``) through
    the u03 harness + :class:`MockTarget` (``docs/07 §3`` = 100% gate).
-3. **Data-leak FP discipline** — a hallucinated-but-valid PII/secret (format-valid, no
+3. **Data-leak FP discipline** - a hallucinated-but-valid PII/secret (format-valid, no
    corroboration) yields ``needs-review`` (``inconclusive``), **never** ``fail``
    (``docs/11 §4``); capability-gated evaluators return ``inconclusive`` not a false pass.
-4. **Safety invariants** — ``DL-PII-ELICIT-001`` is ``test_only`` and skips under a
+4. **Safety invariants** - ``DL-PII-ELICIT-001`` is ``test_only`` and skips under a
    restrictive policy gate (OD-11); ``DOS-TOKEN-AMP-001`` carries a ``budget`` block.
-5. **Coverage** — both suites reference all 18 ids; capability ``requires`` are declared.
-6. **Redaction** — no fixture embeds a real secret/PII (only ``{{canary}}`` + synthetic).
+5. **Coverage** - both suites reference all 18 ids; capability ``requires`` are declared.
+6. **Redaction** - no fixture embeds a real secret/PII (only ``{{canary}}`` + synthetic).
 """
 
 from __future__ import annotations
@@ -324,10 +324,10 @@ def test_no_real_secret_in_shipped_specs(spec_file: Path) -> None:
 
     text = spec_file.read_text()
     assert not _FORBIDDEN_REAL_SECRET.search(text), (
-        f"{spec_file.name} embeds a real-shaped secret/key — use {{{{canary}}}} + synthetic"
+        f"{spec_file.name} embeds a real-shaped secret/key - use {{{{canary}}}} + synthetic"
     )
     assert not _SHIPPED_SECRET_SHAPE.search(text), (
-        f"{spec_file.name} embeds a live-looking API key — a shipped leak must be proven by "
+        f"{spec_file.name} embeds a live-looking API key - a shipped leak must be proven by "
         f"the {{{{canary}}}}, not a raw credential shape"
     )
 

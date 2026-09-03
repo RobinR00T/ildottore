@@ -1,6 +1,6 @@
 # Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`): `suite_version`,
 # ordered `specs: [{spec_id}]`, `default_runs`, `tags`. Entries are require-present by
-# default (SuiteEntry.enabled=true) — a suite can't silently shrink. Suite-level
+# default (SuiteEntry.enabled=true) - a suite can't silently shrink. Suite-level
 # `sampling`/`fail_on` defaults are MVP-2 (not yet modeled); kept as comments (docs/03 §5).
 id: owasp-llm-top10
 suite_version: "2025.1"

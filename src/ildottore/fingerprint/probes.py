@@ -6,7 +6,7 @@ payloads). Each probe is a small, named, declarative unit that a layer turns int
 constant so the set is identical on every run (contract §4 KEEP: deterministic
 replay); the per-probe seed comes from :func:`ildottore.fingerprint.base.seed_for`.
 
-Probes never carry adversarial intent — a self-identification question, a
+Probes never carry adversarial intent - a self-identification question, a
 knowledge-cutoff question, a benign structured-output nudge and a couple of
 neutral idiom/formatting prompts. They are safe to send to any endpoint on the
 scope allowlist and are the "banner-grab" analogue (``docs/10 §1``).

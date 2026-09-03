@@ -7,9 +7,9 @@ Contract §5.2. The load path is fixed (contract §4 KEEP):
 **No code execution, no network, no imports of pack content** happen here. Discovery walks
 the filesystem only. Two on-disk shapes are supported:
 
-* **Spec pack** — a directory containing ``pack.yaml`` (+ ``attacks/*.yaml`` and
+* **Spec pack** - a directory containing ``pack.yaml`` (+ ``attacks/*.yaml`` and
   ``suites/*.yaml``). Discovered recursively from each search path.
-* **Loose spec tree** — a directory (or file) of bare ``*.yaml`` attack specs with no
+* **Loose spec tree** - a directory (or file) of bare ``*.yaml`` attack specs with no
   ``pack.yaml`` (e.g. the repo ``specs/`` tree or a test fixture dir). These are gathered
   under a synthetic pack so the registry API is uniform.
 

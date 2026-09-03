@@ -1,7 +1,7 @@
 """Pydantic-first JSON Schema export (ADR-0006, OD-14).
 
 Only ``schemas/attack-spec.schema.json`` is hand-authored. The ``suite``, ``pack`` and
-``test-plan`` schemas are generated from the Pydantic models here — the model is the
+``test-plan`` schemas are generated from the Pydantic models here - the model is the
 single source of truth. Owned by u00; surfaced later via ``dottore schema export``.
 """
 

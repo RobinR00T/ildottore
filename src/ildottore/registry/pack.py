@@ -3,11 +3,11 @@
 A *spec pack* on disk is a directory containing ``pack.yaml`` plus ``attacks/*.yaml`` and
 ``suites/*.yaml`` (``docs/06 §2``). The manifest model (:class:`~ildottore.shared.Pack`)
 and the suite model (:class:`~ildottore.shared.Suite`) are owned by u00 (Pydantic-first,
-ADR-0006 / OD-14) — this unit imports them, never redefines them.
+ADR-0006 / OD-14) - this unit imports them, never redefines them.
 
 :class:`LoadedPack` binds a parsed manifest to the concrete specs and suites discovered
-inside its directory, preserving on-disk discovery order so later packs extend — never
-silently override — earlier ids (collision handling lives in ``registry.py``).
+inside its directory, preserving on-disk discovery order so later packs extend - never
+silently override - earlier ids (collision handling lives in ``registry.py``).
 """
 
 from __future__ import annotations

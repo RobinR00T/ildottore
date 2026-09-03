@@ -1,4 +1,4 @@
-"""``identity`` — the null transform (contract §2).
+"""``identity`` - the null transform (contract §2).
 
 Returns the input unchanged; ``identity(t) == t`` for all ``t`` (property test, §7).
 This is the baseline variant every spec implicitly runs.

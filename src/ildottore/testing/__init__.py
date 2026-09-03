@@ -3,7 +3,7 @@
 Hosts the golden-target detection-accuracy harness (:mod:`ildottore.testing.golden`)
 that proves every attack spec's fixtures actually flag the vulnerable case and pass
 the hardened case (``docs/07 §2``, the FP/FN merge gate). Import-safe: this package
-pulls in only ``shared`` + ``policy`` (never a concrete evaluator/adapter — those are
+pulls in only ``shared`` + ``policy`` (never a concrete evaluator/adapter - those are
 injected via protocol, contract §3/§8).
 """
 

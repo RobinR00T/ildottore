@@ -1,8 +1,8 @@
 """Versioned, forward-only schema management for the SQLite RunStore (u10).
 
 A single migration in MVP-1: apply ``schema.sql`` (all DDL idempotent) and stamp
-``schema_version``. The design keeps a real migration seam — ``_MIGRATIONS`` is an
-ordered list of ``(version, sql)`` steps — so later units can append v2, v3 …
+``schema_version``. The design keeps a real migration seam - ``_MIGRATIONS`` is an
+ordered list of ``(version, sql)`` steps - so later units can append v2, v3 …
 without rewriting existing rows (contract §4 KEEP: forward-only).
 
 Every connection is opened with ``PRAGMA journal_mode=WAL`` and

@@ -1,13 +1,13 @@
-# CI — the merge gate for Il Dottore (docs/07 §5, contract u14 §7).
+# CI - the merge gate for Il Dottore (docs/07 §5, contract u14 §7).
 #
 # TWO jobs. `static` (fast, parallel) runs lint/format/type/import-boundary. `validate` runs
-# the 12 ORDERED detection gates as discrete steps — GitHub Actions stops a job at the first
+# the 12 ORDERED detection gates as discrete steps - GitHub Actions stops a job at the first
 # failing step, so the pipeline is fail-closed: a later gate never runs green over an earlier
 # red (contract §4 KEEP). No live API keys: adapters are exercised only via cassettes, and the
 # autouse no-live-socket guard in tests/conftest.py fails any test that opens a real socket.
 #
 # Thresholds (coverage ≥85% core, evaluator P/R, golden accuracy, judge flips) are docs/07 §3
-# and MUST NOT be relaxed to go green — a red gate is escalated to its owning unit (contract §8).
+# and MUST NOT be relaxed to go green - a red gate is escalated to its owning unit (contract §8).
 
 name: ci
 
@@ -17,7 +17,7 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    # Weekly full run (Mondays 06:00 UTC) — catches dependency/toolchain drift on the merge gate.
+    # Weekly full run (Mondays 06:00 UTC) - catches dependency/toolchain drift on the merge gate.
     - cron: "0 6 * * 1"
 
 permissions:
@@ -49,7 +49,7 @@ jobs:
         run: ruff format --check src tests
       - name: mypy (strict)
         run: mypy src
-      # Gate 2 — import-boundary contract (docs/01 §2, layer 14). Runs here so a layering
+      # Gate 2 - import-boundary contract (docs/01 §2, layer 14). Runs here so a layering
       # violation blocks fast, and again implicitly via tests/test_import_contract.py in `validate`.
       - name: Import-boundary contract (lint-imports)
         run: lint-imports
@@ -66,18 +66,18 @@ jobs:
       - name: Install (editable + dev)
         run: python -m pip install -e ".[dev]"
 
-      # ---- Gate 1 — spec lint: schema + static checks (layers 1–2) -------------------------
+      # ---- Gate 1 - spec lint: schema + static checks (layers 1-2) -------------------------
       # The shipped spec pack must lint clean end-to-end (u02 §7 / u14 §7). `specs/` resolves
       # as a pack via `specs/pack.yaml`, so discovery loads attacks/ + suites/ and skips the
       # loose scope/target example YAMLs.
       - name: "Gate 1 · spec lint (schema + static)"
         run: dottore lint specs/
 
-      # ---- Gate 2 — import-boundary contract (layer 14) ------------------------------------
+      # ---- Gate 2 - import-boundary contract (layer 14) ------------------------------------
       - name: "Gate 2 · import-boundary contract"
         run: lint-imports
 
-      # ---- Gate 3 — unit + property tests (layers 3, 4, 10) --------------------------------
+      # ---- Gate 3 - unit + property tests (layers 3, 4, 10) --------------------------------
       # Scoped to the pure unit/property layers; the detection layers (golden, evaluator P/R,
       # judge, determinism, reporting, E2E, self-scan) each have their own ordered gate below,
       # so a failure surfaces at *its* gate, not smeared across gate 3.
@@ -90,40 +90,40 @@ jobs:
             tests/policy tests/store tests/fingerprint tests/core \
             --junitxml=reports/junit-unit.xml
 
-      # ---- Gate 4 — adapter contract tests via cassettes (layer 5, no live keys) -----------
+      # ---- Gate 4 - adapter contract tests via cassettes (layer 5, no live keys) -----------
       - name: "Gate 4 · adapter contract (cassettes, no live keys)"
         run: pytest -q tests/adapters --junitxml=reports/junit-adapters.xml
 
-      # ---- Gate 5 — golden-target detection accuracy (layer 6, HARD merge blocker) ---------
+      # ---- Gate 5 - golden-target detection accuracy (layer 6, HARD merge blocker) ---------
       - name: "Gate 5 · golden detection-accuracy (HARD gate)"
         run: pytest -q tests/golden tests/battery --junitxml=reports/junit-golden.xml
 
-      # ---- Gate 6 — evaluator precision / recall (layer 7) ---------------------------------
+      # ---- Gate 6 - evaluator precision / recall (layer 7) ---------------------------------
       - name: "Gate 6 · evaluator precision/recall"
         run: pytest -q tests/evaluators/test_precision_recall.py tests/evaluators/test_data_leak.py
 
-      # ---- Gate 7 — judge robustness / injection (layer 8) ---------------------------------
+      # ---- Gate 7 - judge robustness / injection (layer 8) ---------------------------------
       - name: "Gate 7 · judge robustness (0 verdict flips)"
         run: pytest -q tests/evaluators/test_adversarial_judge.py tests/evaluators/test_semantic_judge.py
 
-      # ---- Gate 8 — determinism replay (layers 9, 18) --------------------------------------
+      # ---- Gate 8 - determinism replay (layers 9, 18) --------------------------------------
       - name: "Gate 8 · determinism replay + metamorphic"
         run: pytest -q tests/evaluators/test_deterministic.py tests/core/test_determinism.py tests/core/test_reproduce.py
 
-      # ---- Gate 9 — reporting: SARIF/JUnit/HTML/JSON valid + secrets masked (layer 11) -----
+      # ---- Gate 9 - reporting: SARIF/JUnit/HTML/JSON valid + secrets masked (layer 11) -----
       - name: "Gate 9 · reporting + schema validity + masking"
         run: pytest -q tests/reporting --junitxml=reports/junit-reporting.xml
 
-      # ---- Gate 10 — E2E CLI (layer 12) ----------------------------------------------------
+      # ---- Gate 10 - E2E CLI (layer 12) ----------------------------------------------------
       - name: "Gate 10 · E2E CLI"
         run: pytest -q tests/cli --junitxml=reports/junit-cli.xml
 
-      # ---- Gate 11 — self-scan / dogfood: scan our own judge, gate on new high/critical ----
+      # ---- Gate 11 - self-scan / dogfood: scan our own judge, gate on new high/critical ----
       - name: "Gate 11 · self-scan (SARIF, fail on new high/critical)"
         run: |
           python -m tests.selfscan.run --out reports/self-scan.sarif.json
 
-      # ---- Gate 12 — coverage gate: core ≥ 85% (docs/07 §3) --------------------------------
+      # ---- Gate 12 - coverage gate: core ≥ 85% (docs/07 §3) --------------------------------
       - name: "Gate 12 · coverage (core ≥ 85%)"
         run: |
           pytest -q \

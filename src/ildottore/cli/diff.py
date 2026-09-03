@@ -1,14 +1,14 @@
-"""``dottore diff <baseline> <current>`` — baseline/drift comparison (docs/12 P1).
+"""``dottore diff <baseline> <current>`` - baseline/drift comparison (docs/12 P1).
 
 Compares two JSON run reports (as written by ``-oJ``/``JsonReporter``, or a bare list of
-findings) by spec id and classifies each spec as a **regression** (``NEW_FAIL`` — was not
-failing, now fails), a **fix** (``FIXED`` — was failing, now not), a **persistent failure**
+findings) by spec id and classifies each spec as a **regression** (``NEW_FAIL`` - was not
+failing, now fails), a **fix** (``FIXED`` - was failing, now not), a **persistent failure**
 (``STILL_FAIL``) or ``UNCHANGED``. Specs present on only one side are reported too
-(``ONLY_IN_BASELINE`` / ``ONLY_IN_CURRENT``) but never count as a regression on their own —
+(``ONLY_IN_BASELINE`` / ``ONLY_IN_CURRENT``) but never count as a regression on their own -
 there is no prior data point to regress from.
 
 Pure classification + thin I/O: this reads only ``Finding.spec_id``/``Finding.status`` and
-never touches ``RiskScore`` math (contract §8 — scoring stays u07's). ``compare_runs`` is the
+never touches ``RiskScore`` math (contract §8 - scoring stays u07's). ``compare_runs`` is the
 small pure helper (dict-in, dataclass-out, no I/O) so it is unit-testable without files.
 """
 
@@ -79,7 +79,7 @@ def load_findings(path: Path) -> dict[str, Finding]:
     Accepts both the full report envelope written by ``JsonReporter``
     (``{"schema_version": ..., "findings": [...], ...}``) and a bare JSON list of findings,
     so hand-built fixtures/tests need not construct a full ``TestRun``. Later duplicates of
-    the same ``spec_id`` win (last one in file order) — a report is expected to have at most
+    the same ``spec_id`` win (last one in file order) - a report is expected to have at most
     one finding per spec, but this stays permissive rather than raising on odd input.
     """
 
@@ -93,7 +93,7 @@ def load_findings(path: Path) -> dict[str, Finding]:
 
 
 def _classify(baseline: Finding | None, current: Finding | None) -> DriftClass:
-    if baseline is None and current is None:  # pragma: no cover — unreachable via compare_runs
+    if baseline is None and current is None:  # pragma: no cover - unreachable via compare_runs
         raise ValueError("_classify requires at least one side present")
     if baseline is None:
         return DriftClass.ONLY_IN_CURRENT
@@ -114,7 +114,7 @@ def _classify(baseline: Finding | None, current: Finding | None) -> DriftClass:
 def compare_runs(baseline: dict[str, Finding], current: dict[str, Finding]) -> DriftReport:
     """Pure compare: classify every spec id present in either side.
 
-    No I/O, no scoring — a dict-in/dataclass-out helper so the classification logic is
+    No I/O, no scoring - a dict-in/dataclass-out helper so the classification logic is
     unit-testable without writing files (contract §7 determinism).
     """
 

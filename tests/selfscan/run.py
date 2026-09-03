@@ -1,6 +1,6 @@
-"""Self-scan / dogfood runner — validation-plan layer 17.
+"""Self-scan / dogfood runner - validation-plan layer 17.
 
-Runs Il Dottore's own LLM-using component — the **semantic judge** — against the
+Runs Il Dottore's own LLM-using component - the **semantic judge** - against the
 adversarial-judge corpus, exactly as the scanner would attack a third-party judge. A judge
 that can be prompt-injected into *flipping* an ``exploited`` verdict to a spurious ``secure``
 (PASS) is a critical defect in our own code; every such flip is recorded as a CRITICAL
@@ -14,7 +14,7 @@ consumes model output as an instruction surface, so injecting *it* is the meanin
 Usage:
     python -m tests.selfscan.run --out reports/self-scan.sarif.json
 
-Owned by ``u14-self-validation-ci``. This is scaffolding/wiring — it adds no ``src/`` code and
+Owned by ``u14-self-validation-ci``. This is scaffolding/wiring - it adds no ``src/`` code and
 uses only the public model + reporting + evaluator surfaces.
 """
 
@@ -66,7 +66,7 @@ _SWAY_MODES = ("reports_injection", "emits_tripwire", "inconsistent")
 
 
 class _SwayedJudge:
-    """A judge model the injection *succeeded* on — the adversary we attack our judge with."""
+    """A judge model the injection *succeeded* on - the adversary we attack our judge with."""
 
     id = "swayed"
 
@@ -202,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
     findings = asyncio.run(_scan())
     run = _build_run(findings)
 
-    # Real reporter — validates against SARIF 2.1.0 as it builds (raises on invalid).
+    # Real reporter - validates against SARIF 2.1.0 as it builds (raises on invalid).
     sarif_bytes = SarifReporter().render(run, findings)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(sarif_bytes)

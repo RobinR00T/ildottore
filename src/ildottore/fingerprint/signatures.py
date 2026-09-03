@@ -9,7 +9,7 @@ extract later) plus a labeled **self-test corpus** used by the detection gate
 A pack is a small Pydantic-validated document (contract §4 KEEP: "loader validates
 pack version + schema; a pack update must not silently break the loader"). Each
 entry declares, per family/version, the matcher fragments each layer looks for and
-a feature-vector centroid for the statistical nearest-neighbor (OD-9 — no embedder
+a feature-vector centroid for the statistical nearest-neighbor (OD-9 - no embedder
 dep). The loader raises :class:`SignaturePackError` on a version mismatch or a
 malformed document so a bad pack fails loudly at load, never silently mis-fingerprints.
 """
@@ -33,7 +33,7 @@ __all__ = [
 ]
 
 # The only pack-format version this loader understands. A pack declaring anything
-# else is rejected (contract §4 KEEP) — the caller must ship a matching loader.
+# else is rejected (contract §4 KEEP) - the caller must ship a matching loader.
 SUPPORTED_PACK_VERSION = 1
 
 _DEFAULT_PACK = Path(__file__).parent / "signatures" / "pack.yaml"
@@ -114,7 +114,7 @@ class CorpusCase(BaseModel):
     # passive metadata the target would expose (raw_ids/headers/finish_reason echo)
     metadata: dict[str, str] = Field(default_factory=dict)
     finish_reason: str | None = None
-    # a deliberately-spoofed self-report (behavioral says X, stats say family) —
+    # a deliberately-spoofed self-report (behavioral says X, stats say family) -
     # used by the spoofing-honesty fixtures (contract §7).
     spoofed: bool = False
 

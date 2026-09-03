@@ -30,7 +30,7 @@ class Endpoint(BaseModel):
 
 
 class Identity(BaseModel):
-    """A named auth identity **reference** — ``auth_ref`` resolves to a secret elsewhere.
+    """A named auth identity **reference** - ``auth_ref`` resolves to a secret elsewhere.
 
     The scope file never carries the secret value itself (S6, contract §2).
     """
@@ -100,7 +100,7 @@ class IntegrityVerifier(Protocol):
 
 
 class Sha256Verifier:
-    """Default :class:`IntegrityVerifier` — SHA-256 hex digest of the scope body."""
+    """Default :class:`IntegrityVerifier` - SHA-256 hex digest of the scope body."""
 
     def compute(self, raw: bytes) -> str:
         return hashlib.sha256(raw).hexdigest()
@@ -132,7 +132,7 @@ def load_scope(
 ) -> Scope:
     """Load, validate and integrity-check a ``scope.yaml`` file.
 
-    * Parses YAML with a **safe** loader — no code execution, no network.
+    * Parses YAML with a **safe** loader - no code execution, no network.
     * Validates the :class:`Scope` model (default-deny: unknown fields rejected).
     * If a ``checksum`` is present, verifies it via ``verifier`` (SHA-256 by
       default); a mismatch raises :class:`ChecksumMismatchError` (S4 tamper).

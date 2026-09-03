@@ -1,4 +1,4 @@
-"""migrations.py — round-trip, idempotency, pragmas."""
+"""migrations.py - round-trip, idempotency, pragmas."""
 
 from __future__ import annotations
 

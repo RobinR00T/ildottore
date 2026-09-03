@@ -1,17 +1,17 @@
-# tests/ — validation harness map
+# tests/ - validation harness map
 
 This directory is the executable form of `docs/07-validation-plan.md`. Every one of the **18
 taxonomy layers** (`docs/07 §1`) has a home here, and the **ordered CI gates** (`docs/07 §5`,
 mirrored in `.github/workflows/ci.yml`) run these layers fail-closed. Scaffolding, shared
 fixtures and gates are owned by `u14-self-validation-ci`; the per-layer **test bodies** are
 owned by each unit's contract (evaluators own their P/R tests, the mutator owns property tests,
-etc. — see `specs/contracts/00-INDEX.md`).
+etc. - see `specs/contracts/00-INDEX.md`).
 
 ## Shared scaffolding (u14-owned)
 
 | File | Purpose |
 |------|---------|
-| `conftest.py` | Root fixtures: `repo_root`, `fixtures_dir`, `specs_dir`, `load_fixture_json`, `frozen_clock`, `mock_target_factory`, and the **autouse `no_live_socket` guard** (fails closed on any non-loopback connect — CI KEEP: no live provider calls). |
+| `conftest.py` | Root fixtures: `repo_root`, `fixtures_dir`, `specs_dir`, `load_fixture_json`, `frozen_clock`, `mock_target_factory`, and the **autouse `no_live_socket` guard** (fails closed on any non-loopback connect - CI KEEP: no live provider calls). |
 | `test_import_contract.py` | Layer 14 smoke: runs `lint-imports` against `.importlinter`, asserts all contracts KEPT and that the config is not double-defined in `pyproject.toml`. |
 | `test_harness_scaffolding.py` | Self-tests for the shared fixtures + the no-live-socket guard. |
 | `fixtures/` | Shared corpora consumed across layers (see below). |
@@ -39,7 +39,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 | 14 | Boundaries | Import-linter contract | `test_import_contract.py` + `.importlinter` |
 | 15 | Safety | Negative tests | `cli/test_scope_gate.py`, `core/test_policy_gate.py`, `policy/test_{allowlist,scope,packs}.py` |
 | 16 | Meta / regression | Golden-run snapshot | `reporting/test_golden_snapshot.py` + nightly regression (`.github/workflows/audit.yml` / `tests/golden-run/`) |
-| 17 | Self-scan | Dogfooding | CI job `self-scan` (`ci.yml`) — `dottore` run against our own judge, gate on new high/critical |
+| 17 | Self-scan | Dogfooding | CI job `self-scan` (`ci.yml`) - `dottore` run against our own judge, gate on new high/critical |
 | 18 | Metamorphic | Metamorphic tests | `evaluators/test_deterministic.py` (semantics-preserving invariance) + nightly metamorphic run |
 
 ## Fixture corpora (`docs/07 §4`)
@@ -50,14 +50,14 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 | `fixtures/labeled/` | 7 | Evaluator precision/recall corpus (positives, negatives, hard cases). |
 | `fixtures/adversarial-judge/` | 8 | Target outputs that try to prompt-inject the judge (must not flip a verdict). |
 | `adapters/cassettes/` | 5 | Recorded provider interactions, secrets scrubbed. **No real API keys, ever.** |
-| `fixtures/{specs,packs,plans,scoring,mutators,fingerprint}/` | 1–4 | Registry / pack / plan / scoring / mutator / fingerprint inputs. |
+| `fixtures/{specs,packs,plans,scoring,mutators,fingerprint}/` | 1-4 | Registry / pack / plan / scoring / mutator / fingerprint inputs. |
 
 ## Running locally (mirrors CI gates)
 
 ```sh
-dottore lint specs/                    # gate 1  (layers 1–2)
+dottore lint specs/                    # gate 1  (layers 1-2)
 lint-imports                           # gate 2  (layer 14)
-pytest -q                              # gates 3–10, 13, 15, 18
+pytest -q                              # gates 3-10, 13, 15, 18
 pytest --cov=src/ildottore --cov-report=term-missing --cov-fail-under=85   # gate 12
 ruff check . && ruff format --check . && mypy src                          # static
 ```
@@ -65,4 +65,4 @@ ruff check . && ruff format --check . && mypy src                          # sta
 The **golden-fixture accuracy** (layer 6) and **self-scan** (layer 17) are hard merge blockers:
 a spec whose fixtures don't produce the expected verdicts, or a new high/critical finding in
 our own LLM-using code, fails CI. Thresholds are `docs/07 §3` and must never be relaxed to go
-green — a red gate is **escalated to its owning unit**, not patched here (contract §8).
+green - a red gate is **escalated to its owning unit**, not patched here (contract §8).

@@ -1,6 +1,6 @@
 """SARIF 2.1.0 reporter (contract u11 §5 step 4, §6, §7; ``docs/05 §3``).
 
-Emits a SARIF 2.1.0 log — the CI / security-tool interchange format. One ``run`` per report;
+Emits a SARIF 2.1.0 log - the CI / security-tool interchange format. One ``run`` per report;
 one ``reportingDescriptor`` (rule) per distinct spec, tagged with its OWASP LLM / MITRE ATLAS
 / NIST framework ids; one ``result`` per finding. ``ruleId`` is the spec id; ``level`` is
 mapped from the risk **band** (critical/high → ``error``, medium → ``warning``,
@@ -8,7 +8,7 @@ low/info → ``note``). Result ``properties`` carry ``{band, risk_score, reprodu
 confidence, state}`` so downstream tools keep the two-axis model (``docs/05``).
 
 Every generated document validates against the vendored SARIF 2.1.0 JSON Schema
-(``schemas/sarif-2.1.0.schema.json``) — the contract's SARIF-validity gate (§7). Output is
+(``schemas/sarif-2.1.0.schema.json``) - the contract's SARIF-validity gate (§7). Output is
 deterministic: rules and results follow the (sorted) finding order and ``json.dumps`` uses a
 fixed separator/ASCII policy (contract §4 KEEP).
 """

@@ -274,7 +274,7 @@ def evaluate_fixture(
     Returns the combined verdict and the list of evaluator types with **no stub** (so the
     linter can report ``UNKNOWN_EVALUATOR_TYPE`` for genuinely unmapped types). Evaluator
     types that are valid schema enums but simply lack a stub are skipped for the verdict
-    but *not* reported as unknown — only types with no stub AND not in the enum are unknown,
+    but *not* reported as unknown - only types with no stub AND not in the enum are unknown,
     which the schema already rejects. Here "missing stub" means "cannot prove", surfaced by
     the caller as a distinct condition.
     """

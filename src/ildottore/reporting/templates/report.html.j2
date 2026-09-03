@@ -2,7 +2,7 @@
   Il Dottore HTML report (u11 §5 step 6). Autoescape is ON (the reporter forces it).
   `reasoning` and evidence excerpts arrive already masked (base pre-pass). When
   `unsafe_render` is true a warning banner is shown and reasoning is emitted with `|safe`
-  (raw HTML) — hard-gated opt-in only (OD-12).
+  (raw HTML) - hard-gated opt-in only (OD-12).
 #}
 <article class="dottore-report">
   <header>
@@ -23,7 +23,7 @@
     <h2>Targets</h2>
     <ul>
       {% for t in targets %}
-      <li><code>{{ t.id }}</code> — {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}</li>
+      <li><code>{{ t.id }}</code> - {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}</li>
       {% endfor %}
     </ul>
   </section>
@@ -110,7 +110,7 @@
           <th>{{ sid }}</th>
           {% for tid in comparison.target_ids %}
           {% set cell = comparison.cells | selectattr('spec_id', 'equalto', sid) | selectattr('target_id', 'equalto', tid) | first %}
-          <td>{% if cell %}{{ cell.band }} (r={{ '%.2f' | format(cell.reproducibility) }}, c={{ '%.2f' | format(cell.confidence) }}){% else %}—{% endif %}</td>
+          <td>{% if cell %}{{ cell.band }} (r={{ '%.2f' | format(cell.reproducibility) }}, c={{ '%.2f' | format(cell.confidence) }}){% else %}-{% endif %}</td>
           {% endfor %}
         </tr>
         {% endfor %}
@@ -121,7 +121,7 @@
 
   {% macro finding_card(f) %}
   <li class="finding band-{{ f.band }} status-{{ f.status }}">
-    <h4><code>{{ f.spec_id }}</code>{% if f.name %} — {{ f.name }}{% endif %}</h4>
+    <h4><code>{{ f.spec_id }}</code>{% if f.name %} - {{ f.name }}{% endif %}</h4>
     <p class="scores">
       target <code>{{ f.target_id }}</code> ·
       status <strong>{{ f.status }}</strong> ·

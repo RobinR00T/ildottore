@@ -2,7 +2,7 @@
 
 Loads a malicious YAML fixture (``!!python/object`` tag + anchor bomb) with sockets
 monkeypatched to raise, and asserts:
-  * parse **rejects** the unsafe tag (no code executes — ``os.system`` is never called),
+  * parse **rejects** the unsafe tag (no code executes - ``os.system`` is never called),
   * **zero** network calls happen at load,
   * the loader surfaces a PARSE_ERROR rather than crashing.
 """

@@ -1,4 +1,4 @@
-"""Shared builders for reporting tests — minimal valid shared-model instances.
+"""Shared builders for reporting tests - minimal valid shared-model instances.
 
 The planted secret/PII values here are the fixtures the masking gate (contract §7) greps for:
 each must be absent from every rendered format's bytes.

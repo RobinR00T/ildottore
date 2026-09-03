@@ -1,4 +1,4 @@
-"""Tests for base helpers: entropy, masking (DL2 — no raw value survives), verdict builders."""
+"""Tests for base helpers: entropy, masking (DL2 - no raw value survives), verdict builders."""
 
 from __future__ import annotations
 

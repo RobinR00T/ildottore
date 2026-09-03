@@ -58,5 +58,5 @@ def test_golden_snapshot_stable(fmt: str) -> None:
     if os.environ.get("UPDATE_REPORT_SNAPSHOTS") == "1":
         path.write_bytes(first)
     assert path.read_bytes() == first, (
-        f"{fmt}: snapshot drift — rerun with UPDATE_REPORT_SNAPSHOTS=1"
+        f"{fmt}: snapshot drift - rerun with UPDATE_REPORT_SNAPSHOTS=1"
     )

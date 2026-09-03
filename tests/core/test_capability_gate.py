@@ -107,7 +107,7 @@ async def test_all_env_errors_yield_inconclusive_finding(
     result = await runner.run(run_id="r1", target=make_target(), specs=[make_spec()])
     finding = result.findings[0]
     assert finding.status is VerdictStatus.INCONCLUSIVE
-    # Attempts ARE recorded (env-errored, not evaluated) — never masked as pass/fail.
+    # Attempts ARE recorded (env-errored, not evaluated) - never masked as pass/fail.
     assert len(finding.attempts) == 2
     assert all(a.verdict.status is VerdictStatus.INCONCLUSIVE for a in finding.attempts)
 

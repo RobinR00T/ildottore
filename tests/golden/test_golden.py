@@ -1,4 +1,4 @@
-"""u03 golden-harness runner tests — fixtures, verdicts, accuracy gate, policy.
+"""u03 golden-harness runner tests - fixtures, verdicts, accuracy gate, policy.
 
 Covers contract §7 acceptance for :mod:`ildottore.testing.golden`:
 * ``load_fixtures`` resolves inline fixtures into replayable scenarios,
@@ -7,12 +7,12 @@ Covers contract §7 acceptance for :mod:`ildottore.testing.golden`:
 * ``run_all`` returns accuracy ``1.0`` on matches and **exits non-zero**
   (``GoldenReport.ok is False`` with a populated ``mismatches`` diff) on an
   injected wrong verdict (``docs/07 §3`` = 100% gate),
-* capability honesty yields ``inconclusive: capability_unavailable`` — never a
+* capability honesty yields ``inconclusive: capability_unavailable`` - never a
   fabricated ``pass``,
 * the ``test_only`` policy gate skips (and records the reason) rather than dropping.
 
 The evaluator is the in-test :class:`~tests.golden.conftest.StubEvaluator` (the real
-pipeline is u06, injected via the ``Evaluator`` protocol — contract §3/§8).
+pipeline is u06, injected via the ``Evaluator`` protocol - contract §3/§8).
 """
 
 from __future__ import annotations

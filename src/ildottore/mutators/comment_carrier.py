@@ -2,9 +2,9 @@
 
 Two built-in strategies live here (one module, two carriers per the contract §1 ownership):
 
-- ``markdown_comment_carrier`` — an HTML/Markdown comment ``[//]: # (...)`` style hidden
+- ``markdown_comment_carrier`` - an HTML/Markdown comment ``[//]: # (...)`` style hidden
   directive plus a benign visible wrapper.
-- ``html_comment_carrier`` — an ``<!-- ... -->`` comment carrying the payload.
+- ``html_comment_carrier`` - an ``<!-- ... -->`` comment carrying the payload.
 
 Both are reversible (contract §7 records the carrier so the payload is recoverable) and
 intent-preserving: the payload sits verbatim inside the comment; the visible text is inert.

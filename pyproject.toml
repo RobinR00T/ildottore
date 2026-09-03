@@ -96,5 +96,5 @@ source = ["src/ildottore"]
 branch = true
 
 # Package-boundary contract (docs/01 §2, §6) lives in the standalone `.importlinter` file
-# (owned by u14-self-validation-ci). It is intentionally NOT duplicated here — having both a
+# (owned by u14-self-validation-ci). It is intentionally NOT duplicated here - having both a
 # `[tool.importlinter]` block and a `.importlinter` file double-defines the root package.

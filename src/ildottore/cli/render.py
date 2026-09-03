@@ -8,7 +8,7 @@ and honours ``--no-color``/``-q``.
 
 Every value that reaches the terminal is already redacted upstream (findings carry no
 raw secrets; the redactor is the choke point in the stores/reporters). This module
-prints spec ids, statuses, bands and counts only — never a raw payload or response
+prints spec ids, statuses, bands and counts only - never a raw payload or response
 (contract §6, ``AGENTS.md §2``).
 """
 
@@ -130,7 +130,7 @@ def coverage_lines(
     cov = build_run_summary(findings, specs or {}).coverage
     return [
         (
-            f"Coverage — OWASP LLM Top 10: {cov.owasp_exercised}/{cov.owasp_total} "
+            f"Coverage - OWASP LLM Top 10: {cov.owasp_exercised}/{cov.owasp_total} "
             f"({cov.owasp_pct * 100:.0f}%) · "
             f"MITRE ATLAS tactics: {cov.atlas_exercised}/{cov.atlas_total} "
             f"({cov.atlas_pct * 100:.0f}%)"

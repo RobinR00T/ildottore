@@ -5,16 +5,16 @@ Every evaluator in this package implements :class:`ildottore.shared.protocols.Ev
 behaviour-free scaffolding they all reuse so no logic is copy-pasted (AGENTS §3 zero
 tech-debt):
 
-* :class:`BaseEvaluator` — a small mixin that pins the ``type`` string, builds
+* :class:`BaseEvaluator` - a small mixin that pins the ``type`` string, builds
   polarity-correct :class:`~ildottore.shared.models.Verdict` objects (``pass`` = secure,
-  ``fail`` = exploited — ``docs/04 §0``) and enforces the closed
+  ``fail`` = exploited - ``docs/04 §0``) and enforces the closed
   :class:`~ildottore.shared.enums.InconclusiveReason` contract.
-* :func:`mask_value` / :func:`mask_values` — type+mask a matched sensitive value for
+* :func:`mask_value` / :func:`mask_values` - type+mask a matched sensitive value for
   storage in ``Verdict.matched`` / evidence, delegating to u01's central
   :class:`~ildottore.redactor.Redactor` so a raw secret/PII value **never** survives
   (``docs/11 §5`` DL2, contract §8). The masking is deterministic and salted-hashable
   for corroboration.
-* :func:`shannon_entropy` — stdlib Shannon entropy over a string (bits/char), used by
+* :func:`shannon_entropy` - stdlib Shannon entropy over a string (bits/char), used by
   ``secret_shape`` and the PII entropy heuristic.
 
 Deterministic evaluators emit confidence ``1.0`` on a clear match and force
@@ -60,7 +60,7 @@ def mask_value(value: str, *, type_hint: str, redactor: Redactor | None = None) 
 
     Returns a ``«REDACTED:<type>[:<hash8>]»`` token; the raw value never survives.
     ``type_hint`` is used verbatim when the central redactor does not recognise the
-    value's shape (so a caller-typed hit — e.g. ``iban``, ``card`` — is still typed).
+    value's shape (so a caller-typed hit - e.g. ``iban``, ``card`` - is still typed).
     A salted corroboration hash is appended so two occurrences of the same value can be
     correlated without revealing it.
     """
@@ -144,7 +144,7 @@ class BaseEvaluator:
         reason: InconclusiveReason | None = None,
         matched: list[str] | None = None,
     ) -> Verdict:
-        """An inconclusive verdict (never coerced to pass/fail — ``docs/04 §2``)."""
+        """An inconclusive verdict (never coerced to pass/fail - ``docs/04 §2``)."""
         return self._verdict(
             VerdictStatus.INCONCLUSIVE,
             confidence=0.0,

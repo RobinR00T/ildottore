@@ -1,4 +1,4 @@
-"""``dottore run`` — resolve → scope-gate → plan → execute → render → exit-code.
+"""``dottore run`` - resolve → scope-gate → plan → execute → render → exit-code.
 
 The default command when a target is given (contract §2). It is pure wiring + I/O:
 it resolves config/scope/selection, delegates execution to the u08 runner, streams
@@ -8,7 +8,7 @@ progress, renders the summary and maps the outcome to a scriptable exit code. It
 The **scope/allowlist gate is never bypassable** (contract §4 KEEP, ``docs/09 §5``):
 ``run`` refuses to send a single request without a ``--scope`` file, and ``--dry-run``
 resolves + validates and sends nothing. ``-A``/``--quick``/``--deep`` do not weaken
-this — they only widen the battery.
+this - they only widen the battery.
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ class RunOptions:
 
 @dataclass
 class RunOutcome:
-    """The result of a ``run`` — findings, per-target results and the exit code."""
+    """The result of a ``run`` - findings, per-target results and the exit code."""
 
     exit_code: ExitCode
     findings: list[Finding] = field(default_factory=list)
@@ -173,7 +173,7 @@ def _resolve_categories(tokens: list[str]) -> set[Category]:
 def _top_by_signal(specs: list[AttackSpec], n: int) -> list[AttackSpec]:
     """Keep the ``n`` highest-signal specs (impact*exploitability), preserving order.
 
-    Signal is the author's ``scoring.impact * scoring.exploitability`` — a stable,
+    Signal is the author's ``scoring.impact * scoring.exploitability`` - a stable,
     offline proxy for "highest-signal" (``docs/09 §2`` ``--top-tests``). Ties break on
     the original order (stable sort) so selection is deterministic.
     """
@@ -260,7 +260,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     Enforces the non-bypassable scope gate first (contract §4 KEEP): without a
     ``--scope`` file this raises :class:`ScopeRequiredError` before any adapter is even
-    constructed — zero sends. ``--dry-run`` resolves + validates the plan and returns
+    constructed - zero sends. ``--dry-run`` resolves + validates the plan and returns
     with **no** sends and exit code 0.
     """
 
@@ -320,7 +320,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         target = wiring.load_target(target_path)
         # --hardened always forces the offline hardened replay (a mock-only flag);
         # otherwise a target with no ``mock_scenario`` and a real, non-``mock://``
-        # ``endpoint`` routes to the live provider adapter (u04) — anything else
+        # ``endpoint`` routes to the live provider adapter (u04) - anything else
         # (including every existing mock-only target.yaml, which never declares an
         # endpoint) keeps resolving to the offline mock, unchanged (contract §5).
         mock_scenario: str | None

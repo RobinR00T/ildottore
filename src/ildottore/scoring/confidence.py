@@ -48,7 +48,7 @@ def aggregate_confidence(verdicts: list[Verdict]) -> float:
     """Mean confidence over verdicts (``0.0`` when there are none).
 
     A plain arithmetic mean of the reported confidences. This is a measurement summary and
-    is deliberately independent of verdict polarity — it never becomes a risk multiplier
+    is deliberately independent of verdict polarity - it never becomes a risk multiplier
     (ADR-0003). With no verdicts, confidence is ``0.0`` (we are maximally unsure), which on
     its own gates ``needs-review``.
     """
@@ -90,7 +90,7 @@ def gate_state(
 
     Returns :attr:`FindingState.CONFIRMED` only when confidence meets the threshold **and**
     there is neither judge disagreement nor a capability gap; otherwise
-    :attr:`FindingState.NEEDS_REVIEW`. Confidence gates state — it never touches risk.
+    :attr:`FindingState.NEEDS_REVIEW`. Confidence gates state - it never touches risk.
     """
     if confidence < threshold:
         return FindingState.NEEDS_REVIEW

@@ -3,7 +3,7 @@
 Masking is **mandatory** and applied at a single choke point *before* any format
 writer runs, so a newly added format cannot bypass it. Every reporter calls
 :func:`mask_run` / :func:`mask_findings` (or the bundled :class:`MaskingContext`)
-and serializes only the masked copies — no writer ever sees a raw secret/PII string.
+and serializes only the masked copies - no writer ever sees a raw secret/PII string.
 
 The redactor itself is owned by u01 (``ildottore.redactor``); this module does **not**
 re-implement detection. It is injected as a :class:`Redactor` structural protocol so a

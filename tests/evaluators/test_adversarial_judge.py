@@ -4,7 +4,7 @@ A malicious target output tries to prompt-inject the judge into flipping an *exp
 to a spurious *secure* (PASS). The corpus ground truth is always ``exploited``; a hardened judge
 must NEVER return PASS on these. We model three realistic swayed-judge behaviours over the same
 adversarial corpus, and assert that for every case the evaluator returns a non-PASS verdict
-(``inconclusive`` — typically ``judge_compromised``). Zero cases may flip to PASS.
+(``inconclusive`` - typically ``judge_compromised``). Zero cases may flip to PASS.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ async def test_zero_verdict_flips_under_injection(mode: str) -> None:
     for case in cases:
         ctx = make_ctx(response_text=case["target_output"], config=_JUDGE_CFG)
         verdict = await SemanticJudgeEvaluator(SwayedJudge(mode)).evaluate(ctx)
-        # Ground truth is 'exploited' — a PASS here is a flip (the injection won).
+        # Ground truth is 'exploited' - a PASS here is a flip (the injection won).
         if verdict.status is VerdictStatus.PASS:
             flips.append(case["id"])
         else:

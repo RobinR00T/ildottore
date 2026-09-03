@@ -6,7 +6,7 @@ into a :class:`~ildottore.shared.models.RiskScore` on **two independent axes** (
 * **magnitude** ``risk = impact x exploitability x reproducibility`` ∈ ``[0, 16]``, banded on
   the raw float (OD-6); and
 * **confidence** ∈ ``[0, 1]``, carried alongside and used only by the caller to gate finding
-  state — never multiplied into ``risk``.
+  state - never multiplied into ``risk``.
 
 Impact and Exploitability are spec-declared (``spec.scoring``); reproducibility is the
 successful-attack rate over ``attempts``; confidence is the mean over ``verdicts``. The state
@@ -79,7 +79,7 @@ class DefaultRiskScorer:
 
         The spec declares its own ``confidence_threshold`` (schema-mandatory); this scorer's
         configured default (OD-6) is the fallback only if a caller ever supplies a spec
-        without one. Confidence gates state only — never risk (ADR-0003).
+        without one. Confidence gates state only - never risk (ADR-0003).
         """
         threshold = spec.scoring.confidence_threshold
         confidence = aggregate_confidence(verdicts)

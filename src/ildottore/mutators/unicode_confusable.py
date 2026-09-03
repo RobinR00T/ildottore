@@ -1,14 +1,14 @@
-"""``unicode_confusable`` — swap ASCII letters for visually confusable codepoints.
+"""``unicode_confusable`` - swap ASCII letters for visually confusable codepoints.
 
 Bounded (contract §4 KEEP): a documented, in-module confusable table (Cyrillic/Greek
 homoglyphs) and a density cap so at most ``density`` fraction of eligible characters are
-substituted. Deterministic — which eligible positions are swapped is chosen by an RNG
+substituted. Deterministic - which eligible positions are swapped is chosen by an RNG
 seeded from ``(spec.id, mutation.name)``. Intent-preserving: the text still *reads* as the
 same ask to a human; only the byte-level codepoints shift. Not losslessly reversible (the
 map is one-way per character), so ``reversible=False`` and the substitution map is recorded
 in provenance for evidence.
 """
-# ruff: noqa: RUF001 — the confusable table intentionally maps ASCII to look-alike Cyrillic/
+# ruff: noqa: RUF001 - the confusable table intentionally maps ASCII to look-alike Cyrillic/
 # Greek codepoints; RUF001 (ambiguous-character) flags exactly the behavior we implement here.
 
 from __future__ import annotations

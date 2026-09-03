@@ -1,4 +1,4 @@
-# 06 — Extensibility: pluggable suites & new techniques
+# 06 - Extensibility: pluggable suites & new techniques
 
 **Requirement:** the operator must be able to define new test sets and drop in new techniques
 that appear in the future, ideally **without touching core code**. This is a first-class
@@ -8,13 +8,13 @@ feature, not an afterthought.
 
 | Level | What you add | Code? | Mechanism |
 |---|---|---|---|
-| **L1 — New test** (most common) | a new `*.yaml` attack spec | **No** | Drop YAML in a spec dir; reference from a suite. |
-| **L2 — New suite/pack** | a `suite.yaml` referencing specs | **No** | Ship a "spec pack" directory. |
-| **L3 — New primitive** | a new evaluator type or mutator strategy | Yes (small, isolated) | Register via plugin entry point. |
+| **L1 - New test** (most common) | a new `*.yaml` attack spec | **No** | Drop YAML in a spec dir; reference from a suite. |
+| **L2 - New suite/pack** | a `suite.yaml` referencing specs | **No** | Ship a "spec pack" directory. |
+| **L3 - New primitive** | a new evaluator type or mutator strategy | Yes (small, isolated) | Register via plugin entry point. |
 
 The design goal: **95% of "new techniques" are L1/L2 (pure declarative), zero code.**
 
-## 2. L1/L2 — Spec packs (data-only, hot-loadable)
+## 2. L1/L2 - Spec packs (data-only, hot-loadable)
 
 - A **spec pack** is a directory: `pack.yaml` (id, version, provenance, framework map) +
   `attacks/*.yaml` + `suites/*.yaml` + `fixtures/`.
@@ -31,9 +31,9 @@ The design goal: **95% of "new techniques" are L1/L2 (pure declarative), zero co
    fixtures.
 2. Fill `attack`, `expected_secure_behavior`, `evaluators`, `fixtures.vulnerable/hardened`.
 3. `dottore lint specs/` → schema + policy + "fixtures actually prove detection" checks.
-4. Add the id to a suite. Done — no core code changed.
+4. Add the id to a suite. Done - no core code changed.
 
-## 3. L3 — Plugin registration (new evaluator / mutator type)
+## 3. L3 - Plugin registration (new evaluator / mutator type)
 
 When a technique needs a genuinely new *primitive* (e.g. a new obfuscation, or an evaluator
 that parses a novel trace format), register it via Python entry points:
@@ -52,7 +52,7 @@ bedrock = "my_pkg.adapters:BedrockAdapter"
 
 - Core discovers plugins at startup, validates each against the `Evaluator` / `Mutator` /
   `TargetAdapter` protocol, and exposes the new `type` string to specs.
-- A spec referencing an unknown `type` fails the linter with a clear message — never a silent
+- A spec referencing an unknown `type` fails the linter with a clear message - never a silent
   skip.
 - Plugins are sandboxed by the same policy engine (allowlist, `test_only`, budgets).
 

@@ -2,10 +2,10 @@
 
 The registry mirrors the L3 plugin pattern (``docs/06 §3``): built-in strategies are
 registered by their ``type`` string, and third-party strategies are discovered from the
-``dottore.mutators`` entry-point group at load. Every candidate — built-in or plugin — is
+``dottore.mutators`` entry-point group at load. Every candidate - built-in or plugin - is
 validated against :class:`ildottore.shared.protocols.Mutator` at registration; a class that
 does not satisfy the protocol raises :class:`MutatorProtocolError` with a clear message
-(never a silent skip — contract §7 registry test).
+(never a silent skip - contract §7 registry test).
 
 Discovery executes no attack and makes no network call; it only imports the plugin class and
 protocol-checks an instance.
@@ -129,7 +129,7 @@ class MutatorRegistry:
         """Load ``dottore.mutators`` entry points, validate, and register each.
 
         Returns the list of newly registered plugin names. A plugin that fails protocol
-        validation raises :class:`MutatorProtocolError` (never a silent skip — contract §7).
+        validation raises :class:`MutatorProtocolError` (never a silent skip - contract §7).
         """
         loaded: list[str] = []
         for ep in entry_points(group=ENTRY_POINT_GROUP):

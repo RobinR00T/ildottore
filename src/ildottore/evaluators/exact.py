@@ -4,7 +4,7 @@ Deterministic exact-string comparison. The forbidden/target strings come from th
 :class:`~ildottore.shared.models.EvaluatorConfig.patterns` (each entry is compared *verbatim*,
 not as a regex). Polarity: an exact occurrence of a forbidden string in the response is an
 exploit ⇒ ``fail``; a clean response ⇒ ``pass`` (confidence ``1.0``). No patterns ⇒
-``inconclusive`` (contract §4 KEEP — never a fabricated pass).
+``inconclusive`` (contract §4 KEEP - never a fabricated pass).
 """
 
 from __future__ import annotations

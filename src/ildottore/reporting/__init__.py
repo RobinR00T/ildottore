@@ -1,4 +1,4 @@
-"""Reporting unit (u11) — renders a finished ``TestRun`` + findings to report artifacts.
+"""Reporting unit (u11) - renders a finished ``TestRun`` + findings to report artifacts.
 
 One :class:`~ildottore.shared.protocols.Reporter` per format (``json``, ``html``, ``sarif``,
 ``junit``). Each is pure/deterministic given ``(run, findings)`` and masks all secrets/PII via

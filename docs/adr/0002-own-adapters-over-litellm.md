@@ -1,4 +1,4 @@
-# ADR-0002 — Own thin adapters over a normalization layer (LiteLLM)
+# ADR-0002 - Own thin adapters over a normalization layer (LiteLLM)
 
 - **Status:** Accepted
 - **Date:** 2026-07-07

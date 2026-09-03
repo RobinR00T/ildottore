@@ -1,4 +1,4 @@
-# ADR-0003 — Confidence gates findings; it is not a risk multiplier
+# ADR-0003 - Confidence gates findings; it is not a risk multiplier
 
 - **Status:** Accepted
 - **Date:** 2026-07-07
@@ -16,4 +16,4 @@ trips on confirmed findings by default. See `docs/05`.
 ## Consequences
 - (+) Severity reflects the vulnerability; uncertainty is explicit, not hidden in the number.
 - (+) Honest board-level risk story; needs-review queue is actionable.
-- (−) Two numbers to communicate instead of one — acceptable and, in fact, more truthful.
+- (−) Two numbers to communicate instead of one - acceptable and, in fact, more truthful.

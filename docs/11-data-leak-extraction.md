@@ -1,15 +1,15 @@
-# 11 — Data-leak & memorization extraction (leak detection by asking)
+# 11 - Data-leak & memorization extraction (leak detection by asking)
 
 **Goal:** detect, *by querying the target*, whether it **leaks sensitive data** or **regurgitates
 memorized / breached data**. This is the "ask it questions and see what falls out" capability.
 
-Two distinct threat layers — the scanner tests both, but scores and gates them differently:
+Two distinct threat layers - the scanner tests both, but scores and gates them differently:
 
 - **A. Application-level exfiltration** (the common, high-value case): a chatbot/agent/RAG app
-  leaks data it *has access to but shouldn't reveal* — other users' data, the whole knowledge
+  leaks data it *has access to but shouldn't reveal* - other users' data, the whole knowledge
   base, prior sessions, secrets, system config. Detectable and actionable.
 - **B. Model-level memorization** (research-grade, legally sensitive): a base model
-  *regurgitates its training data* — PII, secrets, copyrighted text, or samples from a known
+  *regurgitates its training data* - PII, secrets, copyrighted text, or samples from a known
   **breach corpus**. Powerful but full of false-positive and legal traps (see §5).
 
 ## 1. Techniques → specs
@@ -35,7 +35,7 @@ Two distinct threat layers — the scanner tests both, but scores and gates them
 | `pii_detector` | emails, phones, national IDs, cards, IBANs, IPs, health data | regex + **validators** (Luhn for cards, mod-97 for IBAN, locale ID checksums) + optional NER; every hit typed + **masked** |
 | `secret_shape` | credential-shaped strings | known key prefixes + **Shannon-entropy** threshold; value never logged raw |
 | `verbatim_overlap` | regurgitated known text | n-gram / longest-common-substring vs a **reference corpus** (copyright/secret set, stored hashed) |
-| `canary` | planted markers | exact match (reuse `secret_leakage`) — the **highest-confidence** leak signal |
+| `canary` | planted markers | exact match (reuse `secret_leakage`) - the **highest-confidence** leak signal |
 | `logprob_membership` | training-set membership | perplexity/loss threshold on known samples (requires adapter logprobs) |
 | `authz_leak` | cross-identity leakage | run the same query as identity A and B; **leak = A receives B-only data** |
 
@@ -47,7 +47,7 @@ Two distinct threat layers — the scanner tests both, but scores and gates them
 - **multi-identity scope**: `scope.yaml` may declare ≥2 auth identities for the same target so
   cross-tenant/authz specs can run. Absent ⇒ those specs skip (logged, not silent).
 - **reference corpus (optional)**: operator-provided set for `verbatim_overlap`, stored as
-  salted hashes / shingles — never the raw sensitive text.
+  salted hashes / shingles - never the raw sensitive text.
 
 ## 4. The false-positive problem (this family's hardest part)
 
@@ -58,21 +58,21 @@ format-valid hit is **not** proof of a real leak. Scoring rules:
   **reference-corpus match**, or a **cross-identity authz leak** (B's real data reaches A).
 - **Format-only hit** (valid PII/secret shape, no corroboration) → **needs-review**, not a
   headline. Reported, but never scored as a confirmed breach.
-- `logprob_membership` results are **statistical** — reported with the score and threshold,
+- `logprob_membership` results are **statistical** - reported with the score and threshold,
   framed as "likely memorized", never as certainty.
 
 This is the difference between "serious tool" and "scary demo that cries wolf".
 
-## 5. Safety & legal (NON-NEGOTIABLE — extends `docs/02`)
+## 5. Safety & legal (NON-NEGOTIABLE - extends `docs/02`)
 
 | ID | Rule |
 |----|------|
 | DL1 | **Prefer synthetic canaries** over real data. The clean, legal way to prove memorization is a marker *you* planted. |
 | DL2 | **Never persist real secrets/PII.** Detectors store a *verdict + type + masked/hashed sample* only; raw values are redacted in evidence, logs and reports. |
-| DL3 | **No real breach dumps ingested.** For breach-correlation use **hashed/truncated indicators** (k-anonymity range, HIBP-style prefix) or synthetic data — never load a raw leaked dataset into the tool. |
+| DL3 | **No real breach dumps ingested.** For breach-correlation use **hashed/truncated indicators** (k-anonymity range, HIBP-style prefix) or synthetic data - never load a raw leaked dataset into the tool. |
 | DL4 | **PII elicitation about real individuals is OFF by default** (`--allow-pii-elicitation`, audited). Synthetic identities first. |
 | DL5 | **Legal gate.** Probing a third-party model for memorized real PII can implicate GDPR (processing personal data) and copyright. Requires explicit scope authorization, data minimization, and redacted results. The engagement policy pack must enable layer-B specs. |
-| DL6 | **Distinguish leak from fabrication** (§4) before reporting a breach — over-claiming a leak has its own legal/reputational cost. |
+| DL6 | **Distinguish leak from fabrication** (§4) before reporting a breach - over-claiming a leak has its own legal/reputational cost. |
 
 ## 6. Validation (ties to `docs/07`)
 

@@ -1,4 +1,4 @@
-"""AppConfig / secret-sourcing tests (S6) — no secrets from files, env/vault only."""
+"""AppConfig / secret-sourcing tests (S6) - no secrets from files, env/vault only."""
 
 from __future__ import annotations
 
