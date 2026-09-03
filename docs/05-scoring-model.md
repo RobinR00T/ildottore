@@ -1,4 +1,4 @@
-# 05 - Scoring / risk model
+# 05: Scoring / risk model
 
 ## 1. Challenge to the v0.1 formula
 
@@ -54,5 +54,5 @@ confidence distributions are included so the summary is honest about uncertainty
 ## 5. Model comparison (benchmark mode)
 
 When a suite runs against N targets, produce a matrix `spec × target → {band, repro, conf}`
-plus per-category rollups, so "compare models" is a first-class output - not just a per-target
+plus per-category rollups, so "compare models" is a first-class output: not just a per-target
 report. This is where the tool earns its "benchmark + pentest" claim.

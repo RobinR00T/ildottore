@@ -4,7 +4,7 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
 + `docs/06 §3` + `shared/` before implementing.
 
 ## §1 Scope & ownership
-- **OWNS:** `src/ildottore/mutators/` - `base.py` (protocol adapter + `Mutation`/`MutationResult`
+- **OWNS:** `src/ildottore/mutators/`: `base.py` (protocol adapter + `Mutation`/`MutationResult`
   helpers), `registry.py` (entry-point discovery per `docs/06 §3`), and one module per strategy:
   `identity.py`, `translate.py`, `base64_wrap.py`, `rot13.py`, `unicode_confusable.py`,
   `zero_width_inject.py`, `roleplay_wrap.py`, `nested_instruction.py`, `comment_carrier.py`
@@ -15,7 +15,7 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
 ## §2 Intended behavior
 Expand one base attack `attack.user_prompt`/`attack.carrier` into the declared variants
 (`docs/03 §4`). A mutation is a **deterministic, intent-preserving** transform of the *carrier/
-obfuscation* only - the same `expected_secure_behavior` must still apply, so the evaluator/judge
+obfuscation* only: the same `expected_secure_behavior` must still apply, so the evaluator/judge
 contract is unchanged. Determinism is seeded by `(spec.id, mutation.name)` (`docs/01 §3.3`): the
 same seed ⇒ byte-identical output on replay, no wall-clock/RNG/network. `identity` is the null
 transform (returns input unchanged). Built-in strategies are the exact list in `docs/03 §4`;
@@ -28,20 +28,20 @@ naming an unknown mutation is a linter error (u02), never a silent skip.
   each strategy under its `type` string used in `schemas/attack-spec.schema.json` mutation names.
 - Consumes `shared.models` mutation/attack shapes only; produces the mutated carrier(s) the
   execution engine (u08) feeds to the adapter. **No** provider SDKs, no LLM calls (`translate`
-  is a deterministic offline table/map, not an API translation - see §4/§9).
+  is a deterministic offline table/map, not an API translation: see §4/§9).
 - Registry mirrors u06 pattern: protocol validation at load, clear error on a bad plugin.
 
-## §4 Known constraints - KEEP / DECIDE
+## §4 Known constraints: KEEP / DECIDE
 - KEEP: every strategy is a **pure function** of `(text, seed, params)`; no I/O, no global state,
   no clock/`random` without the passed seed. Property test enforces determinism + idempotent
   `identity`.
-- KEEP: intent-preserving - a mutation only re-encodes/wraps; it must not add or drop the attack's
+- KEEP: intent-preserving: a mutation only re-encodes/wraps; it must not add or drop the attack's
   semantic ask. `payload_splitting`/`nested_instruction`/`roleplay_wrap` reassemble to the same
   intent.
-- KEEP: reversibility metadata - `MutationResult` records `strategy`, `seed`, `params` and (for
+- KEEP: reversibility metadata: `MutationResult` records `strategy`, `seed`, `params` and (for
   reversible encodings: base64/rot13/zero-width) enough to reconstruct provenance for evidence.
 - KEEP: `unicode_confusable`/`zero_width_inject` are bounded (documented codepoint tables; density
-  cap in `params`) - no unbounded blow-up.
+  cap in `params`): no unbounded blow-up.
 - DECIDE (§9): `translate` backing (static phrase-map subset vs pluggable dictionary) and its
   default language set.
 

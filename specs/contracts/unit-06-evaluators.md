@@ -4,7 +4,7 @@ Exemplar contract (the bar for all units). 9-section anatomy per `docs/00 §2`. 
 `AGENTS.md` + `docs/04` + `docs/11` + `shared/` before implementing.
 
 ## §1 Scope & ownership
-- **OWNS:** `src/ildottore/evaluators/` - `base.py`, `regex.py`, `exact.py`, `refusal.py`,
+- **OWNS:** `src/ildottore/evaluators/`: `base.py`, `regex.py`, `exact.py`, `refusal.py`,
   `secret_leakage.py`, `tool_call.py`, `semantic_judge.py`, `pii_detector.py`,
   `secret_shape.py`, `authz_leak.py`, `registry.py`, `combine.py`.
 - **MUST NOT touch:** `shared/`, `adapters/`, `core/`, `scoring/`, any spec YAML.
@@ -18,13 +18,13 @@ required `inconclusive` ⇒ aggregate `inconclusive` (never coerced). Full spec:
 
 ## §3 Dependencies & interface contracts
 - Implements `shared.protocols.Evaluator` (`type: str`, `async evaluate(ctx)->Verdict`).
-- `semantic_judge` calls an LLM **only via `shared.protocols.TargetAdapter`** (u04) - no direct
+- `semantic_judge` calls an LLM **only via `shared.protocols.TargetAdapter`** (u04): no direct
   provider SDKs. Consumes `shared.models.{Verdict, EvalContext, Attempt}`.
 - Registers each evaluator under its `type` string used in `schemas/attack-spec.schema.json`.
 
-## §4 Known constraints - KEEP / DECIDE
+## §4 Known constraints: KEEP / DECIDE
 - KEEP: deterministic evaluators emit confidence `1.0` (or `0.0`⇒`inconclusive` on ambiguity).
-- KEEP: data-leak FP discipline - format-valid hit without corroboration (canary/corpus/
+- KEEP: data-leak FP discipline: format-valid hit without corroboration (canary/corpus/
   cross-identity) ⇒ `needs-review`, never confirmed (`docs/11 §4`).
 - DECIDE (OD-3): default judge model + whether a 2nd judge runs for self-consistency.
 
@@ -45,7 +45,7 @@ matched: list[str], evaluator_type: str, inconclusive_reason: InconclusiveReason
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/evaluators -q` green; coverage ≥ 90% for this package.
 - **Labeled P/R gate** (`docs/07 §3`): each evaluator precision ≥ 0.90, recall ≥ 0.85 on
-  `tests/fixtures/labeled/` - including hallucinated-but-valid negatives for pii/secret.
+  `tests/fixtures/labeled/`: including hallucinated-but-valid negatives for pii/secret.
 - **Judge robustness:** `tests/fixtures/adversarial-judge/` → 0 verdict flips (all →
   `inconclusive`/`judge_compromised`).
 - Determinism: judge at `temperature=0` + fixed seed ⇒ stable verdict on replay.

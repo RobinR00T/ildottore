@@ -1,14 +1,14 @@
-# AGENTS.md - Il Dottore
+# AGENTS.md: Il Dottore
 
 > Read this at the **start of every agent session**. It is the model-neutral, portable context
-> layer for this repo (Anthropic / Vercel / `agents.md` practice). Any agent - this month's
-> model or next month's - reads this + the relevant `docs/` + the unit **contract**, then works.
+> layer for this repo (Anthropic / Vercel / `agents.md` practice). Any agent: this month's
+> model or next month's: reads this + the relevant `docs/` + the unit **contract**, then works.
 > This file, the `docs/`, the contracts and the evals are the memory we **own** (rent the
 > intelligence, own the context). Also valid as `CLAUDE.md`.
 
 ## 0. What this project is
 
-**Il Dottore** (`dottore`) - a spec-driven security scanner for LLMs and AI apps
+**Il Dottore** (`dottore`): a spec-driven security scanner for LLMs and AI apps
 (prompt injection, jailbreak, data leakage/memorization, tool/agent abuse, RAG poisoning,
 excessive agency, insecure output handling, model DoS). Aligned to OWASP LLM Top 10 (2025),
 MITRE ATLAS, NIST AI 600-1. **Thesis:** value = reproducibility + evidence + risk mapping,
@@ -18,7 +18,7 @@ not "many jailbreak prompts". License **MIT**. See `README.md` and `docs/`.
 > open decisions, and the operator to-do). As of 2026-07-07: Specify stage in progress, no
 > `src/` code yet, `gh` re-auth pending before any push.
 
-## 1. How we build here - specs-driven, not vibecoding
+## 1. How we build here: specs-driven, not vibecoding
 
 We follow Zynap's engineering methodology (*Specs-Driven Development with AI*). The mindset:
 **think and design first; the AI does the typing.** The contract is the spec; the acceptance
@@ -36,12 +36,12 @@ criteria are the harness. Six stages, each handing a concrete artifact to the ne
 
 Full method: `docs/00-ai-build-playbook.md`.
 
-## 2. Hard rules (the PITV COMMON block - non-negotiable, enforced not requested)
+## 2. Hard rules (the PITV COMMON block: non-negotiable, enforced not requested)
 
 - **Stay in the fence:** write code only inside `src/ildottore/` and `tests/`. Do not touch
   `docs/`, `schemas/`, or another unit's owned files unless your contract says so.
 - **Git:** never `commit`/`push`/`branch` from inside a build loop (read-only `status`/`diff`
-  ok). The conductor (human/main loop) owns commits - signed (GPG), Conventional Commits.
+  ok). The conductor (human/main loop) owns commits: signed (GPG), Conventional Commits.
 - **Secrets:** NEVER print or commit secrets/keys. Source from env/vault; pass via env. The
   central **redactor** masks secrets/PII in logs, evidence and reports (`docs/11 §5`).
 - **Safety:** no real destructive actions (tools mocked/dry-run); no real exfiltration (use
@@ -56,9 +56,9 @@ Full method: `docs/00-ai-build-playbook.md`.
 ## 3. Guardrails we brief into every contract (produce code we can ship and defend)
 
 - **Security by default (OWASP):** validate & sanitize inputs, authn/authz on every endpoint,
-  least privilege, no secrets in code. AI output is never security-first - always review.
+  least privilege, no secrets in code. AI output is never security-first: always review.
 - **No deprecated patterns:** pin current, maintained versions; verify against today's official
-  docs. Risk is the *newest* releases, not old stable code - **check, don't ban by age.**
+  docs. Risk is the *newest* releases, not old stable code: **check, don't ban by age.**
 - **Zero tech debt:** no dead code, no copy-paste, real separation of concerns, tests + types.
   A refactor and a feature never land in the same MR.
 - **Clean licensing:** permissive only (MIT / Apache-2.0 / BSD). **No copyleft (GPL/AGPL) or
@@ -68,7 +68,7 @@ Full method: `docs/00-ai-build-playbook.md`.
 - **Provably correct:** machine-checkable acceptance criteria + adversarial tests + human
   sign-off on every fork. "Done" means proven.
 
-### Robustness anti-patterns (from the ElSereno audit, 2026-08-29 - apply to ANY code we write)
+### Robustness anti-patterns (from the ElSereno audit, 2026-08-29: apply to ANY code we write)
 
 - **Bound every untrusted read.** Never read a request body, stream or file of attacker-
   controlled size without a cap; reject over-limit input, do not truncate and forward it.

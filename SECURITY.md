@@ -4,7 +4,7 @@ Il Dottore is a security tool; we hold ourselves to the bar we test others again
 
 ## Reporting a vulnerability
 
-Please report security issues **privately** - do not open a public issue.
+Please report security issues **privately**: do not open a public issue.
 
 - Email: **security@zynap.com** (PGP available on request).
 - Include: affected version/commit, reproduction, impact, and any evidence (with secrets

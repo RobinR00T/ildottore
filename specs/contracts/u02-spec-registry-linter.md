@@ -4,7 +4,7 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
 `docs/06` + `shared/` (+ `schemas/`) before implementing.
 
 ## §1 Scope & ownership
-- **OWNS:** `src/ildottore/registry/` - `loader.py` (pack/spec/suite discovery + parse), `schema.py`
+- **OWNS:** `src/ildottore/registry/`: `loader.py` (pack/spec/suite discovery + parse), `schema.py`
   (JSON-Schema validation against `schemas/`), `registry.py` (in-memory registry API), `pack.py`
   (`pack.yaml` model + merge/collision rules), `linter.py` (lint rule engine + fixtures-prove
   check), `errors.py`. Plus `cli/lint.py` (the `dottore lint` command body only).
@@ -14,7 +14,7 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
 
 ## §2 Intended behavior
 Discover spec packs from configured search paths, **parse + schema-validate + register** every
-attack spec / suite / `pack.yaml` - **executing no code and making no network calls at load**
+attack spec / suite / `pack.yaml`: **executing no code and making no network calls at load**
 (S-threat-model, `docs/06 §2/§5`). Expose the Attack Spec Registry API (`list/get/resolve`) that
 downstream units (u08, u13) query. Drive `dottore lint specs/`: schema validity + policy
 conformance + **id-collision** detection + **fixtures-prove-detection** (each spec's
@@ -24,7 +24,7 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 
 ## §3 Dependencies & interface contracts
 - Depends on **u00 only**. Consumes `shared.models.AttackSpec` (+ suite/pack models if in u00,
-  else define pack/suite Pydantic models locally against `schemas/`) - must validate vs
+  else define pack/suite Pydantic models locally against `schemas/`): must validate vs
   `schemas/attack-spec.schema.json` / `schemas/suite.schema.json` / `schemas/pack.schema.json`.
 - Registry is a plain library object (no protocol in `docs/01 §3`); it is injected at the
   composition root (u12). Exposes: `list(filter=category|owasp|tag|pack) -> list[AttackSpec]`,
@@ -35,7 +35,7 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 - The fixtures-prove check calls evaluators **by type through u06's registry interface if
   present**; in u02's own tests it runs against a stub evaluator table (u06 not yet built in W1).
 
-## §4 Known constraints - KEEP / DECIDE
+## §4 Known constraints: KEEP / DECIDE
 - KEEP: load path = parse (`yaml.safe_load`) → schema-validate → model-construct → register.
   No `eval`, no `!!python` tags, no `import`, no socket. Enforced by test (§7).
 - KEEP: id immutability + collision = **lint error, not a warning** (`docs/06 §4`); later-pack
@@ -71,10 +71,10 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   parse rejects/ignores, **zero** network calls, no code executed.
 - **ID-collision gate:** golden fixtures `tests/fixtures/packs/collision/` (two packs, same id) →
   lint emits exactly one `ID_COLLISION` error and exits non-zero.
-- **Fixtures-prove-detection gate:** `tests/fixtures/packs/good/` - every spec's
+- **Fixtures-prove-detection gate:** `tests/fixtures/packs/good/`: every spec's
   `fixtures.vulnerable` yields ≥1 fail and `fixtures.hardened` yields all-pass under its declared
   evaluators (stub table); a deliberately broken spec in `.../bad/` triggers `FIXTURE_NO_DETECT`.
-- **Registry API:** property test (Hypothesis) - `get(id)` round-trips every listed spec;
+- **Registry API:** property test (Hypothesis): `get(id)` round-trips every listed spec;
   `resolve(suite)` returns specs in suite order; `list(filter=...)` is a correct subset.
 - `dottore lint specs/` exits 0 on the shipped good tree, non-zero with itemized errors on `bad/`.
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`, `mypy src/ildottore/cli/lint.py`
@@ -91,4 +91,4 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 - Pack **checksum/signature** enforcement in MVP-1 vs MVP-2 (ties to OD-2). Propose: parse +
   record manifest in MVP-1, enforce signatures in MVP-2.
 - Whether suite/pack Pydantic models live in `shared/` (u00) or locally in `registry/` if u00
-  omits them - propose local until promoted to shared by an ADR.
+  omits them: propose local until promoted to shared by an ADR.

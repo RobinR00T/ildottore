@@ -1,17 +1,17 @@
-# 10 - Model fingerprinting engine (`-sV` / standalone recon)
+# 10: Model fingerprinting engine (`-sV` / standalone recon)
 
-Two roles for fingerprinting - both first-class:
+Two roles for fingerprinting: both first-class:
 
 1. **Standalone recognition** (`dottore fingerprint <target>` or `dottore -sV -sn`): identify
    *what model, which version, which guardrails and capabilities* sit behind an endpoint, and
    stop. Nothing else is attacked. This is the nmap `-sV` / banner-grab analogue and a useful
    product on its own (asset discovery of AI endpoints).
 2. **Adaptive first pass** (`-sV` before a scan): the fingerprint drives **test-plan
-   tailoring** - pick the relevant specs, tune mutators to what's known-effective against that
+   tailoring**: pick the relevant specs, tune mutators to what's known-effective against that
    family, skip inapplicable tests, and set the expected baseline resistance.
 
 Grounded in prior art (LLMmap-style statistical fingerprinting; OpenAI `system_fingerprint`;
-glitch-token behavior). Fingerprinting is **probabilistic** - always reported with a
+glitch-token behavior). Fingerprinting is **probabilistic**: always reported with a
 confidence and the evidence, never as ground truth (providers can spoof; models hallucinate
 their own identity).
 
@@ -26,7 +26,7 @@ their own identity).
 | **Guardrail** | benign boundary nudges | pre/post moderation present? canned refusal strings? latency signature of a filter layer? input vs output filtering? |
 | **Statistical (LLMmap-style)** | fixed query battery → embed responses → nearest-neighbor vs signature DB | robust family/version classification when self-report is unreliable |
 
-## 2. Output - `ModelFingerprint`
+## 2. Output: `ModelFingerprint`
 
 ```json
 {
@@ -46,7 +46,7 @@ their own identity).
 ```
 
 - Every fingerprint run is **reproducible** (fixed seeded probe battery, evidence stored like
-  any attempt - `docs/07`).
+  any attempt: `docs/07`).
 - **Signature DB** is a versioned, pluggable data pack (`frameworks/`-style, `docs/06`): new
   models = update the signature pack, not the code. Ships with a self-test corpus.
 
@@ -54,15 +54,15 @@ their own identity).
 
 Given a `ModelFingerprint`, the planner:
 
-1. **Filters by capability** - no `tools` ⇒ drop `agent_tool_abuse`; no `rag` ⇒ drop RAG specs
+1. **Filters by capability**: no `tools` ⇒ drop `agent_tool_abuse`; no `rag` ⇒ drop RAG specs
    (or mark `inconclusive: capability_unavailable`).
-2. **Selects family-effective specs/mutators** - e.g. weight encoding/roleplay variants that
+2. **Selects family-effective specs/mutators**: e.g. weight encoding/roleplay variants that
    are historically effective against the detected family; skip variants known to be no-ops.
-3. **Sets baseline expectations** - records the family's known resistance so a result is scored
+3. **Sets baseline expectations**: records the family's known resistance so a result is scored
    *relative to expectation* (a jailbreak that works on a normally-hardened family is more
    notable).
 4. **Emits an explicit, reviewable `TestPlan`** (which specs, why, which were skipped and why).
-   Nothing is silently dropped - skipped tests are logged (per `docs/07` "no silent caps").
+   Nothing is silently dropped: skipped tests are logged (per `docs/07` "no silent caps").
 
 `--no-adaptive` disables tailoring and runs the full selected suite regardless (for
 apples-to-apples benchmarking across models).

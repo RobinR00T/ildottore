@@ -5,7 +5,7 @@ Config, scope authorization, policy packs and the central redactor. 9-section an
 `shared/` before implementing. Depends on **u00** only.
 
 ## §1 Scope & ownership
-- **OWNS:** `src/ildottore/policy/` - `scope.py` (scope.yaml loader/validator), `allowlist.py`
+- **OWNS:** `src/ildottore/policy/`: `scope.py` (scope.yaml loader/validator), `allowlist.py`
   (endpoint default-deny matcher), `packs.py` (policy-pack loader + spec/category gate),
   `identities.py` (multi-identity resolution), `errors.py`; `src/ildottore/config.py` (app
   config + env/vault sourcing); `src/ildottore/redactor.py` (central secret/PII masking).
@@ -29,19 +29,19 @@ reports (S6, DL2); it is import-cheap and dependency-free so every layer can cal
   NOT redefine them. `multi_identity` maps to `Capabilities.multi_identity`.
 - Exposes (candidates for `shared.protocols`, confirm with u00): `PolicyEngine.check(...)`,
   `Redactor.redact(text|obj) -> masked`, `Redactor.register(pattern)`. Verdict polarity and
-  model shapes are the u00 registry - changing them is a program-level OD, not a u01 choice.
+  model shapes are the u00 registry: changing them is a program-level OD, not a u01 choice.
 - Adapters (u04) call the allowlist matcher to refuse out-of-scope hosts at the adapter layer
   (S3); the runner (u08) calls `PolicyEngine.check` before every attempt. u01 provides the
   interfaces; it does not import u04/u08.
 
-## §4 Known constraints - KEEP / DECIDE
-- KEEP: **default-deny** everywhere - unknown target/endpoint/spec ⇒ blocked, never allowed.
+## §4 Known constraints: KEEP / DECIDE
+- KEEP: **default-deny** everywhere: unknown target/endpoint/spec ⇒ blocked, never allowed.
 - KEEP: redactor masks by **type**, storing typed + masked/hashed sample only; raw secret/PII
   never reaches a log line, evidence blob or report (DL2, S6). Redaction is idempotent.
 - KEEP: no network I/O during scope/pack loading (SSRF-safe spec loading, `docs/02 §4`).
-- KEEP: `test_only` payloads never rendered raw without `--unsafe-render` (S5) - u01 exposes the
+- KEEP: `test_only` payloads never rendered raw without `--unsafe-render` (S5): u01 exposes the
   flag state; rendering is u11.
-- DECIDE (OD-2): scope.yaml signing - SHA-256 checksum now, sigstore later.
+- DECIDE (OD-2): scope.yaml signing: SHA-256 checksum now, sigstore later.
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing, `--unsafe-render`
@@ -62,13 +62,13 @@ replacing values with `«REDACTED:<type>»` (+ salted hash for corroboration whe
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/policy -q` green; coverage ≥ 90% for `policy/` + `config.py` + `redactor.py`.
-- **Default-deny gate:** parametrized fixtures - out-of-scope host, off-allowlist path, unlisted
+- **Default-deny gate:** parametrized fixtures: out-of-scope host, off-allowlist path, unlisted
   spec, layer-B spec with pack disabled, `test_only` unmarked payload → all `blocked_by_policy`;
   in-scope/enabled counterparts → `allow`.
 - **Multi-identity:** `scope.yaml` with 2 identities resolves both `auth_ref`s; single-identity
   scope → authz/xtenant specs report skip-eligible (not error).
 - **Integrity:** tampered scope body ⇒ checksum mismatch raises; hash exposed and stable.
-- **Redaction (DL2/S6):** property test (Hypothesis) - for planted secrets/PII of every type,
+- **Redaction (DL2/S6):** property test (Hypothesis): for planted secrets/PII of every type,
   `redact` output contains **zero** raw values; asserts no raw secret/PII in a captured log
   buffer or a serialized evidence stub. Idempotent: `redact(redact(x)) == redact(x)`.
 - **No-network:** loading a scope/pack with a URL field performs no egress (monkeypatched socket

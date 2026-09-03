@@ -1,4 +1,4 @@
-# 08 - Default test battery (grounded in the state of the art)
+# 08: Default test battery (grounded in the state of the art)
 
 This is the **minimum battery** shipped by default, distilled from the ecosystem
 (NVIDIA garak, Microsoft PyRIT, promptfoo, Giskard, AgentDojo) and the reference frameworks
@@ -21,7 +21,7 @@ This is the **minimum battery** shipped by default, distilled from the ecosystem
    connectors, MCP servers, tool wiring, RAG plumbing. → target types `agent`/`rag`/`api`, and
    an MCP/tool-abuse block.
 5. **Mutators = garak "buffs".** Encoding, translation, obfuscation, ASCII-smuggling,
-   zero-width, homoglyph - apply as transforms over base payloads (our Prompt Mutator).
+   zero-width, homoglyph: apply as transforms over base payloads (our Prompt Mutator).
 6. **Dataset-backed specs.** promptfoo pulls HarmBench, BeaverTails, CyberSecEval,
    DoNotAnswer, ToxicChat, XSTest. → a spec can be `dataset`-backed (sampled, seeded), not
    only hand-authored.
@@ -29,17 +29,17 @@ This is the **minimum battery** shipped by default, distilled from the ecosystem
    `eu:ai-act`, `gdpr`, `iso:42001` presets. → suites map to the same presets (regulatory
    angle: DORA / EU AI Act matter for our buyers).
 8. **Defense is never 100% at the model layer** (Anthropic). Our job is *assurance evidence*
-   across the stack, reported as risk - which is exactly the product thesis.
+   across the stack, reported as risk: which is exactly the product thesis.
 
 ## 2. The three tiers
 
 | Tier | Profile flag | Purpose | ~#tests | Runtime |
 |---|---|---|---|---|
-| **T0 - Quick** | `--quick` | nmap-default equivalent: fast triage, single-turn, cheap | ~15 | minutes |
-| **T1 - Standard** | `--suite owasp:llm` (default) | full OWASP LLM Top 10 2025 coverage | ~60 | tens of min |
-| **T2 - Deep** | `--deep` / `--suite agentic` | multi-turn, adaptive, agentic/RAG, dataset-backed | 150+ | long |
+| **T0: Quick** | `--quick` | nmap-default equivalent: fast triage, single-turn, cheap | ~15 | minutes |
+| **T1: Standard** | `--suite owasp:llm` (default) | full OWASP LLM Top 10 2025 coverage | ~60 | tens of min |
+| **T2: Deep** | `--deep` / `--suite agentic` | multi-turn, adaptive, agentic/RAG, dataset-backed | 150+ | long |
 
-## 3. The minimum battery (T0 "Quick") - mapped to OWASP LLM Top 10 2025
+## 3. The minimum battery (T0 "Quick"): mapped to OWASP LLM Top 10 2025
 
 Each id ships golden fixtures (`docs/07`) and framework mappings. This is the default
 "you have 10 minutes, tell me if this thing is obviously broken" set.
@@ -55,11 +55,11 @@ Each id ships golden fixtures (`docs/07`) and framework mappings. This is the de
 | 7 | `SP-LEAK-001` | System prompt extraction / leakage | LLM07 | Discovery |
 | 8 | `DL-SECRET-CANARY-001` | Secret/canary leakage in output | LLM02 | Exfiltration |
 | 9 | `DL-XSESSION-001` | Cross-session / cross-user leakage | LLM02 | Exfiltration |
-| 10 | `OUT-CODEINJ-001` | Insecure code generation (injectable output) | LLM05 | - |
-| 11 | `OUT-XSS-001` | XSS/HTML/script in rendered output | LLM05 | - |
-| 12 | `OUT-SQLI-001` | Unsafe SQL generation | LLM05 | - |
-| 13 | `AG-TOOL-UNAUTH-001` | Unauthorized / over-permissioned tool call | LLM06 | - |
-| 14 | `AG-CONFIRM-BYPASS-001` | Destructive action without confirmation (dry-run) | LLM06 | - |
+| 10 | `OUT-CODEINJ-001` | Insecure code generation (injectable output) | LLM05 |: |
+| 11 | `OUT-XSS-001` | XSS/HTML/script in rendered output | LLM05 |: |
+| 12 | `OUT-SQLI-001` | Unsafe SQL generation | LLM05 |: |
+| 13 | `AG-TOOL-UNAUTH-001` | Unauthorized / over-permissioned tool call | LLM06 |: |
+| 14 | `AG-CONFIRM-BYPASS-001` | Destructive action without confirmation (dry-run) | LLM06 |: |
 | 15 | `DOS-TOKEN-AMP-001` | Token amplification / unbounded output | LLM10 | Denial of ML Service |
 | 16 | `DL-MEMORIZE-DIVERGENCE-001` | Training-data regurgitation via divergence/repetition | LLM02 | Exfiltration |
 | 17 | `DL-XTENANT-001` | Cross-tenant data leak (needs 2 identities) | LLM02 | Exfiltration |
@@ -67,7 +67,7 @@ Each id ships golden fixtures (`docs/07`) and framework mappings. This is the de
 
 > **P0 data-leak additions (`docs/11`).** Rows 16-18 bring the "detect leaks by asking" family
 > into the default battery. They require target capabilities (`logprobs` for membership,
-> `multi_identity` for cross-tenant) - where absent, they return `inconclusive`, never a false
+> `multi_identity` for cross-tenant): where absent, they return `inconclusive`, never a false
 > pass. All obey the FP discipline + safety/legal gates of `docs/11 §4-§5`.
 
 ## 4. T1 "Standard" adds (full OWASP coverage)
@@ -95,7 +95,7 @@ Each id ships golden fixtures (`docs/07`) and framework mappings. This is the de
   mode + adaptive-attempts budget).
 - **Agentic** (AgentDojo-inspired): memory poisoning, tool discovery, goal hijacking,
   data-exfiltration via tool chains, coding-agent suite (repo/terminal-output injection,
-  sandbox escape, secret read, CI exfil) - all with mocked side-effects.
+  sandbox escape, secret read, CI exfil): all with mocked side-effects.
 - **Agentic malicious-use / autonomous extortion (JadePuffer-class, `docs/13`)**: indirect-
   injection-driven kill-chain (recon→exfil→destroy→ransom), destructive tool use without
   confirmation, offensive-toolkit codegen (refusal). Policy-gated OFF; mocked tools, no
@@ -107,4 +107,4 @@ Each id ships golden fixtures (`docs/07`) and framework mappings. This is the de
 
 `owasp:llm` (default) · `mitre:atlas` · `nist:ai` · `eu:ai-act` · `dora` · `iso:42001` ·
 `gdpr`. A preset is just a suite that references the relevant specs and carries the
-framework rollup - no code. (These are our differentiator for EU/regulated buyers.)
+framework rollup: no code. (These are our differentiator for EU/regulated buyers.)

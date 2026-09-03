@@ -1,4 +1,4 @@
-# ADR-0005 - Common `TokenLogprob` model across adapters (OD-1)
+# ADR-0005: Common `TokenLogprob` model across adapters (OD-1)
 
 - **Status:** Accepted
 - **Date:** 2026-07-07

@@ -1,4 +1,4 @@
-# 02 - Threat model & safety model (of the scanner itself)
+# 02: Threat model & safety model (of the scanner itself)
 
 A security tool that is itself unsafe is a liability. This document is **normative**: the
 build must satisfy it.
@@ -16,7 +16,7 @@ build must satisfy it.
 | ID | Requirement |
 |----|-------------|
 | S1 | **No real destructive actions.** Any tool with side effects (email/calendar/file/HTTP-write/shell/db-write) runs as a **mock or dry-run**; the scanner records the *intent* to call, never executes it. |
-| S2 | **No real exfiltration.** Data-leakage tests use **canaries** (unique tokens planted by the scanner) - detection = "did the canary appear in output", never real secrets. |
+| S2 | **No real exfiltration.** Data-leakage tests use **canaries** (unique tokens planted by the scanner): detection = "did the canary appear in output", never real secrets. |
 | S3 | **Endpoint allowlist.** Adapters refuse any host/path not in the scope allowlist. Default-deny. |
 | S4 | **Authorization gate.** No run starts without a valid `scope.yaml` covering every target; scope file integrity is checksum-verified and the run records its hash. |
 | S5 | **Payload marking.** Every payload that would be dangerous outside a test is `test_only: true` and tagged; reports never render raw dangerous payloads without a `--unsafe-render` opt-in. |

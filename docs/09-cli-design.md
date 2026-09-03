@@ -1,4 +1,4 @@
-# 09 - CLI design (nmap-for-AI, built for red teamers)
+# 09: CLI design (nmap-for-AI, built for red teamers)
 
 Design goal: a red teamer who knows `nmap` is productive in 5 minutes. Same mental model -
 **target as positional arg, scan-type/intensity flags, selectable "scripts", multiple output
@@ -107,7 +107,7 @@ dottore --suite eu:ai-act -oA acme-aiact -t chatbot.yaml --scope scope.yaml
 - Terminal summary table by category + severity band + reproducibility.
 - Exit codes: `0` clean, `1` findings below `--fail-on`, `2` findings at/above `--fail-on`,
   `>2` operational error. CI-friendly and scriptable.
-- Everything is also machine-output (`-oJ`) so it pipes into other tooling - nmap philosophy.
+- Everything is also machine-output (`-oJ`) so it pipes into other tooling: nmap philosophy.
 
 ## 5. Non-goals for the CLI
 

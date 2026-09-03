@@ -1,4 +1,4 @@
-# ADR-0004 - Python src-layout single distribution (not a JS-style monorepo)
+# ADR-0004: Python src-layout single distribution (not a JS-style monorepo)
 
 - **Status:** Accepted
 - **Date:** 2026-07-07
@@ -16,5 +16,5 @@ boundaries from `docs/01 §2` are enforced logically via **import-linter** (conf
 
 ## Consequences
 - (+) Standard, installable (`pip install -e .`), PyPI-ready, simple imports.
-- (+) Boundaries still enforced (import-linter contract) - the architecture rule survives.
+- (+) Boundaries still enforced (import-linter contract): the architecture rule survives.
 - (−) The README's `packages/apps` sketch is superseded by this layout.

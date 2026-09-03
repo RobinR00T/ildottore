@@ -1,4 +1,4 @@
-# 00-INDEX - Contract master index & program ledger
+# 00-INDEX: Contract master index & program ledger
 
 Stage-2 (Specify) output. The authoritative unit list, **dependency DAG**, **single-executor
 ledger** and **open-decisions rollup** for MVP‑1. The PITV orchestrator (`docs/00 §3-§4`)
@@ -9,7 +9,7 @@ serialized. **One owner per unit, no double-edits.**
 
 | Unit | Owns (src/ildottore/…) | Depends on | Wave |
 |------|------------------------|------------|------|
-| `u00-shared-models` | `shared/` (models, protocols, enums) | - | W0 |
+| `u00-shared-models` | `shared/` (models, protocols, enums) |: | W0 |
 | `u01-config-scope-policy` | `policy/`, `config.py`, `redactor.py` | u00 | W1 |
 | `u02-spec-registry-linter` | `registry/`, `cli/lint.py` | u00 | W1 |
 | `u05-prompt-mutator` | `mutators/` | u00 | W1 |
@@ -40,7 +40,7 @@ Parallel chains per wave run concurrently; a unit starts only when every dep is 
 
 ## Shared interface registry (serialize DECISIONS, not just files)
 
-The stable contracts every unit codes against - changing any is a program-level open decision,
+The stable contracts every unit codes against: changing any is a program-level open decision,
 not a unit-local choice:
 
 - `shared.models`: `AttackSpec, Target, Capabilities, TestRun, Attempt, Verdict, Finding,
@@ -49,13 +49,13 @@ not a unit-local choice:
   u08-only** (`core/planner.py`); u09 produces `ModelFingerprint.capability_guess` and feeds it.
 - **Schemas are Pydantic-first** (ADR-0006): only `attack-spec.schema.json` is hand-authored;
   `suite`/`pack`/`test-plan` schemas are generated from the models by `u00` (`schema_export.py`).
-- `requires` (spec-level) ⊇ `Capabilities` (target flags) + `{system_prompt, seed}` - related
+- `requires` (spec-level) ⊇ `Capabilities` (target flags) + `{system_prompt, seed}`: related
   but distinct vocabularies; capability-gating maps between them.
 - `shared.protocols`: `TargetAdapter, Evaluator, Mutator, RiskScorer, EvidenceStore, RunStore,
   Reporter` (`docs/01 §3`).
 - Verdict polarity is fixed repo-wide: `pass` = secure, `fail` = exploited (`docs/04`).
 
-## Program ledger - open decisions (rolled up from unit §9)
+## Program ledger: open decisions (rolled up from unit §9)
 
 | OD | Unit | Decision | Owner | Status |
 |----|------|----------|-------|--------|
