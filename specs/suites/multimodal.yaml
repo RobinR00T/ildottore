@@ -21,3 +21,4 @@ tags: [owasp, mitre-atlas, nist-ai-rmf, multimodal]
 specs:
   - spec_id: MM-IMG-PROMPTINJECT-001      # direct visual override
   - spec_id: MM-IMG-DOC-INJECT-001        # indirect: injection embedded in a document image
+  - spec_id: MM-IMG-HARMFUL-001           # harmful-content refusal on an image-borne request (safety_content, policy-gated)

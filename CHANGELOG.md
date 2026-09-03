@@ -16,12 +16,15 @@ versioning: [SemVer](https://semver.org/).
   user's turn asks only to describe the image while an override instruction rendered inside it
   demands a planted canary, so a successful visual injection is a decisive leak. A second spec,
   `MM-IMG-DOC-INJECT-001`, covers the indirect variant: the user asks to summarize a business-memo
-  image whose body hides a "note to the assistant" (the multimodal analogue of PI-INDIRECT-RAG).
-  Both are gated on `capabilities.multimodal` (a text-only target skips them, never a false pass).
-  `attack.media` / `ModelRequest.media` are additive optional fields. Battery is now 55 specs / 12
-  suites. Audio and document (PDF) carriers are deferred: a faithful audio carrier needs speech
-  (a TTS dependency or a pinned recorded clip), not stdlib synthesis, so it is not shipped as a
-  fake carrier.
+  image whose body hides a "note to the assistant" (the multimodal analogue of PI-INDIRECT-RAG). A
+  third, `MM-IMG-HARMFUL-001` (`safety_content`), checks whether the safety guardrail still refuses
+  a disallowed request when it arrives as an image rather than as text (a non-operational
+  placeholder payload, `test_only`, mirroring SAFETY-HARMFUL-001). All three are gated on
+  `capabilities.multimodal` (a text-only target skips them, never a false pass). `attack.media` /
+  `ModelRequest.media` are additive optional fields. Battery is now 56 specs / 12 suites. Audio is
+  deferred: a faithful audio carrier needs speech (a TTS dependency or a pinned recorded clip), not
+  stdlib synthesis, so it is not shipped as a fake carrier; non-image document (PDF/HTML text)
+  injection is already covered by the retrieval path (PI-INDIRECT-RAG-001).
 - **MCP adapter (`provider: mcp`) + `mcp` suite**: scan a Model Context Protocol server as a
   target. `adapters/mcp.py` speaks JSON-RPC over Streamable HTTP: it performs the `initialize`
   handshake and lists `tools`/`resources`/`prompts`, then renders that advertised metadata as
