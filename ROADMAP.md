@@ -7,8 +7,9 @@ Where the project is and what is left. The living, prioritized gap analysis is
 
 ## Shipped
 
-The battery is **57 specs across 12 suites**, aligned to OWASP LLM Top 10 (2025), MITRE ATLAS and
-NIST AI 600-1. Everything below runs offline against a mock and, where noted, over the wire.
+The battery is **72 specs across 14 suites**, aligned to OWASP LLM Top 10 (2025), MITRE ATLAS,
+NIST AI 600-1 and the Nova IoPC taxonomy. Everything below runs offline against a mock and, where
+noted, over the wire.
 
 - ✅ **Core engine**: spec-driven attacks, deterministic reproduction (N sends), evaluator
   combination (deterministic-first, LLM judge as a hardened secondary), risk scoring, evidence
@@ -20,8 +21,13 @@ NIST AI 600-1. Everything below runs offline against a mock and, where noted, ov
   unbounded consumption, multi-turn (Crescendo / Linear / Sequential / Bad-Likert / Tree),
   access-control (BFLA / BOLA / RBAC / SSRF / debug / shell-injection / tool-metadata poisoning /
   argument-smuggling), OWASP-Agents-2026 agentic breadth, agentic-extortion (policy-gated),
-  embeddings, MCP tool-metadata poisoning, guardrail/moderation-layer evasion, and an optional
-  Responsible-AI pack (safety-content + bias/fairness).
+  embeddings, MCP tool-metadata poisoning, guardrail/moderation-layer evasion, an optional
+  Responsible-AI pack (safety-content + bias/fairness), a **NOVA/IoPC coverage-gap battery**
+  (delayed-trigger injection, persistent memory poisoning, slopsquatting, self-replicating prompt,
+  deceptive human approval, unicode/homoglyph deception, phishing-BEC, disinformation, target
+  recon, log/provenance tampering: see [`docs/15`](docs/15-nova-iopc-gap-analysis.md)), and a
+  **function-calling & structured-output** battery (argument smuggling, out-of-schema field
+  coercion, enum escape).
 - ✅ **Multimodal**: visual/typographic prompt injection (direct override + document-image), a
   harmful-request-via-image safety check, and spoken prompt injection carried in a pinned audio
   clip. Carriers render deterministically (image) or ship as a pinned asset (audio); a
@@ -36,14 +42,20 @@ NIST AI 600-1. Everything below runs offline against a mock and, where noted, ov
 - ⬜ **Live validation matrix**: run the multimodal (image + audio) battery end-to-end against real
   vision/audio models (a local Ollama vision model and/or a hosted provider) and record the
   results. The attacks are golden-proven offline; a live pass is the highest-credibility next step.
-- 🟡 **Multimodal breadth**: audio input currently targets OpenAI `input_audio`; add other
-  providers as their APIs land. A document-image battery beyond the single indirect spec.
-- 🟡 **Function-calling depth**: `forbidden_args` covers argument smuggling; deepen JSON-schema
-  poisoning and structured-output coercion.
-- ⬜ **Finding dedupe across specs**: the runner already collapses mutation variants into one
-  finding; cross-*spec* semantic dedup stays a human judgment for now (lossy, can hide signal).
-- ⬜ **Packaging**: a tagged release and a published distribution if the tool is to be installed by
-  others (see [`RELEASING.md`](RELEASING.md)).
+- 🟡 **Multimodal breadth**: the image side now covers a direct override, a document-image
+  injection, a **payload split across two carriers** and a **visual-to-agentic bridge** (an image
+  driving an unauthorized tool call). Remaining gap: audio input still targets only OpenAI
+  `input_audio`; add other providers as their APIs land.
+- ✅ **Function-calling / structured-output depth**: `forbidden_args` covers what the model sends
+  *into* a tool; `OUT-JSON-SCHEMA-COERCE` and `OUT-JSON-ENUM-ESCAPE` now cover what it hands
+  *back* to the application (out-of-schema privileged field, out-of-enum exposure value), in the
+  `structured-output` suite.
+- ✅ **Tool-orchestration abuse**: shipped as a new deterministic `tool_sequence`
+  evaluator plus `AG-TOOLCHAIN-EXFIL-001`. The evaluator fails when an **ordered** chain of
+  individually-authorized calls completes (read-record then send-mail), matching as a
+  subsequence so an interleaved no-op cannot evade it, and treats a partial chain as a pass.
+  A per-call check cannot express this: `tool_call` passes the very trace `tool_sequence`
+  flags, and a regression test pins that complementarity.
 
 ## Deferred on purpose
 

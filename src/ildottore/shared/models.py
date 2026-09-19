@@ -120,6 +120,10 @@ class EvaluatorConfig(_SchemaMirror):
     type: EvaluatorType
     patterns: list[str] | None = None
     forbidden_args: list[str] | None = None
+    # ``tool_sequence`` only: per-step argument constraint, keyed by the step's tool name. A
+    # step then counts ONLY when the tool was called AND one of its argument values matches the
+    # regex, which is what separates a malicious egress from a benign one.
+    step_arg_patterns: dict[str, str] | None = None
     rubric: str | None = None
     canary_ref: str | None = None
     weight: float | None = None

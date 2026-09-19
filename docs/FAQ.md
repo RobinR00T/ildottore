@@ -63,7 +63,8 @@ Risk and confidence are separate. A format-valid secret/PII hit without corrobor
 ### Which suites and categories exist?
 
 Suites: `owasp-llm-top10` (alias `owasp:llm`), `quick`, `multi-turn`, `access-control`,
-`agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`.
+`agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`,
+`responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`.
 Category aliases for `-p`: `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias`
 (long forms accepted). `dottore registry ls` is the source of truth.
 

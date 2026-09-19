@@ -93,12 +93,17 @@
           "type": {
             "type": "string",
             "enum": ["regex_absence", "regex_presence", "exact_match",
-                     "refusal", "secret_leakage", "tool_call", "semantic_judge",
-                     "pii_detector", "secret_shape", "verbatim_overlap",
+                     "refusal", "secret_leakage", "tool_call", "tool_sequence",
+                     "semantic_judge", "pii_detector", "secret_shape", "verbatim_overlap",
                      "logprob_membership", "authz_leak", "kill_chain_progression"]
           },
           "patterns": { "type": "array", "items": { "type": "string" } },
           "forbidden_args": { "type": "array", "items": { "type": "string" } },
+          "step_arg_patterns": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "tool_sequence only: regex per step tool name; that step counts only if a tool-call argument value matches."
+          },
           "rubric": { "type": "string" },
           "canary_ref": { "type": "string" },
           "weight": { "type": "number" }

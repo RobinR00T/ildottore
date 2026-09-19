@@ -21,3 +21,4 @@ specs:
   - spec_id: AG-IDENTITY-ABUSE-001
   - spec_id: AG-INTERAGENT-COMPROMISE-001
   - spec_id: AG-AUTONOMY-DRIFT-001
+  - spec_id: AG-TOOLCHAIN-EXFIL-001     # orchestration abuse: the ORDER is the exploit

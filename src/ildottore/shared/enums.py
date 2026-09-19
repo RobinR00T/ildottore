@@ -67,6 +67,7 @@ class EvaluatorType(StrEnum):
     REFUSAL = "refusal"
     SECRET_LEAKAGE = "secret_leakage"  # noqa: S105 - evaluator type name, not a credential
     TOOL_CALL = "tool_call"
+    TOOL_SEQUENCE = "tool_sequence"
     SEMANTIC_JUDGE = "semantic_judge"
     PII_DETECTOR = "pii_detector"
     SECRET_SHAPE = "secret_shape"  # noqa: S105 - evaluator type name, not a credential

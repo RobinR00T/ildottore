@@ -21,5 +21,7 @@ tags: [owasp, mitre-atlas, nist-ai-rmf, multimodal]
 specs:
   - spec_id: MM-IMG-PROMPTINJECT-001      # direct visual override
   - spec_id: MM-IMG-DOC-INJECT-001        # indirect: injection embedded in a document image
+  - spec_id: MM-IMG-SPLIT-PAYLOAD-001     # payload split across two images, reassembled by the model
+  - spec_id: MM-IMG-TOOL-EXFIL-001        # visual to agentic bridge: image drives an egress tool call
   - spec_id: MM-IMG-HARMFUL-001           # harmful-content refusal on an image-borne request (safety_content, policy-gated)
   - spec_id: MM-AUD-PROMPTINJECT-001      # spoken prompt injection in an audio clip (requires audio capability)

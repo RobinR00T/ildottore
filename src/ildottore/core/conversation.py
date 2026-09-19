@@ -119,8 +119,17 @@ async def execute_conversation(
 
     Threads each attacker turn (optionally mutated by ``mutate_turn``) with the prior
     assistant replies as ``messages`` history, sending each through
-    :func:`execute_attempt`. The aggregate attempt's ``response`` is the **final** turn's
-    reply (what the evaluator scores) and its ``request.messages`` is the full transcript.
+    :func:`execute_attempt`. The aggregate attempt's ``response`` carries the **final**
+    turn's ``text`` (what the text evaluators score) and its ``request.messages`` is the
+    full transcript.
+
+    Its ``tool_calls``, however, are the **whole conversation's** trace, not just the last
+    turn's. The attack is the dialogue, so "did the agent call these tools while under
+    attack" has to be asked of every turn: scoring only the final reply let an agent answer
+    on one turn and act on the next, which made the trace evaluators
+    (``tool_call``, ``tool_sequence``, ``kill_chain_progression``) under-report a chain that
+    demonstrably happened. Calls are accumulated in turn order, so an ordered-chain check
+    sees the sequence exactly as it occurred.
 
     An env error on **any** turn aborts the conversation and returns an ``env_error``
     result whose attempt has ``response=None`` (the runner records ``inconclusive``, never
@@ -129,6 +138,7 @@ async def execute_conversation(
 
     messages: list[JsonDict] = []
     last_response: ModelResponse | None = None
+    trace_tool_calls: list[JsonDict] = []
     total_latency = 0.0
     saw_latency = False
 
@@ -177,6 +187,9 @@ async def execute_conversation(
             )
 
         last_response = response
+        # Accumulate the trace across turns (see the docstring): the aggregate keeps the final
+        # turn's text but must expose every tool call the conversation made, in order.
+        trace_tool_calls.extend(dict(call) for call in response.tool_calls)
         if result.attempt.latency_ms is not None:
             total_latency += result.attempt.latency_ms
             saw_latency = True
@@ -188,6 +201,11 @@ async def execute_conversation(
             assistant_msg["tool_calls"] = [dict(call) for call in response.tool_calls]
         messages.append(assistant_msg)
 
+    # The scored response: final turn's text, whole-conversation tool trace.
+    scored = last_response
+    if scored is not None and list(scored.tool_calls) != trace_tool_calls:
+        scored = scored.model_copy(update={"tool_calls": trace_tool_calls})
+
     final = _aggregate_attempt(
         attempt_id=attempt_id,
         spec_id=spec_id,
@@ -195,7 +213,7 @@ async def execute_conversation(
         messages=messages,
         system_prompt=system_prompt,
         sampling=sampling,
-        response=last_response,
+        response=scored,
         latency_ms=total_latency if saw_latency else None,
         error=None,
     )

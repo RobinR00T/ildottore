@@ -26,9 +26,13 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 - Depends on **u02** (spec-registry-linter: `dottore lint specs/` is the gate) and **u03**
   (mock-target + golden harness that replays fixtures). No runtime dep on u04/u06/u08.
 - Every spec validates against `schemas/attack-spec.schema.json`; field semantics per `docs/03 §2`.
-- `evaluators[].type` strings MUST be ones u06 registers: `regex_absence`/`regex_presence`,
-  `exact_match`, `refusal`, `secret_leakage`, `tool_call`, `semantic_judge`, `pii_detector`,
-  `secret_shape`, `authz_leak`, `canary`, `logprob_membership`, `verbatim_overlap`.
+- `evaluators[].type` strings MUST be ones u06 registers, which is exactly the
+  `EvaluatorType` enum (the schema enum is kept 1:1 with it by `tests/shared/test_schema_parity.py`):
+  `regex_absence`/`regex_presence`, `exact_match`, `refusal`, `secret_leakage`, `tool_call`,
+  `tool_sequence`, `semantic_judge`, `pii_detector`, `secret_shape`, `verbatim_overlap`,
+  `logprob_membership`, `authz_leak`, `kill_chain_progression`.
+  (Refreshed 2026-09-19: the original list omitted the MVP-2 types and listed `canary`, which
+  was never an `EvaluatorType`; a planted canary is proven by `secret_leakage`.)
 - `mutations[]` use only built-in strategy names from `docs/03 §4`. `requires[]` uses
   `Capabilities` names (`rag`, `tools`, `memory`, `system_prompt`, `logprobs`, `multi_identity`).
 - Verdict polarity fixed repo-wide (`00-INDEX`): `pass` = secure, `fail` = exploited.

@@ -31,6 +31,12 @@ from .registry import Registry
 
 # Evaluator types with no offline stub in W1. A spec relying solely on these can't be
 # fixtures-proved yet, so the linter warns (not errors) rather than false-flagging it.
+#
+# INVARIANT: this set and ``DEFAULT_STUB_TABLE`` must together cover every ``EvaluatorType``.
+# A type in neither bucket falls through ``_check_fixtures`` into the hard-error path, so a
+# spec declaring only that type gets a FALSE ``FIXTURE_NO_DETECT`` failure. That happened to
+# ``kill_chain_progression``, latent only because both specs using it co-declare ``tool_call``.
+# ``tests/registry/test_fixtures_engine.py`` pins the partition so the 15th type cannot repeat it.
 _UNPROVABLE_IN_W1: frozenset[EvaluatorType] = frozenset(
     {
         EvaluatorType.EXACT_MATCH,
@@ -39,6 +45,7 @@ _UNPROVABLE_IN_W1: frozenset[EvaluatorType] = frozenset(
         EvaluatorType.VERBATIM_OVERLAP,
         EvaluatorType.LOGPROB_MEMBERSHIP,
         EvaluatorType.AUTHZ_LEAK,
+        EvaluatorType.KILL_CHAIN_PROGRESSION,
     }
 )
 
@@ -123,6 +130,38 @@ def _check_fixtures(spec: AttackSpec, table: dict[EvaluatorType, StubEvaluator])
                 spec_id=spec.id,
             )
         )
+    return errors
+
+
+def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
+    """Reject evaluator configs that would silently disable the check they declare.
+
+    A misconfigured evaluator is worse than a missing one: it reports a reassuring verdict.
+
+    Guard learned from the ``tool_sequence`` audit: a ``tool_sequence`` with no usable
+    ``patterns`` is a dead arbiter. The schema only requires ``type``, so nothing else catches
+    it, and at runtime it abstains, which under ``combine`` can mask another evaluator's fail.
+
+    (An earlier version also refused ``tool_sequence`` on a multi-turn spec, because only the
+    final turn's trace was scored and a chain split across turns read as a calm ``0/N``. That
+    restriction is gone: ``core.conversation`` now accumulates the tool trace across every
+    turn, so the evaluator sees the whole dialogue.)
+    """
+    errors: list[LintError] = []
+    for cfg in spec.evaluators:
+        if cfg.type is not EvaluatorType.TOOL_SEQUENCE:
+            continue
+        if not [step for step in (cfg.patterns or []) if step.strip()]:
+            errors.append(
+                LintError(
+                    code=LintCode.EVALUATOR_MISCONFIGURED,
+                    message=(
+                        "tool_sequence declares no usable 'patterns'; the ordered tool chain "
+                        "is the whole check, so this evaluator would silently never fire"
+                    ),
+                    spec_id=spec.id,
+                )
+            )
     return errors
 
 
@@ -211,6 +250,7 @@ def lint_packs(
         findings.extend(_check_test_only(spec))
         findings.extend(_check_framework_map(spec))
         findings.extend(_check_media(spec))
+        findings.extend(_check_evaluator_config(spec))
         findings.extend(_check_fixtures(spec, table))
 
     for pack in packs:
