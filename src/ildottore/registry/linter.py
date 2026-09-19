@@ -151,7 +151,7 @@ def _check_iopc(spec: AttackSpec) -> list[LintError]:
             code=LintCode.UNKNOWN_FRAMEWORK_CODE,
             message=(
                 f"iopc code {code!r} is not in the pinned IoPC taxonomy "
-                f"(v{IOPC_TAXONOMY_VERSION}); a well-formed but non-existent code matches "
+                f"({IOPC_TAXONOMY_VERSION}); a code the taxonomy does not contain matches "
                 f"nothing and silently shrinks coverage"
             ),
             spec_id=spec.id,

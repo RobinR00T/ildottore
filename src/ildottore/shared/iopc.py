@@ -16,10 +16,22 @@ The taxonomy has **two axes**, and they answer different questions:
   This is the axis a non-technical reader understands, so it is reported separately rather
   than folded into the technique count.
 
-**Pinned at v2.0.0-alpha** (53 entries: 30 techniques + 23 impacts). The upstream taxonomy is
-pre-1.0 and will move; this tuple is the version we measure against, and it is updated
-deliberately, exactly like the ATLAS tactic universe. A spec declaring a code outside these
-sets is a lint error, because a typo would otherwise silently under-report coverage forever.
+**Transcribed from the LIVE taxonomy on 2026-09-19** (53 entries: 30 techniques + 23 impacts).
+
+Read that sentence carefully, because the obvious label would be wrong. The site banner says
+``v2.0.0-alpha``, but that is the only *published* release (2026-08-15) and it contains
+something else: **46 entries, 8 techniques and 38 impacts**, with 19 of the impact titles under
+their older names. The whole T4 to T9 range did not exist yet. Upstream has ~460 unreleased
+changelog entries sitting on top of that release, so the banner is stale rather than
+descriptive. Pinning to the release artifact would therefore drop most of the techniques our
+own specs map to; pinning to the live state is correct, and calling it "v2.0.0-alpha" is not.
+
+The impact numbering has gaps (R001-R004, R006, R007, R011, R016-R021, R029, R038 are absent).
+Those are real: upstream marks them ``merged``, meaning they were retired into canonical T
+codes and are no longer active. 38 registry records minus 15 merged is the 23 impacts here.
+
+Re-diff against upstream when a new release is finally cut. A spec declaring a code outside
+these sets is a lint error, because a typo would otherwise silently under-report coverage.
 
 Attribution: IoPC taxonomy by Thomas Roccia / SecurityBreak
 (``promptintel.novahunting.ai/taxonomy``). Only the identifiers and their short titles are
@@ -42,13 +54,16 @@ __all__ = [
     "unknown_codes",
 ]
 
-#: The upstream taxonomy release these sets were transcribed from.
-IOPC_TAXONOMY_VERSION = "2.0.0-alpha"
+#: What these sets were transcribed from. Deliberately NOT "2.0.0-alpha": see the module
+#: docstring, that published release holds 46 different entries.
+IOPC_TAXONOMY_VERSION = "live-2026-09-19"
 
 #: Well-formedness of a code, enforced by the JSON schema too (defence in depth: the schema
 #: rejects a malformed code, the universe rejects a well-formed but non-existent one).
-TECHNIQUE_CODE_RE = re.compile(r"^IOPC-T[1-9]\d*\.\d{3}$")
-IMPACT_CODE_RE = re.compile(r"^IOPC-R\d{3}$")
+# ``\Z``, not ``$``: in Python's ``re`` a ``$`` also matches BEFORE a trailing newline, so
+# "IOPC-T1.002\n" would pass and then match nothing, silently shrinking the numerator.
+TECHNIQUE_CODE_RE = re.compile(r"^IOPC-T[1-9]\d*\.\d{3}\Z")
+IMPACT_CODE_RE = re.compile(r"^IOPC-R\d{3}\Z")
 
 #: Technique code → short title (the *how*). Families T1..T9.
 IOPC_TECHNIQUES: MappingProxyType[str, str] = MappingProxyType(
@@ -130,17 +145,21 @@ IOPC_IMPACT_UNIVERSE: tuple[str, ...] = tuple(sorted(IOPC_IMPACTS))
 
 
 def unknown_codes(techniques: list[str] | None, impacts: list[str] | None) -> list[str]:
-    """Codes that are not in the pinned universe, in input order.
+    """Codes this taxonomy does not contain, de-duplicated, in first-seen order.
 
-    A well-formed but non-existent code (a transposed digit, a code from a newer taxonomy
-    release) would otherwise sit in a spec forever, matching nothing and quietly shrinking the
-    coverage numerator. The linter turns this into an error.
+    Covers two shapes with the same consequence: a code that is well formed but does not
+    exist (a transposed digit, a code from a newer upstream release), and a code that is
+    simply malformed. Either would sit in a spec for ever matching nothing and quietly
+    shrinking the coverage numerator, so the linter turns both into an error.
+
+    De-duplicated because a spec that repeats the same bad code should produce one complaint,
+    not one per occurrence.
     """
-    unknown: list[str] = []
+    seen: dict[str, None] = {}
     for code in techniques or []:
         if code not in IOPC_TECHNIQUES:
-            unknown.append(code)
+            seen.setdefault(code, None)
     for code in impacts or []:
         if code not in IOPC_IMPACTS:
-            unknown.append(code)
-    return unknown
+            seen.setdefault(code, None)
+    return list(seen)

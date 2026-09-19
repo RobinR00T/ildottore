@@ -234,3 +234,54 @@ def test_required_fields_match_schema_root() -> None:
         f"required drift - schema-only={schema_required - model_required} "
         f"model-only={model_required - schema_required}"
     )
+
+
+# --- pattern parity: the drift that field-name parity cannot see --------------------
+
+
+def test_iopc_code_patterns_agree_between_schema_and_model() -> None:
+    r"""The model must reject every code shape the JSON schema rejects.
+
+    Field-name parity said "iopc is fine" while the model had NO pattern at all, so it
+    happily accepted "garbage" and then produced a dump that failed its own schema. This
+    asserts behaviour, not pattern strings, because the two engines need different anchors:
+    pydantic uses rust-regex (where `$` is end-of-haystack) and jsonschema uses Python `re`
+    (where `$` also matches before a trailing newline, hence `\Z` in the JSON file).
+    """
+
+    node = SCHEMA["properties"]["iopc"]["properties"]
+    tech_pat = node["techniques"]["items"]["pattern"]
+    impact_pat = node["impacts"]["items"]["pattern"]
+    # The JSON schema must use the absolute-end anchor, or a trailing newline slips through.
+    assert tech_pat.endswith(r"\Z"), tech_pat
+    assert impact_pat.endswith(r"\Z"), impact_pat
+
+    bad = [
+        "garbage",
+        "iopc-t1.001",
+        "IOPC-T1.1",
+        "IOPC-T0.001",
+        "IOPC-T1.001\n",
+    ]
+    for value in bad:
+        schema_ok = not list(
+            jsonschema.Draft202012Validator({"type": "string", "pattern": tech_pat}).iter_errors(
+                value
+            )
+        )
+        model_ok = True
+        try:
+            IoPC(techniques=[value])
+        except ValidationError:
+            model_ok = False
+        assert schema_ok is False and model_ok is False, (
+            f"{value!r}: schema_ok={schema_ok} model_ok={model_ok}"
+        )
+
+    # And the real thing is accepted by both.
+    assert not list(
+        jsonschema.Draft202012Validator({"type": "string", "pattern": tech_pat}).iter_errors(
+            "IOPC-T1.005"
+        )
+    )
+    assert IoPC(techniques=["IOPC-T1.005"]).techniques == ["IOPC-T1.005"]

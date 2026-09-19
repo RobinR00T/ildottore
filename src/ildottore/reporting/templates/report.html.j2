@@ -78,8 +78,10 @@
       {% if summary.coverage.atlas.tactics %}
       <p class="coverage-atlas">ATLAS exercised: {{ summary.coverage.atlas.tactics | join(', ') }}</p>
       {% endif %}
-      {% if summary.coverage.iopc.impacts.codes %}
-      <p class="coverage-iopc">IoPC impacts exercised: {{ summary.coverage.iopc.impacts.codes | join(', ') }}</p>
+      {% if summary.coverage.iopc and summary.coverage.iopc.impacts.codes %}
+      <p class="coverage-iopc">IoPC impacts exercised:
+        {% for code in summary.coverage.iopc.impacts.codes %}{{ code }} ({{ iopc_impact_titles.get(code, 'unknown') }}){% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
       {% endif %}
     </div>
 

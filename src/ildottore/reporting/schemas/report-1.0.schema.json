@@ -76,7 +76,7 @@
     "coverage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["owasp", "atlas", "specs"],
+      "required": ["owasp", "atlas", "iopc", "specs"],
       "properties": {
         "owasp": { "$ref": "#/definitions/frameworkCoverage" },
         "atlas": { "$ref": "#/definitions/frameworkCoverage" },
@@ -86,8 +86,8 @@
           "required": ["techniques", "impacts"],
           "description": "Nova IoPC coverage on both axes: techniques (the how) and impacts (the damage).",
           "properties": {
-            "techniques": { "$ref": "#/definitions/frameworkCoverage" },
-            "impacts": { "$ref": "#/definitions/frameworkCoverage" }
+            "techniques": { "$ref": "#/definitions/codeCoverage" },
+            "impacts": { "$ref": "#/definitions/codeCoverage" }
           }
         },
         "specs": {
@@ -104,6 +104,18 @@
         }
       }
     },
+    "codeCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codes", "exercised", "total", "pct"],
+      "description": "Coverage of a code-keyed taxonomy axis (the IoPC technique and impact axes).",
+      "properties": {
+        "codes": { "type": "array", "items": { "type": "string" } },
+        "exercised": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "pct": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
     "frameworkCoverage": {
       "type": "object",
       "additionalProperties": false,
@@ -111,7 +123,6 @@
       "properties": {
         "categories": { "type": "array", "items": { "type": "string" } },
         "tactics": { "type": "array", "items": { "type": "string" } },
-        "codes": { "type": "array", "items": { "type": "string" } },
         "exercised": { "type": "integer", "minimum": 0 },
         "total": { "type": "integer", "minimum": 0 },
         "pct": { "type": "number", "minimum": 0, "maximum": 1 }

@@ -82,6 +82,15 @@ class MitreAtlas(_SchemaMirror):
     technique: str | None = None
 
 
+# The IoPC code shapes, mirrored from ``schemas/attack-spec.schema.json``.
+# ANCHOR NOTE, do not "fix" this to match the JSON file: pydantic validates with rust-regex,
+# where ``$`` already means end-of-haystack, while the JSON schema is validated by Python
+# ``jsonschema`` (``re``), where ``$`` also matches BEFORE a trailing newline and therefore
+# needs ``\Z``. Same intent, different anchor, because the engines differ.
+_IOPC_TECHNIQUE_PATTERN = r"^IOPC-T[1-9][0-9]*\.[0-9]{3}$"
+_IOPC_IMPACT_PATTERN = r"^IOPC-R[0-9]{3}$"
+
+
 class IoPC(_SchemaMirror):
     """``iopc`` - Nova IoPC taxonomy mapping, on two axes (``docs/15``).
 
@@ -91,8 +100,8 @@ class IoPC(_SchemaMirror):
     spec packs are not broken by the field's arrival).
     """
 
-    techniques: list[str] | None = None
-    impacts: list[str] | None = None
+    techniques: list[Annotated[str, Field(pattern=_IOPC_TECHNIQUE_PATTERN)]] | None = None
+    impacts: list[Annotated[str, Field(pattern=_IOPC_IMPACT_PATTERN)]] | None = None
 
 
 class Setup(_SchemaMirror):

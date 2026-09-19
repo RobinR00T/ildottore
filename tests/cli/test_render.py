@@ -84,15 +84,17 @@ def test_progress_printer_prints_when_not_quiet() -> None:
 def test_coverage_lines_report_surface_and_disposition() -> None:
     specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
     lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], specs)
-    assert len(lines) == 3
+    assert len(lines) == 4
     assert "OWASP LLM Top 10: 1/10 (10%)" in lines[0]
     assert "MITRE ATLAS tactics:" in lines[0]
     # The IoPC axes get their own line: the impact axis is the one a non-technical reader
     # understands, so it must not be buried next to the technique counts.
     assert "IoPC techniques:" in lines[1]
     assert "IoPC impacts:" in lines[1]
-    assert "Specs run: 1" in lines[2]
-    assert "fail 1" in lines[2]
+    # And the harm classes are spelled out, because a bare "IOPC-R012" tells nobody anything.
+    assert lines[2].startswith("Harm classes tested:")
+    assert "Specs run: 1" in lines[3]
+    assert "fail 1" in lines[3]
 
 
 def test_progress_printer_summary_always_prints() -> None:
@@ -103,3 +105,20 @@ def test_progress_printer_summary_always_prints() -> None:
     out = cap.get()
     assert "LLM01" in out
     assert "Coverage - OWASP LLM Top 10:" in out
+
+
+def test_coverage_lines_spell_out_the_harm_classes() -> None:
+    """The impact axis must read as harm, not as opaque ids.
+
+    Carrying the impact axis is only worth it if the line is readable without the taxonomy
+    open, so the titles are rendered next to nothing: the codes themselves stay in the JSON.
+    """
+
+    from ildottore.shared.models import IoPC
+
+    spec = make_spec("PI-1", owasp="LLM01")
+    spec = spec.model_copy(update={"iopc": IoPC(impacts=["IOPC-R012", "IOPC-R031"])})
+    lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], {"PI-1": spec})
+    harm = next(line for line in lines if line.startswith("Harm classes tested:"))
+    assert "Fraud and social engineering content" in harm
+    assert "System prompt leak" in harm

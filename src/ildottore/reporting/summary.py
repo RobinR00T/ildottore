@@ -35,8 +35,8 @@ __all__ = [
 
 _UNKNOWN = "unknown"
 
-#: The Nova IoPC universe lives in ``shared.iopc`` because the linter validates against it too
-#: and ``registry`` and ``reporting`` are peers that must not import each other (docs/01 §2).
+# The Nova IoPC universe lives in ``shared.iopc`` because the linter validates against it too
+# and ``registry`` and ``reporting`` are peers that must not import each other (docs/01 §2).
 
 #: OWASP LLM Top 10 (2025) has exactly ten categories (LLM01…LLM10). The denominator for
 #: OWASP surface coverage - a run that exercises 6 distinct categories covers 60%.

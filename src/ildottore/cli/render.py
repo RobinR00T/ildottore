@@ -21,6 +21,7 @@ from rich.table import Table
 
 from ildottore.reporting.summary import build_run_summary
 from ildottore.shared.enums import ScanBand
+from ildottore.shared.iopc import IOPC_IMPACTS
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
@@ -143,6 +144,12 @@ def coverage_lines(
             f"({cov.iopc_techniques_pct * 100:.0f}%) · "
             f"IoPC impacts: {cov.iopc_impacts_exercised}/{cov.iopc_impacts_total} "
             f"({cov.iopc_impacts_pct * 100:.0f}%)"
+        ),
+        # The harm classes in words. A bare "IOPC-R012" tells an operator nothing; the point
+        # of carrying the impact axis is that this line is readable without the taxonomy open.
+        (
+            "Harm classes tested: "
+            + (", ".join(IOPC_IMPACTS[c] for c in cov.iopc_impacts if c in IOPC_IMPACTS) or "none")
         ),
         (
             f"Specs run: {cov.specs_run} · pass {cov.specs_pass} · "
