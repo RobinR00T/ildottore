@@ -5,8 +5,10 @@ Exemplar contract (the bar for all units). 9-section anatomy per `docs/00 §2`. 
 
 ## §1 Scope & ownership
 - **OWNS:** `src/ildottore/evaluators/`: `base.py`, `regex.py`, `exact.py`, `refusal.py`,
-  `secret_leakage.py`, `tool_call.py`, `semantic_judge.py`, `pii_detector.py`,
-  `secret_shape.py`, `authz_leak.py`, `registry.py`, `combine.py`.
+  `secret_leakage.py`, `tool_call.py`, `tool_sequence.py`, `semantic_judge.py`,
+  `pii_detector.py`, `secret_shape.py`, `verbatim_overlap.py`, `logprob_membership.py`,
+  `authz_leak.py`, `kill_chain.py`, `registry.py`, `combine.py`.
+  (Refreshed 2026-09-19: the original list predated the MVP-2 evaluators and had drifted.)
 - **MUST NOT touch:** `shared/`, `adapters/`, `core/`, `scoring/`, any spec YAML.
 
 ## §2 Intended behavior
