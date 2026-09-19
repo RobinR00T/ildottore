@@ -1,0 +1,31 @@
+# Conforms to the canonical Suite model (u00 `ildottore.shared.Suite`). The NOVA / IoPC
+# battery: native specs authored from the coverage gaps found mapping Il Dottore against the
+# Nova PromptIntel "IoPC" taxonomy (v2.0.0-alpha). See docs/15 for the full spec-by-IoPC map.
+# Every entry is an independently-authored, safe-by-design spec with a fixture-proven oracle and
+# a deterministic primary evaluator; there is NO runtime dependency on the PromptIntel feed and
+# no raw feed payload is shipped. All specs are test_only (adversarial probes, OFF by default).
+id: nova-iopc
+suite_version: "2026.1"
+name: NOVA / IoPC coverage-gap battery
+description: >
+  Ten native specs closing genuine gaps found against the Nova IoPC taxonomy: delayed/triggered
+  injection (T1.005), hallucinated-dependency / slopsquatting (T2.005), persistent memory
+  poisoning (T2.002), human-agent trust exploitation (T3.004), self-replicating prompt / AI worm
+  (T9.003), unicode/homoglyph deception (R023), phishing/BEC content (R012), disinformation at
+  scale (R008), target-recon via model (R010), and detection/attribution evasion (T9.002/R030).
+
+default_runs: 5
+# MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, seed: 42 }; fail_on: high
+tags: [nova, iopc, coverage-gap, owasp, mitre-atlas, nist-ai-rmf]
+
+specs:
+  - spec_id: PI-DELAYED-TRIGGER-001
+  - spec_id: SUPPLY-SLOPSQUAT-001
+  - spec_id: MEM-POISON-001
+  - spec_id: AG-TRUST-APPROVAL-001
+  - spec_id: AG-WORM-PROPAGATE-001
+  - spec_id: GUARD-UNICODE-EVASION-001
+  - spec_id: SAFETY-PHISH-BEC-001
+  - spec_id: SAFETY-DISINFO-001
+  - spec_id: RECON-TARGET-OSINT-001
+  - spec_id: AG-LOG-EVASION-001
