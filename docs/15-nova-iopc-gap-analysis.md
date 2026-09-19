@@ -1,7 +1,8 @@
 # 15, NOVA / IoPC gap analysis (coverage map, no runtime dependency)
 
 Spec-by-technique map of the **Nova IoPC taxonomy** ("Indicators of Prompt Compromise",
-`promptintel.novahunting.ai/taxonomy`, v2.0.0-alpha, by Thomas Roccia / SecurityBreak) against
+`promptintel.novahunting.ai/taxonomy`, live state as of 2026-09-19, by Thomas Roccia /
+SecurityBreak) against
 Il Dottore's battery, to drive the native roadmap. **Decision (2026-09-19):** the Nova property
 is used as a **coverage reference and intel source only**. We do **not** take the PromptIntel
 feed as a runtime dependency, we do **not** ingest raw feed prompts as specs, and we do **not**
@@ -176,8 +177,14 @@ disallowed intent is explicit, no working payload is shipped, and the oracle is 
 
 The map below is no longer only prose. Every shipped spec carries a first-class `iopc:` block,
 and the run report measures coverage against the **pinned taxonomy universe** in
-`shared/iopc.py` (30 techniques + 23 impacts = the 53 entries of v2.0.0-alpha), the same way
-`OWASP_LLM_TOTAL` and `ATLAS_TACTIC_UNIVERSE` already worked.
+`shared/iopc.py` (30 techniques + 23 impacts), the same way `OWASP_LLM_TOTAL` and
+`ATLAS_TACTIC_UNIVERSE` already worked.
+
+A provenance note that cost an audit to get right: the universe is transcribed from the **live**
+taxonomy on 2026-09-19, **not** from the published `v2.0.0-alpha` artifact the site banner
+advertises. That release holds 46 different entries (8 techniques, 38 impacts, 19 impact titles
+under older names) and predates the entire T4 to T9 range our specs map to. Pinning to it would
+have been reproducible and wrong.
 
 ```yaml
 iopc:
@@ -202,18 +209,37 @@ Design decisions worth recording:
   rejects a well-formed but non-existent one, which would otherwise match nothing and shrink
   the coverage numerator silently for ever.
 
-**Where the battery actually stands: 26/30 techniques (87%) and 22/23 impacts (96%).** Every
-uncovered code is a deliberate out-of-scope decision already recorded below (training-data
+**Where the battery actually stands: 25/30 techniques (83%) and 22/23 impacts (96%).**
+
+That number is lower than the one first published here, and the correction is the useful part.
+An adversarial review of the mapping found 30 of the 72 specs mis-mapped, mostly **over-claims**:
+codes declared on specs that do not really exercise them, which inflate the very percentage a
+customer reads. The worst was `IOPC-T4.002` "Unexpected Code Execution", carried by
+`OUT-CODEINJ-001` and `OUT-SHELLI-001`, where nothing executes at all: both are `target_type:
+model` with no tools, and the oracle is a regex over *generated source*. That is insecure code
+generation (`T5.003`, which both already declared). Dropping the false claim moved the technique
+axis from 87% to 83% and turned T4.002 into what it always was: **a real gap**, since the battery
+has no code-interpreter or sandbox-escape spec.
+
+The other uncovered codes are deliberate out-of-scope decisions recorded below (training-data
 poisoning, offline staging, access acquisition, LLMjacking), except `IOPC-T8.002`
-(fingerprinting), which Il Dottore covers with the `dottore fingerprint` command rather than
-with a spec. The metric therefore confirms this document instead of contradicting it.
+(fingerprinting), which Il Dottore covers with the `dottore fingerprint` command rather than a
+spec.
+
+**A caveat on what these percentages mean.** The tables below mark eleven codes as *partial*
+(touched by an adjacent spec rather than covered first class). The machine-readable axis cannot
+express that nuance: a declared code counts the same either way. The mapping was therefore
+tightened so a spec declares a code only when it genuinely exercises it, which keeps the number
+honest without inventing a half-covered state. Read a percentage here as "codes with at least
+one genuine spec", never as depth of coverage.
 
 ---
 
 ## Attribution
 
 Nova IoPC taxonomy by Thomas Roccia / SecurityBreak (`promptintel.novahunting.ai/taxonomy`,
-v2.0.0-alpha). Used here as a taxonomy and coverage reference; the technique/impact codes are
+live state as of 2026-09-19; the published v2.0.0-alpha artifact is an older, smaller
+snapshot). Used here as a taxonomy and coverage reference; the technique/impact codes are
 cited for mapping. No prompt, payload or code from the PromptIntel feed or the NOVA engine is
 shipped in this repository. Any concrete idea later ported from a specific feed entry into a
 native spec must carry an attribution note in that spec's `tags:` / comment block.

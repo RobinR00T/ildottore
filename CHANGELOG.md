@@ -26,10 +26,13 @@ versioning: [SemVer](https://semver.org/).
   `tool_sequence` with no `patterns`) is now a lint error.
 - **Machine-readable Nova IoPC mapping.** Specs gain an optional two-axis `iopc:` block
   (`techniques` = the how, `impacts` = the damage). The taxonomy universe is pinned in
-  `shared/iopc.py` (30 techniques + 23 impacts, v2.0.0-alpha), so the run report measures IoPC
-  coverage against a real denominator in the terminal, JSON and HTML outputs, alongside OWASP
-  and ATLAS. All 72 shipped specs are mapped (26/30 techniques, 22/23 impacts); the uncovered
-  codes are the out-of-scope decisions already recorded in `docs/15`. The field is optional in
+  `shared/iopc.py` (30 techniques + 23 impacts, transcribed from the live taxonomy on
+  2026-09-19: the published v2.0.0-alpha artifact is an older, smaller snapshot), so the run
+  report measures IoPC coverage against a real denominator in the terminal, JSON and HTML
+  outputs, alongside OWASP and ATLAS. All 72 shipped specs are mapped (**25/30 techniques,
+  22/23 impacts**); the uncovered codes are the out-of-scope decisions recorded in `docs/15`,
+  plus `IOPC-T4.002` Unexpected Code Execution, which an audit of the mapping turned from a
+  false claim into an acknowledged gap. The field is optional in
   the JSON schema so third-party spec packs keep validating, and a test pins that our own
   battery is fully mapped. A well-formed but non-existent code is a new `UNKNOWN_FRAMEWORK_CODE`
   lint error, because it would match nothing and silently shrink coverage.

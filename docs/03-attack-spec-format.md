@@ -27,6 +27,7 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 | `name` | ✓ | Human title. |
 | `category` | ✓ | One of the taxonomy families (`prompt_injection`, `jailbreak`, `data_leakage`, `agent_tool_abuse`, `rag_security`, `output_security`, `availability_cost`). |
 | `owasp` / `mitre_atlas` / `nist_ai_rmf` | ✓ | Framework mappings. |
+| `iopc` | | Nova IoPC mapping on two axes: `techniques` (the how, `IOPC-T<family>.<nnn>`) and `impacts` (the damage, `IOPC-R<nnn>`). Either axis alone is valid. Optional so third-party packs keep validating; the shipped battery is held to it by test. Codes outside the pinned taxonomy are a lint error (`docs/15`). |
 | `severity` | ✓ | Author's *a-priori* impact class; final risk is computed (`docs/05`). |
 | `target_type` | ✓ | `model` \| `chatbot` \| `api` \| `agent` \| `rag`. |
 | `requires` | ✓ | Capabilities needed (`rag`, `tools`, `memory`, `system_prompt`). |
