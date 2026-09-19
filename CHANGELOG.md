@@ -23,7 +23,16 @@ versioning: [SemVer](https://semver.org/).
   chain of individually-authorized tool calls completes, which a per-call check cannot express.
   Closes the last open row of `docs/14`.
 - New `EVALUATOR_MISCONFIGURED` lint rule: an evaluator that would silently never fire (a
-  `tool_sequence` with no `patterns`, or one declared on a multi-turn spec) is now a lint error.
+  `tool_sequence` with no `patterns`) is now a lint error.
+- **Machine-readable Nova IoPC mapping.** Specs gain an optional two-axis `iopc:` block
+  (`techniques` = the how, `impacts` = the damage). The taxonomy universe is pinned in
+  `shared/iopc.py` (30 techniques + 23 impacts, v2.0.0-alpha), so the run report measures IoPC
+  coverage against a real denominator in the terminal, JSON and HTML outputs, alongside OWASP
+  and ATLAS. All 72 shipped specs are mapped (26/30 techniques, 22/23 impacts); the uncovered
+  codes are the out-of-scope decisions already recorded in `docs/15`. The field is optional in
+  the JSON schema so third-party spec packs keep validating, and a test pins that our own
+  battery is fully mapped. A well-formed but non-existent code is a new `UNKNOWN_FRAMEWORK_CODE`
+  lint error, because it would match nothing and silently shrink coverage.
 
 ### Changed
 - Battery is now **72 specs / 14 suites / 1 pack**, 14 evaluator types.

@@ -308,7 +308,9 @@ Prints the generated JSON Schemas that machine-validate every spec.
 ## 6. The attack battery
 
 72 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
-the Nova IoPC taxonomy.
+the Nova IoPC taxonomy. Every spec carries its framework mapping, including an optional
+two-axis `iopc:` block (`techniques` = the how, `impacts` = the damage), and the run report
+measures coverage against the pinned IoPC universe, so "we passed" always comes with "of what".
 `dottore registry ls` prints the live list; the columns are `id`, OWASP tag, band, category,
 and title. Spec ids are family-prefixed: `PI-` prompt injection, `JB-` jailbreak, `DL-` data
 leakage, `AC-` access control, `AG-` agentic abuse, `OUT-` insecure output, `EMB-` embeddings,

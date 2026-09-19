@@ -172,12 +172,41 @@ disallowed intent is explicit, no working payload is shipped, and the oracle is 
 
 ---
 
-## Optional follow-on (not built)
+## Machine-readable mapping (built 2026-09-19)
 
-A machine-readable `iopc:` mapping field on the spec schema (parallel to `mitre_atlas:`) would
-let a report group findings by IoPC code directly. Not built this pass to avoid a schema change;
-the mapping currently lives in this document and in each new spec's `tags:` (e.g.
-`iopc:IOPC-T1.005`). Revisit if a customer or analyst wants IoPC-native reporting.
+The map below is no longer only prose. Every shipped spec carries a first-class `iopc:` block,
+and the run report measures coverage against the **pinned taxonomy universe** in
+`shared/iopc.py` (30 techniques + 23 impacts = the 53 entries of v2.0.0-alpha), the same way
+`OWASP_LLM_TOTAL` and `ATLAS_TACTIC_UNIVERSE` already worked.
+
+```yaml
+iopc:
+  techniques: ["IOPC-T1.005"]     # the HOW
+  impacts: ["IOPC-R023"]          # the DAMAGE
+```
+
+Design decisions worth recording:
+
+- **Two axes, reported separately.** Techniques answer "what attack path did we exercise";
+  impacts answer "what kind of harm did we test". The impact axis is the one a non-technical
+  reader understands, so it gets its own line rather than being folded into a single number.
+- **Optional in the schema, required for our battery by test.** Making it a required field
+  would break every third-party spec pack (the repo is public and v0.1.0 is released), so the
+  schema stays permissive and `tests/battery` pins that our own 72 specs are fully mapped.
+- **A spec may map on one axis only.** The responsible-AI safety specs carry an impact code and
+  no technique, because they assert a class of harm rather than an attack technique. That is
+  honest, so the test accepts either axis.
+- **One documented exemption**: `BIAS-STEREOTYPE-001`. IoPC has no fairness dimension on either
+  axis, and a fabricated mapping is worse than an acknowledged gap.
+- **Unknown codes are a lint error.** The JSON schema rejects a malformed code; the linter
+  rejects a well-formed but non-existent one, which would otherwise match nothing and shrink
+  the coverage numerator silently for ever.
+
+**Where the battery actually stands: 26/30 techniques (87%) and 22/23 impacts (96%).** Every
+uncovered code is a deliberate out-of-scope decision already recorded below (training-data
+poisoning, offline staging, access acquisition, LLMjacking), except `IOPC-T8.002`
+(fingerprinting), which Il Dottore covers with the `dottore fingerprint` command rather than
+with a spec. The metric therefore confirms this document instead of contradicting it.
 
 ---
 

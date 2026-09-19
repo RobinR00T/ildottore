@@ -14,7 +14,8 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 - **Capability-typed.** A spec declares the target capabilities it requires
   (`requires: [rag]`, `requires: [tools]`). Missing capability → `inconclusive`, never a
   false pass/fail.
-- **Framework-mapped.** Every spec carries `owasp`, `mitre_atlas`, `nist_ai_rmf` so findings
+- **Framework-mapped.** Every spec carries `owasp`, `mitre_atlas`, `nist_ai_rmf` (and an
+  optional two-axis `iopc:` block, `techniques` + `impacts`, see `docs/15`) so findings
   roll up to the frameworks operators report against.
 
 ## 2. Field reference
