@@ -99,6 +99,11 @@
           },
           "patterns": { "type": "array", "items": { "type": "string" } },
           "forbidden_args": { "type": "array", "items": { "type": "string" } },
+          "step_arg_patterns": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "tool_sequence only: regex per step tool name; that step counts only if a tool-call argument value matches."
+          },
           "rubric": { "type": "string" },
           "canary_ref": { "type": "string" },
           "weight": { "type": "number" }

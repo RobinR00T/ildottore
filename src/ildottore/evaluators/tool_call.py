@@ -33,7 +33,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from ildottore.evaluators.base import BaseEvaluator, mask_value, tool_name
+from ildottore.evaluators.base import BaseEvaluator, mask_value, tool_args, tool_name
 from ildottore.shared.enums import EvaluatorType
 from ildottore.shared.models import EvalContext, Verdict
 
@@ -79,20 +79,6 @@ _INJECTION_RE = re.compile(
     r"|<\s*script\b",
     re.IGNORECASE,
 )
-
-
-def _tool_args(call: Mapping[str, object]) -> Mapping[str, object]:
-    """Extract the argument mapping from a tool-call dict (tolerant of shapes)."""
-    for key in ("arguments", "args", "parameters", "input"):
-        val = call.get(key)
-        if isinstance(val, Mapping):
-            return val
-    fn = call.get("function")
-    if isinstance(fn, Mapping):
-        args = fn.get("arguments")
-        if isinstance(args, Mapping):
-            return args
-    return {}
 
 
 def _is_confirmed(args: Mapping[str, object]) -> bool:
@@ -213,7 +199,7 @@ class ToolCallEvaluator(BaseEvaluator):
 
         for call in calls:
             name = tool_name(call)
-            args = _tool_args(call)
+            args = tool_args(call)
 
             if allowlist is not None and name and name not in allowlist:
                 findings.append(f"unauthorized tool call: {name!r}")
