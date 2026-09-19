@@ -5,6 +5,39 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **NOVA / IoPC coverage-gap battery**: 10 specs + the `nova-iopc` suite, authored from a
+  spec-by-technique map against the Nova IoPC taxonomy (`docs/15`). Covers delayed/triggered
+  injection, persistent memory poisoning, hallucinated dependencies (slopsquatting),
+  human-agent trust exploitation, self-replicating prompts, unicode/homoglyph deception,
+  phishing-BEC, disinformation at scale, target reconnaissance and log/provenance tampering.
+  No runtime dependency on the feed and no raw feed payload shipped.
+- **Function-calling & structured-output battery**: the `structured-output` suite, with
+  `OUT-JSON-SCHEMA-COERCE-001` (out-of-schema privileged field in the returned JSON) and
+  `OUT-JSON-ENUM-ESCAPE-001` (out-of-enum value on a field that gates exposure), grouped with
+  the existing `FUNCALL-ARGSMUGGLE-001` so the contract is covered in both directions.
+- **Multimodal breadth**: `MM-IMG-SPLIT-PAYLOAD-001` (one instruction split across two image
+  carriers, defeating per-attachment scanning) and `MM-IMG-TOOL-EXFIL-001` (the visual-to-agentic
+  bridge: an image-borne instruction driving an unauthorized egress tool call).
+- **`tool_sequence` evaluator** (14th type) + `AG-TOOLCHAIN-EXFIL-001`: fails when an ordered
+  chain of individually-authorized tool calls completes, which a per-call check cannot express.
+  Closes the last open row of `docs/14`.
+- New `EVALUATOR_MISCONFIGURED` lint rule: an evaluator that would silently never fire (a
+  `tool_sequence` with no `patterns`, or one declared on a multi-turn spec) is now a lint error.
+
+### Changed
+- Battery is now **72 specs / 14 suites / 1 pack**, 14 evaluator types.
+- `make bandit` runs with `-c pyproject.toml`; B105 is skipped as redundant with ruff's
+  S105/S106/S107, which stay active.
+
+### Fixed
+- Repaired 10 spec oracles that passed every gate while measuring something other than the
+  attack they described (hedge-vocabulary checks, polarity-free keyword presence, denylists
+  where a complement was needed, and oracles that failed the best possible secure answer).
+- `tool_sequence` name matching is now case- and whitespace-insensitive, and the offline lint
+  stub evaluates every declared chain instead of only the first.
+- Dependency floor `anyio>=4.14.2` for CVE-2026-63349 / 63374 / 64847 (transitive via httpx).
+
 ## [0.1.0] - 2026-09-03
 
 First public release. The engine is built and self-validating: 57 declarative attack specs across

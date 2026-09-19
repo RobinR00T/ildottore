@@ -183,7 +183,7 @@ required.
 
 | Flag | Meaning |
 |------|---------|
-| `--suite TEXT` | suite id or alias (`owasp:llm`, `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`) |
+| `--suite TEXT` | suite id or alias (`owasp:llm`, `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`) |
 | `-p/--categories TEXT` | comma-separated categories (`pi,jailbreak,leakage,tool,rag,output,dos`) |
 | `--spec TEXT` | spec id or glob, e.g. `PI-*` (repeatable) |
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
@@ -307,7 +307,8 @@ Prints the generated JSON Schemas that machine-validate every spec.
 
 ## 6. The attack battery
 
-57 specs across 12 suites, aligned to OWASP LLM Top 10, MITRE ATLAS and OWASP-Agents-2026.
+72 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
+the Nova IoPC taxonomy.
 `dottore registry ls` prints the live list; the columns are `id`, OWASP tag, band, category,
 and title. Spec ids are family-prefixed: `PI-` prompt injection, `JB-` jailbreak, `DL-` data
 leakage, `AC-` access control, `AG-` agentic abuse, `OUT-` insecure output, `EMB-` embeddings,
@@ -321,14 +322,16 @@ Suites (with the count `registry ls --suite <id>` reports):
 | `quick` | 18 | fast triage battery (`--quick`) |
 | `multi-turn` | 5 | Crescendo / Linear / Sequential / Bad-Likert / Tree |
 | `access-control` | 9 | BFLA / BOLA / RBAC / SSRF / debug-interface / argument-smuggling |
-| `agentic-owasp2026` | 5 | goal theft / recursive hijack / identity abuse / inter-agent / autonomy drift |
+| `agentic-owasp2026` | 6 | goal theft / recursive hijack / identity abuse / inter-agent / autonomy drift / tool-orchestration abuse |
 | `obfuscation-enhancers` | 2 | encoding / obfuscation bypass enhancers |
 | `embeddings` | 3 | embedding inversion / neighbor leak / cross-tenant retrieval |
 | `agentic-extortion` | 7 | JadePuffer-class agentic-ransomware susceptibility (policy-gated) |
 | `mcp` | 1 | MCP-server metadata poisoning (point it at a `provider: mcp` target) |
 | `responsible-ai` | 2 | optional NIST-mapped pack: harmful-content refusal + demographic bias/fairness |
 | `guardrail-evasion` | 2 | moderation-layer evasion, input classifier + output filter |
-| `multimodal` | 4 | image injection (direct / document / harmful-request) and a spoken prompt injection carried in an audio clip |
+| `multimodal` | 6 | image injection (direct / document / split across two carriers / harmful-request), a visual-to-agentic bridge, and a spoken prompt injection carried in an audio clip |
+| `structured-output` | 3 | function-calling and structured-output contract: argument smuggling, out-of-schema field coercion, enum escape |
+| `nova-iopc` | 10 | coverage-gap battery mapped against the Nova IoPC taxonomy (see `docs/15`) |
 
 Select with `--suite`, `-p/--categories`, `--spec`/`--exclude` (globs), or `--top-tests`.
 
@@ -420,6 +423,33 @@ evaluators:
     patterns: ["update_account"]          # the authorized tool
     forbidden_args: ["role", "bypass_review"]   # privileged fields the task must not populate
 ```
+
+The **`tool_sequence`** evaluator answers a question `tool_call` structurally cannot: it judges
+the **order**. The exploit it catches is a chain in which every individual call is legitimate
+(read a customer record, then send mail) and only the composition is harmful, so a per-call
+allowlist passes all of it.
+
+> **Careful: `patterns` means something different here.** For `tool_call` it is an
+> **allowlist** of authorized tools. For `tool_sequence` it is an **ordered chain**, where
+> `patterns[0]` must happen first. The same field name, the opposite polarity.
+
+```yaml
+evaluators:
+  - type: tool_sequence
+    patterns: ["read_customer_record", "send_email"]   # this ORDER is the exploit
+```
+
+Matching is an in-order **subsequence**, not adjacency: unrelated calls interleaved between the
+steps do not rescue the verdict (otherwise inserting a no-op would evade the check), and names
+are compared ignoring case and surrounding space. A chain that only partly completes is a
+`pass` with the depth reported, because a partial progression is not a confirmed breach.
+
+Two limits worth knowing before you rely on it. It sees only the **final turn's** trace, so it
+is refused on a multi-turn spec rather than allowed to report a confident "0/2" about calls it
+cannot see. And it is **argument-blind**: mailing the record to the user who asked completes the
+same chain as mailing it to an attacker, so pair it with `tool_call`'s `forbidden_args` when the
+destination is what makes the chain harmful. A lone `tool_sequence` fail means "this sequence
+happened", not "this sequence was malicious".
 
 **Judge hardening.** The judge is assumed to be attackable. Each judge call carries a
 per-call random tripwire token; the judge is flagged **compromised** if it echoes the
