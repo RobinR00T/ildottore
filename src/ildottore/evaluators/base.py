@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from ildottore.redactor import Redactor
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
@@ -36,6 +36,7 @@ __all__ = [
     "mask_value",
     "mask_values",
     "shannon_entropy",
+    "tool_name",
 ]
 
 # A process-wide, unsalted redactor for typing+masking matched values into evidence.
@@ -53,6 +54,25 @@ def shannon_entropy(text: str) -> float:
     counts = Counter(text)
     length = len(text)
     return -sum((c / length) * math.log2(c / length) for c in counts.values())
+
+
+def tool_name(call: Mapping[str, object]) -> str:
+    """Extract a tool name from a tool-call dict, tolerant of provider shapes.
+
+    Handles both the flat ``{"name": ...}`` trace and the OpenAI-style
+    ``{"function": {"name": ...}}`` nesting; returns ``""`` when neither is present. Shared by
+    the ``tool_call`` and ``tool_sequence`` evaluators so the two always agree on *which tool
+    was invoked* (a drift between them would let one flag a call the other could not see).
+    """
+    name = call.get("name")
+    if isinstance(name, str):
+        return name
+    fn = call.get("function")
+    if isinstance(fn, Mapping):
+        fn_name = fn.get("name")
+        if isinstance(fn_name, str):
+            return fn_name
+    return ""
 
 
 def mask_value(value: str, *, type_hint: str, redactor: Redactor | None = None) -> str:

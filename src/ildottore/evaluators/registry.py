@@ -32,6 +32,7 @@ from ildottore.evaluators.secret_leakage import SecretLeakageEvaluator
 from ildottore.evaluators.secret_shape import SecretShapeEvaluator
 from ildottore.evaluators.semantic_judge import SemanticJudgeEvaluator
 from ildottore.evaluators.tool_call import ToolCallEvaluator
+from ildottore.evaluators.tool_sequence import ToolSequenceEvaluator
 from ildottore.evaluators.verbatim_overlap import VerbatimOverlapEvaluator
 from ildottore.shared.protocols import Evaluator, TargetAdapter
 
@@ -52,6 +53,7 @@ _BUILTINS: tuple[type[Evaluator], ...] = (
     RefusalEvaluator,
     SecretLeakageEvaluator,
     ToolCallEvaluator,
+    ToolSequenceEvaluator,
     PIIDetectorEvaluator,
     SecretShapeEvaluator,
     VerbatimOverlapEvaluator,

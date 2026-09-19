@@ -110,6 +110,7 @@ def test_evaluator_type_full_coverage() -> None:
         "refusal",
         "secret_leakage",
         "tool_call",
+        "tool_sequence",
         "semantic_judge",
         "pii_detector",
         "secret_shape",
@@ -119,7 +120,7 @@ def test_evaluator_type_full_coverage() -> None:
         "kill_chain_progression",
     }
     assert {e.value for e in EvaluatorType} == expected
-    assert len(expected) == 13
+    assert len(expected) == 14
 
 
 def test_inconclusive_reason_coverage() -> None:

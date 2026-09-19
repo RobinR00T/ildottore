@@ -93,8 +93,8 @@
           "type": {
             "type": "string",
             "enum": ["regex_absence", "regex_presence", "exact_match",
-                     "refusal", "secret_leakage", "tool_call", "semantic_judge",
-                     "pii_detector", "secret_shape", "verbatim_overlap",
+                     "refusal", "secret_leakage", "tool_call", "tool_sequence",
+                     "semantic_judge", "pii_detector", "secret_shape", "verbatim_overlap",
                      "logprob_membership", "authz_leak", "kill_chain_progression"]
           },
           "patterns": { "type": "array", "items": { "type": "string" } },

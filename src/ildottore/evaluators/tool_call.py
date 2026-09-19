@@ -33,7 +33,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from ildottore.evaluators.base import BaseEvaluator, mask_value
+from ildottore.evaluators.base import BaseEvaluator, mask_value, tool_name
 from ildottore.shared.enums import EvaluatorType
 from ildottore.shared.models import EvalContext, Verdict
 
@@ -79,19 +79,6 @@ _INJECTION_RE = re.compile(
     r"|<\s*script\b",
     re.IGNORECASE,
 )
-
-
-def _tool_name(call: Mapping[str, object]) -> str:
-    """Extract a tool name from a tool-call dict (tolerant of provider shapes)."""
-    name = call.get("name")
-    if isinstance(name, str):
-        return name
-    fn = call.get("function")
-    if isinstance(fn, Mapping):
-        fn_name = fn.get("name")
-        if isinstance(fn_name, str):
-            return fn_name
-    return ""
 
 
 def _tool_args(call: Mapping[str, object]) -> Mapping[str, object]:
@@ -225,7 +212,7 @@ class ToolCallEvaluator(BaseEvaluator):
         matched: list[str] = []
 
         for call in calls:
-            name = _tool_name(call)
+            name = tool_name(call)
             args = _tool_args(call)
 
             if allowlist is not None and name and name not in allowlist:
