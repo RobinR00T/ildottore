@@ -28,7 +28,12 @@ P1 = strong differentiator / real attack surface · P2 = later.
 > **structured-output** half of the function-calling row (`OUT-JSON-SCHEMA-COERCE-001` +
 > `OUT-JSON-ENUM-ESCAPE-001` + `structured-output` suite); and **multimodal breadth**
 > (`MM-IMG-SPLIT-PAYLOAD-001`, a payload split across two image carriers;
-> `MM-IMG-TOOL-EXFIL-001`, the visual-to-agentic bridge). Battery is now **71 specs / 14 suites**.
+> `MM-IMG-TOOL-EXFIL-001`, the visual-to-agentic bridge). Also **tool-orchestration abuse**, which
+> had been the last 🟡 of `docs/14`: a new deterministic **`tool_sequence`** evaluator (fails when an
+> ORDERED chain of individually-authorized calls completes, subsequence match so an interleaved
+> no-op cannot evade it, partial chain = pass) plus `AG-TOOLCHAIN-EXFIL-001`. A per-call check
+> provably cannot see it: `tool_call` passes the very trace `tool_sequence` flags, pinned by a
+> regression test. Battery is now **72 specs / 14 suites**, 14 evaluator types.
 
 ## P0: in scope for MVP‑1 (capabilities are hard to retrofit later)
 

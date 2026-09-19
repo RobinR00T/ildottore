@@ -7,7 +7,7 @@ Where the project is and what is left. The living, prioritized gap analysis is
 
 ## Shipped
 
-The battery is **71 specs across 14 suites**, aligned to OWASP LLM Top 10 (2025), MITRE ATLAS,
+The battery is **72 specs across 14 suites**, aligned to OWASP LLM Top 10 (2025), MITRE ATLAS,
 NIST AI 600-1 and the Nova IoPC taxonomy. Everything below runs offline against a mock and, where
 noted, over the wire.
 
@@ -50,14 +50,12 @@ noted, over the wire.
   *into* a tool; `OUT-JSON-SCHEMA-COERCE` and `OUT-JSON-ENUM-ESCAPE` now cover what it hands
   *back* to the application (out-of-schema privileged field, out-of-enum exposure value), in the
   `structured-output` suite.
-- ⬜ **Tool-orchestration abuse** (a chain of individually-authorized calls whose *sequence* is the
-  exploit): deliberately not shipped as a spec yet. `kill_chain_progression` is hardcoded to the
-  JadePuffer tool map, so a general version needs a new sequence-aware evaluator; without one, a
-  spec would just duplicate `AG-EXFIL-EGRESS` / `AG-TOOL-UNAUTH`.
-- ⬜ **Finding dedupe across specs**: the runner already collapses mutation variants into one
-  finding; cross-*spec* semantic dedup stays a human judgment for now (lossy, can hide signal).
-- ⬜ **Packaging**: a tagged release and a published distribution if the tool is to be installed by
-  others (see [`RELEASING.md`](RELEASING.md)).
+- ✅ **Tool-orchestration abuse**: shipped as a new deterministic `tool_sequence`
+  evaluator plus `AG-TOOLCHAIN-EXFIL-001`. The evaluator fails when an **ordered** chain of
+  individually-authorized calls completes (read-record then send-mail), matching as a
+  subsequence so an interleaved no-op cannot evade it, and treats a partial chain as a pass.
+  A per-call check cannot express this: `tool_call` passes the very trace `tool_sequence`
+  flags, and a regression test pins that complementarity.
 
 ## Deferred on purpose
 

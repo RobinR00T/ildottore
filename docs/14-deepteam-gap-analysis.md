@@ -102,7 +102,7 @@ design constraint for the multi-turn schema extension.
 | Indirect Instruction | ✅ PI-INDIRECT-RAG, PI-INDIRECT-TOOL |, | covered |
 | Exploit Tool Agent | ✅ AG-CRED-SWEEP, AG-EXFIL-EGRESS, AG-DESTRUCTIVE-DBDROP |, | covered |
 | External System Abuse | 🟡 AG-EXFIL-EGRESS, AG-PERSIST-BEACON | P2 | partial |
-| Tool Orchestration Abuse | 🟡 AG-TOOL-UNAUTH | P1 | multi-tool sequence abuse |
+| Tool Orchestration Abuse | ✅ **built** (2026-09-19) AG-TOOLCHAIN-EXFIL + `tool_sequence` evaluator |, | covered: the ORDER is the exploit, not any single call |
 | Autonomous Agent Drift | 🟡 AG-AUTONOMY-SELFCORRECT | P1 | drift-over-time spec |
 | Goal Theft | ❌ | P1 | objective-extraction spec |
 | Robustness (input overreliance / prompt hijacking) | 🟡 | P1 | dedicated robustness spec |
