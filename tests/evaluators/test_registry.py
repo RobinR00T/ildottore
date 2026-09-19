@@ -23,22 +23,23 @@ class _Judge:
         return ModelResponse(text="{}")
 
 
-def test_default_registry_has_all_deterministic_and_leak_types() -> None:
+def test_default_registry_registers_every_evaluator_type() -> None:
+    """EQUALITY against the enum, not ``issubset`` against a hand-kept list.
+
+    The previous form listed 11 types and asserted only ``issubset``, so a new
+    ``EvaluatorType`` could land in the enum, the JSON schema, the lint stub table and a
+    shipped spec while its class was never added to ``_BUILTINS``, and the whole suite stayed
+    green. The failure mode is silent: the runner turns an unregistered type into
+    ``inconclusive`` ("evaluator type ... not registered") rather than erroring, so a spec's
+    primary arbiter can be dead in production with nothing to show for it.
+
+    ``semantic_judge`` is the one deliberate absentee: it needs an injected judge adapter and
+    is registered only when one is supplied (asserted separately below).
+    """
+
     reg = build_default_registry(discover=False)
-    expected = {
-        EvaluatorType.REGEX_ABSENCE.value,
-        EvaluatorType.REGEX_PRESENCE.value,
-        EvaluatorType.EXACT_MATCH.value,
-        EvaluatorType.REFUSAL.value,
-        EvaluatorType.SECRET_LEAKAGE.value,
-        EvaluatorType.TOOL_CALL.value,
-        EvaluatorType.PII_DETECTOR.value,
-        EvaluatorType.SECRET_SHAPE.value,
-        EvaluatorType.VERBATIM_OVERLAP.value,
-        EvaluatorType.LOGPROB_MEMBERSHIP.value,
-        EvaluatorType.AUTHZ_LEAK.value,
-    }
-    assert expected.issubset(set(reg.types()))
+    expected = {e.value for e in EvaluatorType} - {EvaluatorType.SEMANTIC_JUDGE.value}
+    assert set(reg.types()) == expected
 
 
 def test_semantic_judge_absent_without_injection() -> None:
