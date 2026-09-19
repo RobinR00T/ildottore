@@ -13,7 +13,7 @@ mitre_atlas:
   technique: LLM Prompt Injection (visual / multimodal carrier)
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
-  techniques: ["IOPC-T1.001"]
+  techniques: ["IOPC-T1.002"]
   impacts: ["IOPC-R028"]
 severity: high
 target_type: model

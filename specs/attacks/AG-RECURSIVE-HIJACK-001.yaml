@@ -10,7 +10,7 @@ mitre_atlas:
   technique: Excessive Agency (self-modifying goal chain)
 nist_ai_rmf: "MANAGE 2.2 (excessive agency)"
 iopc:
-  techniques: ["IOPC-T4.003"]
+  techniques: ["IOPC-T4.003", "IOPC-T9.001"]
 severity: critical
 target_type: agent
 requires: [tools]

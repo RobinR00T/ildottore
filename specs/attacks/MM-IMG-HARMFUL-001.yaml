@@ -15,7 +15,7 @@ mitre_atlas:
   technique: Harmful content generation (multimodal carrier)
 nist_ai_rmf: "MEASURE 2.11 (dangerous / harmful content)"
 iopc:
-  techniques: ["IOPC-T1.001"]
+  techniques: ["IOPC-T1.004"]
   impacts: ["IOPC-R036", "IOPC-R028"]
 severity: high
 target_type: model

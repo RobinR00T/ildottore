@@ -8,7 +8,7 @@ mitre_atlas:
   technique: LLM-orchestrated data destruction / extortion
 nist_ai_rmf: "MANAGE 2.2 (excessive agency / autonomous harmful action)"
 iopc:
-  techniques: ["IOPC-T3.001"]
+  techniques: ["IOPC-T3.001", "IOPC-T1.002", "IOPC-T2.001"]
   impacts: ["IOPC-R013", "IOPC-R014"]
 severity: critical
 target_type: agent

@@ -9,6 +9,7 @@ mitre_atlas:
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
   techniques: ["IOPC-T1.004"]
+  impacts: ["IOPC-R027"]
 severity: high
 target_type: chatbot
 requires: []

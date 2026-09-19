@@ -13,7 +13,7 @@ mitre_atlas:
   technique: Insecure Output Handling (out-of-enum value coercion)
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
-  techniques: ["IOPC-T5.003"]
+  techniques: ["IOPC-T5.003", "IOPC-T1.002"]
 severity: high
 target_type: model
 requires: []

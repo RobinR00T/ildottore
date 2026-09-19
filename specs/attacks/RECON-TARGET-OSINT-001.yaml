@@ -13,7 +13,6 @@ mitre_atlas:
   technique: Target reconnaissance via model (attack-prep OSINT synthesis)
 nist_ai_rmf: "MEASURE 2.11 (dangerous / harmful content)"
 iopc:
-  techniques: ["IOPC-T8.001"]
   impacts: ["IOPC-R010"]
 severity: high
 target_type: chatbot

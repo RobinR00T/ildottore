@@ -14,7 +14,8 @@ mitre_atlas:
   technique: Excessive Agency (orchestration abuse, read-then-egress chain)
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
-  techniques: ["IOPC-T3.001", "IOPC-T5.002"]
+  techniques: ["IOPC-T3.001", "IOPC-T1.003"]
+  impacts: ["IOPC-R013"]
 severity: high
 target_type: agent
 requires: [tools]
