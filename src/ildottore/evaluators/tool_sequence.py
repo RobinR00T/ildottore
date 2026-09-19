@@ -29,14 +29,13 @@ Semantics:
 Only tool **names** are recorded in the verdict (a name is not sensitive), so no masking is
 needed here; argument-level abuse stays ``tool_call``'s job.
 
-**Two limitations, stated because they bound what a finding from this evaluator means:**
+**Multi-turn chains are covered.** It reads ``ctx.response.tool_calls``, and
+``core.conversation`` accumulates that trace across **every** turn of a conversation (the
+aggregate keeps the final turn's text but the whole dialogue's calls, in order). An agent that
+answers on one turn and acts on the next therefore cannot split the chain to evade the check.
 
-* **Single-turn trace.** It reads ``ctx.response.tool_calls``, and for a multi-turn spec the
-  scored response is the *final* turn only (``core/runner`` scores the last assistant reply),
-  so a chain deliberately split across turns is not seen. The linter therefore refuses
-  ``tool_sequence`` on a spec with two or more ``attack.turns`` rather than letting it report a
-  reassuring, wrong ``0/N``. Lifting this needs the conversation engine to accumulate the trace
-  across turns, which changes what every trace evaluator sees and is tracked separately.
+**One limitation, stated because it bounds what a finding here means:**
+
 * **Argument-blind.** It matches names, so it cannot tell a benign egress from a malicious one:
   "read the record, then mail it **to the user who asked**" completes the same name chain as
   mailing it to an attacker. Pair it with ``tool_call`` (``forbidden_args``) when the

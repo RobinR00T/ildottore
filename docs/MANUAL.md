@@ -444,12 +444,14 @@ steps do not rescue the verdict (otherwise inserting a no-op would evade the che
 are compared ignoring case and surrounding space. A chain that only partly completes is a
 `pass` with the depth reported, because a partial progression is not a confirmed breach.
 
-Two limits worth knowing before you rely on it. It sees only the **final turn's** trace, so it
-is refused on a multi-turn spec rather than allowed to report a confident "0/2" about calls it
-cannot see. And it is **argument-blind**: mailing the record to the user who asked completes the
-same chain as mailing it to an attacker, so pair it with `tool_call`'s `forbidden_args` when the
-destination is what makes the chain harmful. A lone `tool_sequence` fail means "this sequence
-happened", not "this sequence was malicious".
+Multi-turn chains are covered: the conversation engine accumulates the tool trace across every
+turn (the aggregate keeps the final turn's text but the whole dialogue's calls, in order), so an
+agent cannot answer on one turn and act on the next to split the chain.
+
+One limit worth knowing before you rely on it: it is **argument-blind**. Mailing the record to
+the user who asked completes the same chain as mailing it to an attacker, so pair it with
+`tool_call`'s `forbidden_args` when the destination is what makes the chain harmful. A lone
+`tool_sequence` fail means "this sequence happened", not "this sequence was malicious".
 
 **Judge hardening.** The judge is assumed to be attackable. Each judge call carries a
 per-call random tripwire token; the judge is flagged **compromised** if it echoes the

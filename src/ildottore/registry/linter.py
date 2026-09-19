@@ -137,17 +137,17 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
     """Reject evaluator configs that would silently disable the check they declare.
 
     A misconfigured evaluator is worse than a missing one: it reports a reassuring verdict.
-    Two guards, both learned from the ``tool_sequence`` audit:
 
-    * a ``tool_sequence`` with no usable ``patterns`` is a dead arbiter. The schema only
-      requires ``type``, so nothing else catches it, and at runtime it abstains, which under
-      ``combine`` can mask another evaluator's fail.
-    * a ``tool_sequence`` on a multi-turn spec cannot see the chain: only the final turn's
-      trace is scored, so a chain split across turns is reported as a calm ``0/N``. Refuse the
-      combination rather than ship a check that reads as secure precisely when it is blind.
+    Guard learned from the ``tool_sequence`` audit: a ``tool_sequence`` with no usable
+    ``patterns`` is a dead arbiter. The schema only requires ``type``, so nothing else catches
+    it, and at runtime it abstains, which under ``combine`` can mask another evaluator's fail.
+
+    (An earlier version also refused ``tool_sequence`` on a multi-turn spec, because only the
+    final turn's trace was scored and a chain split across turns read as a calm ``0/N``. That
+    restriction is gone: ``core.conversation`` now accumulates the tool trace across every
+    turn, so the evaluator sees the whole dialogue.)
     """
     errors: list[LintError] = []
-    turns = spec.attack.turns or []
     for cfg in spec.evaluators:
         if cfg.type is not EvaluatorType.TOOL_SEQUENCE:
             continue
@@ -158,18 +158,6 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
                     message=(
                         "tool_sequence declares no usable 'patterns'; the ordered tool chain "
                         "is the whole check, so this evaluator would silently never fire"
-                    ),
-                    spec_id=spec.id,
-                )
-            )
-        if len(turns) >= 2:
-            errors.append(
-                LintError(
-                    code=LintCode.EVALUATOR_MISCONFIGURED,
-                    message=(
-                        "tool_sequence is single-turn only: a multi-turn spec scores just the "
-                        "final turn's tool calls, so a chain split across turns would be "
-                        "reported as a reassuring partial progression"
                     ),
                     spec_id=spec.id,
                 )
