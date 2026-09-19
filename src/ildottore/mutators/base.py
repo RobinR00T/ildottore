@@ -73,7 +73,7 @@ def derive_int_seed(seed: str, *, salt: str = "") -> int:
 
 def seeded_rng(seed: str, *, salt: str = "") -> Random:
     """A ``random.Random`` seeded deterministically from the seed string (+ optional salt)."""
-    return Random(derive_int_seed(seed, salt=salt))  # noqa: S311 - not cryptographic; reproducible.
+    return Random(derive_int_seed(seed, salt=salt))  # noqa: S311  # nosec B311
 
 
 class BaseMutator:

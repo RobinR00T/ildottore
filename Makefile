@@ -67,7 +67,7 @@ selfscan: ## Gate 11: self-scan our own judge; fail on new high/critical
 # --- supply chain (advisory, not in the fast static job) ----------------------------
 
 bandit: ## Security linter (no medium/high expected)
-	$(BIN)/bandit -q -r $(SRC)
+	$(BIN)/bandit -q -c pyproject.toml -r $(SRC)
 
 audit: ## Dependency vulnerability audit
 	$(BIN)/pip-audit

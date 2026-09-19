@@ -16,7 +16,7 @@ produced itself, so no untrusted-XML parsing surface is introduced.
 from __future__ import annotations
 
 from collections import OrderedDict
-from xml.etree import ElementTree as ET
+from xml.etree import ElementTree as ET  # nosec B405
 
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext

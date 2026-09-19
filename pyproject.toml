@@ -23,6 +23,9 @@ dependencies = [
   "pyyaml>=6.0",
   "jsonschema>=4.21",
   "httpx>=0.27",
+  # Security floor for anyio, a transitive dep pulled in by httpx: 4.14.2 fixes
+  # CVE-2026-63349 / CVE-2026-63374 / CVE-2026-64847 (pip-audit).
+  "anyio>=4.14.2",
   "jinja2>=3.1",
   "typer>=0.12",
   "rich>=13.7",
@@ -94,6 +97,18 @@ asyncio_mode = "auto"
 [tool.coverage.run]
 source = ["src/ildottore"]
 branch = true
+
+[tool.bandit]
+# B105 (hardcoded_password_string) is skipped because it only ever false-positives here: the
+# evaluator-type / verdict StrEnum values ("secret_leakage", "pass", ...) and the attack
+# translation vocabulary ("password"/"secret" dict keys in mutators/translate.py) are data, not
+# credentials. Hardcoded-secret coverage is not lost: ruff's flake8-bandit S105/S106/S107 stay
+# active (see the `# noqa: S105` markers in shared/enums.py), so a real hardcoded password is
+# still caught at the ruff layer. Inline `# nosec` was avoided for B105 because bandit's line
+# accounting is thrown off by the CJK characters in translate.py (spurious warning storm).
+# B311 (non-crypto random) and B405 (xml import) remain active and are suppressed surgically
+# per-line with `# nosec` where they are by-design (seeded reproducible RNG; writing JUnit XML).
+skips = ["B105"]
 
 # Package-boundary contract (docs/01 §2, §6) lives in the standalone `.importlinter` file
 # (owned by u14-self-validation-ci). It is intentionally NOT duplicated here - having both a
