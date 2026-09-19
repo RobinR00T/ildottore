@@ -82,6 +82,19 @@ class MitreAtlas(_SchemaMirror):
     technique: str | None = None
 
 
+class IoPC(_SchemaMirror):
+    """``iopc`` - Nova IoPC taxonomy mapping, on two axes (``docs/15``).
+
+    ``techniques`` is the *how* (``IOPC-T<family>.<nnn>``), ``impacts`` is the *damage*
+    (``IOPC-R<nnn>``). Both optional so a spec can map on either axis, but the shipped battery
+    is required to carry at least one (pinned by a test, not by the schema, so third-party
+    spec packs are not broken by the field's arrival).
+    """
+
+    techniques: list[str] | None = None
+    impacts: list[str] | None = None
+
+
 class Setup(_SchemaMirror):
     """Declarative ``setup`` block (all fields optional per schema)."""
 
@@ -199,6 +212,7 @@ class AttackSpec(_SchemaMirror):
     owasp: str = Field(pattern=_OWASP_PATTERN)
     mitre_atlas: MitreAtlas
     nist_ai_rmf: str
+    iopc: IoPC | None = None
     severity: Severity
     target_type: TargetType
     requires: list[RequiresCapability]

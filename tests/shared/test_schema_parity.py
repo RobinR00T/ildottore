@@ -44,6 +44,7 @@ from ildottore.shared.models import (
     EvaluatorConfig,
     FixtureCase,
     Fixtures,
+    IoPC,
     MitreAtlas,
     Sampling,
     Scoring,
@@ -120,6 +121,7 @@ _NODE_MODEL_PAIRS: dict[str, tuple[dict[str, Any], type[BaseModel]]] = {
         FixtureCase,
     ),
     "mitre_atlas": (SCHEMA["properties"]["mitre_atlas"], MitreAtlas),
+    "iopc": (SCHEMA["properties"]["iopc"], IoPC),
 }
 
 

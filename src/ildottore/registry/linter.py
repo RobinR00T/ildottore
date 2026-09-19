@@ -21,6 +21,7 @@ from pathlib import Path
 
 from ildottore.shared import AttackSpec, EvaluatorType, VerdictStatus
 from ildottore.shared.enums import RequiresCapability
+from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
@@ -131,6 +132,32 @@ def _check_fixtures(spec: AttackSpec, table: dict[EvaluatorType, StubEvaluator])
             )
         )
     return errors
+
+
+def _check_iopc(spec: AttackSpec) -> list[LintError]:
+    """Every declared IoPC code must exist in the pinned taxonomy universe.
+
+    The JSON schema already rejects a malformed code. This catches the nastier case: a
+    WELL-FORMED code that does not exist (a transposed digit, a code from a newer upstream
+    release). Nothing would ever match it, so it would sit in the spec forever quietly
+    shrinking the coverage numerator, and a coverage metric that under-reports is worse than
+    no metric at all.
+    """
+    if spec.iopc is None:
+        return []
+    unknown = unknown_codes(spec.iopc.techniques, spec.iopc.impacts)
+    return [
+        LintError(
+            code=LintCode.UNKNOWN_FRAMEWORK_CODE,
+            message=(
+                f"iopc code {code!r} is not in the pinned IoPC taxonomy "
+                f"(v{IOPC_TAXONOMY_VERSION}); a well-formed but non-existent code matches "
+                f"nothing and silently shrinks coverage"
+            ),
+            spec_id=spec.id,
+        )
+        for code in unknown
+    ]
 
 
 def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
@@ -251,6 +278,7 @@ def lint_packs(
         findings.extend(_check_framework_map(spec))
         findings.extend(_check_media(spec))
         findings.extend(_check_evaluator_config(spec))
+        findings.extend(_check_iopc(spec))
         findings.extend(_check_fixtures(spec, table))
 
     for pack in packs:
