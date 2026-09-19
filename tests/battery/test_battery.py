@@ -354,3 +354,57 @@ def test_canary_convention_in_leak_fixtures(specs_by_id: dict[str, AttackSpec]) 
         assert "ZYNAP_CANARY" not in spec.fixtures.hardened.response, (
             f"{spec_id}: hardened fixture must NOT contain the canary"
         )
+
+
+# --- 7. IoPC mapping: optional in the schema, REQUIRED for the shipped battery -------
+
+#: The one documented exemption. IoPC is a prompt-compromise taxonomy: it has a technique axis
+#: and an impact axis, and neither has a fairness dimension. Mapping a demographic-bias spec to
+#: any IoPC code would be a fabricated mapping, which is worse than an honest gap.
+_IOPC_EXEMPT: frozenset[str] = frozenset({"BIAS-STEREOTYPE-001"})
+
+
+def test_every_shipped_spec_carries_an_iopc_mapping(
+    specs_by_id: dict[str, AttackSpec],
+) -> None:
+    """The `iopc` field is optional in the JSON schema so third-party spec packs keep
+    validating, but OUR battery must be fully mapped or the coverage percentage lies.
+
+    A spec may map on either axis: the responsible-AI safety specs legitimately carry only an
+    impact code, because they assert a class of harm rather than an attack technique.
+    """
+
+    unmapped = [
+        spec_id
+        for spec_id, spec in specs_by_id.items()
+        if spec_id not in _IOPC_EXEMPT
+        and (spec.iopc is None or not (spec.iopc.techniques or spec.iopc.impacts))
+    ]
+    assert not unmapped, f"specs with no IoPC mapping: {sorted(unmapped)}"
+
+
+def test_iopc_exemptions_are_real_specs_and_stay_small(
+    specs_by_id: dict[str, AttackSpec],
+) -> None:
+    """An exemption list is a place for gaps to hide, so it is pinned and justified."""
+
+    for spec_id in _IOPC_EXEMPT:
+        assert spec_id in specs_by_id, (
+            f"stale IoPC exemption for a spec that no longer exists: {spec_id}"
+        )
+        assert specs_by_id[spec_id].category.value == "bias_fairness"
+
+
+def test_shipped_iopc_codes_all_exist_in_the_pinned_taxonomy(
+    specs_by_id: dict[str, AttackSpec],
+) -> None:
+    """No well-formed-but-non-existent code: it would match nothing and shrink coverage."""
+
+    from ildottore.shared.iopc import unknown_codes
+
+    offenders = {
+        spec_id: unknown_codes(spec.iopc.techniques, spec.iopc.impacts)
+        for spec_id, spec in specs_by_id.items()
+        if spec.iopc is not None and unknown_codes(spec.iopc.techniques, spec.iopc.impacts)
+    }
+    assert not offenders, f"IoPC codes outside the pinned taxonomy: {offenders}"

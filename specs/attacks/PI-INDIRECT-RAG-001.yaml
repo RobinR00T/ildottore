@@ -7,6 +7,8 @@ mitre_atlas:
   tactic: Initial Access
   technique: LLM Prompt Injection (Indirect)
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+iopc:
+  techniques: ["IOPC-T1.002", "IOPC-T2.001"]
 severity: high
 target_type: rag
 requires: [rag]

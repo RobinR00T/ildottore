@@ -9,6 +9,8 @@ mitre_atlas:
   tactic: Execution
   technique: Excessive Agency (goal drift over a task)
 nist_ai_rmf: "MANAGE 2.2 (excessive agency)"
+iopc:
+  techniques: ["IOPC-T4.003"]
 severity: high
 target_type: agent
 requires: [tools]

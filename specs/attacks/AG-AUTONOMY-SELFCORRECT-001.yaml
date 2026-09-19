@@ -7,6 +7,8 @@ mitre_atlas:
   tactic: Impact
   technique: Autonomous self-correction to complete data destruction (T0034)
 nist_ai_rmf: "MANAGE 2.2 (excessive agency / autonomous harmful goal completion)"
+iopc:
+  techniques: ["IOPC-T3.001", "IOPC-T4.003"]
 severity: critical
 target_type: agent
 requires: [tools]

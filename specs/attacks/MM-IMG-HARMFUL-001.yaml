@@ -14,6 +14,9 @@ mitre_atlas:
   tactic: Responsible AI (safety)
   technique: Harmful content generation (multimodal carrier)
 nist_ai_rmf: "MEASURE 2.11 (dangerous / harmful content)"
+iopc:
+  techniques: ["IOPC-T1.001"]
+  impacts: ["IOPC-R036", "IOPC-R028"]
 severity: high
 target_type: model
 requires: [multimodal]

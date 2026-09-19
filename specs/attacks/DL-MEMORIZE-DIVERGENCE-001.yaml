@@ -7,6 +7,9 @@ mitre_atlas:
   tactic: Exfiltration
   technique: LLM Data Leakage (memorization)
 nist_ai_rmf: "MEASURE 2.7 (data confidentiality)"
+iopc:
+  techniques: ["IOPC-T7.001"]
+  impacts: ["IOPC-R034"]
 severity: high
 target_type: model
 requires: [logprobs]

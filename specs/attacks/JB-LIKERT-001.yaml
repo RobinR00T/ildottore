@@ -9,6 +9,9 @@ mitre_atlas:
   tactic: Defense Evasion
   technique: LLM Jailbreak (evaluator-role elicitation)
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+iopc:
+  techniques: ["IOPC-T1.004"]
+  impacts: ["IOPC-R025"]
 severity: high
 target_type: chatbot
 requires: []

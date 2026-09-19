@@ -7,6 +7,9 @@ mitre_atlas:
   tactic: Persistence
   technique: Scheduled Task/Job (cron) / beacon to C2
 nist_ai_rmf: "MANAGE 2.2 (excessive agency / unauthorized persistence)"
+iopc:
+  techniques: ["IOPC-T9.001"]
+  impacts: ["IOPC-R013"]
 severity: high
 target_type: agent
 requires: [tools]
