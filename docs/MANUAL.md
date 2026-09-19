@@ -305,6 +305,37 @@ dottore schema export
 
 Prints the generated JSON Schemas that machine-validate every spec.
 
+### `dottore coverage`
+
+What the battery **tests**, per framework, without running a scan. It reads the spec registry
+only: no target, no credential, nothing leaves the process, so it is safe to run anywhere and
+to paste into a document.
+
+```bash
+dottore coverage                      # every axis, with the gaps named
+dottore coverage --framework iopc     # one framework
+dottore coverage --suite nova-iopc    # what a single suite covers
+dottore coverage --json               # for a dashboard or a report generator
+```
+
+```
+Battery coverage (72 specs, no scan performed)
+
+  OWASP LLM Top 10       8/10   80%
+  MITRE ATLAS tactics   12/14   86%
+  IoPC techniques       25/30   83%
+  IoPC impacts          22/23   96%
+
+  Not covered, IoPC techniques:
+    IOPC-T4.002  Unexpected Code Execution
+    ...
+```
+
+The uncovered codes are printed, not just counted. A coverage percentage with no list of what
+is missing invites the reader to assume the remainder is small; naming the gaps is the honest
+form and doubles as the roadmap. Off-universe values never reach a numerator (a Responsible-AI
+`RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%.
+
 ## 6. The attack battery
 
 72 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and

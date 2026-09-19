@@ -19,6 +19,7 @@ from typing import Annotated
 import typer
 
 from ildottore.cli import calibrate as calibrate_mod
+from ildottore.cli import coverage as coverage_mod
 from ildottore.cli import describe as describe_mod
 from ildottore.cli import diff as diff_mod
 from ildottore.cli import fingerprint as fingerprint_mod
@@ -320,6 +321,47 @@ def fingerprint(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(fp.model_dump_json(indent=2))
+    raise typer.Exit(ExitCode.CLEAN)
+
+
+# --- coverage (read-only, no target) ---------------------------------------------
+
+
+@app.command()
+def coverage(
+    paths: Annotated[list[Path] | None, typer.Argument(help="Spec paths to measure.")] = None,
+    framework: Annotated[
+        str, typer.Option("--framework", help="all | owasp | atlas | iopc.")
+    ] = "all",
+    suite: Annotated[
+        str | None, typer.Option("--suite", help="Narrow to one suite (id or alias).")
+    ] = None,
+    gaps: Annotated[
+        bool, typer.Option("--gaps/--no-gaps", help="List the codes NOT covered.")
+    ] = True,
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+) -> None:
+    """What the battery TESTS, per framework, without running a scan.
+
+    Reads the spec registry only: no target, no credential, nothing sent. Answers the
+    question asked before a run (and before a purchase): "covered, of what?".
+    """
+
+    if framework not in coverage_mod.FRAMEWORK_KEYS:
+        typer.echo(
+            f"error: --framework must be one of {', '.join(coverage_mod.FRAMEWORK_KEYS)}",
+            err=True,
+        )
+        raise typer.Exit(ExitCode.ERROR)
+    try:
+        result = coverage_mod.battery_coverage(list(paths or DEFAULT_SPEC_PATHS), suite=suite)
+    except (OSError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+    if as_json:
+        typer.echo(coverage_mod.render_coverage_json(result, framework=framework))
+    else:
+        typer.echo(coverage_mod.render_coverage(result, framework=framework, show_gaps=gaps))
     raise typer.Exit(ExitCode.CLEAN)
 
 

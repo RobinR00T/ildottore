@@ -37,10 +37,23 @@ versioning: [SemVer](https://semver.org/).
   battery is fully mapped. A well-formed but non-existent code is a new `UNKNOWN_FRAMEWORK_CODE`
   lint error, because it would match nothing and silently shrink coverage.
 
+- **`dottore coverage`**: a read-only command that reports what the battery TESTS, per
+  framework, with no target, no credential and no sends. Answers the question asked before a
+  run (and before a purchase): "covered, of what?". Names the uncovered codes rather than only
+  counting them, supports `--framework`, `--suite` and `--json`.
+
 ### Changed
 - Battery is now **72 specs / 14 suites / 1 pack**, 14 evaluator types.
 - `make bandit` runs with `-c pyproject.toml`; B105 is skipped as redundant with ruff's
   S105/S106/S107, which stay active.
+
+### Fixed
+- **OWASP coverage was over-reported.** The denominator is the ten OWASP LLM categories, but
+  the numerator counted every distinct `owasp` value on a spec, including the Responsible-AI
+  `RAI01` / `RAI02` codes, which belong to a different framework. The battery's 8 LLM codes
+  plus 2 RAI codes read as a perfect 10/10, reporting 100% OWASP coverage while LLM03 and
+  LLM04 are untested; a third RAI code would have pushed it past 100%. ATLAS already filtered
+  against its universe; OWASP now does too (real figure: 8/10).
 
 ### Fixed
 - Repaired 10 spec oracles that passed every gate while measuring something other than the
