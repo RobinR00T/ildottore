@@ -289,6 +289,20 @@
         "tactics": [],
         "total": 14
       },
+      "iopc": {
+        "impacts": {
+          "codes": [],
+          "exercised": 0,
+          "pct": 0.0,
+          "total": 23
+        },
+        "techniques": {
+          "codes": [],
+          "exercised": 0,
+          "pct": 0.0,
+          "total": 30
+        }
+      },
       "owasp": {
         "categories": [
           "LLM01",

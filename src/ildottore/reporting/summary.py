@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
+from ildottore.shared.iopc import IOPC_IMPACT_UNIVERSE, IOPC_TECHNIQUE_UNIVERSE
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
@@ -33,6 +34,9 @@ __all__ = [
 ]
 
 _UNKNOWN = "unknown"
+
+#: The Nova IoPC universe lives in ``shared.iopc`` because the linter validates against it too
+#: and ``registry`` and ``reporting`` are peers that must not import each other (docs/01 §2).
 
 #: OWASP LLM Top 10 (2025) has exactly ten categories (LLM01…LLM10). The denominator for
 #: OWASP surface coverage - a run that exercises 6 distinct categories covers 60%.
@@ -96,7 +100,8 @@ class Coverage:
     """How much of the framework surface a run actually exercised (``docs/12`` P1).
 
     Coverage answers "passed the scan - of *what*?". It reports the fraction of the OWASP
-    LLM Top 10 and the MITRE ATLAS tactic matrix that the run's specs touched, plus a
+    LLM Top 10, the MITRE ATLAS tactic matrix and both Nova IoPC axes (techniques = the how,
+    impacts = the damage) that the run's specs touched, plus a
     breakdown of specs run vs. inconclusive/blocked, so a green run over a narrow suite can
     never masquerade as broad assurance. Percentages are fractions in ``[0, 1]`` (multiply by
     100 for display); ``unknown`` framework buckets (specs the reporter could not attribute)
@@ -119,6 +124,16 @@ class Coverage:
     specs_pass: int
     specs_fail: int
     specs_inconclusive: int
+    #: distinct IoPC TECHNIQUE codes exercised (the *how*); see ``shared.iopc``.
+    iopc_techniques: tuple[str, ...] = ()
+    iopc_techniques_exercised: int = 0
+    iopc_techniques_total: int = 0
+    iopc_techniques_pct: float = 0.0
+    #: distinct IoPC IMPACT codes exercised (the *damage*): the axis a committee reads.
+    iopc_impacts: tuple[str, ...] = ()
+    iopc_impacts_exercised: int = 0
+    iopc_impacts_total: int = 0
+    iopc_impacts_pct: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -203,6 +218,8 @@ def _build_coverage(
 
     owasp_seen: set[str] = set()
     atlas_seen: set[str] = set()
+    iopc_tech_seen: set[str] = set()
+    iopc_impact_seen: set[str] = set()
     specs_pass = 0
     specs_fail = 0
     specs_inconclusive = 0
@@ -221,6 +238,15 @@ def _build_coverage(
         owasp_seen.add(spec.owasp)
         if spec.mitre_atlas.tactic in ATLAS_TACTIC_UNIVERSE:
             atlas_seen.add(spec.mitre_atlas.tactic)
+        if spec.iopc is not None:
+            # Off-universe codes are a spec-authoring error (the linter rejects them), so they
+            # never contribute to the numerator and both percentages stay in [0, 1].
+            iopc_tech_seen.update(
+                c for c in (spec.iopc.techniques or []) if c in IOPC_TECHNIQUE_UNIVERSE
+            )
+            iopc_impact_seen.update(
+                c for c in (spec.iopc.impacts or []) if c in IOPC_IMPACT_UNIVERSE
+            )
 
     owasp_exercised = len(owasp_seen)
     atlas_exercised = len(atlas_seen)
@@ -239,6 +265,18 @@ def _build_coverage(
         specs_pass=specs_pass,
         specs_fail=specs_fail,
         specs_inconclusive=specs_inconclusive,
+        iopc_techniques=tuple(sorted(iopc_tech_seen)),
+        iopc_techniques_exercised=len(iopc_tech_seen),
+        iopc_techniques_total=len(IOPC_TECHNIQUE_UNIVERSE),
+        iopc_techniques_pct=(
+            len(iopc_tech_seen) / len(IOPC_TECHNIQUE_UNIVERSE) if IOPC_TECHNIQUE_UNIVERSE else 0.0
+        ),
+        iopc_impacts=tuple(sorted(iopc_impact_seen)),
+        iopc_impacts_exercised=len(iopc_impact_seen),
+        iopc_impacts_total=len(IOPC_IMPACT_UNIVERSE),
+        iopc_impacts_pct=(
+            len(iopc_impact_seen) / len(IOPC_IMPACT_UNIVERSE) if IOPC_IMPACT_UNIVERSE else 0.0
+        ),
     )
 
 

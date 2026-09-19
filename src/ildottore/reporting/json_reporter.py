@@ -54,6 +54,20 @@ def _coverage_to_wire(coverage: Coverage) -> dict[str, Any]:
             "total": coverage.atlas_total,
             "pct": coverage.atlas_pct,
         },
+        "iopc": {
+            "techniques": {
+                "codes": list(coverage.iopc_techniques),
+                "exercised": coverage.iopc_techniques_exercised,
+                "total": coverage.iopc_techniques_total,
+                "pct": coverage.iopc_techniques_pct,
+            },
+            "impacts": {
+                "codes": list(coverage.iopc_impacts),
+                "exercised": coverage.iopc_impacts_exercised,
+                "total": coverage.iopc_impacts_total,
+                "pct": coverage.iopc_impacts_pct,
+            },
+        },
         "specs": {
             "total": coverage.specs_total,
             "run": coverage.specs_run,

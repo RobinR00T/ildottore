@@ -84,11 +84,15 @@ def test_progress_printer_prints_when_not_quiet() -> None:
 def test_coverage_lines_report_surface_and_disposition() -> None:
     specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
     lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], specs)
-    assert len(lines) == 2
+    assert len(lines) == 3
     assert "OWASP LLM Top 10: 1/10 (10%)" in lines[0]
     assert "MITRE ATLAS tactics:" in lines[0]
-    assert "Specs run: 1" in lines[1]
-    assert "fail 1" in lines[1]
+    # The IoPC axes get their own line: the impact axis is the one a non-technical reader
+    # understands, so it must not be buried next to the technique counts.
+    assert "IoPC techniques:" in lines[1]
+    assert "IoPC impacts:" in lines[1]
+    assert "Specs run: 1" in lines[2]
+    assert "fail 1" in lines[2]
 
 
 def test_progress_printer_summary_always_prints() -> None:
