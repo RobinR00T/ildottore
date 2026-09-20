@@ -208,7 +208,7 @@ required.
 | `--rate FLOAT` | max requests/sec |
 | `--concurrency INT` | max concurrent specs |
 | `--timeout FLOAT` | per-attempt timeout (s) |
-| `--dry-run` | resolve + validate; send nothing |
+| `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
 | `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
 | `--compare` | model-comparison matrix across targets |
 | `--hardened` | replay hardened fixtures (clean-run smoke) |

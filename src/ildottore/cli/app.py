@@ -231,8 +231,8 @@ def run(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
-    if outcome.dry_run and not outcome.estimated:
-        typer.echo("dry-run: resolved plan; sent nothing.")
+    # The dry-run plan is printed by execute_run itself (it owns the resolved plan);
+    # echoing a second, contentless line here just duplicated the header.
     raise typer.Exit(int(outcome.exit_code))
 
 

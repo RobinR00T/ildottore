@@ -48,6 +48,18 @@ versioning: [SemVer](https://semver.org/).
   S105/S106/S107, which stay active.
 
 ### Fixed
+- **A target missing from the scope is now refused instead of silently scanned.** It used to
+  produce a full run whose every spec came back inconclusive, with the real reason
+  ("target not in scope") written only into the JSON report, and an exit code of **0**.
+  Nothing was ever sent (an unscoped target gets an empty allowlist, so default-deny held),
+  but the operator got a green exit and a report of unexplained inconclusives: a false green,
+  which is the worst failure mode for a scanner. `examples/README.md` already promised "a run
+  refuses any target that is not covered", so the code now matches, raising a scope error
+  (exit 3, the documented slot for a bad scope) before any adapter is constructed.
+- **`--dry-run` validates the target, and prints the plan it resolved.** It used to return
+  before the target was even loaded, so the one command whose job is "check my wiring" never
+  looked at the wiring, and reported a single contentless line while holding the scope, the
+  target, the selected battery and the request estimate.
 - **OWASP coverage was over-reported.** The denominator is the ten OWASP LLM categories, but
   the numerator counted every distinct `owasp` value on a spec, including the Responsible-AI
   `RAI01` / `RAI02` codes, which belong to a different framework. The battery's 8 LLM codes
