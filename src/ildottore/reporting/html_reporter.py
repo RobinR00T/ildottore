@@ -24,6 +24,7 @@ from ildottore.reporting.json_reporter import summary_to_wire
 from ildottore.reporting.masking import MaskingContext, Redactor
 from ildottore.reporting.summary import RunSummary
 from ildottore.shared.enums import ReportFormat, VerdictStatus
+from ildottore.shared.iopc import IOPC_IMPACTS
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = ["EVIDENCE_EXCERPT_LEN", "UNSAFE_RENDER_BANNER", "HtmlReporter"]
@@ -117,6 +118,8 @@ class HtmlReporter(BaseReporter):
             finished_at=ctx.run.finished_at,
             targets=[{"id": t.id, "type": t.type.value, "name": t.name} for t in ctx.run.targets],
             summary=summary_to_wire(summary),
+            # Code to title, so the impact axis reads as harm rather than as an opaque id.
+            iopc_impact_titles=dict(IOPC_IMPACTS),
             has_comparison=summary.model_comparison is not None,
             comparison=summary.model_comparison,
             confirmed=confirmed,

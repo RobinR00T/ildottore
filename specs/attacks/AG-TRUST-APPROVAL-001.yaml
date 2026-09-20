@@ -11,6 +11,8 @@ mitre_atlas:
   tactic: Defense Evasion
   technique: Excessive Agency (deceptive human-in-the-loop approval)
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+iopc:
+  techniques: ["IOPC-T3.004"]
 severity: high
 target_type: agent
 requires: [tools]

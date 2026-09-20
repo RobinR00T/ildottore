@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 
 from ildottore.adapters import AnthropicAdapter, OpenAIAdapter, RestAdapter
@@ -25,6 +26,7 @@ from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.run import RunOptions, execute_run
 from ildottore.policy import Endpoint, EndpointAllowlist
+from ildottore.policy.errors import ScopeError
 from ildottore.shared.enums import EvaluatorType, VerdictStatus
 from ildottore.shared.models import Target
 
@@ -235,7 +237,21 @@ def test_off_allowlist_real_target_is_blocked_with_zero_sends(tmp_path, monkeypa
 
 
 @respx.mock
-def test_target_not_in_scope_is_blocked_with_zero_sends(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_target_not_in_scope_is_refused_with_zero_sends(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """An unauthorized target is REFUSED, not scanned into a clean exit.
+
+    This used to produce a full run whose every spec came back inconclusive with
+    "not in scope" buried in the finding reasoning, and an exit code of 0. Nothing was
+    sent (the allowlist is empty for an unscoped target, so default-deny held), but the
+    operator got a green exit and a report of unexplained inconclusives: a false green,
+    which is the worst failure mode for a scanner. `examples/README.md` already promised
+    "a run refuses any target that is not covered", so the code now matches the promise
+    and raises, which the CLI surfaces as exit 3 (the documented slot for a bad scope).
+
+    The zero-sends assertion is kept and is now stronger: the refusal happens before any
+    adapter is constructed at all.
+    """
+
     monkeypatch.setenv("TEST_OPENAI_KEY", "sk-fake-not-a-real-key")
     route = respx.post(_OPENAI_URL).mock(
         return_value=httpx.Response(200, json={"choices": [{"message": {"content": "x"}}]})
@@ -245,11 +261,14 @@ def test_target_not_in_scope_is_blocked_with_zero_sends(tmp_path, monkeypatch) -
     scope_path = _write_scope_for(tmp_path, target_id="some-other-target")
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
 
-    outcome = execute_run(_opts(tmp_path, target_path, scope_path), [specs])
+    with pytest.raises(ScopeError) as excinfo:
+        execute_run(_opts(tmp_path, target_path, scope_path), [specs])
 
     assert not route.called
-    assert outcome.findings[0].reasoning is not None
-    assert "not in scope" in outcome.findings[0].reasoning
+    message = str(excinfo.value)
+    assert "unauthorized-target" in message
+    # The message names what IS authorized, so the operator can fix it without guessing.
+    assert "some-other-target" in message
 
 
 # --- (c) mock targets are unchanged -------------------------------------------------
@@ -311,3 +330,31 @@ def test_stdio_mcp_target_is_real_despite_no_endpoint(tmp_path: Path) -> None:
 def test_target_uses_mock_false_for_real_endpoint_without_mock_scenario(tmp_path: Path) -> None:
     path = _write_real_target(tmp_path)
     assert wiring.target_uses_mock(path) is False
+
+
+def test_dry_run_prints_the_plan_it_resolved(tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
+    """`--dry-run` exists to answer "is my wiring right?", so it must show what it resolved.
+
+    It used to print one contentless line ("resolved plan; sent nothing") while holding the
+    scope, the target, the selected battery and the request estimate, all of which it threw
+    away. It also returned BEFORE loading the target, so it validated nothing about it.
+    """
+
+    from .conftest import write_scope, write_target
+
+    target_path = write_target(tmp_path, mock_scenario="vulnerable")
+    scope_path = write_scope(tmp_path)
+    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+
+    opts = _opts(tmp_path, target_path, scope_path)
+    opts.dry_run = True
+    outcome = execute_run(opts, [specs])
+
+    assert outcome.dry_run is True
+    assert outcome.findings == []
+    out = capsys.readouterr().out
+    assert "sent nothing" in out
+    assert str(scope_path) in out  # which scope authorized it
+    assert "authorized by the scope" in out  # and that the target passed the gate
+    assert "1 specs selected" in out  # the battery it resolved
+    assert "would send:" in out  # and what it would cost

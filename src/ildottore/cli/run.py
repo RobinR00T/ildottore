@@ -255,13 +255,47 @@ def _print_estimate(est: PlanEstimate, *, quiet: bool = False) -> None:
     print("  no per-model pricing known; multiply by your provider's per-token rate.")
 
 
+def _print_dry_run_plan(
+    *,
+    scope_path: Path | None,
+    targets: list[Target],
+    suite: str | None,
+    selected: list[AttackSpec],
+    runs: int,
+    quiet: bool = False,
+) -> None:
+    """Print the plan ``--dry-run`` just resolved (skipped under ``--quiet``).
+
+    Everything here was already computed and then discarded behind a single opaque line.
+    ``--dry-run`` exists to answer "is my wiring right?", which it cannot do without showing
+    what it resolved: which scope authorized which target, which battery was selected, and
+    what the run would cost.
+    """
+
+    if quiet:
+        return
+    est = estimate_plan(selected, runs)
+    print("dry-run: plan resolved, sent nothing.")
+    print(f"  scope:   {scope_path}")
+    for target in targets:
+        print(f"  target:  {target.id} ({target.type.value}) authorized by the scope")
+    print(f"  battery: {suite or 'full battery'}, {len(selected)} specs selected")
+    by_cat: dict[str, int] = {}
+    for spec in selected:
+        by_cat[spec.category.value] = by_cat.get(spec.category.value, 0) + 1
+    for cat, n in sorted(by_cat.items(), key=lambda kv: (-kv[1], kv[0])):
+        print(f"    {cat}: {n}")
+    print(f"  would send: {est.requests} requests over {len(selected)} specs at runs={runs}")
+
+
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     """Run a full campaign for every target and return the aggregate outcome.
 
     Enforces the non-bypassable scope gate first (contract §4 KEEP): without a
     ``--scope`` file this raises :class:`ScopeRequiredError` before any adapter is even
-    constructed - zero sends. ``--dry-run`` resolves + validates the plan and returns
-    with **no** sends and exit code 0.
+    constructed - zero sends. A target absent from the scope raises :class:`ScopeError`
+    (exit 3), refusing rather than running a battery of blocked specs to a clean exit.
+    ``--dry-run`` resolves + validates the plan, prints it, and returns with **no** sends.
     """
 
     if opts.scope is None:
@@ -271,6 +305,26 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         )
 
     scope = wiring.build_scope(opts.scope)
+
+    # Authorization gate, per target, BEFORE anything else is built or any early return.
+    # A target whose id is absent from the scope used to produce a full run of blocked specs
+    # that exited 0: nothing was sent (the allowlist is empty, so default-deny held), but the
+    # operator got a clean exit and a report full of unexplained inconclusives. The reason was
+    # computed and thrown away exactly where a human looks. `examples/README.md` already
+    # promises "a run refuses any target that is not covered", and ExitCode.ERROR is the
+    # documented slot for a bad scope, so this now refuses. It also has to happen here rather
+    # than in the per-target loop, or `--dry-run` (whose entire job is validating the wiring)
+    # would keep returning a false green without ever looking at the target.
+    loaded_targets = [(path, wiring.load_target(path)) for path in opts.targets]
+    unscoped = [t.id for _, t in loaded_targets if scope.target(t.id) is None]
+    if unscoped:
+        authorized = ", ".join(sorted(t.id for t in scope.targets)) or "<none>"
+        raise ScopeError(
+            f"target(s) not covered by the scope: {', '.join(sorted(unscoped))}. "
+            f"The scope authorizes: {authorized}. A target id must match a scope entry "
+            f"exactly; add it (with its endpoint allowlist) or point --scope elsewhere."
+        )
+
     judge_target = wiring.load_target(opts.judge) if opts.judge is not None else None
     registry = wiring.build_registry(spec_paths)
     all_specs = registry.list()
@@ -301,6 +355,14 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         )
 
     if opts.dry_run:
+        _print_dry_run_plan(
+            scope_path=opts.scope,
+            targets=[t for _, t in loaded_targets],
+            suite=opts.suite,
+            selected=selected,
+            runs=opts.runs,
+            quiet=opts.quiet,
+        )
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
 
     timing = resolve_timing(
@@ -316,8 +378,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     results: list[CampaignResult] = []
     all_findings: list[Finding] = []
-    for target_path in opts.targets:
-        target = wiring.load_target(target_path)
+    for target_path, target in loaded_targets:
         # --hardened always forces the offline hardened replay (a mock-only flag);
         # otherwise a target with no ``mock_scenario`` and a real, non-``mock://``
         # ``endpoint`` routes to the live provider adapter (u04) - anything else

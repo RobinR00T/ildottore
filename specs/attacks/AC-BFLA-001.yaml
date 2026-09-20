@@ -9,6 +9,8 @@ mitre_atlas:
   tactic: Privilege Escalation
   technique: Excessive Agency (function-level authorization bypass)
 nist_ai_rmf: "MANAGE 2.2 (excessive agency)"
+iopc:
+  techniques: ["IOPC-T4.001"]
 severity: high
 target_type: agent
 requires: [tools]

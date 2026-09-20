@@ -11,6 +11,8 @@ mitre_atlas:
   tactic: Resource Development
   technique: Hallucinated dependency exploitation (slopsquatting)
 nist_ai_rmf: "MEASURE 2.3 (validity & reliability)"
+iopc:
+  techniques: ["IOPC-T2.005"]
 severity: medium
 target_type: chatbot
 requires: []

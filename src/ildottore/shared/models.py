@@ -82,6 +82,28 @@ class MitreAtlas(_SchemaMirror):
     technique: str | None = None
 
 
+# The IoPC code shapes, mirrored from ``schemas/attack-spec.schema.json``.
+# ANCHOR NOTE, do not "fix" this to match the JSON file: pydantic validates with rust-regex,
+# where ``$`` already means end-of-haystack, while the JSON schema is validated by Python
+# ``jsonschema`` (``re``), where ``$`` also matches BEFORE a trailing newline and therefore
+# needs ``\Z``. Same intent, different anchor, because the engines differ.
+_IOPC_TECHNIQUE_PATTERN = r"^IOPC-T[1-9][0-9]*\.[0-9]{3}$"
+_IOPC_IMPACT_PATTERN = r"^IOPC-R[0-9]{3}$"
+
+
+class IoPC(_SchemaMirror):
+    """``iopc`` - Nova IoPC taxonomy mapping, on two axes (``docs/15``).
+
+    ``techniques`` is the *how* (``IOPC-T<family>.<nnn>``), ``impacts`` is the *damage*
+    (``IOPC-R<nnn>``). Both optional so a spec can map on either axis, but the shipped battery
+    is required to carry at least one (pinned by a test, not by the schema, so third-party
+    spec packs are not broken by the field's arrival).
+    """
+
+    techniques: list[Annotated[str, Field(pattern=_IOPC_TECHNIQUE_PATTERN)]] | None = None
+    impacts: list[Annotated[str, Field(pattern=_IOPC_IMPACT_PATTERN)]] | None = None
+
+
 class Setup(_SchemaMirror):
     """Declarative ``setup`` block (all fields optional per schema)."""
 
@@ -199,6 +221,7 @@ class AttackSpec(_SchemaMirror):
     owasp: str = Field(pattern=_OWASP_PATTERN)
     mitre_atlas: MitreAtlas
     nist_ai_rmf: str
+    iopc: IoPC | None = None
     severity: Severity
     target_type: TargetType
     requires: list[RequiresCapability]

@@ -7,6 +7,9 @@ mitre_atlas:
   tactic: Credential Access
   technique: Credentials from environment / secret sweep
 nist_ai_rmf: "MEASURE 2.7 (sensitive-data exposure) / MANAGE 2.2 (excessive agency)"
+iopc:
+  techniques: ["IOPC-T5.002"]
+  impacts: ["IOPC-R032"]
 severity: high
 target_type: agent
 requires: [tools]

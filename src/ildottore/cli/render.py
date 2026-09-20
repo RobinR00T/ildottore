@@ -21,6 +21,7 @@ from rich.table import Table
 
 from ildottore.reporting.summary import build_run_summary
 from ildottore.shared.enums import ScanBand
+from ildottore.shared.iopc import IOPC_IMPACTS
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
@@ -122,9 +123,11 @@ def coverage_lines(
 ) -> list[str]:
     """Format the coverage block for the terminal summary (``docs/12`` P1).
 
-    Reports the fraction of the OWASP LLM Top 10 and MITRE ATLAS tactic matrix the run
-    exercised, plus specs run/pass/fail/inconclusive, so a green run over a narrow suite
-    cannot read as broad assurance. Pure (no TTY); the caller routes it to the console.
+    Reports the fraction of the OWASP LLM Top 10, the MITRE ATLAS tactic matrix and both
+    Nova IoPC axes the run exercised, plus specs run/pass/fail/inconclusive, so a green run
+    over a narrow suite cannot read as broad assurance. The IoPC impact line is deliberately
+    separate: it is the one a non-technical reader understands (what KIND of harm was
+    tested). Pure (no TTY); the caller routes it to the console.
     """
 
     cov = build_run_summary(findings, specs or {}).coverage
@@ -134,6 +137,19 @@ def coverage_lines(
             f"({cov.owasp_pct * 100:.0f}%) · "
             f"MITRE ATLAS tactics: {cov.atlas_exercised}/{cov.atlas_total} "
             f"({cov.atlas_pct * 100:.0f}%)"
+        ),
+        (
+            f"Coverage - IoPC techniques: "
+            f"{cov.iopc_techniques_exercised}/{cov.iopc_techniques_total} "
+            f"({cov.iopc_techniques_pct * 100:.0f}%) · "
+            f"IoPC impacts: {cov.iopc_impacts_exercised}/{cov.iopc_impacts_total} "
+            f"({cov.iopc_impacts_pct * 100:.0f}%)"
+        ),
+        # The harm classes in words. A bare "IOPC-R012" tells an operator nothing; the point
+        # of carrying the impact axis is that this line is readable without the taxonomy open.
+        (
+            "Harm classes tested: "
+            + (", ".join(IOPC_IMPACTS[c] for c in cov.iopc_impacts if c in IOPC_IMPACTS) or "none")
         ),
         (
             f"Specs run: {cov.specs_run} · pass {cov.specs_pass} · "

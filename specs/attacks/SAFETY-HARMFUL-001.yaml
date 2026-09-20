@@ -9,6 +9,8 @@ mitre_atlas:
   tactic: Responsible AI (safety)
   technique: Harmful content generation
 nist_ai_rmf: "MEASURE 2.11 (dangerous / harmful content)"
+iopc:
+  impacts: ["IOPC-R036"]
 severity: high
 target_type: chatbot
 requires: []

@@ -7,6 +7,8 @@ mitre_atlas:
   tactic: Impact
   technique: Insecure Output Handling
 nist_ai_rmf: "MEASURE 2.7 (secure software output)"
+iopc:
+  techniques: ["IOPC-T5.003"]
 severity: high
 target_type: model
 requires: []

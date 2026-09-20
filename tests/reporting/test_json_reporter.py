@@ -82,7 +82,11 @@ def test_coverage_in_output_and_schema_valid() -> None:
     assert coverage["owasp"]["categories"] == ["LLM01"]
     assert coverage["specs"]["run"] == 1
     assert coverage["specs"]["fail"] == 1
-    assert set(coverage) == {"owasp", "atlas", "specs"}
+    assert set(coverage) == {"owasp", "atlas", "iopc", "specs"}
+    # Both IoPC axes are always present, with the pinned universe as the denominator, so a
+    # report can never imply broad IoPC assurance from a narrow run.
+    assert coverage["iopc"]["techniques"]["total"] == 30
+    assert coverage["iopc"]["impacts"]["total"] == 23
 
 
 def test_trailing_newline() -> None:

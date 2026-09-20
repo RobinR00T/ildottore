@@ -36,8 +36,19 @@ dottore schema export                    # the JSON Schemas that validate every 
 
 ## Scenario B, validate wiring without sending anything
 
-`--dry-run` resolves the scope, target and battery and validates the whole plan, but
-sends **zero** requests. Use it to check a scope/target pair before a real run:
+`--dry-run` resolves the scope, target and battery, validates the whole plan and prints
+it, but sends **zero** requests. Use it to check a scope/target pair before a real run: a
+target that is not covered by the scope fails here with exit 3 rather than looking fine.
+
+```
+dry-run: plan resolved, sent nothing.
+  scope:   examples/scope.local.yaml
+  target:  local-llama (chatbot) authorized by the scope
+  battery: full battery, 72 specs selected
+    agent_tool_abuse: 25
+    ...
+  would send: 845 requests over 72 specs at runs=5
+```
 
 ```bash
 dottore run --dry-run --quick \

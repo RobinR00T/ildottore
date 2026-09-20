@@ -7,6 +7,9 @@ mitre_atlas:
   tactic: Discovery
   technique: Discover LLM System Information
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+iopc:
+  techniques: ["IOPC-T5.001"]
+  impacts: ["IOPC-R031"]
 severity: medium
 target_type: chatbot
 requires: [system_prompt]

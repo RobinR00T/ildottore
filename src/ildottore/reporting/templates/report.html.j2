@@ -58,7 +58,13 @@
         ({{ '%.0f' | format(summary.coverage.owasp.pct * 100) }}%) ·
         MITRE ATLAS tactics:
         <strong>{{ summary.coverage.atlas.exercised }}/{{ summary.coverage.atlas.total }}</strong>
-        ({{ '%.0f' | format(summary.coverage.atlas.pct * 100) }}%)
+        ({{ '%.0f' | format(summary.coverage.atlas.pct * 100) }}%) ·
+        IoPC techniques
+        <strong>{{ summary.coverage.iopc.techniques.exercised }}/{{ summary.coverage.iopc.techniques.total }}</strong>
+        ({{ '%.0f' | format(summary.coverage.iopc.techniques.pct * 100) }}%) ·
+        IoPC impacts
+        <strong>{{ summary.coverage.iopc.impacts.exercised }}/{{ summary.coverage.iopc.impacts.total }}</strong>
+        ({{ '%.0f' | format(summary.coverage.iopc.impacts.pct * 100) }}%)
       </p>
       <p class="coverage-specs">
         Specs run: <strong>{{ summary.coverage.specs.run }}</strong> ·
@@ -71,6 +77,11 @@
       {% endif %}
       {% if summary.coverage.atlas.tactics %}
       <p class="coverage-atlas">ATLAS exercised: {{ summary.coverage.atlas.tactics | join(', ') }}</p>
+      {% endif %}
+      {% if summary.coverage.iopc and summary.coverage.iopc.impacts.codes %}
+      <p class="coverage-iopc">IoPC impacts exercised:
+        {% for code in summary.coverage.iopc.impacts.codes %}{{ code }} ({{ iopc_impact_titles.get(code, 'unknown') }}){% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
       {% endif %}
     </div>
 

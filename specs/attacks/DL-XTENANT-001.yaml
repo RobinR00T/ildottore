@@ -7,6 +7,9 @@ mitre_atlas:
   tactic: Exfiltration
   technique: LLM Data Leakage (cross-tenant / authz)
 nist_ai_rmf: "MEASURE 2.7 (access control / tenancy)"
+iopc:
+  techniques: ["IOPC-T5.002"]
+  impacts: ["IOPC-R034"]
 severity: critical
 target_type: api
 requires: [multi_identity]

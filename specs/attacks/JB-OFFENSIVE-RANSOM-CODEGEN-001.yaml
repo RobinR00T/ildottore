@@ -7,6 +7,9 @@ mitre_atlas:
   tactic: Resource Development
   technique: Develop Capabilities (offensive tooling)
 nist_ai_rmf: "MEASURE 2.7 (harmful capability / insecure output)"
+iopc:
+  techniques: ["IOPC-T1.004"]
+  impacts: ["IOPC-R009", "IOPC-R014", "IOPC-R037"]
 severity: high
 target_type: model
 requires: []

@@ -9,6 +9,9 @@ mitre_atlas:
   tactic: Collection
   technique: Excessive Agency (object-level authorization bypass)
 nist_ai_rmf: "MEASURE 2.7 (data confidentiality)"
+iopc:
+  techniques: ["IOPC-T4.001", "IOPC-T5.002"]
+  impacts: ["IOPC-R033"]
 severity: critical
 target_type: agent
 requires: [tools]

@@ -23,12 +23,49 @@ versioning: [SemVer](https://semver.org/).
   chain of individually-authorized tool calls completes, which a per-call check cannot express.
   Closes the last open row of `docs/14`.
 - New `EVALUATOR_MISCONFIGURED` lint rule: an evaluator that would silently never fire (a
-  `tool_sequence` with no `patterns`, or one declared on a multi-turn spec) is now a lint error.
+  `tool_sequence` with no `patterns`) is now a lint error.
+- **Machine-readable Nova IoPC mapping.** Specs gain an optional two-axis `iopc:` block
+  (`techniques` = the how, `impacts` = the damage). The taxonomy universe is pinned in
+  `shared/iopc.py` (30 techniques + 23 impacts, transcribed from the live taxonomy on
+  2026-09-19: the published v2.0.0-alpha artifact is an older, smaller snapshot), so the run
+  report measures IoPC coverage against a real denominator in the terminal, JSON and HTML
+  outputs, alongside OWASP and ATLAS. All 72 shipped specs are mapped (**25/30 techniques,
+  22/23 impacts**); the uncovered codes are the out-of-scope decisions recorded in `docs/15`,
+  plus `IOPC-T4.002` Unexpected Code Execution, which an audit of the mapping turned from a
+  false claim into an acknowledged gap. The field is optional in
+  the JSON schema so third-party spec packs keep validating, and a test pins that our own
+  battery is fully mapped. A well-formed but non-existent code is a new `UNKNOWN_FRAMEWORK_CODE`
+  lint error, because it would match nothing and silently shrink coverage.
+
+- **`dottore coverage`**: a read-only command that reports what the battery TESTS, per
+  framework, with no target, no credential and no sends. Answers the question asked before a
+  run (and before a purchase): "covered, of what?". Names the uncovered codes rather than only
+  counting them, supports `--framework`, `--suite` and `--json`.
 
 ### Changed
 - Battery is now **72 specs / 14 suites / 1 pack**, 14 evaluator types.
 - `make bandit` runs with `-c pyproject.toml`; B105 is skipped as redundant with ruff's
   S105/S106/S107, which stay active.
+
+### Fixed
+- **A target missing from the scope is now refused instead of silently scanned.** It used to
+  produce a full run whose every spec came back inconclusive, with the real reason
+  ("target not in scope") written only into the JSON report, and an exit code of **0**.
+  Nothing was ever sent (an unscoped target gets an empty allowlist, so default-deny held),
+  but the operator got a green exit and a report of unexplained inconclusives: a false green,
+  which is the worst failure mode for a scanner. `examples/README.md` already promised "a run
+  refuses any target that is not covered", so the code now matches, raising a scope error
+  (exit 3, the documented slot for a bad scope) before any adapter is constructed.
+- **`--dry-run` validates the target, and prints the plan it resolved.** It used to return
+  before the target was even loaded, so the one command whose job is "check my wiring" never
+  looked at the wiring, and reported a single contentless line while holding the scope, the
+  target, the selected battery and the request estimate.
+- **OWASP coverage was over-reported.** The denominator is the ten OWASP LLM categories, but
+  the numerator counted every distinct `owasp` value on a spec, including the Responsible-AI
+  `RAI01` / `RAI02` codes, which belong to a different framework. The battery's 8 LLM codes
+  plus 2 RAI codes read as a perfect 10/10, reporting 100% OWASP coverage while LLM03 and
+  LLM04 are untested; a third RAI code would have pushed it past 100%. ATLAS already filtered
+  against its universe; OWASP now does too (real figure: 8/10).
 
 ### Fixed
 - Repaired 10 spec oracles that passed every gate while measuring something other than the

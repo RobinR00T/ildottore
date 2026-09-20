@@ -29,6 +29,21 @@
       }
     },
     "nist_ai_rmf": { "type": "string" },
+    "iopc": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Nova IoPC taxonomy mapping (docs/15). Optional so third-party spec packs keep validating; the shipped battery is required to carry it by test.",
+      "properties": {
+        "techniques": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^IOPC-T[1-9][0-9]*\\.[0-9]{3}\\Z" }
+        },
+        "impacts": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^IOPC-R[0-9]{3}\\Z" }
+        }
+      }
+    },
     "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
     "target_type": { "type": "string", "enum": ["model", "chatbot", "api", "agent", "rag"] },
     "requires": {

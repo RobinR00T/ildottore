@@ -17,26 +17,47 @@ The model-comparison matrix is populated only when the run spans **more than one
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
+from ildottore.shared.iopc import (
+    IOPC_IMPACT_UNIVERSE,
+    IOPC_IMPACTS,
+    IOPC_TECHNIQUE_UNIVERSE,
+    IOPC_TECHNIQUES,
+)
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
     "ATLAS_TACTIC_UNIVERSE",
     "OWASP_LLM_TOTAL",
+    "OWASP_LLM_UNIVERSE",
+    "AxisCoverage",
+    "BatteryCoverage",
     "Coverage",
     "FrameworkCounts",
     "MatrixCell",
     "ModelComparison",
     "RunSummary",
+    "build_battery_coverage",
     "build_run_summary",
 ]
 
 _UNKNOWN = "unknown"
 
+# The Nova IoPC universe lives in ``shared.iopc`` because the linter validates against it too
+# and ``registry`` and ``reporting`` are peers that must not import each other (docs/01 §2).
+
 #: OWASP LLM Top 10 (2025) has exactly ten categories (LLM01…LLM10). The denominator for
 #: OWASP surface coverage - a run that exercises 6 distinct categories covers 60%.
 OWASP_LLM_TOTAL = 10
+
+#: The ten codes themselves. Specs may also carry a Responsible-AI code (``RAI01``,
+#: ``RAI02``), which is a DIFFERENT framework and must never count toward this denominator:
+#: without this filter the battery's 8 LLM codes plus 2 RAI codes read as a perfect 10/10,
+#: reporting 100% OWASP coverage while LLM03 and LLM04 are untested. ATLAS already filters
+#: against its universe for the same reason.
+OWASP_LLM_UNIVERSE: tuple[str, ...] = tuple(f"LLM{n:02d}" for n in range(1, OWASP_LLM_TOTAL + 1))
 
 #: The MITRE ATLAS tactic universe (the columns of the ATLAS matrix). Coverage is measured
 #: against this known set so "passed the scan" cannot hide an unexercised tactic. Specs carry
@@ -96,7 +117,8 @@ class Coverage:
     """How much of the framework surface a run actually exercised (``docs/12`` P1).
 
     Coverage answers "passed the scan - of *what*?". It reports the fraction of the OWASP
-    LLM Top 10 and the MITRE ATLAS tactic matrix that the run's specs touched, plus a
+    LLM Top 10, the MITRE ATLAS tactic matrix and both Nova IoPC axes (techniques = the how,
+    impacts = the damage) that the run's specs touched, plus a
     breakdown of specs run vs. inconclusive/blocked, so a green run over a narrow suite can
     never masquerade as broad assurance. Percentages are fractions in ``[0, 1]`` (multiply by
     100 for display); ``unknown`` framework buckets (specs the reporter could not attribute)
@@ -119,6 +141,16 @@ class Coverage:
     specs_pass: int
     specs_fail: int
     specs_inconclusive: int
+    #: distinct IoPC TECHNIQUE codes exercised (the *how*); see ``shared.iopc``.
+    iopc_techniques: tuple[str, ...] = ()
+    iopc_techniques_exercised: int = 0
+    iopc_techniques_total: int = 0
+    iopc_techniques_pct: float = 0.0
+    #: distinct IoPC IMPACT codes exercised (the *damage*): the axis a committee reads.
+    iopc_impacts: tuple[str, ...] = ()
+    iopc_impacts_exercised: int = 0
+    iopc_impacts_total: int = 0
+    iopc_impacts_pct: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -203,6 +235,8 @@ def _build_coverage(
 
     owasp_seen: set[str] = set()
     atlas_seen: set[str] = set()
+    iopc_tech_seen: set[str] = set()
+    iopc_impact_seen: set[str] = set()
     specs_pass = 0
     specs_fail = 0
     specs_inconclusive = 0
@@ -218,9 +252,19 @@ def _build_coverage(
         spec = spec_map.get(finding.spec_id)
         if spec is None:
             continue
-        owasp_seen.add(spec.owasp)
+        if spec.owasp in OWASP_LLM_UNIVERSE:
+            owasp_seen.add(spec.owasp)
         if spec.mitre_atlas.tactic in ATLAS_TACTIC_UNIVERSE:
             atlas_seen.add(spec.mitre_atlas.tactic)
+        if spec.iopc is not None:
+            # Off-universe codes are a spec-authoring error (the linter rejects them), so they
+            # never contribute to the numerator and both percentages stay in [0, 1].
+            iopc_tech_seen.update(
+                c for c in (spec.iopc.techniques or []) if c in IOPC_TECHNIQUE_UNIVERSE
+            )
+            iopc_impact_seen.update(
+                c for c in (spec.iopc.impacts or []) if c in IOPC_IMPACT_UNIVERSE
+            )
 
     owasp_exercised = len(owasp_seen)
     atlas_exercised = len(atlas_seen)
@@ -239,6 +283,18 @@ def _build_coverage(
         specs_pass=specs_pass,
         specs_fail=specs_fail,
         specs_inconclusive=specs_inconclusive,
+        iopc_techniques=tuple(sorted(iopc_tech_seen)),
+        iopc_techniques_exercised=len(iopc_tech_seen),
+        iopc_techniques_total=len(IOPC_TECHNIQUE_UNIVERSE),
+        iopc_techniques_pct=(
+            len(iopc_tech_seen) / len(IOPC_TECHNIQUE_UNIVERSE) if IOPC_TECHNIQUE_UNIVERSE else 0.0
+        ),
+        iopc_impacts=tuple(sorted(iopc_impact_seen)),
+        iopc_impacts_exercised=len(iopc_impact_seen),
+        iopc_impacts_total=len(IOPC_IMPACT_UNIVERSE),
+        iopc_impacts_pct=(
+            len(iopc_impact_seen) / len(IOPC_IMPACT_UNIVERSE) if IOPC_IMPACT_UNIVERSE else 0.0
+        ),
     )
 
 
@@ -301,4 +357,98 @@ def build_run_summary(
         needs_review_count=needs_review,
         coverage=_build_coverage(findings, spec_map),
         model_comparison=comparison,
+    )
+
+
+# --- static battery coverage (no scan) ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class AxisCoverage:
+    """What one framework axis the SPEC REGISTRY covers, independent of any run."""
+
+    key: str
+    label: str
+    exercised: int
+    total: int
+    pct: float
+    #: (code, human title) pairs, sorted. ``title`` falls back to the code when the framework
+    #: has no separate name (OWASP codes, ATLAS tactic names are already readable).
+    covered: tuple[tuple[str, str], ...]
+    missing: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class BatteryCoverage:
+    """Coverage of the shipped battery itself: what these specs TEST, before any target.
+
+    The run-time :class:`Coverage` answers "this run exercised X of Y". This answers the
+    question asked *before* a run, and before a purchase: "what does this battery actually
+    test?". It is computed from the specs alone, so it needs no target, no key and no sends.
+    """
+
+    specs: int
+    axes: tuple[AxisCoverage, ...]
+
+
+def _axis(
+    key: str,
+    label: str,
+    universe: tuple[str, ...],
+    seen: set[str],
+    titles: Mapping[str, str] | None = None,
+) -> AxisCoverage:
+    def title(code: str) -> str:
+        return (titles or {}).get(code, code)
+
+    covered = tuple(sorted((c, title(c)) for c in universe if c in seen))
+    missing = tuple(sorted((c, title(c)) for c in universe if c not in seen))
+    return AxisCoverage(
+        key=key,
+        label=label,
+        exercised=len(covered),
+        total=len(universe),
+        pct=(len(covered) / len(universe) if universe else 0.0),
+        covered=covered,
+        missing=missing,
+    )
+
+
+def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
+    """Compute what the given specs cover, on every framework axis, with no run involved.
+
+    Off-universe values never reach a numerator (a Responsible-AI ``RAI0x`` code is not an
+    OWASP LLM category, an unrecognised ATLAS tactic name is a spec-authoring error, an IoPC
+    code outside the pinned taxonomy is a lint error), so every percentage stays in [0, 1].
+    """
+
+    spec_list = list(specs)
+    owasp: set[str] = set()
+    atlas: set[str] = set()
+    tech: set[str] = set()
+    impact: set[str] = set()
+
+    for spec in spec_list:
+        if spec.owasp in OWASP_LLM_UNIVERSE:
+            owasp.add(spec.owasp)
+        if spec.mitre_atlas.tactic in ATLAS_TACTIC_UNIVERSE:
+            atlas.add(spec.mitre_atlas.tactic)
+        if spec.iopc is not None:
+            tech.update(c for c in (spec.iopc.techniques or []) if c in IOPC_TECHNIQUE_UNIVERSE)
+            impact.update(c for c in (spec.iopc.impacts or []) if c in IOPC_IMPACT_UNIVERSE)
+
+    return BatteryCoverage(
+        specs=len(spec_list),
+        axes=(
+            _axis("owasp", "OWASP LLM Top 10", OWASP_LLM_UNIVERSE, owasp),
+            _axis("atlas", "MITRE ATLAS tactics", ATLAS_TACTIC_UNIVERSE, atlas),
+            _axis(
+                "iopc_techniques",
+                "IoPC techniques",
+                IOPC_TECHNIQUE_UNIVERSE,
+                tech,
+                IOPC_TECHNIQUES,
+            ),
+            _axis("iopc_impacts", "IoPC impacts", IOPC_IMPACT_UNIVERSE, impact, IOPC_IMPACTS),
+        ),
     )
