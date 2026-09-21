@@ -19,6 +19,17 @@
   <div class="unsafe-banner" role="alert">{{ unsafe_banner }}</div>
   {% endif %}
 
+  {# A run that did not finish says so above everything else: every count below it is a
+     count of what completed, not of what was planned. `status` is optional in report-1.0,
+     so an older document renders exactly as before. #}
+  {% if summary.status and not summary.status.complete %}
+  <div class="incomplete-banner" role="alert">
+    INCOMPLETE RUN ({{ summary.status.state }}) - this campaign did not finish, so every
+    figure below counts only the specs that completed.
+    {% if summary.status.reason %}<br>{{ summary.status.reason }}{% endif %}
+  </div>
+  {% endif %}
+
   <section class="targets">
     <h2>Targets</h2>
     <ul>
@@ -53,25 +64,40 @@
     <h3>Coverage</h3>
     <div class="coverage">
       <p>
-        OWASP LLM Top 10:
+        OWASP LLM Top 10 ({{ owasp_edition }}):
         <strong>{{ summary.coverage.owasp.exercised }}/{{ summary.coverage.owasp.total }}</strong>
-        ({{ '%.0f' | format(summary.coverage.owasp.pct * 100) }}%) ·
-        MITRE ATLAS tactics:
+        ({{ summary.coverage.owasp | pct }}) ·
+        MITRE ATLAS tactics ({{ atlas_release }}):
         <strong>{{ summary.coverage.atlas.exercised }}/{{ summary.coverage.atlas.total }}</strong>
-        ({{ '%.0f' | format(summary.coverage.atlas.pct * 100) }}%) ·
-        IoPC techniques
+        ({{ summary.coverage.atlas | pct }}) ·
+        IoPC techniques ({{ iopc_version }})
         <strong>{{ summary.coverage.iopc.techniques.exercised }}/{{ summary.coverage.iopc.techniques.total }}</strong>
-        ({{ '%.0f' | format(summary.coverage.iopc.techniques.pct * 100) }}%) ·
+        ({{ summary.coverage.iopc.techniques | pct }}) ·
         IoPC impacts
         <strong>{{ summary.coverage.iopc.impacts.exercised }}/{{ summary.coverage.iopc.impacts.total }}</strong>
-        ({{ '%.0f' | format(summary.coverage.iopc.impacts.pct * 100) }}%)
+        ({{ summary.coverage.iopc.impacts | pct }})
       </p>
       <p class="coverage-specs">
-        Specs run: <strong>{{ summary.coverage.specs.run }}</strong> ·
+        Specs run:
+        <strong>{{ summary.coverage.specs.run }}</strong> of
+        {{ summary.coverage.specs.total }} planned ·
         pass {{ summary.coverage.specs.pass }} ·
         fail {{ summary.coverage.specs.fail }} ·
         inconclusive {{ summary.coverage.specs.inconclusive }}
       </p>
+      {% if summary.coverage.not_exercised %}
+      <p class="coverage-not-exercised">
+        Not exercised: <strong>{{ summary.coverage.not_exercised | length }}</strong> spec(s)
+        sent no request (blocked by policy, or a capability the target does not declare), so
+        their framework codes are not counted as covered.
+      </p>
+      {% endif %}
+      {% if summary.coverage.off_universe %}
+      <p class="coverage-off-universe" role="alert">
+        WARNING: {{ summary.coverage.off_universe | length }} framework value(s) outside their
+        pinned universe were not counted.
+      </p>
+      {% endif %}
       {% if summary.coverage.owasp.categories %}
       <p class="coverage-owasp">OWASP exercised: {{ summary.coverage.owasp.categories | join(', ') }}</p>
       {% endif %}

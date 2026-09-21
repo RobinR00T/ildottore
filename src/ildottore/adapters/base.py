@@ -182,6 +182,14 @@ class BaseAdapter(ABC):
     retry: RetryConfig = field(default_factory=RetryConfig)
     redactor: Redactor = field(default_factory=Redactor)
     client: httpx.AsyncClient | None = None
+    #: The path the OPERATOR declared in ``target.endpoint``, when it differs from the
+    #: provider default. ``_full_url`` was ``base_url + _endpoint_path`` with a hardcoded
+    #: path, so a gateway-hosted model had its path silently discarded:
+    #: ``https://x.openai.azure.com/openai/deployments/gpt4o/chat/completions`` went on the
+    #: wire as ``https://x.openai.azure.com/v1/chat/completions``. Azure OpenAI, LiteLLM and
+    #: every corporate gateway host the API under a prefix, so the declared path is data, not
+    #: decoration: the scope allowlist is built from it and the request has to match.
+    path_override: str | None = None
 
     # --- provider hooks (subclass contract) -----------------------------------
 
@@ -207,10 +215,16 @@ class BaseAdapter(ABC):
 
     # --- wire mechanics --------------------------------------------------------
 
-    def _full_url(self) -> str:
-        """Compose the absolute endpoint URL (base + provider path)."""
+    @property
+    def _request_path(self) -> str:
+        """The path this adapter will actually request: declared first, provider default."""
 
-        return self.base_url.rstrip("/") + self._endpoint_path
+        return self.path_override or self._endpoint_path
+
+    def _full_url(self) -> str:
+        """Compose the absolute endpoint URL (base + the path that will be requested)."""
+
+        return self.base_url.rstrip("/") + self._request_path
 
     def _redact_ids(self, ids: Mapping[str, Any]) -> dict[str, Any]:
         """Redactor-mask provider request/response ids before they persist."""
@@ -280,7 +294,7 @@ class BaseAdapter(ABC):
             return self._handle_final_response(response)
 
         raise AdapterEnvError(
-            f"{self.id}: exhausted {attempts} attempt(s) to {self._endpoint_path}: "
+            f"{self.id}: exhausted {attempts} attempt(s) to {self._request_path}: "
             f"{last_env_detail or 'transient failure'}"
         )
 
@@ -307,5 +321,5 @@ class BaseAdapter(ABC):
         # A non-retryable 4xx (auth, bad request) is a product/config defect -
         # not something a retry will fix, and not to be masked as a flake.
         raise AdapterProductError(
-            f"{self.id}: non-retryable HTTP {response.status_code} from {self._endpoint_path}"
+            f"{self.id}: non-retryable HTTP {response.status_code} from {self._request_path}"
         )

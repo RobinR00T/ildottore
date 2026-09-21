@@ -33,6 +33,15 @@ from ildottore.policy.scope import Scope
 from ildottore.shared.enums import Category
 from ildottore.shared.models import AttackSpec
 
+__all__ = [
+    "CheckResult",
+    "PolicyEngine",
+    "PolicyPack",
+    "authorize_target",
+    "enabled_specs",
+    "load_pack",
+]
+
 # Categories that constitute "layer-B" / PII-elicitation and are off by default
 # (docs/11 §5 DL4/DL5). Layer-B is expressed by the pack's ``enable_layer_b`` flag;
 # a spec is treated as layer-B via its ``requires``/tags below.
@@ -123,6 +132,35 @@ def _is_pii_elicitation(spec: AttackSpec) -> bool:
     return _PII_ELICIT_TAG in tags
 
 
+def authorize_target(scope: Scope, target_id: str, endpoint: str) -> CheckResult:
+    """Steps 1 and 2 of :meth:`PolicyEngine.check`: in scope, and reachable at ``endpoint``?
+
+    Extracted so the pre-flight gate in the CLI and the per-attempt gate in the engine cannot
+    drift apart. They already had: the CLI asked only ``scope.target(id) is not None``, which
+    is **membership, not reachability**. ``ScopeTarget.endpoints`` defaults to ``[]``, so a
+    scope naming the right target id with no endpoint allowlist (or a typo in ``host``) passed
+    the CLI gate and was then denied by this engine on every attempt, turning the refusal back
+    into the run of unexplained inconclusives the gate exists to prevent.
+
+    ``endpoint`` must be the same string the runner will authorize, which is what
+    ``cli.wiring.scope_endpoint_for`` produces: the scope's ``base_url`` for the target, or
+    ``stdio://<command line>`` for a stdio MCP target.
+    """
+
+    target = scope.target(target_id)
+    if target is None:
+        return _blocked(f"target {target_id!r} not in scope")
+    if endpoint.startswith("stdio://"):
+        command = endpoint[len("stdio://") :]
+        if command not in target.commands:
+            return _blocked(f"stdio command not authorized for {target_id!r}")
+        return _ALLOW
+    allowlist = EndpointAllowlist.from_target(target)
+    if not allowlist.is_allowed(endpoint):
+        return _blocked(f"endpoint {endpoint!r} not on allowlist for {target_id!r}")
+    return _ALLOW
+
+
 class PolicyEngine:
     """Central authorization gate - ``check`` returns allow / blocked_by_policy.
 
@@ -148,22 +186,12 @@ class PolicyEngine:
         ``endpoint`` is the concrete request URL the adapter would call.
         """
 
-        # 1. target in scope? (default-deny)
-        target = self._scope.target(target_id)
-        if target is None:
-            return _blocked(f"target {target_id!r} not in scope")
-
-        # 2. authorized to reach this target? (S3 default-deny)
-        #    A stdio MCP target has no request URL: authorize by exact command line against the
-        #    scope's `commands` allowlist. Every other transport authorizes by endpoint URL.
-        if endpoint.startswith("stdio://"):
-            command = endpoint[len("stdio://") :]
-            if command not in target.commands:
-                return _blocked(f"stdio command not authorized for {target_id!r}")
-        else:
-            allowlist = EndpointAllowlist.from_target(target)
-            if not allowlist.is_allowed(endpoint):
-                return _blocked(f"endpoint {endpoint!r} not on allowlist for {target_id!r}")
+        # 1-2. target in scope, and authorized to reach it at this endpoint? (S3
+        #      default-deny). Shared with the CLI's pre-flight gate via
+        #      :func:`authorize_target`, so the two cannot answer differently.
+        reachable = authorize_target(self._scope, target_id, endpoint)
+        if not reachable.allowed:
+            return reachable
 
         # 3. explicit deny always wins.
         if self._pack.is_denied(spec.id, spec.category):

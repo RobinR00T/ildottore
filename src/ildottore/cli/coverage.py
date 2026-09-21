@@ -10,9 +10,16 @@ Two design choices worth stating:
 * **The gaps are printed, not just the percentages.** A coverage number with no list of what
   is missing invites the reader to assume the remainder is small or unimportant. Naming the
   uncovered codes is the honest form, and it is also the useful one: it is the roadmap.
-* **Off-universe values never count.** A Responsible-AI ``RAI0x`` code is not an OWASP LLM
-  category and an IoPC code outside the pinned taxonomy is a lint error, so neither reaches a
-  numerator. Percentages therefore cannot exceed 100%.
+* **Off-universe values never count**, and this command says how many it dropped. A
+  Responsible-AI ``RAI0x`` code is not an OWASP LLM category and an IoPC code outside the
+  pinned taxonomy is a lint error, so neither reaches a numerator. Percentages therefore
+  cannot exceed 100%. Nothing here runs the linter, though (a third-party pack can be
+  measured without ever being linted), so a dropped value is reported as a warning rather
+  than left to shrink the numerator in silence.
+* **Percentages are floored** (:func:`~ildottore.reporting.summary.pct_display`). This module
+  formatted its own with ``%.0f`` until 2026-09-21, which meant it printed 96% for the same
+  22/23 the run summary and the HTML report printed as 95%: one figure, published two
+  different ways, by the command written to be the interrogable one.
 """
 
 from __future__ import annotations
@@ -21,7 +28,12 @@ import json
 from pathlib import Path
 
 from ildottore.cli import wiring
-from ildottore.reporting.summary import AxisCoverage, BatteryCoverage, build_battery_coverage
+from ildottore.reporting.summary import (
+    AxisCoverage,
+    BatteryCoverage,
+    build_battery_coverage,
+    pct_display,
+)
 from ildottore.shared.models import AttackSpec
 
 __all__ = ["battery_coverage", "render_coverage", "render_coverage_json"]
@@ -39,7 +51,13 @@ def _selected(coverage: BatteryCoverage, framework: str) -> tuple[AxisCoverage, 
 
 
 def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> BatteryCoverage:
-    """Load the registry (optionally narrowed to a suite) and compute static coverage."""
+    """Load the registry (optionally narrowed to a suite) and compute static coverage.
+
+    An unregistered ``--suite`` **raises**. It used to resolve to the empty spec set and
+    report a confident 0% across every axis, which reads as "this battery covers nothing"
+    rather than as "you typed a suite that does not exist": a wrong answer where a refusal
+    belongs, and the same false-green shape as a run against an unscoped target.
+    """
 
     registry = wiring.build_registry(spec_paths)
     specs: list[AttackSpec]
@@ -47,7 +65,13 @@ def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> Bat
         from ildottore.cli.flags import resolve_suite_id
 
         suite_id = resolve_suite_id(suite)
-        specs = list(registry.resolve(suite_id)) if registry.has_suite(suite_id) else []
+        if not registry.has_suite(suite_id):
+            known = ", ".join(sorted(s.id for s in registry.suites())) or "<none>"
+            raise ValueError(
+                f"suite {suite!r} (resolved to {suite_id!r}) is not registered. "
+                f"Registered suites: {known}"
+            )
+        specs = list(registry.resolve(suite_id))
     else:
         specs = list(registry.list())
     return build_battery_coverage(specs)
@@ -64,8 +88,10 @@ def render_coverage(
     width = max((len(a.label) for a in axes), default=0)
     for axis in axes:
         lines.append(
-            f"  {axis.label:<{width}}  {axis.exercised:>3}/{axis.total:<3} {axis.pct * 100:>3.0f}%"
+            f"  {axis.label:<{width}}  {axis.exercised:>3}/{axis.total:<3} "
+            f"{pct_display(axis.exercised, axis.total):>4}"
         )
+    lines.extend(_off_universe_lines(coverage))
     if not show_gaps:
         return "\n".join(lines)
 
@@ -78,12 +104,45 @@ def render_coverage(
     return "\n".join(lines)
 
 
-def render_coverage_json(coverage: BatteryCoverage, *, framework: str = "all") -> str:
-    """Machine-readable form, for a dashboard or a report generator."""
+def _off_universe_lines(coverage: BatteryCoverage) -> list[str]:
+    """A warning for every framework value that was dropped for being off-universe.
+
+    Nothing in this path runs the linter (``build_registry`` only loads), so a third-party
+    pack can be measured without ever being linted. Dropping a value silently is how a
+    numerator shrinks without anyone being told, which is the whole failure this command was
+    written against, so the drop is reported here even though the refusal lives in lint.
+    """
+
+    if not coverage.off_universe:
+        return []
+    lines = [
+        "",
+        f"  WARNING: {len(coverage.off_universe)} framework value(s) outside their pinned "
+        "universe are NOT counted (run `dottore lint` to refuse them):",
+    ]
+    lines.extend(
+        f"    {spec_id}  {field} = {value!r}" for spec_id, field, value in coverage.off_universe
+    )
+    return lines
+
+
+def render_coverage_json(
+    coverage: BatteryCoverage, *, framework: str = "all", show_gaps: bool = True
+) -> str:
+    """Machine-readable form, for a dashboard or a report generator.
+
+    ``show_gaps=False`` (``--no-gaps``) drops the ``missing`` list here too. It used to be
+    honoured only by the human renderer, so the two output modes of one command disagreed
+    about what the operator had asked for.
+    """
 
     axes = _selected(coverage, framework)
     payload = {
         "specs": coverage.specs,
+        "off_universe": [
+            {"spec_id": spec_id, "field": field, "value": value}
+            for spec_id, field, value in coverage.off_universe
+        ],
         "axes": [
             {
                 "key": a.key,
@@ -92,7 +151,11 @@ def render_coverage_json(coverage: BatteryCoverage, *, framework: str = "all") -
                 "total": a.total,
                 "pct": a.pct,
                 "covered": [{"code": c, "title": t} for c, t in a.covered],
-                "missing": [{"code": c, "title": t} for c, t in a.missing],
+                **(
+                    {"missing": [{"code": c, "title": t} for c, t in a.missing]}
+                    if show_gaps
+                    else {}
+                ),
             }
             for a in axes
         ],

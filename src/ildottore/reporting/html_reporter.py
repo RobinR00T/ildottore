@@ -22,9 +22,15 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.json_reporter import summary_to_wire
 from ildottore.reporting.masking import MaskingContext, Redactor
-from ildottore.reporting.summary import RunSummary
+from ildottore.reporting.summary import (
+    ATLAS_MATRIX_RELEASE,
+    OWASP_LLM_EDITION,
+    RunStatus,
+    RunSummary,
+    pct_display,
+)
 from ildottore.shared.enums import ReportFormat, VerdictStatus
-from ildottore.shared.iopc import IOPC_IMPACTS
+from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = ["EVIDENCE_EXCERPT_LEN", "UNSAFE_RENDER_BANNER", "HtmlReporter"]
@@ -36,10 +42,22 @@ UNSAFE_RENDER_BANNER = (
 )
 
 
-def _environment() -> Environment:
-    """Jinja2 environment with autoescape forced on for HTML templates."""
+def _pct(node: dict[str, Any]) -> str:
+    """``{{ coverage.owasp | pct }}`` - an exercised/total pair as a floored percentage.
 
-    return Environment(
+    A Jinja filter rather than four inline expressions, and floored rather than rounded:
+    ``'%.0f' | format(199 / 200 * 100)`` renders ``100`` (see
+    :func:`~ildottore.reporting.summary.pct_display`).
+    """
+
+    return pct_display(int(node["exercised"]), int(node["total"]))
+
+
+def _environment() -> Environment:
+    """Jinja2 environment with autoescape forced on for HTML templates (plus the ``pct``
+    filter, so no template rounds an incomplete axis up to 100%)."""
+
+    env = Environment(
         loader=PackageLoader("ildottore.reporting", "templates"),
         autoescape=select_autoescape(
             enabled_extensions=("html", "j2", "html.j2"),
@@ -50,6 +68,8 @@ def _environment() -> Environment:
         lstrip_blocks=True,
         auto_reload=False,
     )
+    env.filters["pct"] = _pct
+    return env
 
 
 def _excerpt(text: str | None) -> str | None:
@@ -73,8 +93,12 @@ class HtmlReporter(BaseReporter):
         specs: dict[str, AttackSpec] | None = None,
         redactor: Redactor | None = None,
         unsafe_render: bool = False,
+        planned_specs: int | None = None,
+        run_status: RunStatus | None = None,
     ) -> None:
-        super().__init__(specs=specs, redactor=redactor)
+        super().__init__(
+            specs=specs, redactor=redactor, planned_specs=planned_specs, run_status=run_status
+        )
         self._unsafe_render = unsafe_render
 
     def _finding_view(self, finding: Finding) -> dict[str, Any]:
@@ -120,6 +144,11 @@ class HtmlReporter(BaseReporter):
             summary=summary_to_wire(summary),
             # Code to title, so the impact axis reads as harm rather than as an opaque id.
             iopc_impact_titles=dict(IOPC_IMPACTS),
+            # Which edition/release each axis is measured against: a bare "LLM03 not covered"
+            # means the opposite thing under the 2026 renumbering (see OWASP_LLM_EDITION).
+            owasp_edition=OWASP_LLM_EDITION,
+            atlas_release=ATLAS_MATRIX_RELEASE,
+            iopc_version=IOPC_TAXONOMY_VERSION,
             has_comparison=summary.model_comparison is not None,
             comparison=summary.model_comparison,
             confirmed=confirmed,

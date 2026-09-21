@@ -23,6 +23,7 @@ from ildottore.policy.packs import (
     CheckResult,
     PolicyEngine,
     PolicyPack,
+    authorize_target,
     enabled_specs,
     load_pack,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "ScopeError",
     "ScopeTarget",
     "Sha256Verifier",
+    "authorize_target",
     "enabled_specs",
     "load_pack",
     "load_scope",

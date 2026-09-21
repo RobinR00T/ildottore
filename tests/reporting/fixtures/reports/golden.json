@@ -287,7 +287,7 @@
         "exercised": 0,
         "pct": 0.0,
         "tactics": [],
-        "total": 14
+        "total": 16
       },
       "iopc": {
         "impacts": {
@@ -303,6 +303,19 @@
           "total": 30
         }
       },
+      "not_exercised": [],
+      "off_universe": [
+        {
+          "field": "mitre_atlas.tactic",
+          "spec_id": "DL-DEMO-002",
+          "value": "AML.TA0000"
+        },
+        {
+          "field": "mitre_atlas.tactic",
+          "spec_id": "PI-DEMO-001",
+          "value": "AML.TA0000"
+        }
+      ],
       "owasp": {
         "categories": [
           "LLM01",
@@ -360,6 +373,11 @@
       "max": 1.0,
       "mean": 1.0,
       "min": 1.0
+    },
+    "status": {
+      "complete": true,
+      "reason": null,
+      "state": "complete"
     },
     "total": 2
   }

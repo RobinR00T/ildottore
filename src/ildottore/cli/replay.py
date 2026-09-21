@@ -23,7 +23,15 @@ def replay(evidence_root: Path, run_id: str) -> ReplayResult:
     longer matches its content-address - a silent pass would hide corruption.
     """
 
-    return replay_run(evidence_root, run_id)
+    result = replay_run(evidence_root, run_id)
+    if not result.attempts:
+        # "no such run" and "a run with no attempts" printed identically (attempts: 0,
+        # exploited: 0, exit 0), so a script could not tell a typo from a real result.
+        raise ValueError(
+            f"no stored attempts for run {run_id!r} under {evidence_root}: check the run id "
+            "and --evidence-root (a run that stored nothing cannot be replayed either)"
+        )
+    return result
 
 
 def render_replay(result: ReplayResult) -> str:

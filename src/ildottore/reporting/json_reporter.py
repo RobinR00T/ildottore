@@ -68,6 +68,11 @@ def _coverage_to_wire(coverage: Coverage) -> dict[str, Any]:
                 "pct": coverage.iopc_impacts_pct,
             },
         },
+        "off_universe": [
+            {"spec_id": spec_id, "field": field, "value": value}
+            for spec_id, field, value in coverage.off_universe
+        ],
+        "not_exercised": list(coverage.not_exercised),
         "specs": {
             "total": coverage.specs_total,
             "run": coverage.specs_run,
@@ -95,6 +100,13 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
         "confirmed_count": summary.confirmed_count,
         "needs_review_count": summary.needs_review_count,
         "coverage": _coverage_to_wire(summary.coverage),
+        # Whether the run finished. Always emitted (a consumer can rely on it being there),
+        # optional in report-1.0 so a report written by an older build still validates.
+        "status": {
+            "state": summary.run_status.state,
+            "complete": summary.run_status.complete,
+            "reason": summary.run_status.reason,
+        },
     }
     if summary.model_comparison is not None:
         wire["model_comparison"] = _comparison_to_wire(summary.model_comparison)

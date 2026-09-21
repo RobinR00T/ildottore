@@ -62,7 +62,8 @@ Copy-pasteable versions of both files (local Ollama, hosted OpenAI, a whole flee
 ## Common invocations
 
 ```bash
-# Fingerprint only: identify the model/guardrails behind an endpoint, attack nothing
+# Fingerprint only: identify the model/guardrails behind an endpoint, attack nothing.
+# A live endpoint is probed for real; add --offline for the deterministic mock (no sends).
 dottore fingerprint target.yaml --scope scope.yaml    # target is positional
 
 # Full OWASP LLM Top 10 suite, HTML + SARIF out
@@ -105,17 +106,20 @@ dottore calibrate report.json labels.yaml
 | `-t/--target` (repeatable), positional | target file(s) |
 | `--judge` | judge model `target.yaml` (LLM-as-judge for `semantic_judge` on live scans) |
 | `--suite` | `owasp:llm` (alias of `owasp-llm-top10`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion` |
-| `--quick` / `--deep` | T0 minimum battery / T2 deep-agentic |
+| `--quick` | the T0 battery: selects `--suite quick` (18 specs) at `-T0`. Conflicts with an explicit `--suite` |
+| `--deep` | the full battery (72 specs) with adaptive planning at `-T2` |
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |
 | `--spec` / `--exclude` | run/skip specific spec ids or globs (e.g. `PI-*`); repeatable |
 | `--top-tests N` | keep the N highest-signal specs |
-| `-sV` / `-sn` / `-A` | fingerprint-first / discovery-only / aggressive (`-sV` + deep + adaptive) |
+| `-sV` | fingerprint the model + guardrails first, then plan with it |
+| `-sn` | discovery only: authorized endpoint + declared capabilities + what the battery would run. **Sends nothing** |
+| `-A` | aggressive: implies `-sV` + `--deep` |
 | `--runs N` | reproducibility runs (default 5) |
 | `-T 0..5` | timing template (default 3); higher is faster/louder |
-| `--rate` / `--concurrency` / `--timeout` | max req/s · max concurrent specs · per-attempt timeout |
+| `--rate` / `--concurrency` / `--timeout` | max req/s (one shared ceiling for the whole campaign, retries included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
 | `--dry-run` | resolve + validate, send nothing |
 | `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
-| `--compare` | model-comparison matrix across targets |
+| `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) |
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.*` |
 | `--fail-on <band>` | CI gate on confirmed findings (`low\|medium\|high\|critical`, default `high`) |
@@ -123,6 +127,15 @@ dottore calibrate report.json labels.yaml
 | `--spec-path` | spec search path (default `specs/`) |
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error.
+
+`3` covers "the run did not finish" too, and it takes precedence over `2`: see
+[`docs/MANUAL.md`](docs/MANUAL.md) for why, and read `summary.status.reason` before you treat
+it as a flake.
+
+`3` also covers a run that **did not finish**: if a hard budget ceiling halts the campaign,
+the exit code is `3`, the reason is printed, and the report carries
+`summary.status.state = "budget_exhausted"` with `coverage.specs.total` (planned) above
+`coverage.specs.run` (completed). A partial scan is never reported as a clean one.
 Only an **exploited** (`fail`) finding trips the gate; `pass`/`inconclusive` never do.
 
 ## Multi-turn attacks

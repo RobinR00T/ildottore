@@ -80,10 +80,19 @@ def test_cli_estimate_prints_and_sends_nothing(tmp_path: Path) -> None:
 
 
 def test_cheatsheet_quick_scan_dry_run(tmp_path: Path) -> None:
+    """``--quick`` now SELECTS the T0 suite, so a spec tree without one is refused.
+
+    It used to set the timing template and nothing else, which made this invocation pass
+    against any spec tree at all - including this one, which registers no suites. The
+    refusal names the registered suites, so a custom pack without a ``quick`` suite gets an
+    actionable message instead of a silent full-battery run at T0 timing.
+    """
+
     scope = write_scope(tmp_path)
     target = write_target(tmp_path)
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
-    code = _dry(
+    res = runner.invoke(
+        app,
         [
             "run",
             "-t",
@@ -94,9 +103,53 @@ def test_cheatsheet_quick_scan_dry_run(tmp_path: Path) -> None:
             "--spec-path",
             str(specs),
             "--dry-run",
-        ]
+        ],
     )
-    assert code == 0
+    assert res.exit_code == 3
+    assert "is not registered" in res.output
+
+
+def test_quick_narrows_the_battery_against_the_shipped_specs(tmp_path: Path) -> None:
+    """``--quick`` selects fewer specs than the default battery (``docs/08 §2`` tier T0).
+
+    Measured against the repo's own ``specs/`` tree, where the ``quick`` suite exists and was
+    unselectable by the flag that documents it in six places.
+    """
+
+    scope = write_scope(tmp_path)
+    target = write_target(tmp_path)
+    base = ["run", "-t", str(target), "--scope", str(scope), "--spec-path", "specs", "--dry-run"]
+
+    full = runner.invoke(app, base)
+    quick = runner.invoke(app, [*base, "--quick"])
+    assert full.exit_code == 0 and quick.exit_code == 0, (full.output, quick.output)
+
+    def selected(output: str) -> int:
+        match = re.search(r"(\d+) specs selected", output)
+        assert match is not None, output
+        return int(match.group(1))
+
+    assert 0 < selected(quick.output) < selected(full.output)
+
+
+def test_discovery_only_sends_nothing_and_says_so(tmp_path: Path) -> None:
+    """``-sn`` is "discovery only, no attacks", and it used to send the whole battery.
+
+    The flag was parsed by typer and never read (it was not even a field on ``RunOptions``),
+    so an operator typing ``-sn`` against production got the full attack run. It now reports
+    what is authorized and what the target declares, and returns.
+    """
+
+    scope = write_scope(tmp_path)
+    target = write_target(tmp_path)
+    res = runner.invoke(
+        app,
+        ["run", "-t", str(target), "-sn", "--scope", str(scope), "--spec-path", "specs"],
+    )
+    assert res.exit_code == 0
+    assert "discovery (-sn): no attacks sent." in res.output
+    assert "authorized by the scope" in res.output
+    assert "would run" in res.output  # it SAYS what it did not do
 
 
 def test_cheatsheet_sv_suite_multiformat_dry_run(tmp_path: Path) -> None:

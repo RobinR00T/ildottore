@@ -127,7 +127,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   W3 `8c87487` · W4 `61d24cd` · W5 `280794c`.
 - **Merge gate GREEN:** full test suite passes; import-linter **4/4 contracts kept, 0 broken**;
   ruff + ruff-format clean (229 files); **mypy clean on 116 source modules**; `dottore --help`
-  + all commands work; **E2E `dottore run --quick` executes the 20-spec T0 battery** against
+  + all commands work; **E2E `dottore run --quick` executes the T0 battery** (the `quick`
+  suite, 18 specs today) against
   MockTarget and produces a valid JSON/summary report (all INCONCLUSIVE: correct for a bare
   mock with no scenario). 122 src files, 167 test files.
 - **Stage‑6 finding #1 (FIXED):** `run` default `specs/` discovery found 0 specs because the

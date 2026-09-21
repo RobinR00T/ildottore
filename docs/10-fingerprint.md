@@ -2,13 +2,24 @@
 
 Two roles for fingerprinting: both first-class:
 
-1. **Standalone recognition** (`dottore fingerprint <target>` or `dottore -sV -sn`): identify
+1. **Standalone recognition** (`dottore fingerprint <target>`, or `run -sn` for the
+   authorization-and-capability half without probes): identify
    *what model, which version, which guardrails and capabilities* sit behind an endpoint, and
    stop. Nothing else is attacked. This is the nmap `-sV` / banner-grab analogue and a useful
    product on its own (asset discovery of AI endpoints).
-2. **Adaptive first pass** (`-sV` before a scan): the fingerprint drives **test-plan
-   tailoring**: pick the relevant specs, tune mutators to what's known-effective against that
-   family, skip inapplicable tests, and set the expected baseline resistance.
+2. **Adaptive first pass** (`-sV`, or `-A`, before a scan): the fingerprint is recorded and
+   printed, and the plan is built in adaptive mode.
+
+   **Read this part carefully, because the tailoring is not doing anything yet.** The two
+   mechanisms that would tailor a plan (`_order_family_effective` and `_baseline_resistance`
+   in `core/planner.py`) read `capability_guess["effective_mutators"]` and
+   `guardrails["baseline_resistance"]`, and the fingerprint engine **emits neither**, so with
+   `-sV` today: 0 specs change mutator order, 0 carry a baseline expectation, and the only
+   observable difference in the plan is the wording of each selection's `reason`. The
+   fingerprint itself is real and is reported; the family-effectiveness table it would need
+   is per-family empirical data we do not have, and inventing one would make the ordering a
+   fiction with a confidence attached. Tracked in `docs/12`; until then, `-sV` buys you a
+   fingerprint, not a different battery.
 
 Grounded in prior art (LLMmap-style statistical fingerprinting; OpenAI `system_fingerprint`;
 glitch-token behavior). Fingerprinting is **probabilistic**: always reported with a
@@ -64,17 +75,18 @@ Given a `ModelFingerprint`, the planner:
 4. **Emits an explicit, reviewable `TestPlan`** (which specs, why, which were skipped and why).
    Nothing is silently dropped: skipped tests are logged (per `docs/07` "no silent caps").
 
-`--no-adaptive` disables tailoring and runs the full selected suite regardless (for
-apples-to-apples benchmarking across models).
+Tailoring is OFF unless you ask for it: without `-sV`/`-A`/`--deep` the full selected
+suite runs untailored (there is no `--no-adaptive` flag on the CLI; the pass-through is the
+default, and `core.planner.build_plan(adaptive=False)` is what implements it), which is what
+apples-to-apples benchmarking across models needs.
 
 ## 4. CLI surface
 
 ```bash
 dottore fingerprint <target> --scope scope.yaml          # standalone recognition, no attacks
-dottore -sV -sn -t target.yaml --scope scope.yaml        # same, nmap-style flags
-dottore -sV --suite owasp:llm -t target.yaml ...         # fingerprint → tailored scan
-dottore --suite owasp:llm --no-adaptive ...              # skip tailoring (benchmark parity)
-dottore fingerprint <target> -oJ fp.json                 # machine output
+dottore run -sn -t target.yaml --scope scope.yaml        # discovery only: sends NOTHING
+dottore run -sV --suite owasp:llm -t target.yaml ...     # fingerprint → tailored scan
+dottore run --suite owasp:llm ...                        # no -sV ⇒ no tailoring (parity)
 ```
 
 ## 5. Safety

@@ -24,6 +24,7 @@ from collections.abc import Awaitable, Callable
 
 from ildottore.core.budgets import BudgetLedger
 from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error, execute_attempt
+from ildottore.core.pacing import RateLimiter
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import ModelRequest, Sampling, Verdict
 from ildottore.shared.protocols import TargetAdapter
@@ -80,6 +81,7 @@ async def reproduce(
     sleep: Callable[[float], Awaitable[None]] | None = None,
     now: Callable[[], float] | None = None,
     completed: set[str] | None = None,
+    pacer: RateLimiter | None = None,
 ) -> list[AttemptResult]:
     """Execute ``request`` ``n`` times, returning the raw per-run results in order.
 
@@ -116,6 +118,7 @@ async def reproduce(
             is_env_error=is_env_error,
             sleep=sleep,
             now=now,
+            pacer=pacer,
         )
         results.append(result)
     return results

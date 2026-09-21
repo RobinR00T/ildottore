@@ -20,6 +20,7 @@ from dataclasses import dataclass, replace
 
 __all__ = [
     "DEFAULT_TEMPLATE",
+    "QUICK_SUITE",
     "SUITE_ALIASES",
     "TIMING_TEMPLATES",
     "Timing",
@@ -52,6 +53,11 @@ TIMING_TEMPLATES: dict[int, Timing] = {
 
 #: Default timing template when ``-T`` is not given (``docs/09 §2`` - "default T3").
 DEFAULT_TEMPLATE = 3
+
+#: The registered suite ``--quick`` selects (``docs/08 §2`` tier T0). Named here so the flag
+#: and the alias table cannot disagree: ``--quick`` used to set only the timing template, so
+#: the T0 battery existed, was documented in six places, and was never selected by it.
+QUICK_SUITE = "quick"
 
 #: Friendly suite aliases → the id the registry stores (``docs/09 §2``).
 SUITE_ALIASES: dict[str, str] = {

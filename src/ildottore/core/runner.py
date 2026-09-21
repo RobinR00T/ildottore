@@ -34,6 +34,7 @@ injected :class:`ScenarioProvider` so ``core`` never builds a u03 concrete.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
@@ -41,6 +42,7 @@ from typing import Protocol, runtime_checkable
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger
 from ildottore.core.conversation import reproduce_conversation
 from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error
+from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import build_plan
 from ildottore.core.reproduce import DEFAULT_N, reproduce
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
@@ -160,8 +162,12 @@ class ScenarioProvider(Protocol):
 class CampaignResult:
     """Everything a run produced: the plan, the persisted run, findings and status.
 
-    ``status`` is the run-level state from §6 (``complete`` | ``budget_exhausted`` |
-    ``parked``). The shared :class:`TestRun` model carries no ``status`` field
+    ``status`` is the run-level state from §6: ``complete`` or ``budget_exhausted`` today.
+    (``parked`` is RESERVED by the contract for the PITV park rule and is not produced by
+    this runner; it was documented as a live state in three places and emitted by none, so
+    a consumer switching on it would be handling a case that never arrives.) The CLI adds
+    ``unreachable`` when a target answered nothing at all. The shared :class:`TestRun`
+    model carries no ``status`` field
     (u00-owned, must-not-touch), so the runner surfaces it here and a downstream
     persister/reporter reads it from the result (contract §6).
     """
@@ -170,6 +176,14 @@ class CampaignResult:
     run: TestRun
     status: str = "complete"
     findings: list[Finding] = field(default_factory=list)
+    #: Why the run is not ``complete`` (the breached axis, its ceiling and the attempted
+    #: spend), so the CLI and the report can name the cause instead of printing a bare
+    #: state. ``None`` on a complete run.
+    status_reason: str | None = None
+
+    @property
+    def complete(self) -> bool:
+        return self.status == "complete"
 
 
 @dataclass
@@ -215,6 +229,9 @@ class CampaignRunner:
         timeout_s: float | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
         now: Callable[[], float] | None = None,
+        wall_clock: Callable[[], float] | None = None,
+        rate_rps: float | None = None,
+        pacer: RateLimiter | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -232,6 +249,35 @@ class CampaignRunner:
         self._timeout_s = timeout_s
         self._sleep = sleep
         self._now = now
+        # TWO clocks, deliberately, because they answer different questions.
+        #
+        # ``now`` is injected by the composition root as ``deterministic_clock()``: a counter
+        # that steps 1.0 per READ, so an offline attempt records a byte-stable ``latency_ms``.
+        # Feeding that counter to the budget ledger made ``max_wall_s`` measure *clock reads*
+        # instead of seconds, which is a defect in both directions at once:
+        #
+        # * the default battery could not finish. 1800 reads is fewer reads than a 72-spec
+        #   run performs, so a plain ``dottore run`` halted after 45 specs, on the wall axis,
+        #   every time. (The token ceiling was never the constraint: the whole battery really
+        #   consumes about 367k of the 500k default. Deriving the budgets from the plan was
+        #   worth doing, but it did not fix this, and the axis that binds is this one.)
+        # * a LIVE run had no time bound at all. The same counter was wired on the real-adapter
+        #   path, so 1800 reads is unrelated to elapsed time, and threat-model S8's wall half
+        #   did not exist where it matters.
+        #
+        # So the ledger gets a real clock (``time.monotonic`` by default) and the evidence
+        # keeps the deterministic one. A test injects ``wall_clock`` to drive the wall axis.
+        self._wall_clock = wall_clock if wall_clock is not None else time.monotonic
+        # S8's rate half. ``None``/``<=0`` leaves sends unpaced, which is what an offline
+        # mock campaign wants (nothing leaves the process, and pacing it would only slow CI);
+        # the CLI decides, and says so, rather than accepting a --rate it would ignore.
+        #
+        # Deliberately NOT fed ``now``/``sleep``: the injected clock here is the
+        # ``deterministic_clock`` the composition root uses to keep evidence byte-stable (a
+        # counter, not a clock), and pacing against a counter would compute delays from
+        # fiction. The limiter therefore keeps real loop time, and a test injects a fully
+        # controlled ``pacer`` instead.
+        self._pacer = pacer if pacer is not None else RateLimiter(rate_rps)
 
     async def run(
         self,
@@ -272,7 +318,7 @@ class CampaignRunner:
             adaptive=adaptive,
             budgets=budgets,
         )
-        ledger = BudgetLedger.from_plan_budgets(plan.budgets, time_source=self._now)
+        ledger = BudgetLedger.from_plan_budgets(plan.budgets, time_source=self._wall_clock)
         completed = _completed_attempt_ids(resume_from)
         # Prior findings from a partial run, keyed by spec, so a resumed spec MERGES its
         # already-persisted attempts with the fresh ones instead of re-scoring on the partial
@@ -295,7 +341,7 @@ class CampaignRunner:
         # Selected specs run under a bounded semaphore; a budget breach halts all.
         selected_specs = [s for s in specs if s.id in selected_ids and s.id not in skipped_ids]
         semaphore = asyncio.Semaphore(self._concurrency)
-        spec_findings, breached = await self._run_selected(
+        spec_findings, breach_reason = await self._run_selected(
             run_id=run_id,
             target=target,
             specs=selected_specs,
@@ -306,7 +352,7 @@ class CampaignRunner:
             prior_by_spec=prior_by_spec,
         )
         findings.extend(spec_findings)
-        if breached:
+        if breach_reason is not None:
             status = "budget_exhausted"
 
         findings.sort(key=lambda f: f.spec_id)
@@ -319,7 +365,33 @@ class CampaignRunner:
             finished_at=finished_at,
         )
         self._runs.save_run(run)
-        return CampaignResult(plan=plan, run=run, status=status, findings=findings)
+        return CampaignResult(
+            plan=plan,
+            run=run,
+            status=status,
+            findings=findings,
+            status_reason=self._truncation_reason(breach_reason, plan, findings),
+        )
+
+    @staticmethod
+    def _truncation_reason(
+        breach_reason: str | None, plan: TestPlan, findings: list[Finding]
+    ) -> str | None:
+        """Spell out a halt: the breached ceiling AND how many specs never ran.
+
+        "budget_exhausted" alone does not tell a reader what they are missing, and the
+        finding list cannot: a spec that never ran leaves no trace in it at all.
+        """
+
+        if breach_reason is None:
+            return None
+        # Every spec the plan knows about produces a finding when it is reached, including a
+        # capability skip and a policy block, so the plan's own total is the denominator here
+        # too. It has to agree with the one the CLI reports, or a halted run prints two
+        # different denominators side by side.
+        planned = len(plan.selected) + len(plan.skipped)
+        missing = max(0, planned - len({f.spec_id for f in findings}))
+        return f"{breach_reason}; {missing} of {planned} specs never ran"
 
     # --- selected-spec loop --------------------------------------------------
 
@@ -334,11 +406,12 @@ class CampaignRunner:
         completed: set[str],
         semaphore: asyncio.Semaphore,
         prior_by_spec: dict[str, Finding],
-    ) -> tuple[list[Finding], bool]:
+    ) -> tuple[list[Finding], str | None]:
         """Run every selected spec concurrently (bounded); report a budget breach.
 
-        Returns ``(findings, breached)``. A :class:`BudgetExhausted` from any spec is
-        caught and flagged (``breached=True``) so the campaign is marked
+        Returns ``(findings, breach_reason)``, the reason being the breached axis and its
+        ceiling (``None`` when nothing breached). A :class:`BudgetExhausted` from any spec is
+        caught and reported so the campaign is marked
         ``budget_exhausted`` **without discarding** the specs that finished before the
         breach - no masked partial, no lost work (contract §2/§4 KEEP). A non-budget
         exception is a real defect and propagates (never masked as a flake).
@@ -346,7 +419,7 @@ class CampaignRunner:
 
         mutators_by_spec = {sel.spec_id: sel.mutators for sel in plan.selected}
         findings: list[Finding] = []
-        breached = False
+        breach: str | None = None
 
         async def _one(spec: AttackSpec) -> Finding | None:
             async with semaphore:
@@ -363,12 +436,16 @@ class CampaignRunner:
         results = await asyncio.gather(*(_one(spec) for spec in specs), return_exceptions=True)
         for outcome in results:
             if isinstance(outcome, BudgetExhausted):
-                breached = True
+                if breach is None:  # first breach wins; they all name the same ceiling
+                    breach = (
+                        f"budget ceiling reached on {outcome.axis!r} "
+                        f"(limit {outcome.limit}, attempted {outcome.attempted})"
+                    )
             elif isinstance(outcome, BaseException):
                 raise outcome
             elif outcome is not None:
                 findings.append(outcome)
-        return findings, breached
+        return findings, breach
 
     async def _run_spec(
         self,
@@ -467,6 +544,7 @@ class CampaignRunner:
             sleep=self._sleep,
             now=self._now,
             completed=completed,
+            pacer=self._pacer,
         )
 
     async def _reproduce_multi_turn(
@@ -507,6 +585,7 @@ class CampaignRunner:
             sleep=self._sleep,
             now=self._now,
             completed=completed,
+            pacer=self._pacer,
         )
 
     # --- multi-identity (authz_leak, audit M14) ------------------------------
@@ -535,6 +614,9 @@ class CampaignRunner:
                 update={"identity": probe.identity_id}
             )
             try:
+                # Paced like every other send: an identity sweep is N more requests on the
+                # wire, so it obeys the authorized rate too.
+                await self._pacer.acquire()
                 response = await probe.adapter.send(request)
             except Exception:
                 # A single bad identity (transport/env error) is skipped, not fatal.

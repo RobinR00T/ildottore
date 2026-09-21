@@ -28,6 +28,7 @@ __all__ = [
     "DriftReport",
     "compare_runs",
     "diff_reports",
+    "incomplete_reason",
     "load_findings",
     "render_diff",
 ]
@@ -71,6 +72,29 @@ class DriftReport:
 
     def has_regressions(self) -> bool:
         return bool(self.regressions)
+
+
+def incomplete_reason(path: Path) -> str | None:
+    """Why this report describes a run that did not finish, or ``None`` when it did.
+
+    ``diff`` is advertised as CI-gateable, and a truncated report is the input that breaks it:
+    27 previously-failing specs simply vanish, which classifies as ``ONLY-IN-BASELINE``, which
+    is not a regression, so the gate goes green. The report already states the truncation in
+    ``summary.status``; this reads it instead of comparing counts and guessing.
+
+    A report written before ``status`` existed (report-1.0 without the block) has no way to
+    say, so it is treated as complete: silence there is age, not a claim.
+    """
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return None  # a bare findings list carries no run-level state
+    status = (data.get("summary") or {}).get("status")
+    if not isinstance(status, dict) or status.get("complete", True):
+        return None
+    state = str(status.get("state", "incomplete"))
+    reason = status.get("reason")
+    return f"{state}: {reason}" if reason else state
 
 
 def load_findings(path: Path) -> dict[str, Finding]:

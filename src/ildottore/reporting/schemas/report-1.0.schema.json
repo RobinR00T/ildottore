@@ -1,16 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ildottore.dev/schemas/report-1.0.schema.json",
-  "title": "Il Dottore canonical report (u11 §6)",
-  "description": "Lossless canonical JSON report: the run, its findings and the aggregated summary. All strings are redactor-masked before serialization (u11 §2).",
+  "title": "Il Dottore canonical report (u11 \u00a76)",
+  "description": "Lossless canonical JSON report: the run, its findings and the aggregated summary. All strings are redactor-masked before serialization (u11 \u00a72).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run", "findings", "summary"],
+  "required": [
+    "schema_version",
+    "run",
+    "findings",
+    "summary"
+  ],
   "properties": {
-    "schema_version": { "const": "1.0" },
-    "run": { "type": "object" },
-    "findings": { "type": "array", "items": { "type": "object" } },
-    "summary": { "$ref": "#/definitions/runSummary" }
+    "schema_version": {
+      "const": "1.0"
+    },
+    "run": {
+      "type": "object"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "summary": {
+      "$ref": "#/definitions/runSummary"
+    }
   },
   "definitions": {
     "runSummary": {
@@ -28,78 +44,235 @@
         "coverage"
       ],
       "properties": {
-        "total": { "type": "integer", "minimum": 0 },
-        "by_status": { "$ref": "#/definitions/countMap" },
-        "by_band": { "$ref": "#/definitions/countMap" },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_status": {
+          "$ref": "#/definitions/countMap"
+        },
+        "by_band": {
+          "$ref": "#/definitions/countMap"
+        },
         "by_framework": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["owasp", "atlas", "nist"],
+          "required": [
+            "owasp",
+            "atlas",
+            "nist"
+          ],
           "properties": {
-            "owasp": { "$ref": "#/definitions/countMap" },
-            "atlas": { "$ref": "#/definitions/countMap" },
-            "nist": { "$ref": "#/definitions/countMap" }
+            "owasp": {
+              "$ref": "#/definitions/countMap"
+            },
+            "atlas": {
+              "$ref": "#/definitions/countMap"
+            },
+            "nist": {
+              "$ref": "#/definitions/countMap"
+            }
           }
         },
         "model_comparison": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
-          "required": ["spec_ids", "target_ids", "cells", "category_rollups"],
+          "required": [
+            "spec_ids",
+            "target_ids",
+            "cells",
+            "category_rollups"
+          ],
           "properties": {
-            "spec_ids": { "type": "array", "items": { "type": "string" } },
-            "target_ids": { "type": "array", "items": { "type": "string" } },
+            "spec_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "target_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "cells": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["spec_id", "target_id", "band", "reproducibility", "confidence"],
+                "required": [
+                  "spec_id",
+                  "target_id",
+                  "band",
+                  "reproducibility",
+                  "confidence"
+                ],
                 "properties": {
-                  "spec_id": { "type": "string" },
-                  "target_id": { "type": "string" },
-                  "band": { "type": "string" },
-                  "reproducibility": { "type": "number" },
-                  "confidence": { "type": "number" }
+                  "spec_id": {
+                    "type": "string"
+                  },
+                  "target_id": {
+                    "type": "string"
+                  },
+                  "band": {
+                    "type": "string"
+                  },
+                  "reproducibility": {
+                    "type": "number"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  }
                 }
               }
             },
-            "category_rollups": { "type": "object" }
+            "category_rollups": {
+              "type": "object"
+            }
           }
         },
-        "repro_distribution": { "$ref": "#/definitions/distribution" },
-        "confidence_distribution": { "$ref": "#/definitions/distribution" },
-        "confirmed_count": { "type": "integer", "minimum": 0 },
-        "needs_review_count": { "type": "integer", "minimum": 0 },
-        "coverage": { "$ref": "#/definitions/coverage" }
+        "repro_distribution": {
+          "$ref": "#/definitions/distribution"
+        },
+        "confidence_distribution": {
+          "$ref": "#/definitions/distribution"
+        },
+        "confirmed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "needs_review_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coverage": {
+          "$ref": "#/definitions/coverage"
+        },
+        "status": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete"
+          ],
+          "description": "Whether the run finished. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one. state is complete, budget_exhausted (a hard ceiling halted the campaign) or unreachable (every attempt failed on transport, so nothing was evaluated).",
+          "properties": {
+            "state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
       }
     },
     "coverage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["owasp", "atlas", "iopc", "specs"],
+      "required": [
+        "owasp",
+        "atlas",
+        "iopc",
+        "specs"
+      ],
       "properties": {
-        "owasp": { "$ref": "#/definitions/frameworkCoverage" },
-        "atlas": { "$ref": "#/definitions/frameworkCoverage" },
+        "owasp": {
+          "$ref": "#/definitions/frameworkCoverage"
+        },
+        "atlas": {
+          "$ref": "#/definitions/frameworkCoverage"
+        },
         "iopc": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["techniques", "impacts"],
+          "required": [
+            "techniques",
+            "impacts"
+          ],
           "description": "Nova IoPC coverage on both axes: techniques (the how) and impacts (the damage).",
           "properties": {
-            "techniques": { "$ref": "#/definitions/codeCoverage" },
-            "impacts": { "$ref": "#/definitions/codeCoverage" }
+            "techniques": {
+              "$ref": "#/definitions/codeCoverage"
+            },
+            "impacts": {
+              "$ref": "#/definitions/codeCoverage"
+            }
           }
         },
         "specs": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["total", "run", "pass", "fail", "inconclusive"],
+          "required": [
+            "total",
+            "run",
+            "pass",
+            "fail",
+            "inconclusive"
+          ],
           "properties": {
-            "total": { "type": "integer", "minimum": 0 },
-            "run": { "type": "integer", "minimum": 0 },
-            "pass": { "type": "integer", "minimum": 0 },
-            "fail": { "type": "integer", "minimum": 0 },
-            "inconclusive": { "type": "integer", "minimum": 0 }
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "run": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pass": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fail": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inconclusive": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "off_universe": {
+          "type": "array",
+          "description": "Framework values this run did not count because they are outside their pinned universe. Optional in report-1.0 so an older document still validates.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "spec_id",
+              "field",
+              "value"
+            ],
+            "properties": {
+              "spec_id": {
+                "type": "string"
+              },
+              "field": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "not_exercised": {
+          "type": "array",
+          "description": "Spec ids that produced a finding but never sent a request (policy-blocked, or skipped for an undeclared capability). Their framework codes are excluded from every numerator. Optional in report-1.0.",
+          "items": {
+            "type": "string"
           }
         }
       }
@@ -107,40 +280,100 @@
     "codeCoverage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["codes", "exercised", "total", "pct"],
+      "required": [
+        "codes",
+        "exercised",
+        "total",
+        "pct"
+      ],
       "description": "Coverage of a code-keyed taxonomy axis (the IoPC technique and impact axes).",
       "properties": {
-        "codes": { "type": "array", "items": { "type": "string" } },
-        "exercised": { "type": "integer", "minimum": 0 },
-        "total": { "type": "integer", "minimum": 0 },
-        "pct": { "type": "number", "minimum": 0, "maximum": 1 }
+        "codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exercised": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
       }
     },
     "frameworkCoverage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["exercised", "total", "pct"],
+      "required": [
+        "exercised",
+        "total",
+        "pct"
+      ],
       "properties": {
-        "categories": { "type": "array", "items": { "type": "string" } },
-        "tactics": { "type": "array", "items": { "type": "string" } },
-        "exercised": { "type": "integer", "minimum": 0 },
-        "total": { "type": "integer", "minimum": 0 },
-        "pct": { "type": "number", "minimum": 0, "maximum": 1 }
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tactics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exercised": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
       }
     },
     "countMap": {
       "type": "object",
-      "additionalProperties": { "type": "integer", "minimum": 0 }
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
     },
     "distribution": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["count", "min", "max", "mean"],
+      "required": [
+        "count",
+        "min",
+        "max",
+        "mean"
+      ],
       "properties": {
-        "count": { "type": "number" },
-        "min": { "type": "number" },
-        "max": { "type": "number" },
-        "mean": { "type": "number" }
+        "count": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "mean": {
+          "type": "number"
+        }
       }
     }
   }

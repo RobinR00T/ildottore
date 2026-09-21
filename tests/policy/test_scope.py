@@ -139,3 +139,32 @@ def test_no_network_on_load(
     monkeypatch.setattr(socket, "create_connection", _boom)
     load_scope(_write(tmp_path, scope_single_text))
     assert calls == []
+
+
+def test_a_duplicate_target_id_is_refused(tmp_path: Path) -> None:
+    """``Scope.target()`` returns the FIRST match, so a duplicate silently resolved.
+
+    A permissive entry could shadow a narrowing one, including its identity allowlist, so an
+    ``auth_ref`` the second entry refuses was accepted; reversed, it became a false refusal.
+    An authorization record has to have exactly one answer per target. The fleet generator
+    already refused duplicates on its side.
+    """
+
+    path = tmp_path / "scope.yaml"
+    path.write_text(
+        'version: "1.0"\n'
+        "targets:\n"
+        + "".join(
+            "  - id: same-id\n"
+            f'    base_url: "https://api{n}.example.com/v1/chat"\n'
+            "    endpoints:\n"
+            f'      - host: "api{n}.example.com"\n'
+            '        path_prefixes: ["/v1"]\n'
+            "    identities:\n      - name: default\n"
+            f'        auth_ref: "env://KEY{n}"\n'
+            for n in (1, 2)
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ScopeError, match="more than once"):
+        load_scope(path)

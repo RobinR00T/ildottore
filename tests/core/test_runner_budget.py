@@ -107,3 +107,53 @@ async def test_generous_budget_completes(evaluators, mutators, scorer, stores) -
         run_id="r1", target=make_target(), specs=[make_spec()], budgets=budgets
     )
     assert result.status == "complete"
+
+
+async def test_breach_reason_names_the_axis_and_the_specs_that_never_ran(
+    evaluators, mutators, scorer, stores
+) -> None:
+    """``budget_exhausted`` alone does not tell a reader what they are missing.
+
+    The finding list cannot say either: a spec that never ran leaves no trace in it at all.
+    So the result carries the breached axis, its ceiling and the count of specs that never
+    ran, and the CLI prints that instead of a bare state word.
+    """
+
+    scenario = make_scenario(VULNERABLE_RESPONSE)
+    budgets = PlanBudgets(max_requests=2)
+    specs = [make_spec(spec_id=f"PI-DIRECT-{i:03d}") for i in range(1, 5)]
+    runner = _runner(
+        scenario,
+        evaluators=evaluators,
+        mutators=mutators,
+        scorer=scorer,
+        stores=stores,
+        budgets=budgets,
+    )
+    result = await runner.run(run_id="r-reason", target=make_target(), specs=specs, budgets=budgets)
+
+    assert result.status == "budget_exhausted"
+    assert result.complete is False
+    assert result.status_reason is not None
+    assert "'max_requests'" in result.status_reason
+    assert "limit 2" in result.status_reason
+    assert "specs never ran" in result.status_reason
+
+
+async def test_a_complete_run_carries_no_reason(evaluators, mutators, scorer, stores) -> None:
+    scenario = make_scenario(VULNERABLE_RESPONSE)
+    budgets = PlanBudgets(max_requests=1000, max_tokens=1_000_000, max_attempts=1000)
+    runner = _runner(
+        scenario,
+        evaluators=evaluators,
+        mutators=mutators,
+        scorer=scorer,
+        stores=stores,
+        budgets=budgets,
+    )
+    result = await runner.run(
+        run_id="r-ok", target=make_target(), specs=[make_spec()], budgets=budgets
+    )
+    assert result.status == "complete"
+    assert result.complete is True
+    assert result.status_reason is None

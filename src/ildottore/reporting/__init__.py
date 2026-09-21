@@ -19,7 +19,7 @@ from ildottore.reporting.json_reporter import JsonReporter
 from ildottore.reporting.junit_reporter import JunitReporter
 from ildottore.reporting.masking import MaskingContext, Redactor, default_redactor
 from ildottore.reporting.sarif_reporter import SarifReporter
-from ildottore.reporting.summary import RunSummary, build_run_summary
+from ildottore.reporting.summary import RunStatus, RunSummary, build_run_summary
 
 __all__ = [
     "BaseReporter",
@@ -28,6 +28,7 @@ __all__ = [
     "JunitReporter",
     "MaskingContext",
     "Redactor",
+    "RunStatus",
     "RunSummary",
     "SarifReporter",
     "build_run_summary",

@@ -134,3 +134,54 @@ def test_generated_scope_is_safe_dumped_and_loads(tmp_path: Path) -> None:
     out = fleet_mod.materialize_fleet(cfg, tmp_path / "fleet-out")
     scope = wiring.build_scope(out.scope_path)
     assert {t.id for t in scope.targets} == {"openai-gpt4o", "local-ollama", "my-app", "my-mcp"}
+
+
+def test_generated_scope_authorizes_the_judge(tmp_path: Path) -> None:
+    """``fleet --judge`` must authorize the judge in the scope it generates.
+
+    It did not: the generated scope listed only the fleet's own targets, so the documented
+    ``fleet examples/fleet.yaml --run --judge ...`` produced a scope the judge was absent
+    from. Nothing was sent to it (default-deny held), but every ``semantic_judge`` verdict
+    came back inconclusive for lack of authorization, the reason went only into the JSON,
+    and the run exited 0: the judge was silently disabled by the tool's own output.
+    """
+
+    judge_path = tmp_path / "judge.yaml"
+    judge_path.write_text(
+        "id: local-judge\n"
+        "type: model\n"
+        "provider: openai\n"
+        'endpoint: "http://localhost:11434/v1/chat/completions"\n'
+        'model: "llama3.2:3b"\n',
+        encoding="utf-8",
+    )
+    judge = wiring.load_target(judge_path)
+
+    cfg = fleet_mod.load_fleet(_write_fleet(tmp_path))
+    out = fleet_mod.materialize_fleet(cfg, tmp_path / "fleet-judge", judge=judge)
+
+    scope = wiring.build_scope(out.scope_path)
+    entry = scope.target("local-judge")
+    assert entry is not None, "the judge must be in the generated scope"
+    assert entry.endpoints, "and with a real endpoint allowlist, not an empty one"
+
+    # And the real gate agrees, which is the only test that matters here.
+    from ildottore.policy import authorize_target
+
+    endpoint = wiring.scope_endpoint_of(scope, judge)
+    assert authorize_target(scope, judge.id, endpoint).allowed
+
+
+def test_a_judge_already_in_the_fleet_is_not_duplicated(tmp_path: Path) -> None:
+    judge_path = tmp_path / "judge.yaml"
+    judge_path.write_text(
+        "id: local-ollama\ntype: model\nprovider: openai\n"
+        'endpoint: "http://localhost:11434/v1/chat/completions"\n',
+        encoding="utf-8",
+    )
+    cfg = fleet_mod.load_fleet(_write_fleet(tmp_path))
+    out = fleet_mod.materialize_fleet(
+        cfg, tmp_path / "fleet-dupe", judge=wiring.load_target(judge_path)
+    )
+    scope = wiring.build_scope(out.scope_path)
+    assert [t.id for t in scope.targets].count("local-ollama") == 1

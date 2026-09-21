@@ -43,6 +43,8 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from ildottore.shared.models import Target
+
 __all__ = [
     "FleetConfig",
     "FleetTarget",
@@ -150,10 +152,35 @@ def _target_doc(entry: FleetTarget) -> dict[str, object]:
     return doc
 
 
-def _scope_doc(entries: list[FleetTarget]) -> dict[str, object]:
+def _judge_scope_entry(judge: Target) -> dict[str, object]:
+    """The scope entry that authorizes the ``--judge`` model.
+
+    The judge is a model this tool sends prompts to, so it needs authorizing like any other
+    target. The generated scope used to list only the fleet's own targets, which meant the
+    documented ``fleet --run --judge`` command produced a scope the judge was absent from:
+    every ``semantic_judge`` verdict then came back inconclusive for lack of authorization,
+    with the reason written only into the JSON, and the run exited 0.
+    """
+
+    endpoint = judge.endpoint or ""
+    parsed = urlsplit(endpoint)
+    host = parsed.hostname or endpoint
+    prefix = parsed.path or "/"
+    # ``identities`` is required (min 1) and is also the credential allowlist: the judge's
+    # own ``auth_ref`` must be declared here or resolving it is refused. A keyless local
+    # judge gets ``env://NONE``, the same placeholder the fleet's own entries use.
+    return {
+        "id": judge.id,
+        "base_url": endpoint,
+        "endpoints": [{"host": host, "path_prefixes": [prefix]}],
+        "identities": [{"name": "default", "auth_ref": judge.auth_ref or "env://NONE"}],
+    }
+
+
+def _scope_doc(entries: list[FleetTarget], *, judge: Target | None = None) -> dict[str, object]:
     """Build the authorization ``scope.yaml`` document (serialized via safe_dump)."""
 
-    targets = []
+    targets: list[dict[str, object]] = []
     for entry in entries:
         host, path = _endpoint_yaml(entry)
         auth = f"env://{entry.api_key_env}" if entry.api_key_env else "env://NONE"
@@ -165,16 +192,23 @@ def _scope_doc(entries: list[FleetTarget]) -> dict[str, object]:
                 "identities": [{"name": "default", "auth_ref": auth}],
             }
         )
+    if judge is not None and judge.id not in {str(t["id"]) for t in targets}:
+        targets.append(_judge_scope_entry(judge))
     return {"version": "1.0", "targets": targets}
 
 
-def materialize_fleet(config: FleetConfig, out_dir: str | Path) -> MaterializedFleet:
+def materialize_fleet(
+    config: FleetConfig, out_dir: str | Path, *, judge: Target | None = None
+) -> MaterializedFleet:
     """Expand ``config`` into a ``scope.yaml`` + one ``target.yaml`` per target.
 
     Both ``llm`` and ``mcp`` entries are scannable: an ``mcp`` entry routes to the read-only
     MCP adapter (discovery of the server's advertised tool metadata). ``skipped`` is retained
     for forward-compatibility with kinds that have no adapter yet (none today). A fleet with
     **no** targets raises rather than writing an empty (min_length) scope.
+
+    ``judge`` (the ``--judge`` target, when one is given) is added to the generated scope, so
+    the LLM-as-judge is authorized rather than silently denied (see :func:`_judge_scope_entry`).
     """
 
     out = Path(out_dir)
@@ -193,7 +227,9 @@ def materialize_fleet(config: FleetConfig, out_dir: str | Path) -> MaterializedF
         raise ValueError("fleet has no targets to scan")
 
     scope_path = out / "scope.yaml"
-    scope_path.write_text(yaml.safe_dump(_scope_doc(scannable), sort_keys=False), encoding="utf-8")
+    scope_path.write_text(
+        yaml.safe_dump(_scope_doc(scannable, judge=judge), sort_keys=False), encoding="utf-8"
+    )
 
     target_paths: list[Path] = []
     for entry in scannable:

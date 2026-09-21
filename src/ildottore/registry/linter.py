@@ -21,6 +21,12 @@ from pathlib import Path
 
 from ildottore.shared import AttackSpec, EvaluatorType, VerdictStatus
 from ildottore.shared.enums import RequiresCapability
+from ildottore.shared.frameworks import (
+    ATLAS_MATRIX_RELEASE,
+    OWASP_LLM_EDITION,
+    unknown_atlas_tactic,
+    unknown_owasp_code,
+)
 from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
 
@@ -160,6 +166,51 @@ def _check_iopc(spec: AttackSpec) -> list[LintError]:
     ]
 
 
+def _check_frameworks(spec: AttackSpec) -> list[LintError]:
+    """Every declared OWASP code and ATLAS tactic must belong to a pinned universe.
+
+    IoPC had this rule; OWASP and ATLAS had **nothing**, in either direction: ``owasp: LLM11``,
+    ``owasp: LLM00``, ``tactic: "initial access"`` (lower case), ``tactic: "Initial Access "``
+    (trailing space) and ``tactic: "AI Model Access"`` all passed lint with zero errors and
+    zero warnings, contributed nothing to the numerator, and told nobody. Coverage matches by
+    exact string, so a rename upstream lands here as silently as a typo: two of our specs
+    scored zero for months because ATLAS renamed a tactic and the published figure simply got
+    smaller.
+
+    The refusal names the universe and its edition, because the fix depends on which one the
+    spec meant (see ``shared.frameworks``).
+    """
+
+    errors: list[LintError] = []
+    bad_owasp = unknown_owasp_code(spec.owasp)
+    if bad_owasp is not None:
+        errors.append(
+            LintError(
+                code=LintCode.UNKNOWN_FRAMEWORK_CODE,
+                message=(
+                    f"owasp code {bad_owasp!r} is in neither the OWASP LLM Top 10 "
+                    f"({OWASP_LLM_EDITION}) nor the Responsible-AI companion set; a code "
+                    f"outside both matches nothing and silently shrinks coverage"
+                ),
+                spec_id=spec.id,
+            )
+        )
+    bad_tactic = unknown_atlas_tactic(spec.mitre_atlas.tactic)
+    if bad_tactic is not None:
+        errors.append(
+            LintError(
+                code=LintCode.UNKNOWN_FRAMEWORK_CODE,
+                message=(
+                    f"mitre_atlas.tactic {bad_tactic!r} is not a tactic of the pinned ATLAS "
+                    f"matrix ({ATLAS_MATRIX_RELEASE}) and not a declared non-matrix value; "
+                    f"tactics are matched by exact name, so a retired spelling scores zero"
+                ),
+                spec_id=spec.id,
+            )
+        )
+    return errors
+
+
 def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
     """Reject evaluator configs that would silently disable the check they declare.
 
@@ -279,6 +330,7 @@ def lint_packs(
         findings.extend(_check_media(spec))
         findings.extend(_check_evaluator_config(spec))
         findings.extend(_check_iopc(spec))
+        findings.extend(_check_frameworks(spec))
         findings.extend(_check_fixtures(spec, table))
 
     for pack in packs:

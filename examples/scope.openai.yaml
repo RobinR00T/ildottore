@@ -1,0 +1,19 @@
+# scope.openai.yaml, the AUTHORIZATION record for the hosted-model scenario (Scenario D).
+#
+# A separate file from scope.local.yaml on purpose: a scope is an authorization record for a
+# specific engagement, and `openai-gpt-staging` is not authorized by the scope that covers a
+# local Ollama. Scenario D used to point at scope.local.yaml with a parenthetical telling the
+# reader to add the entry themselves, so the command as written was refused (exit 3).
+#
+# Default-DENY: the adapter refuses any host or path not listed under `endpoints`. The key is
+# referenced by env-var (`auth_ref`) and read only at send time, never written here.
+version: "1.0"
+targets:
+  - id: openai-gpt-staging          # must match target.openai.yaml's id
+    base_url: "https://api.openai.com/v1/chat/completions"
+    endpoints:
+      - host: "api.openai.com"      # no port ⇒ any port on that host over https
+        path_prefixes: ["/v1/chat/completions"]
+    identities:
+      - name: default
+        auth_ref: "env://OPENAI_API_KEY"

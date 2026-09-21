@@ -29,17 +29,18 @@ formats, sane defaults**. The command is `dottore` (short alias `dott`).
 ## 2. Command surface
 
 ```
-dottore <target> [options]
+dottore run -t <target.yaml> --scope <scope.yaml> [options]
 
 TARGET
   <url|model-id|target.yaml>        positional; or -t/--target for multiple
 
 SCAN TYPE
-  -sn                               discovery only (reachability + capabilities)
+  -sn                               discovery only: authorized endpoint + declared
+                                    capabilities + what the battery would run. Sends nothing
   -sV                               fingerprint model + guardrails before attacking
-  -A                                aggressive: -sV + --deep + --adaptive
-  --quick                           T0 minimum battery (~15 tests)   [fast triage]
-  --deep                            T2 deep/agentic suite
+  -A                                aggressive: implies -sV + --deep (adaptive planning)
+  --quick                           T0 battery: --suite quick (18 specs) at -T0
+  --deep                            the full battery (72 specs), adaptive, at -T2
 
 SELECTION
   --suite <name>                    owasp:llm (default) | mitre:atlas | nist:ai | eu:ai-act
@@ -53,10 +54,8 @@ EXECUTION
   -T <0-5>                          timing/aggressiveness template (default T3)
   --rate <rps>                      max requests/sec       --concurrency <n>
   --runs N                          reproducibility runs (default 5)
-  --adaptive [--max-attempts N]     multi-turn escalation up to a budget
   --seed <int>                      pin determinism
   --timeout <s>                     per-attempt timeout
-  --budget-tokens N --budget-usd N  hard cost caps (also stops self-DoS)
 
 SAFETY / SCOPE
   --scope scope.yaml                REQUIRED authorization record (default-deny)
@@ -82,23 +81,24 @@ REGISTRY / AUTHORING
 ## 3. Example invocations (the red-teamer's cheat sheet)
 
 ```bash
-# Fast triage of a raw model endpoint (nmap-default vibe)
-dottore https://api.openai.com/v1/chat/completions --model gpt-4o --quick --scope scope.yaml
+# Fast triage of a hosted model (the endpoint, provider and credential ref live in the
+# target file; there is no positional-URL form and no --model flag)
+dottore run --quick -t examples/target.openai.yaml --scope examples/scope.openai.yaml
 
 # Fingerprint first, then full OWASP suite, HTML + SARIF out
-dottore -sV --suite owasp:llm -oH report.html -oS out.sarif -t target.yaml --scope scope.yaml
+dottore run -sV --suite owasp:llm -oH report.html -oS out.sarif -t target.yaml --scope scope.yaml
 
-# Aggressive agentic assessment with adaptive multi-turn, budget-capped
-dottore -A --adaptive --max-attempts 50 --budget-usd 5 -t customer-agent.yaml --scope scope.yaml
+# Aggressive agentic assessment: fingerprint first, full battery, adaptive planning
+dottore run -A -t customer-agent.yaml --scope scope.yaml
 
 # Just the injection + leakage families, fast, break CI on high
-dottore -p pi,leakage -T4 --fail-on high -oX junit.xml -t agent.yaml --scope scope.yaml
+dottore run -p pi,leakage -T4 --fail-on high -oX junit.xml -t agent.yaml --scope scope.yaml
 
 # Compare three models on the same suite (benchmark mode)
-dottore --suite owasp:llm --compare -t gpt.yaml -t claude.yaml -t mistral.yaml --scope scope.yaml
+dottore run --suite owasp:llm --compare -t gpt.yaml -t claude.yaml -t mistral.yaml --scope scope.yaml
 
 # EU AI Act / DORA regulatory preset
-dottore --suite eu:ai-act -oA acme-aiact -t chatbot.yaml --scope scope.yaml
+dottore run --suite eu:ai-act -oA acme-aiact -t chatbot.yaml --scope scope.yaml
 ```
 
 ## 4. Output ergonomics
@@ -112,5 +112,14 @@ dottore --suite eu:ai-act -oA acme-aiact -t chatbot.yaml --scope scope.yaml
 ## 5. Non-goals for the CLI
 
 - No interactive TUI in v1 (scriptability first; TUI optional later).
+### Not implemented (this document is the design, not a changelog)
+
+`--adaptive` / `--max-attempts` / `--budget-tokens` / `--budget-usd` are **not** flags on the
+CLI today. Adaptive planning is reached through `-sV` / `--deep` / `-A`; the hard budgets are
+real but are **derived from the resolved plan** rather than passed in (see
+`core/planner.DEFAULT_PLAN_BUDGETS` and `cli/run.budgets_for`). The `discover` subcommand
+alias for `-sn` does not exist either: `-sn` is a flag on `run`. Listing them here without
+this note is how a design doc turns into a false claim about the product.
+
 - The CLI never bypasses the scope/allowlist gate, even with `-A`. Safety is not a flag you
   can turn off except the explicit, audited `--allow-endpoint` / `--unsafe-render`.

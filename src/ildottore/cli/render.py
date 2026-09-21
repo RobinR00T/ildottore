@@ -19,13 +19,19 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.table import Table
 
-from ildottore.reporting.summary import build_run_summary
+from ildottore.reporting.summary import (
+    ATLAS_MATRIX_RELEASE,
+    OWASP_LLM_EDITION,
+    build_run_summary,
+    pct_display,
+)
 from ildottore.shared.enums import ScanBand
-from ildottore.shared.iopc import IOPC_IMPACTS
+from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
     "ProgressPrinter",
+    "comparison_table",
     "coverage_lines",
     "progress_line",
     "summary_rows",
@@ -120,6 +126,8 @@ def summary_table(
 def coverage_lines(
     findings: list[Finding],
     specs: dict[str, AttackSpec] | None = None,
+    *,
+    planned_specs: int | None = None,
 ) -> list[str]:
     """Format the coverage block for the terminal summary (``docs/12`` P1).
 
@@ -130,20 +138,22 @@ def coverage_lines(
     tested). Pure (no TTY); the caller routes it to the console.
     """
 
-    cov = build_run_summary(findings, specs or {}).coverage
+    cov = build_run_summary(findings, specs or {}, planned_specs=planned_specs).coverage
     return [
         (
-            f"Coverage - OWASP LLM Top 10: {cov.owasp_exercised}/{cov.owasp_total} "
-            f"({cov.owasp_pct * 100:.0f}%) · "
-            f"MITRE ATLAS tactics: {cov.atlas_exercised}/{cov.atlas_total} "
-            f"({cov.atlas_pct * 100:.0f}%)"
+            f"Coverage - OWASP LLM Top 10 ({OWASP_LLM_EDITION}): "
+            f"{cov.owasp_exercised}/{cov.owasp_total} "
+            f"({pct_display(cov.owasp_exercised, cov.owasp_total)}) · "
+            f"MITRE ATLAS tactics ({ATLAS_MATRIX_RELEASE}): "
+            f"{cov.atlas_exercised}/{cov.atlas_total} "
+            f"({pct_display(cov.atlas_exercised, cov.atlas_total)})"
         ),
         (
-            f"Coverage - IoPC techniques: "
+            f"Coverage - IoPC techniques ({IOPC_TAXONOMY_VERSION}): "
             f"{cov.iopc_techniques_exercised}/{cov.iopc_techniques_total} "
-            f"({cov.iopc_techniques_pct * 100:.0f}%) · "
+            f"({pct_display(cov.iopc_techniques_exercised, cov.iopc_techniques_total)}) · "
             f"IoPC impacts: {cov.iopc_impacts_exercised}/{cov.iopc_impacts_total} "
-            f"({cov.iopc_impacts_pct * 100:.0f}%)"
+            f"({pct_display(cov.iopc_impacts_exercised, cov.iopc_impacts_total)})"
         ),
         # The harm classes in words. A bare "IOPC-R012" tells an operator nothing; the point
         # of carrying the impact axis is that this line is readable without the taxonomy open.
@@ -152,8 +162,27 @@ def coverage_lines(
             + (", ".join(IOPC_IMPACTS[c] for c in cov.iopc_impacts if c in IOPC_IMPACTS) or "none")
         ),
         (
-            f"Specs run: {cov.specs_run} · pass {cov.specs_pass} · "
-            f"fail {cov.specs_fail} · inconclusive {cov.specs_inconclusive}"
+            f"Specs run: {cov.specs_run} of {cov.specs_total} planned · "
+            f"pass {cov.specs_pass} · fail {cov.specs_fail} · "
+            f"inconclusive {cov.specs_inconclusive}"
+        ),
+        *(
+            [
+                f"Not exercised: {len(cov.not_exercised)} spec(s) produced no request "
+                "(blocked by policy, or a capability the target does not declare), so their "
+                "framework codes are NOT counted as covered"
+            ]
+            if cov.not_exercised
+            else []
+        ),
+        *(
+            [
+                f"WARNING: {len(cov.off_universe)} framework value(s) outside their pinned "
+                "universe were NOT counted: "
+                + ", ".join(f"{sid} {field}={value!r}" for sid, field, value in cov.off_universe)
+            ]
+            if cov.off_universe
+            else []
         ),
     ]
 
@@ -166,6 +195,35 @@ def _band_style(band: str) -> str:
         ScanBand.LOW.value: "green",
         ScanBand.INFO.value: "dim",
     }.get(band, "")
+
+
+def comparison_table(
+    findings: list[Finding],
+    specs: dict[str, AttackSpec] | None = None,
+) -> Table | None:
+    """The spec x target band matrix, or ``None`` when the run spans a single target.
+
+    The matrix was computed on every multi-target run and rendered **only** into the JSON
+    report, so ``--compare`` (whose whole purpose is this view) had no observable effect at
+    all: it counted its arguments and stopped. Same shape as every other finding here, a
+    value computed and then dropped where a human looks.
+    """
+
+    comparison = build_run_summary(findings, specs or {}).model_comparison
+    if comparison is None:
+        return None
+    bands = {(c.spec_id, c.target_id): c.band for c in comparison.cells}
+    table = Table(title="Il Dottore: model comparison (band per spec x target)")
+    table.add_column("Spec", style="cyan")
+    for target_id in comparison.target_ids:
+        table.add_column(target_id, justify="center")
+    for spec_id in comparison.spec_ids:
+        row = [spec_id]
+        for target_id in comparison.target_ids:
+            band = bands.get((spec_id, target_id))
+            row.append(f"[{_band_style(band)}]{band}[/]" if band else "-")
+        table.add_row(*row)
+    return table
 
 
 class ProgressPrinter:
@@ -184,6 +242,15 @@ class ProgressPrinter:
     def console(self) -> Console:
         return self._console
 
+    def error(self, message: str) -> None:
+        """Print an operational failure to stderr, **never** suppressed by ``-q``.
+
+        ``-q`` suppresses per-spec progress, which is noise. "this run did not finish" is
+        not noise: it is the one line that tells the operator the report below is partial.
+        """
+
+        Console(stderr=True, no_color=self._console.no_color, highlight=False).print(message)
+
     def progress(self, index: int, total: int, spec_id: str, finding: Finding) -> None:
         """Print one progress line (suppressed under ``-q``)."""
 
@@ -191,9 +258,22 @@ class ProgressPrinter:
             return
         self._console.print(progress_line(index, total, spec_id, finding))
 
-    def summary(self, findings: list[Finding], specs: dict[str, AttackSpec] | None = None) -> None:
-        """Print the summary table + coverage block (always shown, even under ``-q``)."""
+    def summary(
+        self,
+        findings: list[Finding],
+        specs: dict[str, AttackSpec] | None = None,
+        *,
+        planned_specs: int | None = None,
+    ) -> None:
+        """Print the summary table + coverage block (always shown, even under ``-q``).
+
+        ``planned_specs`` is the battery size the plan selected, so the coverage block can
+        say "run X of Y planned" rather than presenting the completed subset as the whole.
+        """
 
         self._console.print(summary_table(findings, specs))
-        for line in coverage_lines(findings, specs):
+        matrix = comparison_table(findings, specs)
+        if matrix is not None:
+            self._console.print(matrix)
+        for line in coverage_lines(findings, specs, planned_specs=planned_specs):
             self._console.print(line)
