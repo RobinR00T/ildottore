@@ -17,6 +17,7 @@ is swapped in here without touching ``core``.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -45,10 +46,16 @@ from ildottore.policy import (
     load_scope,
 )
 from ildottore.registry import Registry, load_paths
-from ildottore.reporting import get_reporter
+from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.enums import Category, TargetType
-from ildottore.shared.models import AttackSpec, Capabilities, Sampling, Target
+from ildottore.shared.models import (
+    AttackSpec,
+    Capabilities,
+    ModelFingerprint,
+    Sampling,
+    Target,
+)
 from ildottore.shared.protocols import Reporter, TargetAdapter
 from ildottore.store import FsEvidenceStore, SqliteRunStore
 
@@ -61,13 +68,16 @@ __all__ = [
     "build_judge_adapter",
     "build_permissive_pack",
     "build_policy_engine",
+    "build_probe_adapter",
     "build_real_adapter",
     "build_registry",
     "build_reporter",
     "build_run_store",
     "build_runner",
     "build_scope",
+    "check_target_credential",
     "deterministic_clock",
+    "fingerprint_probe",
     "hardened_adapter_factory",
     "load_mock_scenario",
     "load_target",
@@ -78,6 +88,7 @@ __all__ = [
     "scenario_adapter_factory",
     "scenario_judge_adapter",
     "scope_endpoint_for",
+    "scope_endpoint_of",
     "target_uses_mock",
 ]
 
@@ -195,10 +206,20 @@ def build_run_store(db_path: Path) -> SqliteRunStore:
 # --- reporters ---------------------------------------------------------------------
 
 
-def build_reporter(fmt: str, *, specs: dict[str, AttackSpec] | None = None) -> Reporter:
-    """Instantiate the u11 reporter for ``fmt`` (json|html|sarif|junit)."""
+def build_reporter(
+    fmt: str,
+    *,
+    specs: dict[str, AttackSpec] | None = None,
+    planned_specs: int | None = None,
+    run_status: RunStatus | None = None,
+) -> Reporter:
+    """Instantiate the u11 reporter for ``fmt`` (json|html|sarif|junit).
 
-    return get_reporter(fmt, specs=specs)
+    ``planned_specs``/``run_status`` let a report state what the run intended and whether it
+    finished, instead of presenting a budget-truncated campaign as a complete one.
+    """
+
+    return get_reporter(fmt, specs=specs, planned_specs=planned_specs, run_status=run_status)
 
 
 # --- fingerprint -------------------------------------------------------------------
@@ -208,6 +229,42 @@ def build_fingerprint_engine() -> FingerprintEngine:
     """The default six-layer fingerprint engine (u09)."""
 
     return FingerprintEngine()
+
+
+def build_probe_adapter(
+    scope: Scope,
+    target: Target,
+    *,
+    real_target: Target | None = None,
+    scenario: MockScenario | None = None,
+) -> TargetAdapter:
+    """The adapter a fingerprint/discovery probe should talk to (``-sV``, ``dottore
+    fingerprint``).
+
+    ``real_target`` (a non-mock ``target.yaml``) probes the live provider through the same
+    scope-bound allowlist the campaign will use, so ``-sV`` fingerprints the thing it is
+    about to attack. Everything else gets the deterministic offline :class:`MockTarget`, so
+    ``-sV`` stays exercisable in CI without an endpoint (contract §5).
+
+    Shared by ``run -sV`` and the ``fingerprint`` command: two copies of this choice is how
+    ``-sV`` ended up pinned to the mock even for a live target.
+    """
+
+    if real_target is not None:
+        scope_target = scope.target(real_target.id)
+        allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
+        return build_real_adapter(
+            real_target, allowlist, api_key=_authorized_api_key(scope, real_target)
+        )
+    canned = (
+        scenario
+        if scenario is not None
+        else MockScenario(
+            response="I am a helpful assistant. I can't share internal configuration.",
+            capabilities=target.capabilities,
+        )
+    )
+    return MockTarget(canned, id=target.id)
 
 
 # --- adapters ----------------------------------------------------------------------
@@ -261,16 +318,26 @@ def scope_endpoint_for(scope: Scope) -> Callable[[Target, AttackSpec], str]:
     id, which never parses to an allowlisted host ⇒ default-deny.
     """
 
-    base_by_id = {t.id: t.base_url for t in scope.targets}
-
     def _endpoint(target: Target, _spec: AttackSpec) -> str:
-        # A stdio MCP target has no request URL: authorize it by its command line, which the
-        # gate exact-matches against the scope's `commands` allowlist (see PolicyEngine.check).
-        if (target.transport or "").strip().lower() == "stdio" and target.command:
-            return "stdio://" + " ".join(target.command)
-        return base_by_id.get(target.id, target.id)
+        return scope_endpoint_of(scope, target)
 
     return _endpoint
+
+
+def scope_endpoint_of(scope: Scope, target: Target) -> str:
+    """The concrete endpoint string the policy gate authorizes for ``target``.
+
+    Spec-independent, so a pre-flight check can ask the question without inventing a spec:
+    the CLI's authorization gate has to test the *same* string the runner will, or it is a
+    second, weaker gate that can disagree with the real one.
+    """
+
+    # A stdio MCP target has no request URL: authorize it by its command line, which the
+    # gate exact-matches against the scope's `commands` allowlist (see PolicyEngine.check).
+    if (target.transport or "").strip().lower() == "stdio" and target.command:
+        return "stdio://" + " ".join(target.command)
+    base_by_id = {t.id: t.base_url for t in scope.targets}
+    return base_by_id.get(target.id, target.id)
 
 
 def hardened_adapter_factory(target: Target, spec: AttackSpec) -> TargetAdapter:
@@ -472,6 +539,34 @@ def _authorized_api_key(scope: Scope, target: Target) -> str | None:
     return resolve_auth_ref(target.auth_ref)
 
 
+def check_target_credential(scope: Scope, target: Target) -> None:
+    """Assert the scope authorized ``target``'s ``auth_ref`` (raises ``ValueError`` if not).
+
+    The same check :func:`real_adapter_factory` performs, exposed so a command can run it as
+    a pre-flight. The ``--judge`` model skipped it entirely: its credential was resolved from
+    the environment on the judge path only, which left the defence alive in one branch and
+    dead in the other.
+    """
+
+    _authorized_api_key(scope, target)
+
+
+def fingerprint_probe(
+    scope: Scope,
+    target: Target,
+    *,
+    real_target: Target | None = None,
+) -> ModelFingerprint:
+    """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
+
+    Scope-bound: a live target is probed through its allowlisted endpoint with its
+    authorized credential, an offline target through the deterministic mock.
+    """
+
+    adapter = build_probe_adapter(scope, target, real_target=real_target)
+    return asyncio.run(build_fingerprint_engine().run(adapter))
+
+
 def build_judge_adapter(scope: Scope, judge_target: Target) -> TargetAdapter:
     """Build the over-the-wire adapter for the ``--judge`` model (contract §5, ADR-0002).
 
@@ -550,11 +645,22 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
 
 
 def _read_target_yaml(path: Path) -> dict[str, Any]:
-    """Parse a ``target.yaml`` into a raw mapping (shared by every reader below)."""
+    """Parse a ``target.yaml`` into a raw mapping (shared by every reader below).
+
+    A syntax error is re-raised as ``ValueError``, like :func:`load_scope` already does.
+    ``yaml.YAMLError`` does not derive from ``ValueError``, so it used to escape the CLI
+    handler and surface as an uncaught traceback with **exit 1**, which in this tool means
+    "findings below the threshold": a CI step treating 1 as "carry on" would swallow a
+    malformed target, and it did so in the two commands whose only job is to validate the
+    wiring (``--dry-run`` and ``--estimate``).
+    """
 
     import yaml
 
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ValueError(f"target file {path} is not valid YAML: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} must be a mapping at top level")
     return raw
@@ -683,6 +789,7 @@ def build_runner(
     safety: SafetyFlags | None = None,
     concurrency: int = 4,
     timeout_s: float | None = None,
+    rate_rps: float | None = None,
     n: int = 5,
     hardened: bool = False,
     mock_scenario: str | None = None,
@@ -759,6 +866,10 @@ def build_runner(
         n=n,
         concurrency=concurrency,
         timeout_s=timeout_s,
+        # Pacing applies to traffic that actually leaves the process. An offline mock
+        # campaign passes ``None`` (see ``execute_run``), which is the one case where
+        # ignoring a rate is correct rather than silent, because the CLI prints it.
+        rate_rps=rate_rps,
     )
     return BuiltRunner(
         runner=runner,

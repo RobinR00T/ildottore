@@ -92,7 +92,9 @@ targets:                         # >=1; a target whose id is absent here is refu
   - id: my-chatbot               # must match the target.yaml's id
     base_url: "https://api.example.com/v1/chat/completions"
     endpoints:                   # default-DENY allowlist; host + allowed path prefixes
-      - host: "api.example.com"
+      - host: "api.example.com"   # a host with NO port authorizes ANY port on that host
+                                  # (over https; plain http stays loopback-only). Write
+                                  # "api.example.com:8443" to pin a single port
         path_prefixes: ["/v1/chat/completions"]
     identities:                  # >=1; auth by reference, never a secret value
       - name: default
@@ -188,15 +190,16 @@ required.
 | `--spec TEXT` | spec id or glob, e.g. `PI-*` (repeatable) |
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
 | `--top-tests INT` | keep the N highest-signal specs |
-| `--quick` / `--deep` | T0 minimum battery / T2 deep-agentic |
+| `--quick` | the T0 battery: selects `--suite quick` (18 specs) and timing `-T0`. Conflicts with an explicit `--suite` (pass one) |
+| `--deep` | the full battery with fingerprint-tailored planning and timing `-T2`. It does **not** select a larger suite: the whole shipped battery is 72 specs, and `--deep` runs all of it |
 
 **Discovery and aggression**
 
 | Flag | Meaning |
 |------|---------|
-| `-sn` | discovery only (no attacks) |
-| `-sV` | fingerprint before attacking |
-| `-A` | aggressive: `-sV` + deep + adaptive |
+| `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
+| `-sV` | fingerprint the target's model + guardrails first, then let the plan use it (mutator ordering, baseline expectations). A live target is fingerprinted through its allowlisted endpoint; an offline one through the deterministic mock |
+| `-A` | aggressive: implies `-sV` and `--deep` (there is no separate `--adaptive` flag; `-sV`/`--deep` enable adaptive planning) |
 
 **Judge and execution**
 
@@ -205,12 +208,12 @@ required.
 | `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`) |
 | `--runs INT` | reproducibility runs (default 5) |
 | `-T 0..5` | timing template (default 3); higher is faster/louder |
-| `--rate FLOAT` | max requests/sec |
+| `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it; retries count). **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |
 | `--concurrency INT` | max concurrent specs |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
-| `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
-| `--compare` | model-comparison matrix across targets |
+| `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
+| `--compare` | model-comparison matrix across targets. Needs two or more `-t` targets; with one it is refused (exit 3) rather than silently rendering nothing |
 | `--hardened` | replay hardened fixtures (clean-run smoke) |
 
 **Output and gating**

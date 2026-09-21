@@ -85,16 +85,28 @@ def test_coverage_lines_report_surface_and_disposition() -> None:
     specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
     lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], specs)
     assert len(lines) == 4
-    assert "OWASP LLM Top 10: 1/10 (10%)" in lines[0]
-    assert "MITRE ATLAS tactics:" in lines[0]
+    # The edition/release travels with the figure: "LLM03 not covered" means the opposite
+    # thing under the 2026 renumbering, and ATLAS renames tactics between releases.
+    assert "OWASP LLM Top 10 (2025): 1/10 (10%)" in lines[0]
+    assert "MITRE ATLAS tactics (2026.09): 1/16" in lines[0]
     # The IoPC axes get their own line: the impact axis is the one a non-technical reader
     # understands, so it must not be buried next to the technique counts.
     assert "IoPC techniques:" in lines[1]
     assert "IoPC impacts:" in lines[1]
     # And the harm classes are spelled out, because a bare "IOPC-R012" tells nobody anything.
     assert lines[2].startswith("Harm classes tested:")
-    assert "Specs run: 1" in lines[3]
+    # "run X of Y planned": the denominator is what the plan selected, not the length of
+    # the finding list, which is how a truncated run used to report 100% of itself.
+    assert "Specs run: 1 of 1 planned" in lines[3]
     assert "fail 1" in lines[3]
+
+
+def test_coverage_lines_name_the_planned_denominator() -> None:
+    """A run that produced 1 finding out of 3 planned specs says ``1 of 3``."""
+
+    specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
+    lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], specs, planned_specs=3)
+    assert "Specs run: 1 of 3 planned" in lines[3]
 
 
 def test_progress_printer_summary_always_prints() -> None:
@@ -104,7 +116,7 @@ def test_progress_printer_summary_always_prints() -> None:
         printer.summary([make_finding("PI-1", band=ScanBand.HIGH)], specs)
     out = cap.get()
     assert "LLM01" in out
-    assert "Coverage - OWASP LLM Top 10:" in out
+    assert "Coverage - OWASP LLM Top 10 (2025):" in out
 
 
 def test_coverage_lines_spell_out_the_harm_classes() -> None:

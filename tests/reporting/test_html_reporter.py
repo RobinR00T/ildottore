@@ -86,9 +86,9 @@ def test_coverage_section_rendered() -> None:
     run = make_run(findings=[make_finding()])
     html = _html(HtmlReporter(specs={"PI-DEMO-001": make_spec(owasp="LLM01")}), run)
     assert "Coverage" in html
-    assert "OWASP LLM Top 10:" in html
+    assert "OWASP LLM Top 10 (2025):" in html
     assert "1/10" in html
-    assert "MITRE ATLAS tactics:" in html
+    assert "MITRE ATLAS tactics (2026.09):" in html
     assert "Specs run:" in html
 
 

@@ -32,6 +32,7 @@ from collections.abc import Awaitable, Callable
 
 from ildottore.core.budgets import BudgetLedger
 from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error, execute_attempt
+from ildottore.core.pacing import RateLimiter
 from ildottore.core.reproduce import DEFAULT_N, attempt_id_for
 from ildottore.shared.models import Attempt, JsonDict, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
@@ -114,6 +115,7 @@ async def execute_conversation(
     is_env_error: Callable[[BaseException], bool] = default_is_env_error,
     sleep: Callable[[float], Awaitable[None]] | None = None,
     now: Callable[[], float] | None = None,
+    pacer: RateLimiter | None = None,
 ) -> AttemptResult:
     """Run one multi-turn conversation and return one aggregate :class:`AttemptResult`.
 
@@ -165,6 +167,7 @@ async def execute_conversation(
             is_env_error=is_env_error,
             sleep=sleep,
             now=now,
+            pacer=pacer,
         )
         response = result.attempt.response
         if result.env_error or response is None:
@@ -237,6 +240,7 @@ async def reproduce_conversation(
     sleep: Callable[[float], Awaitable[None]] | None = None,
     now: Callable[[], float] | None = None,
     completed: set[str] | None = None,
+    pacer: RateLimiter | None = None,
 ) -> list[AttemptResult]:
     """Execute the pinned conversation ``n`` times (repro), one aggregate attempt each.
 

@@ -39,7 +39,13 @@ def _selected(coverage: BatteryCoverage, framework: str) -> tuple[AxisCoverage, 
 
 
 def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> BatteryCoverage:
-    """Load the registry (optionally narrowed to a suite) and compute static coverage."""
+    """Load the registry (optionally narrowed to a suite) and compute static coverage.
+
+    An unregistered ``--suite`` **raises**. It used to resolve to the empty spec set and
+    report a confident 0% across every axis, which reads as "this battery covers nothing"
+    rather than as "you typed a suite that does not exist": a wrong answer where a refusal
+    belongs, and the same false-green shape as a run against an unscoped target.
+    """
 
     registry = wiring.build_registry(spec_paths)
     specs: list[AttackSpec]
@@ -47,7 +53,13 @@ def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> Bat
         from ildottore.cli.flags import resolve_suite_id
 
         suite_id = resolve_suite_id(suite)
-        specs = list(registry.resolve(suite_id)) if registry.has_suite(suite_id) else []
+        if not registry.has_suite(suite_id):
+            known = ", ".join(sorted(s.id for s in registry.suites())) or "<none>"
+            raise ValueError(
+                f"suite {suite!r} (resolved to {suite_id!r}) is not registered. "
+                f"Registered suites: {known}"
+            )
+        specs = list(registry.resolve(suite_id))
     else:
         specs = list(registry.list())
     return build_battery_coverage(specs)
@@ -78,8 +90,15 @@ def render_coverage(
     return "\n".join(lines)
 
 
-def render_coverage_json(coverage: BatteryCoverage, *, framework: str = "all") -> str:
-    """Machine-readable form, for a dashboard or a report generator."""
+def render_coverage_json(
+    coverage: BatteryCoverage, *, framework: str = "all", show_gaps: bool = True
+) -> str:
+    """Machine-readable form, for a dashboard or a report generator.
+
+    ``show_gaps=False`` (``--no-gaps``) drops the ``missing`` list here too. It used to be
+    honoured only by the human renderer, so the two output modes of one command disagreed
+    about what the operator had asked for.
+    """
 
     axes = _selected(coverage, framework)
     payload = {
@@ -92,7 +111,11 @@ def render_coverage_json(coverage: BatteryCoverage, *, framework: str = "all") -
                 "total": a.total,
                 "pct": a.pct,
                 "covered": [{"code": c, "title": t} for c, t in a.covered],
-                "missing": [{"code": c, "title": t} for c, t in a.missing],
+                **(
+                    {"missing": [{"code": c, "title": t} for c, t in a.missing]}
+                    if show_gaps
+                    else {}
+                ),
             }
             for a in axes
         ],

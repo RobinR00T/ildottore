@@ -15,6 +15,7 @@ fails the test outright if anything ever falls through to a real socket.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import httpx
@@ -27,7 +28,7 @@ from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.run import RunOptions, execute_run
 from ildottore.policy import Endpoint, EndpointAllowlist
 from ildottore.policy.errors import ScopeError
-from ildottore.shared.enums import EvaluatorType, VerdictStatus
+from ildottore.shared.enums import Category, EvaluatorType, RequiresCapability, VerdictStatus
 from ildottore.shared.models import Target
 
 from .conftest import make_spec, write_spec_tree
@@ -213,27 +214,30 @@ def test_real_openai_target_sends_expected_request_shape(tmp_path, monkeypatch) 
 
 
 @respx.mock
-def test_off_allowlist_real_target_is_blocked_with_zero_sends(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_off_allowlist_real_target_is_refused_with_zero_sends(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A scope that names the target but allowlists the wrong host is REFUSED up front.
+
+    This is membership-versus-reachability. The pre-flight gate used to ask only
+    ``scope.target(id) is not None``, so this scope passed it and the campaign then ran the
+    whole battery to ``blocked_by_policy`` inconclusives and **exit 0**: the same false green
+    as an unscoped target, one typo in ``host`` away. It now refuses with the engine's own
+    predicate, and the zero-sends assertion is stronger for it, because no adapter is built.
+    """
+
     monkeypatch.setenv("TEST_OPENAI_KEY", "sk-fake-not-a-real-key")
     route = respx.post(_OPENAI_URL).mock(
         return_value=httpx.Response(200, json={"choices": [{"message": {"content": "x"}}]})
     )
 
     target_path = _write_real_target(tmp_path)
-    # Scope authorizes the target id but allowlists the *wrong* host - the endpoint
-    # gate (u01) must refuse before any adapter is even built.
     scope_path = _write_scope_for(tmp_path, allow_host="not-openai.example")
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
 
-    outcome = execute_run(_opts(tmp_path, target_path, scope_path), [specs])
+    with pytest.raises(ScopeError) as err:
+        execute_run(_opts(tmp_path, target_path, scope_path), [specs])
 
     assert not route.called
-    assert len(outcome.findings) == 1
-    finding = outcome.findings[0]
-    assert finding.status is VerdictStatus.INCONCLUSIVE
-    assert finding.reasoning is not None
-    assert "blocked_by_policy" in finding.reasoning
-    assert outcome.exit_code is ExitCode.CLEAN
+    assert "not on allowlist" in str(err.value)
 
 
 @respx.mock
@@ -332,29 +336,104 @@ def test_target_uses_mock_false_for_real_endpoint_without_mock_scenario(tmp_path
     assert wiring.target_uses_mock(path) is False
 
 
-def test_dry_run_prints_the_plan_it_resolved(tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
-    """`--dry-run` exists to answer "is my wiring right?", so it must show what it resolved.
+@respx.mock
+def test_dry_run_promises_the_request_count_the_run_really_sends(  # type: ignore[no-untyped-def]
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """The number `--dry-run` prints must be the number the run sends. It was not.
 
-    It used to print one contentless line ("resolved plan; sent nothing") while holding the
-    scope, the target, the selected battery and the request estimate, all of which it threw
-    away. It also returned BEFORE loading the target, so it validated nothing about it.
+    The previous version of this test asserted the STRINGS "1 specs selected" and
+    "would send:", never the numbers against a real run, and the numbers were wrong: the
+    plan printed the raw selection, before the planner's capability filter and before the
+    policy gate, so it promised 845 requests where the run sent 499 over 68 specs. Lying
+    about volume is lying about money, so this pins the promise to the wire.
+
+    The battery here deliberately contains a spec the target cannot run (it requires
+    ``tools``; the target declares ``tools: false``), which is exactly the gap that made the
+    old estimate wrong.
     """
 
-    from .conftest import write_scope, write_target
+    monkeypatch.setenv("TEST_OPENAI_KEY", "sk-fake-not-a-real-key")
+    route = respx.post(_OPENAI_URL).mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "sure"}}]})
+    )
 
-    target_path = write_target(tmp_path, mock_scenario="vulnerable")
-    scope_path = write_scope(tmp_path)
-    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+    target_path = _write_real_target(tmp_path)
+    scope_path = _write_scope_for(tmp_path)
+    needs_tools = make_spec("AG-TOOLABUSE-001", category=Category.AGENT_TOOL_ABUSE).model_copy(
+        update={"requires": [RequiresCapability.TOOLS]}
+    )
+    specs = write_spec_tree(
+        tmp_path,
+        [make_spec("PI-DIRECT-001"), make_spec("JB-ROLEPLAY-001"), needs_tools],
+    )
 
     opts = _opts(tmp_path, target_path, scope_path)
+    opts.runs = 2
     opts.dry_run = True
-    outcome = execute_run(opts, [specs])
-
-    assert outcome.dry_run is True
-    assert outcome.findings == []
+    execute_run(opts, [specs])
     out = capsys.readouterr().out
-    assert "sent nothing" in out
-    assert str(scope_path) in out  # which scope authorized it
-    assert "authorized by the scope" in out  # and that the target passed the gate
-    assert "1 specs selected" in out  # the battery it resolved
-    assert "would send:" in out  # and what it would cost
+    match = re.search(r"would send: (\d+) requests over (\d+) specs", out)
+    assert match is not None, out
+    promised_requests, promised_specs = int(match.group(1)), int(match.group(2))
+
+    assert not route.called  # a dry-run sends nothing, whatever it prints
+    assert promised_specs == 2  # the tools spec is NOT counted as runnable
+    assert "1 spec(s) on openai-live, capability not declared" in out
+
+    opts.dry_run = False
+    execute_run(opts, [specs])
+    assert route.call_count == promised_requests
+
+
+@respx.mock
+def test_dry_run_sums_the_estimate_across_targets(  # type: ignore[no-untyped-def]
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Two targets cost twice as much, and the plan has to say so.
+
+    It did not: the estimate was computed once over the selection and printed once, so a
+    two-target run promised half of what it would send, and the documented fleet path
+    promised 195 requests against 390.
+    """
+
+    monkeypatch.setenv("TEST_OPENAI_KEY", "sk-fake-not-a-real-key")
+    respx.post(_OPENAI_URL).mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "sure"}}]})
+    )
+
+    first = _write_real_target(tmp_path, target_id="openai-live")
+    second_dir = tmp_path / "second"
+    second_dir.mkdir()
+    second = _write_real_target(second_dir, target_id="openai-live-2")
+    scope_path = tmp_path / "scope-two.yaml"
+    scope_path.write_text(
+        'version: "1.0"\ntargets:\n'
+        + "".join(
+            f"  - id: {tid}\n"
+            f'    base_url: "{_OPENAI_URL}"\n'
+            "    endpoints:\n"
+            '      - host: "api.openai.com"\n'
+            '        path_prefixes: ["/v1"]\n'
+            "    identities:\n      - name: default\n"
+            '        auth_ref: "env://TEST_OPENAI_KEY"\n'
+            for tid in ("openai-live", "openai-live-2")
+        ),
+        encoding="utf-8",
+    )
+    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+
+    opts = _opts(tmp_path, first, scope_path)
+    opts.runs = 1
+    opts.dry_run = True
+    execute_run(opts, [specs])
+    one = re.search(r"would send: (\d+) requests", capsys.readouterr().out)
+    assert one is not None
+
+    opts.targets = [first, second]
+    execute_run(opts, [specs])
+    two_out = capsys.readouterr().out
+    two = re.search(r"would send: (\d+) requests", two_out)
+    assert two is not None
+    assert int(two.group(1)) == 2 * int(one.group(1))
+    assert "openai-live-2" in two_out

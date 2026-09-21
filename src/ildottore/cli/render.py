@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.table import Table
 
-from ildottore.reporting.summary import build_run_summary
+from ildottore.reporting.summary import (
+    ATLAS_MATRIX_RELEASE,
+    OWASP_LLM_EDITION,
+    build_run_summary,
+    pct_display,
+)
 from ildottore.shared.enums import ScanBand
 from ildottore.shared.iopc import IOPC_IMPACTS
 from ildottore.shared.models import AttackSpec, Finding
@@ -120,6 +125,8 @@ def summary_table(
 def coverage_lines(
     findings: list[Finding],
     specs: dict[str, AttackSpec] | None = None,
+    *,
+    planned_specs: int | None = None,
 ) -> list[str]:
     """Format the coverage block for the terminal summary (``docs/12`` P1).
 
@@ -130,20 +137,22 @@ def coverage_lines(
     tested). Pure (no TTY); the caller routes it to the console.
     """
 
-    cov = build_run_summary(findings, specs or {}).coverage
+    cov = build_run_summary(findings, specs or {}, planned_specs=planned_specs).coverage
     return [
         (
-            f"Coverage - OWASP LLM Top 10: {cov.owasp_exercised}/{cov.owasp_total} "
-            f"({cov.owasp_pct * 100:.0f}%) · "
-            f"MITRE ATLAS tactics: {cov.atlas_exercised}/{cov.atlas_total} "
-            f"({cov.atlas_pct * 100:.0f}%)"
+            f"Coverage - OWASP LLM Top 10 ({OWASP_LLM_EDITION}): "
+            f"{cov.owasp_exercised}/{cov.owasp_total} "
+            f"({pct_display(cov.owasp_exercised, cov.owasp_total)}) · "
+            f"MITRE ATLAS tactics ({ATLAS_MATRIX_RELEASE}): "
+            f"{cov.atlas_exercised}/{cov.atlas_total} "
+            f"({pct_display(cov.atlas_exercised, cov.atlas_total)})"
         ),
         (
             f"Coverage - IoPC techniques: "
             f"{cov.iopc_techniques_exercised}/{cov.iopc_techniques_total} "
-            f"({cov.iopc_techniques_pct * 100:.0f}%) · "
+            f"({pct_display(cov.iopc_techniques_exercised, cov.iopc_techniques_total)}) · "
             f"IoPC impacts: {cov.iopc_impacts_exercised}/{cov.iopc_impacts_total} "
-            f"({cov.iopc_impacts_pct * 100:.0f}%)"
+            f"({pct_display(cov.iopc_impacts_exercised, cov.iopc_impacts_total)})"
         ),
         # The harm classes in words. A bare "IOPC-R012" tells an operator nothing; the point
         # of carrying the impact axis is that this line is readable without the taxonomy open.
@@ -152,8 +161,9 @@ def coverage_lines(
             + (", ".join(IOPC_IMPACTS[c] for c in cov.iopc_impacts if c in IOPC_IMPACTS) or "none")
         ),
         (
-            f"Specs run: {cov.specs_run} · pass {cov.specs_pass} · "
-            f"fail {cov.specs_fail} · inconclusive {cov.specs_inconclusive}"
+            f"Specs run: {cov.specs_run} of {cov.specs_total} planned · "
+            f"pass {cov.specs_pass} · fail {cov.specs_fail} · "
+            f"inconclusive {cov.specs_inconclusive}"
         ),
     ]
 
@@ -184,6 +194,15 @@ class ProgressPrinter:
     def console(self) -> Console:
         return self._console
 
+    def error(self, message: str) -> None:
+        """Print an operational failure to stderr, **never** suppressed by ``-q``.
+
+        ``-q`` suppresses per-spec progress, which is noise. "this run did not finish" is
+        not noise: it is the one line that tells the operator the report below is partial.
+        """
+
+        Console(stderr=True, no_color=self._console.no_color, highlight=False).print(message)
+
     def progress(self, index: int, total: int, spec_id: str, finding: Finding) -> None:
         """Print one progress line (suppressed under ``-q``)."""
 
@@ -191,9 +210,19 @@ class ProgressPrinter:
             return
         self._console.print(progress_line(index, total, spec_id, finding))
 
-    def summary(self, findings: list[Finding], specs: dict[str, AttackSpec] | None = None) -> None:
-        """Print the summary table + coverage block (always shown, even under ``-q``)."""
+    def summary(
+        self,
+        findings: list[Finding],
+        specs: dict[str, AttackSpec] | None = None,
+        *,
+        planned_specs: int | None = None,
+    ) -> None:
+        """Print the summary table + coverage block (always shown, even under ``-q``).
+
+        ``planned_specs`` is the battery size the plan selected, so the coverage block can
+        say "run X of Y planned" rather than presenting the completed subset as the whole.
+        """
 
         self._console.print(summary_table(findings, specs))
-        for line in coverage_lines(findings, specs):
+        for line in coverage_lines(findings, specs, planned_specs=planned_specs):
             self._console.print(line)

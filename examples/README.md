@@ -40,21 +40,41 @@ dottore schema export                    # the JSON Schemas that validate every 
 it, but sends **zero** requests. Use it to check a scope/target pair before a real run: a
 target that is not covered by the scope fails here with exit 3 rather than looking fine.
 
-```
-dry-run: plan resolved, sent nothing.
-  scope:   examples/scope.local.yaml
-  target:  local-llama (chatbot) authorized by the scope
-  battery: full battery, 72 specs selected
-    agent_tool_abuse: 25
-    ...
-  would send: 845 requests over 72 specs at runs=5
-```
-
 ```bash
 dottore run --dry-run --quick \
   -t examples/target.local.yaml \
   --scope examples/scope.local.yaml
 ```
+
+Real output of that exact command:
+
+```
+dry-run: plan resolved, sent nothing.
+  scope:   examples/scope.local.yaml
+  target:  local-llama (chatbot) authorized at http://localhost:11434/v1/chat/completions
+  battery: quick, 10 specs selected
+    jailbreak: 3
+    output_security: 3
+    data_leakage: 2
+    availability_cost: 1
+    prompt_injection: 1
+  skipped: 7 spec(s) on local-llama, capability not declared by the target
+  blocked: 1 spec(s) on local-llama, refused by the policy pack
+  would send: 125 requests over 10 specs at runs=5
+  pacing:  0.5 req/s ceiling (S8)
+  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+```
+
+Three things in there are worth reading carefully, because the previous version of this
+block got all three wrong:
+
+* **the authorized endpoint**, not the phrase "authorized by the scope". A scope that names
+  the target with an empty endpoint allowlist is not authorization, and printing the words
+  made that case read as green;
+* **10 specs, not 18**: the `quick` suite has 18, and this target declares no tools/RAG, so
+  seven are skipped and one is refused by the policy pack. The count is what will run;
+* **125 requests** is what the run really sends. This line used to print the raw selection
+  before both filters, which is how it promised 845.
 
 ## Scenario C, scan a local model (needs Ollama)
 
@@ -85,12 +105,16 @@ The key is referenced by env-var, never written to a file:
 export OPENAI_API_KEY=sk-...            # matches auth_ref in target.openai.yaml
 dottore run --suite owasp:llm -sV \
   -t examples/target.openai.yaml \
-  --scope examples/scope.local.yaml \
+  --scope examples/scope.openai.yaml \
   --fail-on high -oA reports/openai
 ```
 
-(Add a `targets` entry to the scope whose `endpoints` cover the hosted host, matching the
-target's id.)
+Note the scope: `scope.openai.yaml`, not the local one. A scope authorizes specific targets,
+and `openai-gpt-staging` is not in `scope.local.yaml`, so that pairing is refused (exit 3).
+This scenario used to be written against the local scope with a parenthetical asking the
+reader to add the entry themselves, i.e. the command as printed did not work.
+
+Add `--dry-run` first if you want to see the plan and the cost before spending anything.
 
 ## Scenario E, scan a fleet
 
@@ -102,6 +126,11 @@ dottore fleet examples/fleet.yaml --run --judge examples/target.judge.yaml
 # or expand only (review the generated files first):
 dottore fleet examples/fleet.yaml --out .dottore/fleet
 ```
+
+With `--judge`, the generated scope now includes the judge model. It did not until
+2026-09-21, so the judge was unauthorized in the scope this very command produced: every
+`semantic_judge` verdict came back inconclusive for lack of authorization, the reason was
+written only into the JSON report, and the run exited 0.
 
 ## Scenario F, scan an MCP server (read-only discovery)
 

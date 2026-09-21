@@ -29,6 +29,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from ildottore.core.budgets import BudgetLedger
+from ildottore.core.pacing import RateLimiter
 from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
 
@@ -117,6 +118,7 @@ async def execute_attempt(
     is_env_error: Callable[[BaseException], bool] = default_is_env_error,
     sleep: Callable[[float], Awaitable[None]] | None = None,
     now: Callable[[], float] | None = None,
+    pacer: RateLimiter | None = None,
 ) -> AttemptResult:
     """Send one request with retry/backoff/timeout, debiting the budget per send.
 
@@ -139,6 +141,11 @@ async def execute_attempt(
 
     total_sends = policy.max_retries + 1
     for send_index in range(total_sends):
+        # The authorized request rate is enforced per *send*, like the budget below, so a
+        # retry storm cannot burst past it (u08 S8). Waiting happens before the debit: the
+        # ledger records spend, the pacer decides when spending may happen.
+        if pacer is not None:
+            await pacer.acquire()
         # Budget is debited per *send* (retries count) so a storm can't self-DoS.
         ledger.debit_request(tokens=reserved)
         started = clock()

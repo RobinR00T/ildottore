@@ -41,6 +41,7 @@ from typing import Protocol, runtime_checkable
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger
 from ildottore.core.conversation import reproduce_conversation
 from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error
+from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import build_plan
 from ildottore.core.reproduce import DEFAULT_N, reproduce
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
@@ -170,6 +171,14 @@ class CampaignResult:
     run: TestRun
     status: str = "complete"
     findings: list[Finding] = field(default_factory=list)
+    #: Why the run is not ``complete`` (the breached axis, its ceiling and the attempted
+    #: spend), so the CLI and the report can name the cause instead of printing a bare
+    #: state. ``None`` on a complete run.
+    status_reason: str | None = None
+
+    @property
+    def complete(self) -> bool:
+        return self.status == "complete"
 
 
 @dataclass
@@ -215,6 +224,8 @@ class CampaignRunner:
         timeout_s: float | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
         now: Callable[[], float] | None = None,
+        rate_rps: float | None = None,
+        pacer: RateLimiter | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -232,6 +243,16 @@ class CampaignRunner:
         self._timeout_s = timeout_s
         self._sleep = sleep
         self._now = now
+        # S8's rate half. ``None``/``<=0`` leaves sends unpaced, which is what an offline
+        # mock campaign wants (nothing leaves the process, and pacing it would only slow CI);
+        # the CLI decides, and says so, rather than accepting a --rate it would ignore.
+        #
+        # Deliberately NOT fed ``now``/``sleep``: the injected clock here is the
+        # ``deterministic_clock`` the composition root uses to keep evidence byte-stable (a
+        # counter, not a clock), and pacing against a counter would compute delays from
+        # fiction. The limiter therefore keeps real loop time, and a test injects a fully
+        # controlled ``pacer`` instead.
+        self._pacer = pacer if pacer is not None else RateLimiter(rate_rps)
 
     async def run(
         self,
@@ -295,7 +316,7 @@ class CampaignRunner:
         # Selected specs run under a bounded semaphore; a budget breach halts all.
         selected_specs = [s for s in specs if s.id in selected_ids and s.id not in skipped_ids]
         semaphore = asyncio.Semaphore(self._concurrency)
-        spec_findings, breached = await self._run_selected(
+        spec_findings, breach_reason = await self._run_selected(
             run_id=run_id,
             target=target,
             specs=selected_specs,
@@ -306,7 +327,7 @@ class CampaignRunner:
             prior_by_spec=prior_by_spec,
         )
         findings.extend(spec_findings)
-        if breached:
+        if breach_reason is not None:
             status = "budget_exhausted"
 
         findings.sort(key=lambda f: f.spec_id)
@@ -319,7 +340,29 @@ class CampaignRunner:
             finished_at=finished_at,
         )
         self._runs.save_run(run)
-        return CampaignResult(plan=plan, run=run, status=status, findings=findings)
+        return CampaignResult(
+            plan=plan,
+            run=run,
+            status=status,
+            findings=findings,
+            status_reason=self._truncation_reason(breach_reason, plan, findings),
+        )
+
+    @staticmethod
+    def _truncation_reason(
+        breach_reason: str | None, plan: TestPlan, findings: list[Finding]
+    ) -> str | None:
+        """Spell out a halt: the breached ceiling AND how many specs never ran.
+
+        "budget_exhausted" alone does not tell a reader what they are missing, and the
+        finding list cannot: a spec that never ran leaves no trace in it at all.
+        """
+
+        if breach_reason is None:
+            return None
+        planned = len(plan.selected) + len(plan.skipped)
+        missing = max(0, planned - len({f.spec_id for f in findings}))
+        return f"{breach_reason}; {missing} of {planned} specs never ran"
 
     # --- selected-spec loop --------------------------------------------------
 
@@ -334,11 +377,12 @@ class CampaignRunner:
         completed: set[str],
         semaphore: asyncio.Semaphore,
         prior_by_spec: dict[str, Finding],
-    ) -> tuple[list[Finding], bool]:
+    ) -> tuple[list[Finding], str | None]:
         """Run every selected spec concurrently (bounded); report a budget breach.
 
-        Returns ``(findings, breached)``. A :class:`BudgetExhausted` from any spec is
-        caught and flagged (``breached=True``) so the campaign is marked
+        Returns ``(findings, breach_reason)``, the reason being the breached axis and its
+        ceiling (``None`` when nothing breached). A :class:`BudgetExhausted` from any spec is
+        caught and reported so the campaign is marked
         ``budget_exhausted`` **without discarding** the specs that finished before the
         breach - no masked partial, no lost work (contract §2/§4 KEEP). A non-budget
         exception is a real defect and propagates (never masked as a flake).
@@ -346,7 +390,7 @@ class CampaignRunner:
 
         mutators_by_spec = {sel.spec_id: sel.mutators for sel in plan.selected}
         findings: list[Finding] = []
-        breached = False
+        breach: str | None = None
 
         async def _one(spec: AttackSpec) -> Finding | None:
             async with semaphore:
@@ -363,12 +407,16 @@ class CampaignRunner:
         results = await asyncio.gather(*(_one(spec) for spec in specs), return_exceptions=True)
         for outcome in results:
             if isinstance(outcome, BudgetExhausted):
-                breached = True
+                if breach is None:  # first breach wins; they all name the same ceiling
+                    breach = (
+                        f"budget ceiling reached on {outcome.axis!r} "
+                        f"(limit {outcome.limit}, attempted {outcome.attempted})"
+                    )
             elif isinstance(outcome, BaseException):
                 raise outcome
             elif outcome is not None:
                 findings.append(outcome)
-        return findings, breached
+        return findings, breach
 
     async def _run_spec(
         self,
@@ -467,6 +515,7 @@ class CampaignRunner:
             sleep=self._sleep,
             now=self._now,
             completed=completed,
+            pacer=self._pacer,
         )
 
     async def _reproduce_multi_turn(
@@ -507,6 +556,7 @@ class CampaignRunner:
             sleep=self._sleep,
             now=self._now,
             completed=completed,
+            pacer=self._pacer,
         )
 
     # --- multi-identity (authz_leak, audit M14) ------------------------------
@@ -535,6 +585,9 @@ class CampaignRunner:
                 update={"identity": probe.identity_id}
             )
             try:
+                # Paced like every other send: an identity sweep is N more requests on the
+                # wire, so it obeys the authorized rate too.
+                await self._pacer.acquire()
                 response = await probe.adapter.send(request)
             except Exception:
                 # A single bad identity (transport/env error) is skipped, not fatal.

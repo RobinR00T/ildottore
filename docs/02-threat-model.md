@@ -22,7 +22,7 @@ build must satisfy it.
 | S5 | **Payload marking.** Every payload that would be dangerous outside a test is `test_only: true` and tagged; reports never render raw dangerous payloads without a `--unsafe-render` opt-in. |
 | S6 | **Secret masking.** Secrets/keys are masked in logs, console and reports by a central redactor; evidence stored encrypted at rest (MVP‑2+). |
 | S7 | **Judge isolation.** The LLM judge treats target output as **untrusted data**, never as instructions (see `docs/04 §4`). A target that jailbreaks our judge must not flip a verdict. |
-| S8 | **Rate & cost caps.** DoS/availability tests have hard token, request and wall-clock budgets; the scanner cannot be turned into a DoS weapon by a spec. |
+| S8 | **Rate & cost caps.** Hard token, request, attempt and wall-clock budgets (`core/budgets.py`), sized from the resolved plan so a ceiling never truncates a scan in silence, **plus** an enforced request-rate ceiling (`core/pacing.py`, `--rate` / `-T`): one shared gate for the whole campaign, so concurrency cannot multiply it, and retries count against it. The scanner cannot be turned into a DoS weapon by a spec. (The rate half of this row was aspirational until 2026-09-21: `--rate` was parsed and dropped, so `--rate 0.0001` finished eighteen specs in 0.67s. Pacing is not applied to an offline mock run, where nothing leaves the process, and the resolved plan states that explicitly.) |
 | S9 | **Blast-radius for RAG/agent setup.** Test corpora are namespaced and torn down; the scanner never writes to a production index without an explicit, scoped, reversible flag. |
 
 ## 3. Legal / ethical framing

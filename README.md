@@ -31,8 +31,19 @@ model DoS). Aligned to **OWASP LLM Top 10 (2025)**, **MITRE ATLAS** and **NIST A
 
 ```bash
 python3 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"
-.venv/bin/dottore run --quick -t target.yaml --scope scope.yaml -oA report
+
+# What does this battery actually test? No target, no key, nothing sent.
+.venv/bin/dottore coverage
+
+# Resolve a real plan against the shipped example pair and send nothing.
+.venv/bin/dottore run --quick --dry-run \
+  -t examples/target.local.yaml --scope examples/scope.local.yaml
 ```
+
+Both commands run against a fresh clone with no server and no credential. (The previous
+quickstart named `target.yaml` and `scope.yaml`, which do not exist in this repository, so
+it could not be copied and pasted: a scan needs a target file and an authorization record,
+and the shipped examples are those two files.)
 
 New here? Read [`USAGE.md`](USAGE.md) (practical guide) then [`examples/`](examples/)
 (copy-pasteable scenarios, from "no server, no key" to a full fleet). Full reference:

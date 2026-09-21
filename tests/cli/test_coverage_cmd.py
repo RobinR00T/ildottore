@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from ildottore.cli.coverage import (
     FRAMEWORK_KEYS,
     battery_coverage,
@@ -95,10 +97,27 @@ def test_suite_scoping_measures_only_that_suite() -> None:
     assert scoped_t.total == whole_t.total  # same denominator, smaller numerator
 
 
-def test_unknown_suite_yields_an_empty_measurement_not_an_error() -> None:
-    cov = battery_coverage([SPECS], suite="does-not-exist")
-    assert cov.specs == 0
-    assert all(a.exercised == 0 and a.pct == 0.0 for a in cov.axes)
+def test_unknown_suite_is_refused_not_reported_as_zero_coverage() -> None:
+    """A suite that does not exist is a typo, and 0% is a wrong answer to a typo.
+
+    This test used to assert the opposite (``cov.specs == 0`` and every axis at 0%), which
+    pinned the defect rather than the behaviour: "this battery covers nothing" and "you named
+    a suite I do not have" are different statements, and the first one reads as a measurement.
+    The refusal names the registered suites so the fix needs no guessing.
+    """
+
+    with pytest.raises(ValueError) as err:
+        battery_coverage([SPECS], suite="does-not-exist")
+    assert "not registered" in str(err.value)
+    assert "quick" in str(err.value)  # the message lists what IS registered
+
+
+def test_json_output_honours_no_gaps() -> None:
+    """``--json --no-gaps`` drops ``missing`` too: one flag, one meaning per output mode."""
+
+    doc = json.loads(render_coverage_json(_coverage(), framework="owasp", show_gaps=False))
+    assert "covered" in doc["axes"][0]
+    assert "missing" not in doc["axes"][0]
 
 
 def test_json_output_is_machine_readable_and_complete() -> None:

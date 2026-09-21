@@ -23,7 +23,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 
 from ildottore.reporting.masking import MaskingContext, Redactor, default_redactor
-from ildottore.reporting.summary import RunSummary, build_run_summary
+from ildottore.reporting.summary import RunStatus, RunSummary, build_run_summary
 from ildottore.shared.enums import ReportFormat
 from ildottore.shared.models import AttackSpec, Finding, TestRun
 
@@ -46,15 +46,28 @@ class BaseReporter(ABC):
         *,
         specs: dict[str, AttackSpec] | None = None,
         redactor: Redactor | None = None,
+        planned_specs: int | None = None,
+        run_status: RunStatus | None = None,
     ) -> None:
         self._specs = specs or {}
         self._redactor = redactor if redactor is not None else default_redactor()
+        # What the run INTENDED (how many specs the plan selected) and whether it finished.
+        # Neither is derivable from the findings: a campaign halted by a budget ceiling yields
+        # a shorter finding list and nothing else, so every format used to render a truncated
+        # run as a complete one, over a denominator equal to its own length (contract §6).
+        self._planned_specs = planned_specs
+        self._run_status = run_status if run_status is not None else RunStatus()
 
     def render(self, run: TestRun, findings: list[Finding]) -> bytes:
         """Mask once, summarize once, then delegate to the format writer (pure)."""
 
         ctx = MaskingContext(run, findings, self._redactor)
-        summary = build_run_summary(ctx.findings, self._specs)
+        summary = build_run_summary(
+            ctx.findings,
+            self._specs,
+            planned_specs=self._planned_specs,
+            run_status=self._run_status,
+        )
         return self._render(ctx, summary)
 
     @abstractmethod
@@ -89,11 +102,14 @@ def get_reporter(
     *,
     specs: dict[str, AttackSpec] | None = None,
     redactor: Redactor | None = None,
+    planned_specs: int | None = None,
+    run_status: RunStatus | None = None,
 ) -> BaseReporter:
     """Instantiate the reporter registered for ``fmt``.
 
-    Passes ``specs`` (framework attribution) and ``redactor`` (masking seam) through to the
-    factory. An unknown format is a clear ``KeyError``, never a silent fallback.
+    Passes ``specs`` (framework attribution), ``redactor`` (masking seam) and the run's
+    intent/status through to the factory. An unknown format is a clear ``KeyError``, never a
+    silent fallback.
     """
 
     key = fmt.value if isinstance(fmt, ReportFormat) else fmt
@@ -102,4 +118,6 @@ def get_reporter(
     except KeyError:
         available = ", ".join(sorted(_FACTORIES))
         raise KeyError(f"unknown report format {key!r}; available: {available}") from None
-    return factory(specs=specs, redactor=redactor)
+    return factory(
+        specs=specs, redactor=redactor, planned_specs=planned_specs, run_status=run_status
+    )

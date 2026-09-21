@@ -42,6 +42,123 @@ versioning: [SemVer](https://semver.org/).
   run (and before a purchase): "covered, of what?". Names the uncovered codes rather than only
   counting them, supports `--framework`, `--suite` and `--json`.
 
+### Fixed
+- **A run that does not finish is no longer reported as a clean one (exit 3).** The default
+  battery **did not fit the engine's own default token ceiling**: `DEFAULT_PLAN_BUDGETS`
+  pinned `max_tokens = 500_000` while the default plan needs about 537_000 (the figure
+  `--estimate` itself prints). The campaign therefore halted, marked itself
+  `budget_exhausted` internally, and **threw that state away**: `cli/run.py` never read
+  `result.status`, the exit code came only from the findings, and no reporter mentioned it. A
+  scan that dropped 27 of 72 specs printed `total: 45, run: 45` (100% of itself), exited 0,
+  and computed every coverage percentage over the subset that survived. Contradicted
+  `core/runner.py`'s own comment, "never a silently-truncated complete", and invalidated any
+  CI gate built on top. Now: the ceilings are **derived from the resolved plan** (still hard
+  caps, still no self-DoS, but sized from what the operator reviewed instead of from a
+  constant that drifts as the battery grows), a halt prints the breached axis and how many
+  specs never ran, the exit code is **3**, and every report carries
+  `summary.status.state` plus a planned-vs-run denominator (`coverage.specs.total` is what
+  the plan selected; `coverage.specs.run` is what completed). The wall-clock ceiling also
+  stretches to fit a slow `--rate`, so obeying one flag cannot break another.
+- **`-sn` ("discovery only, no attacks") sent the full battery.** `-sn`, `-sV`, `-A` and `-v`
+  were parsed by typer and **never read** (none was even a field on `RunOptions`), while
+  `run.py`'s docstring claimed they "widen the battery". Measured: `-sn` with the quick suite
+  sent **125 attack requests**. Every one is now wired: `-sn` reports the authorized
+  endpoint, the target's declared capabilities and what the battery *would* run, then stops
+  with zero sends (reachability is authorization-level, not a live probe, because probing
+  means sending); `-sV` fingerprints the target through the adapter the campaign will use and
+  feeds the plan; `-A` implies `-sV` + `--deep`; `-v` prints the resolved plan.
+- **`--quick` / `--deep` did not change the battery.** They set the timing template and
+  nothing else, while six documents said otherwise and the `quick` suite (18 specs) shipped
+  unselectable by the flag named after it. `--quick` now selects it (and refuses a
+  conflicting `--suite`); `--deep` runs the full battery with adaptive planning at `-T2`.
+  The `docs/08` tier table no longer advertises a 150-spec T2 tier the battery does not have.
+- **`--rate` was discarded, so the rate half of threat-model S8 did not exist.**
+  `--rate 0.0001` (one request every 10_000 seconds) finished eighteen specs in 0.67s, and
+  the rate column of every `-T` template was decoration. A new `core/pacing.RateLimiter`
+  enforces it as **one shared ceiling for the whole campaign** (a per-task limiter would let
+  concurrency multiply the rate) with **retries counted**, hooked at `execute_attempt`, the
+  single funnel both the single-turn and multi-turn paths use. Not applied to an offline mock
+  run, where nothing leaves the process, and the resolved plan states that rather than
+  dropping the flag silently.
+- **The numbers `--dry-run` and `--estimate` printed were false.** They reported the raw
+  spec *selection*, computed once for all targets, before the planner's capability filter and
+  before the policy gate: 845 requests promised against 499 sent over 68 specs, and a
+  multi-target run wrong **in the direction that costs money** (5 promised, 10 sent; 195 on
+  the documented fleet path against 390). Both now resolve a real per-target plan with
+  `build_plan` plus the live `PolicyEngine`, print the skipped and blocked counts, and total
+  across targets. A test pins the promised count to the real send count against a mocked
+  endpoint; the previous test asserted only that the strings `"1 specs selected"` and
+  `"would send:"` appeared.
+- **The authorization gate checked membership, not reachability.** `scope.target(id) is None`
+  was the whole test, and `ScopeTarget.endpoints` defaults to `[]`, so a scope naming the
+  right target id with no endpoint allowlist (or a typo in `host`) **passed** the gate and was
+  then denied on every single attempt: the false green was one character away. The gate now
+  calls the engine's own predicate, extracted as `policy.authorize_target`, so the pre-flight
+  check and the per-attempt check cannot diverge, and `--dry-run` prints the authorized
+  **endpoint** instead of the words "authorized by the scope".
+- **The `--judge` model was loaded and never authorized**, and its credential skipped the
+  scope's `auth_ref` check that every attack target gets. Reachable through a documented
+  command, because `fleet --judge` generated a scope the judge was absent from: every
+  `semantic_judge` verdict then came back inconclusive for lack of authorization, with the
+  reason only in the JSON, and the run exited 0. The judge now goes through the same gate and
+  the same credential check, and `fleet --judge` puts it in the scope it generates.
+- **`dottore fingerprint` loaded the scope and discarded it** (no id check, no endpoint
+  check); it leaked nothing only because the probe was pinned to the offline mock, i.e. the
+  safety came from an implementation detail. It is now gated by `authorize_target`, and a
+  live target is fingerprinted through its allowlisted endpoint with its authorized
+  credential, so `-sV` fingerprints the thing it is about to attack.
+- **A malformed `target.yaml` exited 1.** `yaml.YAMLError` does not derive from `ValueError`,
+  so it escaped the CLI handler as an uncaught traceback with exit **1**, which in this tool
+  means "findings below the threshold": a CI step treating 1 as "carry on" swallowed a broken
+  target, in the two commands whose only job is validation. Same for `EndpointNotAllowed`,
+  which derives from `AdapterError(Exception)` and was outside the handler's tuple. Both are
+  operational errors now: **exit 3**.
+- **An empty spec selection exited 0.** A typo in `--spec` ran nothing and reported clean, a
+  green CI gate over an empty battery. It is refused, with the selectors echoed back.
+- **`--compare` was parsed and never read.** It needs two or more targets and is now refused
+  with one, rather than silently rendering no matrix.
+- **`dottore coverage --suite <unknown>` reported a confident 0% across every axis** instead
+  of refusing: a wrong answer to a typo, and a test had pinned that behaviour. It now lists
+  the registered suites and exits 3. `--json` also honours `--no-gaps`, which only the human
+  renderer had respected.
+- **`--dry-run -q` printed nothing at all**, so the one command whose output *is* its purpose
+  became mute. It prints a single machine-friendly line.
+- **`estimate_plan` ignored the implicit `identity` mutator**, so every spec declaring
+  mutations without repeating the baseline carrier was under-counted (one declared mutation
+  is two attempts, not one).
+
+### Changed
+- **The MITRE ATLAS tactic universe was re-diffed against upstream and is now 16 tactics,
+  not 14.** Transcribed from `mitre-atlas/atlas-data`, `dist/v6/ATLAS-2026.09.yaml` (release
+  2026.09, 2026-09-14), cross-checked against that repo's `CHANGELOG.md` ("1 matrix, 16
+  tactics"). Two of the old names were **retired spellings** (`ML Model Access` and
+  `ML Attack Staging`, renamed upstream to `AI Model Access` and, in 2026.08,
+  `AI Attack Adaptation`), and `Lateral Movement` (AML.TA0015, added 2025-11-06) and
+  `Command and Control` (AML.TA0014) were missing entirely. Coverage matches by exact string,
+  so our two lateral-movement specs scored **zero in silence** and the published figure was
+  wrong in the numerator *and* the denominator: **12/14 (86%) against a true 13/16 (81%)**.
+  Note for anyone re-checking: the legacy-format `dist/ATLAS.yaml` in the same directory
+  still carries the pre-2026.08 name, so it disagrees with the release it sits next to.
+- **Every framework figure now prints the edition it is measured against**
+  (`OWASP LLM Top 10 (2025)`, `MITRE ATLAS tactics (2026.09)`), in the terminal, the HTML
+  report and the JSON. OWASP published the 2026 list on 2026-08-03 with a **renumbering**, so
+  an unlabelled "not covered: LLM03, LLM04" reads, to anyone holding the new edition, as
+  "Excessive Agency untested": our single most covered category (24 of 72 specs).
+- **Off-universe framework values are now a lint error, in both axes that lacked one.**
+  `owasp: LLM11`, `owasp: LLM00`, `tactic: "initial access"`, `tactic: "Initial Access "` and
+  the retired `tactic: "ML Attack Staging"` all used to pass `dottore lint` with **zero
+  errors and zero warnings**, count for nothing, and tell nobody. IoPC already had this rule;
+  OWASP and ATLAS now do too, with the universes moved to `shared/frameworks.py` (the linter
+  and the reporting layer are peers that must not import each other), plus a battery
+  invariant asserting no numerator can escape its denominator.
+- **Percentages are floored, not rounded.** `"%.0f" % (199 / 200 * 100)` prints `100`, so one
+  uncovered code in two hundred was published as full coverage. `100%` now requires
+  `exercised >= total`.
+- `examples/scope.openai.yaml` added: Scenario D pointed at the local scope with a
+  parenthetical telling the reader to add the missing entry themselves, so the command as
+  printed was refused. The README quickstart named `target.yaml` / `scope.yaml`, which do not
+  exist in this repository; it now uses the shipped example pair and `dottore coverage`.
+
 ### Changed
 - Battery is now **72 specs / 14 suites / 1 pack**, 14 evaluator types.
 - `make bandit` runs with `-c pyproject.toml`; B105 is skipped as redundant with ruff's

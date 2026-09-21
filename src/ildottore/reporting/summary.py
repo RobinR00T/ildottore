@@ -20,6 +20,15 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
+from ildottore.shared.frameworks import (
+    ATLAS_MATRIX_RELEASE,
+    ATLAS_OUT_OF_MATRIX,
+    ATLAS_TACTIC_UNIVERSE,
+    OWASP_LLM_EDITION,
+    OWASP_LLM_TOTAL,
+    OWASP_LLM_UNIVERSE,
+    OWASP_RAI_UNIVERSE,
+)
 from ildottore.shared.iopc import (
     IOPC_IMPACT_UNIVERSE,
     IOPC_IMPACTS,
@@ -29,56 +38,52 @@ from ildottore.shared.iopc import (
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
+    "ATLAS_MATRIX_RELEASE",
+    "ATLAS_OUT_OF_MATRIX",
     "ATLAS_TACTIC_UNIVERSE",
+    "OWASP_LLM_EDITION",
     "OWASP_LLM_TOTAL",
     "OWASP_LLM_UNIVERSE",
+    "OWASP_RAI_UNIVERSE",
     "AxisCoverage",
     "BatteryCoverage",
     "Coverage",
     "FrameworkCounts",
     "MatrixCell",
     "ModelComparison",
+    "RunStatus",
     "RunSummary",
     "build_battery_coverage",
     "build_run_summary",
+    "pct_display",
 ]
 
 _UNKNOWN = "unknown"
 
+
+def pct_display(exercised: int, total: int) -> str:
+    """An integer percentage that reads ``100%`` only when the axis really is complete.
+
+    ``"%.0f" % (199 / 200 * 100)`` prints ``100``, so one uncovered code out of two hundred
+    would be published as full coverage. Every percentage in this tool is read as a claim
+    about what was tested, so the display floors instead of rounding: an incomplete axis
+    tops out at ``99%``, and ``100%`` is reachable only by ``exercised >= total``.
+    """
+
+    if total <= 0:
+        return "0%"
+    if exercised >= total:
+        return "100%"
+    return f"{exercised * 100 // total}%"
+
+
 # The Nova IoPC universe lives in ``shared.iopc`` because the linter validates against it too
 # and ``registry`` and ``reporting`` are peers that must not import each other (docs/01 §2).
 
-#: OWASP LLM Top 10 (2025) has exactly ten categories (LLM01…LLM10). The denominator for
-#: OWASP surface coverage - a run that exercises 6 distinct categories covers 60%.
-OWASP_LLM_TOTAL = 10
-
-#: The ten codes themselves. Specs may also carry a Responsible-AI code (``RAI01``,
-#: ``RAI02``), which is a DIFFERENT framework and must never count toward this denominator:
-#: without this filter the battery's 8 LLM codes plus 2 RAI codes read as a perfect 10/10,
-#: reporting 100% OWASP coverage while LLM03 and LLM04 are untested. ATLAS already filters
-#: against its universe for the same reason.
-OWASP_LLM_UNIVERSE: tuple[str, ...] = tuple(f"LLM{n:02d}" for n in range(1, OWASP_LLM_TOTAL + 1))
-
-#: The MITRE ATLAS tactic universe (the columns of the ATLAS matrix). Coverage is measured
-#: against this known set so "passed the scan" cannot hide an unexercised tactic. Specs carry
-#: the human-readable tactic name (see ``specs/`` + ``MitreAtlas.tactic``), so the universe is
-#: keyed by name. Update this tuple if ATLAS adds a tactic (``docs/12`` coverage-metric item).
-ATLAS_TACTIC_UNIVERSE: tuple[str, ...] = (
-    "Reconnaissance",
-    "Resource Development",
-    "Initial Access",
-    "ML Model Access",
-    "Execution",
-    "Persistence",
-    "Privilege Escalation",
-    "Defense Evasion",
-    "Credential Access",
-    "Discovery",
-    "Collection",
-    "ML Attack Staging",
-    "Exfiltration",
-    "Impact",
-)
+# The OWASP LLM and MITRE ATLAS universes live in ``shared.frameworks`` for the same reason
+# the IoPC one lives in ``shared.iopc``: the linter validates against them too, and
+# ``registry`` and ``reporting`` are peers that must not import each other (docs/01 §2).
+# Re-exported here because every caller of coverage already imports them from this module.
 
 
 @dataclass(frozen=True)
@@ -154,6 +159,24 @@ class Coverage:
 
 
 @dataclass(frozen=True)
+class RunStatus:
+    """Whether the run that produced this summary actually finished (contract §6).
+
+    The runner already computes this (``complete`` | ``budget_exhausted`` | ``parked``) and
+    every report used to throw it away, so a campaign halted by a budget ceiling rendered as
+    an ordinary clean report of whatever had finished. A reader cannot discount a number they
+    cannot see, so the state travels with the summary into every format.
+    """
+
+    state: str = "complete"
+    reason: str | None = None
+
+    @property
+    def complete(self) -> bool:
+        return self.state == "complete"
+
+
+@dataclass(frozen=True)
 class RunSummary:
     """The aggregate every report embeds (contract §6 ``RunSummary``)."""
 
@@ -167,6 +190,7 @@ class RunSummary:
     needs_review_count: int
     coverage: Coverage
     model_comparison: ModelComparison | None = None
+    run_status: RunStatus = field(default_factory=RunStatus)
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -224,6 +248,8 @@ def _build_comparison(
 def _build_coverage(
     findings: list[Finding],
     spec_map: dict[str, AttackSpec],
+    *,
+    planned_specs: int | None = None,
 ) -> Coverage:
     """Compute framework-surface coverage + spec disposition counts (``docs/12`` P1).
 
@@ -231,6 +257,11 @@ def _build_coverage(
     ``unknown`` (unattributed) findings never contribute. ATLAS tactics count toward coverage
     only when they are in :data:`ATLAS_TACTIC_UNIVERSE` (an off-universe name is a spec-
     authoring error, not surface coverage) so ``atlas_pct`` stays in ``[0, 1]``.
+
+    ``planned_specs`` is how many specs the **plan** selected. Without it ``specs_total`` was
+    set to the number of findings, i.e. to ``specs_run``, so the pair always read ``45/45``:
+    a run halted after 45 of 72 specs reported 100% of itself. The caller that knows the
+    intended denominator passes it; absent it, the two stay equal and the report says so.
     """
 
     owasp_seen: set[str] = set()
@@ -278,7 +309,7 @@ def _build_coverage(
         atlas_exercised=atlas_exercised,
         atlas_total=len(ATLAS_TACTIC_UNIVERSE),
         atlas_pct=(atlas_exercised / len(ATLAS_TACTIC_UNIVERSE) if ATLAS_TACTIC_UNIVERSE else 0.0),
-        specs_total=total,
+        specs_total=planned_specs if planned_specs is not None else total,
         specs_run=total,
         specs_pass=specs_pass,
         specs_fail=specs_fail,
@@ -301,11 +332,16 @@ def _build_coverage(
 def build_run_summary(
     findings: list[Finding],
     specs: dict[str, AttackSpec] | None = None,
+    *,
+    planned_specs: int | None = None,
+    run_status: RunStatus | None = None,
 ) -> RunSummary:
     """Aggregate ``findings`` into a :class:`RunSummary` (``docs/05 §4-§5``).
 
     ``specs`` maps ``spec_id → AttackSpec`` for framework attribution. ``model_comparison`` is
     populated only when the findings span more than one distinct ``target_id``.
+    ``planned_specs`` / ``run_status`` carry what the run *intended* and whether it *finished*,
+    which findings alone cannot express (see :class:`RunStatus`).
     """
 
     spec_map = specs or {}
@@ -355,8 +391,9 @@ def build_run_summary(
         confidence_distribution=_distribution(conf_values),
         confirmed_count=confirmed,
         needs_review_count=needs_review,
-        coverage=_build_coverage(findings, spec_map),
+        coverage=_build_coverage(findings, spec_map, planned_specs=planned_specs),
         model_comparison=comparison,
+        run_status=run_status if run_status is not None else RunStatus(),
     )
 
 

@@ -18,6 +18,7 @@ from typing import Annotated
 
 import typer
 
+from ildottore.adapters.base import AdapterError
 from ildottore.cli import calibrate as calibrate_mod
 from ildottore.cli import coverage as coverage_mod
 from ildottore.cli import describe as describe_mod
@@ -29,6 +30,7 @@ from ildottore.cli import registry as registry_mod
 from ildottore.cli import render_media as render_media_mod
 from ildottore.cli import replay as replay_mod
 from ildottore.cli import run as run_mod
+from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
@@ -183,11 +185,14 @@ def run(
     if o_junit is not None:
         outputs["junit"] = o_junit
 
-    # Intensity flags widen the battery / timing but never touch the scope gate.
+    # Intensity flags change the battery / timing but never touch the scope gate.
+    # ``-A`` is documented as "-sV + deep + adaptive", so it implies both of those here
+    # rather than being a third, separate behaviour.
+    resolved_deep = deep or aggressive
     resolved_template = template
     if quick:
         resolved_template = 0
-    elif deep:
+    elif resolved_deep:
         resolved_template = 2
 
     opts = RunOptions(
@@ -200,6 +205,11 @@ def run(
         exclude_globs=list(exclude or []),
         top_tests=top_tests,
         template=resolved_template,
+        discovery_only=sn,
+        fingerprint_first=sv or aggressive,
+        quick=quick,
+        deep=resolved_deep,
+        verbose=verbose,
         rate=rate,
         concurrency=concurrency,
         timeout_s=timeout_s,
@@ -227,7 +237,12 @@ def run(
     except ScopeRequiredError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
-    except (PolicyError, ValueError, OSError) as exc:
+    except (PolicyError, AdapterError, ValueError, OSError) as exc:
+        # AdapterError (and its EndpointNotAllowed subclass) is an authorization/transport
+        # failure, i.e. an operational error: exit 3. It derives from Exception, not from
+        # ValueError, so it used to escape this handler entirely and surface as a traceback
+        # with exit **1**, which in this tool means "findings below the threshold" - a CI
+        # step treating 1 as "carry on" would read a refused endpoint as a clean-ish scan.
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
@@ -268,7 +283,9 @@ def fleet(
 
     try:
         cfg = fleet_mod.load_fleet(config)
-        materialized = fleet_mod.materialize_fleet(cfg, out)
+        # The judge model goes into the generated scope: it is a target we send prompts to.
+        judge_target = wiring.load_target(judge) if judge is not None else None
+        materialized = fleet_mod.materialize_fleet(cfg, out, judge=judge_target)
     except (ValueError, OSError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -317,7 +334,7 @@ def fingerprint(
     except ScopeRequiredError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
-    except (PolicyError, ValueError, OSError) as exc:
+    except (PolicyError, AdapterError, ValueError, OSError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(fp.model_dump_json(indent=2))
@@ -359,7 +376,7 @@ def coverage(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     if as_json:
-        typer.echo(coverage_mod.render_coverage_json(result, framework=framework))
+        typer.echo(coverage_mod.render_coverage_json(result, framework=framework, show_gaps=gaps))
     else:
         typer.echo(coverage_mod.render_coverage(result, framework=framework, show_gaps=gaps))
     raise typer.Exit(ExitCode.CLEAN)
