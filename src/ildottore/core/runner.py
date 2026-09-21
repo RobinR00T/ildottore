@@ -34,6 +34,7 @@ injected :class:`ScenarioProvider` so ``core`` never builds a u03 concrete.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
@@ -161,8 +162,12 @@ class ScenarioProvider(Protocol):
 class CampaignResult:
     """Everything a run produced: the plan, the persisted run, findings and status.
 
-    ``status`` is the run-level state from §6 (``complete`` | ``budget_exhausted`` |
-    ``parked``). The shared :class:`TestRun` model carries no ``status`` field
+    ``status`` is the run-level state from §6: ``complete`` or ``budget_exhausted`` today.
+    (``parked`` is RESERVED by the contract for the PITV park rule and is not produced by
+    this runner; it was documented as a live state in three places and emitted by none, so
+    a consumer switching on it would be handling a case that never arrives.) The CLI adds
+    ``unreachable`` when a target answered nothing at all. The shared :class:`TestRun`
+    model carries no ``status`` field
     (u00-owned, must-not-touch), so the runner surfaces it here and a downstream
     persister/reporter reads it from the result (contract §6).
     """
@@ -224,6 +229,7 @@ class CampaignRunner:
         timeout_s: float | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
         now: Callable[[], float] | None = None,
+        wall_clock: Callable[[], float] | None = None,
         rate_rps: float | None = None,
         pacer: RateLimiter | None = None,
     ) -> None:
@@ -243,6 +249,25 @@ class CampaignRunner:
         self._timeout_s = timeout_s
         self._sleep = sleep
         self._now = now
+        # TWO clocks, deliberately, because they answer different questions.
+        #
+        # ``now`` is injected by the composition root as ``deterministic_clock()``: a counter
+        # that steps 1.0 per READ, so an offline attempt records a byte-stable ``latency_ms``.
+        # Feeding that counter to the budget ledger made ``max_wall_s`` measure *clock reads*
+        # instead of seconds, which is a defect in both directions at once:
+        #
+        # * the default battery could not finish. 1800 reads is fewer reads than a 72-spec
+        #   run performs, so a plain ``dottore run`` halted after 45 specs, on the wall axis,
+        #   every time. (The token ceiling was never the constraint: the whole battery really
+        #   consumes about 367k of the 500k default. Deriving the budgets from the plan was
+        #   worth doing, but it did not fix this, and the axis that binds is this one.)
+        # * a LIVE run had no time bound at all. The same counter was wired on the real-adapter
+        #   path, so 1800 reads is unrelated to elapsed time, and threat-model S8's wall half
+        #   did not exist where it matters.
+        #
+        # So the ledger gets a real clock (``time.monotonic`` by default) and the evidence
+        # keeps the deterministic one. A test injects ``wall_clock`` to drive the wall axis.
+        self._wall_clock = wall_clock if wall_clock is not None else time.monotonic
         # S8's rate half. ``None``/``<=0`` leaves sends unpaced, which is what an offline
         # mock campaign wants (nothing leaves the process, and pacing it would only slow CI);
         # the CLI decides, and says so, rather than accepting a --rate it would ignore.
@@ -293,7 +318,7 @@ class CampaignRunner:
             adaptive=adaptive,
             budgets=budgets,
         )
-        ledger = BudgetLedger.from_plan_budgets(plan.budgets, time_source=self._now)
+        ledger = BudgetLedger.from_plan_budgets(plan.budgets, time_source=self._wall_clock)
         completed = _completed_attempt_ids(resume_from)
         # Prior findings from a partial run, keyed by spec, so a resumed spec MERGES its
         # already-persisted attempts with the fresh ones instead of re-scoring on the partial
@@ -360,6 +385,10 @@ class CampaignRunner:
 
         if breach_reason is None:
             return None
+        # Every spec the plan knows about produces a finding when it is reached, including a
+        # capability skip and a policy block, so the plan's own total is the denominator here
+        # too. It has to agree with the one the CLI reports, or a halted run prints two
+        # different denominators side by side.
         planned = len(plan.selected) + len(plan.skipped)
         missing = max(0, planned - len({f.spec_id for f in findings}))
         return f"{breach_reason}; {missing} of {planned} specs never ran"

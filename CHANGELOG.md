@@ -42,6 +42,113 @@ versioning: [SemVer](https://semver.org/).
   run (and before a purchase): "covered, of what?". Names the uncovered codes rather than only
   counting them, supports `--framework`, `--suite` and `--json`.
 
+### Fixed (second audit round, on the first round's own work)
+
+Four more adversarial audits were run against the commit above. They found that its headline
+diagnosis was **wrong**, and that the fix had reintroduced the defect it was written to remove.
+Both corrections are below, and so is the number the first round got wrong.
+
+- **CORRECTION: the default battery did not fit its budget, but not for the reason the entry
+  above gives.** The binding axis was **`max_wall_s`, not tokens**, and the cause was that
+  `max_wall_s` did not measure time. The composition root injects `deterministic_clock()` (a
+  counter that steps 1.0 per **read**, so offline evidence records a byte-stable `latency_ms`)
+  and the runner handed that same counter to the budget ledger. So 1800 "seconds" was 1800
+  clock reads, fewer reads than a 72-spec run performs: the default battery halted after 45
+  specs on **every** invocation, and adding a telemetry read anywhere silently changed which
+  specs got scanned. The "~537k tokens against a 500k ceiling" figure was measured with
+  `estimate_plan` over the raw unfiltered spec list; the resolved per-target plan estimates
+  481k and the battery really consumes **367k**, so the token ceiling was never the
+  constraint and raising it changed nothing. The ledger now gets a real `time.monotonic`
+  clock and the evidence keeps the deterministic one; the full battery completes in about a
+  second. Deriving the budgets from the plan remains right (a constant ceiling drifts as the
+  battery grows) but it was not the fix. **A live run also had no wall bound at all**, which
+  is where threat-model S8's time half actually mattered.
+- **Multi-turn specs were completely unpaced.** `reproduce_conversation` accepted the
+  `RateLimiter` and did not forward it one hop to `execute_conversation`. 11 of 72 shipped
+  specs are multi-turn, but **42% of a full battery's requests**, and the measured breach was
+  **19x** the authorized rate (389 req/s against a requested 20). The rate ceiling added in
+  the same commit therefore held on one of the two send paths.
+- **`--dry-run -sV` and `--estimate -sV` SENT.** Fingerprinting sends ten probes per target,
+  and the guard excluded `-sn` only, so the two commands whose entire promise is zero egress
+  printed "dry-run: plan resolved, sent nothing." immediately after ten live requests with a
+  real bearer token. `--quick --dry-run` is the first command the README teaches.
+- **A derived ceiling with no upper bound let a spec pack set the scanner's self-DoS limit.**
+  `sampling.max_tokens` was unbounded in the model, in the JSON schema and in the linter (a
+  negative value was accepted too, and dragged an estimate *down*). Measured on a pack nobody
+  would call hostile (200 specs, an ordinary 8k completion, 4 mutations): a **61-million**
+  token allowance, 123x the old constant. `max_tokens` is now bounded (1 to 200_000), and the
+  derivation is clamped by `BUDGET_DERIVATION_CAP`; `--budget-tokens` / `--budget-requests` /
+  `--budget-wall` are how a **human** authorizes more, which is the distinction that makes a
+  budget a budget.
+- **"Specs run: 72 of 70 planned", i.e. 102.9%, on every green run.** The denominator counted
+  `selected + capability-skipped` and omitted the policy-blocked specs, whose findings stayed
+  in the numerator. Same shape as the defect the first round set out to remove, introduced by
+  its fix. The first invariant test written for it could not catch it either: it built the
+  universe out of the output it was checking, so `covered <= universe` was a tautology that
+  passes for any output at all. Both are fixed, and the invariant now reads the pinned
+  universes.
+- **Coverage credited specs that never sent a request.** A policy-blocked or
+  capability-skipped spec produces a finding, and crediting its framework codes inflated a
+  default run by a whole tactic: 13/16 ATLAS published while `Credential Access` was covered
+  solely by `AG-CRED-SWEEP-001`, which the default pack blocks and which sent nothing. Only
+  specs that reached the wire count now, and the ones that did not are reported
+  (`coverage.not_exercised`) rather than silently folded in. A selection where **nothing** is
+  runnable is refused outright (it used to exit 0 with `3 of 0 planned` and zero requests).
+- **SARIF and JUnit carried no truncation signal**, which are the two formats CI actually
+  reads: a halted campaign rendered as a fully green JUnit suite (`errors="0"`, hardcoded)
+  and a SARIF log with no `invocations` at all. SARIF now carries
+  `invocations[0].executionSuccessful` plus a tool notification (its own field for this) and
+  JUnit an `<error>`. **`dottore diff` refuses an incomplete report**: the specs that never
+  ran are absent, absence classifies as `ONLY-IN-BASELINE`, and that is not a regression, so
+  a scan that dropped a third of the battery used to diff green and exit 0.
+- **An authorized but unreachable target exited 0.** Every attempt died on transport, so every
+  verdict was inconclusive, coverage percentages were published as if measured, and the reason
+  lived only inside the evidence. That is the same false green the scope gate was fixed for,
+  one layer further out: it is now `unreachable`, reported, exit 3.
+- **The authorization gate and the adapter disagreed about "the endpoint" in 80 of 252
+  combinations, 41 of them false refusals.** Three different notions: the scope's `base_url`
+  (what the pre-flight authorized), `target.endpoint` (what the operator wrote) and
+  `origin + a hardcoded provider path` (what the adapter sent). The hardcoded path also
+  **discarded the declared one**, so every gateway-hosted model was broken:
+  `https://x.openai.azure.com/openai/deployments/gpt4o/chat/completions` went on the wire as
+  `https://x.openai.azure.com/v1/chat/completions`. One function (`wiring.request_url_for`)
+  now answers for the gate and the factory both, and the declared path wins over the provider
+  default (Azure OpenAI, LiteLLM, any corporate proxy).
+- **`fleet --run` turned an adapter refusal into a traceback and exit 1**, the code that means
+  "findings below the threshold": the same handler tuple `run` and `fingerprint` had already
+  been given in the first round, minus `AdapterError`.
+- **A stdio MCP command line was printed unmasked** by `-sn` and `--dry-run`, secret included
+  (`stdio://... --token sk-...`). The repo's redactor masks exactly that; these two printers
+  were simply not routed through it, and they are the commands whose output lands in tickets.
+- **`--quick` / `--deep` silently overrode an explicit `-T`**, in both directions: `-T0 --deep`
+  became T2, four times the pace, on a target whose operator had chosen T0 precisely because
+  it is fragile. An explicit `-T` now wins.
+- **Schemes were blocklisted, not allowlisted**: `ws://`, `ftp://`, `file:///etc/passwd` and a
+  scheme-relative `//host/path` all passed `is_allowed`, because the gate refused the literal
+  scheme `http` off-loopback and let everything else through to the host check. Percent-encoded
+  dot segments (`/v1/%2e%2e/admin`) are decoded before the prefix check too.
+- **A duplicate target id in a scope silently resolved to the first entry**, so a permissive
+  entry could shadow a narrowing one, including its credential allowlist. Refused.
+- Smaller, each one an audited finding: `--compare` now prints the comparison matrix in the
+  terminal instead of only embedding it in the JSON (it was a flag that counted its arguments
+  and did nothing else); `-v` no longer announces "sent nothing" immediately before sending,
+  and `-vv` lists the skipped and blocked spec ids instead of being byte-identical to `-v`;
+  an ignored `--rate` is announced on a plain run and not only under `--dry-run`, and the
+  notice no longer claims the operator requested the timing template's own default;
+  an **unreadable** `--scope` exits 3 instead of click's exit 2 (which this tool uses for
+  "findings at or above the threshold"); attack targets get the same pre-flight credential
+  check the judge got; `dottore replay <unknown-id>` refuses instead of printing
+  `attempts: 0` and exiting 0; `fleet --judge` carries `--judge` into the "Run it:" hint it
+  prints; a stdio refusal names the `commands:` field and the exact string to add; the
+  `--fail-on`-vs-truncation precedence is documented; `dottore coverage` stopped rounding 22/23
+  up to 96% while every other surface printed 95%; the IoPC axes print their taxonomy version
+  like the other two; `docs/MANUAL.md` stopped publishing the retracted `12/14 86%` ATLAS
+  figure in a block presented as real output; the `docs/09` cheat sheet no longer shows a
+  positional-URL invocation and a `--model` flag that do not exist; `docs/10` states plainly
+  that `-sV`'s plan tailoring is inert until the fingerprint engine emits the hints it reads;
+  and `parked`, documented as a run state in three places and produced by nothing, is marked
+  reserved.
+
 ### Fixed
 - **A run that does not finish is no longer reported as a clean one (exit 3).** The default
   battery **did not fit the engine's own default token ceiling**: `DEFAULT_PLAN_BUDGETS`

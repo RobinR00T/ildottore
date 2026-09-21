@@ -159,7 +159,7 @@
             "state",
             "complete"
           ],
-          "description": "Whether the run finished. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one. state is one of complete | budget_exhausted | parked.",
+          "description": "Whether the run finished. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one. state is complete, budget_exhausted (a hard ceiling halted the campaign) or unreachable (every attempt failed on transport, so nothing was evaluated).",
           "properties": {
             "state": {
               "type": "string",
@@ -242,6 +242,37 @@
               "type": "integer",
               "minimum": 0
             }
+          }
+        },
+        "off_universe": {
+          "type": "array",
+          "description": "Framework values this run did not count because they are outside their pinned universe. Optional in report-1.0 so an older document still validates.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "spec_id",
+              "field",
+              "value"
+            ],
+            "properties": {
+              "spec_id": {
+                "type": "string"
+              },
+              "field": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "not_exercised": {
+          "type": "array",
+          "description": "Spec ids that produced a finding but never sent a request (policy-blocked, or skipped for an undeclared capability). Their framework codes are excluded from every numerator. Optional in report-1.0.",
+          "items": {
+            "type": "string"
           }
         }
       }

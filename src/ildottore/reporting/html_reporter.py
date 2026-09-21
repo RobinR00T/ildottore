@@ -30,7 +30,7 @@ from ildottore.reporting.summary import (
     pct_display,
 )
 from ildottore.shared.enums import ReportFormat, VerdictStatus
-from ildottore.shared.iopc import IOPC_IMPACTS
+from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = ["EVIDENCE_EXCERPT_LEN", "UNSAFE_RENDER_BANNER", "HtmlReporter"]
@@ -148,6 +148,7 @@ class HtmlReporter(BaseReporter):
             # means the opposite thing under the 2026 renumbering (see OWASP_LLM_EDITION).
             owasp_edition=OWASP_LLM_EDITION,
             atlas_release=ATLAS_MATRIX_RELEASE,
+            iopc_version=IOPC_TAXONOMY_VERSION,
             has_comparison=summary.model_comparison is not None,
             comparison=summary.model_comparison,
             confirmed=confirmed,

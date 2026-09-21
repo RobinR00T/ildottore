@@ -209,7 +209,7 @@ Design decisions worth recording:
   rejects a well-formed but non-existent one, which would otherwise match nothing and shrink
   the coverage numerator silently for ever.
 
-**Where the battery actually stands: 25/30 techniques (83%) and 22/23 impacts (96%).**
+**Where the battery actually stands: 25/30 techniques (83%) and 22/23 impacts (95%).**
 
 That number is lower than the one first published here, and the correction is the useful part.
 An adversarial review of the mapping found 30 of the 72 specs mis-mapped, mostly **over-claims**:

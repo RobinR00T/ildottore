@@ -70,7 +70,7 @@
         MITRE ATLAS tactics ({{ atlas_release }}):
         <strong>{{ summary.coverage.atlas.exercised }}/{{ summary.coverage.atlas.total }}</strong>
         ({{ summary.coverage.atlas | pct }}) ·
-        IoPC techniques
+        IoPC techniques ({{ iopc_version }})
         <strong>{{ summary.coverage.iopc.techniques.exercised }}/{{ summary.coverage.iopc.techniques.total }}</strong>
         ({{ summary.coverage.iopc.techniques | pct }}) ·
         IoPC impacts
@@ -85,6 +85,19 @@
         fail {{ summary.coverage.specs.fail }} ·
         inconclusive {{ summary.coverage.specs.inconclusive }}
       </p>
+      {% if summary.coverage.not_exercised %}
+      <p class="coverage-not-exercised">
+        Not exercised: <strong>{{ summary.coverage.not_exercised | length }}</strong> spec(s)
+        sent no request (blocked by policy, or a capability the target does not declare), so
+        their framework codes are not counted as covered.
+      </p>
+      {% endif %}
+      {% if summary.coverage.off_universe %}
+      <p class="coverage-off-universe" role="alert">
+        WARNING: {{ summary.coverage.off_universe | length }} framework value(s) outside their
+        pinned universe were not counted.
+      </p>
+      {% endif %}
       {% if summary.coverage.owasp.categories %}
       <p class="coverage-owasp">OWASP exercised: {{ summary.coverage.owasp.categories | join(', ') }}</p>
       {% endif %}

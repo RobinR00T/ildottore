@@ -161,6 +161,21 @@ def load_scope(
     except Exception as exc:  # pydantic.ValidationError → typed ScopeError
         raise ScopeError(f"scope file {file_path} failed validation: {exc}") from exc
 
+    # A duplicate id is refused, not resolved. ``Scope.target()`` returns the FIRST match,
+    # so two entries for one id meant the first silently won: a permissive entry could
+    # shadow a narrowing one (including its identity allowlist, so an ``auth_ref`` the second
+    # entry refuses was accepted), and reversing the order turned it into a false refusal.
+    # The authorization record has to have one answer per target. ``materialize_fleet``
+    # already refuses duplicates on its side, so this closes the same hole on the other.
+    seen: set[str] = set()
+    for entry in scope.targets:
+        if entry.id in seen:
+            raise ScopeError(
+                f"scope file {file_path} declares target id {entry.id!r} more than once; "
+                "an authorization record must have exactly one entry per target"
+            )
+        seen.add(entry.id)
+
     body = _strip_checksum_line(raw_text).encode("utf-8")
     if scope.checksum is not None:
         if not verifier.verify(body, scope.checksum):

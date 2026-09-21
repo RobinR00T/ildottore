@@ -68,6 +68,11 @@ def _coverage_to_wire(coverage: Coverage) -> dict[str, Any]:
                 "pct": coverage.iopc_impacts_pct,
             },
         },
+        "off_universe": [
+            {"spec_id": spec_id, "field": field, "value": value}
+            for spec_id, field, value in coverage.off_universe
+        ],
+        "not_exercised": list(coverage.not_exercised),
         "specs": {
             "total": coverage.specs_total,
             "run": coverage.specs_run,

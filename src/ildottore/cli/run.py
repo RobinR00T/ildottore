@@ -118,6 +118,11 @@ class RunOptions:
     deep: bool = False  # --deep
     verbose: int = 0  # -v
     rate: float | None = None
+    # Explicit ceilings. The derived ones are clamped by BUDGET_DERIVATION_CAP, so these are
+    # how an operator authorizes more than the derivation may grant itself.
+    budget_tokens: int | None = None
+    budget_requests: int | None = None
+    budget_wall_s: int | None = None
     concurrency: int | None = None
     timeout_s: float | None = None
     runs: int = 5
@@ -329,9 +334,29 @@ def estimate_plan(
 #: ceilings stay hard; they are simply sized from the plan that the operator reviewed.
 BUDGET_HEADROOM = 1.5
 
+#: The absolute cap on a DERIVED ceiling, and the reason it exists: without it, the plan sets
+#: its own limit, so a spec pack sets the scanner's self-DoS bound. Measured on a pack nobody
+#: would call hostile (200 specs, an ordinary 8k completion, 4 mutations): a 61-million-token
+#: allowance, 123 times the old constant. The point of a budget is that something other than
+#: the input decides the maximum, so the derivation is clamped here and an operator who
+#: really needs more says so explicitly with ``--budget-tokens`` / ``--budget-requests``.
+#: The shipped battery at the default ``--runs 5`` derives ~722k tokens and ~750 requests, so
+#: these caps leave room for a battery several times larger before anyone has to think.
+BUDGET_DERIVATION_CAP = PlanBudgets(
+    max_tokens=5_000_000,
+    max_requests=20_000,
+    max_wall_s=7_200,
+    max_attempts=20_000,
+)
 
-def budgets_for(estimate: PlanEstimate, *, rate_rps: float | None = None) -> PlanBudgets:
-    """Hard ceilings sized from the plan, never below the conservative defaults.
+
+def budgets_for(
+    estimate: PlanEstimate,
+    *,
+    rate_rps: float | None = None,
+    overrides: PlanBudgets | None = None,
+) -> PlanBudgets:
+    """Hard ceilings sized from the plan, never below the defaults, never above the cap.
 
     The scanner must not self-DoS, which is why :data:`DEFAULT_PLAN_BUDGETS` exists. But a
     *constant* ceiling is a ceiling that drifts out of date as the battery grows, and this
@@ -344,18 +369,43 @@ def budgets_for(estimate: PlanEstimate, *, rate_rps: float | None = None) -> Pla
     ``rate_rps`` extends the wall-clock ceiling to fit the authorized pace: with pacing now
     enforced, a deliberately slow ``--rate`` would otherwise be halted by the wall axis, i.e.
     obeying one flag would break another.
+
+    Three bounds, in order: the conservative floor (:data:`DEFAULT_PLAN_BUDGETS`), the value
+    derived from this plan, and the absolute :data:`BUDGET_DERIVATION_CAP`. ``overrides`` is
+    the operator's own word (``--budget-tokens`` and friends) and wins outright on the axes it
+    names, cap included: a human raising a ceiling is the authorization the derivation is not.
     """
 
+    def _axis(floor: int | None, derived: int, cap: int | None, override: int | None) -> int:
+        if override is not None:
+            return override
+        return min(max(floor or 0, derived), cap or derived)
+
+    o = overrides if overrides is not None else PlanBudgets()
     tokens = int(estimate.total_tokens * BUDGET_HEADROOM)
     requests = int(estimate.requests * BUDGET_HEADROOM)
     wall_s = DEFAULT_PLAN_BUDGETS.max_wall_s or 0
     if rate_rps is not None and rate_rps > 0:
         wall_s = max(wall_s, int(estimate.requests / rate_rps * BUDGET_HEADROOM) + 1)
     return PlanBudgets(
-        max_tokens=max(DEFAULT_PLAN_BUDGETS.max_tokens or 0, tokens),
-        max_requests=max(DEFAULT_PLAN_BUDGETS.max_requests or 0, requests),
-        max_wall_s=wall_s,
-        max_attempts=max(DEFAULT_PLAN_BUDGETS.max_attempts or 0, requests),
+        max_tokens=_axis(
+            DEFAULT_PLAN_BUDGETS.max_tokens, tokens, BUDGET_DERIVATION_CAP.max_tokens, o.max_tokens
+        ),
+        max_requests=_axis(
+            DEFAULT_PLAN_BUDGETS.max_requests,
+            requests,
+            BUDGET_DERIVATION_CAP.max_requests,
+            o.max_requests,
+        ),
+        max_wall_s=_axis(
+            DEFAULT_PLAN_BUDGETS.max_wall_s, wall_s, BUDGET_DERIVATION_CAP.max_wall_s, o.max_wall_s
+        ),
+        max_attempts=_axis(
+            DEFAULT_PLAN_BUDGETS.max_attempts,
+            requests,
+            BUDGET_DERIVATION_CAP.max_attempts,
+            o.max_attempts,
+        ),
     )
 
 
@@ -368,6 +418,7 @@ def resolve_target_plans(
     rate_rps: float | None = None,
     fingerprints: dict[str, ModelFingerprint] | None = None,
     adaptive: bool = False,
+    budget_overrides: PlanBudgets | None = None,
 ) -> list[TargetPlan]:
     """Resolve, per target, exactly what the run would do - without sending anything.
 
@@ -416,11 +467,25 @@ def resolve_target_plans(
                 skipped_capability=[(s.spec_id, s.reason) for s in plan.skipped],
                 blocked_by_policy=blocked,
                 estimate=estimate,
-                budgets=budgets_for(estimate, rate_rps=rate_rps),
+                budgets=budgets_for(estimate, rate_rps=rate_rps, overrides=budget_overrides),
                 mutators_by_spec=mutators_by_spec,
             )
         )
     return plans
+
+
+def _safe_endpoint(endpoint: str) -> str:
+    """Mask an endpoint before printing it. A stdio MCP target's "endpoint" is a COMMAND LINE.
+
+    ``stdio:///usr/bin/env node server.js --token sk-...`` was printed verbatim by ``-sn`` and
+    by ``--dry-run``, the two commands an operator runs with least suspicion and whose output
+    lands in tickets and CI logs. The repo already ships a redactor that masks exactly that
+    token; these printers simply were not routed through it.
+    """
+
+    from ildottore.reporting import default_redactor
+
+    return str(default_redactor().redact(endpoint))
 
 
 def _print_estimate(plans: list[TargetPlan], *, runs: int, quiet: bool = False) -> None:
@@ -471,29 +536,40 @@ def _print_dry_run_plan(
     runs: int,
     paced: bool,
     rate_rps: float | None,
+    explicit_rate: float | None = None,
     quiet: bool = False,
+    sending: bool = False,
+    detail: int = 0,
 ) -> None:
-    """Print the plan ``--dry-run`` just resolved (one line under ``--quiet``).
+    """Print the resolved plan (one line under ``--quiet``).
 
     ``--dry-run`` exists to answer "is my wiring right?", which it cannot do without showing
     what it resolved: which scope authorized which target *at which endpoint*, which battery
     survived both filters, and what the run would really cost. Under ``-q`` it prints a single
     machine-friendly line rather than nothing: a command whose only output is its exit code
     cannot answer the question it exists for.
+
+    ``sending=True`` is the ``-v`` case, where the same plan is printed and the run then
+    proceeds. It changes the wording, because ``-v`` reused this verbatim and announced
+    "dry-run: plan resolved, sent nothing." immediately before sending. ``detail`` is the
+    ``-v`` count: at ``-vv`` the skipped and blocked spec ids are listed, not just counted.
     """
 
     requests = sum(p.estimate.requests for p in plans)
     specs = sum(len(p.selected) for p in plans)
+    headline = "resolved, sending now." if sending else "plan resolved, sent nothing."
+    label = "plan" if sending else "dry-run"
     if quiet:
-        print(f"dry-run: {specs} specs, {requests} requests, {len(plans)} target(s), sent nothing")
+        print(f"{label}: {specs} specs, {requests} requests, {len(plans)} target(s)")
         return
-    print("dry-run: plan resolved, sent nothing.")
+    print(f"{label}: {headline}")
     print(f"  scope:   {scope_path}")
     for plan in plans:
         # The authorized ENDPOINT, not the words "authorized by the scope": a scope naming
         # the target with an empty endpoint list is the exact case that used to read green.
         print(
-            f"  target:  {plan.target.id} ({plan.target.type.value}) authorized at {plan.endpoint}"
+            f"  target:  {plan.target.id} ({plan.target.type.value}) "
+            f"authorized at {_safe_endpoint(plan.endpoint)}"
         )
     print(f"  battery: {suite or 'full battery'}, {specs} specs selected")
     by_cat: dict[str, int] = {}
@@ -508,17 +584,25 @@ def _print_dry_run_plan(
                 f"  skipped: {len(plan.skipped_capability)} spec(s) on {plan.target.id}, "
                 "capability not declared by the target"
             )
+            if detail >= 2:
+                for spec_id, reason in plan.skipped_capability:
+                    print(f"    - {spec_id}: {reason}")
         if plan.blocked_by_policy:
             print(
                 f"  blocked: {len(plan.blocked_by_policy)} spec(s) on {plan.target.id}, "
                 "refused by the policy pack"
             )
+            if detail >= 2:
+                for spec_id, reason in plan.blocked_by_policy:
+                    print(f"    - {spec_id}: {reason}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
     if paced and rate_rps:
         print(f"  pacing:  {rate_rps} req/s ceiling (S8)")
-    elif rate_rps:
+    elif explicit_rate is not None:
+        # Only when the OPERATOR asked for a rate. Saying "5.0 req/s requested" about the
+        # timing template's own default reads as an ignored instruction that nobody gave.
         print(
-            f"  pacing:  not applied ({rate_rps} req/s requested) - this is an offline "
+            f"  pacing:  not applied ({explicit_rate} req/s requested) - this is an offline "
             "mock run, nothing leaves the process"
         )
     budgets = plans[0].budgets if plans else DEFAULT_PLAN_BUDGETS
@@ -547,7 +631,7 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
     for plan in plans:
         caps = [name for name, on in plan.target.capabilities.model_dump().items() if on]
         print(f"  target:      {plan.target.id} ({plan.target.type.value})")
-        print(f"    endpoint:  {plan.endpoint} (authorized by the scope)")
+        print(f"    endpoint:  {_safe_endpoint(plan.endpoint)} (authorized by the scope)")
         print(f"    provider:  {plan.target.provider or 'mock/offline'}")
         print(f"    model:     {plan.target.model or 'unknown'}")
         print(f"    declares:  {', '.join(caps) if caps else 'no optional capabilities'}")
@@ -613,16 +697,32 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     ]
     if refusals:
         authorized = ", ".join(sorted(t.id for t in scope.targets)) or "<none>"
+        # A stdio MCP target is authorized by its COMMAND LINE, not by an endpoint, and the
+        # generic advice ("allowlist the endpoint") pointed at the wrong field. The spelling
+        # matters too: the scope's `commands` entries are matched against the joined argv, so
+        # the exact string is printed rather than left to the reader to reconstruct.
+        stdio_hint = ""
+        for _, target in to_authorize:
+            if (target.transport or "").strip().lower() == "stdio" and target.command:
+                joined = " ".join(target.command)
+                stdio_hint = (
+                    f" {target.id!r} is a stdio MCP target, so it is authorized by its "
+                    f'command line, not by an endpoint: add commands: ["{joined}"] to its '
+                    "scope entry (one string, exactly as shown)."
+                )
+                break
         raise ScopeError(
             f"target(s) not authorized by the scope: {'; '.join(sorted(refusals))}. "
             f"The scope authorizes: {authorized}. A target id must match a scope entry "
             "exactly and that entry must allowlist the endpoint the target uses; add it "
-            "or point --scope elsewhere."
+            f"or point --scope elsewhere.{stdio_hint}"
         )
-    if judge_target is not None:
-        # Resolving the judge's credential is also scope-gated (the same defence the attack
-        # targets get); raises ValueError when the scope did not declare that auth_ref.
-        wiring.check_target_credential(scope, judge_target)
+    # Credential authorization, pre-flight, for the judge AND for every attack target. Only
+    # the judge got this check, so `--dry-run` printed a green plan for a target whose
+    # auth_ref the scope refuses and the real run then failed at exit 3: the command whose
+    # job is answering "is my wiring right?" gave the wrong answer about the credential.
+    for _, candidate in to_authorize:
+        wiring.check_target_credential(scope, candidate)
 
     registry = wiring.build_registry(spec_paths)
     all_specs = registry.list()
@@ -690,11 +790,32 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     pacing_rate = timing.rate_rps if any_live else None
 
     # -sV / -A: fingerprint before attacking, then let the plan use it.
+    #
+    # NOT under --dry-run/--estimate/-sn: fingerprinting SENDS (ten probes per target), and
+    # those three commands promise the opposite. The guard used to exclude -sn only, so
+    # `--dry-run -sV` printed "dry-run: plan resolved, sent nothing." after posting ten live
+    # requests with a real bearer token, and `--quick --dry-run` is the first command the
+    # README teaches. A no-send promise has to hold for every combination, not the ones that
+    # happened to be tested.
     fingerprints: dict[str, ModelFingerprint] = {}
-    if opts.fingerprint_first and not opts.discovery_only:
+    sends_nothing = opts.discovery_only or opts.dry_run or opts.estimate
+    if opts.fingerprint_first and not sends_nothing:
         for _, target, (_, real_target) in routes:
             fingerprints[target.id] = wiring.fingerprint_probe(
                 scope, target, real_target=real_target
+            )
+    if fingerprints and not opts.quiet:
+        for target_id, fingerprint in sorted(fingerprints.items()):
+            family = fingerprint.family
+            version = fingerprint.version
+            print(
+                f"fingerprint: {target_id} "
+                + (
+                    f"family={family.guess} (confidence {family.confidence:.2f})"
+                    if family is not None
+                    else "family=unknown"
+                )
+                + (f" version={version.guess}" if version is not None else "")
             )
     adaptive = opts.fingerprint_first or opts.deep
 
@@ -706,7 +827,29 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         rate_rps=pacing_rate,
         fingerprints=fingerprints,
         adaptive=adaptive,
+        budget_overrides=PlanBudgets(
+            max_tokens=opts.budget_tokens,
+            max_requests=opts.budget_requests,
+            max_wall_s=opts.budget_wall_s,
+        ),
     )
+
+    # A target with nothing left to run is refused, for the same reason an empty --spec
+    # selection is: it would otherwise scan nothing, report coverage percentages over the
+    # findings of specs that never sent a request, and exit 0. Reproduced by the audit with
+    # three policy-blocked specs: "3 of 0 planned", exit 0, zero requests.
+    barren = [
+        f"{p.target.id} ({len(p.skipped_capability)} skipped for capabilities, "
+        f"{len(p.blocked_by_policy)} blocked by policy)"
+        for p in plans
+        if not p.selected
+    ]
+    if barren and not opts.discovery_only:
+        raise ValueError(
+            "nothing would be sent: every selected spec is unrunnable on "
+            f"{'; '.join(barren)}. Widen the selection, declare the capability on the "
+            "target, or enable the category in the policy pack."
+        )
 
     if opts.discovery_only:
         _print_discovery(plans, quiet=opts.quiet)
@@ -726,7 +869,18 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             runs=opts.runs,
             paced=pacing_rate is not None,
             rate_rps=timing.rate_rps,
+            explicit_rate=opts.rate,
             quiet=opts.quiet and opts.dry_run,
+            sending=not opts.dry_run,
+            detail=opts.verbose,
+        )
+    elif pacing_rate is None and opts.rate is not None and not opts.quiet:
+        # An ignored flag has to be announced on the path the operator is actually using.
+        # This notice existed only inside the plan block, so a plain run silently dropped
+        # --rate: two of the four paths honoured what the threat model claims.
+        print(
+            f"note: --rate {opts.rate} is not applied to an offline mock run "
+            "(nothing leaves the process)"
         )
     if opts.dry_run:
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
@@ -740,7 +894,13 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     all_findings: list[Finding] = []
     planned_specs = 0
     for (_, target, (mock_scenario, real_target)), plan in zip(routes, plans, strict=True):
-        planned_specs += len(plan.selected) + len(plan.skipped_capability)
+        # The denominator is the WHOLE selected battery for this target, because the runner
+        # emits a finding for a capability-skipped spec and for a policy-blocked one too: they
+        # are reported, not dropped. Counting only `selected + skipped_capability` left the
+        # two policy-blocked specs out of the denominator while their findings stayed in the
+        # numerator, and a complete run published "Specs run: 72 of 70 planned", i.e. 102.9%.
+        # Exactly the shape this whole branch exists to remove, introduced by the fix for it.
+        planned_specs += len(selected)
         result = _run_one_target(
             target=target,
             scope=scope,
@@ -768,13 +928,25 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # terminal, the report and the exit code. The runner already computed this state and
     # every one of those three used to discard it, so a scan that dropped 27 of 72 specs
     # printed `total: 45, run: 45` and exited 0 - a denominator measured on the survivors.
-    incomplete = {
-        r.run.targets[0].id if r.run.targets else f"target-{i}": (r.status_reason or r.status)
-        for i, r in enumerate(results)
-        if r.status != "complete"
-    }
+    incomplete: dict[str, str] = {}
+    states: list[str] = []
+    for i, result in enumerate(results):
+        target_id = result.run.targets[0].id if result.run.targets else f"target-{i}"
+        if result.status != "complete":
+            incomplete[target_id] = result.status_reason or result.status
+            states.append(result.status)
+            continue
+        # A target that is authorized but NOT REACHABLE completed in the runner's sense and
+        # is a failed scan in every other sense: every attempt died on transport, so every
+        # verdict is inconclusive and the reason lives only inside the evidence. That is the
+        # same false green the scope gate was fixed for, one layer further out, so it gets
+        # the same treatment rather than a clean exit over a report of nothing.
+        unreachable = _unreachable_reason(result)
+        if unreachable is not None:
+            incomplete[target_id] = unreachable
+            states.append("unreachable")
     run_status = RunStatus(
-        state=next((r.status for r in results if r.status != "complete"), "complete"),
+        state=states[0] if states else "complete",
         reason="; ".join(f"{k}: {v}" for k, v in sorted(incomplete.items())) or None,
     )
     for target_id, reason in sorted(incomplete.items()):
@@ -802,6 +974,26 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         dry_run=False,
         report_paths=report_paths,
         incomplete=incomplete,
+    )
+
+
+def _unreachable_reason(result: CampaignResult) -> str | None:
+    """Why this target counts as unreachable, or ``None`` when it does not.
+
+    Unreachable means: attempts were made, **every** attempt failed on transport (an error
+    and no response), and therefore nothing was actually evaluated. One flaky endpoint or one
+    bad spec is not this, because the run still measured something.
+    """
+
+    attempts = [a for finding in result.findings for a in finding.attempts]
+    if not attempts:
+        return None  # nothing was attempted: a barren plan, refused before the run
+    if any(a.error is None and a.response is not None for a in attempts):
+        return None
+    first = next((a.error for a in attempts if a.error), "no response")
+    return (
+        f"every one of the {len(attempts)} attempt(s) failed on transport, so nothing was "
+        f"evaluated: {first}"
     )
 
 
@@ -921,7 +1113,16 @@ def _write_reports(
 
     if not results:
         return []
+    # The envelope is the last target's run, but the findings and the denominator are summed
+    # across every target, so a multi-target report used to name ONE target while its status
+    # named another: a reader could not find the truncated target in the document at all.
     run = results[-1].run
+    if len(results) > 1:
+        seen: dict[str, Target] = {}
+        for result in results:
+            for target in result.run.targets:
+                seen.setdefault(target.id, target)
+        run = run.model_copy(update={"targets": list(seen.values())})
     outputs = dict(opts.outputs)
     if opts.output_all_prefix is not None:
         prefix = opts.output_all_prefix

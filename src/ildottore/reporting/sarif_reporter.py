@@ -129,7 +129,13 @@ class SarifReporter(BaseReporter):
     format = ReportFormat.SARIF.value
 
     def build_document(self, ctx: MaskingContext) -> dict[str, Any]:
-        """Build (and validate) the SARIF document dict for ``ctx``."""
+        """Build (and validate) the SARIF document dict for ``ctx``.
+
+        The run-level state travels in ``runs[0].invocations[0]``, which is SARIF 2.1.0's own
+        field for it (``executionSuccessful`` plus ``toolExecutionNotifications``). Without it
+        a truncated campaign produced a SARIF log indistinguishable from a complete one, in
+        the format a code-scanning dashboard ingests.
+        """
 
         rule_ids: list[str] = []
         rules: list[dict[str, Any]] = []
@@ -157,12 +163,35 @@ class SarifReporter(BaseReporter):
                     },
                     "columnKind": "utf16CodeUnits",
                     "results": results,
-                    "properties": {"run_id": ctx.run.run_id},
+                    "invocations": [self._invocation()],
+                    "properties": {
+                        "run_id": ctx.run.run_id,
+                        "run_status": self._run_status.state,
+                    },
                 }
             ],
         }
         jsonschema.validate(document, load_sarif_schema())
         return document
+
+    def _invocation(self) -> dict[str, Any]:
+        """The SARIF invocation record: did the tool actually finish?"""
+
+        status = self._run_status
+        invocation: dict[str, Any] = {"executionSuccessful": status.complete}
+        if not status.complete:
+            invocation["toolExecutionNotifications"] = [
+                {
+                    "level": "error",
+                    "message": {
+                        "text": (
+                            f"run did not complete ({status.state}): "
+                            f"{status.reason or 'no reason recorded'}"
+                        )
+                    },
+                }
+            ]
+        return invocation
 
     def _render(self, ctx: MaskingContext, summary: RunSummary) -> bytes:
         document = self.build_document(ctx)

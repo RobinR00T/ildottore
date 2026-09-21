@@ -303,6 +303,19 @@
           "total": 30
         }
       },
+      "not_exercised": [],
+      "off_universe": [
+        {
+          "field": "mitre_atlas.tactic",
+          "spec_id": "DL-DEMO-002",
+          "value": "AML.TA0000"
+        },
+        {
+          "field": "mitre_atlas.tactic",
+          "spec_id": "PI-DEMO-001",
+          "value": "AML.TA0000"
+        }
+      ],
       "owasp": {
         "categories": [
           "LLM01",

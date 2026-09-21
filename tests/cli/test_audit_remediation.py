@@ -28,6 +28,7 @@ from ildottore.cli.run import (
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS
 from ildottore.policy.errors import ScopeError
 from ildottore.reporting.summary import pct_display
+from ildottore.shared.enums import RequiresCapability
 from ildottore.shared.models import PlanBudgets
 
 from .conftest import make_spec, write_scope, write_spec_tree, write_target
@@ -306,3 +307,404 @@ def test_estimate_counts_the_implicit_identity_mutator() -> None:
 )
 def test_pct_display_never_rounds_up_to_complete(exercised: int, total: int, expected: str) -> None:
     assert pct_display(exercised, total) == expected
+
+
+# --- the second audit round (2026-09-21, on this very branch) -----------------------
+
+
+def test_the_planned_denominator_is_never_smaller_than_the_numerator(tmp_path: Path) -> None:
+    """ "Specs run: 72 of 70 planned" is 102.9%, and it shipped in the first fix.
+
+    The denominator counted ``selected + capability-skipped`` and left out the
+    policy-blocked specs, whose findings stayed in the numerator. Both kinds of spec DO
+    produce a finding (they are reported, not dropped), so the denominator is the whole
+    selected battery.
+    """
+
+    target = write_target(tmp_path, mock_scenario="hardened")
+    scope = write_scope(tmp_path)
+    report = tmp_path / "r.json"
+    opts = _opts(tmp_path, target, scope, outputs={"json": report})
+
+    outcome = execute_run(opts, [SHIPPED_SPECS])
+
+    assert outcome.exit_code in (ExitCode.CLEAN, ExitCode.FINDINGS_BELOW)
+    specs = json.loads(report.read_text(encoding="utf-8"))["summary"]["coverage"]["specs"]
+    assert specs["run"] <= specs["total"]
+    assert specs["run"] == specs["total"], "a complete run tested everything it planned"
+
+
+def test_off_universe_values_are_reported_not_just_dropped(tmp_path: Path) -> None:
+    """A run does not lint, so a dropped framework value has to be announced.
+
+    A third-party pack can be measured without ever being linted: `dottore coverage` used to
+    report an unchanged numerator over a larger spec count with no warning at all, which is
+    the silent-shrink failure mode the axis exists to prevent.
+    """
+
+    from ildottore.cli.coverage import battery_coverage, render_coverage
+
+    pack = tmp_path / "pack"
+    (pack / "attacks").mkdir(parents=True)
+    (pack / "pack.yaml").write_text(
+        "id: offpack\npack_version: '1.0'\nname: offpack\n", encoding="utf-8"
+    )
+    spec = make_spec("OFF-UNIVERSE-001").model_copy(update={"owasp": "LLM11"})
+    (pack / "attacks" / "off.yaml").write_text(spec.model_dump_json(indent=2), encoding="utf-8")
+
+    coverage = battery_coverage([pack])
+    assert coverage.off_universe == (("OFF-UNIVERSE-001", "owasp", "LLM11"),)
+    rendered = render_coverage(coverage, show_gaps=False)
+    assert "WARNING" in rendered
+    assert "LLM11" in rendered
+
+
+def test_every_axis_label_names_its_edition() -> None:
+    """A percentage whose taxonomy version is unstated cannot be checked by its reader.
+
+    The first fix labelled the OWASP and ATLAS axes and left the two IoPC axes bare, in the
+    one command written to be interrogable, while `shared/iopc.py` spends a paragraph
+    explaining that the obvious label denotes a different 46-entry set.
+    """
+
+    from ildottore.cli.coverage import battery_coverage
+    from ildottore.shared.frameworks import ATLAS_MATRIX_RELEASE, OWASP_LLM_EDITION
+    from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION
+
+    labels = {a.key: a.label for a in battery_coverage([SHIPPED_SPECS]).axes}
+    assert OWASP_LLM_EDITION in labels["owasp"]
+    assert ATLAS_MATRIX_RELEASE in labels["atlas"]
+    assert IOPC_TAXONOMY_VERSION in labels["iopc_techniques"]
+    assert IOPC_TAXONOMY_VERSION in labels["iopc_impacts"]
+
+
+def test_the_coverage_command_floors_its_percentages_like_every_other_surface() -> None:
+    """One figure, one value. `dottore coverage` printed 96% where the run printed 95%."""
+
+    from ildottore.cli.coverage import battery_coverage, render_coverage
+
+    rendered = render_coverage(battery_coverage([SHIPPED_SPECS]), show_gaps=False)
+    assert "22/23" in rendered
+    assert "95%" in rendered
+    assert "96%" not in rendered
+
+
+# --- the second audit round: the sends, the clock, and the ceilings -----------------
+
+
+def test_dry_run_with_sv_sends_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--dry-run -sV`` printed "sent nothing" after posting ten live probes.
+
+    Fingerprinting SENDS. The guard excluded ``-sn`` only, so the two commands that promise
+    zero egress broke that promise the moment they were combined with the flag that
+    fingerprints, and ``--quick --dry-run`` is the first command the README teaches.
+    """
+
+    probes: list[str] = []
+    monkeypatch.setattr(wiring, "fingerprint_probe", lambda *a, **k: probes.append("sent") or None)
+    target = write_target(tmp_path, mock_scenario="hardened")
+    scope = write_scope(tmp_path)
+    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+
+    for flags in ({"dry_run": True}, {"estimate": True}, {"discovery_only": True}):
+        execute_run(_opts(tmp_path, target, scope, fingerprint_first=True, **flags), [specs])
+    assert probes == [], "a command that promises zero sends must not fingerprint"
+
+
+def test_a_real_run_does_fingerprint_when_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """And the guard must not be so wide that ``-sV`` stops working on a real run."""
+
+    from ildottore.shared.models import FingerprintGuess, ModelFingerprint
+
+    calls: list[str] = []
+
+    def _probe(_scope: object, target: object, **_kw: object) -> ModelFingerprint:
+        calls.append(getattr(target, "id", "?"))
+        return ModelFingerprint(
+            target_id="mock-target",
+            family=FingerprintGuess(guess="llama", confidence=0.5),
+        )
+
+    monkeypatch.setattr(wiring, "fingerprint_probe", _probe)
+    target = write_target(tmp_path, mock_scenario="hardened")
+    scope = write_scope(tmp_path)
+    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+    execute_run(_opts(tmp_path, target, scope, fingerprint_first=True), [specs])
+    assert calls == ["mock-target"]
+
+
+def test_the_shipped_battery_completes_under_its_own_default_budget(tmp_path: Path) -> None:
+    """The headline claim, end to end, with the REAL derived budget.
+
+    The first fix derived the ceilings from the plan and asserted the arithmetic, which was
+    true and beside the point: the axis that actually halted the run was ``max_wall_s``,
+    because the composition root fed the budget ledger the deterministic evidence clock (a
+    counter stepping 1.0 per READ). 1800 "seconds" was 1800 clock reads, fewer than a
+    72-spec run performs, so the default battery could never finish, and a live run had no
+    time bound at all.
+    """
+
+    target = write_target(tmp_path, mock_scenario="hardened")
+    scope = write_scope(tmp_path)
+    report = tmp_path / "r.json"
+    outcome = execute_run(
+        _opts(tmp_path, target, scope, runs=5, outputs={"json": report}), [SHIPPED_SPECS]
+    )
+
+    assert not outcome.incomplete, f"the default battery did not finish: {outcome.incomplete}"
+    doc = json.loads(report.read_text(encoding="utf-8"))
+    assert doc["summary"]["status"]["state"] == "complete"
+    specs = doc["summary"]["coverage"]["specs"]
+    assert specs["run"] == specs["total"] == 72
+
+
+def test_the_ledger_measures_seconds_not_clock_reads() -> None:
+    """The wall axis has to be wired to a real clock, or it is not a wall axis."""
+
+    import time
+
+    from ildottore.core.runner import CampaignRunner
+
+    runner = CampaignRunner(
+        policy=None,  # type: ignore[arg-type]
+        mutators=None,  # type: ignore[arg-type]
+        evaluators=None,  # type: ignore[arg-type]
+        scorer=None,  # type: ignore[arg-type]
+        evidence_store=None,  # type: ignore[arg-type]
+        run_store=None,  # type: ignore[arg-type]
+        adapter_factory=lambda _t, _s: None,  # type: ignore[arg-type,return-value]
+        now=lambda: 0.0,  # the deterministic evidence clock
+    )
+    assert runner._wall_clock is time.monotonic
+
+
+def test_a_spec_pack_cannot_set_the_scanners_own_ceiling() -> None:
+    """The derived budget is clamped, because otherwise the input decides the limit.
+
+    Measured on a pack nobody would call hostile (200 specs, an ordinary 8k completion,
+    4 mutations): a 61-million-token allowance, 123 times the old constant. A budget whose
+    size comes from the thing it is meant to bound is not a budget.
+    """
+
+    from ildottore.cli.run import BUDGET_DERIVATION_CAP
+    from ildottore.shared.models import Sampling
+
+    huge = estimate_plan(
+        [
+            make_spec(f"PI-DIRECT-{i:03d}").model_copy(
+                update={"sampling": Sampling(max_tokens=200_000), "mutations": ["base64"]}
+            )
+            for i in range(1, 40)
+        ],
+        runs=5,
+    )
+    capped = budgets_for(huge)
+    # 39 specs x 2 mutators x 5 runs x 200k tokens derives ~117M; the cap holds it at 5M.
+    assert huge.total_tokens > (BUDGET_DERIVATION_CAP.max_tokens or 0)
+    assert capped.max_tokens == BUDGET_DERIVATION_CAP.max_tokens
+    assert (capped.max_requests or 0) <= (BUDGET_DERIVATION_CAP.max_requests or 0)
+
+    # ...and an operator can still authorize more, explicitly. That is the difference: a
+    # human raising a ceiling is authorization; a spec file raising it is not.
+    from ildottore.shared.models import PlanBudgets as PB
+
+    assert budgets_for(huge, overrides=PB(max_tokens=99_000_000)).max_tokens == 99_000_000
+
+
+@pytest.mark.parametrize("value", [-5_000_000, 0, 10_000_000])
+def test_sampling_max_tokens_is_bounded(value: int) -> None:
+    """Unbounded in the model, the schema AND the linter, which is how a spec could do it.
+
+    A negative value was accepted too, and dragged a pack's estimate DOWN.
+    """
+
+    from pydantic import ValidationError
+
+    from ildottore.shared.models import Sampling
+
+    with pytest.raises(ValidationError):
+        Sampling(max_tokens=value)
+
+
+def test_a_barren_selection_is_refused(tmp_path: Path) -> None:
+    """Every spec blocked by policy used to exit 0 with "3 of 0 planned" and zero requests."""
+
+    target = write_target(tmp_path, mock_scenario="hardened")
+    scope = write_scope(tmp_path)
+    specs = write_spec_tree(
+        tmp_path,
+        [make_spec("AG-TOOLS-001").model_copy(update={"requires": [RequiresCapability.TOOLS]})],
+    )
+    with pytest.raises(ValueError, match="nothing would be sent"):
+        execute_run(_opts(tmp_path, target, scope), [specs])
+
+
+def test_an_explicit_timing_template_beats_the_intensity_flags() -> None:
+    """``-T0 --deep`` quietly became T2: four times the pace on a target chosen for care."""
+
+    res = runner.invoke(
+        app,
+        [
+            "run",
+            "-t",
+            "examples/target.local.yaml",
+            "--scope",
+            "examples/scope.local.yaml",
+            "--deep",
+            "-T",
+            "0",
+            "--dry-run",
+        ],
+    )
+    assert res.exit_code == 0
+    assert "pacing:  0.5 req/s" in res.output
+
+
+def test_a_stdio_command_line_is_masked_when_printed(tmp_path: Path) -> None:
+    """A stdio MCP target's "endpoint" is a command line, and it can carry a secret.
+
+    ``-sn`` and ``--dry-run`` printed it verbatim: the two commands an operator runs with
+    least suspicion, whose output lands in tickets and CI logs.
+    """
+
+    from ildottore.cli.run import _safe_endpoint
+
+    printed = _safe_endpoint("stdio:///usr/bin/env node server.js --token sk-AUDIT-9f3c1b7a2e")
+    assert "sk-AUDIT-9f3c1b7a2e" not in printed
+    assert "REDACTED" in printed
+
+
+def test_the_machine_report_formats_carry_a_truncation(tmp_path: Path) -> None:
+    """SARIF and JUnit are what CI reads, and both ignored the run status entirely.
+
+    A truncated campaign rendered as a fully green JUnit suite (``errors="0"``, hardcoded)
+    and a SARIF log with no ``invocations`` at all, which is SARIF's own field for this.
+    """
+
+    from ildottore.reporting import RunStatus, get_reporter
+    from ildottore.shared.models import TestRun
+
+    status = RunStatus(state="budget_exhausted", reason="27 of 72 specs never ran")
+    sarif = json.loads(
+        get_reporter("sarif", specs={}, run_status=status).render(TestRun(run_id="run-x"), [])
+    )
+    assert sarif["runs"][0]["invocations"][0]["executionSuccessful"] is False
+    assert "27 of 72" in str(sarif["runs"][0]["invocations"][0])
+
+    junit = (
+        get_reporter("junit", specs={}, run_status=status)
+        .render(TestRun(run_id="run-x"), [])
+        .decode()
+    )
+    assert 'errors="1"' in junit
+    assert "<error" in junit and "27 of 72" in junit
+
+    # A complete run says so rather than staying silent about it.
+    ok = json.loads(get_reporter("sarif", specs={}).render(TestRun(run_id="y"), []))
+    assert ok["runs"][0]["invocations"][0]["executionSuccessful"] is True
+
+
+def test_diff_refuses_a_truncated_report(tmp_path: Path) -> None:
+    """27 failing specs vanish, absence is not a regression, so the gate went green."""
+
+    from ildottore.cli.diff import incomplete_reason
+
+    truncated = tmp_path / "cur.json"
+    truncated.write_text(
+        json.dumps(
+            {
+                "findings": [],
+                "summary": {
+                    "status": {
+                        "state": "budget_exhausted",
+                        "complete": False,
+                        "reason": "27 of 72 specs never ran",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    complete = tmp_path / "base.json"
+    complete.write_text(
+        json.dumps(
+            {"findings": [], "summary": {"status": {"state": "complete", "complete": True}}}
+        ),
+        encoding="utf-8",
+    )
+    old_style = tmp_path / "old.json"  # report-1.0 without a status block
+    old_style.write_text(json.dumps({"findings": []}), encoding="utf-8")
+
+    assert incomplete_reason(truncated) is not None
+    assert incomplete_reason(complete) is None
+    assert incomplete_reason(old_style) is None, "silence in an old report is age, not a claim"
+
+    res = runner.invoke(app, ["diff", str(complete), str(truncated)])
+    assert res.exit_code == 3
+    assert "did not complete" in res.output
+
+
+def test_the_gate_authorizes_the_url_the_adapter_will_request() -> None:
+    """Three notions of "the endpoint", now one.
+
+    The pre-flight authorized the scope's ``base_url``, the adapter sent ``origin`` plus a
+    HARDCODED provider path, and the operator wrote ``target.endpoint``. An audit of 252
+    scope/target combinations found 80 disagreements, 41 of them refusals of configurations
+    that the wire would have allowed. Azure OpenAI and LiteLLM host the API under a prefix,
+    so discarding the declared path broke every gateway-hosted model.
+    """
+
+    from ildottore.policy import EndpointAllowlist
+    from ildottore.shared.models import Target
+
+    for endpoint in (
+        "https://x.openai.azure.com/openai/deployments/gpt4o/chat/completions",
+        "http://localhost:4000/litellm/v1/chat/completions",
+        "https://api.openai.com/v1/chat/completions",
+        "http://localhost:11434",  # origin only: the provider default path applies
+    ):
+        target = Target.model_validate(
+            {"id": "t", "type": "model", "provider": "openai", "endpoint": endpoint}
+        )
+        gate_url = wiring.request_url_for(target)
+        adapter = wiring.build_real_adapter(target, EndpointAllowlist([]), api_key=None)
+        assert gate_url == adapter._full_url(), endpoint  # type: ignore[attr-defined]
+
+
+def test_an_unreachable_target_is_not_a_clean_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Authorized but dead: every attempt failed on transport, so nothing was measured.
+
+    That used to exit 0 with a report of inconclusives and published coverage percentages,
+    with the reason only inside the evidence: the same false green as an unscoped target,
+    one layer further out.
+    """
+
+    from ildottore.cli.run import _unreachable_reason
+    from ildottore.core.runner import CampaignResult
+    from ildottore.shared.models import Attempt, ModelRequest, TestPlan, TestRun
+
+    def _result(*, error: str | None) -> CampaignResult:
+        finding = make_spec("PI-DIRECT-001")
+        del finding
+        from .conftest import make_finding
+
+        base = make_finding("PI-DIRECT-001")
+        attempt = Attempt(
+            attempt_id="a1",
+            spec_id="PI-DIRECT-001",
+            request=ModelRequest(prompt="p"),
+            response=None if error else base.attempts[0].response,
+            error=error,
+        )
+        return CampaignResult(
+            plan=TestPlan(plan_ref="p", target_id="t", adaptive=False),
+            run=TestRun(run_id="r"),
+            findings=[base.model_copy(update={"attempts": [attempt]})],
+        )
+
+    assert _unreachable_reason(_result(error="ConnectError: refused")) is not None
+    assert _unreachable_reason(_result(error=None)) is None

@@ -84,14 +84,14 @@ def test_progress_printer_prints_when_not_quiet() -> None:
 def test_coverage_lines_report_surface_and_disposition() -> None:
     specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
     lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], specs)
-    assert len(lines) == 4
+    assert len(lines) == 4  # a spec that ran adds no warning lines
     # The edition/release travels with the figure: "LLM03 not covered" means the opposite
     # thing under the 2026 renumbering, and ATLAS renames tactics between releases.
     assert "OWASP LLM Top 10 (2025): 1/10 (10%)" in lines[0]
     assert "MITRE ATLAS tactics (2026.09): 1/16" in lines[0]
     # The IoPC axes get their own line: the impact axis is the one a non-technical reader
     # understands, so it must not be buried next to the technique counts.
-    assert "IoPC techniques:" in lines[1]
+    assert "IoPC techniques (" in lines[1]  # the axis names its taxonomy version
     assert "IoPC impacts:" in lines[1]
     # And the harm classes are spelled out, because a bare "IOPC-R012" tells nobody anything.
     assert lines[2].startswith("Harm classes tested:")

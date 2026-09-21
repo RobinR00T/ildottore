@@ -447,14 +447,68 @@ def test_coverage_numerators_are_subsets_of_their_denominators(
     crediting codes the specs did not exercise, an OWASP numerator counting Responsible-AI
     codes (a false 100% while two categories were untested), and an ATLAS numerator matching
     against a stale name list. A percentage can therefore never exceed 100%.
+
+    The universes are read from where they are **pinned**, not from the output being checked.
+    A first version of this test built ``universe = covered | missing`` out of the very axis
+    it was asserting about, which made ``covered <= universe`` a tautology: it passed for any
+    output whatsoever, which is precisely the kind of test that let these defects ship.
     """
 
     from ildottore.reporting.summary import build_battery_coverage
+    from ildottore.shared.frameworks import ATLAS_TACTIC_UNIVERSE, OWASP_LLM_UNIVERSE
+    from ildottore.shared.iopc import IOPC_IMPACT_UNIVERSE, IOPC_TECHNIQUE_UNIVERSE
 
+    pinned = {
+        "owasp": OWASP_LLM_UNIVERSE,
+        "atlas": ATLAS_TACTIC_UNIVERSE,
+        "iopc_techniques": IOPC_TECHNIQUE_UNIVERSE,
+        "iopc_impacts": IOPC_IMPACT_UNIVERSE,
+    }
     coverage = build_battery_coverage(list(specs_by_id.values()))
+    assert {a.key for a in coverage.axes} == set(pinned), "an axis appeared or vanished"
     for axis in coverage.axes:
+        universe = set(pinned[axis.key])
         covered = {code for code, _ in axis.covered}
-        universe = covered | {code for code, _ in axis.missing}
-        assert covered <= universe, f"{axis.key}: numerator outside its universe"
-        assert axis.exercised == len(covered) <= axis.total
+        assert covered <= universe, f"{axis.key}: numerator outside its pinned universe"
+        assert axis.total == len(universe), f"{axis.key}: denominator is not the universe"
+        assert axis.exercised == len(covered)
         assert 0.0 <= axis.pct <= 1.0
+    assert not coverage.off_universe, (
+        f"shipped specs carry uncounted framework values: {coverage.off_universe}"
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["OWASP_LLM_UNIVERSE", "OWASP_RAI_UNIVERSE", "ATLAS_TACTIC_UNIVERSE", "ATLAS_OUT_OF_MATRIX"],
+)
+def test_pinned_universes_are_duplicate_free(name: str) -> None:
+    """A duplicated entry inflates a denominator, and every existing test would still pass.
+
+    ``atlas_total == len(ATLAS_TACTIC_UNIVERSE)`` is a tautology: it holds with a duplicate in
+    the tuple. These are hand-maintained lists transcribed from upstream, so the duplicate is
+    a realistic slip, and its effect is a quietly smaller percentage.
+    """
+
+    from ildottore.shared import frameworks
+
+    universe: tuple[str, ...] = getattr(frameworks, name)
+    assert len(universe) == len(set(universe)), f"{name} has duplicates"
+
+
+def test_a_duplicated_universe_entry_cannot_inflate_a_denominator() -> None:
+    """And the axis builder de-duplicates, so a slip cannot reach a published figure."""
+
+    from ildottore.reporting.summary import _axis
+
+    axis = _axis("demo", "demo", ("Execution", "Execution", "Impact"), {"Execution"})
+    assert (axis.exercised, axis.total) == (1, 2)
+
+
+def test_a_repeated_spec_is_counted_once(specs_by_id: dict[str, AttackSpec]) -> None:
+    """ "72 specs" must mean 72 distinct specs: a suite may list the same id twice."""
+
+    from ildottore.reporting.summary import build_battery_coverage
+
+    one = list(specs_by_id.values())[:3]
+    assert build_battery_coverage(one + one + one).specs == 3

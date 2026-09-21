@@ -62,7 +62,8 @@ Copy-pasteable versions of both files (local Ollama, hosted OpenAI, a whole flee
 ## Common invocations
 
 ```bash
-# Fingerprint only: identify the model/guardrails behind an endpoint, attack nothing
+# Fingerprint only: identify the model/guardrails behind an endpoint, attack nothing.
+# A live endpoint is probed for real; add --offline for the deterministic mock (no sends).
 dottore fingerprint target.yaml --scope scope.yaml    # target is positional
 
 # Full OWASP LLM Top 10 suite, HTML + SARIF out
@@ -126,6 +127,10 @@ dottore calibrate report.json labels.yaml
 | `--spec-path` | spec search path (default `specs/`) |
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error.
+
+`3` covers "the run did not finish" too, and it takes precedence over `2`: see
+[`docs/MANUAL.md`](docs/MANUAL.md) for why, and read `summary.status.reason` before you treat
+it as a flake.
 
 `3` also covers a run that **did not finish**: if a hard budget ceiling halts the campaign,
 the exit code is `3`, the reason is printed, and the report carries

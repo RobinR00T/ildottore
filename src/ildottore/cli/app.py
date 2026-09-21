@@ -32,6 +32,7 @@ from ildottore.cli import replay as replay_mod
 from ildottore.cli import run as run_mod
 from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode
+from ildottore.cli.flags import DEFAULT_TEMPLATE
 from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
 from ildottore.policy.errors import PolicyError
@@ -85,7 +86,11 @@ def run(
     ] = None,
     target_pos: Annotated[
         list[Path] | None,
-        typer.Argument(help="Target(s) as positional args (url/model-id/target.yaml)."),
+        # A target.yaml, not a URL: the help promised "url/model-id/target.yaml" and only
+        # ever accepted a file (a URL turned into "No such file or directory"). Declaring an
+        # endpoint is the target file's job, because a URL alone cannot carry the provider,
+        # the credential reference or the declared capabilities.
+        typer.Argument(help="Target file(s) as positional args (target.yaml)."),
     ] = None,
     judge: Annotated[
         Path | None,
@@ -96,7 +101,14 @@ def run(
     ] = None,
     scope: Annotated[
         Path | None,
-        typer.Option("--scope", help="REQUIRED authorization record (scope.yaml)."),
+        typer.Option(
+            "--scope",
+            help="REQUIRED authorization record (scope.yaml).",
+            # readable=False so an unreadable file surfaces as OUR operational error (exit 3)
+            # instead of click's usage error (exit 2, which this tool uses for "findings at or
+            # above --fail-on"): a CI step reading exit 2 as "vulnerabilities" would be wrong.
+            readable=False,
+        ),
     ] = None,
     suite: Annotated[
         str | None,
@@ -124,8 +136,23 @@ def run(
     ] = False,
     quick: Annotated[bool, typer.Option("--quick", help="T0 minimum battery.")] = False,
     deep: Annotated[bool, typer.Option("--deep", help="T2 deep/agentic suite.")] = False,
-    template: Annotated[int, typer.Option("-T", help="Timing template 0..5 (default 3).")] = 3,
+    template: Annotated[
+        int | None,
+        typer.Option("-T", help="Timing template 0..5 (default 3; --quick/--deep imply one)."),
+    ] = None,
     rate: Annotated[float | None, typer.Option("--rate", help="Max requests/sec.")] = None,
+    budget_tokens: Annotated[
+        int | None,
+        typer.Option("--budget-tokens", help="Hard token ceiling (overrides the derived one)."),
+    ] = None,
+    budget_requests: Annotated[
+        int | None,
+        typer.Option("--budget-requests", help="Hard request ceiling (overrides the derived)."),
+    ] = None,
+    budget_wall: Annotated[
+        int | None,
+        typer.Option("--budget-wall", help="Hard wall-clock ceiling in seconds (overrides)."),
+    ] = None,
     concurrency: Annotated[
         int | None, typer.Option("--concurrency", help="Max concurrent specs.")
     ] = None,
@@ -188,12 +215,20 @@ def run(
     # Intensity flags change the battery / timing but never touch the scope gate.
     # ``-A`` is documented as "-sV + deep + adaptive", so it implies both of those here
     # rather than being a third, separate behaviour.
+    #
+    # An EXPLICIT -T always wins. `--quick`/`--deep` used to overwrite it in both directions
+    # without a word: `-T0 --deep` quietly became T2 (0.5 to 2.0 req/s, concurrency 1 to 2),
+    # and -T0 is exactly what an operator picks for a fragile production target. The implied
+    # template is a default, so it applies only when the operator did not choose one.
     resolved_deep = deep or aggressive
-    resolved_template = template
-    if quick:
+    if template is not None:
+        resolved_template = template
+    elif quick:
         resolved_template = 0
     elif resolved_deep:
         resolved_template = 2
+    else:
+        resolved_template = DEFAULT_TEMPLATE
 
     opts = RunOptions(
         targets=targets,
@@ -211,6 +246,9 @@ def run(
         deep=resolved_deep,
         verbose=verbose,
         rate=rate,
+        budget_tokens=budget_tokens,
+        budget_requests=budget_requests,
+        budget_wall_s=budget_wall,
         concurrency=concurrency,
         timeout_s=timeout_s,
         runs=runs,
@@ -298,7 +336,12 @@ def fleet(
 
     if not run_now:
         joined = " ".join(f'"{p}"' for p in materialized.target_paths)
-        typer.echo(f'\nRun it:\n  dottore run {joined} --scope "{materialized.scope_path}"')
+        # Carry --judge into the hint: the scope was widened to authorize the judge, and an
+        # operator following a hint that omits it drops the judge from the run.
+        judge_arg = f' --judge "{judge}"' if judge is not None else ""
+        typer.echo(
+            f'\nRun it:\n  dottore run {joined} --scope "{materialized.scope_path}"{judge_arg}'
+        )
         raise typer.Exit(ExitCode.CLEAN)
 
     opts = RunOptions(
@@ -311,7 +354,11 @@ def fleet(
     )
     try:
         outcome = run_mod.execute_run(opts, _spec_paths(None))
-    except (ScopeRequiredError, PolicyError, ValueError, OSError) as exc:
+    # AdapterError included for the same reason `run` includes it (see that handler): it
+    # derives from Exception, so `fleet --run` used to turn an HTTP 401 or an off-allowlist
+    # endpoint into a traceback and exit **1**, which in this tool means "findings below the
+    # threshold". Identical condition, identical code path underneath, two exit codes.
+    except (ScopeRequiredError, PolicyError, AdapterError, ValueError, OSError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     raise typer.Exit(int(outcome.exit_code))
@@ -324,13 +371,25 @@ def fleet(
 def fingerprint(
     target: Annotated[Path, typer.Argument(help="Target file (target.yaml).")],
     scope: Annotated[
-        Path | None, typer.Option("--scope", help="REQUIRED authorization record.")
+        Path | None,
+        typer.Option("--scope", help="REQUIRED authorization record.", readable=False),
     ] = None,
+    offline: Annotated[
+        bool,
+        typer.Option(
+            "--offline",
+            help="Probe the deterministic mock instead of the live endpoint (no sends).",
+        ),
+    ] = False,
 ) -> None:
-    """Fingerprint a target's model + guardrails (``-sV``)."""
+    """Fingerprint a target's model + guardrails (``-sV``).
+
+    A target declaring a real endpoint is probed over the wire (scope-gated). Use
+    ``--offline`` for the deterministic mock, which sends nothing and works in CI.
+    """
 
     try:
-        fp = fingerprint_mod.fingerprint_target(target, scope)
+        fp = fingerprint_mod.fingerprint_target(target, scope, offline=offline)
     except ScopeRequiredError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -498,7 +557,7 @@ def replay(
 
     try:
         result = replay_mod.replay(evidence_root, run_id)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(replay_mod.render_replay(result))
@@ -519,6 +578,20 @@ def diff(
     """
 
     try:
+        # A truncated report is the input that silently breaks this gate: the specs that never
+        # ran are absent, absence classifies as ONLY-IN-BASELINE, and ONLY-IN-BASELINE is not
+        # a regression, so a scan that dropped a third of the battery diffs green. Refuse it.
+        for label, path in (("baseline", baseline), ("current", current)):
+            incomplete = diff_mod.incomplete_reason(path)
+            if incomplete is not None:
+                typer.echo(
+                    f"error: the {label} report describes a run that did not complete "
+                    f"({incomplete}). Its missing specs would diff as ONLY-IN-BASELINE, "
+                    "which is not a regression, so the comparison would read clean. "
+                    "Re-run that scan, or diff two complete reports.",
+                    err=True,
+                )
+                raise typer.Exit(ExitCode.ERROR)
         report = diff_mod.diff_reports(baseline, current)
     except (OSError, ValueError, KeyError) as exc:
         typer.echo(f"error: {exc}", err=True)

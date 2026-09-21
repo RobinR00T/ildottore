@@ -198,7 +198,7 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
-| `-sV` | fingerprint the target's model + guardrails first, then let the plan use it (mutator ordering, baseline expectations). A live target is fingerprinted through its allowlisted endpoint; an offline one through the deterministic mock |
+| `-sV` | fingerprint the target's model + guardrails first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it, and build the plan in adaptive mode. **The tailoring itself is inert today:** the mutator-ordering and baseline-expectation hooks read fingerprint hints the engine does not yet emit, so `-sV` buys a fingerprint, not a different battery (see `docs/10 §2`). It sends: it is therefore skipped under `--dry-run`, `--estimate` and `-sn` |
 | `-A` | aggressive: implies `-sV` and `--deep` (there is no separate `--adaptive` flag; `-sV`/`--deep` enable adaptive planning) |
 
 **Judge and execution**
@@ -210,10 +210,11 @@ required.
 | `-T 0..5` | timing template (default 3); higher is faster/louder |
 | `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it; retries count). **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |
 | `--concurrency INT` | max concurrent specs |
+| `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
 | `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
-| `--compare` | model-comparison matrix across targets. Needs two or more `-t` targets; with one it is refused (exit 3) rather than silently rendering nothing |
+| `--compare` | model-comparison matrix across targets (a band per spec x target), printed in the terminal and embedded in the JSON report. The matrix renders for **any** multi-target run; `--compare` states the intent and refuses a single target (exit 3) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) |
 
 **Output and gating**
@@ -232,11 +233,25 @@ required.
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3`
 error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` never do.
 
+`3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
+authorized but answered nothing at all (every attempt failed on transport). That code is
+deliberately chosen over `2` even when the partial run found confirmed exploits, because the
+scan itself is not a measurement you can act on: the specs that never ran are the ones you
+know nothing about. The findings are still written to every report. If your pipeline treats
+`3` as "infrastructure, retry", read `summary.status.reason` before retrying: it names the
+breached axis and how many specs never ran.
+
 ### `dottore fingerprint`, identify the model + guardrails
 
 ```
-dottore fingerprint TARGET --scope scope.yaml
+dottore fingerprint TARGET --scope scope.yaml              # probes a live endpoint
+dottore fingerprint TARGET --scope scope.yaml --offline    # deterministic mock, no sends
 ```
+
+A target declaring a real endpoint is probed **over the wire** (scope-gated, through its
+allowlisted endpoint, with the scope-authorized credential), because a fingerprint of a mock
+says nothing about the model you are about to attack. `--offline` keeps the deterministic
+mock, which is what CI and a target whose endpoint is not up both want.
 
 `TARGET` is positional (a `target.yaml`). Attacks nothing; reports the best-effort model and
 guardrail fingerprint. See [`10-fingerprint.md`](10-fingerprint.md).
@@ -324,14 +339,23 @@ dottore coverage --json               # for a dashboard or a report generator
 ```
 Battery coverage (72 specs, no scan performed)
 
-  OWASP LLM Top 10       8/10   80%
-  MITRE ATLAS tactics   12/14   86%
-  IoPC techniques       25/30   83%
-  IoPC impacts          22/23   96%
+  OWASP LLM Top 10 (2025)              8/10   80%
+  MITRE ATLAS tactics (2026.09)       13/16   81%
+  IoPC techniques (live-2026-09-19)   25/30   83%
+  IoPC impacts (live-2026-09-19)      22/23   95%
 
-  Not covered, IoPC techniques:
-    IOPC-T4.002  Unexpected Code Execution
+  Not covered, OWASP LLM Top 10 (2025):
+    LLM03
+    LLM04
+
     ...
+```
+
+Each axis names the edition it is measured against, and the percentages are **floored**: an
+incomplete axis never reads 100%, and 22/23 is 95%, not 96%. (This block published
+`12/14 86%` until 2026-09-21, the retracted ATLAS figure, in the same commit whose changelog
+called it wrong. A number copied into prose does not get re-derived when the code is fixed,
+which is the argument for `dottore coverage` existing: run it rather than trust this block.)
 ```
 
 The uncovered codes are printed, not just counted. A coverage percentage with no list of what

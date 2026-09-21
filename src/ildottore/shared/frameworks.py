@@ -28,8 +28,10 @@ __all__ = [
 
 
 #: Which OWASP edition the ``owasp`` codes on our specs belong to, printed next to every
-#: OWASP figure. Not decoration: OWASP published the 2026 list on 2026-08-03 and **renumbered**
-#: it, so in 2026 ``LLM03`` is Excessive Agency and ``LLM04`` is Supply Chain. Our specs are
+#: OWASP figure. Not decoration: OWASP published a **renumbered** list in August 2026 (the
+#: exact day is secondary-sourced: the project page still lists 2025 as latest, so treat
+#: "early August 2026" as the claim), and in the 2026 numbering ``LLM03`` is Excessive Agency
+#: and ``LLM04`` is Supply Chain. Our specs are
 #: mapped to the 2025 numbering (``LLM06`` = Excessive Agency, 24 of 72 specs). An unlabelled
 #: gap list saying "not covered: LLM03, LLM04" therefore reads, to anyone holding the new
 #: edition, as "Excessive Agency untested", which is our single most covered category. The
@@ -64,8 +66,11 @@ ATLAS_MATRIX_RELEASE = "2026.09"
 #: keyed by **name**, which makes it sensitive to upstream renames as well as additions.
 #:
 #: Transcribed from ``mitre-atlas/atlas-data``, ``dist/v6/ATLAS-2026.09.yaml`` (release
-#: 2026.09, dated 2026-09-14; format-version 6.0.0), cross-checked against that repo's
-#: ``CHANGELOG.md``, which states "1 matrix, 16 tactics" for this release.
+#: 2026.09, format-version 6.0.0), cross-checked against that repo's ``CHANGELOG.md``, which
+#: states "1 matrix, 16 tactics" for this release. Upstream disagrees with itself on the day:
+#: the changelog header says 2026-09-14, the manifest and the file's own ``modified-date``
+#: say 2026-09-15. The tactic SET last changed in 2026.08 (``matrix.modified-date``
+#: 2026-08-31), which is the rename that mattered here.
 #:
 #: Read the source carefully, because two artefacts in the same directory disagree. The
 #: legacy-format ``dist/ATLAS.yaml`` (version 5.6.0) still calls ``AML.TA0001`` "AI Attack

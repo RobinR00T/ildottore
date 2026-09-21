@@ -26,11 +26,12 @@ from ildottore.reporting.summary import (
     pct_display,
 )
 from ildottore.shared.enums import ScanBand
-from ildottore.shared.iopc import IOPC_IMPACTS
+from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = [
     "ProgressPrinter",
+    "comparison_table",
     "coverage_lines",
     "progress_line",
     "summary_rows",
@@ -148,7 +149,7 @@ def coverage_lines(
             f"({pct_display(cov.atlas_exercised, cov.atlas_total)})"
         ),
         (
-            f"Coverage - IoPC techniques: "
+            f"Coverage - IoPC techniques ({IOPC_TAXONOMY_VERSION}): "
             f"{cov.iopc_techniques_exercised}/{cov.iopc_techniques_total} "
             f"({pct_display(cov.iopc_techniques_exercised, cov.iopc_techniques_total)}) · "
             f"IoPC impacts: {cov.iopc_impacts_exercised}/{cov.iopc_impacts_total} "
@@ -165,6 +166,24 @@ def coverage_lines(
             f"pass {cov.specs_pass} · fail {cov.specs_fail} · "
             f"inconclusive {cov.specs_inconclusive}"
         ),
+        *(
+            [
+                f"Not exercised: {len(cov.not_exercised)} spec(s) produced no request "
+                "(blocked by policy, or a capability the target does not declare), so their "
+                "framework codes are NOT counted as covered"
+            ]
+            if cov.not_exercised
+            else []
+        ),
+        *(
+            [
+                f"WARNING: {len(cov.off_universe)} framework value(s) outside their pinned "
+                "universe were NOT counted: "
+                + ", ".join(f"{sid} {field}={value!r}" for sid, field, value in cov.off_universe)
+            ]
+            if cov.off_universe
+            else []
+        ),
     ]
 
 
@@ -176,6 +195,35 @@ def _band_style(band: str) -> str:
         ScanBand.LOW.value: "green",
         ScanBand.INFO.value: "dim",
     }.get(band, "")
+
+
+def comparison_table(
+    findings: list[Finding],
+    specs: dict[str, AttackSpec] | None = None,
+) -> Table | None:
+    """The spec x target band matrix, or ``None`` when the run spans a single target.
+
+    The matrix was computed on every multi-target run and rendered **only** into the JSON
+    report, so ``--compare`` (whose whole purpose is this view) had no observable effect at
+    all: it counted its arguments and stopped. Same shape as every other finding here, a
+    value computed and then dropped where a human looks.
+    """
+
+    comparison = build_run_summary(findings, specs or {}).model_comparison
+    if comparison is None:
+        return None
+    bands = {(c.spec_id, c.target_id): c.band for c in comparison.cells}
+    table = Table(title="Il Dottore: model comparison (band per spec x target)")
+    table.add_column("Spec", style="cyan")
+    for target_id in comparison.target_ids:
+        table.add_column(target_id, justify="center")
+    for spec_id in comparison.spec_ids:
+        row = [spec_id]
+        for target_id in comparison.target_ids:
+            band = bands.get((spec_id, target_id))
+            row.append(f"[{_band_style(band)}]{band}[/]" if band else "-")
+        table.add_row(*row)
+    return table
 
 
 class ProgressPrinter:
@@ -224,5 +272,8 @@ class ProgressPrinter:
         """
 
         self._console.print(summary_table(findings, specs))
+        matrix = comparison_table(findings, specs)
+        if matrix is not None:
+            self._console.print(matrix)
         for line in coverage_lines(findings, specs, planned_specs=planned_specs):
             self._console.print(line)

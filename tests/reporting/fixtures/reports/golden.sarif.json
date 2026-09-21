@@ -3,8 +3,14 @@
   "runs": [
     {
       "columnKind": "utf16CodeUnits",
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
       "properties": {
-        "run_id": "golden-1"
+        "run_id": "golden-1",
+        "run_status": "complete"
       },
       "results": [
         {

@@ -29,7 +29,7 @@ formats, sane defaults**. The command is `dottore` (short alias `dott`).
 ## 2. Command surface
 
 ```
-dottore <target> [options]
+dottore run -t <target.yaml> --scope <scope.yaml> [options]
 
 TARGET
   <url|model-id|target.yaml>        positional; or -t/--target for multiple
@@ -81,23 +81,24 @@ REGISTRY / AUTHORING
 ## 3. Example invocations (the red-teamer's cheat sheet)
 
 ```bash
-# Fast triage of a raw model endpoint (nmap-default vibe)
-dottore https://api.openai.com/v1/chat/completions --model gpt-4o --quick --scope scope.yaml
+# Fast triage of a hosted model (the endpoint, provider and credential ref live in the
+# target file; there is no positional-URL form and no --model flag)
+dottore run --quick -t examples/target.openai.yaml --scope examples/scope.openai.yaml
 
 # Fingerprint first, then full OWASP suite, HTML + SARIF out
-dottore -sV --suite owasp:llm -oH report.html -oS out.sarif -t target.yaml --scope scope.yaml
+dottore run -sV --suite owasp:llm -oH report.html -oS out.sarif -t target.yaml --scope scope.yaml
 
 # Aggressive agentic assessment: fingerprint first, full battery, adaptive planning
 dottore run -A -t customer-agent.yaml --scope scope.yaml
 
 # Just the injection + leakage families, fast, break CI on high
-dottore -p pi,leakage -T4 --fail-on high -oX junit.xml -t agent.yaml --scope scope.yaml
+dottore run -p pi,leakage -T4 --fail-on high -oX junit.xml -t agent.yaml --scope scope.yaml
 
 # Compare three models on the same suite (benchmark mode)
-dottore --suite owasp:llm --compare -t gpt.yaml -t claude.yaml -t mistral.yaml --scope scope.yaml
+dottore run --suite owasp:llm --compare -t gpt.yaml -t claude.yaml -t mistral.yaml --scope scope.yaml
 
 # EU AI Act / DORA regulatory preset
-dottore --suite eu:ai-act -oA acme-aiact -t chatbot.yaml --scope scope.yaml
+dottore run --suite eu:ai-act -oA acme-aiact -t chatbot.yaml --scope scope.yaml
 ```
 
 ## 4. Output ergonomics

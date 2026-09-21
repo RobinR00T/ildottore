@@ -95,3 +95,61 @@ def test_cleartext_http_denied_except_loopback() -> None:
     assert remote.is_allowed("http://api.acme.test/v1/x") is False
     local = EndpointAllowlist([Endpoint(host="localhost", path_prefixes=["/v1"])])
     assert local.is_allowed("http://localhost:11434/v1/chat/completions") is True
+
+
+# --- scheme allowlist + percent-encoded dot segments (audit 2026-09-21) -------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "ws://api.example.com/v1/x",
+        "wss://api.example.com/v1/x",
+        "ftp://api.example.com/v1/x",
+        "file:///etc/passwd",
+        "//api.example.com/v1/x",  # scheme-relative
+        "gopher://api.example.com/v1",
+    ],
+)
+def test_only_allowlisted_schemes_pass(url: str) -> None:
+    """Schemes are allowlisted, not blocklisted.
+
+    The gate used to refuse the literal scheme ``http`` off-loopback and let everything else
+    through to the host/path check, so these all passed ``is_allowed``. Nothing in the tool
+    speaks them today, which made the invariant rest on adapter implementation rather than on
+    the gate, and default-deny has to be the gate's own answer.
+    """
+
+    allowlist = EndpointAllowlist([Endpoint(host="api.example.com", path_prefixes=["/v1"])])
+    assert allowlist.is_allowed(url) is False
+
+
+def test_percent_encoded_dot_segments_are_refused() -> None:
+    """``/v1/%2e%2e/admin`` resolves to ``/admin`` on a server that decodes it.
+
+    httpx forwards the encoded form verbatim, so the gate and the wire agree either way; the
+    residual risk is an origin server that decodes it and serves a path this allowlist never
+    authorized. Only ``%2e`` is decoded, so an encoded slash or space still means what it says.
+    """
+
+    allowlist = EndpointAllowlist([Endpoint(host="api.example.com", path_prefixes=["/v1"])])
+    assert allowlist.is_allowed("https://api.example.com/v1/%2e%2e/admin") is False
+    assert allowlist.is_allowed("https://api.example.com/v1/%2E%2E/admin") is False
+    assert allowlist.is_allowed("https://api.example.com/v1/chat") is True
+
+
+def test_the_offline_and_loopback_schemes_still_work() -> None:
+    """The allowlist must not break the two schemes the tool really uses."""
+
+    assert (
+        EndpointAllowlist([Endpoint(host="mock-target", path_prefixes=["/"])]).is_allowed(
+            "mock://mock-target"
+        )
+        is True
+    )
+    assert (
+        EndpointAllowlist([Endpoint(host="localhost", path_prefixes=["/v1"])]).is_allowed(
+            "http://localhost:11434/v1/chat/completions"
+        )
+        is True
+    )

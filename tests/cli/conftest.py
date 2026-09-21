@@ -24,6 +24,7 @@ from ildottore.shared.enums import (
 from ildottore.shared.models import (
     Attack,
     AttackSpec,
+    Attempt,
     EvaluatorConfig,
     Finding,
     FixtureCase,
@@ -95,12 +96,25 @@ def make_finding(
     reproducibility: float = 1.0,
     confidence: float = 0.9,
 ) -> Finding:
-    """A :class:`Finding` for exit-code / render table tests."""
+    """A :class:`Finding` for exit-code / render table tests.
+
+    Carries one :class:`Attempt` with a response, because that is what a spec that actually
+    ran produces, and coverage now (correctly) credits only specs that reached the wire.
+    ``attempts=[]`` is the shape of a policy-blocked or capability-skipped spec.
+    """
 
     return Finding(
         spec_id=spec_id,
         target_id=target_id,
         status=status,
+        attempts=[
+            Attempt(
+                attempt_id=f"{spec_id}::identity::0",
+                spec_id=spec_id,
+                request=ModelRequest(prompt="probe"),
+                response=ModelResponse(text="answer"),
+            )
+        ],
         risk=RiskScore(
             impact=3,
             exploitability=4,

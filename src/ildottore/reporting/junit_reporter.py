@@ -102,10 +102,42 @@ class JunitReporter(BaseReporter):
             total_failures += failures
             total_skipped += skipped
 
+        # A run that did not finish is an ERROR in JUnit's vocabulary, and this is the format
+        # a CI dashboard actually reads. It used to hardcode errors="0" and ignore the status
+        # entirely, so the classic `dottore run ... -oX junit.xml || true` plus a JUnit publish
+        # step rendered a truncated campaign as a fully green suite of whatever finished.
+        total_errors = 0
+        if not summary.run_status.complete:
+            total_errors = 1
+            suite = ET.SubElement(
+                root,
+                "testsuite",
+                {
+                    "name": "dottore.run",
+                    "tests": "1",
+                    "failures": "0",
+                    "skipped": "0",
+                    "errors": "1",
+                    "time": "0",
+                },
+            )
+            case = ET.SubElement(
+                suite,
+                "testcase",
+                {"name": f"run-{summary.run_status.state}", "classname": ctx.run.run_id},
+            )
+            error = ET.SubElement(
+                case,
+                "error",
+                {"message": f"run did not complete: {summary.run_status.state}", "type": "run"},
+            )
+            error.text = (summary.run_status.reason or summary.run_status.state)[:4096]
+            total_tests += 1
+
         root.set("tests", str(total_tests))
         root.set("failures", str(total_failures))
         root.set("skipped", str(total_skipped))
-        root.set("errors", "0")
+        root.set("errors", str(total_errors))
 
         ET.indent(root, space="  ")
         body = ET.tostring(root, encoding="unicode")

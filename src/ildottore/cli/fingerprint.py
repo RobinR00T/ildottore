@@ -5,8 +5,15 @@ call the u09 :class:`~ildottore.fingerprint.engine.FingerprintEngine`. It adds n
 recognition logic (contract §8) - it wires the engine to an adapter and renders the
 returned :class:`~ildottore.shared.models.ModelFingerprint`.
 
-Offline default: fingerprints the deterministic :class:`MockTarget` built from a
-target.yaml so ``-sV`` is exercisable in CI without a live endpoint (contract §5).
+**A live target is probed for real.** A ``target.yaml`` declaring a real (non-``mock://``)
+endpoint is fingerprinted through that endpoint, under the scope's allowlist and with the
+scope-authorized credential, because a fingerprint of a mock tells you nothing about the
+model you are about to attack. That is a behaviour change (2026-09-21): this command used to
+build a :class:`MockTarget` unconditionally, which also meant its scope gate was decorative.
+
+``--offline`` keeps the old behaviour on purpose: the deterministic mock, no sends, so
+``-sV`` stays exercisable in CI and against a target whose endpoint is not up. A mock-only
+target.yaml (no ``endpoint``, or a ``mock_scenario``) still routes to the mock either way.
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ def fingerprint_target(
     scope_path: Path | None,
     *,
     scenario: MockScenario | None = None,
+    offline: bool = False,
 ) -> ModelFingerprint:
     """Fingerprint the target described by ``target_path`` (scope-gated).
 
@@ -62,7 +70,11 @@ def fingerprint_target(
             f"{decision.reason}. The scope authorizes: {authorized}."
         )
 
-    real_target = None if (scenario is not None or wiring.target_uses_mock(target_path)) else target
+    real_target = (
+        None
+        if (offline or scenario is not None or wiring.target_uses_mock(target_path))
+        else target
+    )
     if real_target is not None:
         wiring.check_target_credential(scope, real_target)
     adapter = wiring.build_probe_adapter(scope, target, real_target=real_target, scenario=scenario)

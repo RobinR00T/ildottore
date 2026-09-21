@@ -159,21 +159,30 @@ class Scoring(_SchemaMirror):
     confidence_threshold: Unit
 
 
+#: Bound on a spec's requested completion length. Unbounded until 2026-09-21, in the model,
+#: in the JSON schema and in the linter, which mattered once the run budgets started being
+#: derived from the plan: a spec declaring ``max_tokens: 10_000_000`` handed the campaign a
+#: 75-million-token ceiling, i.e. a third-party spec pack could set the scanner's own
+#: self-DoS limit. A negative value was accepted too, and dragged a pack's estimate DOWN.
+#: 200k is above every provider's output limit today and far below anything dangerous.
+MAX_SAMPLING_TOKENS = 200_000
+
+
 class Sampling(_SchemaMirror):
     """Pinned sampling params (``sampling``)."""
 
     temperature: float | None = None
     top_p: float | None = None
     seed: int | None = None
-    max_tokens: int | None = None
+    max_tokens: Annotated[int, Field(ge=1, le=MAX_SAMPLING_TOKENS)] | None = None
 
 
 class Budget(_SchemaMirror):
     """Hard caps (``budget``) - mandatory for ``availability_cost`` specs."""
 
-    max_tokens: int | None = None
-    max_requests: int | None = None
-    timeout_s: int | None = None
+    max_tokens: Annotated[int, Field(ge=1, le=MAX_SAMPLING_TOKENS)] | None = None
+    max_requests: Annotated[int, Field(ge=1, le=100_000)] | None = None
+    timeout_s: Annotated[int, Field(ge=1, le=86_400)] | None = None
 
 
 class SetupDoc(_SchemaMirror):

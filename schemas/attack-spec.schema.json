@@ -4,31 +4,72 @@
   "title": "AttackSpec",
   "type": "object",
   "required": [
-    "id", "spec_version", "name", "category", "owasp", "mitre_atlas",
-    "nist_ai_rmf", "severity", "target_type", "requires", "description",
-    "attack", "expected_secure_behavior", "evaluators", "scoring", "fixtures"
+    "id",
+    "spec_version",
+    "name",
+    "category",
+    "owasp",
+    "mitre_atlas",
+    "nist_ai_rmf",
+    "severity",
+    "target_type",
+    "requires",
+    "description",
+    "attack",
+    "expected_secure_behavior",
+    "evaluators",
+    "scoring",
+    "fixtures"
   ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "pattern": "^[A-Z]+(-[A-Z0-9]+)+$" },
-    "spec_version": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
-    "name": { "type": "string", "minLength": 3 },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Z]+(-[A-Z0-9]+)+$"
+    },
+    "spec_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3
+    },
     "category": {
       "type": "string",
-      "enum": ["prompt_injection", "jailbreak", "data_leakage",
-               "agent_tool_abuse", "rag_security", "output_security",
-               "availability_cost", "safety_content", "bias_fairness"]
+      "enum": [
+        "prompt_injection",
+        "jailbreak",
+        "data_leakage",
+        "agent_tool_abuse",
+        "rag_security",
+        "output_security",
+        "availability_cost",
+        "safety_content",
+        "bias_fairness"
+      ]
     },
-    "owasp": { "type": "string", "pattern": "^(LLM|RAI)\\d{2}$" },
+    "owasp": {
+      "type": "string",
+      "pattern": "^(LLM|RAI)\\d{2}$"
+    },
     "mitre_atlas": {
       "type": "object",
-      "required": ["tactic"],
+      "required": [
+        "tactic"
+      ],
       "properties": {
-        "tactic": { "type": "string" },
-        "technique": { "type": "string" }
+        "tactic": {
+          "type": "string"
+        },
+        "technique": {
+          "type": "string"
+        }
       }
     },
-    "nist_ai_rmf": { "type": "string" },
+    "nist_ai_rmf": {
+      "type": "string"
+    },
     "iopc": {
       "type": "object",
       "additionalProperties": false,
@@ -36,157 +77,406 @@
       "properties": {
         "techniques": {
           "type": "array",
-          "items": { "type": "string", "pattern": "^IOPC-T[1-9][0-9]*\\.[0-9]{3}\\Z" }
+          "items": {
+            "type": "string",
+            "pattern": "^IOPC-T[1-9][0-9]*\\.[0-9]{3}\\Z"
+          }
         },
         "impacts": {
           "type": "array",
-          "items": { "type": "string", "pattern": "^IOPC-R[0-9]{3}\\Z" }
+          "items": {
+            "type": "string",
+            "pattern": "^IOPC-R[0-9]{3}\\Z"
+          }
         }
       }
     },
-    "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
-    "target_type": { "type": "string", "enum": ["model", "chatbot", "api", "agent", "rag"] },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "target_type": {
+      "type": "string",
+      "enum": [
+        "model",
+        "chatbot",
+        "api",
+        "agent",
+        "rag"
+      ]
+    },
     "requires": {
       "type": "array",
-      "items": { "type": "string", "enum": ["rag", "tools", "memory", "system_prompt", "streaming", "logprobs", "multi_identity", "multimodal", "audio"] }
+      "items": {
+        "type": "string",
+        "enum": [
+          "rag",
+          "tools",
+          "memory",
+          "system_prompt",
+          "streaming",
+          "logprobs",
+          "multi_identity",
+          "multimodal",
+          "audio"
+        ]
+      }
     },
-    "description": { "type": "string" },
-    "preconditions": { "type": "array", "items": { "type": "string" } },
+    "description": {
+      "type": "string"
+    },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "setup": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "documents": { "type": "array", "items": { "type": "object" } },
-        "tools": { "type": "array", "items": { "type": "object" } },
-        "memory_seed": { "type": "array", "items": { "type": "object" } },
-        "system_prompt": { "type": "string" },
-        "canaries": { "type": "array", "items": { "type": "string" } }
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "memory_seed": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "system_prompt": {
+          "type": "string"
+        },
+        "canaries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "attack": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "user_prompt": { "type": "string" },
-        "carrier": { "type": "string" },
-        "turns": { "type": "array", "items": { "type": "string" } },
+        "user_prompt": {
+          "type": "string"
+        },
+        "carrier": {
+          "type": "string"
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "media": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["kind"],
+            "required": [
+              "kind"
+            ],
             "properties": {
-              "kind": { "type": "string", "enum": ["image", "audio"] },
-              "format": { "type": "string", "enum": ["png", "wav"] },
-              "render_text": { "type": "string" },
-              "data_b64": { "type": "string" },
-              "asset": { "type": "string" },
-              "scale": { "type": "integer", "minimum": 1, "maximum": 16 },
-              "columns": { "type": "integer", "minimum": 1, "maximum": 256 },
-              "alt": { "type": "string" }
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "audio"
+                ]
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "png",
+                  "wav"
+                ]
+              },
+              "render_text": {
+                "type": "string"
+              },
+              "data_b64": {
+                "type": "string"
+              },
+              "asset": {
+                "type": "string"
+              },
+              "scale": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16
+              },
+              "columns": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 256
+              },
+              "alt": {
+                "type": "string"
+              }
             }
           }
         }
       },
       "anyOf": [
-        { "required": ["user_prompt"] },
-        { "required": ["carrier"] },
-        { "required": ["turns"] }
+        {
+          "required": [
+            "user_prompt"
+          ]
+        },
+        {
+          "required": [
+            "carrier"
+          ]
+        },
+        {
+          "required": [
+            "turns"
+          ]
+        }
       ]
     },
-    "mutations": { "type": "array", "items": { "type": "string" } },
+    "mutations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "expected_secure_behavior": {
-      "type": "array", "minItems": 1, "items": { "type": "string" }
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
     },
     "evaluators": {
-      "type": "array", "minItems": 1,
+      "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["type"],
+        "required": [
+          "type"
+        ],
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["regex_absence", "regex_presence", "exact_match",
-                     "refusal", "secret_leakage", "tool_call", "tool_sequence",
-                     "semantic_judge", "pii_detector", "secret_shape", "verbatim_overlap",
-                     "logprob_membership", "authz_leak", "kill_chain_progression"]
+            "enum": [
+              "regex_absence",
+              "regex_presence",
+              "exact_match",
+              "refusal",
+              "secret_leakage",
+              "tool_call",
+              "tool_sequence",
+              "semantic_judge",
+              "pii_detector",
+              "secret_shape",
+              "verbatim_overlap",
+              "logprob_membership",
+              "authz_leak",
+              "kill_chain_progression"
+            ]
           },
-          "patterns": { "type": "array", "items": { "type": "string" } },
-          "forbidden_args": { "type": "array", "items": { "type": "string" } },
+          "patterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forbidden_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "step_arg_patterns": {
             "type": "object",
-            "additionalProperties": { "type": "string" },
+            "additionalProperties": {
+              "type": "string"
+            },
             "description": "tool_sequence only: regex per step tool name; that step counts only if a tool-call argument value matches."
           },
-          "rubric": { "type": "string" },
-          "canary_ref": { "type": "string" },
-          "weight": { "type": "number" }
+          "rubric": {
+            "type": "string"
+          },
+          "canary_ref": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number"
+          }
         }
       }
     },
-    "evaluator_logic": { "type": "string", "enum": ["all_pass", "any_fail", "weighted"] },
+    "evaluator_logic": {
+      "type": "string",
+      "enum": [
+        "all_pass",
+        "any_fail",
+        "weighted"
+      ]
+    },
     "scoring": {
       "type": "object",
-      "required": ["impact", "exploitability", "confidence_threshold"],
+      "required": [
+        "impact",
+        "exploitability",
+        "confidence_threshold"
+      ],
       "additionalProperties": false,
       "properties": {
-        "impact": { "type": "integer", "minimum": 1, "maximum": 4 },
-        "exploitability": { "type": "integer", "minimum": 1, "maximum": 4 },
-        "confidence_threshold": { "type": "number", "minimum": 0, "maximum": 1 }
+        "impact": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "exploitability": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
       }
     },
-    "runs": { "type": "integer", "minimum": 1, "maximum": 50 },
+    "runs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
     "sampling": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "temperature": { "type": "number" },
-        "top_p": { "type": "number" },
-        "seed": { "type": "integer" },
-        "max_tokens": { "type": "integer" }
+        "temperature": {
+          "type": "number"
+        },
+        "top_p": {
+          "type": "number"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200000
+        }
       }
     },
     "budget": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "max_tokens": { "type": "integer" },
-        "max_requests": { "type": "integer" },
-        "timeout_s": { "type": "integer" }
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200000
+        },
+        "max_requests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "timeout_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
       }
     },
-    "test_only": { "type": "boolean" },
+    "test_only": {
+      "type": "boolean"
+    },
     "requires_policy": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Engagement capabilities this spec requires to run; each must be present in the scope pack's enabled_capabilities or the spec is blocked_by_policy (OFF by default). Seed values: offensive_simulation, layer_b_pii."
     },
     "fixtures": {
       "type": "object",
-      "required": ["vulnerable", "hardened"],
+      "required": [
+        "vulnerable",
+        "hardened"
+      ],
       "additionalProperties": false,
       "properties": {
         "vulnerable": {
           "type": "object",
-          "required": ["response", "expect_verdict"],
+          "required": [
+            "response",
+            "expect_verdict"
+          ],
           "properties": {
-            "response": { "type": "string" },
-            "tool_calls": { "type": "array", "items": { "type": "object" } },
-            "expect_verdict": { "type": "string", "enum": ["fail"] }
+            "response": {
+              "type": "string"
+            },
+            "tool_calls": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "expect_verdict": {
+              "type": "string",
+              "enum": [
+                "fail"
+              ]
+            }
           }
         },
         "hardened": {
           "type": "object",
-          "required": ["response", "expect_verdict"],
+          "required": [
+            "response",
+            "expect_verdict"
+          ],
           "properties": {
-            "response": { "type": "string" },
-            "tool_calls": { "type": "array", "items": { "type": "object" } },
-            "expect_verdict": { "type": "string", "enum": ["pass"] }
+            "response": {
+              "type": "string"
+            },
+            "tool_calls": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "expect_verdict": {
+              "type": "string",
+              "enum": [
+                "pass"
+              ]
+            }
           }
         }
       }
     },
-    "tags": { "type": "array", "items": { "type": "string" } }
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
   }
 }

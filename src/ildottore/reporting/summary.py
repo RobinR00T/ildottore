@@ -32,6 +32,7 @@ from ildottore.shared.frameworks import (
 from ildottore.shared.iopc import (
     IOPC_IMPACT_UNIVERSE,
     IOPC_IMPACTS,
+    IOPC_TAXONOMY_VERSION,
     IOPC_TECHNIQUE_UNIVERSE,
     IOPC_TECHNIQUES,
 )
@@ -156,6 +157,15 @@ class Coverage:
     iopc_impacts_exercised: int = 0
     iopc_impacts_total: int = 0
     iopc_impacts_pct: float = 0.0
+    #: ``(spec_id, field, value)`` for framework values this run did NOT count because they
+    #: are outside their pinned universe. A run does not lint, so without this the numerator
+    #: shrinks and the report reads as if nothing were missing.
+    off_universe: tuple[tuple[str, str, str], ...] = ()
+    #: Specs that produced a finding but never sent a request (policy-blocked, or skipped for
+    #: a capability the target does not declare). They are reported, and they do NOT count as
+    #: covered surface: crediting them told the reader a tactic had been exercised when the
+    #: spec for it was refused before the first send.
+    not_exercised: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -168,6 +178,9 @@ class RunStatus:
     cannot see, so the state travels with the summary into every format.
     """
 
+    #: ``complete`` | ``budget_exhausted`` (the runner) | ``unreachable`` (the CLI, when a
+    #: target answered nothing at all). Not ``parked``: the contract reserves that word for
+    #: the PITV park rule and nothing produces it.
     state: str = "complete"
     reason: str | None = None
 
@@ -268,6 +281,8 @@ def _build_coverage(
     atlas_seen: set[str] = set()
     iopc_tech_seen: set[str] = set()
     iopc_impact_seen: set[str] = set()
+    off_universe: list[tuple[str, str, str]] = []
+    not_exercised: list[str] = []
     specs_pass = 0
     specs_fail = 0
     specs_inconclusive = 0
@@ -283,19 +298,38 @@ def _build_coverage(
         spec = spec_map.get(finding.spec_id)
         if spec is None:
             continue
+        # A spec that never reached the wire covers nothing. A policy-blocked spec and a
+        # capability-skipped one both produce a finding (they are reported, not dropped), and
+        # crediting their framework codes inflated the published figure by a whole tactic: a
+        # default run claimed 13/16 ATLAS while `Credential Access` was covered solely by
+        # `AG-CRED-SWEEP-001`, which the pack blocks and which sent nothing.
+        if not any(a.response is not None for a in finding.attempts):
+            not_exercised.append(spec.id)
+            continue
+
+        # Off-universe values are a spec-authoring error (the linter refuses them), so they
+        # never contribute to a numerator and every percentage stays in [0, 1]. They are also
+        # RECORDED, because a run does not lint: dropping one in silence is how a numerator
+        # shrinks with nobody told, which is the defect this axis exists to prevent.
         if spec.owasp in OWASP_LLM_UNIVERSE:
             owasp_seen.add(spec.owasp)
+        elif spec.owasp not in OWASP_RAI_UNIVERSE:
+            off_universe.append((spec.id, "owasp", spec.owasp))
         if spec.mitre_atlas.tactic in ATLAS_TACTIC_UNIVERSE:
             atlas_seen.add(spec.mitre_atlas.tactic)
+        elif spec.mitre_atlas.tactic not in ATLAS_OUT_OF_MATRIX:
+            off_universe.append((spec.id, "mitre_atlas.tactic", spec.mitre_atlas.tactic))
         if spec.iopc is not None:
-            # Off-universe codes are a spec-authoring error (the linter rejects them), so they
-            # never contribute to the numerator and both percentages stay in [0, 1].
-            iopc_tech_seen.update(
-                c for c in (spec.iopc.techniques or []) if c in IOPC_TECHNIQUE_UNIVERSE
-            )
-            iopc_impact_seen.update(
-                c for c in (spec.iopc.impacts or []) if c in IOPC_IMPACT_UNIVERSE
-            )
+            for code in spec.iopc.techniques or []:
+                if code in IOPC_TECHNIQUE_UNIVERSE:
+                    iopc_tech_seen.add(code)
+                else:
+                    off_universe.append((spec.id, "iopc.techniques", code))
+            for code in spec.iopc.impacts or []:
+                if code in IOPC_IMPACT_UNIVERSE:
+                    iopc_impact_seen.add(code)
+                else:
+                    off_universe.append((spec.id, "iopc.impacts", code))
 
     owasp_exercised = len(owasp_seen)
     atlas_exercised = len(atlas_seen)
@@ -326,6 +360,8 @@ def _build_coverage(
         iopc_impacts_pct=(
             len(iopc_impact_seen) / len(IOPC_IMPACT_UNIVERSE) if IOPC_IMPACT_UNIVERSE else 0.0
         ),
+        off_universe=tuple(sorted(set(off_universe))),
+        not_exercised=tuple(sorted(set(not_exercised))),
     )
 
 
@@ -426,6 +462,11 @@ class BatteryCoverage:
 
     specs: int
     axes: tuple[AxisCoverage, ...]
+    #: ``(spec_id, field, value)`` for every framework value that was NOT counted because it
+    #: is outside its pinned universe. Reported rather than dropped: nothing in the coverage
+    #: path runs the linter, so a third-party pack can be measured without ever being linted,
+    #: and a silently shrinking numerator is the failure this whole axis exists to avoid.
+    off_universe: tuple[tuple[str, str, str], ...] = ()
 
 
 def _axis(
@@ -438,14 +479,17 @@ def _axis(
     def title(code: str) -> str:
         return (titles or {}).get(code, code)
 
-    covered = tuple(sorted((c, title(c)) for c in universe if c in seen))
-    missing = tuple(sorted((c, title(c)) for c in universe if c not in seen))
+    # ``set`` on both sides: a universe with a duplicated entry would otherwise inflate the
+    # denominator, and ``seen`` is already a set, so the numerator counts distinct codes.
+    distinct = tuple(dict.fromkeys(universe))
+    covered = tuple(sorted((c, title(c)) for c in distinct if c in seen))
+    missing = tuple(sorted((c, title(c)) for c in distinct if c not in seen))
     return AxisCoverage(
         key=key,
         label=label,
         exercised=len(covered),
-        total=len(universe),
-        pct=(len(covered) / len(universe) if universe else 0.0),
+        total=len(distinct),
+        pct=(len(covered) / len(distinct) if distinct else 0.0),
         covered=covered,
         missing=missing,
     )
@@ -459,33 +503,60 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
     code outside the pinned taxonomy is a lint error), so every percentage stays in [0, 1].
     """
 
-    spec_list = list(specs)
+    # De-duplicated by id: a suite may list the same spec more than once, and "72 specs" has
+    # to mean 72 distinct specs or the headline count is as soft as the percentages were.
+    spec_list = list({spec.id: spec for spec in specs}.values())
     owasp: set[str] = set()
     atlas: set[str] = set()
     tech: set[str] = set()
     impact: set[str] = set()
+    off: list[tuple[str, str, str]] = []
 
     for spec in spec_list:
         if spec.owasp in OWASP_LLM_UNIVERSE:
             owasp.add(spec.owasp)
+        elif spec.owasp not in OWASP_RAI_UNIVERSE:
+            off.append((spec.id, "owasp", spec.owasp))
         if spec.mitre_atlas.tactic in ATLAS_TACTIC_UNIVERSE:
             atlas.add(spec.mitre_atlas.tactic)
+        elif spec.mitre_atlas.tactic not in ATLAS_OUT_OF_MATRIX:
+            off.append((spec.id, "mitre_atlas.tactic", spec.mitre_atlas.tactic))
         if spec.iopc is not None:
-            tech.update(c for c in (spec.iopc.techniques or []) if c in IOPC_TECHNIQUE_UNIVERSE)
-            impact.update(c for c in (spec.iopc.impacts or []) if c in IOPC_IMPACT_UNIVERSE)
+            for code in spec.iopc.techniques or []:
+                if code in IOPC_TECHNIQUE_UNIVERSE:
+                    tech.add(code)
+                else:
+                    off.append((spec.id, "iopc.techniques", code))
+            for code in spec.iopc.impacts or []:
+                if code in IOPC_IMPACT_UNIVERSE:
+                    impact.add(code)
+                else:
+                    off.append((spec.id, "iopc.impacts", code))
 
     return BatteryCoverage(
         specs=len(spec_list),
         axes=(
-            _axis("owasp", "OWASP LLM Top 10", OWASP_LLM_UNIVERSE, owasp),
-            _axis("atlas", "MITRE ATLAS tactics", ATLAS_TACTIC_UNIVERSE, atlas),
+            _axis("owasp", f"OWASP LLM Top 10 ({OWASP_LLM_EDITION})", OWASP_LLM_UNIVERSE, owasp),
+            _axis(
+                "atlas",
+                f"MITRE ATLAS tactics ({ATLAS_MATRIX_RELEASE})",
+                ATLAS_TACTIC_UNIVERSE,
+                atlas,
+            ),
             _axis(
                 "iopc_techniques",
-                "IoPC techniques",
+                f"IoPC techniques ({IOPC_TAXONOMY_VERSION})",
                 IOPC_TECHNIQUE_UNIVERSE,
                 tech,
                 IOPC_TECHNIQUES,
             ),
-            _axis("iopc_impacts", "IoPC impacts", IOPC_IMPACT_UNIVERSE, impact, IOPC_IMPACTS),
+            _axis(
+                "iopc_impacts",
+                f"IoPC impacts ({IOPC_TAXONOMY_VERSION})",
+                IOPC_IMPACT_UNIVERSE,
+                impact,
+                IOPC_IMPACTS,
+            ),
         ),
+        off_universe=tuple(sorted(set(off))),
     )

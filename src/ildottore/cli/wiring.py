@@ -84,6 +84,7 @@ __all__ = [
     "mock_adapter_factory",
     "planted_secrets",
     "real_adapter_factory",
+    "request_url_for",
     "resolve_auth_ref",
     "scenario_adapter_factory",
     "scenario_judge_adapter",
@@ -332,10 +333,16 @@ def scope_endpoint_of(scope: Scope, target: Target) -> str:
     second, weaker gate that can disagree with the real one.
     """
 
-    # A stdio MCP target has no request URL: authorize it by its command line, which the
-    # gate exact-matches against the scope's `commands` allowlist (see PolicyEngine.check).
-    if (target.transport or "").strip().lower() == "stdio" and target.command:
-        return "stdio://" + " ".join(target.command)
+    # The URL the adapter will really request, when there is one (a stdio MCP target answers
+    # with its command line, which the gate exact-matches against the scope's `commands`).
+    # Authorizing the scope's `base_url` instead was testing a different string from the one
+    # that goes on the wire: see :func:`request_url_for`.
+    wire_url = request_url_for(target)
+    if wire_url is not None:
+        return wire_url
+    # A mock/offline target has no wire URL: fall back to the scope's declared base_url, and
+    # to the bare id when the scope does not know it (which no allowlist can match, so
+    # default-deny holds).
     base_by_id = {t.id: t.base_url for t in scope.targets}
     return base_by_id.get(target.id, target.id)
 
@@ -445,6 +452,43 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
     raise ValueError(f"unsupported auth_ref scheme in {auth_ref!r}; only 'env://NAME' is supported")
 
 
+#: The path each provider's API lives at when the operator declares only an origin. Used by
+#: :func:`request_url_for` and :func:`build_real_adapter`, from one table, so the URL the gate
+#: authorizes and the URL the adapter requests are computed the same way.
+PROVIDER_DEFAULT_PATHS: dict[str, str] = {
+    "openai": "/v1/chat/completions",
+    "anthropic": "/v1/messages",
+}
+
+
+def request_url_for(target: Target) -> str | None:
+    """The URL (or ``stdio://`` command) this target's adapter will really request.
+
+    ``None`` for a mock/offline target, which has no wire URL at all.
+
+    This exists because "the endpoint" had three different meanings: the scope's ``base_url``
+    (what the pre-flight gate authorized), ``target.endpoint`` (what the operator wrote), and
+    ``origin + a hardcoded provider path`` (what the adapter sent). An audit of 252
+    scope/target combinations found 80 disagreements between the first and the third, 41 of
+    them refusals of configurations that would have been allowed on the wire. One function,
+    one answer, used by the gate and by the adapter factory.
+    """
+
+    if (target.transport or "").strip().lower() == "stdio" and target.command:
+        return "stdio://" + " ".join(target.command)
+    endpoint = (target.endpoint or "").strip()
+    if not endpoint or endpoint.startswith("mock://"):
+        return None
+    parts = urlsplit(endpoint)
+    if not parts.scheme or not parts.netloc:
+        return None
+    provider = (target.provider or "").strip().lower()
+    if provider == "mcp":
+        return endpoint  # MCP posts JSON-RPC to the declared path itself
+    path = parts.path or PROVIDER_DEFAULT_PATHS.get(provider, "/")
+    return f"{parts.scheme}://{parts.netloc}{path}"
+
+
 def build_real_adapter(
     target: Target,
     allowlist: EndpointAllowlist,
@@ -493,13 +537,27 @@ def build_real_adapter(
             api_key=api_key,
             model=target.model,
         )
+    # The DECLARED path wins over the provider default: a gateway (Azure OpenAI, LiteLLM, a
+    # corporate proxy) hosts the same API under a prefix, and discarding it both sent the
+    # wrong URL and tripped the allowlist built from the declared one.
+    declared_path = parts.path or None
     if provider == "openai":
         return OpenAIAdapter(
-            id=target.id, base_url=origin, allowlist=allowlist, api_key=api_key, model=target.model
+            id=target.id,
+            base_url=origin,
+            allowlist=allowlist,
+            api_key=api_key,
+            model=target.model,
+            path_override=declared_path,
         )
     if provider == "anthropic":
         return AnthropicAdapter(
-            id=target.id, base_url=origin, allowlist=allowlist, api_key=api_key, model=target.model
+            id=target.id,
+            base_url=origin,
+            allowlist=allowlist,
+            api_key=api_key,
+            model=target.model,
+            path_override=declared_path,
         )
     template = RestTemplate(path=parts.path or "/")
     return RestAdapter(

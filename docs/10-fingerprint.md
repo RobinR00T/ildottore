@@ -7,9 +7,19 @@ Two roles for fingerprinting: both first-class:
    *what model, which version, which guardrails and capabilities* sit behind an endpoint, and
    stop. Nothing else is attacked. This is the nmap `-sV` / banner-grab analogue and a useful
    product on its own (asset discovery of AI endpoints).
-2. **Adaptive first pass** (`-sV`, or `-A`, before a scan): the fingerprint drives **test-plan
-   tailoring**: pick the relevant specs, tune mutators to what's known-effective against that
-   family, skip inapplicable tests, and set the expected baseline resistance.
+2. **Adaptive first pass** (`-sV`, or `-A`, before a scan): the fingerprint is recorded and
+   printed, and the plan is built in adaptive mode.
+
+   **Read this part carefully, because the tailoring is not doing anything yet.** The two
+   mechanisms that would tailor a plan (`_order_family_effective` and `_baseline_resistance`
+   in `core/planner.py`) read `capability_guess["effective_mutators"]` and
+   `guardrails["baseline_resistance"]`, and the fingerprint engine **emits neither**, so with
+   `-sV` today: 0 specs change mutator order, 0 carry a baseline expectation, and the only
+   observable difference in the plan is the wording of each selection's `reason`. The
+   fingerprint itself is real and is reported; the family-effectiveness table it would need
+   is per-family empirical data we do not have, and inventing one would make the ordering a
+   fiction with a confidence attached. Tracked in `docs/12`; until then, `-sV` buys you a
+   fingerprint, not a different battery.
 
 Grounded in prior art (LLMmap-style statistical fingerprinting; OpenAI `system_fingerprint`;
 glitch-token behavior). Fingerprinting is **probabilistic**: always reported with a

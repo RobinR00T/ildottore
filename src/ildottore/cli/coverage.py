@@ -10,9 +10,16 @@ Two design choices worth stating:
 * **The gaps are printed, not just the percentages.** A coverage number with no list of what
   is missing invites the reader to assume the remainder is small or unimportant. Naming the
   uncovered codes is the honest form, and it is also the useful one: it is the roadmap.
-* **Off-universe values never count.** A Responsible-AI ``RAI0x`` code is not an OWASP LLM
-  category and an IoPC code outside the pinned taxonomy is a lint error, so neither reaches a
-  numerator. Percentages therefore cannot exceed 100%.
+* **Off-universe values never count**, and this command says how many it dropped. A
+  Responsible-AI ``RAI0x`` code is not an OWASP LLM category and an IoPC code outside the
+  pinned taxonomy is a lint error, so neither reaches a numerator. Percentages therefore
+  cannot exceed 100%. Nothing here runs the linter, though (a third-party pack can be
+  measured without ever being linted), so a dropped value is reported as a warning rather
+  than left to shrink the numerator in silence.
+* **Percentages are floored** (:func:`~ildottore.reporting.summary.pct_display`). This module
+  formatted its own with ``%.0f`` until 2026-09-21, which meant it printed 96% for the same
+  22/23 the run summary and the HTML report printed as 95%: one figure, published two
+  different ways, by the command written to be the interrogable one.
 """
 
 from __future__ import annotations
@@ -21,7 +28,12 @@ import json
 from pathlib import Path
 
 from ildottore.cli import wiring
-from ildottore.reporting.summary import AxisCoverage, BatteryCoverage, build_battery_coverage
+from ildottore.reporting.summary import (
+    AxisCoverage,
+    BatteryCoverage,
+    build_battery_coverage,
+    pct_display,
+)
 from ildottore.shared.models import AttackSpec
 
 __all__ = ["battery_coverage", "render_coverage", "render_coverage_json"]
@@ -76,8 +88,10 @@ def render_coverage(
     width = max((len(a.label) for a in axes), default=0)
     for axis in axes:
         lines.append(
-            f"  {axis.label:<{width}}  {axis.exercised:>3}/{axis.total:<3} {axis.pct * 100:>3.0f}%"
+            f"  {axis.label:<{width}}  {axis.exercised:>3}/{axis.total:<3} "
+            f"{pct_display(axis.exercised, axis.total):>4}"
         )
+    lines.extend(_off_universe_lines(coverage))
     if not show_gaps:
         return "\n".join(lines)
 
@@ -88,6 +102,28 @@ def render_coverage(
         for code, title in axis.missing:
             lines.append(f"    {code}  {title}" if title != code else f"    {code}")
     return "\n".join(lines)
+
+
+def _off_universe_lines(coverage: BatteryCoverage) -> list[str]:
+    """A warning for every framework value that was dropped for being off-universe.
+
+    Nothing in this path runs the linter (``build_registry`` only loads), so a third-party
+    pack can be measured without ever being linted. Dropping a value silently is how a
+    numerator shrinks without anyone being told, which is the whole failure this command was
+    written against, so the drop is reported here even though the refusal lives in lint.
+    """
+
+    if not coverage.off_universe:
+        return []
+    lines = [
+        "",
+        f"  WARNING: {len(coverage.off_universe)} framework value(s) outside their pinned "
+        "universe are NOT counted (run `dottore lint` to refuse them):",
+    ]
+    lines.extend(
+        f"    {spec_id}  {field} = {value!r}" for spec_id, field, value in coverage.off_universe
+    )
+    return lines
 
 
 def render_coverage_json(
@@ -103,6 +139,10 @@ def render_coverage_json(
     axes = _selected(coverage, framework)
     payload = {
         "specs": coverage.specs,
+        "off_universe": [
+            {"spec_id": spec_id, "field": field, "value": value}
+            for spec_id, field, value in coverage.off_universe
+        ],
         "axes": [
             {
                 "key": a.key,
