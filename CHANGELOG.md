@@ -48,6 +48,41 @@ versioning: [SemVer](https://semver.org/).
   S105/S106/S107, which stay active.
 
 ### Fixed
+- **The report masker no longer destroys spec ids.** The interim global entropy fallback
+  (OD-15) masked any 16+ char token scoring 3.7 bits/char or more, which a hyphenated
+  uppercase identifier does: 15 of the 72 shipped spec ids (`JB-SEQUENTIAL-001`,
+  `SAFETY-HARMFUL-001`, `EMB-NEIGHBOR-LEAK-001`, all eight `AG-*`) rendered as
+  `«REDACTED:high_entropy:<hash>»` in every format, and a URL lost its port and path
+  (`endpoint 'http://localhost:«REDACTED:high_entropy:462fdfa1»' not on allowlist`).
+  `spec_id` is the join key for `dottore diff` and the SARIF rule id, so regressions in 21%
+  of the battery were untrackable across runs and those SARIF rule ids were unusable. The
+  fallback now exempts separator-structured tokens **by shape** (the schema id shape, plus
+  lowercase/digit ids, model names and URL paths), and requires every segment to be shorter
+  than `entropy_min_len`, so an id-shaped wrapper around an opaque run
+  (`ZYNAP-CANARY-A1B2C3D4E5F6G7H8`) is still masked whole. A token that is hexadecimal all
+  the way through is excluded from the exemption outright, because that is the shape of a
+  UUID-format key or a grouped digest (`da39a3ee-5e6b-4b0d-3255-bfef95601890`), which a
+  model can emit with no label for the labelled-secret rule to catch. The bits/char threshold is
+  deliberately unchanged: raising it to 4.0 would stop catching a random 20-char base64
+  token two times out of three, and planted canaries (`CANARY-8f3a-...`, `ZYNAP_CANARY_*`),
+  api keys, bearer tokens and PEM keys are all still masked, with tests pinning both sides.
+- **The report masker no longer destroys dated model names, dates and run ids.** The
+  `phone` detector (`\+?\d[\d\s().-]{7,}\d`) let `-` and `.` float freely inside the digit
+  run, which is exactly how a dated identifier is punctuated, so
+  `claude-opus-4-1-20250805` rendered as `claude-opus-«REDACTED:phone»`,
+  `gpt-4o-mini-2024-07-18` as `gpt-4o-mini-«REDACTED:phone»`, `run-20260920-143000` as
+  `run-«REDACTED:phone»` and a bare `2026-09-20` as `«REDACTED:phone»`, in every format. A
+  model name reaches a report through `Target.model` / `Target.name` and the run through its
+  date fields, so the report could not name the model it had just tested. (A full ISO
+  timestamp survived: the `T` and the colons break the pattern, so only bare dates and dated
+  names were hit.) Same remedy as the entropy fallback above, exempt **by shape**: a match
+  is spared only when the whole of it is a calendar-valid date stamp (`YYYY-MM-DD` or
+  `YYYYMMDD`), optionally preceded by up to three short version segments (`4-1-`, `4.1-`)
+  and followed by at most one `HH`/`HHMM`/`HHMMSS` clock. The same bound applies as for ids:
+  no segment can carry a number, so `20250805-600123456789` is still masked whole, and real
+  numbers keep their mask in every notation (`+34 600 123 456`, `+1 (555) 123-4567`,
+  `555-123-4567`, `555.123.4567`, `020-7946-0958`, `0034-600-123456`, `600123456`), with
+  tests pinning both sides and the masking gate unchanged.
 - **A target missing from the scope is now refused instead of silently scanned.** It used to
   produce a full run whose every spec came back inconclusive, with the real reason
   ("target not in scope") written only into the JSON report, and an exit code of **0**.

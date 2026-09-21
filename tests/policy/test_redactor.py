@@ -242,3 +242,156 @@ def test_pem_detector_has_no_redos_without_end_marker() -> None:
     start = time.perf_counter()
     r.redact_text(payload)
     assert (time.perf_counter() - start) < 1.0  # was ~19s before the precheck
+
+
+# --- entropy-fallback false positives (2026-09-20) ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "JB-SEQUENTIAL-001",
+        "SAFETY-HARMFUL-001",
+        "EMB-NEIGHBOR-LEAK-001",
+        "GUARD-UNICODE-EVASION-001",
+        "AG-INTERAGENT-COMPROMISE-001",
+        "JB-OFFENSIVE-RANSOM-CODEGEN-001",
+        "emb-neighbor-leak-001",  # lowercase id
+        "qwen2.5-coder-32b-instruct",  # model name
+    ],
+)
+def test_structured_identifier_survives_entropy_fallback(token: str) -> None:
+    """A separator-structured identifier is not an opaque secret (OD-15 exemption)."""
+
+    assert Redactor().redact_text(token) == token
+
+
+def test_url_with_port_survives_entropy_fallback() -> None:
+    """A policy-gate reason kept its endpoint: the port + path used to be masked."""
+
+    r = Redactor()
+    reason = "endpoint 'http://localhost:11434/v1/chat/completions' not on allowlist"
+    assert r.redact_text(reason) == reason
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "CANARY-8f3a-secret-token-42",  # planted canary: mixed case, never id-shaped
+        "ZYNAP_CANARY_run-20260920-abcdef",  # substituted canary stem
+        "ZYNAP-CANARY-A1B2C3D4E5F6G7H8",  # id-shaped wrapper, opaque 16-char segment
+        "ZYNAP-CANARY-ABCDEF123456",  # id-shaped wrapper, alphanumeric (key-shaped) segment
+        "AB1CD-2EF3G-H4IJK-5LMN6-OPQ7R",  # license-key shape: segments mix letters + digits
+        "Zk9Qw3Xr7Lm2Vt8Np5Bd6Yc4Hs1Gf0",  # unknown-shape high-entropy token
+    ],
+)
+def test_identifier_exemption_does_not_spare_a_secret(secret: str) -> None:
+    """The exemption is shape-bounded: a canary or an opaque run is still masked whole."""
+
+    out = Redactor(salt="s").redact_text(f"opaque {secret} value")
+    assert secret not in out
+    assert "«REDACTED:" in out
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "da39a3ee-5e6b-4b0d-3255-bfef95601890",  # hyphen-grouped digest
+        "3f2a1b4c-5d6e-7f80-9a1b-2c3d4e5f6071",  # UUID-format token, the shape of an api key
+        "DA39A3EE-5E6B-4B0D-3255-BFEF95601890",  # same, upper case: id-shaped as well
+        "a1b2c3d4-e5f6-a7b8-c9d0",  # shorter grouped hex, still 20 hex digits
+        "f0e1d2c3_b4a59687_78695a4b",  # underscore grouping
+        "7b3e1f9a/2c8d40a5/6e1b93cf",  # slash grouping, path-shaped
+    ],
+)
+def test_hex_shaped_token_is_not_exempt(secret: str) -> None:
+    """An all-hex structured token is a key or a digest, never an identifier.
+
+    A model can emit one with no label, so the labelled-secret rule never sees it; without
+    this counter-rule the separator exemption would hand it to the report intact. Each case
+    here clears the bits/char threshold on its own: a hex blob *below* it
+    (``deadbeef/cafebabe/1a2b3c4d5e``, 3.30) is missed by the interim fallback with or
+    without the exemption, which is the OD-15 limitation, not this rule's doing.
+    """
+
+    out = Redactor(salt="s").redact_text(f"value {secret} here")
+    assert secret not in out
+    assert "\u00abREDACTED:" in out
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "qwen2.5-coder-32b-instruct",  # every hex-looking segment, but 'q'/'w'/'n'/'s' are not
+        "http://localhost:11434/v1/chat/completions",
+        "text-embedding-3-large",
+        "AG-TOOLCHAIN-EXFIL-001",
+        "MM-AUD-PROMPTINJECT-001",
+    ],
+)
+def test_hex_counter_rule_does_not_re_break_identifiers(token: str) -> None:
+    """The counter-rule must bite hex only: it is what keeps the spec-id fix honest."""
+
+    assert Redactor(salt="s").redact_text(token) == token
+
+
+# --- phone false positives on dated identifiers (2026-09-20) -----------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "claude-opus-4-1-20250805",  # dated model suffix behind a version pair
+        "claude-sonnet-4-5-20250929",
+        "gpt-4o-mini-2024-07-18",  # hyphenated dated model suffix
+        "gpt-4.1-2025-04-14",  # dotted version + hyphenated date
+        "deepseek-v3-20241226",
+        "mistral-large-2411",
+        "run-20260920-143000",  # run id: date stamp + clock
+        "2026-09-20",  # a bare date
+        "baseline 2026-01-31 vs current 2026-02-01",
+        "started 2026-09-20 10:01:00 UTC",
+        "2026-01-01T00:00:00Z",  # ISO timestamp (already survived, pinned)
+        "v1.2.3-20250805",
+    ],
+)
+def test_dated_identifier_is_not_a_phone_number(text: str) -> None:
+    """A date, a dated model/version suffix and a run id are not phone numbers.
+
+    ``Target.model`` / ``Target.name`` and the run's date fields travel into every
+    rendered report, so these used to surface as ``claude-opus-«REDACTED:phone»``.
+    """
+
+    assert Redactor(salt="s").redact_text(text) == text
+
+
+@pytest.mark.parametrize(
+    "phone",
+    [
+        "+34 600 123 456",
+        "+1 (555) 123-4567",
+        "+44 20 7946 0958",
+        "555-123-4567",
+        "555.123.4567",
+        "020-7946-0958",
+        "1-202-555-0199",
+        "0034-600-123456",
+        "600123456",
+    ],
+)
+def test_real_phone_numbers_stay_masked(phone: str) -> None:
+    """The date exemption must not cost a single real number (pinned both ways)."""
+
+    out = Redactor(salt="s").redact_text(f"reach me on {phone} today")
+    assert phone not in out
+    assert "«REDACTED:phone»" in out
+
+
+def test_date_exemption_does_not_carry_a_digit_run() -> None:
+    """The bound: an opaque digit run cannot ride along behind a valid date stamp."""
+
+    r = Redactor(salt="s")
+    for text in ["20250805-600123456789", "2026-09-20-4155550142"]:
+        out = r.redact_text(text)
+        assert text not in out
+        assert "«REDACTED:" in out

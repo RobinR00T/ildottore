@@ -17,7 +17,16 @@ Design (contract §4, §6; ``docs/11 §5`` DL2):
   shape; dict keys are preserved, values redacted.
 * **Entropy fallback (OD-15)**: an interim *global* Shannon-entropy threshold
   catches unknown-shape high-entropy tokens. Documented as interim; will reuse
-  u06 ``secret_shape`` policy when that lands.
+  u06 ``secret_shape`` policy when that lands. **Separator-structured tokens**
+  (a spec id, a model name, a URL path) are exempt *by shape* - they score high
+  bits/char without being opaque, and masking one destroys a report join key
+  rather than hiding a secret (see ``_ID_SHAPED`` / ``_PATH_SHAPED``). A token that is
+  hexadecimal throughout is *not* exempt: that is a key or a digest shape, not an id
+  shape (see ``_HEX_SEGMENT``).
+* **Dated identifiers**: the ``phone`` detector reads ``-``/``.``/space as digit-group
+  separators, which is also how a date, a dated model suffix and a run id are punctuated.
+  A match that is entirely a calendar-valid date stamp is likewise exempt *by shape*
+  (see ``_DATE_SHAPED``); a real number, which never carries one, still gets masked.
 
 Verifier / pattern set is extensible via :meth:`Redactor.register`.
 """
@@ -51,6 +60,67 @@ _LABELED_SECRET: Final = re.compile(
 # word, i.e. it carries a digit, an uppercase letter, or a symbol. This keeps the labelled
 # heuristic from masking ordinary prose ("password strength is low").
 _PLAIN_WORD: Final = re.compile(r"^[a-z]+$")
+
+# --- structured-identifier exemptions for the entropy fallback (OD-15) ----------------
+# The entropy fallback must fire on *opaque* tokens only. A separator-structured token -
+# a spec id (``AG-TOOLCHAIN-EXFIL-001``), a model name (``qwen2.5-coder-32b-instruct``), a
+# URL path carrying a port (``11434/v1/chat/completions``) - scores high bits/char purely
+# because its short segments barely repeat a character: 15 of the 72 shipped spec ids sat
+# at 3.72-3.94 bits/char, i.e. over the 3.7 threshold. Masking one hides nothing and
+# destroys a join key (``spec_id`` drives ``dottore diff`` and the SARIF rule id), so both
+# shapes are exempted **by shape** - not by raising the global threshold, which would also
+# stop catching short real secrets (a random 20-char base64 token averages ~4.04 bits/char).
+#
+# Mirrors ``shared.models._ID_PATTERN`` (the schema's id shape), narrowed to segments that
+# are a whole WORD or a whole NUMBER - which every shipped id is (``MM-AUD-PROMPTINJECT-001``).
+# A segment mixing letters and digits is the shape of a key, not of an id, so an id-looking
+# credential (``ZYNAP-CANARY-ABCDEF123456``, a license key ``AB1CD-2EF3G-H4IJK``) is **not**
+# exempt. Neither is a mixed-case marker (``CANARY-8f3a-secret-token-42``) nor an underscored
+# canary stem (``ZYNAP_CANARY_...``): both stay maskable.
+_ID_SHAPED: Final = re.compile(r"[A-Z]+(?:-(?:[A-Z]+|[0-9]+))+")
+# Lowercase/digit segments joined by ``-``/``_``/``/``: lowercase ids, model names, URL
+# paths and ports. An uppercase letter anywhere disqualifies the token, and a base64 key of
+# this length is never all-lowercase, so this cannot exempt a real credential.
+_PATH_SHAPED: Final = re.compile(r"[a-z0-9]+(?:[-_/][a-z0-9]+)+")
+_SEGMENT_SPLIT: Final = re.compile(r"[-_/]")
+# Counter-rule to the two shapes above: a separator-structured token that is hexadecimal all
+# the way through is not an identifier we owe anything to, it is the shape of a UUID-format
+# credential or a hyphen-grouped digest (``da39a3ee-5e6b-4b0d-3255-bfef95601890``), which a
+# model can emit unlabelled and which the labelled-secret rule therefore never sees. Nothing
+# the exemption exists to protect is hex all through: a spec id carries a non-hex letter
+# (``AG-TOOLCHAIN-EXFIL-001``), so does a model name (``qwen2.5-coder-32b-instruct``) and so
+# does a URL path (``11434/v1/chat/completions``). Digits alone cannot reach the bits/char
+# threshold (base 10 caps at 3.32), so this only ever bites tokens mixing ``a``-``f`` with
+# digits, i.e. the hash and UUID shapes.
+_HEX_SEGMENT: Final = re.compile(r"[0-9a-fA-F]+")
+_HEX_EXEMPTION_MIN_LEN: Final = 16
+
+# --- date-shape exemption for the ``phone`` detector -----------------------------------
+# The phone pattern accepts ``-``/``.``/space as group separators, which is exactly how a
+# dated identifier is punctuated, so ``2026-09-20``, ``gpt-4o-mini-2024-07-18``,
+# ``claude-opus-4-1-20250805`` and ``run-20260920-143000`` all read as phone numbers and
+# rendered as ``claude-opus-«REDACTED:phone»`` in every report. The model name reaches a
+# report via ``Target.model`` / ``Target.name`` and the run's date fields, so the report
+# could not name the model it had just tested.
+#
+# Same remedy as the entropy fallback above: exempt **by shape**, never by loosening the
+# detector. A candidate is exempt only when the whole match is a calendar-valid date stamp
+# (``YYYY-MM-DD`` or ``YYYYMMDD``), optionally preceded by up to three short version
+# segments (``4-1-`` in ``claude-opus-4-1-20250805``, ``4.1-`` in ``gpt-4.1-2025-04-14``)
+# and followed by at most one clock time (``-143000`` in a run id).
+#
+# The bound is that no segment can carry a phone: the date stamp is exactly 8 digits with a
+# ``19``/``20`` century, a valid month and a valid day; every other segment is at most 4
+# digits (version) or a valid ``HH``/``HHMM``/``HHMMSS`` (clock). So a real number keeps its
+# mask - ``555-123-4567`` has no 4-digit year, ``+34 600 123 456`` and ``+1 (555) 123-4567``
+# carry a ``+``/parens the shape does not admit - and a long opaque run cannot ride along
+# behind a date (``20250805-600123456789`` is masked whole, as ``600123456789`` is no clock).
+_DATE_SHAPED: Final = re.compile(
+    r"(?:\d{1,4}[.-]){0,3}"  # optional version prefix: 4-1-, 4.1-, 1-2-3-
+    r"(?:(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"  # YYYY-MM-DD
+    r"|(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))"  # YYYYMMDD
+    r"(?:[-_ T](?:[01]\d|2[0-3])(?:[0-5]\d){0,2})?"  # optional HH / HHMM / HHMMSS
+)
 
 
 @dataclass(frozen=True)
@@ -193,6 +263,8 @@ class Redactor:
                 working = self._redact_cards(pattern, working)
             elif pattern.type == "pem_private_key":
                 working = self._redact_pem(pattern, working)
+            elif pattern.type == "phone":
+                working = self._redact_phones(pattern, working)
             else:
                 working = pattern.regex.sub(self._make_sub(pattern), working)
 
@@ -246,11 +318,53 @@ class Redactor:
 
         return pattern.regex.sub(_sub, text)
 
+    def _redact_phones(self, pattern: Pattern, text: str) -> str:
+        """Phone matcher with a date-shape guard to cut dated-identifier false positives.
+
+        A match that is entirely a date / dated version suffix / run id (``_DATE_SHAPED``)
+        is left as written; everything else is masked exactly as before.
+        """
+
+        def _sub(m: re.Match[str]) -> str:
+            if _DATE_SHAPED.fullmatch(m.group(0)):
+                return m.group(0)
+            return self._mask_token(pattern, m.group(0))
+
+        return pattern.regex.sub(_sub, text)
+
+    def _is_structured(self, token: str) -> bool:
+        """True when ``token`` is a structured identifier/path rather than an opaque blob.
+
+        Both exempt shapes additionally require **every** segment to be shorter than
+        ``entropy_min_len``, so an identifier-looking wrapper around a long opaque run
+        (``ZYNAP-CANARY-A1B2C3D4E5F6G7H8``) is still masked *as a whole* - an exemption can
+        never expose part of a secret. An all-hexadecimal token of ``entropy_min_len`` or more
+        hex digits is excluded outright (``_HEX_SEGMENT``): that is a UUID-format key or a
+        grouped digest, not an identifier.
+        """
+
+        if not (_ID_SHAPED.fullmatch(token) or _PATH_SHAPED.fullmatch(token)):
+            return False
+        segments = _SEGMENT_SPLIT.split(token)
+        if not all(len(segment) < self._entropy_min_len for segment in segments):
+            return False
+        hex_len = sum(len(segment) for segment in segments)
+        return not (
+            hex_len >= _HEX_EXEMPTION_MIN_LEN
+            and all(_HEX_SEGMENT.fullmatch(segment) for segment in segments)
+        )
+
     def _redact_high_entropy(self, text: str) -> str:
-        """Interim global entropy fallback for unknown-shape secrets (OD-15)."""
+        """Interim global entropy fallback for unknown-shape secrets (OD-15).
+
+        Structured identifiers/paths are skipped (:meth:`_is_structured`); everything else
+        is masked once it clears both the length and the bits/char threshold.
+        """
 
         def _sub(m: re.Match[str]) -> str:
             token = m.group(0)
+            if self._is_structured(token):
+                return token
             if (
                 len(token) >= self._entropy_min_len
                 and _shannon_entropy(token) >= self._entropy_threshold
