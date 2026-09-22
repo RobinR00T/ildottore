@@ -22,6 +22,7 @@ from ildottore.fingerprint.base import FingerprintLayer, ProbeContext
 from ildottore.fingerprint.combine import CombinedFingerprint, combine
 from ildottore.fingerprint.layers import default_layers
 from ildottore.fingerprint.layers.capability import capability_guess
+from ildottore.fingerprint.layers.carrier import CARRIER_PROBE_DETAIL, effective_mutators
 from ildottore.fingerprint.layers.guardrail import GUARDRAIL_PROFILE_DETAIL
 from ildottore.fingerprint.signatures import SignaturePack, load_pack
 from ildottore.shared.models import (
@@ -53,6 +54,12 @@ class FingerprintEngine:
         self._layers = layers if layers is not None else default_layers()
         self._pack = pack if pack is not None else load_pack()
 
+    @property
+    def layers(self) -> list[FingerprintLayer]:
+        """The composed layer list (read-only; the CLI prices a pass off it)."""
+
+        return list(self._layers)
+
     async def run(self, adapter: TargetAdapter) -> ModelFingerprint:
         """Probe ``adapter`` with every layer and assemble the fingerprint.
 
@@ -70,6 +77,12 @@ class FingerprintEngine:
         fused = combine(evidence)
         guardrails = _guardrails_from_evidence(evidence)
         caps = capability_guess(adapter.capabilities())
+        # The one key the PLANNER reads (``core.planner._order_family_effective``). Without
+        # it, adaptive mode reordered nothing and ``-sV`` bought a fingerprint that changed
+        # no part of the battery: a probe pass with real cost and no consequence.
+        carriers = _carriers_from_evidence(evidence)
+        if carriers:
+            caps["effective_mutators"] = carriers
         version = _with_cutoff(fused, self._pack)
 
         return ModelFingerprint(
@@ -98,6 +111,23 @@ def _guardrails_from_evidence(evidence: list[FingerprintEvidence]) -> JsonDict:
             if isinstance(parsed, dict):
                 return parsed
     return {}
+
+
+def _carriers_from_evidence(evidence: list[FingerprintEvidence]) -> list[str]:
+    """Order the carriers this target still understands, best-first (see ``layers/carrier``)."""
+
+    prefix = f"{CARRIER_PROBE_DETAIL}="
+    for ev in evidence:
+        if ev.layer == "carrier" and ev.signal.startswith(prefix):
+            try:
+                parsed = json.loads(ev.signal.split("=", 1)[1])
+            except ValueError:
+                return []
+            if isinstance(parsed, dict):
+                return effective_mutators(
+                    {str(k): float(v) for k, v in parsed.items() if isinstance(v, (int, float))}
+                )
+    return []
 
 
 def _with_cutoff(fused: CombinedFingerprint, pack: SignaturePack) -> FingerprintGuess | None:

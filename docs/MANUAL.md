@@ -198,7 +198,7 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
-| `-sV` | fingerprint the target's model + guardrails first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it, and build the plan in adaptive mode. **The tailoring itself is inert today:** the mutator-ordering and baseline-expectation hooks read fingerprint hints the engine does not yet emit, so `-sV` buys a fingerprint, not a different battery (see `docs/10 §2`). It sends: it is therefore skipped under `--dry-run`, `--estimate` and `-sn` |
+| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it, and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs ~24 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan, and **not** sent under `--dry-run`, `--estimate` or `-sn` |
 | `-A` | aggressive: implies `-sV` and `--deep` (there is no separate `--adaptive` flag; `-sV`/`--deep` enable adaptive planning) |
 
 **Judge and execution**
