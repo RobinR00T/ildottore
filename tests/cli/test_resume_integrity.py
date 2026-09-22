@@ -35,6 +35,12 @@ def _opts(tmp_path: Path, spec_dir: Path, **kw: object) -> RunOptions:
         evidence_root=tmp_path / "ev",
         run_db=tmp_path / "runs.sqlite",
         budget_requests=_BUDGET,
+        # Serial on purpose. With the default concurrency of 4, WHICH attempts finish before
+        # the ceiling halts the campaign is scheduler-dependent: locally the first spec's
+        # three attempts were always stored, and in CI the halt landed before any of them
+        # were, so every test here failed on an evidence tree that did not exist. A resume
+        # test needs a halted run with evidence, not a halted run.
+        concurrency=1,
     )
     for key, value in kw.items():
         setattr(opts, key, value)
@@ -46,8 +52,15 @@ def _halted_run(tmp_path: Path, spec_dir: Path) -> str:
 
     outcome = execute_run(_opts(tmp_path, spec_dir), [spec_dir])
     assert outcome.exit_code == ExitCode.ERROR, "the ceiling should have halted the run"
+    assert (tmp_path / "ev").is_dir(), (
+        "precondition: the halted run stored evidence. If this fails, the ceiling stopped the "
+        "campaign before a single attempt was persisted and there is nothing to resume, which "
+        "is a broken fixture rather than a broken resume."
+    )
     run_ids = [p.name for p in (tmp_path / "ev").iterdir() if p.is_dir()]
     assert len(run_ids) == 1
+    stored = list((tmp_path / "ev" / run_ids[0] / "attempts").glob("*.json"))
+    assert stored, "precondition: at least one attempt is on disk to resume from"
     return run_ids[0]
 
 
