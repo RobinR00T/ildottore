@@ -1,7 +1,7 @@
 """Model fingerprinting engine (u09, ``docs/10``, ADR-0006).
 
 Standalone recognition: probe an unknown endpoint with **benign** seeded signals
-across six layers (passive/metadata, capability, behavioral, tokenizer, guardrail,
+across six self-contained layers (passive/metadata, capability, behavioral, tokenizer, guardrail,
 statistical), fuse the weighted evidence and return a
 :class:`~ildottore.shared.models.ModelFingerprint` - family/version guesses with
 confidence, a ``capability_guess``, a guardrail profile, the evidence trail and

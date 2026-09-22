@@ -1,6 +1,6 @@
 """Fingerprint engine orchestrator (u09, contract §5 step 7, ADR-0006).
 
-Runs the six signal layers against an injected
+Runs the composed signal layers against an injected
 :class:`~ildottore.shared.protocols.TargetAdapter`, fuses their evidence
 (:mod:`ildottore.fingerprint.combine`) and assembles a
 :class:`~ildottore.shared.models.ModelFingerprint` - **and stops** (ADR-0006: u09
@@ -40,9 +40,13 @@ class FingerprintEngine:
     """Composes signal layers into a :class:`ModelFingerprint` (contract §5 step 7).
 
     Layers and the signature pack are injected for testability + pluggable
-    extension (contract §1); defaults are the six built-in layers and the in-repo
-    MVP-1 pack. The engine holds no per-run state (a fresh :class:`ProbeContext` is
-    built per call) so one engine instance can fingerprint many targets.
+    extension (contract §1); defaults are the six self-contained built-in layers and
+    the in-repo MVP-1 pack. The **seventh**, the carrier layer, probes with u05's
+    mutators and u09 may not import them, so the composition root
+    (``cli.wiring.build_fingerprint_engine``) appends it with the registry injected:
+    a ``FingerprintEngine()`` built here therefore has six layers and the one the CLI
+    builds has seven. The engine holds no per-run state (a fresh :class:`ProbeContext`
+    is built per call) so one engine instance can fingerprint many targets.
     """
 
     def __init__(
