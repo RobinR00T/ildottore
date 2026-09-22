@@ -213,6 +213,7 @@ required.
 | `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
+| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt already stored in the evidence tree, and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target. The id is in the halt message and in `summary.status.reason` |
 | `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
 | `--compare` | model-comparison matrix across targets (a band per spec x target), printed in the terminal and embedded in the JSON report. The matrix renders for **any** multi-target run; `--compare` states the intent and refuses a single target (exit 3) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) |
@@ -232,6 +233,10 @@ required.
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3`
 error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` never do.
+
+A halted run can be finished with `dottore run --resume <run-id>` instead of being started
+over: the attempts already in the evidence tree are not re-sent, and a resumed spec is scored
+over its full `--runs`.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
 authorized but answered nothing at all (every attempt failed on transport). That code is

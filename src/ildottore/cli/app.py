@@ -169,6 +169,13 @@ def run(
             "--estimate", help="Print a pre-run cost estimate (requests + tokens); no sends."
         ),
     ] = False,
+    resume: Annotated[
+        str | None,
+        typer.Option(
+            "--resume",
+            help="Finish a halted run: its id. Completed attempts are not re-sent.",
+        ),
+    ] = None,
     fail_on: Annotated[
         str, typer.Option("--fail-on", help="CI gate band (low|medium|high|critical).")
     ] = "high",
@@ -254,6 +261,7 @@ def run(
         runs=runs,
         dry_run=dry_run,
         estimate=estimate,
+        resume=resume,
         fail_on=fail_on,
         include_needs_review=include_needs_review,
         compare=compare,
