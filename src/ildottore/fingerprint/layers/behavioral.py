@@ -68,6 +68,9 @@ class BehavioralLayer:
     """Seeded self-id / cutoff / refusal-style / idiom probes (contract §5 step 3)."""
 
     layer: str = _LAYER
+    #: Requests this layer sends, so the CLI can price a ``-sV`` pass without
+    #: guessing. It guessed "one per layer" and was wrong for three of six.
+    probe_count: int = 4
 
     async def probe(self, adapter: TargetAdapter, ctx: ProbeContext) -> list[FingerprintEvidence]:
         """Run the behavioral battery, match the pack, surface the self-report."""

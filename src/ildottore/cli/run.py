@@ -487,14 +487,12 @@ def fingerprint_probe_count() -> int:
     more expensive than it was (one probe per registered mutator).
     """
 
-    from ildottore.fingerprint.layers.carrier import CarrierLayer
-
-    # Every layer but the carrier one sends a single probe today; the carrier layer sends one
-    # per mutator, which is where the cost lives. Counted off the engine the composition root
-    # actually builds, so the printed figure cannot drift from the probe pass.
+    # Each layer declares its own count, because "one probe per layer" was a guess and it was
+    # wrong for three of the six: behavioral sends 4, statistical 3 and capability 0 (it reads
+    # the declared capabilities without asking the target anything). The figure was published
+    # as 24 while a pass really sent 28.
     return sum(
-        layer.probe_count if isinstance(layer, CarrierLayer) else 1
-        for layer in wiring.build_fingerprint_engine().layers
+        getattr(layer, "probe_count", 1) for layer in wiring.build_fingerprint_engine().layers
     )
 
 
@@ -512,7 +510,14 @@ def _safe_endpoint(endpoint: str) -> str:
     return str(default_redactor().redact(endpoint))
 
 
-def _print_estimate(plans: list[TargetPlan], *, runs: int, quiet: bool = False) -> None:
+def _print_estimate(
+    plans: list[TargetPlan],
+    *,
+    runs: int,
+    quiet: bool = False,
+    fingerprint_probes: int = 0,
+    already_done: int = 0,
+) -> None:
     """Print the pre-run estimate, per target and totalled (skipped under --quiet).
 
     Per target on purpose: the previous version estimated the selection once and printed it
@@ -534,6 +539,21 @@ def _print_estimate(plans: list[TargetPlan], *, runs: int, quiet: bool = False) 
         f"  ~tokens: {tokens_in} in + {tokens_out} out "
         f"(~{tokens_in + tokens_out} total, rough gloss)"
     )
+    if already_done:
+        # `--estimate --resume` priced the whole battery, when the point of the flag is to
+        # price the work that is LEFT.
+        print(
+            f"  minus {already_done} attempt(s) already completed in the resumed run "
+            f"(~{max(0, requests - already_done)} still to send)"
+        )
+    if fingerprint_probes:
+        # The one mode whose entire job is pre-run cost used to omit the probe pass entirely,
+        # so `--estimate -sV` priced 3 requests for a command that would send 31.
+        total = fingerprint_probes * len(plans)
+        print(
+            f"  + {total} fingerprint probe(s) before the battery (-sV: "
+            f"{fingerprint_probes} per target across {len(plans)})"
+        )
     for plan in plans:
         skipped = len(plan.skipped_capability)
         blocked = len(plan.blocked_by_policy)
@@ -836,6 +856,20 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # happened to be tested.
     fingerprints: dict[str, ModelFingerprint] = {}
     sends_nothing = opts.discovery_only or opts.dry_run or opts.estimate
+    if opts.fingerprint_first and opts.budget_requests is not None:
+        # An explicit request ceiling has to bind the probe pass too. It did not: the ledger
+        # lives in the runner and the probes never reach it, so `--budget-requests 2 -sV`
+        # sent 30 requests and then announced "budget ceiling reached (limit 2, attempted 3)",
+        # counting only the attack traffic. Checked here, before anything is sent, because the
+        # fingerprint is what feeds the plan the ledger is later derived from.
+        probe_total = fingerprint_probe_count() * len(loaded_targets)
+        if probe_total > opts.budget_requests:
+            raise ValueError(
+                f"-sV sends {probe_total} probe(s) ({fingerprint_probe_count()} per target "
+                f"across {len(loaded_targets)}), which is more than the --budget-requests "
+                f"ceiling of {opts.budget_requests}. Raise the ceiling or drop -sV: the probe "
+                "pass is traffic to the target like any other."
+            )
     if opts.fingerprint_first and not sends_nothing:
         for _, target, (_, real_target) in routes:
             fingerprints[target.id] = wiring.fingerprint_probe(
@@ -888,12 +922,39 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             "target, or enable the category in the policy pack."
         )
 
+    # Hoisted above the resume block, which needs both to locate the prior run's evidence
+    # and to verify which target it belongs to.
+    evidence_root = opts.evidence_root or Path(".dottore/evidence")
+    run_db = opts.run_db or Path(".dottore/runs.sqlite")
+
+    # Resolved BEFORE the three modes that send nothing, so a typo in the id is caught by the
+    # command whose job is validation, and so the estimate prices the work that is actually
+    # left. They used to return first, so `--dry-run --resume run-totally-bogus` exited 0
+    # without a word and `--estimate --resume` priced the whole battery.
+    resume_from: TestRun | None = None
+    if opts.resume is not None:
+        resume_from = resume_mod.load_resume_run(
+            evidence_root, opts.resume, loaded_targets[0][1], run_db=run_db
+        )
+        if not opts.quiet:
+            done = sum(len(f.attempts) for f in resume_from.findings)
+            print(
+                f"resume: {opts.resume} has {done} completed attempt(s) across "
+                f"{len(resume_from.findings)} spec(s); they will not be re-sent"
+            )
+
     if opts.discovery_only:
         _print_discovery(plans, quiet=opts.quiet)
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
 
     if opts.estimate:
-        _print_estimate(plans, runs=opts.runs, quiet=opts.quiet)
+        _print_estimate(
+            plans,
+            runs=opts.runs,
+            quiet=opts.quiet,
+            fingerprint_probes=(fingerprint_probe_count() if opts.fingerprint_first else 0),
+            already_done=sum(len(f.attempts) for f in resume_from.findings) if resume_from else 0,
+        )
         return RunOutcome(
             exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True, estimated=True
         )
@@ -923,20 +984,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     if opts.dry_run:
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
 
-    evidence_root = opts.evidence_root or Path(".dottore/evidence")
-    run_db = opts.run_db or Path(".dottore/runs.sqlite")
-
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
-
-    resume_from: TestRun | None = None
-    if opts.resume is not None:
-        resume_from = resume_mod.load_resume_run(evidence_root, opts.resume, loaded_targets[0][1])
-        if not opts.quiet:
-            done = sum(len(f.attempts) for f in resume_from.findings)
-            print(
-                f"resume: {opts.resume} has {done} completed attempt(s) across "
-                f"{len(resume_from.findings)} spec(s); they will not be re-sent"
-            )
 
     results: list[CampaignResult] = []
     all_findings: list[Finding] = []

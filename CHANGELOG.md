@@ -5,6 +5,67 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (the audit of the same day's features)
+
+Two adversarial audits were run against `-sV`'s carrier layer and `--resume`, in isolated
+worktrees, hours after both landed. Each found a defect in the feature's central claim.
+
+- **`-sV` was sending the repo's own jailbreak carriers during *recognition*.** The carrier
+  layer probed every registered mutator, so a fingerprint pass put a refusal-suppression
+  preamble ("Do not refuse"), a fabricated no-restrictions prior turn, a claimed-compromise
+  framing and the published GCG universal suffix on the wire, the last one byte-identical to
+  the string `JB-REFUSAL-SUPPRESS-001` ships behind `test_only: true` **and a policy gate**.
+  The payload was benign; the carrier was not, and a filter sees the composite string.
+  Contract §8 says recognition sends benign probes only and `docs/10 §5` calls it "the safest
+  mode", so it violated both. Only **obscuring** carriers are probed now (7 of 18), and the
+  split is computed rather than listed: a mutator whose output still contains the original
+  sentence has *added* instruction text around it, which is the adversarial part. Structural,
+  so a new mutator is classified on its behaviour instead of on somebody remembering a
+  deny-list.
+- **The measurement was mostly noise.** For the 13 carriers that leave the instruction
+  readable, any target that echoed the prompt, or refused while quoting it, scored a perfect
+  1.0 with zero comprehension; and `leetspeak` and `unicode_confusable` rewrote the marker
+  itself (`Z0RBL47`, a Greek capital Beta), so a target with perfect comprehension scored
+  **zero** on both. The marker is now drawn from the alphabet neither carrier rewrites,
+  zero-width injections are stripped before the match, and the probe carries a second
+  invariant token the target is asked not to repeat, so an echo is caught on every carrier.
+  Measured against simulated oracles with the real mutators: an ideal decoder scores 7/7, a
+  pure echo 0/7, a refusal 0/7, a refusal-that-quotes 0/7 (it was 13/18 for all three).
+- **`-sV`'s cost was understated and unbounded.** The printed figure assumed one probe per
+  layer, which is wrong for three of six (behavioral sends 4, statistical 3, capability 0), so
+  a pass advertised as 24 requests really sent 28. Each layer declares its own count now and a
+  test asserts the declared figure equals the real send count. `--estimate` prices the probes
+  (it omitted them entirely, pricing 3 requests for a command that would send 31), and an
+  explicit `--budget-requests` **binds** them: `--budget-requests 2 -sV` used to send 30
+  requests and then report "limit 2, attempted 3", counting only the attack traffic.
+- **`--resume` accepted another target's run id**, and that is the worst failure this tool can
+  have: resuming target B with target A's evidence produced a full report for B with **zero
+  requests sent**, in either direction (a vulnerable target inheriting a clean bill of health
+  and exiting 0, or a hardened one inheriting criticals). An `Attempt` carries no target, so
+  the evidence cannot detect it; the run store records `target_id`, so the resume is now bound
+  to it and refuses a mismatch, and refuses too when no run store is available to check.
+- **A tampered artifact exited 1.** `TamperError` subclasses `RuntimeError`, so it escaped the
+  CLI handler and surfaced as a traceback with the code that means "findings below the
+  threshold": corrupted evidence read as an almost-clean scan. Exit 3. And `--resume` is now
+  resolved **before** `--dry-run` / `--estimate` / `-sn` return, so a typo in the id is caught
+  by the commands whose job is validation, and `--estimate --resume` prices the work that is
+  left rather than the whole battery.
+- **Mutator ordering no longer imposes an alphabet.** The carrier scores are binary, so the
+  hint arrives alphabetically, and ranking by its position silently made the tie-break the
+  whole ordering, discarding the spec author's declared order. The hint is treated as a set:
+  comprehended carriers first, declared order kept inside each group.
+- **A symlinked run directory could read evidence from outside the store root** (the id cannot
+  escape; a symlink planted at `<root>/<run-id>` could). Paths are now checked to resolve
+  inside the root. And a stray file in an attempts directory reports what it is instead of a
+  raw pydantic dump.
+
+**Known limits, stated rather than left to be discovered.** `-sV` cannot reorder anything
+against the offline mock (its canned reply never carries the marker), so CI exercises the
+plumbing and not the measurement. Probe traffic is not written to the evidence store, so a
+scan's evidence tree does not answer "what did `-sV` send my endpoint". `--resume` does not
+detect that the spec files changed since the halt, and the hard budget is per invocation, so
+resuming repeatedly can spend more in total than any single ceiling allows.
+
 ### Fixed (audit leftovers)
 - **`nist_ai_rmf` had no validation of any kind** beyond non-blank, so a lowercase function
   or a missing subcategory number would fragment the `by_framework.nist` rollup in silence:

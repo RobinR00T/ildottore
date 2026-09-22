@@ -80,6 +80,18 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`, `mypy src/ildottore/cli/lint.py`
   clean; `lint-imports` green (registry imports `shared` only).
 
+**A-17 Every framework field is validated against something (added 2026-09-22).** `owasp` and
+`mitre_atlas.tactic` must be in their pinned universes (or in the declared companion sets),
+exactly as `iopc` already was; `nist_ai_rmf` must carry a well-formed `FUNCTION n.n` token.
+`LLM11`, `LLM00`, `initial access`, a trailing space and the retired `ML Attack Staging` all
+passed lint with **zero errors and zero warnings**, counted for nothing and told nobody.
+
+The rules differ on purpose, and the reason is the asymmetry a reviewer should check for:
+membership where the field drives a **denominator** (a wrong value moves a published
+percentage), shape where it drives only a rollup and we have not transcribed the source list.
+Pinning a universe nobody diffed against its primary source is the mistake that made the ATLAS
+axis wrong in numerator and denominator at once.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
 - MUST NOT author, mutate, or "fix" spec/suite/pack YAML (u13 owns content).

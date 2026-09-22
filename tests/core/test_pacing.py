@@ -164,3 +164,54 @@ def test_every_send_including_a_retry_passes_through_the_gate() -> None:
     asyncio.run(go())
     assert adapter.calls == 2  # one env failure, one success
     assert pacer.acquired == 2  # and BOTH were paced
+
+
+def test_the_multi_turn_path_is_paced_too() -> None:
+    """Contract u08 §7 A-5: every send passes the gate, asserted at the sink.
+
+    ``reproduce_conversation`` accepted the limiter and did not forward it one hop to
+    ``execute_conversation``, so every multi-turn spec ran unpaced: 11 of 72 shipped specs, but
+    **42% of a full battery's requests**, at a measured 19x the authorized rate. The parameter
+    was present at the call site and absent at the point of use, which is why this counts calls
+    rather than reading a signature.
+    """
+
+    from ildottore.core.budgets import BudgetLedger
+    from ildottore.core.conversation import reproduce_conversation
+    from ildottore.shared.models import Capabilities, ModelResponse, PlanBudgets, Sampling
+
+    class _Adapter:
+        id = "a"
+
+        def __init__(self) -> None:
+            self.sends = 0
+
+        async def send(self, request: object) -> ModelResponse:
+            self.sends += 1
+            return ModelResponse(text="ok")
+
+        def capabilities(self) -> Capabilities:
+            return Capabilities()
+
+    pacer = _CountingPacer()
+    adapter = _Adapter()
+    turns = ["first turn", "second turn", "third turn"]
+    results = asyncio.run(
+        reproduce_conversation(
+            adapter,  # type: ignore[arg-type]
+            turns,
+            spec_id="MT-SPEC-001",
+            mutation="identity",
+            sampling=Sampling(temperature=0.0),
+            ledger=BudgetLedger.from_plan_budgets(PlanBudgets(max_requests=99)),
+            n=2,
+            retry=None,
+            sleep=lambda _s: asyncio.sleep(0),
+            now=lambda: 0.0,
+            pacer=pacer,
+        )
+    )
+
+    assert len(results) == 2
+    assert adapter.sends == len(turns) * 2
+    assert pacer.acquired == adapter.sends, "every turn of every conversation is paced"

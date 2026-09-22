@@ -49,3 +49,25 @@ def test_relative_uri_is_portable_posix(tmp_path: Path) -> None:
     uri = paths.relative_uri(tmp_path, ap)
     assert uri == f"run-1/attempts/{digest}.json"
     assert not Path(uri).is_absolute()
+
+
+def test_a_symlinked_run_directory_cannot_escape_the_store_root(tmp_path: Path) -> None:
+    """``validate_run_id`` stops the id escaping; a symlink escaped anyway.
+
+    ``ev/run-x -> /somewhere/else`` loaded that tree's attempts and emitted refs as though
+    they belonged to this run. The store is content-addressed, so the artifacts still verify;
+    what does not hold is that they are this run's.
+    """
+
+    root = tmp_path / "ev"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    (outside / "attempts").mkdir(parents=True)
+    (root / "run-elsewhere").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(UnsafePathError, match="escapes the store root"):
+        paths.run_dir(root, "run-elsewhere")
+
+    # A real directory under the root is unaffected.
+    (root / "run-here").mkdir()
+    assert paths.run_dir(root, "run-here") == root / "run-here"

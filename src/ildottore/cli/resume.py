@@ -18,6 +18,8 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from ildottore.shared.enums import ScanBand, VerdictStatus
 from ildottore.shared.models import (
     Attempt,
@@ -47,15 +49,34 @@ RESUME_PLACEHOLDER_RISK = RiskScore(
 )
 
 
-def load_resume_run(evidence_root: Path, run_id: str, target: Target) -> TestRun:
+def load_resume_run(
+    evidence_root: Path, run_id: str, target: Target, *, run_db: Path | None = None
+) -> TestRun:
     """Rebuild the partial :class:`TestRun` for ``run_id`` from stored evidence.
 
     Raises ``ValueError`` when the run has no stored attempts (a typo in the id, the wrong
     ``--evidence-root``, or a run that was refused before it sent anything): resuming
     "nothing" would quietly re-run the whole battery under an id that promises otherwise.
+
+    ``run_db`` binds the resume to the target the run was made against. Without it, resuming
+    target B with target A's run id produced **a full report for B out of A's evidence, with
+    zero requests sent**: a hardened target inheriting a vulnerable one's criticals, or (worse)
+    a vulnerable one inheriting a clean bill of health and exiting 0. An ``Attempt`` carries no
+    target, so the evidence cannot detect it; the run store records ``target_id``, so it can.
     """
 
-    result = replay_run(Path(evidence_root), run_id)
+    if run_db is not None:
+        _assert_same_target(run_db, run_id, target)
+    try:
+        result = replay_run(Path(evidence_root), run_id)
+    except ValidationError as exc:
+        # A stray file in the attempts directory, or a half-written artifact, used to surface
+        # as a raw "4 validation errors for Attempt" dump.
+        raise ValueError(
+            f"run {run_id!r} has an artifact that is not a stored attempt (under "
+            f"{Path(evidence_root) / run_id}): {exc.error_count()} field error(s). Remove the "
+            "stray file or point --evidence-root at the right tree."
+        ) from exc
     if not result.attempts:
         raise ValueError(
             f"no stored attempts for run {run_id!r} under {evidence_root}: nothing to resume. "
@@ -81,6 +102,34 @@ def load_resume_run(evidence_root: Path, run_id: str, target: Target) -> TestRun
         for spec_id, attempts in sorted(by_spec.items())
     ]
     return TestRun(run_id=run_id, targets=[target], findings=findings)
+
+
+def _assert_same_target(run_db: Path, run_id: str, target: Target) -> None:
+    """Refuse a resume whose stored run belongs to a different target (or is unknown)."""
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        raise ValueError(
+            f"cannot verify that run {run_id!r} belongs to target {target.id!r}: no run store "
+            f"at {run_db}. Point --run-db at the store the original run wrote, or the resume "
+            "could splice another target's evidence into this target's report."
+        )
+    with SqliteRunStore(Path(run_db)) as store:
+        row = store.get_run(run_id)
+    if row is None:
+        raise ValueError(
+            f"run {run_id!r} is not in the run store at {run_db}, so the target it was made "
+            "against cannot be verified. Resuming would attribute its evidence to "
+            f"{target.id!r} on trust."
+        )
+    stored = row.get("target_id")
+    if stored is not None and stored != target.id:
+        raise ValueError(
+            f"run {run_id!r} was made against target {stored!r}, not {target.id!r}. Resuming "
+            "it here would report one target's evidence as another's, with zero requests "
+            "sent. Resume it against its own target, or start a fresh run."
+        )
 
 
 def _ref_index(evidence_root: Path, run_id: str) -> dict[str, EvidenceRef]:

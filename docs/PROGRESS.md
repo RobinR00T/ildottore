@@ -161,7 +161,8 @@ The carryover ledger. Every agent session updates this so context survives even 
 - **Stage 3 Execute: 3 of 6 waves done.** ✅ W0 u00 (`5c86bfc`) · ✅ W1 u01/u02/u05/u07
   (`c33e7a1`) · ✅ W2 u03/u04/u10 (`1a8dff9`). Full suite green, mypy clean on 61 modules.
 - **W3 launched** (`wq7p6q9iq`): u06 evaluators (hardened judge + pii/secret-shape/authz +
-  membership) · u09 fingerprint (6 layers, capability_guess, no TestPlan per ADR-0006).
+  membership) · u09 fingerprint (6 self-contained layers + the carrier layer wired by u12,
+  capability_guess, no TestPlan per ADR-0006).
 - Transient API "Overloaded" hit u03 twice in W2: PITV loop retried to green (working as
   designed).
 - **Permissions:** session set to `bypassPermissions` (settings.local.json) for unattended

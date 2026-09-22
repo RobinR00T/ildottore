@@ -708,3 +708,34 @@ def test_an_unreachable_target_is_not_a_clean_scan(
 
     assert _unreachable_reason(_result(error="ConnectError: refused")) is not None
     assert _unreachable_reason(_result(error=None)) is None
+
+
+def test_a_declared_ceiling_binds_the_fingerprint_probes(tmp_path: Path) -> None:
+    """Contract u12 §7 A-11: a ceiling binds every request the tool makes.
+
+    Probes do not travel through the runner, so the ledger never saw them:
+    ``--budget-requests 2 -sV`` sent 30 requests and then reported "limit 2, attempted 3",
+    counting only the half that passed the ledger. Checked before anything is sent, because
+    the fingerprint is what feeds the plan the ledger is later derived from.
+    """
+
+    from ildottore.cli.run import fingerprint_probe_count
+
+    target = write_target(tmp_path, mock_scenario="hardened")
+    scope = write_scope(tmp_path)
+    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+
+    with pytest.raises(ValueError, match="more than the --budget-requests"):
+        execute_run(
+            _opts(tmp_path, target, scope, fingerprint_first=True, budget_requests=2), [specs]
+        )
+
+    # A ceiling that fits the probe pass is allowed through.
+    opts = _opts(
+        tmp_path,
+        target,
+        scope,
+        fingerprint_first=True,
+        budget_requests=fingerprint_probe_count() + 50,
+    )
+    execute_run(opts, [specs])

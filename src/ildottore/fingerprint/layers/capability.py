@@ -52,6 +52,9 @@ class CapabilityLayer:
     """``adapter.capabilities()`` reflection + pack capability tells (contract §5)."""
 
     layer: str = _LAYER
+    #: Requests this layer sends, so the CLI can price a ``-sV`` pass without
+    #: guessing. It guessed "one per layer" and was wrong for three of six.
+    probe_count: int = 0
 
     async def probe(self, adapter: TargetAdapter, ctx: ProbeContext) -> list[FingerprintEvidence]:
         """Reflect declared capabilities; match any capability tells in the pack."""

@@ -82,6 +82,26 @@ redactor before serialization**: no reporter ever emits raw sensitive strings.
   model-comparison matrix populated only when >1 target and shape-checked.
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/reporting` clean; `lint-imports` green.
 
+**A-12 A denominator is never measured on the survivors (added 2026-09-22).**
+`coverage.specs.total` is what the plan selected; `specs.run` is what completed. They were the
+same number by construction, so a campaign halted after 45 of 72 specs published `total: 45,
+run: 45`, i.e. 100% of itself, and computed every framework percentage over the subset that
+survived. A test asserts `run <= total` and that a complete run has them equal.
+
+**A-13 A value that is not counted is reported.** A framework value outside its pinned universe
+never reaches a numerator **and** appears in `coverage.off_universe`; a spec that produced a
+finding without sending a request appears in `coverage.not_exercised` and is credited nothing.
+A run does not lint, so silently dropping either is how a numerator shrinks with nobody told.
+
+**A-14 Every figure carries its edition, and percentages floor.** OWASP renumbered in 2026 and
+ATLAS renames tactics between releases, so a bare "not covered: LLM03" reads as the opposite
+claim to a reader holding the other edition. `100%` requires `exercised >= total`: rounding
+published 199/200 as complete.
+
+**A-15 The machine formats carry the run state.** SARIF sets `invocations[0].executionSuccessful`
+and JUnit emits an `<error>` when a campaign did not finish. Those two are what CI reads, and
+they rendered a truncated scan as a fully green suite while the JSON and HTML said otherwise.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
 - MUST NOT read/persist to the run or evidence store beyond the injected read interface (u10).

@@ -70,10 +70,34 @@ def content_hash(payload: str) -> str:
     return hashlib.sha256(canonical_bytes(payload)).hexdigest()
 
 
-def run_dir(root: Path, run_id: str) -> Path:
-    """Directory holding one run's artifacts: ``<root>/<run_id>/``."""
+def _assert_inside(root: Path, path: Path) -> Path:
+    """Refuse a path that resolves outside ``root`` (a symlinked run directory).
 
-    return root / validate_run_id(run_id)
+    ``validate_run_id`` stops the id from escaping, and a **symlink** then escaped anyway:
+    ``ev/run-x -> /somewhere/else`` loaded that tree's attempts and emitted refs as though
+    they were this run's. The store is content-addressed, so the artifacts still verify; what
+    does not hold is that they belong to the run being read.
+    """
+
+    try:
+        resolved = path.resolve()
+        base = root.resolve()
+    except OSError:  # pragma: no cover - unreadable path surfaces at the caller
+        return path
+    if resolved != base and base not in resolved.parents:
+        raise UnsafePathError(f"path escapes the store root: {path}")
+    return path
+
+
+def run_dir(root: Path, run_id: str) -> Path:
+    """Directory holding one run's artifacts: ``<root>/<run_id>/``.
+
+    The id is validated as a single safe segment, and the resulting directory is then checked
+    to resolve **inside** the root: the id cannot escape, but a symlink planted at
+    ``<root>/<run-id>`` could, and a resume would read that tree's attempts as this run's.
+    """
+
+    return _assert_inside(root, root / validate_run_id(run_id))
 
 
 def run_doc_path(root: Path, run_id: str) -> Path:
