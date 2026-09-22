@@ -29,6 +29,14 @@ _SHA256_HEX: Final = re.compile(r"^[0-9a-f]{64}$")
 
 _RUN_DOC_NAME: Final = "run.json"
 _ATTEMPTS_DIR: Final = "attempts"
+#: Recognition traffic (``-sV`` / ``dottore fingerprint``) is stored here, NOT under
+#: ``attempts/``. Two reasons, and both are about not lying: a probe is not an attack attempt,
+#: so counting it as one would inflate every attempt-derived number (reproducibility, resume's
+#: skip set, ``dottore replay``'s N); and keeping it in the tree at all is what lets an operator
+#: answer "what did this tool send my endpoint", which a fingerprint pass could not answer at
+#: all until 2026-09-22, the same day an audit found those probes had been carrying attack
+#: framing for a day.
+_PROBES_DIR: Final = "probes"
 
 
 class UnsafePathError(ValueError):
@@ -110,6 +118,18 @@ def attempts_dir(root: Path, run_id: str) -> Path:
     """Directory holding one run's content-addressed attempt artifacts."""
 
     return run_dir(root, run_id) / _ATTEMPTS_DIR
+
+
+def probes_dir(root: Path, run_id: str) -> Path:
+    """Directory holding one run's content-addressed **probe** artifacts (see ``_PROBES_DIR``)."""
+
+    return run_dir(root, run_id) / _PROBES_DIR
+
+
+def probe_path(root: Path, run_id: str, sha256: str) -> Path:
+    """Path of a single content-addressed probe: ``probes/<sha256>.json``."""
+
+    return probes_dir(root, run_id) / f"{validate_sha256(sha256)}.json"
 
 
 def attempt_path(root: Path, run_id: str, sha256: str) -> Path:

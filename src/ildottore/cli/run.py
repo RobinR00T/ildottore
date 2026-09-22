@@ -839,6 +839,12 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     )
 
     # Per-target routing decided once, here, so the preview and the run share it.
+    # Both store paths are resolved here, before anything can send: the probe pass files its
+    # evidence under the run id, and the resume block reads the prior run's evidence and asks
+    # the run store which target it belonged to.
+    evidence_root = opts.evidence_root or Path(".dottore/evidence")
+    run_db = opts.run_db or Path(".dottore/runs.sqlite")
+
     routes = [(path, target, _route_for(opts, path)) for path, target in loaded_targets]
     any_live = any(real is not None for _, _, (_, real) in routes)
     # Pacing applies to traffic that leaves the process. An offline mock campaign is not
@@ -870,10 +876,24 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 f"ceiling of {opts.budget_requests}. Raise the ceiling or drop -sV: the probe "
                 "pass is traffic to the target like any other."
             )
+    # One run id per target, minted HERE rather than inside the campaign, because the probe
+    # pass happens first and its evidence has to file under the run it belongs to. A resumed
+    # campaign keeps the original id (the evidence and the run store are keyed by it).
+    run_ids = {
+        target.id: (opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}")
+        for _, target in loaded_targets
+    }
+
     if opts.fingerprint_first and not sends_nothing:
+        probe_store = wiring.build_evidence_store(evidence_root, planted_canaries=[])
         for _, target, (_, real_target) in routes:
             fingerprints[target.id] = wiring.fingerprint_probe(
-                scope, target, real_target=real_target, rate_rps=pacing_rate
+                scope,
+                target,
+                real_target=real_target,
+                rate_rps=pacing_rate,
+                evidence=probe_store,
+                run_id=run_ids[target.id],
             )
     if fingerprints and not opts.quiet:
         for target_id, fingerprint in sorted(fingerprints.items()):
@@ -921,11 +941,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{'; '.join(barren)}. Widen the selection, declare the capability on the "
             "target, or enable the category in the policy pack."
         )
-
-    # Hoisted above the resume block, which needs both to locate the prior run's evidence
-    # and to verify which target it belongs to.
-    evidence_root = opts.evidence_root or Path(".dottore/evidence")
-    run_db = opts.run_db or Path(".dottore/runs.sqlite")
 
     # Resolved BEFORE the three modes that send nothing, so a typo in the id is caught by the
     # command whose job is validation, and so the estimate prices the work that is actually
@@ -1014,6 +1029,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             fingerprint=fingerprints.get(target.id),
             adaptive=adaptive,
             resume_from=resume_from,
+            run_id=run_ids[target.id],
         )
         results.append(result)
         _print_progress(printer, plan.selected, result.findings)
@@ -1139,6 +1155,7 @@ def _run_one_target(
     fingerprint: ModelFingerprint | None = None,
     adaptive: bool = False,
     resume_from: TestRun | None = None,
+    run_id: str | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -1166,8 +1183,10 @@ def _run_one_target(
         judge_target=judge_target,
     )
     # A resumed campaign keeps the ORIGINAL run id: the evidence and the store are keyed by
-    # it, and a new id would file the continuation as a separate, equally partial run.
-    run_id = resume_from.run_id if resume_from is not None else f"run-{uuid.uuid4().hex[:12]}"
+    # it, and a new id would file the continuation as a separate, equally partial run. The
+    # caller mints it (the probe pass needs it first), and falls back for direct callers.
+    if run_id is None:
+        run_id = resume_from.run_id if resume_from is not None else f"run-{uuid.uuid4().hex[:12]}"
     return asyncio.run(
         built.runner.run(
             run_id=run_id,

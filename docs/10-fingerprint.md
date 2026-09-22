@@ -46,12 +46,15 @@ Two roles for fingerprinting: both first-class:
    the same `--rate` ceiling as attack traffic, and `--dry-run` / `--estimate` / `-sn` send
    none of them.
 
-   **Two limits worth knowing before you rely on it.** Against the offline mock the probes
+   **One limit worth knowing before you rely on it.** Against the offline mock the probes
    never come back with the marker, so `-sV` orders nothing there: only a live target can
-   reorder a battery, and CI therefore exercises the plumbing rather than the measurement. And
-   the probe traffic is **not** written to the evidence store, so a scan's evidence tree does
-   not answer "what did `-sV` send my endpoint"; the fingerprint itself is printed and, for
-   the standalone command, emitted as JSON.
+   reorder a battery, and CI therefore exercises the plumbing rather than the measurement.
+
+   **The probes are evidence.** Each one is stored under `<run-id>/probes/` through the same
+   redacted, content-addressed path as an attack attempt, and `dottore replay` lists them
+   under their own heading, so a scan can answer "what did `-sV` send my endpoint" request by
+   request. They are kept out of `attempts/` deliberately: a probe is not an attack attempt,
+   and counting it as one would move the reproducibility denominator and the attempt count.
 
 Grounded in prior art (LLMmap-style statistical fingerprinting; OpenAI `system_fingerprint`;
 glitch-token behavior). Fingerprinting is **probabilistic**: always reported with a
