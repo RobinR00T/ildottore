@@ -85,6 +85,36 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   injected components satisfy each `shared.protocols` type; no concrete leaks past the root.
 - `--dry-run` sends nothing (fake adapter send-count == 0); `-oA` writes exactly 4 report files.
 
+**A-7 A no-send promise holds under COMBINATION (added 2026-09-22).** `--dry-run`,
+`--estimate` and `-sn` send zero requests in **every** flag combination, asserted with socket,
+DNS and httpx entry points patched to raise, and with a positive control proving the
+instrument fires. Each alone was clean; `--dry-run -sV` printed "sent nothing" immediately
+after ten live probes with a real bearer token, because the guard named one of three modes.
+
+**A-8 Every printed number is produced by the code that does the work.** A count the CLI
+prints (specs selected, requests to send, probes, budget ceilings) is computed by calling the
+same planner and policy gate the run calls, and a test pins the printed figure to the **real
+send count**. The dry-run printed the raw selection before both filters and promised 845
+requests where the run sent 499, and understated a multi-target run by half.
+
+**A-9 An operational failure exits 3.** Never 1 (which this tool uses for "findings below
+`--fail-on`") and never 2 (at or above). That binds every exception class that can reach a
+command: a malformed YAML, an adapter refusal, a tampered artifact, an unreadable scope. Each
+one shipped as a 1 or a 2 at some point, because the handler tuple was written by listing the
+classes somebody remembered. A test drives each failure through the CLI and asserts the code.
+
+**A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
+belongs to a different target, and refuses when no run store is available to check. Unbound, it
+produced a full report for an unprobed target with **zero requests sent**, in both directions:
+a vulnerable target inheriting a clean bill of health and exiting 0, or a hardened one
+inheriting criticals. The evidence cannot detect this (an `Attempt` carries no target); the run
+store can.
+
+**A-11 A declared ceiling binds every request the tool makes.** `--rate` and
+`--budget-requests` cover fingerprint probes as well as attack traffic. Probes do not travel
+through the runner, so they were bounded by neither: `--budget-requests 2 -sV` sent 30 requests
+and then reported "limit 2, attempted 3", counting only the half that passed the ledger.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

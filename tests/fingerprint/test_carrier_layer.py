@@ -283,3 +283,42 @@ def test_the_fingerprint_reorders_the_real_plan() -> None:
     assert set(tuned.selected[0].mutators) == set(plain.selected[0].mutators), (
         "tailoring reorders the declared mutators and never introduces one"
     )
+
+
+def test_the_declared_probe_count_is_the_real_send_count() -> None:
+    """Contract u09 §7 A-3: the price of ``-sV`` is measured, not assumed.
+
+    The CLI printed "one probe per layer", wrong for three of six (behavioral sends 4,
+    statistical 3, capability 0 because it only reads the declared capabilities), so a pass
+    advertised as 24 requests really sent 28. This asserts the two are the same number, per
+    layer as well as in total, so a new layer that forgets to declare one is caught here
+    rather than in an operator's bill.
+    """
+
+    from ildottore.cli.run import fingerprint_probe_count
+    from ildottore.fingerprint.signatures import load_pack
+
+    class _Counter:
+        id = "counter"
+
+        def __init__(self) -> None:
+            self.sends = 0
+
+        async def send(self, request: ModelRequest) -> ModelResponse:
+            self.sends += 1
+            return ModelResponse(text="hello")
+
+        def capabilities(self) -> Capabilities:
+            return Capabilities()
+
+    target = _Counter()
+    engine = wiring.build_fingerprint_engine()
+    asyncio.run(engine.run(target))  # type: ignore[arg-type]
+    assert fingerprint_probe_count() == target.sends
+
+    for layer in engine.layers:
+        probe_target = _Counter()
+        asyncio.run(
+            layer.probe(probe_target, ProbeContext(target_id="c", signature_pack=load_pack()))  # type: ignore[arg-type]
+        )
+        assert getattr(layer, "probe_count", 1) == probe_target.sends, type(layer).__name__

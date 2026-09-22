@@ -76,6 +76,23 @@ replacing values with `«REDACTED:<type>»` (+ salted hash for corroboration whe
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/policy src/ildottore/config.py
   src/ildottore/redactor.py` clean; `lint-imports` green.
 
+**A-18 Authorization is reachability, not membership (added 2026-09-22).** The gate answers
+"may this target be reached at the URL the adapter will actually request", and the CLI
+pre-flight and the per-attempt check call **the same predicate** (`policy.authorize_target`).
+Asking only whether the id is present in the scope passed a scope with an empty endpoint
+allowlist, which then denied every attempt: the false green the gate exists to prevent, one
+typo away. A differential test enumerates scope/target shapes and asserts the two answers never
+diverge.
+
+**A-19 Schemes are allowlisted.** `https`, loopback `http` and the offline `mock` scheme; every
+other scheme is denied. Refusing `http` off-loopback and letting the rest through to the host
+check meant `ws://`, `ftp://`, `file:///etc/passwd` and a scheme-relative `//host/path` all
+passed, with the invariant resting on adapter implementation rather than on the gate.
+
+**A-20 One answer per target.** A scope declaring an id twice is refused: `Scope.target()`
+returns the first match, so a permissive entry silently shadowed a narrowing one, including its
+credential allowlist.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).

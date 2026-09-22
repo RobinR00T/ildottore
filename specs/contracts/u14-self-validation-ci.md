@@ -79,6 +79,29 @@ to each unit's contract (evaluators own their P/R tests, mutator owns property t
 - Self-scan (layer 17): **no new high/critical** in our own LLM-using code, or CI fails.
 - CI job order matches `docs/07 §5` (1→12) and fails closed; no-live-socket guard active.
 
+**A-21 A test asserts the claim, against the real collaborator (added 2026-09-22).** Eight
+adversarial audits found defects that a green suite could not see, and the tests that should
+have caught them shared three shapes. They are now gate conditions on a test, not style advice:
+
+1. **No test may build its universe from the output under test.** The first battery invariant
+   computed `universe = covered | missing` from the very axis it was asserting about, so
+   `covered <= universe` was a tautology that passes for any output whatsoever. Pinned sets are
+   read from where they are pinned.
+2. **A double must be able to fail the way the real thing fails.** The carrier tests used
+   pass-through fakes (`f"[{name}] {text}"`) and a target that recognised carriers by a metadata
+   key without reading the mutated prompt, so they could not have caught either the adversarial
+   carriers or the echo-scoring. Where a claim is about behaviour of a real registry, the test
+   drives the real registry.
+3. **A test asserts the number, not the presence of a number.** `"1 specs selected" in output`
+   passed for years while the printed count was wrong by 40%. Pin the figure to the thing it
+   claims about (the real send count, the real probe count, the real exit code).
+
+**A-22 Flakiness is a defect in the test, and the fix is determinism, not a retry.** A helper
+that halted a campaign with a request ceiling assumed some attempts had completed, which depends
+on how the scheduler interleaves concurrent sends: it passed locally with three stored attempts
+and failed in CI with zero. Concurrency is pinned where the test depends on ordering, and the
+precondition is asserted with a message that names the cause.
+
 ## §8 Out of scope / forbidden
 - MUST NOT add or modify `src/ildottore/**`, `schemas/`, `docs/`, or spec YAML to make a gate
   pass: escalate the red gate to its owning unit.

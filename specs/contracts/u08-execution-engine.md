@@ -104,6 +104,24 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/core` clean; `lint-imports` green
   (core imports interfaces only: asserted).
 
+**A-4 The wall budget MUST measure time (added 2026-09-22).** The composition root injects a
+deterministic counter as the runner's clock so offline evidence records a byte-stable
+`latency_ms`. That counter was also handed to the budget ledger, so `max_wall_s` counted clock
+**reads**: 1800 "seconds" was fewer reads than a 72-spec run performs, the default battery
+halted after 45 specs on every invocation, adding a telemetry read anywhere changed which specs
+were scanned, and a **live** run had no time bound at all. The ledger takes a real monotonic
+clock; the evidence keeps the deterministic one; a test asserts the two are not the same object.
+
+**A-5 Every send passes the rate gate, asserted at the sink.** `--rate` is enforced for
+single-turn **and** multi-turn paths and counts retries. The limiter reached
+`reproduce_conversation` and was not forwarded one hop, so 42% of a full battery's requests ran
+unpaced at 19x the authorized rate while the flag looked wired. A cross-cutting parameter is
+asserted by counting calls at the point of use, never by reading the call site.
+
+**A-6 A campaign that did not finish says why.** `CampaignResult` carries the breached axis,
+its ceiling and how many specs never ran. A bare state word is not a reason: a spec that never
+ran leaves no trace in the finding list, so nothing downstream can reconstruct it.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.

@@ -90,9 +90,37 @@ reason}], mutator_weights, baseline_resistance}`: nothing silently dropped (`doc
 - **Safety-negative:** all probes classified benign; an out-of-scope target ⇒ adapter refusal
   propagated (no probe sent). `ruff check`, `mypy src/ildottore/fingerprint`, `lint-imports` clean.
 
+**A-1 Benign is a predicate, not a category (added 2026-09-22 after A-1 shipped broken).**
+"All probes classified benign" was satisfied by inspection and violated in fact: the carrier
+layer probed every registered mutator, so recognition sent a refusal-suppression preamble, a
+fabricated no-restrictions prior turn, a claimed-compromise framing and the published GCG
+universal suffix, the last byte-identical to the string `JB-REFUSAL-SUPPRESS-001` ships behind
+`test_only: true` **and** a policy gate. The payload was benign; the carrier was the attack.
+The criterion is therefore mechanical:
+- a probe carrier MUST NOT leave the probe sentence as a **substring** of its output (a carrier
+  that does has *added* instruction text, and that added text is the technique);
+- the test asserts the classification over the **real** mutator registry, and separately
+  asserts on the bytes that would go on the wire that no probe contains a known attack tell
+  (`tests/fingerprint/test_carrier_layer.py`).
+
+**A-2 A probe that drives the plan MUST discriminate, and be shown to.** The measurement is
+scored against simulated oracles built from the real mutators: an ideal decoder scores every
+probed carrier, and a **pure echo**, a **refusal** and a **refusal that quotes the prompt** all
+score zero. (The first version scored 13 of 18 for all three, and guaranteed a zero on the two
+carriers that rewrite the marker's own characters, so the signal ordering the battery was
+mostly noise.)
+
+**A-3 Declared cost equals real cost.** Every layer declares `probe_count`, and a test asserts
+the sum **equals the number of `adapter.send` calls a pass makes**. "One probe per layer" was a
+guess, wrong for three of six, and it was published to operators as the price of `-sV`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`); MUST NOT send any jailbreak /
-  `test_only` payload: benign probes only.
+  `test_only` payload: benign probes only. **This binds the carrier as well as the payload**
+  (see §7 A-1): a probe wrapped in an adversarial framing is an adversarial probe, whatever the
+  sentence inside it says.
+- MUST NOT probe with a mutator whose behaviour it could not classify (an unclassifiable
+  transform is not sent).
 - MUST NOT implement scoring/banding (u07), evaluators (u06), the run loop (u08), or persist
   evidence itself (u10 stores; this unit only produces `Evidence` objects).
 - MUST NOT hardcode model identity from self-report; MUST NOT bypass the scope allowlist.

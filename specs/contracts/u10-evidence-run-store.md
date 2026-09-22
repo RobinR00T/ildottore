@@ -76,6 +76,12 @@ the u00 protocols:
 - `ruff check`, `ruff format --check .`, `mypy src/ildottore/store` clean; `lint-imports` green
   (store imports only `shared` + `redactor`).
 
+**A-16 A store path resolves inside the store root (added 2026-09-22).** The run id is
+validated as a single safe segment, and the directory it names is then checked to resolve under
+the root: a symlink planted at `<root>/<run-id>` escaped the first check and a resume read that
+tree's attempts as this run's. Content-addressing still verified them; what did not hold is
+that they belonged to the run being read.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.
