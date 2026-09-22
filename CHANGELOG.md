@@ -5,6 +5,20 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (audit leftovers)
+- **`nist_ai_rmf` had no validation of any kind** beyond non-blank, so a lowercase function
+  or a missing subcategory number would fragment the `by_framework.nist` rollup in silence:
+  the same drift shape the OWASP and ATLAS fields now refuse. It gets a **shape** rule (a
+  well-formed `FUNCTION n.n` token must be present; the free-text gloss beside it stays
+  free), deliberately **not** a universe rule. The asymmetry is the point: that field feeds a
+  rollup and a SARIF tag, never a denominator, so a bad value cannot move a percentage, and
+  the NIST AI RMF subcategory list is not transcribed in this repo, so "this subcategory
+  exists" is not a claim it can make. Pinning a list nobody had diffed against NIST AI 100-1
+  would have repeated the ATLAS mistake.
+- **`examples/ci-github-actions.yml` installed with `pip install ildottore`, which 404s**:
+  the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
+  gate cannot change meaning between runs.
+
 ### Added
 - **NOVA / IoPC coverage-gap battery**: 10 specs + the `nova-iopc` suite, authored from a
   spec-by-technique map against the Nova IoPC taxonomy (`docs/15`). Covers delayed/triggered

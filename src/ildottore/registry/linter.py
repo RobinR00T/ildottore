@@ -23,7 +23,9 @@ from ildottore.shared import AttackSpec, EvaluatorType, VerdictStatus
 from ildottore.shared.enums import RequiresCapability
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
+    NIST_FUNCTIONS,
     OWASP_LLM_EDITION,
+    malformed_nist_mapping,
     unknown_atlas_tactic,
     unknown_owasp_code,
 )
@@ -179,6 +181,12 @@ def _check_frameworks(spec: AttackSpec) -> list[LintError]:
 
     The refusal names the universe and its edition, because the fix depends on which one the
     spec meant (see ``shared.frameworks``).
+
+    ``nist_ai_rmf`` gets a **shape** rule rather than a universe one, and the asymmetry is
+    deliberate: that field feeds a rollup and a SARIF tag, never a denominator, so a bad value
+    cannot move a percentage; and we have not transcribed the NIST subcategory list from its
+    primary source, so "this subcategory exists" is not a claim this repo can make. Checking
+    the shape catches the drift a free-text field really suffers and claims nothing else.
     """
 
     errors: list[LintError] = []
@@ -191,6 +199,20 @@ def _check_frameworks(spec: AttackSpec) -> list[LintError]:
                     f"owasp code {bad_owasp!r} is in neither the OWASP LLM Top 10 "
                     f"({OWASP_LLM_EDITION}) nor the Responsible-AI companion set; a code "
                     f"outside both matches nothing and silently shrinks coverage"
+                ),
+                spec_id=spec.id,
+            )
+        )
+    bad_nist = malformed_nist_mapping(spec.nist_ai_rmf)
+    if bad_nist is not None:
+        errors.append(
+            LintError(
+                code=LintCode.UNKNOWN_FRAMEWORK_CODE,
+                message=(
+                    f"nist_ai_rmf {bad_nist!r} carries no well-formed subcategory: expected a "
+                    f"token like 'MEASURE 2.7' (one of {', '.join(NIST_FUNCTIONS)} plus n.n), "
+                    "optionally followed by a free-text gloss. This checks the SHAPE only: the "
+                    "NIST subcategory list is not pinned here, so membership is not claimed"
                 ),
                 spec_id=spec.id,
             )

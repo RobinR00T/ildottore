@@ -23,7 +23,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install Il Dottore
-        run: pip install ildottore            # or: pip install git+https://…/ildottore
+        # Not on PyPI (`pip install ildottore` 404s): install from the repository, pinned to
+        # a tag so a pipeline gate cannot change meaning under you between runs.
+        run: pip install "git+https://github.com/RobinR00T/ildottore@v0.1.0"
 
       - name: Scan (fail the build on confirmed high/critical)
         env:
