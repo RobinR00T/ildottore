@@ -56,6 +56,9 @@ class MetadataLayer:
     """Passive envelope/header/error parsing (contract §5 step 2)."""
 
     layer: str = _LAYER
+    #: Requests this layer sends, so the CLI can price a ``-sV`` pass without
+    #: guessing. It guessed "one per layer" and was wrong for three of six.
+    probe_count: int = 1
 
     async def probe(self, adapter: TargetAdapter, ctx: ProbeContext) -> list[FingerprintEvidence]:
         """Send one benign probe, read the envelope, match the pack.

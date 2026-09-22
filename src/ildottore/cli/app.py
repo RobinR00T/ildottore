@@ -37,6 +37,7 @@ from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
 from ildottore.policy.errors import PolicyError
 from ildottore.shared.schema_export import export_schemas
+from ildottore.store.replay import TamperError
 
 __version__ = "0.0.1"
 
@@ -283,7 +284,12 @@ def run(
     except ScopeRequiredError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
-    except (PolicyError, AdapterError, ValueError, OSError) as exc:
+    except (PolicyError, AdapterError, TamperError, ValueError, OSError) as exc:
+        # TamperError: a stored artifact whose content no longer hashes to its name, which
+        # `--resume` can hit. It subclasses RuntimeError, so it escaped this handler and
+        # surfaced as a traceback with exit 1: corrupted evidence read as an almost-clean
+        # scan. Exactly the omission described just below, one class along.
+        #
         # AdapterError (and its EndpointNotAllowed subclass) is an authorization/transport
         # failure, i.e. an operational error: exit 3. It derives from Exception, not from
         # ValueError, so it used to escape this handler entirely and surface as a traceback

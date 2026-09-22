@@ -124,12 +124,12 @@ def _order_family_effective(mutations: list[str], fingerprint: ModelFingerprint)
     hint = fingerprint.capability_guess.get("effective_mutators")
     if not isinstance(hint, (list, tuple)):
         return list(mutations)
-    priority = {str(name): rank for rank, name in enumerate(hint)}
-    # Stable sort: effective-first (by hint rank), then declared order preserved.
-    return sorted(
-        mutations,
-        key=lambda name: (0, priority[name]) if name in priority else (1, 0),
-    )
+    promoted = {str(name) for name in hint}
+    # Stable sort into two groups, and **the spec's declared order is kept inside each**.
+    # Ranking by the hint's own position was ranking by nothing: the carrier probe scores are
+    # binary, so the hint arrives alphabetically and the tie-break silently became the whole
+    # ordering, discarding what the spec author wrote.
+    return sorted(mutations, key=lambda name: 0 if name in promoted else 1)
 
 
 def _baseline_resistance(

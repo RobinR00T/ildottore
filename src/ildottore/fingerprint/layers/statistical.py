@@ -92,6 +92,9 @@ class StatisticalLayer:
     """Fixed battery → feature vector → nearest-neighbor vs pack (contract §5 step 5)."""
 
     layer: str = _LAYER
+    #: Requests this layer sends, so the CLI can price a ``-sV`` pass without
+    #: guessing. It guessed "one per layer" and was wrong for three of six.
+    probe_count: int = 3
 
     async def probe(self, adapter: TargetAdapter, ctx: ProbeContext) -> list[FingerprintEvidence]:
         """Featurize the battery responses and emit nearest-centroid evidence."""

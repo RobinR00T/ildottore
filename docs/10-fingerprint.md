@@ -32,10 +32,26 @@ Two roles for fingerprinting: both first-class:
    relative to an expectation. Tracked in `docs/12`. That one really is inert, and saying so
    is cheaper than a number nobody can defend.
 
-   **Cost:** the carrier layer is one request per registered mutator, so a fingerprint pass
-   went from 6 probes to ~24. The resolved plan prints the figure (`fingerprint: +N probe(s)
-   per target`), the probes are paced by the same `--rate` ceiling as attack traffic, and
-   `--dry-run` / `--estimate` / `-sn` do not send them at all.
+   **Only obscuring carriers are probed, and that is a safety boundary.** A carrier that
+   leaves the instruction readable and wraps it in new text (a refusal-suppression preamble, a
+   fabricated prior turn, a GCG suffix) is attack technique, and recognition sends benign
+   probes only (contract §8). The split is computed, not listed: a mutator whose output still
+   contains the original sentence has *added* instructions around it. On the shipped set that
+   is 7 carriers probed of 18, and every carrier the repo documents as an attack is on the
+   other side.
+
+   **Cost:** one request per probed carrier, so a fingerprint pass is ~17 requests rather than
+   the 10 it was. The resolved plan prints the figure (`fingerprint: +N probe(s) per target`),
+   `--estimate` prices it, an explicit `--budget-requests` binds it, the probes are paced by
+   the same `--rate` ceiling as attack traffic, and `--dry-run` / `--estimate` / `-sn` send
+   none of them.
+
+   **Two limits worth knowing before you rely on it.** Against the offline mock the probes
+   never come back with the marker, so `-sV` orders nothing there: only a live target can
+   reorder a battery, and CI therefore exercises the plumbing rather than the measurement. And
+   the probe traffic is **not** written to the evidence store, so a scan's evidence tree does
+   not answer "what did `-sV` send my endpoint"; the fingerprint itself is printed and, for
+   the standalone command, emitted as JSON.
 
 Grounded in prior art (LLMmap-style statistical fingerprinting; OpenAI `system_fingerprint`;
 glitch-token behavior). Fingerprinting is **probabilistic**: always reported with a

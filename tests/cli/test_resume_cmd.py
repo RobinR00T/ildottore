@@ -146,3 +146,95 @@ def test_resume_refuses_more_than_one_target(tmp_path: Path) -> None:
     opts.targets = [target, other]
     with pytest.raises(ValueError, match="single target"):
         execute_run(opts, [specs])
+
+
+# --- the audit of this feature (2026-09-22) -----------------------------------------
+
+
+def test_resume_refuses_another_targets_run(tmp_path: Path) -> None:
+    """The worst one: a clean report for a target that was never probed.
+
+    Resuming target B with target A's run id produced a full report for B out of A's
+    evidence, with **zero requests sent**: a hardened target inheriting a vulnerable one's
+    criticals, or a vulnerable one inheriting a clean bill of health and exiting 0. An
+    ``Attempt`` carries no target so the evidence cannot detect it; the run store records
+    ``target_id``, so the resume is bound to it.
+    """
+
+    opts, specs, run_id = _truncate_a_run(tmp_path)
+
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    other = write_target(other_dir, target_id="mock-target-b", mock_scenario="hardened")
+    scope = tmp_path / "scope-two.yaml"
+    scope.write_text(
+        'version: "1.0"\ntargets:\n'
+        + "".join(
+            f"  - id: {tid}\n"
+            f'    base_url: "mock://{tid}"\n'
+            "    endpoints:\n"
+            f'      - host: "{tid}"\n'
+            '        path_prefixes: ["/"]\n'
+            "    identities:\n      - name: default\n"
+            '        auth_ref: "env://MOCK_KEY"\n'
+            for tid in ("mock-target", "mock-target-b")
+        ),
+        encoding="utf-8",
+    )
+
+    opts.targets = [other]
+    opts.scope = scope
+    opts.resume = run_id
+    opts.budget_requests = None
+    with pytest.raises(ValueError, match="was made against target"):
+        execute_run(opts, specs)
+
+
+def test_resume_refuses_when_the_target_cannot_be_verified(tmp_path: Path) -> None:
+    """No run store, no binding, no resume: the check must not be optional in practice."""
+
+    opts, specs, run_id = _truncate_a_run(tmp_path)
+    opts.resume = run_id
+    opts.budget_requests = None
+    opts.run_db = tmp_path / "does-not-exist.sqlite"
+    with pytest.raises(ValueError, match="no run store"):
+        execute_run(opts, specs)
+
+
+def test_a_tampered_artifact_exits_three_from_the_cli(tmp_path: Path) -> None:
+    """``TamperError`` subclasses ``RuntimeError``, so it escaped the CLI handler entirely.
+
+    Exit 1 in this tool means "findings below the threshold", so corrupted evidence read as
+    an almost-clean scan. The unit test asserted the raise and never saw the exit code.
+    """
+
+    from typer.testing import CliRunner
+
+    from ildottore.cli.main import app
+
+    opts, specs, run_id = _truncate_a_run(tmp_path)
+    artifact = sorted((tmp_path / "ev" / run_id / "attempts").glob("*.json"))[0]
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    payload["mutation"] = "tampered"
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+
+    res = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "-t",
+            str(opts.targets[0]),
+            "--scope",
+            str(opts.scope),
+            "--spec-path",
+            str(specs[0]),
+            "--resume",
+            run_id,
+            "--evidence-root",
+            str(tmp_path / "ev"),
+            "--run-db",
+            str(tmp_path / "runs.sqlite"),
+        ],
+    )
+    assert res.exit_code == 3, res.output
+    assert "hash mismatch" in res.output
