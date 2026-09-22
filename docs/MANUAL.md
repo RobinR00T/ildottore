@@ -191,7 +191,7 @@ required.
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
 | `--top-tests INT` | keep the N highest-signal specs |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) and timing `-T0`. Conflicts with an explicit `--suite` (pass one) |
-| `--deep` | the full battery with fingerprint-tailored planning and timing `-T2`. It does **not** select a larger suite: the whole shipped battery is 72 specs, and `--deep` runs all of it |
+| `--deep` | the full battery with fingerprint-tailored planning and timing `-T2`. It does **not** select a larger suite: the whole shipped battery is 75 specs, and `--deep` runs all of it |
 
 **Discovery and aggression**
 
@@ -345,16 +345,19 @@ dottore coverage --json               # for a dashboard or a report generator
 ```
 
 ```
-Battery coverage (72 specs, no scan performed)
+Battery coverage (75 specs, no scan performed)
 
   OWASP LLM Top 10 (2025)              8/10   80%
   MITRE ATLAS tactics (2026.09)       13/16   81%
-  IoPC techniques (live-2026-09-19)   25/30   83%
-  IoPC impacts (live-2026-09-19)      22/23   95%
+  IoPC techniques (live-2026-09-19)   27/30   90%
+  IoPC impacts (live-2026-09-19)      23/23  100%
 
-  Not covered, OWASP LLM Top 10 (2025):
+  Out of reach for a black-box runtime scanner, OWASP LLM Top 10 (2025):
     LLM03
+      supply chain: a property of where the model and its components came from, which
+      an endpoint cannot be asked about
     LLM04
+      data and model poisoning: needs the training or fine-tuning pipeline
 
     ...
 ```
@@ -366,14 +369,17 @@ called it wrong. A number copied into prose does not get re-derived when the cod
 which is the argument for `dottore coverage` existing: run it rather than trust this block.)
 ```
 
-The uncovered codes are printed, not just counted. A coverage percentage with no list of what
-is missing invites the reader to assume the remainder is small; naming the gaps is the honest
-form and doubles as the roadmap. Off-universe values never reach a numerator (a Responsible-AI
+The uncovered codes are printed, not just counted, and they are printed in **two groups**:
+what is not covered *yet* (the roadmap) and what a black-box runtime scanner cannot reach at
+all, each with the reason. Training-pipeline poisoning, adversary-side infrastructure and
+model provenance are not work in progress; saying so is what keeps the first list meaning what
+it says. Out-of-reach codes stay in the **denominator**: dropping them would raise every
+percentage by redefining the universe as the part the tool can already do. Off-universe values never reach a numerator (a Responsible-AI
 `RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%.
 
 ## 6. The attack battery
 
-72 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
+75 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
 the Nova IoPC taxonomy. Every spec carries its framework mapping, including an optional
 two-axis `iopc:` block (`techniques` = the how, `impacts` = the damage), and the run report
 measures coverage against the pinned IoPC universe, so "we passed" always comes with "of what".

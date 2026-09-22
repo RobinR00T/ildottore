@@ -102,6 +102,16 @@ published 199/200 as complete.
 and JUnit emits an `<error>` when a campaign did not finish. Those two are what CI reads, and
 they rendered a truncated scan as a fully green suite while the JSON and HTML said otherwise.
 
+**A-26 A gap says whether it is the roadmap or not this tool's job (added 2026-09-22).** The
+coverage report printed one undifferentiated list of uncovered codes, so "8 of 10" read as two
+items of pending work when both are properties a black-box runtime scanner cannot observe at
+all (where a model came from, what it was trained on, adversary-side infrastructure). Gaps are
+now printed in two groups, and an out-of-reach code carries the reason it is unreachable.
+The codes stay in the **denominator**: removing them would raise every percentage by redefining
+the universe as the part the tool can already do, which is A-12 (no denominator over survivors)
+from the other side. A reason is mandatory, because a gap with an empty excuse beside it is a
+gap that has been hidden rather than explained. Checked by `tests/cli/test_coverage_cmd.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
 - MUST NOT read/persist to the run or evidence store beyond the injected read interface (u10).

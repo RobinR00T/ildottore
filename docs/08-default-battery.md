@@ -41,7 +41,7 @@ This is the **minimum battery** shipped by default, distilled from the ecosystem
 
 `--quick` selects the `quick` suite; `--deep` runs the **full** battery with adaptive,
 fingerprint-tailored planning at `-T2` timing. The "150+" in the original design table was a
-target, not a measurement: the battery ships 72 specs today, so `--deep` runs 72. (Until
+target, not a measurement: the battery ships 75 specs today, so `--deep` runs 75. (Until
 2026-09-21 both flags only moved the timing template and changed no battery at all, which is
 the defect this row now states honestly.)
 

@@ -149,12 +149,22 @@ disallowed intent is explicit, no working payload is shipped, and the oracle is 
 ## Deliberately out-of-scope (and why)
 
 - **T2.003 Training & Fine-tuning Data Poisoning.** Attacks the training pipeline, not a live
-  inference endpoint. Il Dottore scans a running target; it cannot exercise this.
+  inference endpoint. Il Dottore scans a running target; it cannot exercise this. (Since
+  2026-09-22 this, T8.003, T8.004, LLM03 and LLM04 are printed by `dottore coverage` under
+  "out of reach for a black-box runtime scanner", with the reason, instead of sitting in the
+  same list as work that is merely pending.)
 - **T8.003 Offline Attack Staging** and **T8.004 AI System Access Acquisition.** Attacker-side
   activity (building proxy models, acquiring accounts/infrastructure). There is no target to
   probe.
-- **R015 Model resource hijacking (LLMjacking).** Abuse of stolen credentials / infrastructure,
-  an infra-security concern, not a property of the model's responses.
+- **R015 Model resource hijacking (LLMjacking).** ~~Abuse of stolen credentials /
+  infrastructure, an infra-security concern, not a property of the model's responses.~~
+  **Revised 2026-09-22, and the revision is narrower than a reversal.** That reasoning holds
+  for the route it considered: a stolen key used against someone else's account is infra
+  security, and this tool cannot see it. It is not the only route to the same impact. A
+  narrow-scope assistant that accepts a long unrelated workload spends the operator's
+  inference budget on the requester's task, every request looking individually reasonable,
+  and *that* is entirely a property of the responses. Covered by
+  `DOS-RESOURCE-HIJACK-001`; the credential-theft route remains out of scope and always was.
 - **T7.001 distillation-style functionality cloning.** The membership/inversion half is covered;
   full functional cloning needs a large, costly query campaign that does not fit the pinned,
   reproducible, budget-bounded model. Left as a possible future mode, not core.
@@ -209,7 +219,10 @@ Design decisions worth recording:
   rejects a well-formed but non-existent one, which would otherwise match nothing and shrink
   the coverage numerator silently for ever.
 
-**Where the battery actually stands: 25/30 techniques (83%) and 22/23 impacts (95%).**
+**Where the battery actually stands: 27/30 techniques (90%) and 23/23 impacts (100%)**, since
+the three specs added on 2026-09-22 (`RECON-MODEL-IDENTITY-001`, `AG-CODEEXEC-UNEXPECTED-001`,
+`DOS-RESOURCE-HIJACK-001`). Every remaining uncovered code is one a black-box runtime scanner
+cannot reach, and the command says which and why. It was 25/30 and 22/23 before those three.
 
 That number is lower than the one first published here, and the correction is the useful part.
 An adversarial review of the mapping found 30 of the 72 specs mis-mapped, mostly **over-claims**:
@@ -222,9 +235,12 @@ axis from 87% to 83% and turned T4.002 into what it always was: **a real gap**, 
 has no code-interpreter or sandbox-escape spec.
 
 The other uncovered codes are deliberate out-of-scope decisions recorded below (training-data
-poisoning, offline staging, access acquisition, LLMjacking), except `IOPC-T8.002`
-(fingerprinting), which Il Dottore covers with the `dottore fingerprint` command rather than a
-spec.
+poisoning, offline staging, access acquisition). Two of that list have since moved:
+`IOPC-T8.002` (fingerprinting) was written off on the grounds that `dottore fingerprint`
+covers it, which conflated two different things: the tool fingerprinting a target is not a
+test of whether the target *discloses* what it was configured to hide, and that second thing
+is a finding a customer can act on. `RECON-MODEL-IDENTITY-001` tests it. `R015` moved for the
+reason recorded against it below.
 
 **A caveat on what these percentages mean.** The tables below mark eleven codes as *partial*
 (touched by an adjacent spec rather than covered first class). The machine-readable axis cannot

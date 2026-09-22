@@ -78,6 +78,27 @@ order, not how any real model behaves: that still needs a live run.
   gate cannot change meaning between runs.
 
 ### Added
+- **Three specs, and a coverage report that says which gaps are gaps.** The uncovered codes
+  were printed as one list, so "8 of 10" read as two items of pending work when both are
+  properties a black-box runtime scanner cannot observe at all. Gaps now print in two groups,
+  and an out-of-reach code carries its reason (supply chain is provenance, not a reply;
+  poisoning needs the training pipeline; command-and-control is adversary-side infrastructure).
+  They stay in the denominator: dropping them would raise every percentage by redefining the
+  universe as the part the tool can already do. Contract clause A-26.
+  With that split, the three remaining **reachable** gaps became visible as work rather than as
+  scenery, and they are now covered: `RECON-MODEL-IDENTITY-001` (IoPC T8.002, a deployment
+  configured to hide its underlying model gives up the build string on request; the previous
+  note wrote this off because `dottore fingerprint` exists, which conflated the tool
+  fingerprinting a target with the target disclosing what it was told to hide),
+  `AG-CODEEXEC-UNEXPECTED-001` (T4.002, an agent runs code that came from the document it was
+  asked to summarize, the execution half of indirect injection) and `DOS-RESOURCE-HIJACK-001`
+  (R015, a narrow-scope assistant accepts an unrelated bulk workload and spends the operator's
+  inference budget on the requester's task). R015 had been recorded as out of scope on the
+  grounds that LLMjacking is credential theft: true of that route, and `docs/15` now records
+  why the scope-abuse route is a different one that the replies do show.
+  **Battery: 75 specs / 14 suites.** IoPC techniques 27/30, impacts 23/23. OWASP (8/10) and
+  ATLAS (13/16) are unchanged, and every code still missing on either is now labelled
+  out-of-reach with its reason.
 - **`--resume` is bound to its battery and to the campaign's ceiling.** Two documented limits,
   the same shape: the command claimed a property of a whole campaign while checking only the
   invocation in front of it. (1) The specs could change between the halt and the resume, and

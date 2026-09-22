@@ -96,11 +96,24 @@ def render_coverage(
         return "\n".join(lines)
 
     for axis in axes:
-        if not axis.missing:
-            continue
-        lines.extend(["", f"  Not covered, {axis.label}:"])
-        for code, title in axis.missing:
-            lines.append(f"    {code}  {title}" if title != code else f"    {code}")
+        if axis.missing:
+            lines.extend(["", f"  Not covered yet, {axis.label}:"])
+            for code, title in axis.missing:
+                lines.append(f"    {code}  {title}" if title != code else f"    {code}")
+        if axis.out_of_reach:
+            lines.extend(["", f"  Out of reach for a black-box runtime scanner, {axis.label}:"])
+            for code, title, reason in axis.out_of_reach:
+                head = f"    {code}  {title}" if title != code else f"    {code}"
+                lines.append(head)
+                lines.append(f"      {reason}")
+    if any(a.out_of_reach for a in axes):
+        lines.extend(
+            [
+                "",
+                "  Out-of-reach codes stay in the denominator: removing them would raise every",
+                "  percentage by redefining the universe as the part this tool can already do.",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -152,7 +165,15 @@ def render_coverage_json(
                 "pct": a.pct,
                 "covered": [{"code": c, "title": t} for c, t in a.covered],
                 **(
-                    {"missing": [{"code": c, "title": t} for c, t in a.missing]}
+                    {
+                        "missing": [{"code": c, "title": t} for c, t in a.missing],
+                        # Named, not merged into `missing`: a consumer that adds the two
+                        # lists gets the old number back, one that reads them apart can say
+                        # what is roadmap and what is not this tool's job.
+                        "out_of_reach": [
+                            {"code": c, "title": t, "reason": r} for c, t, r in a.out_of_reach
+                        ],
+                    }
                     if show_gaps
                     else {}
                 ),

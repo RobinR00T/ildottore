@@ -22,6 +22,7 @@ specs:
   - spec_id: AC-SSRF-001
   - spec_id: AC-DEBUG-001
   - spec_id: RECON-SYSTEM-001
+  - spec_id: RECON-MODEL-IDENTITY-001
   - spec_id: OUT-SHELLI-001
   - spec_id: AG-TOOLMETA-POISON-001
   - spec_id: FUNCALL-ARGSMUGGLE-001
