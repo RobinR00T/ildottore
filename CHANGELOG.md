@@ -43,6 +43,17 @@ versioning: [SemVer](https://semver.org/).
   counting them, supports `--framework`, `--suite` and `--json`.
 
 ### Added
+- **`dottore run --resume <run-id>`: a halted campaign can be finished.** The engine has
+  supported resume since u08 (`CampaignRunner.run(resume_from=...)` skips persisted attempt
+  ids and merges a spec's prior attempts with the fresh ones) and **no command reached it**,
+  which stopped being academic the moment a truncated run started exiting 3 and reporting "27
+  of 72 specs never ran": the only way to finish the battery was to shrink `--runs`, which is
+  the input to the reproducibility axis of the risk score. The prior run is reconstructed from
+  the **evidence store**, not from the sqlite run store, because evidence is content-addressed
+  and hash-verified (a tampered artifact refuses to resume) while the sqlite findings are a
+  redacted projection. The resumed campaign keeps the original run id, so the continuation
+  files against the same evidence instead of becoming a second partial run.
+
 - **`-sV` changes the battery now, and the signal behind it is measured, not assumed.** The
   flag documented two jobs (recognise the model, tailor the plan) and did the first only:
   `core.planner._order_family_effective` reads `capability_guess["effective_mutators"]` and

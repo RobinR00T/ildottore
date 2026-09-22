@@ -117,6 +117,7 @@ dottore calibrate report.json labels.yaml
 | `--runs N` | reproducibility runs (default 5) |
 | `-T 0..5` | timing template (default 3); higher is faster/louder |
 | `--rate` / `--concurrency` / `--timeout` | max req/s (one shared ceiling for the whole campaign, retries included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
+| `--resume RUN_ID` | finish a halted run (exit 3): completed attempts are not re-sent |
 | `--dry-run` | resolve + validate, send nothing |
 | `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |

@@ -30,6 +30,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ildottore.cli import resume as resume_mod
 from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
@@ -46,6 +47,7 @@ from ildottore.shared.models import (
     ModelFingerprint,
     PlanBudgets,
     Target,
+    TestRun,
 )
 
 __all__ = [
@@ -128,6 +130,9 @@ class RunOptions:
     runs: int = 5
     dry_run: bool = False
     estimate: bool = False
+    #: ``--resume <run-id>``: finish a campaign that halted, reusing its run id and skipping
+    #: the attempts already persisted in the evidence store.
+    resume: str | None = None
     fail_on: str = "high"
     include_needs_review: bool = False
     compare: bool = False
@@ -793,6 +798,13 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             "nothing would be tested. Check the selectors against `dottore registry ls`."
         )
 
+    if opts.resume is not None and len(loaded_targets) != 1:
+        # A campaign stores one run id per target, so "resume this run" names exactly one.
+        raise ValueError(
+            f"--resume names a single run ({opts.resume!r}) and therefore a single target; "
+            f"got {len(loaded_targets)}. Resume each target's run id in its own invocation."
+        )
+
     if opts.compare and len(loaded_targets) < 2:
         raise ValueError(
             "--compare renders a model-comparison matrix and needs two or more targets "
@@ -916,6 +928,16 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
 
+    resume_from: TestRun | None = None
+    if opts.resume is not None:
+        resume_from = resume_mod.load_resume_run(evidence_root, opts.resume, loaded_targets[0][1])
+        if not opts.quiet:
+            done = sum(len(f.attempts) for f in resume_from.findings)
+            print(
+                f"resume: {opts.resume} has {done} completed attempt(s) across "
+                f"{len(resume_from.findings)} spec(s); they will not be re-sent"
+            )
+
     results: list[CampaignResult] = []
     all_findings: list[Finding] = []
     planned_specs = 0
@@ -943,6 +965,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             budgets=plan.budgets,
             fingerprint=fingerprints.get(target.id),
             adaptive=adaptive,
+            resume_from=resume_from,
         )
         results.append(result)
         _print_progress(printer, plan.selected, result.findings)
@@ -1067,6 +1090,7 @@ def _run_one_target(
     budgets: PlanBudgets | None = None,
     fingerprint: ModelFingerprint | None = None,
     adaptive: bool = False,
+    resume_from: TestRun | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -1093,7 +1117,9 @@ def _run_one_target(
         real_target=real_target,
         judge_target=judge_target,
     )
-    run_id = f"run-{uuid.uuid4().hex[:12]}"
+    # A resumed campaign keeps the ORIGINAL run id: the evidence and the store are keyed by
+    # it, and a new id would file the continuation as a separate, equally partial run.
+    run_id = resume_from.run_id if resume_from is not None else f"run-{uuid.uuid4().hex[:12]}"
     return asyncio.run(
         built.runner.run(
             run_id=run_id,
@@ -1102,6 +1128,7 @@ def _run_one_target(
             fingerprint=fingerprint,
             adaptive=adaptive,
             budgets=budgets,
+            resume_from=resume_from,
         )
     )
 
