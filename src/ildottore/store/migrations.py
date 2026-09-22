@@ -13,18 +13,38 @@ re-run on an already-current DB does nothing and returns the current version.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
 _SCHEMA_SQL_PATH: Final = Path(__file__).with_name("schema.sql")
 
 # The current (latest) schema version. Bump + append to _MIGRATIONS to evolve.
-SCHEMA_VERSION: Final = 1
+SCHEMA_VERSION: Final = 2
 
-# Ordered forward-only migration steps: (target_version, ddl). Step N is applied
+
+def _add_run_context_columns(conn: sqlite3.Connection) -> None:
+    """v2: record WHICH battery a run executed and WHAT it spent.
+
+    Both exist for ``--resume``, which reuses a run id across invocations: the digests let a
+    resume refuse a battery that changed under it, and the spend lets the ledger open where
+    the halted invocation stopped instead of granting a fresh ceiling every time.
+
+    Written as a callable rather than DDL because SQLite's ``ADD COLUMN`` is not re-runnable
+    (it errors when the column is already there), and every other step in this file is.
+    """
+
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+    for column in ("spec_digests_json", "spend_json"):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE runs ADD COLUMN {column} TEXT")
+
+
+# Ordered forward-only migration steps: (target_version, ddl-or-callable). Step N is applied
 # only when the DB is currently below N.
-_MIGRATIONS: Final[list[tuple[int, str]]] = [
+_MIGRATIONS: Final[list[tuple[int, str | Callable[[sqlite3.Connection], None]]]] = [
     (1, _SCHEMA_SQL_PATH.read_text(encoding="utf-8")),
+    (2, _add_run_context_columns),
 ]
 
 
@@ -65,10 +85,13 @@ def migrate(conn: sqlite3.Connection) -> int:
 
     start = current_version(conn)
     with conn:  # single transaction; rolls back on error
-        for version, ddl in _MIGRATIONS:
+        for version, step in _MIGRATIONS:
             if version <= start:
                 continue
-            conn.executescript(ddl)
+            if callable(step):
+                step(conn)
+            else:
+                conn.executescript(step)
             conn.execute(
                 "INSERT OR IGNORE INTO schema_version (version) VALUES (?)",
                 (version,),

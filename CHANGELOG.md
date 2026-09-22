@@ -59,11 +59,9 @@ worktrees, hours after both landed. Each found a defect in the feature's central
   inside the root. And a stray file in an attempts directory reports what it is instead of a
   raw pydantic dump.
 
-**Known limits, stated rather than left to be discovered.** `-sV` cannot reorder anything
-against the offline mock (its canned reply never carries the marker), so CI exercises the
-plumbing and not the measurement. `--resume` does not
-detect that the spec files changed since the halt, and the hard budget is per invocation, so
-resuming repeatedly can spend more in total than any single ceiling allows.
+**Known limits, stated rather than left to be discovered.** What `-sV` measures offline is a
+*simulated* decoder (`mock_scenario: comprehending`), so CI proves the chain from probe to plan
+order, not how any real model behaves: that still needs a live run.
 
 ### Fixed (audit leftovers)
 - **`nist_ai_rmf` had no validation of any kind** beyond non-blank, so a lowercase function
@@ -80,6 +78,29 @@ resuming repeatedly can spend more in total than any single ceiling allows.
   gate cannot change meaning between runs.
 
 ### Added
+- **`--resume` is bound to its battery and to the campaign's ceiling.** Two documented limits,
+  the same shape: the command claimed a property of a whole campaign while checking only the
+  invocation in front of it. (1) The specs could change between the halt and the resume, and
+  the two halves are merged into one finding per spec and scored together, so an edited prompt
+  produced a single report, under a single run id, out of two different batteries, with nothing
+  saying so. The run store now records a per-spec digest and a resume **refuses** a changed
+  battery, naming what changed and exiting 3. The digest is over the loaded model, so
+  reformatting a file or adding a comment is not a change while anything that reaches the wire
+  or the verdict is. A run recorded before the digests existed is reported **unverifiable** (on
+  stderr, never suppressed by `--quiet`) rather than treated as a match. (2) The hard budget
+  reset on every command, so a run halted at its ceiling could be resumed and spend the whole
+  ceiling again under the same id: `--budget-requests 6` twice sent 12. The cumulative spend is
+  persisted and the ledger opens there, so a ceiling binds the campaign. Contract clause A-24.
+- **CI now measures what `-sV` produces, not just that it ran.** The carrier layer's entire
+  output is an ordering, and every offline scenario answered with one fixed string whatever
+  arrived, so no carrier was ever comprehended, the hint came back empty, and the ordering was
+  asserted nowhere. `mock_scenario: comprehending` is an offline target that decodes what it is
+  sent (zero-width, rot13, base64) and follows the instruction when it survives, so the layer
+  produces a real split (4 comprehended, 3 not) and the plan comes out in a different order,
+  through the real layer, the real mutators and the real planner, with no endpoint and no key.
+  It is a simulated decoder, not a model: it proves the chain, not how a real model behaves.
+  It also buys nothing on the verdict side, every spec against it stays `inconclusive`.
+  Contract clause A-25.
 - **Recognition traffic is now evidence.** A `-sV` pass sends 17 requests per target and left
   no trace of any of them: the evidence tree could not answer "what did this tool send my
   endpoint", which is the question the product exists to answer, and is precisely what kept a

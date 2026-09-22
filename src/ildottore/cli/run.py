@@ -35,11 +35,13 @@ from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
+from ildottore.core.budgets import Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
+from ildottore.shared.digest import spec_digests
 from ildottore.shared.enums import Category
 from ildottore.shared.models import (
     AttackSpec,
@@ -886,7 +888,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     if opts.fingerprint_first and not sends_nothing:
         probe_store = wiring.build_evidence_store(evidence_root, planted_canaries=[])
-        for _, target, (_, real_target) in routes:
+        for _, target, (mock_scenario, real_target) in routes:
             fingerprints[target.id] = wiring.fingerprint_probe(
                 scope,
                 target,
@@ -894,6 +896,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 rate_rps=pacing_rate,
                 evidence=probe_store,
                 run_id=run_ids[target.id],
+                mock_scenario=mock_scenario,
             )
     if fingerprints and not opts.quiet:
         for target_id, fingerprint in sorted(fingerprints.items()):
@@ -949,7 +952,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     resume_from: TestRun | None = None
     if opts.resume is not None:
         resume_from = resume_mod.load_resume_run(
-            evidence_root, opts.resume, loaded_targets[0][1], run_db=run_db
+            evidence_root, opts.resume, loaded_targets[0][1], run_db=run_db, specs=selected
         )
         if not opts.quiet:
             done = sum(len(f.attempts) for f in resume_from.findings)
@@ -1001,6 +1004,10 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
 
+    # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
+    # loop: `--resume` names a single target, so there is one prior spend to carry.
+    prior_spend = _prior_spend(run_db, opts.resume) if opts.resume is not None else None
+
     results: list[CampaignResult] = []
     all_findings: list[Finding] = []
     planned_specs = 0
@@ -1030,8 +1037,10 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             adaptive=adaptive,
             resume_from=resume_from,
             run_id=run_ids[target.id],
+            prior_spend=prior_spend,
         )
         results.append(result)
+        _persist_run_context(run_db, result, selected)
         _print_progress(printer, plan.selected, result.findings)
         all_findings.extend(result.findings)
 
@@ -1156,6 +1165,7 @@ def _run_one_target(
     adaptive: bool = False,
     resume_from: TestRun | None = None,
     run_id: str | None = None,
+    prior_spend: Spend | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -1196,8 +1206,55 @@ def _run_one_target(
             adaptive=adaptive,
             budgets=budgets,
             resume_from=resume_from,
+            prior_spend=prior_spend,
         )
     )
+
+
+def _prior_spend(run_db: Path, run_id: str) -> Spend | None:
+    """What a halted run already consumed, so its resume does not get a fresh ceiling.
+
+    ``None`` when the run store has no record: a run from before this was persisted, or one
+    whose campaign never reached the write. The resume then starts at zero, which is the old
+    behaviour, and the operator is not told a total that was never measured.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        return None
+    with SqliteRunStore(Path(run_db)) as store:
+        stored = store.get_run_spend(run_id)
+    if not stored:
+        return None
+    return Spend(
+        tokens=int(stored.get("tokens", 0)),
+        requests=int(stored.get("requests", 0)),
+        attempts=int(stored.get("attempts", 0)),
+        wall_s=float(stored.get("wall_s", 0.0)),
+    )
+
+
+def _persist_run_context(run_db: Path, result: CampaignResult, specs: list[AttackSpec]) -> None:
+    """Record the battery this run executed and what it has spent in total.
+
+    Written after every campaign, not only a halted one: the halt is exactly when nobody is
+    in a position to do it later, and a run that completed can still be resumed by mistake.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)) as store:
+        store.save_run_context(
+            result.run.run_id,
+            spec_digests=spec_digests(specs),
+            spend={
+                "tokens": result.spend.tokens,
+                "requests": result.spend.requests,
+                "attempts": result.spend.attempts,
+                "wall_s": round(result.spend.wall_s, 6),
+            },
+        )
 
 
 def _print_progress(

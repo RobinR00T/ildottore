@@ -105,3 +105,43 @@ def test_save_run_with_no_targets_has_null_target(store_root: Path) -> None:
         row = rs.get_run("run-1")
         assert row["target_id"] is None
         assert row["suite_id"] is None
+
+
+def test_a_malformed_context_column_reads_as_absent_not_as_empty(tmp_path: Path) -> None:
+    """A corrupt row must not pass for "nothing changed" or "nothing spent".
+
+    Both columns drive a refusal (a changed battery) and a ceiling (the carried spend), so a
+    value that cannot be parsed has to read as *unknown*, which the caller reports, and never
+    as an empty dict, which would read as a clean comparison and a zero opening balance.
+    """
+
+    store = SqliteRunStore(tmp_path / "runs.sqlite")
+    store.save_run_context("run-abc123", spec_digests={"A": "sha256:aa"})
+    store._conn.execute(
+        "UPDATE runs SET spec_digests_json = ?, spend_json = ? WHERE run_id = ?",
+        ("{not json", "[1, 2]", "run-abc123"),
+    )
+    store._conn.commit()
+
+    assert store.get_run_spec_digests("run-abc123") is None
+    assert store.get_run_spend("run-abc123") is None
+    store.close()
+
+
+def test_an_older_store_gains_the_context_columns_on_open(tmp_path: Path) -> None:
+    """The v2 step runs against a v1 file, and twice in a row is a no-op."""
+
+    db = tmp_path / "old.sqlite"
+    conn = migrations.connect(db)
+    conn.executescript(migrations._SCHEMA_SQL_PATH.read_text(encoding="utf-8"))
+    conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+    conn.commit()
+    conn.close()
+
+    with SqliteRunStore(db) as store:
+        assert store.schema_version() == 2
+        store.save_run_context("run-old01", spend={"requests": 3})
+        assert store.get_run_spend("run-old01") == {"requests": 3}
+    with SqliteRunStore(db) as reopened:  # migrate() again on an already-current file
+        assert reopened.schema_version() == 2
+        assert reopened.get_run_spend("run-old01") == {"requests": 3}

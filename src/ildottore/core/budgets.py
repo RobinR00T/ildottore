@@ -32,6 +32,7 @@ __all__ = [
     "BudgetExhausted",
     "BudgetLedger",
     "BudgetSnapshot",
+    "Spend",
 ]
 
 
@@ -48,6 +49,31 @@ class BudgetExhausted(RuntimeError):
         self.attempted = attempted
         super().__init__(
             f"budget exhausted on {axis!r}: attempted {attempted} would exceed limit {limit}"
+        )
+
+
+@dataclass(frozen=True)
+class Spend:
+    """What a campaign consumed, on the axes a ceiling can bind.
+
+    Persisted per run so a **resume** opens its ledger already holding the prior
+    invocation's spend. Without it the hard budget was per invocation: a run halted at its
+    500k-token ceiling, resumed, and spent another 500k under the same ceiling and the same
+    run id, so "this scan will not cost more than X" was true of each command and false of
+    the campaign the operator was actually paying for.
+    """
+
+    tokens: int = 0
+    requests: int = 0
+    attempts: int = 0
+    wall_s: float = 0.0
+
+    def plus(self, other: Spend) -> Spend:
+        return Spend(
+            tokens=self.tokens + other.tokens,
+            requests=self.requests + other.requests,
+            attempts=self.attempts + other.attempts,
+            wall_s=self.wall_s + other.wall_s,
         )
 
 
@@ -83,6 +109,7 @@ class BudgetLedger:
         max_attempts: int | None = None,
         max_wall_s: int | None = None,
         time_source: Callable[[], float] | None = None,
+        prior: Spend | None = None,
     ) -> None:
         self._max_tokens = _validate_ceiling("max_tokens", max_tokens)
         self._max_requests = _validate_ceiling("max_requests", max_requests)
@@ -90,9 +117,14 @@ class BudgetLedger:
         self._max_wall_s = _validate_ceiling("max_wall_s", max_wall_s)
         self._time = time_source if time_source is not None else time.monotonic
         self._lock = threading.Lock()
-        self._tokens = 0
-        self._requests = 0
-        self._attempts = 0
+        # A ledger opened for a RESUMED run starts at the prior invocation's spend, so every
+        # ceiling binds the campaign rather than the command. `_prior_wall_s` is kept apart
+        # from `_started` because elapsed time is derived from the clock, not accumulated.
+        opening = prior if prior is not None else Spend()
+        self._tokens = opening.tokens
+        self._requests = opening.requests
+        self._attempts = opening.attempts
+        self._prior_wall_s = opening.wall_s
         self._started = self._time()
 
     @classmethod
@@ -101,6 +133,7 @@ class BudgetLedger:
         budgets: PlanBudgets,
         *,
         time_source: Callable[[], float] | None = None,
+        prior: Spend | None = None,
     ) -> BudgetLedger:
         """Build a ledger from a :class:`TestPlan`'s :class:`PlanBudgets`."""
 
@@ -110,14 +143,21 @@ class BudgetLedger:
             max_attempts=budgets.max_attempts,
             max_wall_s=budgets.max_wall_s,
             time_source=time_source,
+            prior=prior,
         )
 
     # --- wall clock ----------------------------------------------------------
 
     def elapsed_s(self) -> float:
-        """Seconds since the ledger opened (via the injected clock)."""
+        """Seconds this CAMPAIGN has spent, prior invocations included.
 
-        return self._time() - self._started
+        For a fresh run that is "since the ledger opened". For a resumed one it also
+        carries the halted invocation's elapsed time, so ``max_wall_s`` bounds the campaign
+        and not each command that continues it. The pause between them is not counted: only
+        time the scanner was actually running.
+        """
+
+        return self._prior_wall_s + (self._time() - self._started)
 
     def check_wall(self) -> None:
         """Raise :class:`BudgetExhausted` if the wall-clock ceiling is crossed.
@@ -182,6 +222,17 @@ class BudgetLedger:
             self._tokens = next_tokens
 
     # --- read ----------------------------------------------------------------
+
+    def spend(self) -> Spend:
+        """This campaign's consumption so far, in the shape that is persisted."""
+
+        snap = self.snapshot()
+        return Spend(
+            tokens=snap.tokens,
+            requests=snap.requests,
+            attempts=snap.attempts,
+            wall_s=snap.wall_s,
+        )
 
     def snapshot(self) -> BudgetSnapshot:
         """A consistent read of all four axes (taken under the lock)."""

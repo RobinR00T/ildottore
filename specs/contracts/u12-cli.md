@@ -115,6 +115,20 @@ store can.
 through the runner, so they were bounded by neither: `--budget-requests 2 -sV` sent 30 requests
 and then reported "limit 2, attempted 3", counting only the half that passed the ledger.
 
+**A-24 A resume is bound to the battery that halted, and to the campaign's ceiling (added
+2026-09-22).** Both were per-invocation claims about a whole campaign. The specs could change
+between the halt and the resume: the two halves are merged into one finding per spec and
+scored together, so an edited prompt produced one report, under one run id, out of two
+different batteries, with nothing in it saying so. And the hard budget reset on every command,
+so a run halted at its ceiling could be resumed to spend the whole ceiling again, under the
+same id. The run store now records the per-spec digests and the cumulative spend, the resume
+refuses a changed battery naming what changed (exit 3), and the ledger opens at the prior
+spend. The digest is over the **loaded model**, not the file bytes, so reformatting or a
+comment is not a change while anything that reaches the wire or the verdict is. A run recorded
+before the digests existed is reported **unverifiable**, on stderr and never suppressed by
+`--quiet`, rather than treated as a match: an assurance that was not performed is not a pass.
+Checked by `tests/cli/test_resume_integrity.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

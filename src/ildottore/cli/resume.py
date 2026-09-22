@@ -15,13 +15,16 @@ findings are a redacted projection, not the attempts themselves.
 from __future__ import annotations
 
 import json
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from ildottore.shared.digest import spec_digests
 from ildottore.shared.enums import ScanBand, VerdictStatus
 from ildottore.shared.models import (
+    AttackSpec,
     Attempt,
     EvidenceRef,
     Finding,
@@ -50,13 +53,20 @@ RESUME_PLACEHOLDER_RISK = RiskScore(
 
 
 def load_resume_run(
-    evidence_root: Path, run_id: str, target: Target, *, run_db: Path | None = None
+    evidence_root: Path,
+    run_id: str,
+    target: Target,
+    *,
+    run_db: Path | None = None,
+    specs: list[AttackSpec] | None = None,
 ) -> TestRun:
     """Rebuild the partial :class:`TestRun` for ``run_id`` from stored evidence.
 
     Raises ``ValueError`` when the run has no stored attempts (a typo in the id, the wrong
     ``--evidence-root``, or a run that was refused before it sent anything): resuming
     "nothing" would quietly re-run the whole battery under an id that promises otherwise.
+
+    ``specs`` binds it to the battery the run was made with (see :func:`_assert_same_specs`).
 
     ``run_db`` binds the resume to the target the run was made against. Without it, resuming
     target B with target A's run id produced **a full report for B out of A's evidence, with
@@ -67,6 +77,8 @@ def load_resume_run(
 
     if run_db is not None:
         _assert_same_target(run_db, run_id, target)
+        if specs is not None:
+            _assert_same_specs(run_db, run_id, specs)
     try:
         result = replay_run(Path(evidence_root), run_id)
     except ValidationError as exc:
@@ -130,6 +142,55 @@ def _assert_same_target(run_db: Path, run_id: str, target: Target) -> None:
             "it here would report one target's evidence as another's, with zero requests "
             "sent. Resume it against its own target, or start a fresh run."
         )
+
+
+def _assert_same_specs(run_db: Path, run_id: str, specs: list[AttackSpec]) -> None:
+    """Refuse a resume whose battery changed since the halt, naming what changed.
+
+    The two halves of a resumed run are merged into one finding per spec and scored as one
+    campaign. That is only meaningful while both halves ran the same spec: edit a prompt,
+    tighten an evaluator or add a spec between the halt and the resume, and the report is a
+    single document, under a single id, whose evidence comes from two different batteries,
+    with nothing in it saying so. The digest is over the loaded model, so reformatting the
+    YAML or editing a comment is not a change; anything that reaches the wire or the verdict
+    is.
+
+    A run recorded before this column existed has **no** digests. That is reported as
+    unverifiable and allowed through, rather than silently treated as a match: the check
+    cannot claim a property it never observed.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)) as store:
+        stored = store.get_run_spec_digests(run_id)
+    if stored is None:
+        # stderr, and never suppressed by --quiet: an assurance the tool could not perform
+        # is exactly the kind of notice that must not be silenced into looking like a pass.
+        print(
+            f"resume: run {run_id!r} predates battery-digest recording, so it cannot be "
+            "verified that the specs are unchanged since the halt. Continuing.",
+            file=sys.stderr,
+        )
+        return
+    current = spec_digests(specs)
+    changed = sorted(k for k in stored.keys() & current.keys() if stored[k] != current[k])
+    removed = sorted(stored.keys() - current.keys())
+    added = sorted(current.keys() - stored.keys())
+    if not (changed or removed or added):
+        return
+    parts = []
+    if changed:
+        parts.append(f"{len(changed)} changed ({', '.join(changed[:5])})")
+    if removed:
+        parts.append(f"{len(removed)} no longer selected ({', '.join(removed[:5])})")
+    if added:
+        parts.append(f"{len(added)} new ({', '.join(added[:5])})")
+    raise ValueError(
+        f"the battery changed since run {run_id!r} halted: {'; '.join(parts)}. Resuming "
+        "would merge two different batteries into one report under one run id, and score "
+        "them as one campaign. Start a fresh run, or restore the specs as they were."
+    )
 
 
 def _ref_index(evidence_root: Path, run_id: str) -> dict[str, EvidenceRef]:

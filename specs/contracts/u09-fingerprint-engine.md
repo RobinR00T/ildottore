@@ -114,6 +114,18 @@ mostly noise.)
 the sum **equals the number of `adapter.send` calls a pass makes**. "One probe per layer" was a
 guess, wrong for three of six, and it was published to operators as the price of `-sV`.
 
+**A-25 The ordering `-sV` exists to produce is measured in CI, not just executed (added
+2026-09-22).** Every offline scenario answered with one fixed string whatever arrived, so no
+carrier was ever comprehended, the hint came back empty, and the ordering (the part that
+decides what a customer's endpoint is sent first) was asserted nowhere: CI ran the layer and
+checked that it ran. `mock_scenario: comprehending` is an offline target that decodes what it
+is sent (zero-width, rot13, base64) and follows the instruction when it survives, so the layer
+produces a real split and the plan comes out in a different order, through the real layer, the
+real mutators and the real planner. It is a **simulated decoder, not a model**: it proves the
+chain, not how any given model behaves, and the docs say so where the claim is made. It also
+may not buy the measurement with a verdict: every spec against it stays `inconclusive`.
+Checked by `tests/fingerprint/test_carrier_measured_offline.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`); MUST NOT send any jailbreak /
   `test_only` payload: benign probes only. **This binds the carrier as well as the payload**
