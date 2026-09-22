@@ -115,6 +115,49 @@ store can.
 through the runner, so they were bounded by neither: `--budget-requests 2 -sV` sent 30 requests
 and then reported "limit 2, attempted 3", counting only the half that passed the ledger.
 
+**A-24 A resume is bound to its campaign: the battery, the target, the route, the sample size
+and the money (added 2026-09-22, widened the same night after audit).** Every one of these was
+a claim about a whole campaign checked only against the invocation in front of it.
+
+* **The battery.** Both halves are merged into one finding per spec and scored together, so an
+  edited prompt produced one report, under one run id, out of two different batteries. Per-spec
+  digests are recorded and a resume refuses a changed battery naming what changed (exit 3). The
+  digest is over a **behavioural projection** of the loaded model, so a corrected description or
+  a reflowed line is not a change: hashing the whole model refused a resume over an edited
+  `tags` line, which is how a check teaches the operator to route around it.
+* **The target and the route.** The id check was one field deep. `--resume --hardened` needed no
+  file edit at all: it flipped the offline replay, and a vulnerable half's criticals were
+  published as a hardened run's findings. A target digest now covers the loaded target and the
+  resolved route.
+* **The sample size.** `--runs` is the denominator of the reproducibility axis. Changing it
+  explicitly is refused; omitting it **inherits** the campaign's, because the store knows it.
+* **The money.** The hard budget reset on every command. The cumulative spend is persisted and
+  the ledger opens there, **including the `-sV` probe pass**, which runs outside the runner's
+  ledger by design and was therefore pre-checked against the ceiling and then never billed: 17
+  requests per target per resume, unrecorded. It binds **sequential** invocations: two concurrent
+  resumes of one run id are not serialised (no lease), so they can each spend the remainder. The
+  write is monotonic per axis, so a refused write can no longer discard a higher token or wall
+  figure along with the request count, and the record cannot under-report what was spent.
+* **The judge and the planning mode.** `semantic_judge` decides verdicts, so a different
+  `--judge` mid-campaign arbitrates one report with two models; `--deep`/`-sV` reorder the
+  mutators a spec runs. Both are in the recorded context now.
+
+**The target is the one thing with no opt-in.** `--resume-unverified` waives the battery, the
+context and the spend, and a second audit pointed it at a run row with no target id and resumed
+a vulnerable app's evidence into a hardened app's report with zero requests sent: one flag was
+disarming two checks, and its help text advertises a budget consequence. A run that does not
+record its target is refused outright, with no flag.
+
+**An unverifiable resume is refused, not noticed.** The first version continued with a warning,
+and an audit showed why that is wrong: a run recorded before the digest column also predates the
+spend column, so the same resume that could not verify the battery was handed a brand-new budget
+ceiling, and the commit that claimed to fix the double ceiling could still reproduce it on every
+run that existed. `--resume-unverified` is the explicit opt-in, and it says in its own message
+that the ceiling then covers one invocation. A **corrupt** integrity record is not the same as an
+absent one and raises rather than continuing. All of it is checked before the fingerprint pass,
+which sends: `-sV --resume` used to put 17 probes on a live endpoint and then exit 3 having done
+no work. Checked by `tests/cli/test_resume_integrity.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

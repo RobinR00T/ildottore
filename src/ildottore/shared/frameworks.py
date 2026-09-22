@@ -20,12 +20,16 @@ __all__ = [
     "ATLAS_TACTIC_UNIVERSE",
     "NIST_FUNCTIONS",
     "NIST_SUBCATEGORY_RE",
+    "NOT_TESTED_BY_DESIGN",
+    "OUT_OF_REACH",
     "OWASP_LLM_EDITION",
     "OWASP_LLM_TOTAL",
     "OWASP_LLM_UNIVERSE",
     "OWASP_RAI_UNIVERSE",
     "malformed_nist_mapping",
     "nist_subcategories",
+    "not_tested_by_design_reason",
+    "out_of_reach_reason",
     "unknown_atlas_tactic",
     "unknown_owasp_code",
 ]
@@ -37,7 +41,7 @@ import re
 #: exact day is secondary-sourced: the project page still lists 2025 as latest, so treat
 #: "early August 2026" as the claim), and in the 2026 numbering ``LLM03`` is Excessive Agency
 #: and ``LLM04`` is Supply Chain. Our specs are
-#: mapped to the 2025 numbering (``LLM06`` = Excessive Agency, 24 of 72 specs). An unlabelled
+#: mapped to the 2025 numbering (``LLM06`` = Excessive Agency, 25 of 75 specs). An unlabelled
 #: gap list saying "not covered: LLM03, LLM04" therefore reads, to anyone holding the new
 #: edition, as "Excessive Agency untested", which is our single most covered category. The
 #: label travels with the number for the same reason the IoPC taxonomy pins its date.
@@ -55,7 +59,7 @@ OWASP_LLM_TOTAL = 10
 OWASP_LLM_UNIVERSE: tuple[str, ...] = tuple(f"LLM{n:02d}" for n in range(1, OWASP_LLM_TOTAL + 1))
 
 #: The companion Responsible-AI codes our responsible-ai specs carry in the same ``owasp``
-#: field (6 of 72 specs). They are a DIFFERENT framework, so they are excluded from the OWASP
+#: field (6 of 75 specs). They are a DIFFERENT framework, so they are excluded from the OWASP
 #: numerator above and listed here instead: the linter accepts them, coverage never counts
 #: them. Without this second set, "accepted" and "counted" would be the same thing, which is
 #: how ``LLM11``, ``LLM00`` and a lowercase code all used to pass lint with zero warnings and
@@ -182,3 +186,75 @@ def unknown_atlas_tactic(tactic: str | None) -> str | None:
     if tactic in ATLAS_TACTIC_UNIVERSE or tactic in ATLAS_OUT_OF_MATRIX:
         return None
     return tactic
+
+
+#: Framework values a black-box runtime scanner **cannot reach**, with the reason. Physics, not
+#: preference: there is no request whose answer would settle them.
+#:
+#: The distinction from the dict below matters, and getting it wrong was the first version of
+#: this file. "Out of reach" and "we chose not to" are different sentences, and printing a
+#: decision under the first one tells a reader the category is impossible when what is true is
+#: that this product does not do it. An audit put it plainly: it dresses a design decision as a
+#: law of nature.
+#:
+#: Everything here stays in the **denominator**. Dropping it would raise every percentage by
+#: redefining the universe as the part we can already do, which is the denominator-over-
+#: survivors move the reporting layer refuses everywhere else (clause A-12).
+OUT_OF_REACH: dict[str, str] = {
+    "LLM03": (
+        "supply chain: provenance, packages and adapters cannot be asked of an endpoint, they "
+        "are answered by SBOM and vendor controls"
+    ),
+    "LLM04": (
+        "data and model poisoning: the training and fine-tuning stages need pipeline access. "
+        "Runtime poisoning of a durable store IS exercised (MEM-POISON-001, PI-INDIRECT-RAG-001) "
+        "and those specs count under the code they declare"
+    ),
+    "IOPC-T2.003": (
+        "training and fine-tuning data poisoning: the same pipeline access LLM04 needs, and the "
+        "same limit from the outside"
+    ),
+    "IOPC-T8.003": (
+        "offline attack staging: it happens on the attacker's own machine, so there is nothing "
+        "to send and nothing to observe at the target"
+    ),
+    "AI Model Access": (
+        "the adversary's own level of access to a model, which is not a behaviour any target "
+        "exhibits: there is no reply that settles it. Moved here from the by-design list, "
+        "where it did not belong: no version of this product would make it testable"
+    ),
+}
+
+#: Framework values this scanner **deliberately does not test**, with the reason. Every one is a
+#: decision that could be revisited, and none of them is a property of the category.
+NOT_TESTED_BY_DESIGN: dict[str, str] = {
+    "AI Attack Adaptation": (
+        "adapting an attack from the target's answers. Not implemented on purpose: the turns of "
+        "a multi-turn attack are pinned in the spec, which is what makes a finding replayable. "
+        "Parts of this tactic are reachable through an inference API, so this is a roadmap "
+        "decision, not a limit of black-box testing"
+    ),
+    "IOPC-T8.004": (
+        "acquiring access to an AI system: the scanner only touches endpoints it is already "
+        "authorized for, which is an authorization policy rather than a limit of reach"
+    ),
+}
+
+# Deliberately in NEITHER dict, and therefore in the roadmap: "Command and Control". The first
+# version called it adversary-side infrastructure that the replies cannot show, while this
+# repository ships `AG-PERSIST-BEACON-001` (an agent writing a cron entry that calls a C2-shaped
+# address) and `AG-EXFIL-EGRESS-001` (egress over a C2 channel), whose fixtures are exactly that
+# behaviour observed in a target's own tool calls. A claim of unobservability contradicted by
+# our own battery is a claim to withdraw, not to qualify.
+
+
+def not_tested_by_design_reason(code: str) -> str | None:
+    """Why ``code`` is deliberately untested, or ``None``."""
+
+    return NOT_TESTED_BY_DESIGN.get(code)
+
+
+def out_of_reach_reason(code: str) -> str | None:
+    """Why ``code`` is not something a black-box runtime scanner can cover, or ``None``."""
+
+    return OUT_OF_REACH.get(code)

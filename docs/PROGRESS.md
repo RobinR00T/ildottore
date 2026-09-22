@@ -3,6 +3,31 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-09-22 (night): campaign integrity, a measured -sV, honest gaps, live runbook
+
+- **`--resume` now binds to its campaign**, not to the invocation: a per-spec digest in the run
+  store refuses a resume whose battery changed (naming what changed, exit 3), and the persisted
+  cumulative spend makes a ceiling bind the campaign (`--budget-requests 6` twice sent 12).
+- **CI measures `-sV` instead of only running it**: `mock_scenario: comprehending` decodes
+  zero-width, rot13 and base64, so the carrier layer produces a real split and the plan comes
+  out reordered through the real layer, mutators and planner. A simulated decoder, not a model.
+- **Coverage tells the roadmap apart from what a black-box scanner cannot reach**, with a
+  reason per code, and the out-of-reach codes stay in the denominator.
+- **Battery 72 -> 75 specs**: `RECON-MODEL-IDENTITY-001` (IoPC T8.002),
+  `AG-CODEEXEC-UNEXPECTED-001` (T4.002), `DOS-RESOURCE-HIJACK-001` (R015). IoPC techniques
+  27/30, impacts 23/23. Two previously recorded out-of-scope decisions revised in `docs/15`,
+  with the reason, rather than flipped in silence.
+- **Live validation runbook: `docs/16-live-validation.md`** plus `make live-estimate`. Measured
+  today with `--estimate`: a bare hosted model exercises **34 of 75** specs for **550
+  requests**; a fully capable deployment **67 of 75** for **780** (+17 probes with `-sV`). The
+  capability gate is why a raw endpoint cannot exercise the battery, and 8 specs stay blocked
+  by the default policy pack on purpose.
+- **Contract clauses A-24, A-25, A-26.** Gates green (95%+ coverage), 75 specs / 14 suites.
+- **Still open and needing Daniel**: the accounts, the models and the spend for a live run.
+  Everything else for it is written down.
+
+---
+
 ## State, 2026-08-31, first real over-the-wire scans (Ollama + a vulnerable chatbot)
 
 - **Ran Il Dottore against real targets for the first time** (local, no API key): a raw

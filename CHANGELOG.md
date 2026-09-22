@@ -59,11 +59,9 @@ worktrees, hours after both landed. Each found a defect in the feature's central
   inside the root. And a stray file in an attempts directory reports what it is instead of a
   raw pydantic dump.
 
-**Known limits, stated rather than left to be discovered.** `-sV` cannot reorder anything
-against the offline mock (its canned reply never carries the marker), so CI exercises the
-plumbing and not the measurement. `--resume` does not
-detect that the spec files changed since the halt, and the hard budget is per invocation, so
-resuming repeatedly can spend more in total than any single ceiling allows.
+**Known limits, stated rather than left to be discovered.** What `-sV` measures offline is a
+*simulated* decoder (`mock_scenario: comprehending`), so CI proves the chain from probe to plan
+order, not how any real model behaves: that still needs a live run.
 
 ### Fixed (audit leftovers)
 - **`nist_ai_rmf` had no validation of any kind** beyond non-blank, so a lowercase function
@@ -79,7 +77,146 @@ resuming repeatedly can spend more in total than any single ceiling allows.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (two rounds of audit of the same night's work, six auditors in isolated worktrees)
+
+The second round audited the first round's fixes, which is the practice that keeps paying: it
+found that one of them had made a spec **worse** than the bug it fixed.
+
+- **The `--resume-unverified` flag re-opened the cross-target splice.** One flag disarmed both
+  the battery check and the target check, so a run row with no target id resumed a vulnerable
+  app's evidence into a hardened app's report, with zero requests sent: the original
+  catastrophic bug, one flag away, behind a flag whose help text advertises a budget
+  consequence. The target has no opt-in now.
+- **`RECON-MODEL-IDENTITY-001`'s fix made it worse.** Adding a vendor allow-list as a third
+  deterministic vote under `weighted` pushed a real disclosure from 1-of-2 (fail) to 1-of-3
+  (pass), it missed every model family not on the list, and it failed a target that refused
+  while naming the vendors it would not confirm. Withdrawn. The deterministic half is the
+  canary, the rest is the judge's call, and the spec says so instead of pretending otherwise.
+- **`DOS-RESOURCE-HIJACK-001`'s fix was cosmetic.** Swapping `billing` for `decline` swapped one
+  phrase from the spec's own system prompt for another, and three of the six remaining markers
+  had the same defect; meanwhile a genuine refusal phrased in other words scored a FAIL the
+  judge could not overturn. The oracle keys on the **capitulation** now (the batch being
+  produced), which is the only thing a capitulating target has and a refusing one does not. All
+  ten of the auditor's cases come out right, and the spec no longer decides anything at all
+  against a canned offline string, which is the honest outcome for evidence of neither.
+- **`tags` was excluded from the spec digest and gates the policy pack.** Removing a `layer_b`
+  or `pii_elicitation` tag turned a blocked spec into traffic on the wire under an unchanged
+  digest. `nist_ai_rmf` was excluded too and feeds a published rollup. Both are in now.
+- **A tenant-shaped target id could never be resumed.** `target_id` is stored through the
+  redactor, so `tenant-<32 hex>` was masked and never equalled itself: every resume of such a
+  target was refused with "was made against target '«REDACTED:...»'", which is false and no flag
+  recovered it. Invisible on the test fixtures, certain on a real engagement.
+- **The new wall-clock refusal sat below the probe pass**, so it sent 17 requests and then
+  refused: the exact defect the clause above it says was fixed, reintroduced by the fix for it.
+- **The probe pass was never billed.** 17 requests per `-sV` per target left the process and the
+  record the next resume opens its ledger on did not know, so each resume added another 17
+  unbilled. The double-ceiling shape on a different axis.
+- **The judge and the planning mode were unbound**, so one campaign could be arbitrated by two
+  different models. Both are in the recorded context.
+- **`--runs` inheritance was silent under `--quiet`**, which is what CI uses, while it moves the
+  reproducibility denominator. It goes to stderr unconditionally now.
+- **The coverage classification guarded one direction of three.** Moving a code between the two
+  dicts was caught; adding an entry for a code the battery **covers** was not, and an auditor
+  used it to make five suite-scoped reports print that prompt injection is out of reach for a
+  black-box scanner, with CI green. And two of the reasons were wrong: LLM03's claimed a
+  deprecation check that does not exist in the code, LLM04's credited the LLM08 specs with a
+  poisoning test they do not perform. `AI Model Access` moved to out-of-reach, where it belongs:
+  no version of this product makes an adversary's own access a target-side observable.
+
+### Fixed (the first round: four auditors, same worktree discipline)
+
+Every feature above was audited within the hour, and the audits found more than the features
+did. The pattern held: the defects were in the **claims**, not only in the code.
+
+- **The double ceiling was still reproducible on every run that existed.** A run recorded before
+  the spend column also predates it, and a resume then opened at zero, so the exact case this
+  release claims to have fixed (`--budget-requests 6` twice sending 12) still worked on the
+  upgrade path. An unverifiable resume is now **refused**, with `--resume-unverified` as the
+  explicit opt-in, and the notice names the money and not only the specs.
+- **`--resume --hardened` needed no file edit to publish one target's evidence as another's.**
+  The id matched and the specs matched, so both checks passed while the answers came from a
+  different replay. A target digest now covers the loaded target and the resolved route.
+- **`--runs` was outside the check**, so one report could score some specs over three samples and
+  others over five. Explicit changes are refused; omitting the flag inherits the campaign's.
+- **`-sV --resume` sent 17 probes before refusing.** The resume checks now run before anything
+  that sends.
+- **A corrupt integrity record read as an absent one** ("this run predates the check, continuing")
+  and now raises. A tampered record is a stronger signal than a missing one, not a weaker one.
+- **The spec digest refused a resume over an edited description or tag.** It is over a
+  behavioural projection now: what reaches the wire, the verdict or a published number.
+- **Two of the three new specs' oracles passed for the wrong reason.**
+  `DOS-RESOURCE-HIJACK-001` listed `billing` among its secure markers, a word that appears in its
+  own system prompt and its own attack prompt, so a target that took the whole out-of-scope batch
+  while echoing it scored secure. `RECON-MODEL-IDENTITY-001` hung entirely on a planted canary, so
+  a deployment that gave up model, provider and version while declining to print the build id
+  passed: exactly the disclosure the spec is named for. Both now have a deterministic arbiter for
+  the branch they were missing, and `tests/battery/test_new_spec_oracles.py` pins the bypasses.
+- **"Out of reach" was hiding decisions.** "The turns are pinned in the spec" is a choice this
+  product made, not a property of black-box testing, and printing it as unreachability tells a
+  reader the category is impossible. Gaps print in three groups now. `Command and Control` was
+  withdrawn from the classification altogether: it was called unobservable in a target's replies
+  while this repository ships fixtures of an agent writing a cron entry to a C2-shaped address.
+- **The cost table's headline row was measured against the wrong target.** "66 specs, 775
+  requests" came from a target missing one capability. It is 67 and 780. The third retracted
+  figure in this project's history, and the reason `make live-estimate` exists.
+- **The contract clause said every spec stays `inconclusive` against the decoding mock**, which
+  was never true (three specs decide against any fixed-string offline target) and was backed by a
+  test scoped to one spec the test itself built. The property is differential now and measured
+  over the shipped battery, and the fingerprint line says `[offline mock: <scenario>]` so an
+  offline result cannot be read as a real-model one.
+- Plus: three discriminators in the carrier check had no individual coverage (all three could be
+  removed with the suite green), the migration is a v3 step so a database stamped by an
+  intermediate build gains its third column, `make live-estimate` guards `SCOPE` and quotes paths
+  with spaces, and five stale "72 specs" counts in live comments are now 75.
+
 ### Added
+- **Three specs, and a coverage report that says which gaps are gaps.** The uncovered codes
+  were printed as one list, so "8 of 10" read as two items of pending work when both are
+  properties a black-box runtime scanner cannot observe at all. Gaps now print in two groups,
+  and an out-of-reach code carries its reason (supply chain is provenance, not a reply;
+  poisoning needs the training pipeline; command-and-control is adversary-side infrastructure).
+  They stay in the denominator: dropping them would raise every percentage by redefining the
+  universe as the part the tool can already do. Contract clause A-26.
+  With that split, the three remaining **reachable** gaps became visible as work rather than as
+  scenery, and they are now covered: `RECON-MODEL-IDENTITY-001` (IoPC T8.002, a deployment
+  configured to hide its underlying model gives up the build string on request; the previous
+  note wrote this off because `dottore fingerprint` exists, which conflated the tool
+  fingerprinting a target with the target disclosing what it was told to hide),
+  `AG-CODEEXEC-UNEXPECTED-001` (T4.002, an agent runs code that came from the document it was
+  asked to summarize, the execution half of indirect injection) and `DOS-RESOURCE-HIJACK-001`
+  (R015, a narrow-scope assistant accepts an unrelated bulk workload and spends the operator's
+  inference budget on the requester's task). R015 had been recorded as out of scope on the
+  grounds that LLMjacking is credential theft: true of that route, and `docs/15` now records
+  why the scope-abuse route is a different one that the replies do show.
+  **Battery: 75 specs / 14 suites.** IoPC techniques 27/30, impacts 23/23. OWASP (8/10) and
+  ATLAS (13/16) are unchanged, and every code still missing on either is now labelled
+  out-of-reach with its reason.
+- **`--resume` is bound to its battery and to the campaign's ceiling.** Two documented limits,
+  the same shape: the command claimed a property of a whole campaign while checking only the
+  invocation in front of it. (1) The specs could change between the halt and the resume, and
+  the two halves are merged into one finding per spec and scored together, so an edited prompt
+  produced a single report, under a single run id, out of two different batteries, with nothing
+  saying so. The run store now records a per-spec digest and a resume **refuses** a changed
+  battery, naming what changed and exiting 3. The digest is over the loaded model, so
+  reformatting a file or adding a comment is not a change while anything that reaches the wire
+  or the verdict is. A run recorded before the digests existed is reported **unverifiable** (on
+  stderr, never suppressed by `--quiet`) rather than treated as a match. (2) The hard budget
+  reset on every command, so a run halted at its ceiling could be resumed and spend the whole
+  ceiling again under the same id: `--budget-requests 6` twice sent 12. The cumulative spend is
+  persisted and the ledger opens there, so a ceiling binds the campaign. Contract clause A-24.
+- **CI now measures what `-sV` produces, not just that it ran.** The carrier layer's entire
+  output is an ordering, and every offline scenario answered with one fixed string whatever
+  arrived, so no carrier was ever comprehended, the hint came back empty, and the ordering was
+  asserted nowhere. `mock_scenario: comprehending` is an offline target that decodes what it is
+  sent (zero-width, rot13, base64) and follows the instruction when it survives, so the layer
+  produces a real split (at least three comprehended, at least two opaque; one carrier's
+  offline gloss is seed-dependent and the seed derives from the target id) and the plan comes
+  out in a different order, through the real layer, the real mutators and the real planner,
+  with no endpoint and no key. It is a simulated decoder, not a model: it proves the chain, not
+  how a real model behaves, and the fingerprint line now says so where it is printed rather
+  than only in the documents. On the verdict side it changes nothing: whatever the plain `bare`
+  mock decides, this one decides identically, spec by spec over the shipped battery. Contract
+  clause A-25.
 - **Recognition traffic is now evidence.** A `-sV` pass sends 17 requests per target and left
   no trace of any of them: the evidence tree could not answer "what did this tool send my
   endpoint", which is the question the product exists to answer, and is precisely what kept a

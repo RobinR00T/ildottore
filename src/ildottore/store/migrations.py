@@ -13,18 +13,52 @@ re-run on an already-current DB does nothing and returns the current version.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
 _SCHEMA_SQL_PATH: Final = Path(__file__).with_name("schema.sql")
 
 # The current (latest) schema version. Bump + append to _MIGRATIONS to evolve.
-SCHEMA_VERSION: Final = 1
+SCHEMA_VERSION: Final = 3
 
-# Ordered forward-only migration steps: (target_version, ddl). Step N is applied
+
+def _add_run_context_columns(conn: sqlite3.Connection) -> None:
+    """v2: record WHICH battery a run executed, against WHAT target, and what it spent.
+
+    Both exist for ``--resume``, which reuses a run id across invocations: the digests let a
+    resume refuse a battery that changed under it, and the spend lets the ledger open where
+    the halted invocation stopped instead of granting a fresh ceiling every time.
+
+    Written as a callable rather than DDL because SQLite's ``ADD COLUMN`` is not re-runnable
+    (it errors when the column is already there), and every other step in this file is.
+    """
+
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "runs" not in tables:
+        # A stamped database with no `runs` table (a drop, a partial restore). Previously it
+        # opened and failed later at query time; failing here would be a new behaviour, and an
+        # unannounced one, so the step does nothing and leaves the diagnosis where it was.
+        return
+    # Positional indexing, not row["name"]: `migrate(conn)` is public and used to work on a
+    # plain connection, and requiring a `sqlite3.Row` factory would have broken that silently.
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+    for column in ("spec_digests_json", "spend_json", "context_json"):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE runs ADD COLUMN {column} TEXT")
+
+
+# Ordered forward-only migration steps: (target_version, ddl-or-callable). Step N is applied
 # only when the DB is currently below N.
-_MIGRATIONS: Final[list[tuple[int, str]]] = [
+_MIGRATIONS: Final[list[tuple[int, str | Callable[[sqlite3.Connection], None]]]] = [
     (1, _SCHEMA_SQL_PATH.read_text(encoding="utf-8")),
+    (2, _add_run_context_columns),
+    # v3 re-runs the SAME column step. The step is idempotent per column, but `migrate` skips
+    # any step at or below the stored version, so a database stamped v2 by an intermediate
+    # build (before `context_json` joined the step) would never gain the third column and every
+    # write to it would fail with "no such column". Forward-only means adding a step, not
+    # editing one that has already been stamped somewhere.
+    (3, _add_run_context_columns),
 ]
 
 
@@ -65,10 +99,13 @@ def migrate(conn: sqlite3.Connection) -> int:
 
     start = current_version(conn)
     with conn:  # single transaction; rolls back on error
-        for version, ddl in _MIGRATIONS:
+        for version, step in _MIGRATIONS:
             if version <= start:
                 continue
-            conn.executescript(ddl)
+            if callable(step):
+                step(conn)
+            else:
+                conn.executescript(step)
             conn.execute(
                 "INSERT OR IGNORE INTO schema_version (version) VALUES (?)",
                 (version,),

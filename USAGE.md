@@ -107,7 +107,7 @@ dottore calibrate report.json labels.yaml
 | `--judge` | judge model `target.yaml` (LLM-as-judge for `semantic_judge` on live scans) |
 | `--suite` | `owasp:llm` (alias of `owasp-llm-top10`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion` |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) at `-T0`. Conflicts with an explicit `--suite` |
-| `--deep` | the full battery (72 specs) with adaptive planning at `-T2` |
+| `--deep` | the full battery (75 specs) with adaptive planning at `-T2` |
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |
 | `--spec` / `--exclude` | run/skip specific spec ids or globs (e.g. `PI-*`); repeatable |
 | `--top-tests N` | keep the N highest-signal specs |

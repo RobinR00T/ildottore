@@ -7,9 +7,12 @@ process, so it is safe to run and to paste into a document.
 
 Two design choices worth stating:
 
-* **The gaps are printed, not just the percentages.** A coverage number with no list of what
-  is missing invites the reader to assume the remainder is small or unimportant. Naming the
-  uncovered codes is the honest form, and it is also the useful one: it is the roadmap.
+* **The gaps are printed, not just the percentages, and in three groups.** A coverage number
+  with no list of what is missing invites the reader to assume the remainder is small. Naming
+  the uncovered codes is the honest form; naming them in one list was not, because it read as
+  one queue of pending work. What is *not covered yet* is the roadmap, what is *out of reach*
+  is physics (no request settles it), and what is *not tested by design* is a decision this
+  product made and could revisit. All three stay in the denominator (clause A-26).
 * **Off-universe values never count**, and this command says how many it dropped. A
   Responsible-AI ``RAI0x`` code is not an OWASP LLM category and an IoPC code outside the
   pinned taxonomy is a lint error, so neither reaches a numerator. Percentages therefore
@@ -96,11 +99,29 @@ def render_coverage(
         return "\n".join(lines)
 
     for axis in axes:
-        if not axis.missing:
-            continue
-        lines.extend(["", f"  Not covered, {axis.label}:"])
-        for code, title in axis.missing:
-            lines.append(f"    {code}  {title}" if title != code else f"    {code}")
+        if axis.missing:
+            lines.extend(["", f"  Not covered yet, {axis.label}:"])
+            for code, title in axis.missing:
+                lines.append(f"    {code}  {title}" if title != code else f"    {code}")
+        for header, entries in (
+            (f"  Out of reach for a black-box runtime scanner, {axis.label}:", axis.out_of_reach),
+            (f"  Deliberately not tested, and why, {axis.label}:", axis.by_design),
+        ):
+            if not entries:
+                continue
+            lines.extend(["", header])
+            for code, title, reason in entries:
+                head = f"    {code}  {title}" if title != code else f"    {code}"
+                lines.append(head)
+                lines.append(f"      {reason}")
+    if any(a.out_of_reach or a.by_design for a in axes):
+        lines.extend(
+            [
+                "",
+                "  Both lists stay in the denominator: removing them would raise every",
+                "  percentage by redefining the universe as the part this tool can already do.",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -152,7 +173,18 @@ def render_coverage_json(
                 "pct": a.pct,
                 "covered": [{"code": c, "title": t} for c, t in a.covered],
                 **(
-                    {"missing": [{"code": c, "title": t} for c, t in a.missing]}
+                    {
+                        "missing": [{"code": c, "title": t} for c, t in a.missing],
+                        # Named, not merged into `missing`: a consumer that adds the two
+                        # lists gets the old number back, one that reads them apart can say
+                        # what is roadmap and what is not this tool's job.
+                        "out_of_reach": [
+                            {"code": c, "title": t, "reason": r} for c, t, r in a.out_of_reach
+                        ],
+                        "not_tested_by_design": [
+                            {"code": c, "title": t, "reason": r} for c, t, r in a.by_design
+                        ],
+                    }
                     if show_gaps
                     else {}
                 ),

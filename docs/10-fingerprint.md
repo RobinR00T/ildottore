@@ -46,9 +46,13 @@ Two roles for fingerprinting: both first-class:
    the same `--rate` ceiling as attack traffic, and `--dry-run` / `--estimate` / `-sn` send
    none of them.
 
-   **One limit worth knowing before you rely on it.** Against the offline mock the probes
-   never come back with the marker, so `-sV` orders nothing there: only a live target can
-   reorder a battery, and CI therefore exercises the plumbing rather than the measurement.
+   **One limit worth knowing before you rely on it.** What CI measures is a *simulated*
+   decoder: `mock_scenario: comprehending` is an offline target that strips zero-width
+   padding and decodes rot13 and base64, so the layer produces a real split and the plan
+   really is reordered by it, end to end and with no endpoint. That proves the chain, not
+   how any given model behaves. The bare/fixture scenarios still answer with a fixed string,
+   so `-sV` orders nothing against those, and the claim "this carrier works on that model"
+   only ever comes from a live run.
 
    **The probes are evidence.** Each one is stored under `<run-id>/probes/` through the same
    redacted, content-addressed path as an attack attempt, and `dottore replay` lists them

@@ -191,7 +191,7 @@ required.
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
 | `--top-tests INT` | keep the N highest-signal specs |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) and timing `-T0`. Conflicts with an explicit `--suite` (pass one) |
-| `--deep` | the full battery with fingerprint-tailored planning and timing `-T2`. It does **not** select a larger suite: the whole shipped battery is 72 specs, and `--deep` runs all of it |
+| `--deep` | the full battery with fingerprint-tailored planning and timing `-T2`. It does **not** select a larger suite: the whole shipped battery is 75 specs, and `--deep` runs all of it |
 
 **Discovery and aggression**
 
@@ -213,7 +213,7 @@ required.
 | `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
-| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt already stored in the evidence tree, and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. Known limits: it does not detect that the spec files changed since the halt, and the hard budget is per invocation, so resuming repeatedly can spend more in total than any single ceiling |
+| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt already stored in the evidence tree, and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N |
 | `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
 | `--compare` | model-comparison matrix across targets (a band per spec x target), printed in the terminal and embedded in the JSON report. The matrix renders for **any** multi-target run; `--compare` states the intent and refuses a single target (exit 3) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) |
@@ -345,35 +345,59 @@ dottore coverage --json               # for a dashboard or a report generator
 ```
 
 ```
-Battery coverage (72 specs, no scan performed)
+Battery coverage (75 specs, no scan performed)
 
   OWASP LLM Top 10 (2025)              8/10   80%
   MITRE ATLAS tactics (2026.09)       13/16   81%
-  IoPC techniques (live-2026-09-19)   25/30   83%
-  IoPC impacts (live-2026-09-19)      22/23   95%
+  IoPC techniques (live-2026-09-19)   27/30   90%
+  IoPC impacts (live-2026-09-19)      23/23  100%
 
-  Not covered, OWASP LLM Top 10 (2025):
+  Out of reach for a black-box runtime scanner, OWASP LLM Top 10 (2025):
     LLM03
+      supply chain: ... (the full reason is printed; it is one line per code)
     LLM04
+      data and model poisoning: ...
 
     ...
 ```
 
 Each axis names the edition it is measured against, and the percentages are **floored**: an
-incomplete axis never reads 100%, and 22/23 is 95%, not 96%. (This block published
+incomplete axis never reads 100%, and 13/16 is 81%, not 82%. (This block published
 `12/14 86%` until 2026-09-21, the retracted ATLAS figure, in the same commit whose changelog
 called it wrong. A number copied into prose does not get re-derived when the code is fixed,
 which is the argument for `dottore coverage` existing: run it rather than trust this block.)
 ```
 
-The uncovered codes are printed, not just counted. A coverage percentage with no list of what
-is missing invites the reader to assume the remainder is small; naming the gaps is the honest
-form and doubles as the roadmap. Off-universe values never reach a numerator (a Responsible-AI
+The uncovered codes are printed, not just counted, and they are printed in **two groups**:
+what is not covered *yet* (the roadmap) and what a black-box runtime scanner cannot reach at
+all, each with the reason. Training-pipeline poisoning, adversary-side infrastructure and
+model provenance are not work in progress; saying so is what keeps the first list meaning what
+it says. Out-of-reach codes stay in the **denominator**: dropping them would raise every
+percentage by redefining the universe as the part the tool can already do. Off-universe values never reach a numerator (a Responsible-AI
 `RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%.
+
+### `mock_scenario`, the offline replay selector
+
+An optional key in `target.yaml`, honoured **only** by the offline mock and ignored by every
+real adapter. It decides what an offline target answers:
+
+| value | what it answers | what a run against it means |
+|---|---|---|
+| `bare` (default) | one canned string | every spec `inconclusive`, no fabricated verdict |
+| `vulnerable` | each spec's own `fixtures.vulnerable` | proves the detect path end to end |
+| `hardened` | each spec's own `fixtures.hardened` | the clean-run smoke test |
+| `comprehending` | it **decodes** what it was sent (zero-width, rot13, base64) and follows a decodable instruction | the only offline mode in which `-sV`'s carrier measurement produces a real split, so CI can assert the plan ordering |
+
+`comprehending` is a **simulated decoder, not a model**. It shows that a target which
+comprehends some carriers and not others changes the plan, through the real layer, the real
+mutators and the real planner. It says nothing about how any actual model behaves: that needs a
+live run, and the fingerprint line prints `[offline mock: <scenario>]` so an offline result is
+never read as one. Three specs decide against any fixed-string offline target (their oracles
+read only the response text); `comprehending` decides exactly what `bare` decides, no more.
 
 ## 6. The attack battery
 
-72 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
+75 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
 the Nova IoPC taxonomy. Every spec carries its framework mapping, including an optional
 two-axis `iopc:` block (`techniques` = the how, `impacts` = the damage), and the run report
 measures coverage against the pinned IoPC universe, so "we passed" always comes with "of what".
@@ -389,7 +413,7 @@ Suites (with the count `registry ls --suite <id>` reports):
 | `owasp-llm-top10` (alias `owasp:llm`) | 18 | the OWASP LLM Top 10 baseline |
 | `quick` | 18 | fast triage battery (`--quick`) |
 | `multi-turn` | 5 | Crescendo / Linear / Sequential / Bad-Likert / Tree |
-| `access-control` | 9 | BFLA / BOLA / RBAC / SSRF / debug-interface / argument-smuggling |
+| `access-control` | 10 | BFLA / BOLA / RBAC / SSRF / debug-interface / argument-smuggling |
 | `agentic-owasp2026` | 6 | goal theft / recursive hijack / identity abuse / inter-agent / autonomy drift / tool-orchestration abuse |
 | `obfuscation-enhancers` | 2 | encoding / obfuscation bypass enhancers |
 | `embeddings` | 3 | embedding inversion / neighbor leak / cross-tenant retrieval |
@@ -399,7 +423,7 @@ Suites (with the count `registry ls --suite <id>` reports):
 | `guardrail-evasion` | 2 | moderation-layer evasion, input classifier + output filter |
 | `multimodal` | 6 | image injection (direct / document / split across two carriers / harmful-request), a visual-to-agentic bridge, and a spoken prompt injection carried in an audio clip |
 | `structured-output` | 3 | function-calling and structured-output contract: argument smuggling, out-of-schema field coercion, enum escape |
-| `nova-iopc` | 10 | coverage-gap battery mapped against the Nova IoPC taxonomy (see `docs/15`) |
+| `nova-iopc` | 13 | coverage-gap battery mapped against the Nova IoPC taxonomy (see `docs/15`) |
 
 Select with `--suite`, `-p/--categories`, `--spec`/`--exclude` (globs), or `--top-tests`.
 

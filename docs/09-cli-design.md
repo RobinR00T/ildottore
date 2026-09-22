@@ -40,7 +40,7 @@ SCAN TYPE
   -sV                               fingerprint model + guardrails before attacking
   -A                                aggressive: implies -sV + --deep (adaptive planning)
   --quick                           T0 battery: --suite quick (18 specs) at -T0
-  --deep                            the full battery (72 specs), adaptive, at -T2
+  --deep                            the full battery (75 specs), adaptive, at -T2
 
 SELECTION
   --suite <name>                    owasp:llm (default) | mitre:atlas | nist:ai | eu:ai-act

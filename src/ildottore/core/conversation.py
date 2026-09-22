@@ -276,7 +276,7 @@ async def reproduce_conversation(
             now=now,
             # Forwarded, which it was not: this function took a ``pacer`` and dropped it one
             # hop short, so every multi-turn spec ran UNPACED while the single-turn path
-            # obeyed the ceiling. 11 of 72 shipped specs are multi-turn, but 42% of a full
+            # obeyed the ceiling. 11 of 75 shipped specs are multi-turn, but 42% of a full
             # battery's requests, and the measured breach was 19x the authorized rate.
             pacer=pacer,
         )

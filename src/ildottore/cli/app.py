@@ -160,7 +160,10 @@ def run(
     timeout_s: Annotated[
         float | None, typer.Option("--timeout", help="Per-attempt timeout (s).")
     ] = None,
-    runs: Annotated[int, typer.Option("--runs", help="Reproducibility runs (default 5).")] = 5,
+    runs: Annotated[
+        int | None,
+        typer.Option("--runs", help="Reproducibility runs (default 5)."),
+    ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Resolve + validate; send nothing.")
     ] = False,
@@ -177,6 +180,14 @@ def run(
             help="Finish a halted run: its id. Completed attempts are not re-sent.",
         ),
     ] = None,
+    resume_unverified: Annotated[
+        bool,
+        typer.Option(
+            "--resume-unverified",
+            help="Resume a run whose integrity record is missing (its ceiling then covers "
+            "this invocation only).",
+        ),
+    ] = False,
     fail_on: Annotated[
         str, typer.Option("--fail-on", help="CI gate band (low|medium|high|critical).")
     ] = "high",
@@ -259,10 +270,12 @@ def run(
         budget_wall_s=budget_wall,
         concurrency=concurrency,
         timeout_s=timeout_s,
-        runs=runs,
+        runs=runs if runs is not None else 5,
+        runs_explicit=runs is not None,
         dry_run=dry_run,
         estimate=estimate,
         resume=resume,
+        resume_unverified=resume_unverified,
         fail_on=fail_on,
         include_needs_review=include_needs_review,
         compare=compare,

@@ -65,7 +65,7 @@ _PLAIN_WORD: Final = re.compile(r"^[a-z]+$")
 # The entropy fallback must fire on *opaque* tokens only. A separator-structured token -
 # a spec id (``AG-TOOLCHAIN-EXFIL-001``), a model name (``qwen2.5-coder-32b-instruct``), a
 # URL path carrying a port (``11434/v1/chat/completions``) - scores high bits/char purely
-# because its short segments barely repeat a character: 15 of the 72 shipped spec ids sat
+# because its short segments barely repeat a character: 15 of the 75 shipped spec ids sat
 # at 3.72-3.94 bits/char, i.e. over the 3.7 threshold. Masking one hides nothing and
 # destroys a join key (``spec_id`` drives ``dottore diff`` and the SARIF rule id), so both
 # shapes are exempted **by shape** - not by raising the global threshold, which would also

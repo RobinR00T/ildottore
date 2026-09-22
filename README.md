@@ -16,7 +16,7 @@ model DoS). Aligned to **OWASP LLM Top 10 (2025)**, **MITRE ATLAS** and **NIST A
 
 ## What it does
 
-- **72 declarative attack specs across 14 suites** covering the OWASP LLM Top 10, MITRE
+- **75 declarative attack specs across 14 suites** covering the OWASP LLM Top 10, MITRE
   ATLAS, agentic/OWASP-Agents-2026 abuse and the Nova IoPC taxonomy. `dottore registry ls` lists them all.
 - **Fingerprint** a target's model + guardrails before attacking (`-sV`).
 - **Multi-turn** attacks (Crescendo, Linear, Sequential, Bad-Likert, Tree) whose turns are
@@ -44,6 +44,10 @@ Both commands run against a fresh clone with no server and no credential. (The p
 quickstart named `target.yaml` and `scope.yaml`, which do not exist in this repository, so
 it could not be copied and pasted: a scan needs a target file and an authorization record,
 and the shipped examples are those two files.)
+
+Scanning something real, with a bill attached? [`docs/16-live-validation.md`](docs/16-live-validation.md)
+is the runbook: what is and is not verified today, what it costs (measured, not guessed), and the
+order to run it in.
 
 New here? Read [`USAGE.md`](USAGE.md) (practical guide) then [`examples/`](examples/)
 (copy-pasteable scenarios, from "no server, no key" to a full fleet). Full reference:

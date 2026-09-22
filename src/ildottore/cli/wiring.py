@@ -32,6 +32,7 @@ from ildottore.adapters import (
     RestAdapter,
     RestTemplate,
 )
+from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
 from ildottore.core.pacing import RateLimiter
@@ -83,6 +84,7 @@ __all__ = [
     "build_runner",
     "build_scope",
     "check_target_credential",
+    "comprehending_adapter_factory",
     "deterministic_clock",
     "fingerprint_probe",
     "hardened_adapter_factory",
@@ -103,9 +105,13 @@ __all__ = [
 #: The offline mock-replay scenarios a ``target.yaml`` may select via ``mock_scenario``.
 #: ``bare`` (default) returns a generic canned response → every spec ``inconclusive``;
 #: ``vulnerable`` replays each spec's ``fixtures.vulnerable`` → ``fail``; ``hardened``
-#: replays ``fixtures.hardened`` → ``pass``. A real over-the-wire adapter (u04) ignores
-#: this - the field only steers the deterministic offline mock (contract §5).
-MOCK_SCENARIOS = ("bare", "vulnerable", "hardened")
+#: replays ``fixtures.hardened`` → ``pass``. ``comprehending`` decodes what it is sent and
+#: follows a decodable instruction, which is the only offline scenario in which ``-sV``'s
+#: carrier measurement can produce anything but an empty hint (verdicts stay ``inconclusive``,
+#: exactly like ``bare``: it recognises no attack, it only decodes). A real over-the-wire
+#: adapter (u04) ignores this - the field only steers the deterministic offline mock
+#: (contract §5).
+MOCK_SCENARIOS = ("bare", "vulnerable", "hardened", "comprehending")
 
 #: The ``spec_id`` stored on a recognition probe. Not a real spec id, and deliberately not one:
 #: a probe is not an attack attempt, so nothing that groups by spec should ever mistake it for
@@ -258,6 +264,7 @@ def build_probe_adapter(
     *,
     real_target: Target | None = None,
     scenario: MockScenario | None = None,
+    mock_scenario: str | None = None,
 ) -> TargetAdapter:
     """The adapter a fingerprint/discovery probe should talk to (``-sV``, ``dottore
     fingerprint``).
@@ -277,6 +284,10 @@ def build_probe_adapter(
         return build_real_adapter(
             real_target, allowlist, api_key=_authorized_api_key(scope, real_target)
         )
+    if mock_scenario == "comprehending" and scenario is None:
+        # The one offline target whose answer depends on what was sent, so the carrier layer
+        # measures something instead of scoring every carrier zero against a fixed string.
+        return ComprehendingMock(id=target.id, capabilities=target.capabilities)
     canned = (
         scenario
         if scenario is not None
@@ -393,6 +404,17 @@ def bare_adapter_factory(target: Target, _spec: AttackSpec) -> TargetAdapter:
     return MockTarget(bare_scenario(capabilities=target.capabilities), id=target.id)
 
 
+def comprehending_adapter_factory(target: Target, _spec: AttackSpec) -> TargetAdapter:
+    """Attack traffic against the decoding mock: it decodes, it does not play along.
+
+    It answers an attack prompt the way it answers anything it cannot parse as its one known
+    instruction, so every spec comes out ``inconclusive``, as with ``bare``. The scenario
+    exists for the fingerprint pass, and it must not fabricate a verdict to pay for it.
+    """
+
+    return ComprehendingMock(id=target.id, capabilities=target.capabilities)
+
+
 def scenario_judge_adapter(scenario: str) -> TargetAdapter | None:
     """A deterministic offline *judge* whose verdict matches the mock scenario.
 
@@ -443,6 +465,8 @@ def scenario_adapter_factory(
         return hardened_adapter_factory
     if scenario == "bare":
         return bare_adapter_factory
+    if scenario == "comprehending":
+        return comprehending_adapter_factory
     raise ValueError(
         f"unknown mock_scenario {scenario!r}; expected one of {', '.join(MOCK_SCENARIOS)}"
     )
@@ -718,6 +742,7 @@ def fingerprint_probe(
     rate_rps: float | None = None,
     evidence: FsEvidenceStore | None = None,
     run_id: str | None = None,
+    mock_scenario: str | None = None,
 ) -> ModelFingerprint:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
@@ -727,7 +752,9 @@ def fingerprint_probe(
     what an offline mock wants.
     """
 
-    adapter = build_probe_adapter(scope, target, real_target=real_target)
+    adapter = build_probe_adapter(
+        scope, target, real_target=real_target, mock_scenario=mock_scenario
+    )
     if rate_rps is not None and rate_rps > 0:
         adapter = cast("TargetAdapter", _PacedAdapter(adapter, RateLimiter(rate_rps)))
     if evidence is not None and run_id is not None:

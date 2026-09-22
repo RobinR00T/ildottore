@@ -37,11 +37,11 @@ This is the **minimum battery** shipped by default, distilled from the ecosystem
 |---|---|---|---|---|
 | **T0: Quick** | `--quick` | nmap-default equivalent: fast triage, cheap (mostly single-turn; `JB-ROLEPLAY-001` is multi-turn) | 18 | minutes |
 | **T1: Standard** | `--suite owasp:llm` (default) | full OWASP LLM Top 10 2025 coverage | ~60 | tens of min |
-| **T2: Deep** | `--deep` / `--suite agentic` | multi-turn, adaptive, agentic/RAG, dataset-backed | 72 (the whole shipped battery) | long |
+| **T2: Deep** | `--deep` / `--suite agentic` | multi-turn, adaptive, agentic/RAG, dataset-backed | 75 (the whole shipped battery) | long |
 
 `--quick` selects the `quick` suite; `--deep` runs the **full** battery with adaptive,
 fingerprint-tailored planning at `-T2` timing. The "150+" in the original design table was a
-target, not a measurement: the battery ships 72 specs today, so `--deep` runs 72. (Until
+target, not a measurement: the battery ships 75 specs today, so `--deep` runs 75. (Until
 2026-09-21 both flags only moved the timing template and changed no battery at all, which is
 the defect this row now states honestly.)
 

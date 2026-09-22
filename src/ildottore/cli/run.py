@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,11 +36,13 @@ from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
+from ildottore.core.budgets import Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
+from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import Category
 from ildottore.shared.models import (
     AttackSpec,
@@ -133,6 +136,15 @@ class RunOptions:
     #: ``--resume <run-id>``: finish a campaign that halted, reusing its run id and skipping
     #: the attempts already persisted in the evidence store.
     resume: str | None = None
+    #: ``--resume-unverified``: continue a resume whose integrity record is missing (a run from
+    #: before the record existed). Never a default: the missing record is also the missing
+    #: SPEND record, so the invocation gets a fresh ceiling and the operator has to say so.
+    resume_unverified: bool = False
+    #: True when the operator typed ``--runs``. A resume without it INHERITS the campaign's
+    #: sample size instead of refusing: the check exists so one report never scores some specs
+    #: over three samples and others over five, and inheriting achieves that without making
+    #: the operator remember a number the store already knows.
+    runs_explicit: bool = False
     fail_on: str = "high"
     include_needs_review: bool = False
     compare: bool = False
@@ -852,6 +864,65 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # output says so out loud instead of quietly dropping the flag.
     pacing_rate = timing.rate_rps if any_live else None
 
+    # Resolved BEFORE the fingerprint pass, which SENDS. It used to sit after it, so
+    # `-sV --resume <id-of-a-changed-battery>` put 17 probes on a real endpoint with a real
+    # bearer token and then exited 3 having done no work. Nothing here needs the fingerprint.
+    adaptive = opts.fingerprint_first or opts.deep
+
+    prior_spend: Spend | None = None
+    resume_from: TestRun | None = None
+    if opts.resume is not None:
+        # The budgets are derived from a plan, and the real plan needs the fingerprint, which
+        # SENDS. A provisional plan resolved with no fingerprint derives the same ceilings (the
+        # estimate counts specs and mutators, which -sV reorders rather than changes), so the
+        # wall-clock refusal can happen here rather than after 17 probes have gone out. The
+        # first version of this check sat below the probe pass, which is the exact defect the
+        # clause above it says was fixed.
+        provisional = resolve_target_plans(
+            scope=scope,
+            targets=loaded_targets,
+            specs=selected,
+            runs=opts.runs,
+            rate_rps=pacing_rate,
+            fingerprints={},
+            adaptive=adaptive,
+            budget_overrides=PlanBudgets(
+                max_tokens=opts.budget_tokens,
+                max_requests=opts.budget_requests,
+                max_wall_s=opts.budget_wall_s,
+            ),
+        )
+        prior_spend = _prior_spend(run_db, opts.resume, provisional[0].budgets)
+        resume_from = resume_mod.load_resume_run(
+            evidence_root,
+            opts.resume,
+            loaded_targets[0][1],
+            run_db=run_db,
+            specs=selected,
+            mock_scenario=routes[0][2][0],
+            runs=opts.runs if opts.runs_explicit else None,
+            judge=judge_target,
+            adaptive=adaptive,
+            allow_unverified=opts.resume_unverified,
+        )
+        inherited = resume_mod.stored_runs(run_db, opts.resume)
+        if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
+            # stderr and never suppressed: this changes the denominator of the reproducibility
+            # axis, which is a state change and not progress chatter. Under --quiet (which is
+            # what CI uses) the downgrade was invisible in every surface.
+            print(
+                f"resume: continuing at --runs {inherited}, as the halted campaign ran "
+                f"(you asked for {opts.runs})",
+                file=sys.stderr,
+            )
+            opts.runs = inherited
+        if not opts.quiet:
+            done = sum(len(f.attempts) for f in resume_from.findings)
+            print(
+                f"resume: {opts.resume} has {done} completed attempt(s) across "
+                f"{len(resume_from.findings)} spec(s); they will not be re-sent"
+            )
+
     # -sV / -A: fingerprint before attacking, then let the plan use it.
     #
     # NOT under --dry-run/--estimate/-sn: fingerprinting SENDS (ten probes per target), and
@@ -886,7 +957,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     if opts.fingerprint_first and not sends_nothing:
         probe_store = wiring.build_evidence_store(evidence_root, planted_canaries=[])
-        for _, target, (_, real_target) in routes:
+        for _, target, (mock_scenario, real_target) in routes:
             fingerprints[target.id] = wiring.fingerprint_probe(
                 scope,
                 target,
@@ -894,13 +965,21 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 rate_rps=pacing_rate,
                 evidence=probe_store,
                 run_id=run_ids[target.id],
+                mock_scenario=mock_scenario,
             )
     if fingerprints and not opts.quiet:
+        # Which targets were fingerprinted against a canned offline mock rather than over the
+        # wire. The line printed `family=meta-llama (confidence 0.67) version=llama-3-8b` for a
+        # mock, and the caveat that this is an offline fixture lived in six documents and not
+        # in the one line anybody actually reads. An audit read it off the terminal as a result.
+        offline = {target.id: scenario for _, target, (scenario, _) in routes if scenario}
         for target_id, fingerprint in sorted(fingerprints.items()):
             family = fingerprint.family
             version = fingerprint.version
+            scenario = offline.get(target_id)
             print(
                 f"fingerprint: {target_id} "
+                + (f"[offline mock: {scenario}] " if scenario is not None else "")
                 + (
                     f"family={family.guess} (confidence {family.confidence:.2f})"
                     if family is not None
@@ -908,8 +987,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 )
                 + (f" version={version.guess}" if version is not None else "")
             )
-    adaptive = opts.fingerprint_first or opts.deep
-
     plans = resolve_target_plans(
         scope=scope,
         targets=loaded_targets,
@@ -946,18 +1023,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # command whose job is validation, and so the estimate prices the work that is actually
     # left. They used to return first, so `--dry-run --resume run-totally-bogus` exited 0
     # without a word and `--estimate --resume` priced the whole battery.
-    resume_from: TestRun | None = None
-    if opts.resume is not None:
-        resume_from = resume_mod.load_resume_run(
-            evidence_root, opts.resume, loaded_targets[0][1], run_db=run_db
-        )
-        if not opts.quiet:
-            done = sum(len(f.attempts) for f in resume_from.findings)
-            print(
-                f"resume: {opts.resume} has {done} completed attempt(s) across "
-                f"{len(resume_from.findings)} spec(s); they will not be re-sent"
-            )
-
     if opts.discovery_only:
         _print_discovery(plans, quiet=opts.quiet)
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
@@ -1001,6 +1066,8 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
 
+    # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
+    # loop: `--resume` names a single target, so there is one prior spend to carry.
     results: list[CampaignResult] = []
     all_findings: list[Finding] = []
     planned_specs = 0
@@ -1030,8 +1097,26 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             adaptive=adaptive,
             resume_from=resume_from,
             run_id=run_ids[target.id],
+            prior_spend=prior_spend,
         )
         results.append(result)
+        _persist_run_context(
+            run_db,
+            result,
+            selected,
+            target=target,
+            mock_scenario=mock_scenario,
+            runs=opts.runs,
+            judge=judge_target,
+            adaptive=adaptive,
+            # The probe pass runs outside the runner's ledger by design, so it was pre-checked
+            # against --budget-requests and then never billed: 17 requests per -sV per target
+            # left the process and the record the next resume opens on did not know. Each
+            # resume added another 17, which is the double-ceiling shape on a different axis.
+            extra_requests=(
+                fingerprint_probe_count() if (opts.fingerprint_first and not sends_nothing) else 0
+            ),
+        )
         _print_progress(printer, plan.selected, result.findings)
         all_findings.extend(result.findings)
 
@@ -1156,6 +1241,7 @@ def _run_one_target(
     adaptive: bool = False,
     resume_from: TestRun | None = None,
     run_id: str | None = None,
+    prior_spend: Spend | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -1196,8 +1282,88 @@ def _run_one_target(
             adaptive=adaptive,
             budgets=budgets,
             resume_from=resume_from,
+            prior_spend=prior_spend,
         )
     )
+
+
+def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) -> Spend | None:
+    """What a halted run already consumed, so its resume does not get a fresh ceiling.
+
+    ``None`` when the store holds no spend for that run. That case is NOT silent: it is the
+    same missing integrity record the resume checks refuse on, so reaching here with no record
+    means the operator passed ``--resume-unverified`` and has been told that this invocation's
+    ceiling covers this invocation alone.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        return None
+    with SqliteRunStore(Path(run_db)) as store:
+        stored = store.get_run_spend(run_id)
+    if not stored:
+        print(
+            f"resume: no spend was recorded for run {run_id!r}, so this invocation's budget "
+            "ceiling applies to this invocation alone and not to the campaign. What the "
+            "halted half already cost is not known to this tool.",
+            file=sys.stderr,
+        )
+        return None
+    prior = Spend(
+        tokens=int(stored.get("tokens", 0)),
+        requests=int(stored.get("requests", 0)),
+        attempts=int(stored.get("attempts", 0)),
+        wall_s=float(stored.get("wall_s", 0.0)),
+    )
+    ceiling = budgets.max_wall_s if budgets is not None else None
+    if ceiling is not None and prior.wall_s >= ceiling:
+        raise ValueError(
+            f"run {run_id!r} already spent {prior.wall_s:.1f}s of its {ceiling}s wall-clock "
+            "ceiling, which the campaign's budget covers as a whole. Resuming it would do no "
+            "work and halt again on the same axis. Raise --budget-wall-s for this campaign, or "
+            "start a fresh run."
+        )
+    return prior
+
+
+def _persist_run_context(
+    run_db: Path,
+    result: CampaignResult,
+    specs: list[AttackSpec],
+    *,
+    target: Target,
+    mock_scenario: str | None,
+    runs: int,
+    judge: Target | None = None,
+    adaptive: bool = False,
+    extra_requests: int = 0,
+) -> None:
+    """Record the battery this run executed and what it has spent in total.
+
+    Written after every campaign, not only a halted one: the halt is exactly when nobody is
+    in a position to do it later, and a run that completed can still be resumed by mistake.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)) as store:
+        store.save_run_context(
+            result.run.run_id,
+            spec_digests=spec_digests(specs),
+            context={
+                "target_digest": target_digest(target, mock_scenario=mock_scenario),
+                "judge_digest": target_digest(judge) if judge is not None else None,
+                "adaptive": adaptive,
+                "runs": runs,
+            },
+            spend={
+                "tokens": result.spend.tokens,
+                "requests": result.spend.requests + extra_requests,
+                "attempts": result.spend.attempts,
+                "wall_s": round(result.spend.wall_s, 6),
+            },
+        )
 
 
 def _print_progress(

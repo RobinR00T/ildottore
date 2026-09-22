@@ -383,10 +383,14 @@ def test_the_coverage_command_floors_its_percentages_like_every_other_surface() 
 
     from ildottore.cli.coverage import battery_coverage, render_coverage
 
+    # The witness moved on 2026-09-22: the impact axis reached 23/23, so the fractional axis
+    # that proves flooring is now ATLAS at 13/16 = 81.25%, which must print 81 and not 82.
+    # The original witness was 22/23 = 95.65%, printed as 96% by this command and 95% by every
+    # other surface.
     rendered = render_coverage(battery_coverage([SHIPPED_SPECS]), show_gaps=False)
-    assert "22/23" in rendered
-    assert "95%" in rendered
-    assert "96%" not in rendered
+    assert "13/16" in rendered
+    assert "81%" in rendered
+    assert "82%" not in rendered
 
 
 # --- the second audit round: the sends, the clock, and the ceilings -----------------
@@ -457,7 +461,7 @@ def test_the_shipped_battery_completes_under_its_own_default_budget(tmp_path: Pa
     doc = json.loads(report.read_text(encoding="utf-8"))
     assert doc["summary"]["status"]["state"] == "complete"
     specs = doc["summary"]["coverage"]["specs"]
-    assert specs["run"] == specs["total"] == 72
+    assert specs["run"] == specs["total"] == 75
 
 
 def test_the_ledger_measures_seconds_not_clock_reads() -> None:

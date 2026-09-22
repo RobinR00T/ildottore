@@ -39,7 +39,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from ildottore.core.budgets import BudgetExhausted, BudgetLedger
+from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.conversation import reproduce_conversation
 from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error
 from ildottore.core.pacing import RateLimiter
@@ -180,6 +180,9 @@ class CampaignResult:
     #: spend), so the CLI and the report can name the cause instead of printing a bare
     #: state. ``None`` on a complete run.
     status_reason: str | None = None
+    #: What this campaign consumed, prior invocations of the same run included. Persisted by
+    #: the CLI so a later ``--resume`` opens its ledger here rather than at zero.
+    spend: Spend = field(default_factory=Spend)
 
     @property
     def complete(self) -> bool:
@@ -292,6 +295,7 @@ class CampaignRunner:
         started_at: str | None = None,
         finished_at: str | None = None,
         resume_from: TestRun | None = None,
+        prior_spend: Spend | None = None,
     ) -> CampaignResult:
         """Execute the whole campaign; return the plan + persisted run + findings.
 
@@ -299,6 +303,10 @@ class CampaignRunner:
         ``run_id``: its completed attempt ids are skipped so resume never re-sends a
         finished attempt (contract §7 resume). A budget breach halts the loop and
         the run is persisted as ``budget_exhausted`` with whatever completed.
+
+        ``prior_spend`` opens the ledger at what the halted invocation already consumed, so
+        a ceiling binds the campaign instead of resetting on every command that continues
+        it. The caller reads it from the run store; ``None`` means a fresh run.
         """
 
         # Bind the per-run canary: substitute ``{{run_id}}`` throughout each spec (plant,
@@ -318,7 +326,9 @@ class CampaignRunner:
             adaptive=adaptive,
             budgets=budgets,
         )
-        ledger = BudgetLedger.from_plan_budgets(plan.budgets, time_source=self._wall_clock)
+        ledger = BudgetLedger.from_plan_budgets(
+            plan.budgets, time_source=self._wall_clock, prior=prior_spend
+        )
         completed = _completed_attempt_ids(resume_from)
         # Prior findings from a partial run, keyed by spec, so a resumed spec MERGES its
         # already-persisted attempts with the fresh ones instead of re-scoring on the partial
@@ -371,6 +381,7 @@ class CampaignRunner:
             status=status,
             findings=findings,
             status_reason=self._truncation_reason(breach_reason, plan, findings),
+            spend=ledger.spend(),
         )
 
     @staticmethod

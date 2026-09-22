@@ -8,11 +8,15 @@ id: nova-iopc
 suite_version: "2026.1"
 name: NOVA / IoPC coverage-gap battery
 description: >
-  Ten native specs closing genuine gaps found against the Nova IoPC taxonomy: delayed/triggered
+  Thirteen native specs closing genuine gaps found against the Nova IoPC taxonomy:
+  delayed/triggered
   injection (T1.005), hallucinated-dependency / slopsquatting (T2.005), persistent memory
   poisoning (T2.002), human-agent trust exploitation (T3.004), self-replicating prompt / AI worm
   (T9.003), unicode/homoglyph deception (R023), phishing/BEC content (R012), disinformation at
   scale (R008), target-recon via model (R010), and detection/attribution evasion (T9.002/R030).
+  Added 2026-09-22, the three remaining reachable gaps: model/agent fingerprint disclosure
+  (T8.002), unexpected code execution from processed data (T4.002) and model resource
+  hijacking by scope abuse (R015).
 
 default_runs: 5
 # MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, seed: 42 }; fail_on: high
@@ -29,3 +33,6 @@ specs:
   - spec_id: SAFETY-DISINFO-001
   - spec_id: RECON-TARGET-OSINT-001
   - spec_id: AG-LOG-EVASION-001
+  - spec_id: RECON-MODEL-IDENTITY-001
+  - spec_id: AG-CODEEXEC-UNEXPECTED-001
+  - spec_id: DOS-RESOURCE-HIJACK-001
