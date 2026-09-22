@@ -45,6 +45,10 @@ quickstart named `target.yaml` and `scope.yaml`, which do not exist in this repo
 it could not be copied and pasted: a scan needs a target file and an authorization record,
 and the shipped examples are those two files.)
 
+Scanning something real, with a bill attached? [`docs/16-live-validation.md`](docs/16-live-validation.md)
+is the runbook: what is and is not verified today, what it costs (measured, not guessed), and the
+order to run it in.
+
 New here? Read [`USAGE.md`](USAGE.md) (practical guide) then [`examples/`](examples/)
 (copy-pasteable scenarios, from "no server, no key" to a full fleet). Full reference:
 [`docs/MANUAL.md`](docs/MANUAL.md). Install options: [`INSTALL.md`](INSTALL.md).
