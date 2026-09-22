@@ -18,14 +18,19 @@ __all__ = [
     "ATLAS_MATRIX_RELEASE",
     "ATLAS_OUT_OF_MATRIX",
     "ATLAS_TACTIC_UNIVERSE",
+    "NIST_FUNCTIONS",
+    "NIST_SUBCATEGORY_RE",
     "OWASP_LLM_EDITION",
     "OWASP_LLM_TOTAL",
     "OWASP_LLM_UNIVERSE",
     "OWASP_RAI_UNIVERSE",
+    "malformed_nist_mapping",
+    "nist_subcategories",
     "unknown_atlas_tactic",
     "unknown_owasp_code",
 ]
 
+import re
 
 #: Which OWASP edition the ``owasp`` codes on our specs belong to, printed next to every
 #: OWASP figure. Not decoration: OWASP published a **renumbered** list in August 2026 (the
@@ -113,6 +118,39 @@ ATLAS_OUT_OF_MATRIX: tuple[str, ...] = (
     "Responsible AI (safety)",
     "Responsible AI (fairness)",
 )
+
+
+#: The four NIST AI RMF 1.0 functions. A spec's ``nist_ai_rmf`` reads
+#: ``MEASURE 2.7 (security & resilience)``: a subcategory plus a free-text gloss, sometimes
+#: two of them joined by ``/`` or ``;``.
+NIST_FUNCTIONS: tuple[str, ...] = ("GOVERN", "MAP", "MEASURE", "MANAGE")
+
+#: Shape of one subcategory token. **Shape, not membership**, and the difference is the whole
+#: point: we have not transcribed the NIST AI RMF subcategory list from its primary source
+#: (NIST AI 100-1), so claiming "this subcategory exists" would be a claim we cannot back.
+#: This catches the drift that a free-text field really suffers (a lowercase function, a
+#: misspelled one, a missing number, an empty value) and says nothing about the rest.
+#:
+#: The field feeds a rollup (``by_framework.nist``) and a SARIF tag, never a denominator, so
+#: an unrecognised value cannot inflate or deflate a percentage the way an OWASP or ATLAS one
+#: could. That is why this is a shape rule and not a universe.
+NIST_SUBCATEGORY_RE = re.compile(rf"\b(?:{'|'.join(NIST_FUNCTIONS)})\s+\d+\.\d+")
+
+
+def nist_subcategories(value: str | None) -> list[str]:
+    """Every ``FUNCTION n.n`` token in a spec's ``nist_ai_rmf`` string, in order."""
+
+    if not value:
+        return []
+    return [m.group(0) for m in NIST_SUBCATEGORY_RE.finditer(value)]
+
+
+def malformed_nist_mapping(value: str | None) -> str | None:
+    """Return ``value`` when it carries no well-formed subcategory token, else ``None``."""
+
+    if value is None:
+        return None
+    return None if nist_subcategories(value) else value
 
 
 def unknown_owasp_code(code: str | None) -> str | None:

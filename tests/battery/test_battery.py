@@ -512,3 +512,30 @@ def test_a_repeated_spec_is_counted_once(specs_by_id: dict[str, AttackSpec]) -> 
 
     one = list(specs_by_id.values())[:3]
     assert build_battery_coverage(one + one + one).specs == 3
+
+
+def test_shipped_nist_mappings_are_well_formed(specs_by_id: dict[str, AttackSpec]) -> None:
+    """Every spec's ``nist_ai_rmf`` carries a parseable ``FUNCTION n.n`` token.
+
+    A shape check, not a membership one: the NIST AI RMF subcategory list is not transcribed
+    in this repo, so "this subcategory exists" is not a claim we can make. The field feeds a
+    rollup and a SARIF tag and never a denominator, so a bad value cannot move a percentage;
+    what it can do is fragment the rollup silently, which is what this catches.
+    """
+
+    from ildottore.shared.frameworks import malformed_nist_mapping, nist_subcategories
+
+    offenders = {
+        spec_id: spec.nist_ai_rmf
+        for spec_id, spec in specs_by_id.items()
+        if malformed_nist_mapping(spec.nist_ai_rmf) is not None
+    }
+    assert not offenders, f"nist_ai_rmf values with no well-formed subcategory: {offenders}"
+
+    # And the tokens really do parse into the four functions, so the rollup keys are stable.
+    functions = {
+        token.split()[0]
+        for spec in specs_by_id.values()
+        for token in nist_subcategories(spec.nist_ai_rmf)
+    }
+    assert functions <= {"GOVERN", "MAP", "MEASURE", "MANAGE"}, functions

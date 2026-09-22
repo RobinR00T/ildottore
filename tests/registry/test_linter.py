@@ -201,7 +201,12 @@ def test_absent_iopc_block_lints_clean(tmp_path: Path) -> None:
 # --- UNKNOWN_FRAMEWORK_CODE: the OWASP + ATLAS membership guard ----------------------
 
 
-def _framework_spec(*, owasp: str = "LLM01", tactic: str = "Initial Access") -> str:
+def _framework_spec(
+    *,
+    owasp: str = "LLM01",
+    tactic: str = "Initial Access",
+    nist: str = "MEASURE 2.7",
+) -> str:
     """The same minimal spec, with the two older framework fields as the variables."""
 
     return (
@@ -211,7 +216,7 @@ def _framework_spec(*, owasp: str = "LLM01", tactic: str = "Initial Access") -> 
         "category: prompt_injection\n"
         f"owasp: {owasp}\n"
         f"mitre_atlas:\n  tactic: '{tactic}'\n"
-        "nist_ai_rmf: 'MEASURE 2.7'\n"
+        f"nist_ai_rmf: '{nist}'\n"
         "severity: high\n"
         "target_type: chatbot\n"
         "requires: []\n"
@@ -314,3 +319,42 @@ def test_current_atlas_tactics_and_declared_non_matrix_values_lint_clean(
     tmp_path: Path, tactic: str
 ) -> None:
     assert _lint_frameworks(tmp_path, f"ok-{abs(hash(tactic))}", tactic=tactic) == []
+
+
+# --- the NIST mapping: a SHAPE rule, deliberately not a universe one -----------------
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "MEASURE 2.7 (security & resilience)",
+        "MANAGE 2.2 (excessive agency) / MEASURE 2.7 (data exfiltration)",
+        "GOVERN 1.1 (fairness)",
+        "MAP 5.1 (context)",
+    ],
+)
+def test_well_formed_nist_mappings_lint_clean(tmp_path: Path, value: str) -> None:
+    assert _lint_frameworks(tmp_path, f"nist-ok-{abs(hash(value))}", nist=value) == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "measure 2.7 (security)",  # lower case function
+        "MEASURES 2.7",  # misspelled function
+        "MEASURE two point seven",  # no numeric subcategory
+        "security & resilience",  # gloss only
+    ],
+)
+def test_malformed_nist_mapping_is_a_lint_error(tmp_path: Path, value: str) -> None:
+    """The field is free text with a token inside it, and the token is what can rot.
+
+    No universe is claimed: the NIST subcategory list is not transcribed here, so the rule
+    checks that a ``FUNCTION n.n`` token is present and well formed, and says nothing about
+    whether that subcategory exists. The field feeds a rollup and a SARIF tag, never a
+    denominator, which is why the weaker rule is the honest one rather than a shortcut.
+    """
+
+    errors = _lint_frameworks(tmp_path, f"nist-bad-{abs(hash(value))}", nist=value)
+    assert len(errors) == 1
+    assert "nist_ai_rmf" in errors[0].message
