@@ -27,6 +27,7 @@ from ildottore.fingerprint.layers.carrier import (
     CARRIER_DECOY,
     CARRIER_MARKER,
     CARRIER_PROBE_DETAIL,
+    _comprehended,
     effective_mutators,
     is_obscuring,
 )
@@ -322,3 +323,31 @@ def test_the_declared_probe_count_is_the_real_send_count() -> None:
             layer.probe(probe_target, ProbeContext(target_id="c", signature_pack=load_pack()))  # type: ignore[arg-type]
         )
         assert getattr(layer, "probe_count", 1) == probe_target.sends, type(layer).__name__
+
+
+# --- the discriminators, pinned one by one (audit of 2026-09-22) --------------------
+
+
+def test_a_short_reply_that_repeats_the_decoy_scores_zero() -> None:
+    """The echo tell, on its own. Removing it left the whole suite green.
+
+    An audit mutated `_comprehended` to drop the decoy check and nothing failed, because every
+    oracle in this file either comprehends or refuses: none of them produced the shape the
+    decoy exists to catch, a SHORT reply carrying both the marker and the instruction's own
+    token. That is a double that cannot fail the way the real thing fails (clause A-21).
+    """
+
+    assert _comprehended(f"{CARRIER_MARKER} {CARRIER_DECOY}") == 0.0
+    assert _comprehended(CARRIER_MARKER) == 1.0
+
+
+def test_the_marker_is_matched_through_zero_width_padding() -> None:
+    """The strip, on its own. Also survived being removed with the suite green.
+
+    ``zero_width_inject`` is designed to be invisible to a filter and readable by a model, so a
+    model that echoes the invisible characters back is still comprehending.
+    """
+
+    padded = "​".join(CARRIER_MARKER)
+    assert _comprehended(padded) == 1.0
+    assert _comprehended(f"﻿{CARRIER_MARKER}‍") == 1.0

@@ -18,7 +18,6 @@ from pathlib import Path
 import pytest
 
 from ildottore.cli.exit_codes import ExitCode
-from ildottore.cli.resume import load_resume_run
 from ildottore.cli.run import RunOptions, execute_run
 from ildottore.store.run_sqlite import SqliteRunStore
 
@@ -124,21 +123,145 @@ def test_a_ceiling_binds_the_campaign_not_the_command(tmp_path: Path) -> None:
     )
 
 
-def test_a_run_from_before_the_digests_is_reported_unverifiable_not_clean(
+def test_a_run_from_before_the_digests_is_refused_and_can_be_opted_into(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An absent record is not a match, and the operator is told so rather than nothing."""
+    """An absent integrity record refuses, and the opt-in names what it costs.
+
+    The first version continued with a notice, and an audit showed why that was wrong: a run
+    recorded before the digest column also predates the SPEND column, so the same resume that
+    could not verify the battery was handed a brand-new budget ceiling. The commit that
+    claimed to have fixed the double ceiling could still reproduce it on every run that
+    existed at the time. Refusing by default closes both halves at once.
+    """
 
     spec_dir = _specs(tmp_path)
     run_id = _halted_run(tmp_path, spec_dir)
     with SqliteRunStore(tmp_path / "runs.sqlite") as store:
-        store._conn.execute("UPDATE runs SET spec_digests_json = NULL WHERE run_id = ?", (run_id,))
+        store._conn.execute(
+            "UPDATE runs SET spec_digests_json = NULL, spend_json = NULL, context_json = NULL "
+            "WHERE run_id = ?",
+            (run_id,),
+        )
         store._conn.commit()
 
-    target = write_target(tmp_path, mock_scenario="vulnerable")
-    from ildottore.cli.wiring import load_target
+    with pytest.raises(ValueError, match="cannot verify"):
+        execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
 
-    loaded = load_target(target)
-    specs = [make_spec("PI-DIRECT-001")]
-    load_resume_run(tmp_path / "ev", run_id, loaded, run_db=tmp_path / "runs.sqlite", specs=specs)
-    assert "predates battery-digest recording" in capsys.readouterr().err
+    execute_run(
+        _opts(
+            tmp_path,
+            spec_dir,
+            resume=run_id,
+            budget_requests=100,
+            resume_unverified=True,
+        ),
+        [spec_dir],
+    )
+    err = capsys.readouterr().err
+    assert "--resume-unverified" in err or "cannot be verified" in err
+    assert "no spend was recorded" in err, "the money half has to be named, not just the specs"
+
+
+def test_a_corrupt_integrity_record_is_not_an_absent_one(tmp_path: Path) -> None:
+    """A tampered column must read as stronger evidence than a missing one, not weaker."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store._conn.execute(
+            "UPDATE runs SET spec_digests_json = ? WHERE run_id = ?", ("not json", run_id)
+        )
+        store._conn.commit()
+
+    with pytest.raises(ValueError, match="not readable JSON"):
+        execute_run(
+            _opts(
+                tmp_path,
+                spec_dir,
+                resume=run_id,
+                budget_requests=100,
+                resume_unverified=True,
+            ),
+            [spec_dir],
+        )
+
+
+def test_the_offline_scenario_cannot_be_flipped_under_a_resume(tmp_path: Path) -> None:
+    """`--resume --hardened` needed no file edit to publish one half as another's findings.
+
+    The id matched and the specs matched, so both checks passed, while the answers came from
+    a different replay. The target digest covers the resolved route for that reason.
+    """
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+
+    flipped = _opts(tmp_path, spec_dir, resume=run_id, budget_requests=100)
+    flipped.targets = [write_target(tmp_path, mock_scenario="hardened")]
+    with pytest.raises(ValueError, match="different target"):
+        execute_run(flipped, [spec_dir])
+
+
+def test_changing_runs_under_a_resume_is_refused_but_omitting_it_inherits(
+    tmp_path: Path,
+) -> None:
+    """One report must not score some specs over 3 samples and others over 1.
+
+    Asking for a different sample size explicitly is refused. Not asking at all inherits the
+    campaign's, because the store knows it and making the operator remember a number is how a
+    check gets worked around.
+    """
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+
+    explicit = _opts(tmp_path, spec_dir, resume=run_id, budget_requests=100, runs=1)
+    explicit.runs_explicit = True
+    with pytest.raises(ValueError, match="--runs"):
+        execute_run(explicit, [spec_dir])
+
+    inheriting = _opts(tmp_path, spec_dir, resume=run_id, budget_requests=100, runs=5)
+    execute_run(inheriting, [spec_dir])
+    assert inheriting.runs == 3, "the resume inherited the campaign's sample size"
+
+
+def test_a_resume_is_refused_before_the_fingerprint_sends_anything(tmp_path: Path) -> None:
+    """`-sV --resume` put 17 probes on the endpoint and then exited 3 having done no work."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    edited = make_spec("PI-DIRECT-001")
+    edited = edited.model_copy(
+        update={"attack": edited.attack.model_copy(update={"user_prompt": "a different question"})}
+    )
+    changed = write_spec_tree(
+        tmp_path / "edited", [edited, make_spec("PI-DIRECT-002"), make_spec("PI-DIRECT-003")]
+    )
+
+    sent: list[str] = []
+    import ildottore.cli.wiring as wiring_mod
+
+    original = wiring_mod.fingerprint_probe
+
+    def _counting(*args: object, **kwargs: object) -> object:
+        sent.append("probe pass")
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    wiring_mod.fingerprint_probe = _counting  # type: ignore[assignment]
+    try:
+        with pytest.raises(ValueError, match="battery changed"):
+            execute_run(
+                _opts(
+                    tmp_path,
+                    changed,
+                    resume=run_id,
+                    budget_requests=100,
+                    fingerprint_first=True,
+                ),
+                [changed],
+            )
+    finally:
+        wiring_mod.fingerprint_probe = original  # type: ignore[assignment]
+
+    assert sent == [], "the refusal has to land before the probe pass, not after it"

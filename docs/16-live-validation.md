@@ -46,14 +46,19 @@ battery of 75 specs at the default `runs=5`:
 | Target shape | Specs run | Requests | Rough token gloss |
 |---|---|---|---|
 | A bare hosted model (`type: model`, no tools/rag/memory/multimodal) | 34 | 550 | ~395k |
-| A fully capable deployment (`type: agent`, every capability declared) | 66 | 775 (+17 with `-sV`) | ~520k |
+| A fully capable deployment (`type: agent`, every capability declared) | 67 | 780 (+17 with `-sV`) | ~523k |
 
 Two things that table says out loud:
 
 * **A raw model endpoint cannot exercise the battery.** 39 of 75 specs are capability-gated and
   skip on a bare `type: model` target, which is honest rather than inconvenient: a tool-abuse
   spec against an endpoint with no tools would be theatre. To exercise those, the target has to
-  be a deployed application that really has tools, retrieval and memory.
+  be a deployed application that really has tools, retrieval and memory. A target that declares
+  every capability skips **nothing**: 67 run and the other 8 are the policy-blocked ones below.
+  (The first version of this table said 66 and 775. It was measured against a target missing
+  one capability, `multi_identity`, so one spec was silently skipped. An audit re-ran it. The
+  correct figures are above, and the lesson is in the commit: a number is measured against the
+  thing the row claims, or the row says which thing it was measured against.)
 * **Eight specs are blocked by the default policy pack**, on purpose: the offensive-simulation
   family (`AG-CRED-SWEEP-001`, `AG-DESTRUCTIVE-DBDROP-001`, `AG-EXFIL-EGRESS-001`,
   `AG-EXTORT-CHAIN-001`, `AG-PERSIST-BEACON-001`, `AG-AUTONOMY-SELFCORRECT-001`,

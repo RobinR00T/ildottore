@@ -102,15 +102,26 @@ published 199/200 as complete.
 and JUnit emits an `<error>` when a campaign did not finish. Those two are what CI reads, and
 they rendered a truncated scan as a fully green suite while the JSON and HTML said otherwise.
 
-**A-26 A gap says whether it is the roadmap or not this tool's job (added 2026-09-22).** The
-coverage report printed one undifferentiated list of uncovered codes, so "8 of 10" read as two
-items of pending work when both are properties a black-box runtime scanner cannot observe at
-all (where a model came from, what it was trained on, adversary-side infrastructure). Gaps are
-now printed in two groups, and an out-of-reach code carries the reason it is unreachable.
-The codes stay in the **denominator**: removing them would raise every percentage by redefining
-the universe as the part the tool can already do, which is A-12 (no denominator over survivors)
-from the other side. A reason is mandatory, because a gap with an empty excuse beside it is a
-gap that has been hidden rather than explained. Checked by `tests/cli/test_coverage_cmd.py`.
+**A-26 A gap says which kind of gap it is (added 2026-09-22, widened the same night after
+audit).** The coverage report printed one undifferentiated list of uncovered codes, so "8 of 10"
+read as two items of pending work. Gaps now print in **three** groups: not covered *yet* (the
+roadmap), *out of reach* for a black-box runtime scanner (physics: no request settles it), and
+*not tested by design* (a decision this product made and could revisit). The third bucket exists
+because the first version put both in one: "the turns of a multi-turn attack are pinned in the
+spec" is a design choice, and printing it under "out of reach" tells a reader the category is
+impossible when what is true is that we chose not to. An audit called it dressing a decision as
+a law of nature, and it was right.
+
+All three stay in the **denominator**: removing them would raise every percentage by redefining
+the universe as the part the tool can already do, which is A-12 from the other side. A reason is
+mandatory. A test can assert a reason is present; it cannot assert it is true, so the membership
+of each bucket is **pinned per axis** in the test file: moving a code between buckets then shows
+up as a test change next to the argument for it. That guard was added after an audit moved a
+plainly testable gap into "out of reach" with a fabricated reason and the suite stayed green.
+One code was withdrawn from the classification entirely on the same grounds: `Command and
+Control` was called unobservable in a target's replies while this repository ships fixtures in
+which an agent writes a cron entry calling a C2-shaped address. Checked by
+`tests/cli/test_coverage_cmd.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.

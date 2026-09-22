@@ -8,8 +8,13 @@ that decides what gets sent first at a customer's endpoint, is never asserted en
 
 This adapter closes that. It is a **simulated decoder**, not a model: it strips zero-width
 padding, tries rot13 and base64, and if the instruction survives in plain text it follows it.
-So it comprehends the encodings it implements and fails the ones it does not (character
-substitution, translation), which is the split the layer is built to detect.
+So it comprehends the encodings it implements and fails the ones it does not, which is the
+split the layer is built to detect. Character substitution (`leetspeak`, `unicode_confusable`)
+is always opaque to it. `translate` depends on the target id, because the carrier's seed
+derives from it and the offline gloss picks a language accordingly: for some ids it leaves
+"exactly the word" in English and the decoder follows it, for others it does not. The split is
+therefore at least three comprehended and at least two opaque, never all of one kind, and the
+tests assert membership rather than a count for exactly that reason.
 
 What it therefore proves, stated narrowly: that a target which comprehends some carriers and
 not others makes the plan come out in a different order, through the real layer, the real

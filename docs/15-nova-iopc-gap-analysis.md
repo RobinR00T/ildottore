@@ -76,7 +76,7 @@ specs, which is exactly what this pass does.
 | T3.003 | Cross-Agent Context Propagation | AG-INTERAGENT-COMPROMISE-001; deepened by AG-WORM-PROPAGATE-001 | partial |
 | T3.004 | Human-Agent Trust Exploitation | **AG-TRUST-APPROVAL-001** | GAP-CLOSED |
 | T4.001 | Agent Identity & Privilege Abuse | AG-IDENTITY-ABUSE-001, AC-RBAC/BFLA/BOLA-001 | OK |
-| T4.002 | Unexpected Code Execution | OUT-CODEINJ-001, OUT-SHELLI-001, AC-DEBUG-001 | OK |
+| T4.002 | Unexpected Code Execution | AG-CODEEXEC-UNEXPECTED-001 | OK (2026-09-22; the three specs credited here before executed nothing, see below) |
 | T4.003 | Agent Goal Drift | AG-AUTONOMY-DRIFT-001 | OK |
 | T5.001 | System Prompt & Configuration Disclosure | SP-LEAK-001, RECON-SYSTEM-001 | OK |
 | T5.002 | Sensitive Data Disclosure | DL-* (8 specs) | OK |
@@ -85,7 +85,7 @@ specs, which is exactly what this pass does.
 | T7.001 | Model Extraction & Inversion | EMB-INVERSION-PROBE-001, DL-MEMORIZE-DIVERGENCE-001 (membership); distillation-cloning not modeled | partial |
 | T7.002 | Adversarial Evasion | GUARD-INPUT-EVASION-001, GUARD-OUTPUT-ENCODE-001 | OK |
 | T8.001 | AI System Reconnaissance | RECON-SYSTEM-001 (self); RECON-TARGET-OSINT-001 (target) | OK |
-| T8.002 | Model & Agent Fingerprinting | `dottore fingerprint` subsystem (a command, not a spec) | OK |
+| T8.002 | Model & Agent Fingerprinting | RECON-MODEL-IDENTITY-001 | OK (2026-09-22; the `dottore fingerprint` credit was a conflation, see below) |
 | T8.003 | Offline Attack Staging | (attacker-side offline activity) | out-of-scope |
 | T8.004 | AI System Access Acquisition | (attacker infrastructure / access) | out-of-scope |
 | T9.001 | Agent Configuration & Prompt Logic Tampering | AG-TOOLMETA-POISON-001; persistence variant adjacent to MEM-POISON-001 | partial |
@@ -106,7 +106,7 @@ The ones that named a distinct behavior we did not test became specs.
 | R012 | Fraud & social-engineering content | **SAFETY-PHISH-BEC-001** | GAP-CLOSED |
 | R013 | Malicious workflow automation | AG-EXTORT-CHAIN-001, AG-PERSIST-BEACON-001 | partial |
 | R014 | LLM-enabled offensive tooling | JB-OFFENSIVE-RANSOM-CODEGEN-001 | partial |
-| R015 | Model resource hijacking (LLMjacking) | (stolen-credential infra abuse) | out-of-scope |
+| R015 | Model resource hijacking (LLMjacking) | DOS-RESOURCE-HIJACK-001 | OK (2026-09-22; the credential-theft route stays out of scope, the scope-abuse route is covered) |
 | R022 | Encoding & obfuscation | JB-ENCODING-001 (base64_wrap / rot13 / leetspeak mutators) | OK |
 | R023 | Unicode & homoglyph manipulation | **GUARD-UNICODE-EVASION-001** | GAP-CLOSED |
 | R024 | Multi-step prompt chaining | JB-CRESCENDO/LINEAR/SEQUENTIAL-001 | OK |
@@ -209,7 +209,7 @@ Design decisions worth recording:
   reader understands, so it gets its own line rather than being folded into a single number.
 - **Optional in the schema, required for our battery by test.** Making it a required field
   would break every third-party spec pack (the repo is public and v0.1.0 is released), so the
-  schema stays permissive and `tests/battery` pins that our own 72 specs are fully mapped.
+  schema stays permissive and `tests/battery` pins that our own 75 specs are fully mapped.
 - **A spec may map on one axis only.** The responsible-AI safety specs carry an impact code and
   no technique, because they assert a class of harm rather than an attack technique. That is
   honest, so the test accepts either axis.
@@ -232,7 +232,7 @@ customer reads. The worst was `IOPC-T4.002` "Unexpected Code Execution", carried
 model` with no tools, and the oracle is a regex over *generated source*. That is insecure code
 generation (`T5.003`, which both already declared). Dropping the false claim moved the technique
 axis from 87% to 83% and turned T4.002 into what it always was: **a real gap**, since the battery
-has no code-interpreter or sandbox-escape spec.
+had no code-interpreter or sandbox-escape spec until `AG-CODEEXEC-UNEXPECTED-001` on 2026-09-22.
 
 The other uncovered codes are deliberate out-of-scope decisions recorded below (training-data
 poisoning, offline staging, access acquisition). Two of that list have since moved:

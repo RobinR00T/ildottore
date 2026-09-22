@@ -19,7 +19,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   with the reason, rather than flipped in silence.
 - **Live validation runbook: `docs/16-live-validation.md`** plus `make live-estimate`. Measured
   today with `--estimate`: a bare hosted model exercises **34 of 75** specs for **550
-  requests**; a fully capable deployment **66 of 75** for **775** (+17 probes with `-sV`). The
+  requests**; a fully capable deployment **67 of 75** for **780** (+17 probes with `-sV`). The
   capability gate is why a raw endpoint cannot exercise the battery, and 8 specs stay blocked
   by the default policy pack on purpose.
 - **Contract clauses A-24, A-25, A-26.** Gates green (95%+ coverage), 75 specs / 14 suites.

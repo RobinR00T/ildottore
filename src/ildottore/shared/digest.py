@@ -1,14 +1,14 @@
-"""Content digests for the battery that a run executed (u00 shared, no imports upward).
+"""Content digests for what a run executed (u00 shared, no imports upward).
 
-A resumed campaign reuses the original run id, merges the stored attempts with the fresh
-ones and scores the result as one run. That is only sound while both halves ran **the same
-specs**. Nothing checked it: editing a prompt, tightening an evaluator or adding a spec
-between the halt and the resume produced a single report, under a single id, whose evidence
-came from two different batteries, with no marker anywhere saying so.
+A resumed campaign reuses the original run id, merges the stored attempts with the fresh ones
+and scores the result as one run. That is only sound while both halves ran **the same specs
+against the same target**. Nothing checked either: editing a prompt, or pointing the same
+target id at a different endpoint, or flipping the offline scenario with a CLI flag, produced
+one report, under one id, out of two different campaigns, with no marker anywhere.
 
-The digest is taken over the **loaded model**, not the file bytes, so reformatting a YAML
-file or editing a comment does not invalidate a resume, while any change that reaches the
-wire or the verdict does.
+Two digests, because they fail differently. The battery digest names *which spec* changed, so
+the refusal is actionable. The target digest is one value, because "the target is not the one
+this evidence came from" needs no itemisation.
 """
 
 from __future__ import annotations
@@ -16,27 +16,42 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable
-from typing import Final
+from typing import Any, Final
 
-from ildottore.shared.models import AttackSpec
+from ildottore.shared.models import AttackSpec, Target
 
-__all__ = ["BATTERY_DIGEST_PREFIX", "battery_digest", "spec_digest", "spec_digests"]
+__all__ = ["DIGEST_PREFIX", "spec_digest", "spec_digests", "target_digest"]
 
-#: Marks a digest as produced by this scheme, so a future scheme change is visible in the
+#: Marks a digest as produced by this scheme. A future scheme change is then visible in the
 #: stored value instead of silently comparing apples to oranges.
-BATTERY_DIGEST_PREFIX: Final = "sha256:"
+DIGEST_PREFIX: Final = "sha256:v2:"
+
+#: Spec fields deliberately OUTSIDE the digest: they reach neither the wire, nor the verdict,
+#: nor any published number. An audit showed that hashing the whole model refused a resume over
+#: an edited `description` or a corrected `tags` line, which is how a check trains the operator
+#: to work around it rather than read it.
+#:
+#: `fixtures` is deliberately **inside**. For a live target it is offline self-test data, but
+#: the `vulnerable`/`hardened` mock scenarios replay it as the target's own answers, so for an
+#: offline run it decides the verdict. Excluding it would be right for one kind of run and a
+#: false negative for the other, and a false negative is the direction that costs.
+_COSMETIC_FIELDS: Final = frozenset({"name", "description", "tags", "preconditions", "nist_ai_rmf"})
+
+#: Target fields outside the digest: they say nothing about what is on the other end of the
+#: wire. Everything else is in, including `endpoint`, `model`, `provider` and `capabilities`.
+_TARGET_COSMETIC: Final = frozenset({"name", "description", "tags"})
+
+
+def _sha(payload: Any) -> str:
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return DIGEST_PREFIX + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def spec_digest(spec: AttackSpec) -> str:
-    """SHA-256 of one spec's canonical JSON serialization."""
+    """SHA-256 over one spec's behavioural projection (see :data:`_COSMETIC_FIELDS`)."""
 
-    canonical = json.dumps(
-        spec.model_dump(mode="json"),
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    return BATTERY_DIGEST_PREFIX + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    dumped = spec.model_dump(mode="json")
+    return _sha({k: v for k, v in dumped.items() if k not in _COSMETIC_FIELDS})
 
 
 def spec_digests(specs: Iterable[AttackSpec]) -> dict[str, str]:
@@ -45,8 +60,16 @@ def spec_digests(specs: Iterable[AttackSpec]) -> dict[str, str]:
     return {spec.id: spec_digest(spec) for spec in specs}
 
 
-def battery_digest(digests: dict[str, str]) -> str:
-    """One digest over the whole battery (id + per-spec digest, order-independent)."""
+def target_digest(target: Target, *, mock_scenario: str | None = None) -> str:
+    """SHA-256 over the target and the route resolved for it.
 
-    joined = "\n".join(f"{spec_id}={digest}" for spec_id, digest in sorted(digests.items()))
-    return BATTERY_DIGEST_PREFIX + hashlib.sha256(joined.encode("utf-8")).hexdigest()
+    ``mock_scenario`` is part of the digest because it is part of what answers: `--resume`
+    with `--hardened` flipped the offline replay and published a vulnerable half's criticals
+    as a hardened run's findings, without touching a single file. The id matched, the specs
+    matched, and the answers came from somewhere else.
+    """
+
+    dumped = target.model_dump(mode="json")
+    payload = {k: v for k, v in dumped.items() if k not in _TARGET_COSMETIC}
+    payload["__route__"] = mock_scenario or "live"
+    return _sha(payload)

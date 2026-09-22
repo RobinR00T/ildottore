@@ -354,16 +354,15 @@ Battery coverage (75 specs, no scan performed)
 
   Out of reach for a black-box runtime scanner, OWASP LLM Top 10 (2025):
     LLM03
-      supply chain: a property of where the model and its components came from, which
-      an endpoint cannot be asked about
+      supply chain: ... (the full reason is printed; it is one line per code)
     LLM04
-      data and model poisoning: needs the training or fine-tuning pipeline
+      data and model poisoning: ...
 
     ...
 ```
 
 Each axis names the edition it is measured against, and the percentages are **floored**: an
-incomplete axis never reads 100%, and 22/23 is 95%, not 96%. (This block published
+incomplete axis never reads 100%, and 13/16 is 81%, not 82%. (This block published
 `12/14 86%` until 2026-09-21, the retracted ATLAS figure, in the same commit whose changelog
 called it wrong. A number copied into prose does not get re-derived when the code is fixed,
 which is the argument for `dottore coverage` existing: run it rather than trust this block.)
@@ -376,6 +375,25 @@ model provenance are not work in progress; saying so is what keeps the first lis
 it says. Out-of-reach codes stay in the **denominator**: dropping them would raise every
 percentage by redefining the universe as the part the tool can already do. Off-universe values never reach a numerator (a Responsible-AI
 `RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%.
+
+### `mock_scenario`, the offline replay selector
+
+An optional key in `target.yaml`, honoured **only** by the offline mock and ignored by every
+real adapter. It decides what an offline target answers:
+
+| value | what it answers | what a run against it means |
+|---|---|---|
+| `bare` (default) | one canned string | every spec `inconclusive`, no fabricated verdict |
+| `vulnerable` | each spec's own `fixtures.vulnerable` | proves the detect path end to end |
+| `hardened` | each spec's own `fixtures.hardened` | the clean-run smoke test |
+| `comprehending` | it **decodes** what it was sent (zero-width, rot13, base64) and follows a decodable instruction | the only offline mode in which `-sV`'s carrier measurement produces a real split, so CI can assert the plan ordering |
+
+`comprehending` is a **simulated decoder, not a model**. It shows that a target which
+comprehends some carriers and not others changes the plan, through the real layer, the real
+mutators and the real planner. It says nothing about how any actual model behaves: that needs a
+live run, and the fingerprint line prints `[offline mock: <scenario>]` so an offline result is
+never read as one. Three specs decide against any fixed-string offline target (their oracles
+read only the response text); `comprehending` decides exactly what `bare` decides, no more.
 
 ## 6. The attack battery
 
@@ -395,7 +413,7 @@ Suites (with the count `registry ls --suite <id>` reports):
 | `owasp-llm-top10` (alias `owasp:llm`) | 18 | the OWASP LLM Top 10 baseline |
 | `quick` | 18 | fast triage battery (`--quick`) |
 | `multi-turn` | 5 | Crescendo / Linear / Sequential / Bad-Likert / Tree |
-| `access-control` | 9 | BFLA / BOLA / RBAC / SSRF / debug-interface / argument-smuggling |
+| `access-control` | 10 | BFLA / BOLA / RBAC / SSRF / debug-interface / argument-smuggling |
 | `agentic-owasp2026` | 6 | goal theft / recursive hijack / identity abuse / inter-agent / autonomy drift / tool-orchestration abuse |
 | `obfuscation-enhancers` | 2 | encoding / obfuscation bypass enhancers |
 | `embeddings` | 3 | embedding inversion / neighbor leak / cross-tenant retrieval |
@@ -405,7 +423,7 @@ Suites (with the count `registry ls --suite <id>` reports):
 | `guardrail-evasion` | 2 | moderation-layer evasion, input classifier + output filter |
 | `multimodal` | 6 | image injection (direct / document / split across two carriers / harmful-request), a visual-to-agentic bridge, and a spoken prompt injection carried in an audio clip |
 | `structured-output` | 3 | function-calling and structured-output contract: argument smuggling, out-of-schema field coercion, enum escape |
-| `nova-iopc` | 10 | coverage-gap battery mapped against the Nova IoPC taxonomy (see `docs/15`) |
+| `nova-iopc` | 13 | coverage-gap battery mapped against the Nova IoPC taxonomy (see `docs/15`) |
 
 Select with `--suite`, `-p/--categories`, `--spec`/`--exclude` (globs), or `--top-tests`.
 

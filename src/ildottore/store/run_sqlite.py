@@ -167,6 +167,7 @@ class SqliteRunStore:
         *,
         spec_digests: dict[str, str] | None = None,
         spend: dict[str, float] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
         """Record which battery a run executed and what it spent (``--resume`` support).
 
@@ -192,9 +193,28 @@ class SqliteRunStore:
                     (_dumps(spec_digests), run_id),
                 )
             if spend is not None:
+                # Monotonic on the request axis. Two resumes of one run id race read-modify-write
+                # (there is no lease), and a last-writer-wins UPDATE let the loser's spend erase
+                # the winner's: the store then reported LESS than the campaign had spent, which
+                # is the one direction a spend record must never move. It cannot prevent the
+                # concurrent overspend, and the contract clause says so rather than claiming it.
                 self._conn.execute(
-                    "UPDATE runs SET spend_json = ? WHERE run_id = ?",
-                    (_dumps(spend), run_id),
+                    """
+                    UPDATE runs SET spend_json = :spend
+                    WHERE run_id = :run_id
+                      AND (spend_json IS NULL
+                           OR COALESCE(json_extract(spend_json, '$.requests'), 0) <= :requests)
+                    """,
+                    {
+                        "spend": _dumps(spend),
+                        "run_id": run_id,
+                        "requests": spend.get("requests", 0),
+                    },
+                )
+            if context is not None:
+                self._conn.execute(
+                    "UPDATE runs SET context_json = ? WHERE run_id = ?",
+                    (_dumps(context), run_id),
                 )
 
     # --- queries (reporting / replay support) --------------------------------
@@ -214,7 +234,7 @@ class SqliteRunStore:
         row = self._conn.execute(
             "SELECT spec_digests_json AS value FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
-        return _loads_dict(row["value"] if row is not None else None)
+        return _loads_dict(row["value"] if row is not None else None, column="spec_digests_json")
 
     def get_run_spend(self, run_id: str) -> dict[str, float] | None:
         """What ``run_id`` has consumed so far across every invocation, or ``None``."""
@@ -222,7 +242,15 @@ class SqliteRunStore:
         row = self._conn.execute(
             "SELECT spend_json AS value FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
-        return _loads_dict(row["value"] if row is not None else None)
+        return _loads_dict(row["value"] if row is not None else None, column="spend_json")
+
+    def get_run_context(self, run_id: str) -> dict[str, Any] | None:
+        """The target digest and run parameters recorded for ``run_id``, or ``None``."""
+
+        row = self._conn.execute(
+            "SELECT context_json AS value FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        return _loads_dict(row["value"] if row is not None else None, column="context_json")
 
     def list_findings(self, run_id: str) -> list[dict[str, Any]]:
         rows = self._conn.execute(
@@ -252,16 +280,30 @@ def _dumps(obj: dict[str, Any]) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
-def _loads_dict(raw: str | None) -> dict[str, Any] | None:
-    """Parse a stored JSON object column; a malformed one reads as absent, never as empty."""
+class CorruptRunContext(ValueError):
+    """A stored integrity column exists but cannot be read.
+
+    Distinct from absent on purpose. An unreadable integrity record is a STRONGER signal than a
+    missing one, and folding the two together reported a tampered database as "this run predates
+    the check, continuing", which names the wrong cause and waves the run through.
+    """
+
+
+def _loads_dict(raw: str | None, *, column: str) -> dict[str, Any] | None:
+    """Parse a stored JSON object column. ``None`` means absent; malformed **raises**."""
 
     if raw is None:
         return None
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError as exc:
+        raise CorruptRunContext(
+            f"{column} is not readable JSON. An integrity record that cannot be read is not "
+            "the same as one that was never written: refusing rather than continuing."
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise CorruptRunContext(f"{column} holds {type(parsed).__name__}, not an object.")
+    return parsed
 
 
 def _dominant_status(run: TestRun) -> str | None:

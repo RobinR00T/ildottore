@@ -33,7 +33,10 @@ def test_reports_every_axis_over_the_whole_battery() -> None:
     assert keys == ["owasp", "atlas", "iopc_techniques", "iopc_impacts"]
     for axis in cov.axes:
         assert 0.0 <= axis.pct <= 1.0, axis.label
-        assert axis.exercised + len(axis.missing) + len(axis.out_of_reach) == axis.total
+        assert (
+            axis.exercised + len(axis.missing) + len(axis.out_of_reach) + len(axis.by_design)
+            == axis.total
+        )
 
 
 def test_responsible_ai_codes_never_inflate_the_owasp_axis() -> None:
@@ -83,6 +86,7 @@ def test_no_gaps_flag_suppresses_the_listing() -> None:
     out = render_coverage(_coverage(), framework="iopc", show_gaps=False)
     assert "Not covered" not in out
     assert "Out of reach" not in out
+    assert "Deliberately not tested" not in out
     assert "IOPC-T2.003" not in out
     assert "IoPC techniques" in out
 
@@ -137,7 +141,13 @@ def test_json_output_is_machine_readable_and_complete() -> None:
     assert [a["key"] for a in doc["axes"]] == ["iopc_techniques", "iopc_impacts"]
     tech = doc["axes"][0]
     assert len(tech["covered"]) == tech["exercised"]
-    assert len(tech["covered"]) + len(tech["missing"]) + len(tech["out_of_reach"]) == tech["total"]
+    assert (
+        len(tech["covered"])
+        + len(tech["missing"])
+        + len(tech["out_of_reach"])
+        + len(tech["not_tested_by_design"])
+        == tech["total"]
+    )
     assert {"code", "title", "reason"} == set(tech["out_of_reach"][0])
 
 
@@ -150,6 +160,45 @@ def test_empty_spec_set_is_zero_not_a_crash() -> None:
 # --- honest gaps: roadmap vs out of reach (added 2026-09-22) ------------------------
 
 
+def test_every_classification_is_pinned_per_axis() -> None:
+    """A reclassification has to be argued in a diff, not landed quietly.
+
+    Nothing checked WHICH codes sat in which bucket, so an audit moved a plainly testable gap
+    into "out of reach" with a fabricated reason and the whole suite stayed green. A reason
+    string can be asserted non-empty; it cannot be asserted true. The defence is that the
+    membership is written down here, so moving a code shows up as a test change next to the
+    argument for it.
+    """
+
+    from ildottore.cli.coverage import battery_coverage
+
+    by_key = {a.key: a for a in battery_coverage([Path("specs")]).axes}
+
+    assert {c for c, _ in by_key["owasp"].missing} == set()
+    assert {c for c, _, _ in by_key["owasp"].out_of_reach} == {"LLM03", "LLM04"}
+    assert by_key["owasp"].by_design == ()
+
+    # "Command and Control" is roadmap, NOT out of reach: this repository ships fixtures in
+    # which an agent writes a cron entry calling a C2-shaped address, so the behaviour is
+    # observable in a target's own tool calls. It was briefly classified unreachable.
+    assert {c for c, _ in by_key["atlas"].missing} == {"Command and Control"}
+    assert by_key["atlas"].out_of_reach == ()
+    assert {c for c, _, _ in by_key["atlas"].by_design} == {
+        "AI Attack Adaptation",
+        "AI Model Access",
+    }
+
+    assert {c for c, _ in by_key["iopc_techniques"].missing} == set()
+    assert {c for c, _, _ in by_key["iopc_techniques"].out_of_reach} == {
+        "IOPC-T2.003",
+        "IOPC-T8.003",
+    }
+    assert {c for c, _, _ in by_key["iopc_techniques"].by_design} == {"IOPC-T8.004"}
+
+    assert by_key["iopc_impacts"].missing == ()
+    assert by_key["iopc_impacts"].out_of_reach == ()
+
+
 def test_a_gap_is_either_roadmap_or_out_of_reach_with_a_reason() -> None:
     """ "8 of 10" invites the reader to assume the other two are coming. Some never are."""
 
@@ -157,11 +206,12 @@ def test_a_gap_is_either_roadmap_or_out_of_reach_with_a_reason() -> None:
 
     coverage = battery_coverage([Path("specs")])
     for axis in coverage.axes:
-        assert axis.exercised + len(axis.missing) + len(axis.out_of_reach) == axis.total, (
-            f"{axis.key}: every code in the universe is covered, pending or out of reach"
-        )
-        for _code, _title, reason in axis.out_of_reach:
-            assert reason.strip(), "an out-of-reach code without a reason is just a gap hidden"
+        assert (
+            axis.exercised + len(axis.missing) + len(axis.out_of_reach) + len(axis.by_design)
+            == axis.total
+        ), f"{axis.key}: every code is covered, pending, out of reach or deliberately untested"
+        for _code, _title, reason in (*axis.out_of_reach, *axis.by_design):
+            assert reason.strip(), "a classified gap without a reason is just a gap hidden"
 
 
 def test_out_of_reach_codes_stay_in_the_denominator() -> None:
@@ -188,9 +238,10 @@ def test_the_two_groups_are_rendered_apart_and_the_denominator_is_explained() ->
     rendered = render_coverage(battery_coverage([Path("specs")]))
 
     assert "Out of reach for a black-box runtime scanner" in rendered
+    assert "Deliberately not tested, and why" in rendered
     assert "stay in the denominator" in rendered
     # The reason travels with the code, in the human output as well as the JSON.
-    assert "training or fine-tuning pipeline" in rendered
+    assert "training and fine-tuning stages need the pipeline" in rendered
 
 
 def test_the_json_keeps_the_two_lists_apart() -> None:

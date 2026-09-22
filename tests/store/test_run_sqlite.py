@@ -107,12 +107,14 @@ def test_save_run_with_no_targets_has_null_target(store_root: Path) -> None:
         assert row["suite_id"] is None
 
 
-def test_a_malformed_context_column_reads_as_absent_not_as_empty(tmp_path: Path) -> None:
-    """A corrupt row must not pass for "nothing changed" or "nothing spent".
+def test_a_malformed_context_column_raises_instead_of_reading_as_absent(tmp_path: Path) -> None:
+    """A corrupt row must not pass for "nothing changed", "nothing spent", or "not recorded".
 
-    Both columns drive a refusal (a changed battery) and a ceiling (the carried spend), so a
-    value that cannot be parsed has to read as *unknown*, which the caller reports, and never
-    as an empty dict, which would read as a clean comparison and a zero opening balance.
+    Both columns drive a refusal (a changed battery) and a ceiling (the carried spend). The
+    first version returned ``None`` for unparseable JSON, which the caller reports as "this run
+    predates the check, continuing": an audit pointed out that an integrity record which cannot
+    be READ is a stronger signal than one that was never written, and folding them together
+    names the wrong cause and waves the run through.
     """
 
     store = SqliteRunStore(tmp_path / "runs.sqlite")
@@ -123,8 +125,14 @@ def test_a_malformed_context_column_reads_as_absent_not_as_empty(tmp_path: Path)
     )
     store._conn.commit()
 
-    assert store.get_run_spec_digests("run-abc123") is None
-    assert store.get_run_spend("run-abc123") is None
+    import pytest
+
+    from ildottore.store.run_sqlite import CorruptRunContext
+
+    with pytest.raises(CorruptRunContext, match="spec_digests_json"):
+        store.get_run_spec_digests("run-abc123")
+    with pytest.raises(CorruptRunContext, match="spend_json"):
+        store.get_run_spend("run-abc123")
     store.close()
 
 
@@ -139,9 +147,34 @@ def test_an_older_store_gains_the_context_columns_on_open(tmp_path: Path) -> Non
     conn.close()
 
     with SqliteRunStore(db) as store:
-        assert store.schema_version() == 2
+        assert store.schema_version() == migrations.SCHEMA_VERSION
         store.save_run_context("run-old01", spend={"requests": 3})
         assert store.get_run_spend("run-old01") == {"requests": 3}
     with SqliteRunStore(db) as reopened:  # migrate() again on an already-current file
-        assert reopened.schema_version() == 2
+        assert reopened.schema_version() == migrations.SCHEMA_VERSION
         assert reopened.get_run_spend("run-old01") == {"requests": 3}
+
+
+def test_a_store_stamped_by_an_intermediate_build_still_gains_every_column(
+    tmp_path: Path,
+) -> None:
+    """A step already stamped is never re-run, so a later column has to be a later step.
+
+    An intermediate build stamped v2 with two of the three context columns. Because `migrate`
+    skips anything at or below the stored version, editing that step would have left those
+    databases one column short for ever, failing every write with "no such column".
+    """
+
+    db = tmp_path / "intermediate.sqlite"
+    conn = migrations.connect(db)
+    conn.executescript(migrations._SCHEMA_SQL_PATH.read_text(encoding="utf-8"))
+    conn.execute("ALTER TABLE runs ADD COLUMN spec_digests_json TEXT")
+    conn.execute("ALTER TABLE runs ADD COLUMN spend_json TEXT")
+    conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+    conn.execute("INSERT INTO schema_version (version) VALUES (2)")
+    conn.commit()
+    conn.close()
+
+    with SqliteRunStore(db) as store:
+        store.save_run_context("run-int01", context={"runs": 3})
+        assert store.get_run_context("run-int01") == {"runs": 3}

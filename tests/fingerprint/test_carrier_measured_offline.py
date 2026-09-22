@@ -101,27 +101,148 @@ def test_the_decoding_target_never_fabricates_a_verdict() -> None:
     assert attack.text == COMPREHENDING_REFUSAL
 
 
-def test_a_whole_offline_scan_with_it_measures_and_fabricates_nothing(tmp_path: object) -> None:
-    """The scenario reaches the CLI, and buys the measurement without buying a verdict."""
+def test_it_changes_no_verdict_that_the_plain_mock_would_not_also_produce(tmp_path: object) -> None:
+    """The scenario must buy the measurement without buying a single verdict.
 
+    The first version of this test asserted "every spec stays inconclusive" over ONE spec the
+    test itself built, and that claim is false over the shipped battery: three specs decide
+    against any fixed-string offline target, because their oracles read only the response text
+    (`DOS-TOKEN-AMP-001` and `DOS-RESOURCE-HIJACK-001` look for a secure marker that a canned
+    string does not carry, `MCP-TOOLPOISON-001` looks for the ABSENCE of injection markers,
+    which a canned string trivially satisfies). An audit found it by running the real battery,
+    which is what the test should have done: a universe the test builds itself proves nothing
+    about the one that ships (clause A-21).
+
+    So the property asserted here is **differential** and over the shipped specs: whatever the
+    plain `bare` mock decides, the decoding one decides identically, spec by spec. That is the
+    claim the scenario actually needs to be true (it exists to make the fingerprint measurable,
+    not to move a verdict), it holds today, and it fails the moment the decoder starts
+    satisfying an evaluator.
+    """
+
+    from collections import Counter
     from pathlib import Path
 
     from ildottore.cli.run import RunOptions, execute_run
     from ildottore.shared.enums import VerdictStatus
 
-    from ..cli.conftest import write_scope, write_spec_tree, write_target
+    from ..cli.conftest import write_scope, write_target
+
+    root = Path(str(tmp_path))
+
+    def verdicts(scenario: str) -> dict[str, str]:
+        home = root / scenario
+        home.mkdir()
+        opts = RunOptions(
+            targets=[write_target(home, mock_scenario=scenario)],
+            scope=write_scope(home),
+            runs=1,
+            quiet=True,
+            evidence_root=home / "ev",
+            run_db=home / "runs.sqlite",
+        )
+        outcome = execute_run(opts, [Path("specs")])
+        return {f.spec_id: f.status.value for f in outcome.findings}
+
+    decoding = verdicts("comprehending")
+    plain = verdicts("bare")
+
+    assert decoding == plain, "the decoding scenario moved a verdict the plain mock did not"
+    decided = {spec: v for spec, v in decoding.items() if v != VerdictStatus.INCONCLUSIVE.value}
+    assert set(decided) == {
+        "DOS-TOKEN-AMP-001",
+        "DOS-RESOURCE-HIJACK-001",
+        "MCP-TOOLPOISON-001",
+    }, (
+        "the set of specs that decide against a fixed-string offline target changed: "
+        f"{sorted(decided)}. That is a property of those specs' oracles, not of this "
+        "scenario, and it is pinned here because the contract clause used to claim the "
+        "battery comes out inconclusive, which was never true."
+    )
+    assert Counter(decoding.values())[VerdictStatus.INCONCLUSIVE.value] == len(decoding) - 3
+
+
+def test_the_fingerprint_line_says_it_came_from_an_offline_mock(
+    tmp_path: object, capsys: object
+) -> None:
+    """The one surface an operator reads must not look like a real-model result.
+
+    It printed `family=meta-llama (confidence 0.67) version=llama-3-8b` for a canned offline
+    target, with the caveat present in six documents and absent from the only line anybody
+    sees. An audit read it off the terminal.
+    """
+
+    from pathlib import Path
+
+    from ildottore.cli.run import RunOptions, execute_run
+
+    from ..cli.conftest import make_spec, write_scope, write_spec_tree, write_target
 
     root = Path(str(tmp_path))
     opts = RunOptions(
         targets=[write_target(root, mock_scenario="comprehending")],
         scope=write_scope(root),
         runs=1,
-        quiet=True,
         fingerprint_first=True,
         evidence_root=root / "ev",
         run_db=root / "runs.sqlite",
     )
-    outcome = execute_run(opts, [write_spec_tree(root, [make_spec("PI-DIRECT-001")])])
+    execute_run(opts, [write_spec_tree(root, [make_spec("PI-DIRECT-001")])])
 
-    assert {f.status for f in outcome.findings} == {VerdictStatus.INCONCLUSIVE}
-    assert outcome.results[0].plan.selected, "the plan resolved through the real planner"
+    printed = capsys.readouterr().out  # type: ignore[attr-defined]
+    fingerprint_line = next(ln for ln in printed.splitlines() if ln.startswith("fingerprint:"))
+    assert "offline mock" in fingerprint_line and "comprehending" in fingerprint_line
+
+
+def test_the_cli_path_really_routes_sv_to_the_decoding_target(tmp_path: object) -> None:
+    """The end-to-end half, asserted on the ORDER the campaign actually planned.
+
+    An audit disabled the one line in `wiring.build_probe_adapter` that routes a
+    `comprehending` target to the decoding mock during `-sV`, which makes the CLI measure
+    nothing again, and the whole suite stayed green: the e2e test asserted only that the run
+    produced inconclusive verdicts, which is equally true of the plain mock. So the clause's
+    operator-facing half was prose. This asserts the observable consequence instead.
+    """
+
+    from pathlib import Path
+
+    from ildottore.cli.run import RunOptions, execute_run
+
+    from ..cli.conftest import make_spec, write_scope, write_spec_tree, write_target
+
+    root = Path(str(tmp_path))
+    spec = make_spec("JB-ORDER-002")
+    spec = spec.model_copy(
+        update={"mutations": ["leetspeak", "rot13", "unicode_confusable", "base64_wrap"]}
+    )
+    spec_dir = write_spec_tree(root, [spec])
+
+    def mutators(*, fingerprint_first: bool, scenario: str) -> list[str]:
+        home = root / f"{scenario}-{fingerprint_first}"
+        home.mkdir()
+        opts = RunOptions(
+            targets=[write_target(home, mock_scenario=scenario)],
+            scope=write_scope(home),
+            runs=1,
+            quiet=True,
+            fingerprint_first=fingerprint_first,
+            evidence_root=home / "ev",
+            run_db=home / "runs.sqlite",
+        )
+        outcome = execute_run(opts, [spec_dir])
+        return list(outcome.results[0].plan.selected[0].mutators)
+
+    assert mutators(fingerprint_first=True, scenario="comprehending") == [
+        "identity",
+        "rot13",
+        "base64_wrap",
+        "leetspeak",
+        "unicode_confusable",
+    ], "the CLI did not route -sV to the decoding target, so the plan came out unordered"
+    assert mutators(fingerprint_first=False, scenario="comprehending") == [
+        "identity",
+        "leetspeak",
+        "rot13",
+        "unicode_confusable",
+        "base64_wrap",
+    ], "without -sV the declared order is kept"

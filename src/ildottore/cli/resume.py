@@ -21,7 +21,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from ildottore.shared.digest import spec_digests
+from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import ScanBand, VerdictStatus
 from ildottore.shared.models import (
     AttackSpec,
@@ -35,7 +35,7 @@ from ildottore.shared.models import (
 from ildottore.store import paths
 from ildottore.store.replay import replay_run
 
-__all__ = ["RESUME_PLACEHOLDER_RISK", "load_resume_run"]
+__all__ = ["RESUME_PLACEHOLDER_RISK", "load_resume_run", "stored_runs"]
 
 #: The reconstructed findings need a ``risk``, and a prior partial run's score is not stored
 #: with the attempts. It is never published: the runner rescores every resumed spec from the
@@ -59,6 +59,9 @@ def load_resume_run(
     *,
     run_db: Path | None = None,
     specs: list[AttackSpec] | None = None,
+    mock_scenario: str | None = None,
+    runs: int | None = None,
+    allow_unverified: bool = False,
 ) -> TestRun:
     """Rebuild the partial :class:`TestRun` for ``run_id`` from stored evidence.
 
@@ -76,9 +79,17 @@ def load_resume_run(
     """
 
     if run_db is not None:
-        _assert_same_target(run_db, run_id, target)
+        _assert_same_target(run_db, run_id, target, allow_unverified=allow_unverified)
+        _assert_same_context(
+            run_db,
+            run_id,
+            target,
+            mock_scenario=mock_scenario,
+            runs=runs,
+            allow_unverified=allow_unverified,
+        )
         if specs is not None:
-            _assert_same_specs(run_db, run_id, specs)
+            _assert_same_specs(run_db, run_id, specs, allow_unverified=allow_unverified)
     try:
         result = replay_run(Path(evidence_root), run_id)
     except ValidationError as exc:
@@ -116,7 +127,9 @@ def load_resume_run(
     return TestRun(run_id=run_id, targets=[target], findings=findings)
 
 
-def _assert_same_target(run_db: Path, run_id: str, target: Target) -> None:
+def _assert_same_target(
+    run_db: Path, run_id: str, target: Target, *, allow_unverified: bool = False
+) -> None:
     """Refuse a resume whose stored run belongs to a different target (or is unknown)."""
 
     from ildottore.store.run_sqlite import SqliteRunStore
@@ -136,7 +149,12 @@ def _assert_same_target(run_db: Path, run_id: str, target: Target) -> None:
             f"{target.id!r} on trust."
         )
     stored = row.get("target_id")
-    if stored is not None and stored != target.id:
+    if stored is None:
+        # A row with no target id verifies nothing, and `_ensure_run_row` can mint exactly such
+        # a row. Treated as unverifiable rather than as a match.
+        _unverifiable(run_id, "the target of the stored run", allow=allow_unverified)
+        return
+    if stored != target.id:
         raise ValueError(
             f"run {run_id!r} was made against target {stored!r}, not {target.id!r}. Resuming "
             "it here would report one target's evidence as another's, with zero requests "
@@ -144,20 +162,57 @@ def _assert_same_target(run_db: Path, run_id: str, target: Target) -> None:
         )
 
 
-def _assert_same_specs(run_db: Path, run_id: str, specs: list[AttackSpec]) -> None:
+def stored_runs(run_db: Path, run_id: str) -> int | None:
+    """The ``--runs`` the halted campaign used, so a resume can inherit it."""
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        return None
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
+    value = (context or {}).get("runs")
+    return int(value) if value is not None else None
+
+
+def _unverifiable(run_id: str, what: str, *, allow: bool) -> None:
+    """One decision for every "this cannot be checked" case: refuse, or say so loudly.
+
+    Refusing is the default because the alternative was tried and it was wrong. The first
+    version continued with a notice, and an audit showed the shape of the mistake: a run that
+    predates the digest column also predates the SPEND column, so the same resume that could
+    not verify the battery was also handed a brand-new budget ceiling, silently, and the
+    commit that claimed to have fixed exactly that could still reproduce it on every run that
+    existed at the time.
+    """
+
+    if not allow:
+        raise ValueError(
+            f"cannot verify {what} for run {run_id!r}, so resuming it would merge two halves "
+            "that nothing checked are the same campaign, under one id and one report. This is "
+            "usually a run recorded before the check existed. Start a fresh run, or pass "
+            "--resume-unverified to continue deliberately (its budget ceiling then applies to "
+            "this invocation alone, because the earlier spend was never recorded)."
+        )
+    print(
+        f"resume: {what} cannot be verified for run {run_id!r}, continuing because "
+        "--resume-unverified was given. The ceiling binds this invocation only.",
+        file=sys.stderr,
+    )
+
+
+def _assert_same_specs(
+    run_db: Path, run_id: str, specs: list[AttackSpec], *, allow_unverified: bool = False
+) -> None:
     """Refuse a resume whose battery changed since the halt, naming what changed.
 
     The two halves of a resumed run are merged into one finding per spec and scored as one
     campaign. That is only meaningful while both halves ran the same spec: edit a prompt,
     tighten an evaluator or add a spec between the halt and the resume, and the report is a
     single document, under a single id, whose evidence comes from two different batteries,
-    with nothing in it saying so. The digest is over the loaded model, so reformatting the
-    YAML or editing a comment is not a change; anything that reaches the wire or the verdict
-    is.
-
-    A run recorded before this column existed has **no** digests. That is reported as
-    unverifiable and allowed through, rather than silently treated as a match: the check
-    cannot claim a property it never observed.
+    with nothing in it saying so. The digest is over a behavioural projection of the loaded
+    model, so a corrected description or a reflowed line is not a change while anything that
+    reaches the wire, the verdict or a published number is.
     """
 
     from ildottore.store.run_sqlite import SqliteRunStore
@@ -165,13 +220,7 @@ def _assert_same_specs(run_db: Path, run_id: str, specs: list[AttackSpec]) -> No
     with SqliteRunStore(Path(run_db)) as store:
         stored = store.get_run_spec_digests(run_id)
     if stored is None:
-        # stderr, and never suppressed by --quiet: an assurance the tool could not perform
-        # is exactly the kind of notice that must not be silenced into looking like a pass.
-        print(
-            f"resume: run {run_id!r} predates battery-digest recording, so it cannot be "
-            "verified that the specs are unchanged since the halt. Continuing.",
-            file=sys.stderr,
-        )
+        _unverifiable(run_id, "the battery", allow=allow_unverified)
         return
     current = spec_digests(specs)
     changed = sorted(k for k in stored.keys() & current.keys() if stored[k] != current[k])
@@ -191,6 +240,51 @@ def _assert_same_specs(run_db: Path, run_id: str, specs: list[AttackSpec]) -> No
         "would merge two different batteries into one report under one run id, and score "
         "them as one campaign. Start a fresh run, or restore the specs as they were."
     )
+
+
+def _assert_same_context(
+    run_db: Path,
+    run_id: str,
+    target: Target,
+    *,
+    mock_scenario: str | None,
+    runs: int | None,
+    allow_unverified: bool = False,
+) -> None:
+    """Refuse a resume whose TARGET, route or sample size changed since the halt.
+
+    The id check was one field deep and everything else was unbound. `--resume --hardened`
+    needed no file edit at all: it flipped the offline replay, and the vulnerable half's
+    criticals were published as findings of a hardened run, scored from evidence the second
+    invocation never produced. `--runs` is here for the same reason one field over: it is the
+    denominator of the reproducibility axis, and changing it mid-campaign scores one report's
+    specs over different sample sizes.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
+    if context is None:
+        _unverifiable(run_id, "the target and the run parameters", allow=allow_unverified)
+        return
+    stored_target = context.get("target_digest")
+    current_target = target_digest(target, mock_scenario=mock_scenario)
+    if stored_target is not None and stored_target != current_target:
+        raise ValueError(
+            f"run {run_id!r} was made against a different target than the one resolved now "
+            "(its endpoint, model, capabilities or offline scenario differ, even though the id "
+            "matches). Resuming would publish one target's evidence as another's. Restore the "
+            "target as it was, or start a fresh run."
+        )
+    stored_runs = context.get("runs")
+    if runs is not None and stored_runs is not None and int(stored_runs) != runs:
+        raise ValueError(
+            f"run {run_id!r} halted at --runs {stored_runs} and this invocation asks for "
+            f"{runs}. One report would then score some specs over {stored_runs} samples and "
+            "others over "
+            f"{runs}, on the same reproducibility axis. Resume at --runs {stored_runs}."
+        )
 
 
 def _ref_index(evidence_root: Path, run_id: str) -> dict[str, EvidenceRef]:

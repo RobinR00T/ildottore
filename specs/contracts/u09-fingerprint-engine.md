@@ -122,9 +122,17 @@ checked that it ran. `mock_scenario: comprehending` is an offline target that de
 is sent (zero-width, rot13, base64) and follows the instruction when it survives, so the layer
 produces a real split and the plan comes out in a different order, through the real layer, the
 real mutators and the real planner. It is a **simulated decoder, not a model**: it proves the
-chain, not how any given model behaves, and the docs say so where the claim is made. It also
-may not buy the measurement with a verdict: every spec against it stays `inconclusive`.
-Checked by `tests/fingerprint/test_carrier_measured_offline.py`.
+chain, not how any given model behaves, and the docs say so where the claim is made. It also may not buy the measurement with a **verdict**: whatever the plain
+`bare` mock decides, the decoding one decides identically, spec by spec over the shipped
+battery. (The first version of this clause said "every spec stays inconclusive", which is false
+and always was: three specs decide against any fixed-string offline target because their
+oracles read only the response text. The test asserted it over one spec the test itself built,
+so it could not find that out. Both are fixed: the property is differential now, and measured
+against `specs/`.) What this file checks is the **ordering**; the scoring discriminators
+(the echo tell, the zero-width strip, marker invariance) are pinned by
+`tests/fingerprint/test_carrier_layer.py`, each one individually since 2026-09-22, because an
+audit removed all three at once and the suite stayed green. Checked by
+`tests/fingerprint/test_carrier_measured_offline.py` and `tests/fingerprint/test_carrier_layer.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`); MUST NOT send any jailbreak /

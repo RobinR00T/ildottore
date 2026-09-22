@@ -80,9 +80,9 @@ gates: static spec-lint cov selfscan bandit audit ## The full local merge gate
 ci: gates ## Alias for the full gate set (what the pipeline runs)
 
 live-estimate: ## Price a live run without sending anything (TARGET=… SCOPE=… [JUDGE=…])
-	@test -n "$(TARGET)" || (echo "usage: make live-estimate TARGET=target.yaml SCOPE=scope.yaml"; exit 2)
-	$(BIN)/dottore run --deep --dry-run --verbose -t $(TARGET) --scope $(SCOPE)
-	$(BIN)/dottore run --deep --estimate -sV -t $(TARGET) --scope $(SCOPE)
+	@test -n "$(TARGET)" -a -n "$(SCOPE)" || (echo "usage: make live-estimate TARGET=target.yaml SCOPE=scope.yaml"; exit 2)
+	$(BIN)/dottore run --deep --dry-run --verbose -t "$(TARGET)" --scope "$(SCOPE)"
+	$(BIN)/dottore run --deep --estimate -sV -t "$(TARGET)" --scope "$(SCOPE)"
 	@echo "Runbook: docs/16-live-validation.md. Nothing was sent."
 
 schema: ## Export the generated JSON schemas to stdout

@@ -20,11 +20,11 @@ from typing import Final
 _SCHEMA_SQL_PATH: Final = Path(__file__).with_name("schema.sql")
 
 # The current (latest) schema version. Bump + append to _MIGRATIONS to evolve.
-SCHEMA_VERSION: Final = 2
+SCHEMA_VERSION: Final = 3
 
 
 def _add_run_context_columns(conn: sqlite3.Connection) -> None:
-    """v2: record WHICH battery a run executed and WHAT it spent.
+    """v2: record WHICH battery a run executed, against WHAT target, and what it spent.
 
     Both exist for ``--resume``, which reuses a run id across invocations: the digests let a
     resume refuse a battery that changed under it, and the spend lets the ledger open where
@@ -34,8 +34,16 @@ def _add_run_context_columns(conn: sqlite3.Connection) -> None:
     (it errors when the column is already there), and every other step in this file is.
     """
 
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
-    for column in ("spec_digests_json", "spend_json"):
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "runs" not in tables:
+        # A stamped database with no `runs` table (a drop, a partial restore). Previously it
+        # opened and failed later at query time; failing here would be a new behaviour, and an
+        # unannounced one, so the step does nothing and leaves the diagnosis where it was.
+        return
+    # Positional indexing, not row["name"]: `migrate(conn)` is public and used to work on a
+    # plain connection, and requiring a `sqlite3.Row` factory would have broken that silently.
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+    for column in ("spec_digests_json", "spend_json", "context_json"):
         if column not in existing:
             conn.execute(f"ALTER TABLE runs ADD COLUMN {column} TEXT")
 
@@ -45,6 +53,12 @@ def _add_run_context_columns(conn: sqlite3.Connection) -> None:
 _MIGRATIONS: Final[list[tuple[int, str | Callable[[sqlite3.Connection], None]]]] = [
     (1, _SCHEMA_SQL_PATH.read_text(encoding="utf-8")),
     (2, _add_run_context_columns),
+    # v3 re-runs the SAME column step. The step is idempotent per column, but `migrate` skips
+    # any step at or below the stored version, so a database stamped v2 by an intermediate
+    # build (before `context_json` joined the step) would never gain the third column and every
+    # write to it would fail with "no such column". Forward-only means adding a step, not
+    # editing one that has already been stamped somewhere.
+    (3, _add_run_context_columns),
 ]
 
 

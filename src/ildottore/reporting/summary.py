@@ -28,6 +28,7 @@ from ildottore.shared.frameworks import (
     OWASP_LLM_TOTAL,
     OWASP_LLM_UNIVERSE,
     OWASP_RAI_UNIVERSE,
+    not_tested_by_design_reason,
     out_of_reach_reason,
 )
 from ildottore.shared.iopc import (
@@ -453,11 +454,14 @@ class AxisCoverage:
     #: scanner could in principle test it.
     missing: tuple[tuple[str, str], ...]
     #: ``(code, title, reason)`` for what this kind of tool cannot reach at all (training
-    #: pipelines, adversary-side infrastructure, provenance). Separated from ``missing``
-    #: because "8 of 10" otherwise invites the reader to assume the other two are coming.
-    #: They stay in ``total``: dropping them would raise the percentage by redefining the
-    #: universe as the part we can already do (clause A-12).
+    #: pipelines, provenance, attacker-side staging). Separated from ``missing`` because
+    #: "8 of 10" otherwise invites the reader to assume the other two are coming.
     out_of_reach: tuple[tuple[str, str, str], ...] = ()
+    #: ``(code, title, reason)`` for what this scanner deliberately does not test. A decision,
+    #: not a property of the category, and printed apart from ``out_of_reach`` for exactly that
+    #: reason: one of these could be revisited tomorrow and none of the others can.
+    #: Both lists stay in ``total`` (clause A-12).
+    by_design: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -493,12 +497,25 @@ def _axis(
     distinct = tuple(dict.fromkeys(universe))
     covered = tuple(sorted((c, title(c)) for c in distinct if c in seen))
     uncovered = [c for c in distinct if c not in seen]
-    missing = tuple(sorted((c, title(c)) for c in uncovered if out_of_reach_reason(c) is None))
+    missing = tuple(
+        sorted(
+            (c, title(c))
+            for c in uncovered
+            if out_of_reach_reason(c) is None and not_tested_by_design_reason(c) is None
+        )
+    )
     unreachable = tuple(
         sorted(
             (c, title(c), reason)
             for c in uncovered
             if (reason := out_of_reach_reason(c)) is not None
+        )
+    )
+    deliberate = tuple(
+        sorted(
+            (c, title(c), reason)
+            for c in uncovered
+            if (reason := not_tested_by_design_reason(c)) is not None
         )
     )
     return AxisCoverage(
@@ -510,6 +527,7 @@ def _axis(
         covered=covered,
         missing=missing,
         out_of_reach=unreachable,
+        by_design=deliberate,
     )
 
 
