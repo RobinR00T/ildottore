@@ -193,23 +193,22 @@ class SqliteRunStore:
                     (_dumps(spec_digests), run_id),
                 )
             if spend is not None:
-                # Monotonic on the request axis. Two resumes of one run id race read-modify-write
-                # (there is no lease), and a last-writer-wins UPDATE let the loser's spend erase
-                # the winner's: the store then reported LESS than the campaign had spent, which
-                # is the one direction a spend record must never move. It cannot prevent the
-                # concurrent overspend, and the contract clause says so rather than claiming it.
+                # Monotonic PER AXIS. Two resumes of one run id race read-modify-write (there
+                # is no lease), and a last-writer-wins UPDATE let the loser erase the winner's
+                # spend: the store then reported LESS than the campaign had spent, the one
+                # direction a spend record must never move. An all-or-nothing guard on the
+                # request axis fixed that and introduced its own version of it, discarding a
+                # higher token or wall figure along with the refused request count. It cannot
+                # prevent a concurrent overspend, and the contract clause says so rather than
+                # claiming more.
+                current = self.get_run_spend(run_id) or {}
+                merged = {
+                    axis: max(float(spend.get(axis, 0)), float(current.get(axis, 0)))
+                    for axis in {*spend, *current}
+                }
                 self._conn.execute(
-                    """
-                    UPDATE runs SET spend_json = :spend
-                    WHERE run_id = :run_id
-                      AND (spend_json IS NULL
-                           OR COALESCE(json_extract(spend_json, '$.requests'), 0) <= :requests)
-                    """,
-                    {
-                        "spend": _dumps(spend),
-                        "run_id": run_id,
-                        "requests": spend.get("requests", 0),
-                    },
+                    "UPDATE runs SET spend_json = ? WHERE run_id = ?",
+                    (_dumps(merged), run_id),
                 )
             if context is not None:
                 self._conn.execute(

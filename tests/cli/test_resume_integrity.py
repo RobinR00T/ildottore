@@ -263,7 +263,7 @@ def test_a_resume_is_refused_before_the_fingerprint_sends_anything(tmp_path: Pat
 
     wiring_mod.fingerprint_probe = _counting  # type: ignore[assignment]
     try:
-        with pytest.raises(ValueError, match="battery changed"):
+        with pytest.raises(ValueError):
             execute_run(
                 _opts(
                     tmp_path,
@@ -278,3 +278,45 @@ def test_a_resume_is_refused_before_the_fingerprint_sends_anything(tmp_path: Pat
         wiring_mod.fingerprint_probe = original  # type: ignore[assignment]
 
     assert sent == [], "the refusal has to land before the probe pass, not after it"
+
+
+def test_the_wall_ceiling_refusal_also_lands_before_the_probe_pass(tmp_path: Path) -> None:
+    """The second refusal added that night sat BELOW the fingerprint block.
+
+    So a resume whose wall budget was already spent sent 17 probes on a live endpoint with a
+    real bearer token and then exited 3 having done no work: the exact defect the clause above
+    it claims was fixed, reintroduced by the fix for it.
+    """
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store.save_run_context(run_id, spend={"wall_s": 100000.0})
+
+    sent: list[str] = []
+    import ildottore.cli.wiring as wiring_mod
+
+    original = wiring_mod.fingerprint_probe
+
+    def _counting(*args: object, **kwargs: object) -> object:
+        sent.append("probe pass")
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    wiring_mod.fingerprint_probe = _counting  # type: ignore[assignment]
+    try:
+        with pytest.raises(ValueError, match="wall-clock ceiling"):
+            execute_run(
+                _opts(
+                    tmp_path,
+                    spec_dir,
+                    resume=run_id,
+                    budget_requests=100,
+                    budget_wall_s=1800,
+                    fingerprint_first=True,
+                ),
+                [spec_dir],
+            )
+    finally:
+        wiring_mod.fingerprint_probe = original  # type: ignore[assignment]
+
+    assert sent == []

@@ -61,6 +61,8 @@ def load_resume_run(
     specs: list[AttackSpec] | None = None,
     mock_scenario: str | None = None,
     runs: int | None = None,
+    judge: Target | None = None,
+    adaptive: bool | None = None,
     allow_unverified: bool = False,
 ) -> TestRun:
     """Rebuild the partial :class:`TestRun` for ``run_id`` from stored evidence.
@@ -86,6 +88,8 @@ def load_resume_run(
             target,
             mock_scenario=mock_scenario,
             runs=runs,
+            judge=judge,
+            adaptive=adaptive,
             allow_unverified=allow_unverified,
         )
         if specs is not None:
@@ -149,10 +153,22 @@ def _assert_same_target(
             f"{target.id!r} on trust."
         )
     stored = row.get("target_id")
+    # Compare like with like. `save_run` writes `target_id` through the redactor, so a
+    # tenant-shaped id (`tenant-<32 hex>`, an email) is stored masked and never equalled its
+    # own raw value: every resume of such a target was refused with "was made against target
+    # '«REDACTED:high_entropy:...»'", which is both false and unrecoverable by any flag. The
+    # masking is deterministic, so redacting this side too restores the comparison.
+    if stored is not None and stored != target.id:
+        from ildottore.redactor import Redactor
+
+        if stored == Redactor().redact_text(target.id):
+            stored = target.id
     if stored is None:
         # A row with no target id verifies nothing, and `_ensure_run_row` can mint exactly such
         # a row. Treated as unverifiable rather than as a match.
-        _unverifiable(run_id, "the target of the stored run", allow=allow_unverified)
+        _unverifiable(
+            run_id, "the target of the stored run", allow=allow_unverified, waivable=False
+        )
         return
     if stored != target.id:
         raise ValueError(
@@ -175,7 +191,7 @@ def stored_runs(run_db: Path, run_id: str) -> int | None:
     return int(value) if value is not None else None
 
 
-def _unverifiable(run_id: str, what: str, *, allow: bool) -> None:
+def _unverifiable(run_id: str, what: str, *, allow: bool, waivable: bool = True) -> None:
     """One decision for every "this cannot be checked" case: refuse, or say so loudly.
 
     Refusing is the default because the alternative was tried and it was wrong. The first
@@ -186,6 +202,16 @@ def _unverifiable(run_id: str, what: str, *, allow: bool) -> None:
     existed at the time.
     """
 
+    if not waivable:
+        # The TARGET is never waivable. An audit pointed the opt-in at a run row with no
+        # target id and resumed a vulnerable app's evidence into a hardened app's report, with
+        # zero requests sent: the original catastrophic bug, one flag away, behind a flag whose
+        # help text advertises a budget consequence. One flag must not disarm two checks.
+        raise ValueError(
+            f"run {run_id!r} does not record which target it was made against, so resuming it "
+            "here could publish another target's evidence as this one's, with zero requests "
+            "sent. There is no flag for this: start a fresh run against this target."
+        )
     if not allow:
         raise ValueError(
             f"cannot verify {what} for run {run_id!r}, so resuming it would merge two halves "
@@ -249,6 +275,8 @@ def _assert_same_context(
     *,
     mock_scenario: str | None,
     runs: int | None,
+    judge: Target | None = None,
+    adaptive: bool | None = None,
     allow_unverified: bool = False,
 ) -> None:
     """Refuse a resume whose TARGET, route or sample size changed since the halt.
@@ -276,6 +304,24 @@ def _assert_same_context(
             "(its endpoint, model, capabilities or offline scenario differ, even though the id "
             "matches). Resuming would publish one target's evidence as another's. Restore the "
             "target as it was, or start a fresh run."
+        )
+    stored_judge = context.get("judge_digest")
+    current_judge = target_digest(judge) if judge is not None else None
+    if stored_judge != current_judge:
+        raise ValueError(
+            f"run {run_id!r} was judged by a different model than this invocation offers "
+            f"(stored {'a judge' if stored_judge else 'no judge'}, now "
+            f"{'a judge' if current_judge else 'none'}). `semantic_judge` decides verdicts, so "
+            "one campaign would be arbitrated by two different models and merged into one "
+            "finding per spec. Resume with the same --judge, or start a fresh run."
+        )
+    stored_adaptive = context.get("adaptive")
+    if adaptive is not None and stored_adaptive is not None and bool(stored_adaptive) != adaptive:
+        raise ValueError(
+            f"run {run_id!r} halted with adaptive planning "
+            f"{'on' if stored_adaptive else 'off'} and this invocation asks for "
+            f"{'on' if adaptive else 'off'}. It reorders the mutators a spec runs, so the two "
+            "halves would not be the same campaign."
         )
     stored_runs = context.get("runs")
     if runs is not None and stored_runs is not None and int(stored_runs) != runs:

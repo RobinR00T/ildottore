@@ -867,8 +867,32 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # Resolved BEFORE the fingerprint pass, which SENDS. It used to sit after it, so
     # `-sV --resume <id-of-a-changed-battery>` put 17 probes on a real endpoint with a real
     # bearer token and then exited 3 having done no work. Nothing here needs the fingerprint.
+    adaptive = opts.fingerprint_first or opts.deep
+
+    prior_spend: Spend | None = None
     resume_from: TestRun | None = None
     if opts.resume is not None:
+        # The budgets are derived from a plan, and the real plan needs the fingerprint, which
+        # SENDS. A provisional plan resolved with no fingerprint derives the same ceilings (the
+        # estimate counts specs and mutators, which -sV reorders rather than changes), so the
+        # wall-clock refusal can happen here rather than after 17 probes have gone out. The
+        # first version of this check sat below the probe pass, which is the exact defect the
+        # clause above it says was fixed.
+        provisional = resolve_target_plans(
+            scope=scope,
+            targets=loaded_targets,
+            specs=selected,
+            runs=opts.runs,
+            rate_rps=pacing_rate,
+            fingerprints={},
+            adaptive=adaptive,
+            budget_overrides=PlanBudgets(
+                max_tokens=opts.budget_tokens,
+                max_requests=opts.budget_requests,
+                max_wall_s=opts.budget_wall_s,
+            ),
+        )
+        prior_spend = _prior_spend(run_db, opts.resume, provisional[0].budgets)
         resume_from = resume_mod.load_resume_run(
             evidence_root,
             opts.resume,
@@ -877,13 +901,21 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             specs=selected,
             mock_scenario=routes[0][2][0],
             runs=opts.runs if opts.runs_explicit else None,
+            judge=judge_target,
+            adaptive=adaptive,
             allow_unverified=opts.resume_unverified,
         )
         inherited = resume_mod.stored_runs(run_db, opts.resume)
         if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
+            # stderr and never suppressed: this changes the denominator of the reproducibility
+            # axis, which is a state change and not progress chatter. Under --quiet (which is
+            # what CI uses) the downgrade was invisible in every surface.
+            print(
+                f"resume: continuing at --runs {inherited}, as the halted campaign ran "
+                f"(you asked for {opts.runs})",
+                file=sys.stderr,
+            )
             opts.runs = inherited
-            if not opts.quiet:
-                print(f"resume: continuing at --runs {inherited}, as the halted campaign ran")
         if not opts.quiet:
             done = sum(len(f.attempts) for f in resume_from.findings)
             print(
@@ -955,8 +987,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 )
                 + (f" version={version.guess}" if version is not None else "")
             )
-    adaptive = opts.fingerprint_first or opts.deep
-
     plans = resolve_target_plans(
         scope=scope,
         targets=loaded_targets,
@@ -1038,10 +1068,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
     # loop: `--resume` names a single target, so there is one prior spend to carry.
-    prior_spend = (
-        _prior_spend(run_db, opts.resume, plans[0].budgets) if opts.resume is not None else None
-    )
-
     results: list[CampaignResult] = []
     all_findings: list[Finding] = []
     planned_specs = 0
@@ -1081,6 +1107,15 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             target=target,
             mock_scenario=mock_scenario,
             runs=opts.runs,
+            judge=judge_target,
+            adaptive=adaptive,
+            # The probe pass runs outside the runner's ledger by design, so it was pre-checked
+            # against --budget-requests and then never billed: 17 requests per -sV per target
+            # left the process and the record the next resume opens on did not know. Each
+            # resume added another 17, which is the double-ceiling shape on a different axis.
+            extra_requests=(
+                fingerprint_probe_count() if (opts.fingerprint_first and not sends_nothing) else 0
+            ),
         )
         _print_progress(printer, plan.selected, result.findings)
         all_findings.extend(result.findings)
@@ -1300,6 +1335,9 @@ def _persist_run_context(
     target: Target,
     mock_scenario: str | None,
     runs: int,
+    judge: Target | None = None,
+    adaptive: bool = False,
+    extra_requests: int = 0,
 ) -> None:
     """Record the battery this run executed and what it has spent in total.
 
@@ -1315,11 +1353,13 @@ def _persist_run_context(
             spec_digests=spec_digests(specs),
             context={
                 "target_digest": target_digest(target, mock_scenario=mock_scenario),
+                "judge_digest": target_digest(judge) if judge is not None else None,
+                "adaptive": adaptive,
                 "runs": runs,
             },
             spend={
                 "tokens": result.spend.tokens,
-                "requests": result.spend.requests,
+                "requests": result.spend.requests + extra_requests,
                 "attempts": result.spend.attempts,
                 "wall_s": round(result.spend.wall_s, 6),
             },

@@ -202,14 +202,13 @@ def unknown_atlas_tactic(tactic: str | None) -> str | None:
 #: survivors move the reporting layer refuses everywhere else (clause A-12).
 OUT_OF_REACH: dict[str, str] = {
     "LLM03": (
-        "supply chain: provenance, packages and adapters cannot be asked of an endpoint. One "
-        "of the nine items in the 2025 list, a deprecated model still in service, IS visible "
-        "to `dottore fingerprint`, and is not yet asserted as a finding"
+        "supply chain: provenance, packages and adapters cannot be asked of an endpoint, they "
+        "are answered by SBOM and vendor controls"
     ),
     "LLM04": (
-        "data and model poisoning: the training and fine-tuning stages need the pipeline. The "
-        "embedding stage, which the 2025 text also covers, is exercised by this battery and "
-        "counted under LLM08"
+        "data and model poisoning: the training and fine-tuning stages need pipeline access. "
+        "Runtime poisoning of a durable store IS exercised (MEM-POISON-001, PI-INDIRECT-RAG-001) "
+        "and those specs count under the code they declare"
     ),
     "IOPC-T2.003": (
         "training and fine-tuning data poisoning: the same pipeline access LLM04 needs, and the "
@@ -218,6 +217,11 @@ OUT_OF_REACH: dict[str, str] = {
     "IOPC-T8.003": (
         "offline attack staging: it happens on the attacker's own machine, so there is nothing "
         "to send and nothing to observe at the target"
+    ),
+    "AI Model Access": (
+        "the adversary's own level of access to a model, which is not a behaviour any target "
+        "exhibits: there is no reply that settles it. Moved here from the by-design list, "
+        "where it did not belong: no version of this product would make it testable"
     ),
 }
 
@@ -229,10 +233,6 @@ NOT_TESTED_BY_DESIGN: dict[str, str] = {
         "a multi-turn attack are pinned in the spec, which is what makes a finding replayable. "
         "Parts of this tactic are reachable through an inference API, so this is a roadmap "
         "decision, not a limit of black-box testing"
-    ),
-    "AI Model Access": (
-        "how an adversary reaches a model. This scanner's own precondition is an authorized "
-        "endpoint in scope, so it does not test acquiring access to one"
     ),
     "IOPC-T8.004": (
         "acquiring access to an AI system: the scanner only touches endpoints it is already "

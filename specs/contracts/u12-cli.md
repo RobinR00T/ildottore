@@ -132,10 +132,21 @@ a claim about a whole campaign checked only against the invocation in front of i
 * **The sample size.** `--runs` is the denominator of the reproducibility axis. Changing it
   explicitly is refused; omitting it **inherits** the campaign's, because the store knows it.
 * **The money.** The hard budget reset on every command. The cumulative spend is persisted and
-  the ledger opens there. It binds **sequential** invocations: two concurrent resumes of one run
-  id are not serialised (no lease), so they can each spend the remainder. The write is monotonic
-  on the request axis so the record cannot under-report what was spent, and this sentence is the
-  claim rather than a stronger one.
+  the ledger opens there, **including the `-sV` probe pass**, which runs outside the runner's
+  ledger by design and was therefore pre-checked against the ceiling and then never billed: 17
+  requests per target per resume, unrecorded. It binds **sequential** invocations: two concurrent
+  resumes of one run id are not serialised (no lease), so they can each spend the remainder. The
+  write is monotonic per axis, so a refused write can no longer discard a higher token or wall
+  figure along with the request count, and the record cannot under-report what was spent.
+* **The judge and the planning mode.** `semantic_judge` decides verdicts, so a different
+  `--judge` mid-campaign arbitrates one report with two models; `--deep`/`-sV` reorder the
+  mutators a spec runs. Both are in the recorded context now.
+
+**The target is the one thing with no opt-in.** `--resume-unverified` waives the battery, the
+context and the spend, and a second audit pointed it at a run row with no target id and resumed
+a vulnerable app's evidence into a hardened app's report with zero requests sent: one flag was
+disarming two checks, and its help text advertises a budget consequence. A run that does not
+record its target is refused outright, with no flag.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the

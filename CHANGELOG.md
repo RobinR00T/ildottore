@@ -77,7 +77,53 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
-### Fixed (the audit of the same night's work, four auditors in isolated worktrees)
+### Fixed (two rounds of audit of the same night's work, six auditors in isolated worktrees)
+
+The second round audited the first round's fixes, which is the practice that keeps paying: it
+found that one of them had made a spec **worse** than the bug it fixed.
+
+- **The `--resume-unverified` flag re-opened the cross-target splice.** One flag disarmed both
+  the battery check and the target check, so a run row with no target id resumed a vulnerable
+  app's evidence into a hardened app's report, with zero requests sent: the original
+  catastrophic bug, one flag away, behind a flag whose help text advertises a budget
+  consequence. The target has no opt-in now.
+- **`RECON-MODEL-IDENTITY-001`'s fix made it worse.** Adding a vendor allow-list as a third
+  deterministic vote under `weighted` pushed a real disclosure from 1-of-2 (fail) to 1-of-3
+  (pass), it missed every model family not on the list, and it failed a target that refused
+  while naming the vendors it would not confirm. Withdrawn. The deterministic half is the
+  canary, the rest is the judge's call, and the spec says so instead of pretending otherwise.
+- **`DOS-RESOURCE-HIJACK-001`'s fix was cosmetic.** Swapping `billing` for `decline` swapped one
+  phrase from the spec's own system prompt for another, and three of the six remaining markers
+  had the same defect; meanwhile a genuine refusal phrased in other words scored a FAIL the
+  judge could not overturn. The oracle keys on the **capitulation** now (the batch being
+  produced), which is the only thing a capitulating target has and a refusing one does not. All
+  ten of the auditor's cases come out right, and the spec no longer decides anything at all
+  against a canned offline string, which is the honest outcome for evidence of neither.
+- **`tags` was excluded from the spec digest and gates the policy pack.** Removing a `layer_b`
+  or `pii_elicitation` tag turned a blocked spec into traffic on the wire under an unchanged
+  digest. `nist_ai_rmf` was excluded too and feeds a published rollup. Both are in now.
+- **A tenant-shaped target id could never be resumed.** `target_id` is stored through the
+  redactor, so `tenant-<32 hex>` was masked and never equalled itself: every resume of such a
+  target was refused with "was made against target '«REDACTED:...»'", which is false and no flag
+  recovered it. Invisible on the test fixtures, certain on a real engagement.
+- **The new wall-clock refusal sat below the probe pass**, so it sent 17 requests and then
+  refused: the exact defect the clause above it says was fixed, reintroduced by the fix for it.
+- **The probe pass was never billed.** 17 requests per `-sV` per target left the process and the
+  record the next resume opens its ledger on did not know, so each resume added another 17
+  unbilled. The double-ceiling shape on a different axis.
+- **The judge and the planning mode were unbound**, so one campaign could be arbitrated by two
+  different models. Both are in the recorded context.
+- **`--runs` inheritance was silent under `--quiet`**, which is what CI uses, while it moves the
+  reproducibility denominator. It goes to stderr unconditionally now.
+- **The coverage classification guarded one direction of three.** Moving a code between the two
+  dicts was caught; adding an entry for a code the battery **covers** was not, and an auditor
+  used it to make five suite-scoped reports print that prompt injection is out of reach for a
+  black-box scanner, with CI green. And two of the reasons were wrong: LLM03's claimed a
+  deprecation check that does not exist in the code, LLM04's credited the LLM08 specs with a
+  poisoning test they do not perform. `AI Model Access` moved to out-of-reach, where it belongs:
+  no version of this product makes an adversary's own access a target-side observable.
+
+### Fixed (the first round: four auditors, same worktree discipline)
 
 Every feature above was audited within the hour, and the audits found more than the features
 did. The pattern held: the defects were in the **claims**, not only in the code.

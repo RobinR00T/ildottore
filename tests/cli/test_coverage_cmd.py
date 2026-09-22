@@ -172,7 +172,7 @@ def test_every_classification_is_pinned_per_axis() -> None:
 
     from ildottore.cli.coverage import battery_coverage
 
-    by_key = {a.key: a for a in battery_coverage([Path("specs")]).axes}
+    by_key = {a.key: a for a in battery_coverage([SPECS]).axes}
 
     assert {c for c, _ in by_key["owasp"].missing} == set()
     assert {c for c, _, _ in by_key["owasp"].out_of_reach} == {"LLM03", "LLM04"}
@@ -182,11 +182,8 @@ def test_every_classification_is_pinned_per_axis() -> None:
     # which an agent writes a cron entry calling a C2-shaped address, so the behaviour is
     # observable in a target's own tool calls. It was briefly classified unreachable.
     assert {c for c, _ in by_key["atlas"].missing} == {"Command and Control"}
-    assert by_key["atlas"].out_of_reach == ()
-    assert {c for c, _, _ in by_key["atlas"].by_design} == {
-        "AI Attack Adaptation",
-        "AI Model Access",
-    }
+    assert {c for c, _, _ in by_key["atlas"].by_design} == {"AI Attack Adaptation"}
+    assert {c for c, _, _ in by_key["atlas"].out_of_reach} == {"AI Model Access"}
 
     assert {c for c, _ in by_key["iopc_techniques"].missing} == set()
     assert {c for c, _, _ in by_key["iopc_techniques"].out_of_reach} == {
@@ -199,12 +196,43 @@ def test_every_classification_is_pinned_per_axis() -> None:
     assert by_key["iopc_impacts"].out_of_reach == ()
 
 
+def test_a_classified_code_is_one_that_is_actually_uncovered() -> None:
+    """The other two directions a reclassification can go, both of which were unguarded.
+
+    `_axis` only consults the two dicts for codes the battery does NOT cover, so an entry for a
+    COVERED code is invisible to every other assertion here while still changing real output:
+    an audit put `LLM01` into the out-of-reach dict and five suite-scoped reports began printing
+    that prompt injection is out of reach for a black-box scanner, with the whole suite green.
+    An entry for a code in no universe at all is inert, which is its own kind of rot.
+    """
+
+    from ildottore.reporting.summary import build_battery_coverage
+    from ildottore.shared.frameworks import NOT_TESTED_BY_DESIGN, OUT_OF_REACH
+
+    coverage = battery_coverage([SPECS])
+    covered = {code for axis in coverage.axes for code, _ in axis.covered}
+    universe = {code for axis in coverage.axes for code, _ in (*axis.covered, *axis.missing)} | {
+        code for axis in coverage.axes for code, _, _ in (*axis.out_of_reach, *axis.by_design)
+    }
+
+    classified = set(OUT_OF_REACH) | set(NOT_TESTED_BY_DESIGN)
+    assert not (classified & covered), (
+        "a code the battery covers is classified as unreachable or untested: "
+        f"{sorted(classified & covered)}. It reads as inert on the full battery and changes "
+        "what a suite-scoped report says."
+    )
+    assert classified <= universe, (
+        f"classified codes outside every pinned universe: {sorted(classified - universe)}"
+    )
+    assert build_battery_coverage([]).axes, "the empty battery still resolves its axes"
+
+
 def test_a_gap_is_either_roadmap_or_out_of_reach_with_a_reason() -> None:
     """ "8 of 10" invites the reader to assume the other two are coming. Some never are."""
 
     from ildottore.cli.coverage import battery_coverage
 
-    coverage = battery_coverage([Path("specs")])
+    coverage = battery_coverage([SPECS])
     for axis in coverage.axes:
         assert (
             axis.exercised + len(axis.missing) + len(axis.out_of_reach) + len(axis.by_design)
@@ -224,7 +252,7 @@ def test_out_of_reach_codes_stay_in_the_denominator() -> None:
     from ildottore.cli.coverage import battery_coverage
     from ildottore.shared.frameworks import OWASP_LLM_UNIVERSE
 
-    coverage = battery_coverage([Path("specs")])
+    coverage = battery_coverage([SPECS])
     owasp = next(a for a in coverage.axes if a.key == "owasp")
 
     assert owasp.out_of_reach, "the OWASP axis has out-of-reach codes to speak about"
@@ -235,13 +263,13 @@ def test_out_of_reach_codes_stay_in_the_denominator() -> None:
 def test_the_two_groups_are_rendered_apart_and_the_denominator_is_explained() -> None:
     from ildottore.cli.coverage import battery_coverage, render_coverage
 
-    rendered = render_coverage(battery_coverage([Path("specs")]))
+    rendered = render_coverage(battery_coverage([SPECS]))
 
     assert "Out of reach for a black-box runtime scanner" in rendered
     assert "Deliberately not tested, and why" in rendered
     assert "stay in the denominator" in rendered
     # The reason travels with the code, in the human output as well as the JSON.
-    assert "training and fine-tuning stages need the pipeline" in rendered
+    assert "training and fine-tuning stages need pipeline access" in rendered
 
 
 def test_the_json_keeps_the_two_lists_apart() -> None:
@@ -249,7 +277,7 @@ def test_the_json_keeps_the_two_lists_apart() -> None:
 
     from ildottore.cli.coverage import battery_coverage, render_coverage_json
 
-    payload = json.loads(render_coverage_json(battery_coverage([Path("specs")])))
+    payload = json.loads(render_coverage_json(battery_coverage([SPECS])))
     owasp = next(a for a in payload["axes"] if a["key"] == "owasp")
 
     assert owasp["missing"] == [], "both OWASP gaps are out of reach, neither is pending"

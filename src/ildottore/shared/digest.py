@@ -28,8 +28,13 @@ DIGEST_PREFIX: Final = "sha256:v2:"
 
 #: Spec fields deliberately OUTSIDE the digest: they reach neither the wire, nor the verdict,
 #: nor any published number. An audit showed that hashing the whole model refused a resume over
-#: an edited `description` or a corrected `tags` line, which is how a check trains the operator
-#: to work around it rather than read it.
+#: an edited `description`, which is how a check trains the operator to work around it.
+#:
+#: The list is short because a second audit shortened it. `tags` was in it and is **load
+#: bearing**: `policy/packs.py` reads `layer_b` and `pii_elicitation` off it, so removing a tag
+#: turns a policy-blocked spec into traffic on the wire under an unchanged digest, and that is
+#: the DL4 safety gate. `nist_ai_rmf` was in it and feeds the `by_framework.nist` rollup, a
+#: SARIF tag and an HTML column, which is a published number by this clause's own criterion.
 #:
 #: `fixtures` is deliberately **inside**. For a live target it is offline self-test data, but
 #: the `vulnerable`/`hardened` mock scenarios replay it as the target's own answers, so for an
