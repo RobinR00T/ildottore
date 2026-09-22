@@ -26,10 +26,14 @@ class TamperError(RuntimeError):
 
 @dataclass(frozen=True)
 class ReplayResult:
-    """The reconstructed, hash-verified view of one run's attempts."""
+    """The reconstructed, hash-verified view of one run's attempts (and its probes)."""
 
     run_id: str
     attempts: tuple[Attempt, ...]
+    #: Recognition traffic (``-sV``), kept SEPARATE from the attempts on purpose: it is
+    #: evidence of what this tool sent, and it is not an attack attempt, so it must never
+    #: reach ``n`` or the reproducibility ratio below.
+    probes: tuple[Attempt, ...] = ()
 
     @property
     def n(self) -> int:
@@ -64,18 +68,25 @@ def _load_verified_attempt(artifact: Path) -> Attempt:
 
 
 def replay_run(root: Path, run_id: str) -> ReplayResult:
-    """Load + hash-verify every attempt artifact for ``run_id``.
+    """Load + hash-verify every attempt **and probe** artifact for ``run_id``.
 
     Raises :class:`TamperError` on the first artifact whose content does not match
     its filename hash. Returns an empty result if the run has no attempts dir.
     """
 
-    directory = paths.attempts_dir(Path(root), run_id)
-    attempts: list[Attempt] = []
-    if directory.is_dir():
-        for artifact in sorted(directory.glob("*.json")):
-            attempts.append(_load_verified_attempt(artifact))
-    return ReplayResult(run_id=run_id, attempts=tuple(attempts))
+    return ReplayResult(
+        run_id=run_id,
+        attempts=_load_dir(paths.attempts_dir(Path(root), run_id)),
+        probes=_load_dir(paths.probes_dir(Path(root), run_id)),
+    )
+
+
+def _load_dir(directory: Path) -> tuple[Attempt, ...]:
+    """Every hash-verified artifact in one directory, in stable filename order."""
+
+    if not directory.is_dir():
+        return ()
+    return tuple(_load_verified_attempt(a) for a in sorted(directory.glob("*.json")))
 
 
 def verify_ref(root: Path, run_id: str, sha256: str) -> bool:

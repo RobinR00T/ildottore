@@ -82,6 +82,17 @@ the root: a symlink planted at `<root>/<run-id>` escaped the first check and a r
 tree's attempts as this run's. Content-addressing still verified them; what did not hold is
 that they belonged to the run being read.
 
+**A-23 Recognition traffic is evidence, stored apart from the attempts (added 2026-09-22).**
+A fingerprint pass sends 17 requests per target, and for as long as none of them was written
+down the evidence tree could not answer "what did this tool send my endpoint": the question the
+product exists to answer, and the reason a day's worth of probes carrying attack framing stayed
+invisible. Probes go to `<run>/probes/` through the same redact-hash-write path as attempts, so
+the leak guard and the content-addressing cover them without a second implementation. They are
+kept out of `attempts/` because a probe is not an attempt: filing it as one would inflate the
+reproducibility denominator, the resume skip set and the replay count, all published numbers.
+A send that fails is stored with its error, because "we sent this and got nothing back" is also
+evidence. Checked by `tests/cli/test_probe_evidence.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.

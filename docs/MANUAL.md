@@ -308,7 +308,10 @@ Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`).
 dottore replay RUN_ID [--evidence-root PATH]
 ```
 
-Re-reads a run from stored evidence without re-sending anything.
+Re-reads a run from stored evidence without re-sending anything. Attack attempts and the
+recognition probes sent by `-sV` are listed apart: a probe is not an attempt, so it never enters
+the reproducibility ratio or the attempt count, but it is stored, hashed and replayable like
+one, which is what lets a run answer "what did this tool send my endpoint".
 
 ### `dottore diff`, regression gate against a baseline
 
@@ -562,7 +565,9 @@ Only exploited (`fail`) findings can trip the CI gate, and by default only `conf
   test reporting), `-oA <prefix>` writes all four.
 - **Evidence store.** Every attempt persists its prompt, full response, sampling params, tool
   traces, evaluator reasoning and diffs under `--evidence-root` (default `.dottore/evidence`),
-  content-addressed and redacted at rest. The run store is a SQLite db (`--run-db`).
+  content-addressed and redacted at rest, in `<run-id>/attempts/`. Recognition traffic from
+  `-sV` is stored the same way in `<run-id>/probes/`, kept apart so it cannot be counted as
+  attack traffic. The run store is a SQLite db (`--run-db`).
 - **Replay.** `dottore replay <run-id>` re-derives a run from stored evidence with no
   re-sending, which is what makes a finding auditable after the fact.
 - **Do not commit `.dottore/`** (evidence + runs are runtime artifacts).

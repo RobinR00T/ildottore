@@ -24,7 +24,7 @@ def replay(evidence_root: Path, run_id: str) -> ReplayResult:
     """
 
     result = replay_run(evidence_root, run_id)
-    if not result.attempts:
+    if not result.attempts and not result.probes:
         # "no such run" and "a run with no attempts" printed identically (attempts: 0,
         # exploited: 0, exit 0), so a script could not tell a typo from a real result.
         raise ValueError(
@@ -41,6 +41,14 @@ def render_replay(result: ReplayResult) -> str:
     for attempt in result.attempts:
         status = attempt.verdict.status.value if attempt.verdict is not None else "?"
         lines.append(f"  {attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}  {status}")
+    if result.probes:
+        # Recognition traffic, listed apart and never folded into the counts below: this is
+        # the answer to "what did this tool send my endpoint", which a fingerprint pass could
+        # not give at all until probes were stored.
+        lines.append(f"  probes ({len(result.probes)}, recognition traffic from -sV):")
+        for probe in result.probes:
+            answered = "answered" if probe.response is not None else f"no answer ({probe.error})"
+            lines.append(f"    {probe.attempt_id}  {answered}")
     lines.append(
         f"attempts: {result.n}  exploited: {result.successful_attacks()}  "
         f"reproducibility: {result.reproducibility():.2f}"

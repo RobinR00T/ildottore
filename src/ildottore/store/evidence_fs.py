@@ -17,7 +17,7 @@ import json
 import os
 import re
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from ildottore.redactor import Pattern, Redactor
@@ -135,6 +135,27 @@ class FsEvidenceStore:
         same ref (same content → same hash → same path).
         """
 
+        return self._store(run_id, attempt, paths.attempt_path)
+
+    def put_probe(self, run_id: str, attempt: Attempt) -> EvidenceRef:
+        """Store a **recognition probe** (``-sV``), under ``probes/`` rather than ``attempts/``.
+
+        Same redaction, same content-addressing, same fail-closed leak guard: a probe is
+        traffic this tool sent to somebody's endpoint, so it is evidence. It is filed apart
+        because it is **not an attack attempt**: counting it as one would inflate every
+        attempt-derived number (reproducibility over N, the resume skip set, ``replay``'s
+        count). Until 2026-09-22 a fingerprint pass left no trace at all, which is how 17
+        requests per target, briefly including attack framing, stayed unauditable.
+        """
+
+        return self._store(run_id, attempt, paths.probe_path)
+
+    def _store(
+        self,
+        run_id: str,
+        attempt: Attempt,
+        path_for: Callable[[Path, str, str], Path],
+    ) -> EvidenceRef:
         # Value-redact the dump with the injected redactor, then mask dict KEYS separately
         # so a secret in a key (e.g. a model-controlled tool-call argument name) is masked
         # too (DL2). Keys are masked here but VALUES are left to ``redactor.redact``, so an
@@ -152,7 +173,7 @@ class FsEvidenceStore:
         payload = _canonical_json(redacted)
 
         digest = paths.content_hash(payload)
-        target = paths.attempt_path(self._root, run_id, digest)
+        target = path_for(self._root, run_id, digest)
         target.parent.mkdir(parents=True, exist_ok=True)
 
         if not target.exists():

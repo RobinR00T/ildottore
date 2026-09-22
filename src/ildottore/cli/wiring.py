@@ -54,6 +54,7 @@ from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.models import (
     AttackSpec,
+    Attempt,
     Capabilities,
     ModelFingerprint,
     ModelRequest,
@@ -66,6 +67,7 @@ from ildottore.store import FsEvidenceStore, SqliteRunStore
 
 __all__ = [
     "MOCK_SCENARIOS",
+    "PROBE_SPEC_ID",
     "BuiltRunner",
     "bare_adapter_factory",
     "build_evidence_store",
@@ -104,6 +106,11 @@ __all__ = [
 #: replays ``fixtures.hardened`` → ``pass``. A real over-the-wire adapter (u04) ignores
 #: this - the field only steers the deterministic offline mock (contract §5).
 MOCK_SCENARIOS = ("bare", "vulnerable", "hardened")
+
+#: The ``spec_id`` stored on a recognition probe. Not a real spec id, and deliberately not one:
+#: a probe is not an attack attempt, so nothing that groups by spec should ever mistake it for
+#: one. It is also why probes live under ``probes/`` rather than ``attempts/``.
+PROBE_SPEC_ID = "__probe__"
 
 
 @dataclass
@@ -647,12 +654,70 @@ class _PacedAdapter:
         return self.inner.capabilities()
 
 
+@dataclass
+class _RecordingAdapter:
+    """Wraps a probe adapter so every recognition exchange lands in the evidence store.
+
+    A fingerprint pass is 17 requests per target and it left **no trace**: the evidence tree
+    could not answer "what did this tool send my endpoint", which is the question the whole
+    product is built to answer, and it is exactly what kept a day's worth of probes carrying
+    attack framing invisible. Probes are filed under ``probes/``, not ``attempts/``: a probe is
+    not an attack attempt, and counting it as one would inflate every attempt-derived number.
+
+    A failed send is recorded too, with its error: "we sent this and got nothing back" is
+    evidence, and dropping it would make the tree quietly incomplete.
+    """
+
+    inner: TargetAdapter
+    evidence: FsEvidenceStore
+    run_id: str
+    sent: int = 0
+
+    @property
+    def id(self) -> str:
+        return self.inner.id
+
+    def capabilities(self) -> Capabilities:
+        return self.inner.capabilities()
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        probe = str((request.metadata or {}).get("probe", "probe"))
+        attempt_id = f"probe::{probe}#{self.sent}"
+        self.sent += 1
+        try:
+            response = await self.inner.send(request)
+        except Exception as exc:
+            self.evidence.put_probe(
+                self.run_id,
+                Attempt(
+                    attempt_id=attempt_id,
+                    spec_id=PROBE_SPEC_ID,
+                    request=request,
+                    response=None,
+                    error=f"{type(exc).__name__}: {exc}",
+                ),
+            )
+            raise
+        self.evidence.put_probe(
+            self.run_id,
+            Attempt(
+                attempt_id=attempt_id,
+                spec_id=PROBE_SPEC_ID,
+                request=request,
+                response=response,
+            ),
+        )
+        return response
+
+
 def fingerprint_probe(
     scope: Scope,
     target: Target,
     *,
     real_target: Target | None = None,
     rate_rps: float | None = None,
+    evidence: FsEvidenceStore | None = None,
+    run_id: str | None = None,
 ) -> ModelFingerprint:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
@@ -665,6 +730,9 @@ def fingerprint_probe(
     adapter = build_probe_adapter(scope, target, real_target=real_target)
     if rate_rps is not None and rate_rps > 0:
         adapter = cast("TargetAdapter", _PacedAdapter(adapter, RateLimiter(rate_rps)))
+    if evidence is not None and run_id is not None:
+        # Recording wraps the pacing, so what is stored is what went on the wire.
+        adapter = cast("TargetAdapter", _RecordingAdapter(adapter, evidence, run_id))
     return asyncio.run(build_fingerprint_engine().run(adapter))
 
 

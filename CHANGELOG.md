@@ -61,8 +61,7 @@ worktrees, hours after both landed. Each found a defect in the feature's central
 
 **Known limits, stated rather than left to be discovered.** `-sV` cannot reorder anything
 against the offline mock (its canned reply never carries the marker), so CI exercises the
-plumbing and not the measurement. Probe traffic is not written to the evidence store, so a
-scan's evidence tree does not answer "what did `-sV` send my endpoint". `--resume` does not
+plumbing and not the measurement. `--resume` does not
 detect that the spec files changed since the halt, and the hard budget is per invocation, so
 resuming repeatedly can spend more in total than any single ceiling allows.
 
@@ -81,6 +80,15 @@ resuming repeatedly can spend more in total than any single ceiling allows.
   gate cannot change meaning between runs.
 
 ### Added
+- **Recognition traffic is now evidence.** A `-sV` pass sends 17 requests per target and left
+  no trace of any of them: the evidence tree could not answer "what did this tool send my
+  endpoint", which is the question the product exists to answer, and is precisely what kept a
+  day's worth of probes carrying attack framing invisible (see above). Probes are written to
+  `<run>/probes/` through the same redact-hash-write path as attempts, so the fail-closed leak
+  guard and the content-addressing cover them for free, and `dottore replay` lists them under
+  their own heading. They stay out of `attempts/` on purpose: a probe is not an attack attempt,
+  and counting it as one would inflate the reproducibility denominator, the resume skip set and
+  the replay count. A probe whose send fails is stored with its error. Contract clause A-23.
 - **NOVA / IoPC coverage-gap battery**: 10 specs + the `nova-iopc` suite, authored from a
   spec-by-technique map against the Nova IoPC taxonomy (`docs/15`). Covers delayed/triggered
   injection, persistent memory poisoning, hallucinated dependencies (slopsquatting),
