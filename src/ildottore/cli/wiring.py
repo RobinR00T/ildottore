@@ -34,9 +34,12 @@ from ildottore.adapters import (
 )
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
+from ildottore.core.pacing import RateLimiter
+from ildottore.core.planner import IDENTITY_MUTATOR
 from ildottore.core.runner import CampaignRunner, IdentityProbe, PolicyGate
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
 from ildottore.fingerprint import FingerprintEngine
+from ildottore.fingerprint.layers import CarrierLayer, default_layers
 from ildottore.mutators import build_default_registry as build_mutator_registry
 from ildottore.policy import (
     EndpointAllowlist,
@@ -53,6 +56,8 @@ from ildottore.shared.models import (
     AttackSpec,
     Capabilities,
     ModelFingerprint,
+    ModelRequest,
+    ModelResponse,
     Sampling,
     Target,
 )
@@ -227,9 +232,17 @@ def build_reporter(
 
 
 def build_fingerprint_engine() -> FingerprintEngine:
-    """The default six-layer fingerprint engine (u09)."""
+    """The fingerprint engine: u09's six self-contained layers plus the carrier layer.
 
-    return FingerprintEngine()
+    The carrier layer is assembled here because it probes with u05's mutators and u09 may not
+    import them. It is what makes ``-sV`` change the battery rather than only name the model:
+    the planner orders each spec's mutators by what this target demonstrably still
+    understands (``fingerprint.layers.carrier``).
+    """
+
+    registry = build_mutator_registry()
+    carriers = [registry.get(name) for name in registry.names() if name != IDENTITY_MUTATOR]
+    return FingerprintEngine(layers=[*default_layers(), CarrierLayer(carriers)])
 
 
 def build_probe_adapter(
@@ -609,19 +622,49 @@ def check_target_credential(scope: Scope, target: Target) -> None:
     _authorized_api_key(scope, target)
 
 
+@dataclass
+class _PacedAdapter:
+    """Wraps an adapter so every probe passes the campaign's rate gate (S8).
+
+    A fingerprint pass is ~28 requests per target (the carrier layer alone is one per
+    registered mutator), and they went out unpaced because they do not travel through the
+    runner: the rate ceiling was enforced on the attack path and nowhere else. Same ceiling,
+    same gate, one decorator.
+    """
+
+    inner: TargetAdapter
+    pacer: RateLimiter
+
+    @property
+    def id(self) -> str:
+        return self.inner.id
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        await self.pacer.acquire()
+        return await self.inner.send(request)
+
+    def capabilities(self) -> Capabilities:
+        return self.inner.capabilities()
+
+
 def fingerprint_probe(
     scope: Scope,
     target: Target,
     *,
     real_target: Target | None = None,
+    rate_rps: float | None = None,
 ) -> ModelFingerprint:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
     Scope-bound: a live target is probed through its allowlisted endpoint with its
-    authorized credential, an offline target through the deterministic mock.
+    authorized credential, an offline target through the deterministic mock. ``rate_rps``
+    paces the probes exactly like the attack traffic; ``None`` leaves them unpaced, which is
+    what an offline mock wants.
     """
 
     adapter = build_probe_adapter(scope, target, real_target=real_target)
+    if rate_rps is not None and rate_rps > 0:
+        adapter = cast("TargetAdapter", _PacedAdapter(adapter, RateLimiter(rate_rps)))
     return asyncio.run(build_fingerprint_engine().run(adapter))
 
 

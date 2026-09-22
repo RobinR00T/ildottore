@@ -42,6 +42,30 @@ versioning: [SemVer](https://semver.org/).
   run (and before a purchase): "covered, of what?". Names the uncovered codes rather than only
   counting them, supports `--framework`, `--suite` and `--json`.
 
+### Added
+- **`-sV` changes the battery now, and the signal behind it is measured, not assumed.** The
+  flag documented two jobs (recognise the model, tailor the plan) and did the first only:
+  `core.planner._order_family_effective` reads `capability_guess["effective_mutators"]` and
+  **nothing ever wrote that key**, so a fingerprint was bought with real requests and left the
+  plan byte-identical except for the wording of each selection's `reason`. A new **carrier
+  layer** (`fingerprint/layers/carrier.py`) sends one benign, policy-neutral instruction
+  through every registered mutator and records whether the target still follows it; the
+  planner then runs the carriers it recovered first. A transformation whose instruction the
+  model cannot recover cannot carry an attack either.
+
+  Stated narrowly on purpose: this measures **carrier comprehension**, not guardrail evasion,
+  which cannot be measured with benign probes (contract §8). The alternative was a
+  hand-written "mutators known to work against family X" table, which we have no empirical
+  basis for; shipping one would attach a confidence to a fiction. The other tailoring hook,
+  `_baseline_resistance`, is still unwritten by the engine and `docs/10` now says so instead
+  of implying otherwise.
+
+  The layer lives behind the composition root, not in `default_layers()`, because u09 may not
+  import u05's mutators (import contract). Cost: a fingerprint pass goes from 6 probes to
+  ~24, the figure is printed in the resolved plan, the probes are paced by the same `--rate`
+  ceiling as attack traffic (they bypassed it entirely before, since they do not travel
+  through the runner), and `--dry-run` / `--estimate` / `-sn` still send none of them.
+
 ### Fixed (second audit round, on the first round's own work)
 
 Four more adversarial audits were run against the commit above. They found that its headline

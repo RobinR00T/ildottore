@@ -7,19 +7,35 @@ Two roles for fingerprinting: both first-class:
    *what model, which version, which guardrails and capabilities* sit behind an endpoint, and
    stop. Nothing else is attacked. This is the nmap `-sV` / banner-grab analogue and a useful
    product on its own (asset discovery of AI endpoints).
-2. **Adaptive first pass** (`-sV`, or `-A`, before a scan): the fingerprint is recorded and
-   printed, and the plan is built in adaptive mode.
+2. **Adaptive first pass** (`-sV`, or `-A`, before a scan): the fingerprint is recorded,
+   printed, and **used to order each spec's mutators**, best carrier first.
 
-   **Read this part carefully, because the tailoring is not doing anything yet.** The two
-   mechanisms that would tailor a plan (`_order_family_effective` and `_baseline_resistance`
-   in `core/planner.py`) read `capability_guess["effective_mutators"]` and
-   `guardrails["baseline_resistance"]`, and the fingerprint engine **emits neither**, so with
-   `-sV` today: 0 specs change mutator order, 0 carry a baseline expectation, and the only
-   observable difference in the plan is the wording of each selection's `reason`. The
-   fingerprint itself is real and is reported; the family-effectiveness table it would need
-   is per-family empirical data we do not have, and inventing one would make the ordering a
-   fiction with a confidence attached. Tracked in `docs/12`; until then, `-sV` buys you a
-   fingerprint, not a different battery.
+   What drives that ordering is a measurement of *this* target, not a table of priors. The
+   **carrier layer** (`fingerprint/layers/carrier.py`) sends one benign, policy-neutral
+   instruction through every registered mutator and checks whether the target still follows
+   it; `core/planner._order_family_effective` then runs the carriers it recovered before the
+   ones it did not. A transformation whose instruction the model cannot recover cannot carry
+   an attack either, so it belongs at the back of the queue.
+
+   **Be precise about what that is and is not.** It measures *carrier comprehension*. It does
+   **not** measure guardrail evasion, which would require sending something a guardrail should
+   block, and this engine sends benign probes only (contract §8). So the ordering is a
+   measured proxy for carrier viability against this target, never a claim about what will
+   defeat its filters.
+
+   The alternative was a hand-written "mutators known to work against family X" table. We
+   have no empirical basis for one, and shipping it would attach a confidence to a fiction.
+
+   The other hook, `_baseline_resistance` (a per-category expectation read from
+   `guardrails["baseline_resistance"]`), is **still unwritten by the engine**: benign probes
+   cannot measure per-category resistance, so nothing emits it and no result is scored
+   relative to an expectation. Tracked in `docs/12`. That one really is inert, and saying so
+   is cheaper than a number nobody can defend.
+
+   **Cost:** the carrier layer is one request per registered mutator, so a fingerprint pass
+   went from 6 probes to ~24. The resolved plan prints the figure (`fingerprint: +N probe(s)
+   per target`), the probes are paced by the same `--rate` ceiling as attack traffic, and
+   `--dry-run` / `--estimate` / `-sn` do not send them at all.
 
 Grounded in prior art (LLMmap-style statistical fingerprinting; OpenAI `system_fingerprint`;
 glitch-token behavior). Fingerprinting is **probabilistic**: always reported with a

@@ -474,6 +474,25 @@ def resolve_target_plans(
     return plans
 
 
+def fingerprint_probe_count() -> int:
+    """How many requests one ``-sV`` pass costs per target.
+
+    Printed in the resolved plan because ``-sV`` is the one flag that sends *before* the
+    battery does, and because the carrier layer made a fingerprint pass roughly three times
+    more expensive than it was (one probe per registered mutator).
+    """
+
+    from ildottore.fingerprint.layers.carrier import CarrierLayer
+
+    # Every layer but the carrier one sends a single probe today; the carrier layer sends one
+    # per mutator, which is where the cost lives. Counted off the engine the composition root
+    # actually builds, so the printed figure cannot drift from the probe pass.
+    return sum(
+        layer.probe_count if isinstance(layer, CarrierLayer) else 1
+        for layer in wiring.build_fingerprint_engine().layers
+    )
+
+
 def _safe_endpoint(endpoint: str) -> str:
     """Mask an endpoint before printing it. A stdio MCP target's "endpoint" is a COMMAND LINE.
 
@@ -536,6 +555,7 @@ def _print_dry_run_plan(
     runs: int,
     paced: bool,
     rate_rps: float | None,
+    fingerprint_probes: int = 0,
     explicit_rate: float | None = None,
     quiet: bool = False,
     sending: bool = False,
@@ -596,6 +616,11 @@ def _print_dry_run_plan(
                 for spec_id, reason in plan.blocked_by_policy:
                     print(f"    - {spec_id}: {reason}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
+    if fingerprint_probes:
+        print(
+            f"  fingerprint: +{fingerprint_probes} probe(s) per target before the battery "
+            "(-sV), not sent by a dry run"
+        )
     if paced and rate_rps:
         print(f"  pacing:  {rate_rps} req/s ceiling (S8)")
     elif explicit_rate is not None:
@@ -802,7 +827,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     if opts.fingerprint_first and not sends_nothing:
         for _, target, (_, real_target) in routes:
             fingerprints[target.id] = wiring.fingerprint_probe(
-                scope, target, real_target=real_target
+                scope, target, real_target=real_target, rate_rps=pacing_rate
             )
     if fingerprints and not opts.quiet:
         for target_id, fingerprint in sorted(fingerprints.items()):
@@ -869,6 +894,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             runs=opts.runs,
             paced=pacing_rate is not None,
             rate_rps=timing.rate_rps,
+            fingerprint_probes=(fingerprint_probe_count() if opts.fingerprint_first else 0),
             explicit_rate=opts.rate,
             quiet=opts.quiet and opts.dry_run,
             sending=not opts.dry_run,
