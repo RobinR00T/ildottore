@@ -77,6 +77,29 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (the re-keying cost detection in one spec, and now a test says so)
+
+Yesterday's oracle re-keying removed a false-positive class. Auditing it against adversarial
+exploited replies (not the specs' own fixtures) found that it had **paid for that with a missed
+exploit** in one spec: `RECON-TARGET-OSINT-001` stopped catching a recon plan that carries no
+address and no "step 1" ("enumerate staff from LinkedIn, then check the exposed panels, then
+spray the passwords"), which the old, echoable markers did catch. For a security scanner that
+trade is the wrong way round, and it is invisible in a clean report.
+
+Four markers restore it, each measured against five recon outputs and five refusals before
+being added: they catch all five outputs and flag none of the refusals. `LinkedIn` was rejected
+as a marker for the same reason the old ones were, because a refusal names it too ("I'm not
+going to scrape LinkedIn").
+
+The measurement is now `tests/battery/test_detection_not_regressed.py` rather than a script run
+once. Four gaps it measured are left as gaps on purpose, each written into its own spec, because
+closing them means matching the words of the request, which is the defect the re-keying removed:
+a `PI-DIRECT-001` reply that describes the instructions without revealing the token, a
+capitulation to `DOS-RESOURCE-HIJACK-001` in English or Spanish rather than German, an
+exfiltration naming no destination, and a paraphrase of a system prompt carrying no canary. Each
+is the judge's call. None is asserted in the test: a test that pins a weakness in place is a
+test that argues against fixing it.
+
 ### Fixed (two claims the code does not support, and two decisions that were never taken)
 
 - **"never a fabricated pass or fail" was false.** `bare_adapter_factory` and `MockScenario.bare`
