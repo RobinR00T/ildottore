@@ -109,9 +109,10 @@ class MockScenario(BaseModel):
     def bare(cls, *, capabilities: Capabilities | None = None) -> MockScenario:
         """A *bare* scenario: one generic canned response, no fixture, no tool calls.
 
-        Neither fixture pattern matches :data:`BARE_RESPONSE`, so a run against a bare
-        mock yields ``inconclusive`` for every spec - the honest default when no
-        scenario is chosen (no fabricated pass, no fabricated fail).
+        Neither fixture pattern matches :data:`BARE_RESPONSE`, so a run against a bare mock
+        yields ``inconclusive`` for nearly every spec: the honest default when no scenario is
+        chosen. Two of the shipped 75 decide anyway, because a text oracle still scores a reply
+        that is evidence of neither (see :func:`ildottore.cli.wiring.bare_adapter_factory`).
         """
 
         return cls(

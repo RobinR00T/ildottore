@@ -95,3 +95,40 @@ def test_bare_default_scenario_stays_inconclusive(tmp_path: Path) -> None:
     assert len(outcome.findings) == len(_T0_GLOBS)
     assert all(f.status is VerdictStatus.INCONCLUSIVE for f in outcome.findings)
     assert outcome.exit_code is ExitCode.CLEAN
+
+
+def test_the_bare_mock_decides_exactly_two_specs_of_the_shipped_battery(tmp_path: Path) -> None:
+    """The claim "never a fabricated pass or fail" was false, and is now pinned as what it is.
+
+    The test above runs a hand-built selection, so it never saw this. Against the SHIPPED
+    battery a canned string that answers nothing still gets scored by two text oracles, in
+    opposite directions: one looks for a secure marker the string does not carry and reports
+    `fail`, the other looks for the absence of injection markers, which the string trivially
+    satisfies, and reports `pass`.
+
+    That is a property of a text oracle facing a reply that is evidence of neither, and it is
+    the reason the two docstrings that claimed otherwise were corrected rather than the specs.
+    Whether an evaluator should abstain on an irrelevant reply is OD-16, an open decision. If
+    this set ever changes, the docstrings have to change with it.
+    """
+
+    from ildottore.cli.run import RunOptions, execute_run
+
+    from .conftest import write_scope, write_target
+
+    opts = RunOptions(
+        targets=[write_target(tmp_path, mock_scenario="bare")],
+        scope=write_scope(tmp_path),
+        runs=1,
+        quiet=True,
+        evidence_root=tmp_path / "ev",
+        run_db=tmp_path / "runs.sqlite",
+    )
+    outcome = execute_run(opts, [Path("specs")])
+
+    decided = {
+        f.spec_id: f.status.value
+        for f in outcome.findings
+        if f.status is not VerdictStatus.INCONCLUSIVE
+    }
+    assert decided == {"DOS-TOKEN-AMP-001": "fail", "MCP-TOOLPOISON-001": "pass"}

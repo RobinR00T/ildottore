@@ -77,6 +77,25 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (two claims the code does not support, and two decisions that were never taken)
+
+- **"never a fabricated pass or fail" was false.** `bare_adapter_factory` and `MockScenario.bare`
+  both claimed a bare mock leaves every spec inconclusive. Against the shipped battery two of
+  the 75 decide anyway, in opposite directions: `DOS-TOKEN-AMP-001` looks for a secure marker a
+  canned string does not carry and reports `fail`, `MCP-TOOLPOISON-001` looks for the absence of
+  injection markers, which a canned string trivially satisfies, and reports `pass`. The test
+  that was supposed to cover this ran a hand-built selection, so it never saw the two. The
+  docstrings say what is true now and `tests/cli/test_scenario_mode.py` pins the pair, so the
+  claim and the code cannot drift apart again.
+- **Whether an evaluator should abstain on a reply that answers nothing is now OD-16**, an open
+  decision rather than an undocumented behaviour. A relevance precondition would fix the above
+  properly; it is a design change and it is the owner's call.
+- **`baseline_resistance` is dead at both ends, and now says so (OD-17).** No fingerprint layer
+  writes the `guardrails` key the planner reads it from, and nothing in `src/` reads the
+  `PlanSelection` field the planner writes it to, yet the field sits in the u00 wire shape and
+  in two contracts as if it flowed. Wiring it needs live data (`docs/16`); dropping it is a
+  contract revision. Recorded as a decision instead of left as scenery.
+
 ### Fixed (the false-positive class behind two nights of oracle bugs)
 
 **A refusal that names what it refuses was scored as a breach, in six shipped specs.** The

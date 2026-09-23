@@ -27,7 +27,9 @@ Two roles for fingerprinting: both first-class:
    have no empirical basis for one, and shipping it would attach a confidence to a fiction.
 
    The other hook, `_baseline_resistance` (a per-category expectation read from
-   `guardrails["baseline_resistance"]`), is **still unwritten by the engine**: benign probes
+   `guardrails["baseline_resistance"]`), is **dead at both ends**: unwritten by the engine, and
+   the `PlanSelection.baseline_resistance` it fills has no reader anywhere in `src/` (OD-17).
+   Unwritten because: benign probes
    cannot measure per-category resistance, so nothing emits it and no result is scored
    relative to an expectation. Tracked in `docs/12`. That one really is inert, and saying so
    is cheaper than a number nobody can defend.
