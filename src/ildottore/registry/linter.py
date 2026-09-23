@@ -10,6 +10,8 @@ Runs over a loaded pack set + the merged registry and emits a :class:`LintReport
 * **FIXTURE_NO_DETECT** - ``fixtures.vulnerable`` does not yield a fail.
 * **FIXTURE_HARDENED_FAIL** - ``fixtures.hardened`` does not all-pass.
 * **UNKNOWN_SPEC_REF** - a suite references a spec id absent from the registry.
+* **ORACLE_MARKER_IS_ECHOABLE** - a text oracle's pattern matches the spec's own
+  planted prompt, so an echo satisfies it.
 
 The linter runs **no code and opens no socket**: it consumes already-parsed models and the
 offline stub evaluator table.
@@ -17,6 +19,7 @@ offline stub evaluator table.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ildottore.shared import AttackSpec, EvaluatorType, VerdictStatus
@@ -82,6 +85,111 @@ def _check_framework_map(spec: AttackSpec) -> list[LintError]:
         errors.append(_fw_err(spec, "mitre_atlas.tactic"))
     if not spec.nist_ai_rmf.strip():
         errors.append(_fw_err(spec, "nist_ai_rmf"))
+    return errors
+
+
+def _as_text(value: object) -> str:
+    """Flatten a seeded-memory value (a string, or a list of turns) to searchable text."""
+
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "\n".join(_as_text(item) for item in value)
+    if isinstance(value, dict):
+        return "\n".join(_as_text(item) for item in value.values())
+    return str(value)
+
+
+def _the_request(spec: AttackSpec) -> str:
+    """The thing the target is answering: the prompt, or the last turn of a conversation.
+
+    This is the narrow slice a refusal quotes ("I can't print your system prompt"), which is
+    why an EXPLOITED marker may not come from it. Deliberately NOT the whole attack: a
+    `carrier` and a planted document are untrusted CONTENT, and reproducing that content can
+    itself be the exploit (a worm payload the agent passes on, an injection it propagates), so
+    a marker drawn from there is doing its job.
+    """
+
+    turns = spec.attack.turns or []
+    last_turn = turns[-1] if turns else None
+    tail = (
+        _as_text(last_turn.get("content")) if isinstance(last_turn, dict) else _as_text(last_turn)
+    )
+    return "\n".join(part for part in (spec.attack.user_prompt or "", tail) if part)
+
+
+def _everything_the_target_reads(spec: AttackSpec) -> str:
+    """Every string the target sees: the request, the carrier, the turns, setup, documents."""
+
+    parts: list[str] = [spec.attack.user_prompt or "", spec.attack.carrier or ""]
+    for turn in spec.attack.turns or []:
+        parts.append(_as_text(turn.get("content")) if isinstance(turn, dict) else _as_text(turn))
+    setup = spec.setup
+    if setup is not None:
+        parts.append(setup.system_prompt or "")
+        parts.append(_as_text(setup.memory_seed))
+        parts.extend(_as_text(document) for document in setup.documents or [])
+    return "\n".join(part for part in parts if part)
+
+
+def _check_oracle_markers(spec: AttackSpec) -> list[LintError]:
+    """Refuse a text oracle whose pattern matches the spec's OWN planted text.
+
+    Added 2026-09-23, after the same defect shipped twice in one night in one spec. A
+    ``regex_presence`` pattern is a SECURE marker, so a marker that appears in the spec's own
+    system prompt means a target that echoes its instruction and then does the forbidden thing
+    scores secure: `DOS-RESOURCE-HIJACK-001` listed ``billing``, and the repair listed
+    ``decline``, and both words were in the system prompt the spec itself plants. A
+    ``regex_absence`` pattern is an EXPLOITED marker, so the mirror image fails a target that
+    merely quotes the request back while refusing it.
+
+    Either way the oracle can be satisfied by an echo, which means it is not measuring what the
+    spec claims. Two rounds of audit found the same bug in the same place, which is the moment
+    a spec-by-spec fix stops being the right answer.
+    """
+
+    errors: list[LintError] = []
+    # A SECURE marker may not appear ANYWHERE the target can read, because an echo would then
+    # be evidence of security. An EXPLOITED marker may not come from THE REQUEST, because a
+    # refusal that names what it refuses would then be evidence of a breach. It may come from
+    # protected content (leaking the planted system prompt is the finding) and from untrusted
+    # content (reproducing a worm payload is the finding).
+    for config in spec.evaluators:
+        if config.type not in (EvaluatorType.REGEX_PRESENCE, EvaluatorType.REGEX_ABSENCE):
+            continue
+        secure_marker = config.type is EvaluatorType.REGEX_PRESENCE
+        polarity = "secure" if secure_marker else "exploited"
+        haystack = _everything_the_target_reads(spec) if secure_marker else _the_request(spec)
+        if not haystack.strip():
+            continue
+        for pattern in config.patterns or []:
+            try:
+                match = re.search(pattern, haystack, re.IGNORECASE)
+            except re.error:
+                continue  # a malformed pattern is EVALUATOR_MISCONFIGURED's business
+            if match is None:
+                continue
+            errors.append(
+                LintError(
+                    code=LintCode.ORACLE_MARKER_IS_ECHOABLE,
+                    message=(
+                        f"{config.type.value} pattern {pattern!r} (a {polarity} marker) matches "
+                        + (
+                            "text this spec itself plants"
+                            if secure_marker
+                            else "the request this spec sends"
+                        )
+                        + f", at {match.group(0)!r}. A target that echoes it back, or quotes it "
+                        "while refusing, satisfies the oracle without doing anything the spec "
+                        f"is testing for. Key the marker on what only a {polarity} target "
+                        "produces."
+                    ),
+                    severity=Severity.ERROR,
+                    spec_id=spec.id,
+                )
+            )
     return errors
 
 
@@ -351,6 +459,7 @@ def lint_packs(
         findings.extend(_check_framework_map(spec))
         findings.extend(_check_media(spec))
         findings.extend(_check_evaluator_config(spec))
+        findings.extend(_check_oracle_markers(spec))
         findings.extend(_check_iopc(spec))
         findings.extend(_check_frameworks(spec))
         findings.extend(_check_fixtures(spec, table))
