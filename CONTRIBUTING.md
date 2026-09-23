@@ -21,6 +21,22 @@ This is the product's extensibility story (`docs/06`). To add an attack:
 3. Every module ships tests satisfying `docs/07`. Coverage ≥ 85% core. `lint-imports` green.
 4. Log any human-decision fork in the contract §9. Missing decision → an ADR (`docs/adr/`).
 
+## Two rules about oracles, learned the expensive way
+
+A spec's deterministic oracle decides what a customer reads in a report, so two rules are
+enforced rather than suggested:
+
+* **A marker may not be satisfied by an echo.** `dottore lint` refuses a `regex_presence`
+  pattern that appears anywhere the target can read, and a `regex_absence` pattern taken from
+  the request the spec sends (`ORACLE_MARKER_IS_ECHOABLE`). A refusal quotes the request; if
+  that satisfies your oracle, the oracle measures nothing. Key it on what only a secure (or
+  only an exploited) target produces.
+* **Removing a false positive must not cost a detection.** If you re-key an oracle, add the
+  exploited replies it must still catch to `tests/battery/test_detection_not_regressed.py`. A
+  false alarm is visible and arguable; a missed exploit is a clean report.
+
+The full list of rules bought with defects is in `docs/00-ai-build-playbook.md` §0b.
+
 ## Commits & PRs
 - Conventional Commits; signed (GPG) where possible.
 - Each PR updates docs touched + `CHANGELOG.md` + `docs/PROGRESS.md`.

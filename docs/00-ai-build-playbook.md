@@ -18,6 +18,64 @@ against), so the **spec is the oracle**.
 7. **Each PR updates** docs touched + `CHANGELOG.md` + `docs/PROGRESS.md` + the spec/schema if
    the contract changed.
 
+## 0b. Rules bought with defects (2026-09-21 to 2026-09-23)
+
+Ten adversarial audits over three days. Every rule below is here because its absence shipped a
+defect, and each one names it: a rule with no incident behind it is an opinion.
+
+**Landing a change**
+
+1. **A scripted edit asserts every replacement.** A patch that removed two fields from the spec
+   digest matched the docstring, missed the constant (the formatter had reflowed it onto one
+   line) and was not asserted, so the file shipped with a **comment contradicting its own code**,
+   and the contract clause and the commit message both described the comment. Read the changed
+   value back, or assert the replacement, or both.
+2. **Report what the code does, not what the patch intended.** Verify by executing the claim
+   before writing it down. "Both are in now" was written from intent.
+3. **A clause with no check is prose** (this is why A-1..A-27 each name a test), and a check that
+   cannot fail is not a check: try removing the behaviour and watch the test go red.
+
+**Changing an oracle**
+
+4. **A marker may not be satisfied by an echo.** A `regex_presence` marker from the spec's own
+   prompt is satisfied by a target that quotes it; a `regex_absence` marker from the request is
+   satisfied by a refusal that names what it refuses. Enforced by `ORACLE_MARKER_IS_ECHOABLE`
+   after it shipped six times, including twice in one spec (in the bug and in its repair).
+5. **Measure a marker before writing it.** Each candidate against N exploited replies and N
+   refusals. `LinkedIn` was rejected that way: a refusal names it too.
+6. **Removing a false positive must not cost a detection.** Re-keying five oracles lost one:
+   `RECON-TARGET-OSINT-001` stopped catching a recon plan with no address. A false alarm is
+   visible and arguable; a missed exploit is a clean report. Test both directions, always.
+7. **Adding an evaluator changes the aggregate.** A third deterministic vote under `weighted`
+   pushed a real disclosure from 1-of-2 (fail) to 1-of-3 (pass), so the "fix" scored worse than
+   the bug. Re-run the aggregate, not just the new evaluator.
+8. **A gap you decide to keep goes in the spec, not in a test.** A test that pins a weakness in
+   place is a test that argues against fixing it.
+
+**Guards and flags**
+
+9. **Record is not enforce.** The `-sV` probe pass was recorded in the spend and never debited,
+   so it told the next resume what had been spent and never stopped this one spending it.
+10. **One flag must not disarm two checks.** `--resume-unverified` was meant to waive an
+    unverifiable battery and also waived the target route, which reopened the cross-target
+    splice the feature exists to prevent.
+11. **Guard every direction a value can move.** A classification test pinned that a code could
+    not MOVE between buckets and said nothing about adding one for a code already covered, which
+    an auditor used to print "prompt injection is out of reach" on five suites with CI green.
+12. **Refuse before you send.** Every precondition is checked before the pass that puts traffic
+    on the wire. Two refusals landed after 17 probes had gone out, one of them added by the fix
+    for the first.
+
+**Auditing**
+
+13. **Audit the fix as hard as the finding.** Round two found that a repair had made a spec worse
+    than the bug; round three found a repair that was never in the code.
+14. **A broken harness invents findings.** Two "regressions" were an artifact of not wiring the
+    canaries the way a run wires them. Reproduce a known case before trusting a negative result.
+15. **Auditors write reproductions to disk as they go.** Four audit runs died on a network fault;
+    the one that had been writing repro tests left 783 lines that were the entire value of the
+    round. A report held only in a dying agent's context is lost.
+
 ## 1. The six stages (each hands an artifact to the next)
 
 | Stage | For Il Dottore (net-new) | Artifact |
