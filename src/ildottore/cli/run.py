@@ -1091,6 +1091,16 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         # numerator, and a complete run published "Specs run: 72 of 70 planned", i.e. 102.9%.
         # Exactly the shape this whole branch exists to remove, introduced by the fix for it.
         planned_specs += len(selected)
+        _persist_run_integrity(
+            run_db,
+            run_ids[target.id],
+            selected,
+            target=target,
+            mock_scenario=mock_scenario,
+            runs=opts.runs,
+            judge=judge_target,
+            adaptive=adaptive,
+        )
         result = _run_one_target(
             target=target,
             scope=scope,
@@ -1116,16 +1126,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             prior_spend=(prior_spend or Spend()).plus(Spend(requests=probes_sent)),
         )
         results.append(result)
-        _persist_run_context(
-            run_db,
-            result,
-            selected,
-            target=target,
-            mock_scenario=mock_scenario,
-            runs=opts.runs,
-            judge=judge_target,
-            adaptive=adaptive,
-        )
+        _persist_run_spend(run_db, result)
         _print_progress(printer, plan.selected, result.findings)
         all_findings.extend(result.findings)
 
@@ -1336,9 +1337,9 @@ def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) 
     return prior
 
 
-def _persist_run_context(
+def _persist_run_integrity(
     run_db: Path,
-    result: CampaignResult,
+    run_id: str,
     specs: list[AttackSpec],
     *,
     target: Target,
@@ -1347,17 +1348,23 @@ def _persist_run_context(
     judge: Target | None = None,
     adaptive: bool = False,
 ) -> None:
-    """Record the battery this run executed and what it has spent in total.
+    """Record WHAT this campaign is about to run, before it sends anything.
 
-    Written after every campaign, not only a halted one: the halt is exactly when nobody is
-    in a position to do it later, and a run that completed can still be resumed by mistake.
+    Written first, not last. Both halves used to be written when the campaign returned, so a
+    run killed mid-flight (SIGKILL, a lost laptop, a CI timeout) left evidence on disk and no
+    row, and the resume was then refused outright because the target it belonged to could not
+    be verified: the resume you most want after a crash was the one you could not have.
+
+    Everything here is known before the first request, so there is no reason to make a resume
+    depend on the campaign finishing. What genuinely cannot be known in advance is the spend,
+    and that is written separately when the campaign returns.
     """
 
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
         store.save_run_context(
-            result.run.run_id,
+            run_id,
             spec_digests=spec_digests(specs),
             context={
                 "target_digest": target_digest(target, mock_scenario=mock_scenario),
@@ -1365,6 +1372,22 @@ def _persist_run_context(
                 "adaptive": adaptive,
                 "runs": runs,
             },
+        )
+
+
+def _persist_run_spend(run_db: Path, result: CampaignResult) -> None:
+    """Record what the campaign consumed, once it is known.
+
+    A crash therefore loses the dead half's spend and its resume opens at whatever was last
+    recorded. That is stated rather than hidden: the alternative is debiting continuously,
+    which costs a write per request.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)) as store:
+        store.save_run_context(
+            result.run.run_id,
             spend={
                 "tokens": result.spend.tokens,
                 "requests": result.spend.requests,
