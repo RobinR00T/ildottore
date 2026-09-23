@@ -152,8 +152,9 @@ def test_a_run_from_before_the_digests_is_refused_and_can_be_opted_into(
     run_id = _halted_run(tmp_path, spec_dir)
     with SqliteRunStore(tmp_path / "runs.sqlite") as store:
         store._conn.execute(
-            "UPDATE runs SET spec_digests_json = NULL, spend_json = NULL, context_json = NULL "
-            "WHERE run_id = ?",
+            # Digests and spend absent, context KEPT: the battery and the money are
+            # unverifiable and waivable; the route is verifiable and has no opt-in (below).
+            "UPDATE runs SET spec_digests_json = NULL, spend_json = NULL WHERE run_id = ?",
             (run_id,),
         )
         store._conn.commit()
@@ -312,6 +313,126 @@ def test_the_wall_ceiling_refusal_also_lands_before_the_probe_pass(tmp_path: Pat
                     resume=run_id,
                     budget_requests=100,
                     budget_wall_s=1800,
+                    fingerprint_first=True,
+                ),
+                [spec_dir],
+            )
+    finally:
+        wiring_mod.fingerprint_probe = original  # type: ignore[assignment]
+
+    assert sent == []
+
+
+# --- the third audit round (2026-09-23) ---------------------------------------------
+
+
+def test_the_digest_covers_the_fields_that_gate_policy_and_feed_a_report() -> None:
+    """The exclusion set, pinned by BEHAVIOUR, because the last fix to it never landed.
+
+    A patch removed `tags` and `nist_ai_rmf` from the excluded set, matched the docstring,
+    missed the constant (the formatter had reflowed it) and did not assert that replacement.
+    The file shipped with a comment contradicting its own code, and the commit message
+    described the comment. An audit found it by computing two digests.
+
+    `tags` is what `policy/packs.py` reads for `layer_b` and `pii_elicitation`, so excluding it
+    let a de-tagged spec become traffic on the wire under an unchanged digest, which is the DL4
+    safety gate. `nist_ai_rmf` feeds a published rollup.
+    """
+
+    from ildottore.shared.digest import spec_digest
+
+    base = make_spec("PI-DIRECT-001")
+    assert spec_digest(base) != spec_digest(base.model_copy(update={"tags": ["layer_b"]}))
+    assert spec_digest(base) != spec_digest(
+        base.model_copy(update={"nist_ai_rmf": "GOVERN 1.1 (something else)"})
+    )
+    # And the cosmetic half still holds: an edited description does not refuse a resume.
+    assert spec_digest(base) == spec_digest(
+        base.model_copy(update={"description": "a clearer description of the same test"})
+    )
+
+
+def test_the_route_cannot_be_flipped_by_the_unverified_flag(tmp_path: Path) -> None:
+    """`--resume-unverified` waives the battery and the spend. It may not waive the route.
+
+    The target ID was made unwaivable and the target DIGEST was not, so one flag still reached
+    the splice through a run row whose context column was absent: `--hardened` then flipped the
+    offline replay and published one half's criticals as the other's.
+    """
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store._conn.execute("UPDATE runs SET context_json = NULL WHERE run_id = ?", (run_id,))
+        store._conn.commit()
+
+    flipped = _opts(tmp_path, spec_dir, resume=run_id, budget_requests=100, resume_unverified=True)
+    flipped.targets = [write_target(tmp_path, mock_scenario="hardened")]
+    with pytest.raises(ValueError, match=r"no flag for this|target and the route"):
+        execute_run(flipped, [spec_dir])
+
+
+def test_a_context_row_missing_its_target_digest_refuses(tmp_path: Path) -> None:
+    """A row that exists but carries no digest verified nothing, silently and with no notice."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store._conn.execute(
+            "UPDATE runs SET context_json = ? WHERE run_id = ?", ('{"runs": 3}', run_id)
+        )
+        store._conn.commit()
+
+    with pytest.raises(ValueError, match=r"no flag for this|target and the route"):
+        execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
+
+
+def test_the_probe_pass_is_debited_from_the_request_ceiling(tmp_path: Path) -> None:
+    """`--budget-requests N` means N requests, probes included.
+
+    They were recorded after the fact, which told the NEXT resume what had been spent and never
+    stopped this invocation spending it: 17 probes plus a full N of attack traffic.
+    """
+
+    from ildottore.cli.run import fingerprint_probe_count
+
+    ceiling = fingerprint_probe_count() + 3
+    spec_dir = _specs(tmp_path)
+    opts = _opts(tmp_path, spec_dir, fingerprint_first=True, budget_requests=ceiling)
+    execute_run(opts, [spec_dir])
+
+    run_ids = [p.name for p in (tmp_path / "ev").iterdir() if p.is_dir()]
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        spend = store.get_run_spend(run_ids[0])
+
+    assert spend is not None
+    assert spend["requests"] <= ceiling, (
+        f"the campaign spent {spend['requests']} requests against a ceiling of {ceiling}: the "
+        "probe pass is not being debited"
+    )
+
+
+def test_a_resume_with_an_exhausted_ceiling_refuses_before_probing(tmp_path: Path) -> None:
+    """Three sequential resumes used to run a whole probe pass each, past a spent ceiling."""
+
+    from ildottore.cli.run import fingerprint_probe_count
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+
+    sent: list[str] = []
+    import ildottore.cli.wiring as wiring_mod
+
+    original = wiring_mod.fingerprint_probe
+    wiring_mod.fingerprint_probe = lambda *a, **k: sent.append("probe") or original(*a, **k)  # type: ignore[assignment,func-returns-value]
+    try:
+        with pytest.raises(ValueError, match="already spent"):
+            execute_run(
+                _opts(
+                    tmp_path,
+                    spec_dir,
+                    resume=run_id,
+                    budget_requests=_BUDGET + fingerprint_probe_count() - 1,
                     fingerprint_first=True,
                 ),
                 [spec_dir],

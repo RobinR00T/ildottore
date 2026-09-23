@@ -293,18 +293,24 @@ def _assert_same_context(
 
     with SqliteRunStore(Path(run_db)) as store:
         context = store.get_run_context(run_id)
-    if context is None:
-        _unverifiable(run_id, "the target and the run parameters", allow=allow_unverified)
-        return
-    stored_target = context.get("target_digest")
+    stored_target = (context or {}).get("target_digest")
     current_target = target_digest(target, mock_scenario=mock_scenario)
-    if stored_target is not None and stored_target != current_target:
+    if stored_target is None:
+        # NOT waivable, for the same reason the target id is not: this digest covers the
+        # endpoint, the model, the capabilities and the resolved offline scenario, so without
+        # it `--resume-unverified --hardened` flips the replay and publishes one half's
+        # criticals as the other's. An audit walked straight through that with a run row whose
+        # context column was absent, and through a context row that simply lacked this key.
+        _unverifiable(run_id, "the target and the route", allow=allow_unverified, waivable=False)
+        return
+    if stored_target != current_target:
         raise ValueError(
             f"run {run_id!r} was made against a different target than the one resolved now "
             "(its endpoint, model, capabilities or offline scenario differ, even though the id "
             "matches). Resuming would publish one target's evidence as another's. Restore the "
             "target as it was, or start a fresh run."
         )
+    context = context or {}
     stored_judge = context.get("judge_digest")
     current_judge = target_digest(judge) if judge is not None else None
     if stored_judge != current_judge:

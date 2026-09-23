@@ -893,6 +893,16 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             ),
         )
         prior_spend = _prior_spend(run_db, opts.resume, provisional[0].budgets)
+        if opts.fingerprint_first and prior_spend is not None:
+            ceiling = provisional[0].budgets.max_requests
+            probes = fingerprint_probe_count() * len(loaded_targets)
+            if ceiling is not None and prior_spend.requests + probes > ceiling:
+                raise ValueError(
+                    f"run {opts.resume!r} has already spent {prior_spend.requests} of its "
+                    f"{ceiling}-request ceiling, and -sV would send {probes} more before any "
+                    "attack traffic. Three sequential resumes used to run a whole probe pass "
+                    "each, past an exhausted ceiling. Raise --budget-requests, or drop -sV."
+                )
         resume_from = resume_mod.load_resume_run(
             evidence_root,
             opts.resume,
@@ -1064,6 +1074,8 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     if opts.dry_run:
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
 
+    probes_sent = fingerprint_probe_count() if (opts.fingerprint_first and not sends_nothing) else 0
+
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
 
     # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
@@ -1097,7 +1109,11 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             adaptive=adaptive,
             resume_from=resume_from,
             run_id=run_ids[target.id],
-            prior_spend=prior_spend,
+            # The probe pass runs outside the runner's ledger, so it is opened INTO the ledger
+            # as spend already made. Recording it after the fact (which is what the first fix
+            # did) told the next resume what had been spent and never stopped this invocation
+            # spending it: `-sV --budget-requests 20` sent 17 probes and then a further 20.
+            prior_spend=(prior_spend or Spend()).plus(Spend(requests=probes_sent)),
         )
         results.append(result)
         _persist_run_context(
@@ -1109,13 +1125,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             runs=opts.runs,
             judge=judge_target,
             adaptive=adaptive,
-            # The probe pass runs outside the runner's ledger by design, so it was pre-checked
-            # against --budget-requests and then never billed: 17 requests per -sV per target
-            # left the process and the record the next resume opens on did not know. Each
-            # resume added another 17, which is the double-ceiling shape on a different axis.
-            extra_requests=(
-                fingerprint_probe_count() if (opts.fingerprint_first and not sends_nothing) else 0
-            ),
         )
         _print_progress(printer, plan.selected, result.findings)
         all_findings.extend(result.findings)
@@ -1337,7 +1346,6 @@ def _persist_run_context(
     runs: int,
     judge: Target | None = None,
     adaptive: bool = False,
-    extra_requests: int = 0,
 ) -> None:
     """Record the battery this run executed and what it has spent in total.
 
@@ -1359,7 +1367,7 @@ def _persist_run_context(
             },
             spend={
                 "tokens": result.spend.tokens,
-                "requests": result.spend.requests + extra_requests,
+                "requests": result.spend.requests,
                 "attempts": result.spend.attempts,
                 "wall_s": round(result.spend.wall_s, 6),
             },

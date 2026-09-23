@@ -77,6 +77,32 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (third audit round: a fix that never landed, and three that landed short)
+
+An independent audit of the campaign-integrity work, written as reproductions rather than as
+prose, found five defects. The worst is a process failure, not a design one.
+
+- **A fix I reported as done was never in the code.** The patch that removed `tags` and
+  `nist_ai_rmf` from the spec digest's excluded set matched the file's docstring, missed the
+  constant (the formatter had reflowed it onto one line), and did not assert that replacement.
+  The file shipped with a **comment contradicting its own code**, the contract clause described
+  the comment, and so did the commit message. Consequence: `tags` gates the policy pack, so a
+  de-tagged spec became traffic on the wire under an unchanged digest, which is the DL4 safety
+  gate. The set is now pinned by behaviour (two digests compared), not by reading.
+- **`--resume-unverified` still reached the splice through the route.** The target ID was made
+  unwaivable and the target DIGEST was not, so a run row with no context column accepted
+  `--resume-unverified --hardened`, which flips the offline replay and publishes one half's
+  criticals as the other's. A context row that merely lacked the digest key skipped the check
+  silently. The route has no opt-in now.
+- **The probe pass was recorded but never debited.** Recording it told the next resume what had
+  been spent and never stopped this invocation spending it: `-sV --budget-requests 20` sent 17
+  probes and then a further 20, and three sequential resumes each ran a whole probe pass past an
+  exhausted ceiling. It is opened into the ledger as spend already made, and an exhausted resume
+  refuses before probing.
+- A campaign killed mid-flight records nothing, so its resume is now **refused outright** rather
+  than granted a fresh ceiling. Safe, and it means the resume you most want after a crash is the
+  one you cannot have: stated rather than discovered.
+
 ### Fixed (the re-keying cost detection in one spec, and now a test says so)
 
 Yesterday's oracle re-keying removed a false-positive class. Auditing it against adversarial
