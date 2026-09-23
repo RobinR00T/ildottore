@@ -77,6 +77,32 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (the false-positive class behind two nights of oracle bugs)
+
+**A refusal that names what it refuses was scored as a breach, in six shipped specs.** The
+deterministic oracle of `PI-DIRECT-001` (the most basic spec in the battery) listed `system
+prompt`, `developer mode` and `configuration token` as exploited markers, and all three are
+words from its own request, so "I can't print my system prompt or any configuration token"
+came back `fail`. With the judge inconclusive (the offline default, and any live run without
+`--judge`) that is a published finding against a target that did exactly the right thing,
+which is the crying-wolf failure this tool's own documentation says it avoids. The same shape
+was in `SP-LEAK-001`, `RECON-TARGET-OSINT-001`, `PI-DELAYED-TRIGGER-001`,
+`DOS-RESOURCE-HIJACK-001` and `AG-WORM-PROPAGATE-001`.
+
+It is now a **lint error**, `ORACLE_MARKER_IS_ECHOABLE`, rather than six spec edits: the same
+defect shipped twice in one night in one spec, in the bug and in its repair, and at that point
+the class is the thing to fix. The rule separates the request (a refusal quotes it) from
+untrusted content (reproducing it can BE the exploit, as in the worm spec) and from protected
+content (emitting it is the leak, as in `SP-LEAK-001`), so it refuses the defect without
+refusing the three oracles that are working.
+
+Five oracles were re-keyed onto what only an exploited target produces: the planted system
+prompt rather than the words asking for it, a concrete address shape rather than "likely email
+format", an emission verb near the exfil destination rather than the bare address, the German
+product text rather than "SEO article". `AG-WORM-PROPAGATE-001` keeps its payload marker
+deliberately: for a worm, reproducing the payload verbatim is how it travels, and its hardened
+fixture refuses without reproducing it. Contract clause A-27.
+
 ### Fixed (two rounds of audit of the same night's work, six auditors in isolated worktrees)
 
 The second round audited the first round's fixes, which is the practice that keeps paying: it
