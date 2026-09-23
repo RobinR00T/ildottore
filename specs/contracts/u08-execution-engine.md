@@ -74,6 +74,10 @@ concretes:
 ## §6 Data/wire shapes
 `TestPlan = {plan_ref: str, target_id: str, adaptive: bool, fingerprint_ref: str|None,
 selected: [{spec_id, reason, mutators: [str], baseline_resistance: float|None}],
+# NOTE (2026-09-23, OD-17): `baseline_resistance` is dead at both ends today. No fingerprint
+# layer writes the `guardrails` key it is read from, and nothing in src/ reads the field it is
+# written to. It is in the shape, and in this contract, as if it flowed. Decide before a
+# reader is written against it.
 skipped: [{spec_id, reason}], budgets: {max_tokens, max_requests, max_wall_s, max_attempts}}`
 - reviewable, persisted with the run (validates vs `schemas/test-plan.schema.json`).
 `Attempt` carries `{sampling: {temperature, top_p, seed?}, provider_request_id,

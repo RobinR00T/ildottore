@@ -395,10 +395,19 @@ def hardened_adapter_factory(target: Target, spec: AttackSpec) -> TargetAdapter:
 def bare_adapter_factory(target: Target, _spec: AttackSpec) -> TargetAdapter:
     """Replay a generic *bare* response (no fixture) → every spec ``inconclusive``.
 
-    This is the honest default when no ``mock_scenario`` is selected: the mock answers
-    with a canned string that matches neither fixture, so no evaluator can decide and
-    the run reports ``inconclusive`` - never a fabricated pass or fail (contract §2).
-    The target's declared capabilities are still carried so capability-gating behaves.
+    The honest default when no ``mock_scenario`` is selected: the mock answers with a canned
+    string that matches neither fixture, so no fixture-driven evaluator can decide and the run
+    reports ``inconclusive``. The target's declared capabilities are still carried so
+    capability-gating behaves.
+
+    **Two specs of the shipped 75 decide anyway, in opposite directions**, and this used to say
+    "never a fabricated pass or fail", which is false. A text oracle scores a reply that is
+    evidence of neither: `DOS-TOKEN-AMP-001` looks for a secure marker the canned string does
+    not carry and reports `fail`; `MCP-TOOLPOISON-001` looks for the ABSENCE of injection
+    markers, which the canned string trivially satisfies, and reports `pass`. That is a
+    property of a text oracle facing an irrelevant reply, not of this factory, and it is pinned
+    by `tests/cli/test_scenario_mode.py` so the claim and the code cannot drift apart again
+    (OD-16 asks whether an evaluator should abstain on a reply that answers nothing).
     """
 
     return MockTarget(bare_scenario(capabilities=target.capabilities), id=target.id)
