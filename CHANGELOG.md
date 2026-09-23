@@ -77,6 +77,20 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Added (the two open decisions, prepared so they can be taken by reading)
+
+- **ADR-0007 (OD-16)**: an irrelevant reply is not a verdict. Measured against the shipped
+  battery with every capability declared, so capability gating hides nothing: **73 inconclusive,
+  1 fail, 1 pass**. 30 of 75 specs carry a text oracle and only two decide, because the other 28
+  pair it with `semantic_judge` and an abstaining judge carries the aggregate to inconclusive.
+  Exactly one spec has a text oracle and no judge, and exactly one uses the presence polarity.
+  So the choice is two spec edits (recommended) against an engine-level relevance heuristic that
+  would touch thirty.
+- **ADR-0008 (OD-17)**: `baseline_resistance`, wire it or drop it. 27 references across 11 files,
+  one of them the u00 wire shape, so dropping it is a contract revision rather than a tidy-up.
+  Wiring it needs a new fingerprint layer, more recognition traffic and a live run to mean
+  anything, so it is not honestly buildable before the validation in `docs/16`.
+
 ### Fixed (third audit round: a fix that never landed, and three that landed short)
 
 An independent audit of the campaign-integrity work, written as reproductions rather than as
