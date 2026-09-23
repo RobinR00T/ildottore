@@ -142,11 +142,14 @@ a claim about a whole campaign checked only against the invocation in front of i
   `--judge` mid-campaign arbitrates one report with two models; `--deep`/`-sV` reorder the
   mutators a spec runs. Both are in the recorded context now.
 
-**The target is the one thing with no opt-in.** `--resume-unverified` waives the battery, the
+**The target AND ITS ROUTE are the things with no opt-in.** `--resume-unverified` waives the battery, the
 context and the spend, and a second audit pointed it at a run row with no target id and resumed
 a vulnerable app's evidence into a hardened app's report with zero requests sent: one flag was
-disarming two checks, and its help text advertises a budget consequence. A run that does not
-record its target is refused outright, with no flag.
+disarming two checks, and its help text advertises a budget consequence. A run that does not record its target, **or its route**, is refused outright, with no flag. The
+first version made only the target ID unwaivable, and a third audit walked through the gap it
+left: a run row whose context column was absent still accepted `--resume-unverified --hardened`,
+which flips the offline replay, so one half's criticals were published as the other's. A context
+row that merely lacked the digest key skipped the check silently, with no flag and no notice.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
