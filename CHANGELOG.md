@@ -99,9 +99,12 @@ prose, found five defects. The worst is a process failure, not a design one.
   probes and then a further 20, and three sequential resumes each ran a whole probe pass past an
   exhausted ceiling. It is opened into the ledger as spend already made, and an exhausted resume
   refuses before probing.
-- A campaign killed mid-flight records nothing, so its resume is now **refused outright** rather
-  than granted a fresh ceiling. Safe, and it means the resume you most want after a crash is the
-  one you cannot have: stated rather than discovered.
+- A campaign killed mid-flight recorded nothing, so its resume was **refused outright**: safe,
+  and it meant the resume you most want after a crash was the one you could not have. Fixed the
+  same day by splitting the write: the integrity record (digests, target, route, sample size,
+  judge) is known before the first request and is written then, the spend when the campaign
+  returns. A crash still loses the dead half's spend, which is the stated trade against a
+  database write per request.
 
 ### Fixed (the re-keying cost detection in one spec, and now a test says so)
 

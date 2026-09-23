@@ -441,3 +441,50 @@ def test_a_resume_with_an_exhausted_ceiling_refuses_before_probing(tmp_path: Pat
         wiring_mod.fingerprint_probe = original  # type: ignore[assignment]
 
     assert sent == []
+
+
+def test_a_campaign_killed_mid_flight_can_still_be_resumed(tmp_path: Path) -> None:
+    """The resume you most want after a crash used to be the one you could not have.
+
+    Both halves of the run record were written when the campaign returned, so a run killed
+    mid-flight (SIGKILL, a lost laptop, a CI timeout) left evidence on disk and no row, and the
+    resume was refused outright because the target it belonged to could not be verified. The
+    integrity half is known before the first request, so it is written first now.
+
+    The spend of the dead half is still lost, and that is the stated trade: the alternative is
+    a database write per request.
+    """
+
+    from ildottore.core.runner import CampaignRunner
+
+    spec_dir = _specs(tmp_path)
+    opts = _opts(tmp_path, spec_dir, budget_requests=100)
+
+    # A campaign that dies after sending, exactly where a crash hurts: evidence on disk, no
+    # result returned, nothing written afterwards.
+    original = CampaignRunner.run
+
+    async def _die(self: CampaignRunner, **kwargs: object) -> None:
+        await original(self, **kwargs)  # type: ignore[arg-type]
+        raise KeyboardInterrupt("the laptop closed")
+
+    CampaignRunner.run = _die  # type: ignore[assignment,method-assign]
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            execute_run(opts, [spec_dir])
+    finally:
+        CampaignRunner.run = original  # type: ignore[method-assign]
+
+    run_ids = [p.name for p in (tmp_path / "ev").iterdir() if p.is_dir()]
+    assert len(run_ids) == 1, "precondition: the dead campaign left evidence"
+    run_id = run_ids[0]
+
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        assert store.get_run_context(run_id) is not None, (
+            "the integrity record must exist before the campaign returns, or a crashed run is "
+            "unresumable by construction"
+        )
+        assert store.get_run_spend(run_id) is None, "the dead half's spend is lost, as stated"
+
+    outcome = execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
+    assert outcome.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}

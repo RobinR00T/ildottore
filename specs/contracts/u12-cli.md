@@ -151,6 +151,14 @@ left: a run row whose context column was absent still accepted `--resume-unverif
 which flips the offline replay, so one half's criticals were published as the other's. A context
 row that merely lacked the digest key skipped the check silently, with no flag and no notice.
 
+**The integrity record is written before the campaign sends, the spend after it returns.** Both
+halves used to be written when the campaign returned, so a run killed mid-flight left evidence
+on disk and no row, and its resume was refused outright because the target could not be
+verified: the resume you most want after a crash was the one you could not have. Everything in
+the integrity half is known before the first request. The spend genuinely is not, so a crash
+still loses the dead half's spend and the resume opens at whatever was last recorded, which is
+the stated trade against a database write per request.
+
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
 spend column, so the same resume that could not verify the battery was handed a brand-new budget
