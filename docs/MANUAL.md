@@ -368,12 +368,21 @@ called it wrong. A number copied into prose does not get re-derived when the cod
 which is the argument for `dottore coverage` existing: run it rather than trust this block.)
 ```
 
-The uncovered codes are printed, not just counted, and they are printed in **two groups**:
-what is not covered *yet* (the roadmap) and what a black-box runtime scanner cannot reach at
-all, each with the reason. Training-pipeline poisoning, adversary-side infrastructure and
-model provenance are not work in progress; saying so is what keeps the first list meaning what
-it says. Out-of-reach codes stay in the **denominator**: dropping them would raise every
-percentage by redefining the universe as the part the tool can already do. Off-universe values never reach a numerator (a Responsible-AI
+The uncovered codes are printed, not just counted, and they are printed in **three groups**,
+each with its reason: what is not covered *yet* (the roadmap), what a black-box runtime scanner
+cannot reach at all (no request settles it: training-pipeline poisoning, model provenance,
+attacker-side staging), and what this product *deliberately does not test* (a decision that
+could be revisited, such as adaptive attack generation, which would cost the pinned turns that
+make a finding replayable). Keeping the three apart is what keeps the first list meaning what it
+says. All three stay in the **denominator**: dropping them would raise every percentage by
+redefining the universe as the part the tool can already do.
+
+**What the percentages are not about.** Every axis above measures what an *endpoint* does with
+what it is sent. Attacks on the **agent harness** a developer runs locally (the configuration a
+repository ships, the trust prompt shown before it is opened, the plugins and skills an agent
+installs) are a different target class: they act on the machine opening the project, not on
+the model's replies, so no request this tool sends can exercise them and none of these figures
+covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never reach a numerator (a Responsible-AI
 `RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%.
 
 ### `mock_scenario`, the offline replay selector
