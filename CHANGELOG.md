@@ -77,6 +77,21 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Documentation (what the coverage figures are not about)
+
+- **The coverage percentages now say which target class they measure.** Every axis measures
+  what an *endpoint* does with what it is sent. Attacks on the **agent harness** a developer runs
+  locally (the configuration a repository ships, the trust prompt shown before it opens, the
+  plugins and skills an agent installs) act on the machine that opens the project rather than on
+  a model's replies, so no request this tool sends can exercise them and no figure here covers
+  them. `docs/MANUAL.md` says so beside the figures, and `docs/REFERENCES.md` cites a current
+  survey of that class (Adversa AI, 2026-09-23) as the boundary marker, with the category-level
+  overlap named: untrusted tool output, MCP tool metadata, supply chain.
+- **The manual said the gaps print in two groups; the tool prints three** (roadmap, out of reach,
+  deliberately not tested) since the second audit round, and the same paragraph still named
+  adversary-side infrastructure as unreachable after `Command and Control` moved to the roadmap.
+  Both corrected against the tool's own output rather than from memory.
+
 ### Added (the two open decisions, prepared so they can be taken by reading)
 
 - **ADR-0007 (OD-16)**: an irrelevant reply is not a verdict. Measured against the shipped

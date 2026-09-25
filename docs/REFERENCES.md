@@ -1,4 +1,4 @@
-# References (state of the art, as of 2026-07)
+# References (state of the art as of 2026-07, with additions to 2026-09)
 
 ## Frameworks
 - OWASP Top 10 for LLM Applications 2025: https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/
@@ -45,6 +45,16 @@ six-stage method, PITV harness, contract anatomy and operating discipline in `AG
 - Cognition: Don't Build Multi-Agents: https://cognition.com/blog/dont-build-multi-agents
 - Thoughtworks: Exploring Generative AI: https://martinfowler.com/articles/exploring-gen-ai.html
 - Addy Osmani: The 70% Problem (https://addyo.substack.com) · Chip Huyen: AI Engineering / EDD (https://huyenchip.com)
+
+## Agent-harness attacks (a different target class, out of scope for this tool)
+- Adversa AI: Claude Code vulnerabilities, 10 attacks, CVEs and defenses (2026-09-23):
+  https://adversa.ai/blog/claude-code-vulnerabilities/. A survey of attacks on coding-agent
+  harnesses (project configuration, trust prompts, plugin and skill supply chain). Kept here as
+  the boundary marker for `docs/MANUAL.md` §coverage: these act on the machine that opens a
+  project, not on an endpoint's replies, so a black-box runtime scanner cannot exercise them.
+  The overlap with this battery is at the category level only (untrusted tool output,
+  `PI-INDIRECT-TOOL-001`; MCP tool metadata, `MCP-TOOLPOISON-001` and `AG-TOOLMETA-POISON-001`;
+  supply chain, `SUPPLY-SLOPSQUAT-001`).
 
 ## Agentic-abuse / LLM-driven threats (docs/13)
 - Sysdig: JADEPUFFER: agentic ransomware for automated database extortion (2026): https://www.sysdig.com/blog/jadepuffer-agentic-ransomware-for-automated-database-extortion
