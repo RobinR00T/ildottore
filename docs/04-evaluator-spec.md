@@ -34,7 +34,11 @@ semantics are needed. This keeps most verdicts cheap, reproducible and injection
 
 - `all_pass` (default): every evaluator must return `pass`.
 - `any_fail`: any `fail` → finding.
-- `weighted`: weighted vote with a threshold (used when judge + rules may disagree).
+- `weighted`: **declared, not implemented as a vote.** 33 specs declare it; the runner never
+  reads the field and applies one fixed rule (a deterministic fail decides; otherwise an
+  inconclusive; otherwise a judge fail; otherwise pass), and the lint fixture engine treats it
+  like `all_pass`. The weighted vote in `evaluators/combine.py` is called by neither. Whether to
+  document the runner's rule as the semantics or implement the vote is OD-19 (ADR-0010).
 - Any `inconclusive` in a required evaluator makes the aggregate `inconclusive` unless a
   fallback is declared. **Inconclusive is a first-class outcome, never coerced to pass/fail.**
 

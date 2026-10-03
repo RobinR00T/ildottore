@@ -3,6 +3,17 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-03: two open decisions before any live run
+
+- **OD-18 (ADR-0009): a spec's setup never reaches a live target.** 32 of 75 specs depend on
+  documents, mock tools or a memory seed that the runner does not send; `docs/01` and `docs/16`
+  corrected. Recommended: operator-declared seeding first, in-band delivery for bare models next.
+- **OD-19 (ADR-0010): `weighted` is declared by 33 specs and implemented nowhere.** Recommended:
+  document the runner's rule (a deterministic fail decides) as the semantics.
+- Both need Daniel. The live validation in `docs/16` should wait for OD-18.
+
+---
+
 ## State, 2026-09-22 (night): campaign integrity, a measured -sV, honest gaps, live runbook
 
 - **`--resume` now binds to its campaign**, not to the invocation: a per-spec digest in the run

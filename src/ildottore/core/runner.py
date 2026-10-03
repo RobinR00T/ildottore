@@ -656,8 +656,9 @@ class CampaignRunner:
 
         An env-errored attempt (no response) is ``inconclusive`` without touching an
         evaluator - env-vs-product, never a fabricated fail (contract §4 KEEP).
-        Combination honours the spec's ``evaluator_logic`` via the injected
-        combiner semantics (u06's ``combine``, applied here structurally). ``identities`` +
+        Combination applies one fixed, role-aware rule (``_combine_verdicts``) and does NOT read
+        the spec's ``evaluator_logic``: a deterministic fail always decides (OD-19, ADR-0010).
+        ``identities`` +
         ``canary_owners`` (multi_identity) are threaded to authz_leak via the EvalContext.
         """
 
@@ -937,11 +938,13 @@ def _build_request(spec: AttackSpec, prompt: str) -> ModelRequest:
 
 
 def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec) -> Verdict:
-    """Combine per-evaluator verdicts by the spec's ``evaluator_logic`` (u06 semantics).
+    """Combine per-evaluator verdicts by one fixed, role-aware rule.
 
-    Reimplements the *decision* of ``evaluators.combine`` at the interface level so
-    ``core`` does not import the evaluators concrete (contract §8): inconclusive in a
-    required evaluator dominates; else ``any_fail``/``all_pass``/``weighted``.
+    ``spec.evaluator_logic`` is NOT read: a deterministic fail decides, else an inconclusive,
+    else a judge fail, else pass. That is deliberate (a confirmed exploit is never outvoted),
+    but 33 specs declare ``weighted`` and ``docs/04`` described a vote, so which of the two is
+    the semantics is OD-19 (ADR-0010). ``core`` does not import ``evaluators.combine``
+    (contract §8), which is where the unused weighted vote lives.
     """
 
     if not verdicts:

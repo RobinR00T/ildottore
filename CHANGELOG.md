@@ -77,6 +77,23 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Documentation (two claims the code does not back, and the decisions they need)
+
+- **A spec's setup never reaches a live target.** The runner sends the prompt, the system prompt,
+  the sampling and the media; a spec's documents, mock tools and memory seed are read only by the
+  evaluators and by lint. 32 of 75 specs depend on them, 26 go out on a fully capable target, and
+  the `tool_call` evaluator flags a real target's own tools as unauthorized. `docs/01` §4 said the
+  runner materialises the setup, and `docs/16` said 67 specs "run". Both now say what happens.
+  How to close it is OD-18, prepared as ADR-0009 (recommended: operator-declared seeding with
+  unseeded specs `inconclusive` first, then in-band delivery for bare model endpoints), and it
+  should be decided before the live validation.
+- **`evaluator_logic: weighted` is implemented in no run path.** 33 specs declare it and
+  `docs/04` described a weighted vote; the runner never reads the field (a deterministic fail
+  always decides), lint treats it as `all_pass`, and the vote in `evaluators/combine.py` is called
+  by neither. The runner's docstrings, `docs/04` and u06 now describe the rule that runs. OD-19,
+  prepared as ADR-0010 (recommended: make that rule the documented semantics, because a vote would
+  let a judge PASS outvote a leaked canary).
+
 ### Documentation (what the coverage figures are not about)
 
 - **The coverage percentages now say which target class they measure.** Every axis measures
