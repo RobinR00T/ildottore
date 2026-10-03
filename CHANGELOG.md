@@ -77,6 +77,19 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Documentation (the user docs caught up with what shipped)
+
+- **The man page listed neither `coverage`, `calibrate` nor `render-media`**, and described the
+  battery as aligned to three frameworks; it now lists every command and names Nova IoPC and the
+  AISVS falsification mapping. `USAGE.md` listed 11 of the 14 suites and had no `coverage` line;
+  `examples/README.md` and `docs/09` gain the `coverage` examples, run before they were written.
+- **Two FAQ entries a reader needs before trusting a result:** passing Il Dottore does not mean
+  meeting AISVS (a pass falsifies nothing), and a spec's documents, tools and memory seed are not
+  delivered to a live target today (OD-18), so 32 specs only test something where the operator
+  seeded the same content.
+- **`dottore new-spec` offers the optional `iopc:` and `aisvs:` blocks**, commented, so an author
+  sees them instead of finding out from the battery test.
+
 ### Fixed (the oracle re-key that never reached the two indirect-injection specs)
 
 - **`PI-INDIRECT-RAG-001` and `PI-INDIRECT-TOOL-001` scored a refusal as a breach.** Their

@@ -3,6 +3,14 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-03 (later): user docs caught up
+
+- Man page, `USAGE.md`, `docs/FAQ.md`, `docs/09`, `examples/README.md` and the `new-spec`
+  scaffold now reflect `coverage`, AISVS and the OD-18 limit. Standing rule from Daniel, the same
+  day: every change updates docs and examples in the same pass, without being asked.
+
+---
+
 ## State, 2026-10-03: the indirect-injection oracles re-keyed
 
 - `PI-INDIRECT-RAG-001` and `PI-INDIRECT-TOOL-001` no longer score a refusal that names the

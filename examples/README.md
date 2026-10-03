@@ -32,6 +32,8 @@ dottore registry ls --category jailbreak # filter by category / owasp / suite / 
 dottore describe PI-DIRECT-001           # one spec's detail card
 dottore lint specs/                      # schema + policy + fixtures-prove-detection
 dottore schema export                    # the JSON Schemas that validate every spec
+dottore coverage                         # what the battery tests, per framework, gaps named
+dottore coverage --framework aisvs       # OWASP AISVS by level (falsification, never verification)
 ```
 
 ## Scenario B, validate wiring without sending anything

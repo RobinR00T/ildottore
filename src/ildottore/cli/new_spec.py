@@ -49,6 +49,10 @@ owasp: {owasp}
 mitre_atlas:
   tactic: TODO
 nist_ai_rmf: "TODO"
+# iopc:                # Nova IoPC mapping; the shipped battery requires it (docs/15)
+#   techniques: []
+#   impacts: []
+# aisvs: []            # optional: OWASP AISVS IDs a FAIL is evidence against (CONTRIBUTING)
 severity: medium
 target_type: chatbot
 requires: []

@@ -22,8 +22,9 @@ dottore \- spec-driven security scanner for LLMs and AI applications (nmap-for-A
 (alias
 .BR dott )
 examines an AI endpoint, diagnoses its security weaknesses against a declarative attack
-battery aligned to the OWASP LLM Top 10, MITRE ATLAS and NIST AI 600-1, and issues a
-reproducible, evidence-backed report mapped to operational risk.
+battery aligned to the OWASP LLM Top 10, MITRE ATLAS, NIST AI 600-1 and the Nova IoPC
+taxonomy, mapped by falsification to the OWASP AISVS controls it can catch failing, and
+issues a reproducible, evidence-backed report mapped to operational risk.
 .PP
 It is a defensive tool. It scans nothing without a signed
 .I scope.yaml
@@ -59,6 +60,17 @@ Re-read a run from stored evidence, sending nothing.
 .TP
 .B diff
 Compare a run against a baseline and surface regressions (CI-gateable).
+.TP
+.B coverage
+What the battery tests, per framework (OWASP LLM, MITRE ATLAS, Nova IoPC, OWASP AISVS by
+level), without sending anything; the gaps print in three groups (not covered yet, out of
+reach for a black-box scanner, deliberately not tested), each with its reason.
+.TP
+.B calibrate
+Compare a run's findings against operator labels (human in the loop).
+.TP
+.B render-media
+Render a multimodal spec's image carriers to disk for inspection; no target.
 .TP
 .B schema export
 Print the JSON Schemas that validate every spec.
