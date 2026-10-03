@@ -813,7 +813,19 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     for _, candidate in to_authorize:
         wiring.check_target_credential(scope, candidate)
 
-    registry = wiring.build_registry(spec_paths)
+    # A spec file that fails to load is refused, not dropped. `build_registry` keeps only what
+    # parsed, so a one-letter typo removed a spec from the battery and the run still printed
+    # "Specs run: 1 of 1 planned" and `complete` (audit 2026-10-03, F-10).
+    registry, load_errors = wiring.load_registry(spec_paths)
+    if load_errors:
+        shown = "; ".join(
+            f"{e.path or e.spec_id or '?'}: {e.message[:120]}" for e in load_errors[:5]
+        )
+        more = f" (and {len(load_errors) - 5} more)" if len(load_errors) > 5 else ""
+        raise ValueError(
+            f"{len(load_errors)} spec file(s) failed to load and would silently leave the "
+            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first."
+        )
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
 
@@ -1399,6 +1411,7 @@ def _persist_run_integrity(
     with SqliteRunStore(Path(run_db)) as store:
         store.save_run_context(
             run_id,
+            target_id=target.id,
             spec_digests=spec_digests(specs),
             context={
                 "target_digest": target_digest(target, mock_scenario=mock_scenario),

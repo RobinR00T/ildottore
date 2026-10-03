@@ -135,7 +135,10 @@ _ID_SHAPED: Final = re.compile(r"[A-Z]+(?:-(?:[A-Z]+|[0-9]+))+")
 # Lowercase/digit segments joined by ``-``/``_``/``/``: lowercase ids, model names, URL
 # paths and ports. An uppercase letter anywhere disqualifies the token, and a base64 key of
 # this length is never all-lowercase, so this cannot exempt a real credential.
-_PATH_SHAPED: Final = re.compile(r"[a-z0-9]+(?:[-_/][a-z0-9]+)+")
+# An optional leading and trailing ``/`` is part of the shape: an absolute URL path
+# (``/v1/chat/completions``) inside a transport error was masked as high entropy once the run
+# status reason started going through the redactor (2026-10-03).
+_PATH_SHAPED: Final = re.compile(r"/?[a-z0-9]+(?:[-_/][a-z0-9]+)+/?")
 _SEGMENT_SPLIT: Final = re.compile(r"[-_/]")
 # Counter-rule to the two shapes above: a separator-structured token that is hexadecimal all
 # the way through is not an identifier we owe anything to, it is the shape of a UUID-format

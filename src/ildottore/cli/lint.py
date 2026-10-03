@@ -23,8 +23,15 @@ EXIT_LINT_FAILED = 1
 
 
 def lint(paths: list[Path]) -> LintReport:
-    """Load + lint the given search paths (contract §5.5 entry point)."""
-    return _lint(paths)
+    """Load + lint the given search paths (contract §5.5 entry point).
+
+    The registered mutator names (built-ins plus installed plugins) are passed in so lint can
+    refuse a mutation that names none of them; ``registry`` cannot import ``mutators`` itself.
+    """
+    from ildottore.mutators import build_default_registry
+
+    known = frozenset(build_default_registry().names())
+    return _lint(paths, known_mutators=known)
 
 
 def render_json(report: LintReport) -> str:

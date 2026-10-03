@@ -176,8 +176,15 @@ class SqliteRunStore:
         spec_digests: dict[str, str] | None = None,
         spend: dict[str, float] | None = None,
         context: dict[str, Any] | None = None,
+        target_id: str | None = None,
     ) -> None:
         """Record which battery a run executed and what it spent (``--resume`` support).
+
+        ``target_id`` is recorded here too, with the same fixed identity mask ``save_run``
+        uses, and only if the row has none yet. This record is written BEFORE the campaign
+        sends, so a campaign killed mid-flight left a row whose target was NULL, and the
+        unwaivable target check then refused to resume exactly the run this record exists to
+        make resumable (audit 2026-10-03, F4).
 
         Both columns are written **unredacted**, deliberately. They hold SHA-256 digests of
         our own spec files and four integers of consumption: no secret, no PII, no canary,
@@ -191,6 +198,12 @@ class SqliteRunStore:
         """
 
         self._ensure_run_row(run_id)
+        if target_id is not None:
+            with self._conn:
+                self._conn.execute(
+                    "UPDATE runs SET target_id = ? WHERE run_id = ? AND target_id IS NULL",
+                    (redact_identity(target_id), run_id),
+                )
         # Two fixed statements rather than one assembled from column names: dynamic SQL in
         # the store of a security scanner is a shape worth not having, even where every
         # fragment is an internal constant.

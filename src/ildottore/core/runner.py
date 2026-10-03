@@ -351,7 +351,7 @@ class CampaignRunner:
         # Selected specs run under a bounded semaphore; a budget breach halts all.
         selected_specs = [s for s in specs if s.id in selected_ids and s.id not in skipped_ids]
         semaphore = asyncio.Semaphore(self._concurrency)
-        spec_findings, breach_reason = await self._run_selected(
+        spec_findings, breach_reason, halt_state = await self._run_selected(
             run_id=run_id,
             target=target,
             specs=selected_specs,
@@ -362,8 +362,8 @@ class CampaignRunner:
             prior_by_spec=prior_by_spec,
         )
         findings.extend(spec_findings)
-        if breach_reason is not None:
-            status = "budget_exhausted"
+        if halt_state is not None:
+            status = halt_state
 
         findings.sort(key=lambda f: f.spec_id)
         run = self._build_run(
@@ -417,32 +417,45 @@ class CampaignRunner:
         completed: set[str],
         semaphore: asyncio.Semaphore,
         prior_by_spec: dict[str, Finding],
-    ) -> tuple[list[Finding], str | None]:
-        """Run every selected spec concurrently (bounded); report a budget breach.
+    ) -> tuple[list[Finding], str | None, str | None]:
+        """Run every selected spec concurrently (bounded); report a halt and why.
 
-        Returns ``(findings, breach_reason)``, the reason being the breached axis and its
-        ceiling (``None`` when nothing breached). A :class:`BudgetExhausted` from any spec is
-        caught and reported so the campaign is marked
-        ``budget_exhausted`` **without discarding** the specs that finished before the
-        breach - no masked partial, no lost work (contract §2/§4 KEEP). A non-budget
-        exception is a real defect and propagates (never masked as a flake).
+        Returns ``(findings, halt_reason, halt_state)``. A :class:`BudgetExhausted` from any
+        spec halts as ``budget_exhausted``; any other exception halts as ``aborted``. Either
+        way the specs that finished are kept and the reason names the cause, so nothing is
+        masked and no work is lost (contract §2/§4 KEEP).
+
+        An exception used to propagate only after every other spec had run: one
+        non-retryable HTTP 4xx at send 40 let the battery send 539 more requests, then
+        discarded every finished finding and the spend record (audit 2026-10-03, F5). Now
+        the first one stops new specs from starting; specs already sending finish.
         """
 
         mutators_by_spec = {sel.spec_id: sel.mutators for sel in plan.selected}
         findings: list[Finding] = []
         breach: str | None = None
+        error: str | None = None
+        abort = asyncio.Event()
 
         async def _one(spec: AttackSpec) -> Finding | None:
             async with semaphore:
-                return await self._run_spec(
-                    run_id=run_id,
-                    target=target,
-                    spec=spec,
-                    mutators=mutators_by_spec.get(spec.id, ["identity"]),
-                    ledger=ledger,
-                    completed=completed,
-                    prior=prior_by_spec.get(spec.id),
-                )
+                if abort.is_set():
+                    return None
+                try:
+                    return await self._run_spec(
+                        run_id=run_id,
+                        target=target,
+                        spec=spec,
+                        mutators=mutators_by_spec.get(spec.id, ["identity"]),
+                        ledger=ledger,
+                        completed=completed,
+                        prior=prior_by_spec.get(spec.id),
+                    )
+                except BudgetExhausted:
+                    raise
+                except Exception:
+                    abort.set()
+                    raise
 
         results = await asyncio.gather(*(_one(spec) for spec in specs), return_exceptions=True)
         for outcome in results:
@@ -452,11 +465,18 @@ class CampaignRunner:
                         f"budget ceiling reached on {outcome.axis!r} "
                         f"(limit {outcome.limit}, attempted {outcome.attempted})"
                     )
+            elif isinstance(outcome, Exception):
+                if error is None:
+                    error = f"aborted on {type(outcome).__name__}: {outcome}"
             elif isinstance(outcome, BaseException):
-                raise outcome
+                raise outcome  # KeyboardInterrupt / cancellation are not campaign outcomes
             elif outcome is not None:
                 findings.append(outcome)
-        return findings, breach
+        if error is not None:
+            return findings, error, "aborted"
+        if breach is not None:
+            return findings, breach, "budget_exhausted"
+        return findings, None, None
 
     async def _run_spec(
         self,
@@ -480,6 +500,20 @@ class CampaignRunner:
         decision = self._policy.check(target.id, endpoint, spec)
         if not decision.allowed:
             return self._blocked_finding(spec, target, reason=decision.reason or _BLOCKED)
+
+        # An unregistered mutation is an authoring defect, isolated to this spec. It used to
+        # fall back to the identity prompt and be recorded under the unknown name, so the
+        # evidence claimed a variant that was never sent (audit 2026-10-03, F3 / F-11).
+        unknown = [m for m in mutators if m != "identity" and not self._mutators.has(_base(m))]
+        if unknown:
+            return self._media_error_finding(
+                spec,
+                target,
+                reason=(
+                    f"unknown_mutator: {', '.join(unknown)} is not registered; nothing was sent "
+                    "for this spec (run `dottore lint` to catch it before a campaign)"
+                ),
+            )
 
         adapter = self._adapter_factory(target, spec)
         multi_turn = _is_multi_turn(spec)
@@ -577,7 +611,9 @@ class CampaignRunner:
         sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
         system_prompt = spec.setup.system_prompt if spec.setup is not None else None
         mutate_turn: Callable[[str], str] | None = None
-        if mutation != "identity" and self._mutators.has(mutation):
+        # By BASE name, as the single-turn path does: a parameterized `translate:fr` was looked
+        # up whole, never found, and the conversation went out unmutated (F3).
+        if mutation != "identity" and self._mutators.has(_base(mutation)):
             mutate_turn = self._turn_mutator(spec, mutation)
 
         return await reproduce_conversation(
@@ -812,7 +848,7 @@ class CampaignRunner:
         replays. An unregistered base falls back to identity.
         """
 
-        base = mutation.split(":", 1)[0]
+        base = _base(mutation)
         if mutation == "identity" or not self._mutators.has(base):
             return text
         seed = f"{spec.id}::{mutation}"
@@ -1020,6 +1056,12 @@ def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec) -> Verdict:
         matched=_union_matched(verdicts),
         evaluator_type="aggregate",
     )
+
+
+def _base(mutation: str) -> str:
+    """Registry name of a possibly parameterized mutation (``translate:fr`` -> ``translate``)."""
+
+    return mutation.split(":", 1)[0]
 
 
 def _shared_inconclusive_reason(verdicts: list[Verdict]) -> InconclusiveReason | None:

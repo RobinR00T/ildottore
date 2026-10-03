@@ -32,6 +32,7 @@ from typing import Any
 import httpx
 
 from ildottore.adapters.base import (
+    MAX_RESPONSE_BYTES,
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
@@ -260,6 +261,12 @@ class MCPAdapter:
                 last = f"HTTP {response.status_code}"
                 await self._maybe_backoff(attempt, attempts)
                 continue
+            # Same ceiling as the model adapters (SEC-07): an advertised tool list larger than
+            # this is not metadata to evaluate, it is an environment failure.
+            if len(response.content) > MAX_RESPONSE_BYTES:
+                raise AdapterEnvError(
+                    f"{self.id}: MCP response exceeded {MAX_RESPONSE_BYTES} bytes; not evaluated"
+                )
             return response
         raise AdapterEnvError(f"{self.id}: exhausted {attempts} attempt(s) to MCP endpoint: {last}")
 

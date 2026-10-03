@@ -494,3 +494,20 @@ def test_malformed_aisvs_id_is_refused_by_the_schema(tmp_path: Path, bad: str) -
 
     errors = _lint_with_aisvs(tmp_path, f"['{bad}']", "aisvsshape")
     assert any(e.code in (LintCode.SCHEMA, LintCode.PARSE_ERROR) for e in errors), errors
+
+
+def test_an_unknown_mutation_is_a_lint_error(tmp_path: Path) -> None:
+    """F-11 (audit 2026-10-03): UNKNOWN_MUTATOR_TYPE was declared and never emitted."""
+
+    from ildottore.cli.lint import lint as cli_lint
+
+    pack = tmp_path / "mutpack"
+    (pack / "attacks").mkdir(parents=True)
+    (pack / "pack.yaml").write_text("id: mutpack\npack_version: '1.0'\nname: mutpack\n")
+    (pack / "attacks" / "probe.yaml").write_text(
+        _iopc_spec("").replace(
+            "severity: high\n", "mutations: [identity, base64, translate:fr]\nseverity: high\n"
+        )
+    )
+    errors = [e for e in cli_lint([pack]).errors if e.code is LintCode.UNKNOWN_MUTATOR_TYPE]
+    assert [e.message.split("'")[1] for e in errors] == ["base64"], "translate:fr is known by base"

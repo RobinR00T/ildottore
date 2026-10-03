@@ -77,6 +77,25 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (full audit of 2026-10-03: robustness)
+
+- **One non-retryable 4xx aborted the campaign after 539 more sends and saved nothing.** The
+  first spec exception now stops new specs from starting, keeps every finished finding and the
+  spend, and halts the run as `aborted` with the exception named (exit 3).
+- **A campaign killed mid-flight could not be resumed**: the pre-send integrity record left the
+  run's target unrecorded and the unwaivable target check refused it. The target is recorded
+  there now.
+- **An unknown mutation ran the plain prompt under its name**, so the evidence claimed a
+  variant that was never sent, and lint never emitted `UNKNOWN_MUTATOR_TYPE`. Lint refuses it
+  now and the runner makes that spec inconclusive without sending; a parameterized mutation
+  (`translate:fr`) is no longer silently unmutated on multi-turn specs.
+- **`dottore run` silently dropped a spec file that failed to load** and still printed
+  "1 of 1 planned"; it now refuses with exit 3 and points at `dottore lint`.
+- **Target replies had no size limit** (three 60 MB replies cost 1.5 GB of memory); bodies
+  over 4 MiB are refused unread past the cap as an environment failure for that attempt, which
+  also bounds the input to every spec regex.
+- URL paths with a leading `/` are no longer masked as high entropy in status reasons.
+
 ### Fixed (full audit of 2026-10-03: verdicts that left a CI gate green)
 
 - **One refused variant un-confirmed an exploit that always worked.** All mutation variants

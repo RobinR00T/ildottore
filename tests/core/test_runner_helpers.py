@@ -334,10 +334,14 @@ def test_confirmed_false_when_status_fail_but_no_fail_verdicts() -> None:
     assert R._is_confirmed(VerdictStatus.FAIL, [_att(_v(VerdictStatus.PASS))], spec) is False
 
 
-async def test_product_exception_propagates_through_runner(
+async def test_product_exception_halts_the_campaign_without_masking_it(
     mutators, evaluators, scorer, stores
 ) -> None:
-    """A non-budget adapter exception is a real defect and must not be masked."""
+    """A non-budget adapter exception is a real defect and must not be masked, and it must
+    not cost the work already done either. It used to propagate only after every other spec
+    had run, then discard every finished finding and the spend (audit 2026-10-03, F5). Now
+    the campaign halts as ``aborted`` with the exception named in the reason, which every
+    report shows and the CLI turns into exit 3."""
 
     class ExplodingAdapter:
         id = "t1"
@@ -364,14 +368,16 @@ async def test_product_exception_propagates_through_runner(
         sleep=no_sleep,
         now=lambda: 0.0,
     )
-    import pytest
+    result = await runner.run(run_id="r1", target=make_target(), specs=[make_spec()])
+    assert result.status == "aborted"
+    assert result.status_reason is not None
+    assert "RuntimeError: product defect" in result.status_reason
 
-    with pytest.raises(RuntimeError, match="product defect"):
-        await runner.run(run_id="r1", target=make_target(), specs=[make_spec()])
 
-
-async def test_unregistered_mutation_falls_back_to_identity(evaluators, scorer, stores) -> None:
-    """A mutation not in the registry is applied as identity (unchanged carrier)."""
+async def test_unregistered_mutation_is_refused_for_that_spec(evaluators, scorer, stores) -> None:
+    """A mutation not in the registry used to be applied as identity and recorded under the
+    unknown name, so the evidence claimed a variant that was never sent (audit 2026-10-03,
+    F3 / F-11). The spec is now inconclusive, says why, and sends nothing."""
 
     class NoMutators:
         def has(self, name: str) -> bool:
@@ -397,8 +403,10 @@ async def test_unregistered_mutation_falls_back_to_identity(evaluators, scorer, 
         now=lambda: 0.0,
     )
     result = await runner.run(run_id="r1", target=make_target(), specs=[spec])
-    # identity + unknown_mut both ran (fallback = identity transform), 2 muts x 2 runs.
-    assert len(result.findings[0].attempts) == 4
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    assert finding.attempts == []
+    assert finding.reasoning is not None and "unknown_mutator: unknown_mut" in finding.reasoning
 
 
 def test_combine_deterministic_fail_wins_over_unconsulted_judge() -> None:
