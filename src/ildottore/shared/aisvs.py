@@ -30,9 +30,10 @@ ATLAS tactic names and IoPC titles are. The requirement **text is deliberately n
 copied requirement would carry the ShareAlike obligation into an MIT codebase. Read the text
 upstream: https://github.com/OWASP/AISVS (attribution: the OWASP AISVS project and contributors).
 
-Levels are cumulative in the standard (aligned with ASVS: verifying at level N assumes the
-levels below it), but each requirement is *assigned* exactly one level, so the three coverage
-axes partition the universe and a requirement is never counted twice.
+The standard's levels are ascending (each adds depth, and organisations start at level 1;
+separately, verifying at AISVS level N assumes ASVS level N), and each requirement is *assigned*
+exactly one level, so the three coverage axes partition the universe and a requirement is never
+counted twice.
 
 Re-diff against upstream when 1.01 is released. A spec declaring an ID outside this table is a
 lint error, because an ID that matches nothing would otherwise shrink the numerator in silence.
@@ -186,8 +187,9 @@ def _classify(groups: tuple[tuple[str, tuple[str, ...]], ...]) -> dict[str, str]
 
 _PROCESS = (
     "a process the operator runs, and a reply cannot show that it ran. Running this battery on "
-    "every model change and comparing runs with `dottore diff` is one way to satisfy it; the "
-    "battery digest is what proves the same suite was used both times"
+    "every model change and comparing the two runs with `dottore diff` is one way to satisfy it. "
+    "`diff` compares verdicts per spec id; it does not check that both runs used the same spec "
+    "content, so pin the battery version alongside the runs"
 )
 
 _OUT_OF_REACH_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -218,8 +220,19 @@ _OUT_OF_REACH_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "how identity and privileged access are built (step-up authentication, token lifetimes, "
         "just-in-time access, where the policy engine runs, label propagation). What a reply can "
         "show is whether an authorization boundary was crossed, and that is mapped where AISVS "
-        "asks for it (C5.2.2, C5.2.4 and C9.5)",
-        ("C5.1", "C5.2.3", "C5.2.5", "C5.2.6", "C5.2.7", "C5.3.2"),
+        "asks for it (C5.2.2, C5.2.4, C9.5.2 to C9.5.4)",
+        ("C5.1", "C5.2.5", "C5.2.6", "C5.2.7"),
+    ),
+    (
+        "where sensitive data lives (retrieved at query time rather than trained into the model): "
+        "an architecture choice that no reply shows",
+        ("C5.2.3",),
+    ),
+    (
+        "tenant isolation below the application (hardware partitioning, confidential computing, "
+        "dedicated compute): side channels no reply exposes. Isolation at the application layer "
+        "IS observable and sits in the roadmap under C5.3.1",
+        ("C5.3.2",),
     ),
     (
         "supply chain (artifact scanning, approved sources, integrity, AI BOMs): answered by SBOM "
@@ -268,8 +281,9 @@ _OUT_OF_REACH_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (
         "logging, detection and alerting happen in the operator's monitoring, which a reply "
-        "does not show. A campaign's stored probes, with their timestamps and run id, are the "
-        "test traffic to check those logs and alerts against",
+        "does not show. A campaign's stored probes, filed under its run id, are the test "
+        "traffic to check those logs and alerts against (they carry no per-probe timestamp "
+        "today, so the match is by content)",
         ("C12.1.1", "C12.1.2", "C12.1.4", "C12.2.1", "C12.2.2", "C12.2.3", "C12.2.4", "C12.2.5"),
     ),
 )
@@ -278,12 +292,17 @@ _OUT_OF_REACH_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 _NOT_TESTED_BY_DESIGN_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
-        "MCP server and transport conformance (token validation, OAuth claims, Origin and Host "
-        "checks, payload limits, response signing): protocol testing against an MCP server, a "
-        "different target from the model endpoint this scanner talks to. A protocol test suite "
-        "is the right tool; this product could add one and has not",
+        "MCP server auth and transport conformance (token validation, OAuth claims, Origin and "
+        "Host checks, payload limits, response signing). This scanner does talk to MCP servers "
+        "(`provider: mcp`), but only for read-only discovery and tool-metadata checks; protocol "
+        "conformance is a decision not taken, and could be revisited",
         (
-            "C10.2",
+            "C10.2.1",
+            "C10.2.2",
+            "C10.2.3",
+            "C10.2.5",
+            "C10.2.6",
+            "C10.2.7",
             "C10.3.1",
             "C10.3.3",
             "C10.3.5",
@@ -301,9 +320,9 @@ _NOT_TESTED_BY_DESIGN_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("C10.1", "C10.3.2", "C10.3.4", "C10.4.7", "C10.4.8"),
     ),
     (
-        "rate limits sized to the extraction threat: measuring them means sending at the rate an "
-        "extractor would, which is load testing. This scanner caps its own request rate and "
-        "spend on purpose",
+        "extraction-aware rate limiting: measuring it means sending at the rate an extractor "
+        "would, which is load testing. This scanner caps its own request rate and spend on "
+        "purpose",
         ("C11.2.2",),
     ),
     (

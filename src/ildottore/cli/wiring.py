@@ -49,7 +49,7 @@ from ildottore.policy import (
     Scope,
     load_scope,
 )
-from ildottore.registry import Registry, load_paths
+from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.enums import Category, TargetType
@@ -140,8 +140,18 @@ def build_registry(spec_paths: list[Path]) -> Registry:
     the queryable registry from whatever parsed.
     """
 
+    return load_registry(spec_paths)[0]
+
+
+def load_registry(spec_paths: list[Path]) -> tuple[Registry, list[LintError]]:
+    """:func:`build_registry`, plus the load-time findings it would otherwise drop.
+
+    For callers that publish a count (``dottore coverage``): a file that failed to load is in
+    no numerator, so it has to be reported rather than quietly subtracted.
+    """
+
     result = load_paths(spec_paths)
-    return Registry.from_packs(result.packs)
+    return Registry.from_packs(result.packs), list(result.errors)
 
 
 # --- policy / scope ----------------------------------------------------------------

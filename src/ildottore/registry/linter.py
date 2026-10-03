@@ -309,16 +309,22 @@ def _check_aisvs(spec: AttackSpec) -> list[LintError]:
         for code in unknown_aisvs_codes(spec.aisvs)
     ]
     for code in dict.fromkeys(spec.aisvs):
-        reason = AISVS_OUT_OF_REACH.get(code) or AISVS_NOT_TESTED_BY_DESIGN.get(code)
-        if reason is None:
+        # Two different claims, so two messages: out of reach is physics (no reply shows it),
+        # not-tested-by-design is a decision (reachable in principle, deliberately untested).
+        if (reason := AISVS_OUT_OF_REACH.get(code)) is not None:
+            verdict = "is classified out of reach for a black-box scanner"
+            remedy = "this spec claims more than a black box can show"
+        elif (reason := AISVS_NOT_TESTED_BY_DESIGN.get(code)) is not None:
+            verdict = "is classified as deliberately not tested"
+            remedy = "this spec contradicts a scope decision"
+        else:
             continue
         errors.append(
             LintError(
                 code=LintCode.FRAMEWORK_CLAIM_CONTRADICTED,
                 message=(
-                    f"aisvs ID {code!r} is classified as not testable by this scanner "
-                    f"({reason[:80]}...). Either this spec claims more than a black box can "
-                    f"show, or the classification in shared/aisvs.py is wrong: fix one"
+                    f"aisvs ID {code!r} {verdict} ({reason[:80]}...). Either {remedy}, or the "
+                    f"classification in shared/aisvs.py is wrong: fix one"
                 ),
                 spec_id=spec.id,
             )

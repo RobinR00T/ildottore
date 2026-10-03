@@ -29,7 +29,8 @@ class LintCode(StrEnum):
     EVALUATOR_MISCONFIGURED = "EVALUATOR_MISCONFIGURED"
     UNKNOWN_FRAMEWORK_CODE = "UNKNOWN_FRAMEWORK_CODE"
     ORACLE_MARKER_IS_ECHOABLE = "ORACLE_MARKER_IS_ECHOABLE"
-    #: A spec claims a framework code its own classification calls untestable from outside.
+    #: A spec claims a framework code its own classification calls out of reach for a black box,
+    #: or deliberately untested.
     FRAMEWORK_CLAIM_CONTRADICTED = "FRAMEWORK_CLAIM_CONTRADICTED"
 
 

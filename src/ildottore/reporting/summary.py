@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 
 from ildottore.shared.aisvs import (
     AISVS_LEVELS,
+    AISVS_NOT_TESTED_BY_DESIGN,
+    AISVS_OUT_OF_REACH,
     AISVS_REQUIREMENTS,
     AISVS_TITLES,
     AISVS_VERSION,
@@ -488,13 +490,18 @@ class BatteryCoverage:
     #: path runs the linter, so a third-party pack can be measured without ever being linted,
     #: and a silently shrinking numerator is the failure this whole axis exists to avoid.
     off_universe: tuple[tuple[str, str, str], ...] = ()
+    #: ``(path, message)`` for every spec file that failed to load and is therefore in no
+    #: numerator and no spec count. Same reasoning as ``off_universe``, one level up: a spec
+    #: whose framework value fails the schema used to vanish from "75 specs" with rc 0.
+    unloaded: tuple[tuple[str, str], ...] = ()
 
 
 def _natural(entry: tuple[str, ...]) -> list[object]:
     """Order codes as a reader counts them: ``C2.1.6`` before ``C10.4.2``.
 
     Plain string order put every AISVS chapter from 10 up ahead of chapter 2. The other axes are
-    unaffected: OWASP and IoPC codes are zero-padded and ATLAS tactic names carry no digits.
+    unaffected: OWASP and IoPC impact codes are zero-padded, IoPC technique families stop at 9
+    today (and natural order is the right one when a T10 arrives), ATLAS names carry no digits.
     """
 
     return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", entry[0])]
@@ -597,10 +604,16 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
                 else:
                     off.append((spec.id, "iopc.impacts", code))
         for code in spec.aisvs or []:
-            if code in AISVS_REQUIREMENTS:
-                aisvs.add(code)
-            else:
+            if code not in AISVS_REQUIREMENTS:
                 off.append((spec.id, "aisvs", code))
+            elif code in AISVS_OUT_OF_REACH or code in AISVS_NOT_TESTED_BY_DESIGN:
+                # Lint refuses this (FRAMEWORK_CLAIM_CONTRADICTED), but coverage does not lint,
+                # and `_axis` consults the classification only for UNcovered codes: counting
+                # the claim would print a control as covered and silently drop the reason it
+                # is not testable. Reported instead, like any other value not counted (A-13).
+                off.append((spec.id, "aisvs (contradicts its classification)", code))
+            else:
+                aisvs.add(code)
 
     return BatteryCoverage(
         specs=len(spec_list),
@@ -626,9 +639,9 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
                 impact,
                 IOPC_IMPACTS,
             ),
-            # One axis per assigned level. The standard's levels are cumulative, but each
+            # One axis per assigned level. The standard's levels are ascending and each
             # requirement is assigned exactly one, so these partition the 191 and nothing is
-            # counted twice; a reader verifying "level 2" adds the level 1 row to it.
+            # counted twice; a reader targeting level 2 typically reads the level 1 row with it.
             *(
                 _axis(
                     f"aisvs_l{level}",

@@ -331,8 +331,11 @@ def test_every_aisvs_requirement_is_pinned_to_its_bucket() -> None:
     morning (2026-10-03) read every spec behind them and kept 17: some specs only show the model
     PROPOSING a tool call where the control is the runtime blocking it, some test the tester's
     own schema or allowlist instead of the operator's, four send a placeholder instead of a
-    concrete request, and the multilingual spec sends English. The 20 it dropped are in the
-    roadmap below, not deleted, because a better spec could cover them.
+    concrete request, and the multilingual spec sends English. 19 of the 20 it dropped are in
+    the roadmap below, because a better spec could cover them; C1.3.3 moved to out of reach
+    with its reason. A second audit moved C10.2.4 from "by design" to the roadmap: this scanner
+    already talks to MCP servers with a bearer token, and comparing what tools/list returns to
+    two tokens is what that row needs.
     """
 
     from ildottore.cli.coverage import battery_coverage
@@ -352,7 +355,7 @@ def test_every_aisvs_requirement_is_pinned_to_its_bucket() -> None:
         "C2.1.1 C2.1.4 C2.1.5 C2.1.7 C2.1.8 C2.2.1 C2.2.2 C2.2.4 C5.2.1 C5.3.1 C7.1.1 C7.1.2 "
         "C7.2.2 C7.3.3 C7.3.4 C7.4.1 C7.4.2 C7.4.3 C8.1.1 C8.2.1 C8.2.3 C8.2.4 C8.3 C9.1.2 "
         "C9.2.1 C9.2.2 C9.2.4 C9.2.5 C9.2.7 C9.2.10 C9.3.2 C9.3.4 C9.3.7 C9.5.1 C9.5.5 C9.5.6 "
-        "C10.4.1 C11.2.1 C11.2.3 C11.2.5 C11.3.2 C11.3.4 C11.4.1 C11.4.2"
+        "C10.2.4 C10.4.1 C11.2.1 C11.2.3 C11.2.5 C11.3.2 C11.3.4 C11.4.1 C11.4.2"
     )
     # Includes the operator-side processes this tool can be the instrument for (C3.2, C6.1.4,
     # C11.1.2/3/5, C1.3.3, the logging and alerting rows of C12): a reply cannot show they ran.
@@ -362,9 +365,10 @@ def test_every_aisvs_requirement_is_pinned_to_its_bucket() -> None:
         "C11.1.2 C11.1.3 C11.1.5 C11.2.4 C11.3.1 C11.3.3 C11.4.3 C12"
     )
     assert by_design == _aisvs(
-        "C7.4.4 C10.1 C10.2 C10.3 C10.4.3 C10.4.4 C10.4.5 C10.4.6 C10.4.7 C10.4.8 C11.2.2"
+        "C7.4.4 C10.1 C10.2.1 C10.2.2 C10.2.3 C10.2.5 C10.2.6 C10.2.7 C10.3 C10.4.3 C10.4.4 "
+        "C10.4.5 C10.4.6 C10.4.7 C10.4.8 C11.2.2"
     )
-    assert (len(covered), len(missing), len(out_of_reach), len(by_design)) == (17, 46, 105, 23)
+    assert (len(covered), len(missing), len(out_of_reach), len(by_design)) == (17, 47, 105, 22)
     assert [a.exercised for a in axes] == [5, 12, 0]
 
 
@@ -462,3 +466,62 @@ def test_codes_are_listed_in_the_order_a_reader_counts_them() -> None:
     assert l1.index("v1.0-C9.3.2") < l1.index("v1.0-C10.4.1") < l1.index("v1.0-C11.2.1")
     # The zero-padded axes keep the order they always had.
     assert [c for c, _ in by_key["owasp"].covered] == sorted(c for c, _ in by_key["owasp"].covered)
+
+
+def test_an_unlinted_claim_on_an_untestable_control_is_reported_not_counted() -> None:
+    """Coverage does not lint, so a third-party pack can carry what lint would refuse.
+
+    `_axis` consults the classification only for codes nothing covers, so before this a pack
+    mapping "models run in isolated sandboxes" (C4.1.1) printed it as covered, rc 0, and the
+    reason it is out of reach vanished. Found by the second audit of 2026-10-03.
+    """
+
+    from ildottore.cli import wiring
+
+    spec = next(s for s in wiring.build_registry([SPECS]).list() if s.id == "PI-DIRECT-001")
+    claims = spec.model_copy(update={"aisvs": ["v1.0-C4.1.1", "v1.0-C10.2.1", "v1.0-C2.1.6"]})
+    coverage = build_battery_coverage([claims])
+    covered = {c for a in coverage.axes for c, _ in a.covered if a.key.startswith("aisvs")}
+
+    assert covered == {"v1.0-C2.1.6"}
+    reported = {value for _, field, value in coverage.off_universe if field.startswith("aisvs")}
+    assert reported == {"v1.0-C4.1.1", "v1.0-C10.2.1"}
+    rendered = render_coverage(coverage, framework="aisvs")
+    assert "contradicts its classification" in rendered
+    assert "v1.0-C4.1.1" in rendered.split("Not covered yet")[0], "the warning names the claim"
+
+
+def test_a_spec_that_fails_to_load_is_reported_not_silently_subtracted(tmp_path: Path) -> None:
+    """A spec whose framework value fails the schema used to drop out of every count, rc 0.
+
+    The trigger this change made likely: an AISVS 1.01 ID (`v1.01-C...`) the day 1.01 ships.
+    Found by the second audit of 2026-10-03; the same hole existed on main for `owasp`.
+    """
+
+    pack = tmp_path / "thirdparty"
+    (pack / "attacks").mkdir(parents=True)
+    (pack / "pack.yaml").write_text("id: thirdparty\npack_version: '1.0'\nname: thirdparty\n")
+    good = (SPECS / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    (pack / "attacks" / "bad.yaml").write_text(
+        good.replace("id: PI-DIRECT-001", "id: TP-BAD-001").replace(
+            "\nseverity:", '\naisvs: ["v1.01-C2.1.6"]\nseverity:', 1
+        )
+    )
+    coverage = battery_coverage([pack])
+
+    assert coverage.specs == 0
+    assert len(coverage.unloaded) == 1 and "bad.yaml" in coverage.unloaded[0][0]
+    assert "failed to load and are NOT counted" in render_coverage(coverage)
+    assert json.loads(render_coverage_json(coverage))["unloaded"][0]["path"].endswith("bad.yaml")
+
+
+def test_codes_that_share_a_reason_print_it_once() -> None:
+    """AISVS classifies 105 requirements under 15 reasons; one copy per code took the default
+    output from 36 lines to 359. Axes whose codes each have their own reason print as before."""
+
+    rendered = render_coverage(battery_coverage([SPECS]), framework="aisvs")
+    infra = "infrastructure and hardware (workload sandboxes"
+    # C4 has requirements on all three levels, so its reason prints once per level section.
+    assert rendered.count(infra) == 3
+    owasp = render_coverage(battery_coverage([SPECS]), framework="owasp")
+    assert owasp.count("training and fine-tuning stages need pipeline access") == 1

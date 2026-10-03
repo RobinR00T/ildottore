@@ -28,6 +28,7 @@ Two design choices worth stating:
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from ildottore.cli import wiring
@@ -62,7 +63,7 @@ def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> Bat
     belongs, and the same false-green shape as a run against an unscoped target.
     """
 
-    registry = wiring.build_registry(spec_paths)
+    registry, load_errors = wiring.load_registry(spec_paths)
     specs: list[AttackSpec]
     if suite is not None:
         from ildottore.cli.flags import resolve_suite_id
@@ -77,7 +78,10 @@ def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> Bat
         specs = list(registry.resolve(suite_id))
     else:
         specs = list(registry.list())
-    return build_battery_coverage(specs)
+    return replace(
+        build_battery_coverage(specs),
+        unloaded=tuple((e.path or e.spec_id or "<unknown>", e.message) for e in load_errors),
+    )
 
 
 def render_coverage(
@@ -95,6 +99,7 @@ def render_coverage(
             f"{pct_display(axis.exercised, axis.total):>4}"
         )
     lines.extend(_off_universe_lines(coverage))
+    lines.extend(_unloaded_lines(coverage))
     if not show_gaps:
         return "\n".join(lines)
 
@@ -110,9 +115,15 @@ def render_coverage(
             if not entries:
                 continue
             lines.extend(["", header])
+            # Codes sharing a reason print together and the reason once. AISVS classifies by
+            # group (105 requirements, 15 reasons), and printing the reason under every code
+            # took the default output from 36 lines to 359. One reason per code is unchanged.
+            by_reason: dict[str, list[tuple[str, str]]] = {}
             for code, title, reason in entries:
-                head = f"    {code}  {title}" if title != code else f"    {code}"
-                lines.append(head)
+                by_reason.setdefault(reason, []).append((code, title))
+            for reason, members in by_reason.items():
+                for code, title in members:
+                    lines.append(f"    {code}  {title}" if title != code else f"    {code}")
                 lines.append(f"      {reason}")
     if any(a.out_of_reach or a.by_design for a in axes):
         lines.extend(
@@ -138,12 +149,27 @@ def _off_universe_lines(coverage: BatteryCoverage) -> list[str]:
         return []
     lines = [
         "",
-        f"  WARNING: {len(coverage.off_universe)} framework value(s) outside their pinned "
-        "universe are NOT counted (run `dottore lint` to refuse them):",
+        f"  WARNING: {len(coverage.off_universe)} framework value(s) NOT counted, outside their "
+        "pinned universe or contradicting its classification (run `dottore lint` to refuse "
+        "them):",
     ]
     lines.extend(
         f"    {spec_id}  {field} = {value!r}" for spec_id, field, value in coverage.off_universe
     )
+    return lines
+
+
+def _unloaded_lines(coverage: BatteryCoverage) -> list[str]:
+    """A warning for every spec file that failed to load: it is in no count at all."""
+
+    if not coverage.unloaded:
+        return []
+    lines = [
+        "",
+        f"  WARNING: {len(coverage.unloaded)} spec file(s) failed to load and are NOT counted "
+        "(run `dottore lint` for the full reason):",
+    ]
+    lines.extend(f"    {path}  {message[:100]}" for path, message in coverage.unloaded)
     return lines
 
 
@@ -164,6 +190,7 @@ def render_coverage_json(
             {"spec_id": spec_id, "field": field, "value": value}
             for spec_id, field, value in coverage.off_universe
         ],
+        "unloaded": [{"path": path, "message": message} for path, message in coverage.unloaded],
         "axes": [
             {
                 "key": a.key,

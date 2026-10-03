@@ -346,8 +346,9 @@ def test_the_digest_covers_the_fields_that_gate_policy_and_feed_a_report() -> No
     assert spec_digest(base) != spec_digest(
         base.model_copy(update={"nist_ai_rmf": "GOVERN 1.1 (something else)"})
     )
-    # `aisvs` feeds the AISVS coverage axes, so it is in the digest for the same reason.
-    assert spec_digest(base) != spec_digest(base.model_copy(update={"aisvs": ["v1.0-C2.1.6"]}))
+    # `aisvs` is OUTSIDE: it feeds `dottore coverage`, never a run artifact. Inside, it made a
+    # campaign halted before the AISVS mapping landed unresumable after it (measured 2026-10-03).
+    assert spec_digest(base) == spec_digest(base.model_copy(update={"aisvs": ["v1.0-C2.1.6"]}))
     # And the cosmetic half still holds: an edited description does not refuse a resume.
     assert spec_digest(base) == spec_digest(
         base.model_copy(update={"description": "a clearer description of the same test"})

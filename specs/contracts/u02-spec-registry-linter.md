@@ -129,7 +129,11 @@ and no report, document or summary may phrase it otherwise. Two refusals make th
   more than a black box can show, or the requirement belongs back in the roadmap. Coverage
   consults the classification only for codes nothing covers, so without this refusal a spec
   mapping, say, "models run in isolated sandboxes" would be counted and the reason dropped,
-  with nobody deciding which was true.
+  with nobody deciding which was true. `dottore coverage` does not lint, so it applies the same
+  rule itself: a contradicted claim is reported under `off_universe` and counted nowhere.
+
+The field is **outside** the resume digest: it feeds `dottore coverage`, never a run artifact,
+and inside it made a campaign halted before the mapping landed unresumable after it.
 
 Only IDs, levels and section headings are reproduced: AISVS is CC-BY-SA 4.0 and this repository
 is MIT, so requirement text stays upstream. Checked by `tests/registry/test_linter.py` and

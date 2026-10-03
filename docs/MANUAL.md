@@ -387,7 +387,8 @@ repository ships, the trust prompt shown before it is opened, the plugins and sk
 installs) are a different target class: they act on the machine opening the project, not on
 the model's replies, so no request this tool sends can exercise them and none of these figures
 covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never reach a numerator (a Responsible-AI
-`RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%.
+`RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%, and a spec file
+that fails to load is named in a warning instead of quietly leaving the spec count.
 
 **Why the AISVS figures are low, and should be.** OWASP AISVS lists 191 *controls* ("verify
 that a classifier screens every prompt"), not attacks. A black-box scanner never sees the
@@ -398,19 +399,22 @@ never that they are verified (clause A-28). Most of the standard is out of reach
 construction (training data, infrastructure, cryptographic identity, logging), and the gaps
 print in the same three groups as every other axis, with the reason. Some out-of-reach rows are
 operator processes this tool can serve as the **instrument** for even though no reply shows
-them: re-running the same battery after a model change (C3.2, C11.1.2, the battery digest proves
-it was the same suite), or using a campaign's stored probes as test traffic for the operator's
-logging and alerting (C12.1, C12.2).
+them: re-running the same battery after a model change and comparing the runs with `dottore
+diff` (C3.2, C11.1.2; `diff` compares verdicts per spec id and does not check that both runs used
+the same spec content, so pin the battery version beside the runs), or using a campaign's stored
+probes as test traffic for the operator's logging and alerting (C12.1, C12.2).
 
-Read the 17 covered requirements with three cautions. Eight of them (C5.2.2, C5.2.4, C8.1.3,
-C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need something the operator
-provides: a seeded corpus or tool, a target that exposes its tool trace, or two identities.
-Today the runner sends a live target the prompt, the system prompt and the media, not a spec's
-documents, tool definitions or memory seed. C9.5.4 also needs the `offensive_simulation` policy
-layer, off by default. And two specs (`AC-BOLA-001`, `DL-XTENANT-001`) carry four rows each, so
-one failure lights four controls: the count is not independent evidence. The first mapping
-claimed 37; an audit read every spec behind them and kept these 17, and the reasons are pinned in
-`tests/cli/test_coverage_cmd.py`.
+Read the 17 covered requirements with four cautions. **Nine** of them (C5.2.2, C5.2.4, C8.1.3,
+C9.3.5, C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need something the
+operator provides: a seeded corpus or tool, a target that exposes its tool trace, or two
+identities. Today the runner sends a live target the prompt, the system prompt and the media, not
+a spec's documents, tool definitions or memory seed (OD-18), so eight of the 17 are exercisable
+by the tool alone. C10.4.2 is an MCP control: it applies only where the tools are served over
+MCP, while its two specs run against any tool-using agent. C9.5.4 also needs the
+`offensive_simulation` policy layer, off by default. And the rows are not independent evidence:
+`DL-XTENANT-001` carries four of them and `AC-BOLA-001` three, so one failure lights several
+controls. The first mapping claimed 37; an audit read every spec behind them and kept these 17,
+and the reasons are pinned in `tests/cli/test_coverage_cmd.py`.
 
 ### `mock_scenario`, the offline replay selector
 

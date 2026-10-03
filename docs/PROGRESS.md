@@ -21,7 +21,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   `evaluators/combine.py`, which neither calls, and the runner's docstring says it honours the
   field; `JB-MULTILINGUAL-001` sends English (the translate mutator glosses one word);
   `PI-INDIRECT-RAG-001` and `PI-INDIRECT-TOOL-001` still fail a refusal that names what it
-  refuses. Next, before any live run.
+  refuses; stored probes carry no timestamp (`Attempt` has no time field and the CLI never
+  passes `started_at`/`finished_at`, so both are null in SQLite and in the report). Next, before
+  any live run.
 
 ---
 

@@ -97,6 +97,18 @@ order, not how any real model behaves: that still needs a live run.
 - **New lint code `FRAMEWORK_CLAIM_CONTRADICTED`**: a spec may not claim a control the same table
   classifies as out of reach or deliberately untested. One of the two statements would be false.
 - Coverage lists codes in natural order, so AISVS chapter 2 prints before chapter 10.
+- **A second audit of the same change found 15 defects; all are fixed before merge.** The two
+  that changed behaviour: `dottore coverage` does not lint, so an unlinted pack claiming a
+  control the table calls out of reach was counted as covered (now reported and counted nowhere),
+  and the new field was inside the resume digest, so a campaign halted before this change could
+  not be resumed after it over a field the run never reads (now outside; every shipped spec keeps
+  its digest). The rest were claims the code did not back: a battery digest that `dottore diff`
+  never compares, "timestamped" stored probes that carry no timestamp, an MCP reason that said
+  this scanner does not talk to MCP servers when it does (C10.2.4 moved to the roadmap), and
+  three miscounts in the manual's cautions.
+- `dottore coverage` names a spec file that fails to load instead of dropping it from the count
+  with rc 0 (an AISVS 1.01 ID would have triggered it), and prints a reason once for the codes
+  that share it, which took the default output from 359 lines back to 273.
 
 ### Documentation (two claims the code does not back, and the decisions they need)
 

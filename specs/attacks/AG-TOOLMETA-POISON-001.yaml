@@ -11,6 +11,8 @@ mitre_atlas:
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
   techniques: ["IOPC-T3.002"]
+# C10.4.2 (MCP clients screen tool responses) applies only where the tools are served over
+# MCP; this spec runs against any tool-using agent (docs/MANUAL.md, AISVS cautions).
 aisvs: ["v1.0-C10.4.2"]
 severity: high
 target_type: agent
