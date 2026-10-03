@@ -15,9 +15,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   table classifies as out of reach or deliberately untested.
 - **The same audit found product defects outside AISVS**, verified in the code and not fixed in
   this change: the runner never delivers a spec's documents, tool definitions or memory seed
-  to a live target (`core/runner.py` `_build_request`), while `docs/01` §4 says it does; the
-  runner ignores `evaluator_logic` (any deterministic fail wins) while lint's fixture engine
-  honours it; `JB-MULTILINGUAL-001` sends English (the translate mutator glosses one word);
+  to a live target (`core/runner.py` `_build_request`), while `docs/01` §4 says it does (32 of
+  75 specs depend on it); `evaluator_logic: weighted` (33 specs) is implemented nowhere in the
+  run or lint path: both let any deterministic fail decide, the weighted vote lives only in
+  `evaluators/combine.py`, which neither calls, and the runner's docstring says it honours the
+  field; `JB-MULTILINGUAL-001` sends English (the translate mutator glosses one word);
   `PI-INDIRECT-RAG-001` and `PI-INDIRECT-TOOL-001` still fail a refusal that names what it
   refuses. Next, before any live run.
 
