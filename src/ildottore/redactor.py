@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import math
 import os
 import re
@@ -59,14 +60,22 @@ _ALREADY_MASKED: Final = re.compile(r"Â«REDACTED:[A-Za-z0-9_]+(?::[0-9a-f]{8})?Â
 # the value, masked the label words and left the real secret in clear, and on the first
 # input it never reached a fixed point, which tripped the store's fail-closed guard and
 # aborted the whole campaign over one reply (audit 2026-10-03, F17).
+#
+# The run is BOUNDED (at most three more labels). Unbounded, every start position consumed
+# the rest of a long run of label words and backtracked through all of it: 48 KB of
+# ``token token ...`` took 4.9 s, 96 KB took 20 s, and a target controls that text (review of
+# PR #32). A longer run still masks its value, from a later start position. A value is
+# refused only when it is a label FOLLOWED by a separator or the end, so ``Password!2026x``
+# after ``password:`` is a value again (the first fix left it in clear).
 _LABEL_WORDS: Final = (
     r"(?:secret|password|passwd|passphrase|api[\s_-]?key|access[\s_-]?key|"
     r"token|credential|client[\s_-]?secret)s?"
 )
+_LABEL_SEP: Final = r"[\s\"'`:=]"
 _LABELED_SECRET: Final = re.compile(
-    rf"(?i)\b{_LABEL_WORDS}\b(?:[\s\"'`:=]{{1,4}}{_LABEL_WORDS}\b)*"
-    r"(?:\s+(?:is|are|was|were|=|:))?[\s\"'`:=]{1,4}"
-    rf"(?!{_LABEL_WORDS}\b)([^\s\"'`,;)\x00]{{6,}})"
+    rf"(?i)\b{_LABEL_WORDS}\b(?:{_LABEL_SEP}{{1,4}}{_LABEL_WORDS}\b){{0,3}}"
+    rf"(?:\s+(?:is|are|was|were|=|:))?{_LABEL_SEP}{{1,4}}"
+    rf"(?!{_LABEL_WORDS}(?:{_LABEL_SEP}|$))([^\s\"'`,;)\x00]{{6,}})"
 )
 
 # --- credentials the tool itself has read ----------------------------------------------
@@ -82,13 +91,28 @@ _KNOWN_LOCK: Final = threading.Lock()
 _KNOWN_MIN_LEN: Final = 8
 
 
+def _escaped_forms(value: str) -> set[str]:
+    """The forms ``value`` takes when a library quotes it: ``repr`` and JSON escaping.
+
+    An HTTP library rejecting a header quotes it repr-escaped (``b'Bearer a\\nb'``, with a
+    literal backslash-n), so the raw value with a real newline never matched and the key
+    reached stderr, every report format and the evidence (review of PR #32).
+    """
+
+    forms = {value, value.strip()}
+    for form in list(forms):
+        forms.add(repr(form)[1:-1])
+        forms.add(json.dumps(form)[1:-1])
+    return forms
+
+
 def register_known_secret(value: str | None) -> None:
-    """Mask ``value`` (and its whitespace-stripped form) by value in every Redactor."""
+    """Mask ``value`` (stripped, and as a library would quote it) by value in every Redactor."""
 
     if not value:
         return
     with _KNOWN_LOCK:
-        for candidate in {value, value.strip()}:
+        for candidate in _escaped_forms(value):
             if len(candidate) >= _KNOWN_MIN_LEN:
                 _KNOWN_SECRETS.add(candidate)
 
@@ -318,25 +342,29 @@ class Redactor:
         return current
 
     def _redact_once(self, text: str) -> str:
-        text = _URL_USERINFO.sub(
-            lambda m: m.group(1) + _MASK_TEMPLATE.format(type="url_password") + m.group(3), text
-        )
-        for secret in _known_secrets():
-            if secret in text:
-                text = text.replace(
-                    secret,
-                    _MASK_TEMPLATE_HASHED.format(type="credential", digest=self._digest(secret)),
-                )
-
-        # Protect already-masked tokens from being re-scanned (idempotency).
+        # Protect already-masked tokens from being re-scanned (idempotency). This runs FIRST:
+        # a registered credential that is a substring of the mask itself (``credential``)
+        # used to be replaced inside the previous pass's mask, nesting it on every pass, and
+        # the store's fixed-point guard then aborted the campaign (review of PR #32).
         preserved: dict[str, str] = {}
 
-        def _stash(m: re.Match[str]) -> str:
+        def _keep(mask: str) -> str:
             token = f"\x00{len(preserved)}\x00"
-            preserved[token] = m.group(0)
+            preserved[token] = mask
             return token
 
-        working = _ALREADY_MASKED.sub(_stash, text)
+        working = _ALREADY_MASKED.sub(lambda m: _keep(m.group(0)), text)
+
+        # Credentials the tool read, by value, before the URL rule: a password containing a
+        # raw ``@`` is matched whole here, where the URL rule would stop at the first ``@``.
+        for secret in _known_secrets():
+            if secret in working:
+                mask = _MASK_TEMPLATE_HASHED.format(type="credential", digest=self._digest(secret))
+                working = working.replace(secret, _keep(mask))
+        working = _URL_USERINFO.sub(
+            lambda m: m.group(1) + _keep(_MASK_TEMPLATE.format(type="url_password")) + m.group(3),
+            working,
+        )
 
         for pattern in self._patterns:
             if pattern.type == "card":

@@ -247,7 +247,7 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
     ``env://ANY_VARIABLE`` therefore made the scanner read that variable and send it, with the
     targets' replies, to a host no authorization record listed, the very thing the scope's
     credential allowlist exists to prevent (audit SEC-04). The same file passed to ``run`` with
-    a signed scope was refused.
+    a scope that did not list the judge was refused.
     """
 
     declared = config.judge
@@ -308,7 +308,6 @@ def materialize_fleet(
     """
 
     out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
 
     seen: set[str] = set()
     for target in config.targets:
@@ -324,8 +323,13 @@ def materialize_fleet(
     if not scannable:  # pragma: no cover - FleetConfig.targets already enforces min_length=1
         raise ValueError("fleet has no targets to scan")
 
+    # Everything that can refuse runs before anything touches the disk: a refused judge used
+    # to leave an empty --out directory, or an older scope.yaml in an existing one (review of
+    # PR #32).
+    scope_doc = _scope_doc(config)
+    out.mkdir(parents=True, exist_ok=True)
     scope_path = out / "scope.yaml"
-    scope_path.write_text(yaml.safe_dump(_scope_doc(config), sort_keys=False), encoding="utf-8")
+    scope_path.write_text(yaml.safe_dump(scope_doc, sort_keys=False), encoding="utf-8")
 
     target_paths: list[Path] = []
     for entry in scannable:

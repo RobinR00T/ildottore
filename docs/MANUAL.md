@@ -90,18 +90,23 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   sets `allow_pii_elicitation` **and** the run's safety flag of the same name is on (DL4), on top
   of the `layer_b_pii` capability. No CLI flag sets the run key today, so the spec cannot be
   enabled from the command line at all. The gate recognises the spec by its
-  `pii-elicitation` tag in any spelling (`pii_elicitation`, `PII-Elicitation`) or by the
+  `pii-elicitation` tag regardless of case and of `-` or `_` (`pii_elicitation`,
+  `PII-Elicitation`; not `pii elicitation`) or by the
   `layer_b_pii` capability alone.
 - **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports. Every
   credential the tool reads (an `env://` key, a password in an endpoint URL) is registered and
-  masked **by value** wherever it appears, including inside an HTTP library's error message,
-  and stripped of surrounding whitespace before use (a key with a trailing CR from a
-  Windows-edited `.env` used to be quoted, in clear, by the transport error that rejected it).
-  Values shorter than 8 characters are not registered. The 8-hex digest after a mask is salted
-  per process, so a report cannot be used to confirm a guessed password; set
+  masked **by value** wherever it appears, also in the escaped form an HTTP library quotes it
+  in its error message, and stripped of surrounding whitespace before use (a key with a
+  trailing CR from a Windows-edited `.env` used to be quoted, in clear, by the transport error
+  that rejected it). A key with a control character **inside** it (a newline from a pasted
+  value) is refused before any request, with an error that names the variable and never the
+  value. Values shorter than 8 characters are not registered. The 8-hex digest after a mask is
+  salted per process, so a report cannot be used to confirm a guessed password; set
   `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose. What the tool itself
-  generated to point at its evidence (a sha256, the store's own path for it, an attempt id) is
-  left readable in reports.
+  generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
+  readable in every report, in both copies of a finding the JSON report carries, so a custom
+  spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
+  prints go through the same redactor.
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
@@ -170,7 +175,8 @@ capabilities: { tools: true }
 For a stdio target the scope authorizes by command, not endpoint: add the exact command line
 to the scope target's `commands` list (default-deny). The MCP adapter is read-only for both
 transports (it never calls a tool). The server process gets a minimal environment (`PATH`,
-`HOME`, locale and temp variables) and **not** the scanner's: it used to inherit every other
+`HOME`, locale and temp variables, and `SYSTEMROOT` on Windows) and **not** the scanner's: it
+used to inherit every other
 target's API key. A server that needs a variable gets it on the authorized command line
 (`env NAME=value node server.js`), where the scope has to name it.
 
@@ -299,7 +305,8 @@ dottore fleet CONFIG [--out DIR] [--run] [--judge PATH] [--runs N] [-p CATEGORIE
 
 Expands `CONFIG` (a `fleet.yaml`) into an authorization scope plus one target file per model
 under `--out` (default `.dottore/fleet`). With `--run`, scans every expanded target
-immediately. Every generated scope entry is pinned to its host **and port**
+immediately. Every generated scope entry for an `http` or `https` endpoint is pinned to its
+host **and port** (an offline `mock://` entry, which sends nothing, keeps a bare host)
 (`localhost:11434`, `api.openai.com:443`), so authorizing a local model does not authorize
 every other port on that machine.
 
@@ -329,6 +336,9 @@ dottore lint [PATHS]... [--json]
 
 Schema + policy + fixtures-prove-detection lint. `specs/` resolves as a pack (via
 `pack.yaml`) so discovery loads `attacks/` + `suites/` and skips the loose example YAMLs.
+A mutation must name a registered mutator (built-ins plus installed plugins), or lint reports
+`UNKNOWN_MUTATOR_TYPE`. An installed mutator plugin that cannot be loaded is a
+`MUTATOR_PLUGIN_ERROR` warning, not a crash: lint goes on with the built-ins.
 
 ### `dottore describe`, one spec's detail card
 
@@ -359,12 +369,19 @@ dottore replay RUN_ID [--evidence-root PATH] [--run-db PATH]
 ```
 
 Re-reads a run from stored evidence without re-sending anything. Each artifact is verified
-against its content hash **and** against the run store: the findings recorded for the run
-list the hash of every attempt they were scored from, so an artifact that was edited and
-renamed to its new hash is refused (exit 3) instead of replaying as genuine, and `--resume`
-refuses it the same way. An attempt of a spec with no recorded finding (a campaign killed
-mid-spec) cannot be checked against that manifest; it is the known limit. Runs stored before
-2026-10-03 kept masked digests and are replayed without the manifest check. Attack attempts and the
+against its content hash and, when the run store at `--run-db` (default
+`.dottore/runs.sqlite`) holds the run, against what the run recorded: the findings list the
+hash of every attempt they were scored from. An artifact added or replaced after the run
+(edited and renamed to its new hash, or placed under a spec whose finding cites no evidence)
+and a recorded artifact that was deleted are refused (exit 3) instead of replaying as genuine,
+and `--resume` refuses them the same way. When there is no store at that path, or it has no
+record of the run, the replay still runs and says on stderr that the manifest was not checked.
+Two known limits: an attempt of a spec with no recorded finding (a campaign killed mid-spec)
+cannot be checked, and neither can a spec whose findings were stored before 2026-10-03 with
+masked digests (those specs are replayed without the check; the rest of the run is checked).
+Probes are hash-checked but not part of the manifest. The last line is the **pooled** rate
+over every attempt of the run; a report's reproducibility is per spec and takes the best
+variant, so the two can differ on the same run. Attack attempts and the
 recognition probes sent by `-sV` are listed apart: a probe is not an attempt, so it never enters
 the reproducibility ratio or the attempt count, but it is stored, hashed and replayable like
 one, which is what lets a run answer "what did this tool send my endpoint".
@@ -600,8 +617,9 @@ Each spec names one or more evaluators. The design is **deterministic-first**:
   today such a finding can be confirmed and gate CI; whether a judge-only fail should be
   `needs-review` instead is open (OD-19, ADR-0010). Without a judge it abstains
   (`capability_unavailable`) and a finding that depends on it comes back inconclusive; a live
-  run without `--judge` says so before sending. A judge that errors (an outage, a rate limit)
-  counts like no judge, never as a pass.
+  run without `--judge` says so before sending anything (the `-sV` probes included) and in
+  the dry run. A judge that errors (an outage, a rate limit) or never returns a parseable
+  verdict (empty content, a refusal in prose) counts like no judge, never as a pass.
 
 The **`tool_call`** evaluator inspects the tool-call trace and fails on four abuse classes:
 an unauthorized tool (outside `patterns` / `setup.tools`), an unconfirmed destructive call, an
@@ -681,7 +699,10 @@ Risk and confidence are **separate axes**:
 - **Risk** = `Impact x Exploitability x Reproducibility`, banded info / low / medium / high /
   critical. Reproducibility is measured over `--runs` with pinned sampling params, not
   assumed: successes over **all** attempts of a mutation variant, and the spec takes its most
-  reproducible variant. Confidence is deliberately **not** a multiplier on risk.
+  reproducible variant, counting only variants with at least 2 attempts. With `--runs 1` no
+  variant qualifies and the rate is pooled over every attempt (one exploit among six
+  single-shot variants is 1/6, not a confirmed Critical). Confidence is deliberately **not** a
+  multiplier on risk.
 - **Confidence** gates a finding as `confirmed` or `needs-review`. A format-valid secret/PII
   hit without corroboration is `needs-review`, never a confirmed leak.
 
@@ -698,8 +719,9 @@ Only exploited (`fail`) findings can trip the CI gate, and by default only `conf
   content-addressed and redacted at rest, in `<run-id>/attempts/`. Recognition traffic from
   `-sV` is stored the same way in `<run-id>/probes/`, kept apart so it cannot be counted as
   attack traffic. The run store is a SQLite db (`--run-db`).
-- **Replay.** `dottore replay <run-id>` re-derives a run from stored evidence with no
-  re-sending, which is what makes a finding auditable after the fact.
+- **Replay.** `dottore replay <run-id>` re-reads a run from stored evidence with no
+  re-sending and checks it against the run store, which is what makes a finding auditable
+  after the fact.
 - **Do not commit `.dottore/`** (evidence + runs are runtime artifacts).
 
 ## 11. CI integration

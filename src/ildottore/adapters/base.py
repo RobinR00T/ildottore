@@ -47,8 +47,10 @@ __all__ = [
     "AdapterProductError",
     "BaseAdapter",
     "EndpointNotAllowed",
+    "ResponseTooLarge",
     "RetryConfig",
     "map_logprobs",
+    "read_capped",
 ]
 
 # HTTP statuses that mean "try again later" (transient / env, not a defect).
@@ -82,11 +84,44 @@ class AdapterEnvError(AdapterError):
     """
 
 
+class ResponseTooLarge(AdapterEnvError):
+    """A reply over :data:`MAX_RESPONSE_BYTES`: an environment failure that is NOT retried.
+
+    It would come back the same size on every retry, and the runner's retry policy used to
+    send it three more times although the docstring said it was not retried (review of
+    PR #32). ``retryable = False`` is the structural marker ``core.execute`` reads, and
+    ``is_env_error`` says explicitly what the class name no longer does: ``core.execute`` falls
+    back to an ``...EnvError`` name suffix, and without the marker this subclass would have
+    been taken for a product defect and halted the campaign.
+    """
+
+    is_env_error = True
+    retryable = False
+
+
 class AdapterProductError(AdapterError):
     """A real product defect (e.g. a malformed / unparseable success response).
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
+
+
+async def read_capped(response: httpx.Response, label: str) -> bytes:
+    """Read a streamed body, refusing one larger than :data:`MAX_RESPONSE_BYTES`.
+
+    The single cap for every adapter that reads a target over the wire. The check runs per
+    chunk, so an oversized body is abandoned mid-stream instead of being buffered whole and
+    measured afterwards, which is what the MCP adapter did (review of PR #32).
+    """
+
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in response.aiter_bytes():
+        size += len(chunk)
+        if size > MAX_RESPONSE_BYTES:
+            raise ResponseTooLarge(f"{label} exceeded {MAX_RESPONSE_BYTES} bytes; not read further")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @dataclass(frozen=True)
@@ -325,17 +360,7 @@ class BaseAdapter(ABC):
         is not retried. The cap also bounds the input every spec regex runs over.
         """
 
-        chunks: list[bytes] = []
-        size = 0
-        async for chunk in response.aiter_bytes():
-            size += len(chunk)
-            if size > MAX_RESPONSE_BYTES:
-                raise AdapterEnvError(
-                    f"{self.id}: response from {self._request_path} exceeded "
-                    f"{MAX_RESPONSE_BYTES} bytes; not read further"
-                )
-            chunks.append(chunk)
-        return b"".join(chunks)
+        return await read_capped(response, f"{self.id}: response from {self._request_path}")
 
     def _handle_final_response(self, response: httpx.Response, raw: bytes) -> ModelResponse:
         """Classify a non-retryable response: 2xx → parse, else product defect."""

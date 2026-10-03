@@ -34,8 +34,9 @@ live scan without it, `semantic_judge` abstains (`capability_unavailable`) and f
 depend on it come back inconclusive. Deterministic evaluators decide first regardless: a
 deterministic fail always wins, and the judge cannot turn it into a pass. When every
 deterministic evaluator passes, a judge fail still decides; whether that kind of finding should
-gate CI is open (OD-19). A live run without `--judge` warns before sending, and a judge outage
-counts as no judge, never as a pass.
+gate CI is open (OD-19). A live run without `--judge` warns before sending anything (and in
+the dry run), and a judge outage, or a judge whose output cannot be parsed, counts as no judge,
+never as a pass.
 
 ### Why does `fleet --judge` say the fleet file does not declare the judge?
 
@@ -45,7 +46,7 @@ generated scope is built from. Before, the scope took the judge's host and crede
 `--judge` file itself, so any judge file could make the scanner read any environment variable
 and send it elsewhere. Add the block; `fleet` then writes `judge.yaml` and `--run` uses it, and a
 `--judge` file is still accepted when it names the same id, endpoint and credential. `run`
-with your own signed scope is unchanged: the judge must be in that scope.
+with your own scope is unchanged: the judge must be in that scope.
 
 ### Can the judge itself be fooled by a prompt injection?
 

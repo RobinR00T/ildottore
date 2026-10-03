@@ -2,7 +2,7 @@
 # Expand it with:   dottore fleet specs/fleet.example.yaml --out .dottore/fleet
 # then scan the generated targets, or add --run to scan immediately.
 #
-# The generated scope pins every endpoint to its host AND port (api.openai.com:443,
+# The generated scope pins every http(s) endpoint to its host AND port (api.openai.com:443,
 # localhost:11434), so authorizing a local model does not authorize every other port on
 # that machine.
 #

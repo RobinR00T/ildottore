@@ -32,11 +32,11 @@ from typing import Any
 import httpx
 
 from ildottore.adapters.base import (
-    MAX_RESPONSE_BYTES,
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
     RetryConfig,
+    read_capped,
 )
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
@@ -246,28 +246,34 @@ class MCPAdapter:
         attempts = self.retry.max_retries + 1
         for attempt in range(attempts):
             try:
-                response = await client.post(
+                async with client.stream(
+                    "POST",
                     self.base_url,
                     json=body,
                     headers=headers,
                     timeout=self.retry.timeout_s,
                     follow_redirects=False,
-                )
+                ) as streamed:
+                    if streamed.status_code in _RETRYABLE_STATUS:
+                        last = f"HTTP {streamed.status_code}"
+                        raw: bytes | None = None
+                    else:
+                        # Same ceiling as the model adapters (SEC-07), checked while reading:
+                        # an advertised tool list larger than this is not metadata to evaluate.
+                        raw = await read_capped(streamed, f"{self.id}: MCP response")
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last = f"{type(exc).__name__}: {exc}"
                 await self._maybe_backoff(attempt, attempts)
                 continue
-            if response.status_code in _RETRYABLE_STATUS:
-                last = f"HTTP {response.status_code}"
+            if raw is None:
                 await self._maybe_backoff(attempt, attempts)
                 continue
-            # Same ceiling as the model adapters (SEC-07): an advertised tool list larger than
-            # this is not metadata to evaluate, it is an environment failure.
-            if len(response.content) > MAX_RESPONSE_BYTES:
-                raise AdapterEnvError(
-                    f"{self.id}: MCP response exceeded {MAX_RESPONSE_BYTES} bytes; not evaluated"
-                )
-            return response
+            return httpx.Response(
+                streamed.status_code,
+                headers=streamed.headers,
+                content=raw,
+                request=streamed.request,
+            )
         raise AdapterEnvError(f"{self.id}: exhausted {attempts} attempt(s) to MCP endpoint: {last}")
 
     async def _maybe_backoff(self, attempt: int, attempts: int) -> None:

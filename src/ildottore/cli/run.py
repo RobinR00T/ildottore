@@ -818,12 +818,15 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # "Specs run: 1 of 1 planned" and `complete` (audit 2026-10-03, F-10).
     registry, load_errors = wiring.load_registry(spec_paths)
     if load_errors:
+        # Counted by FILE: one bad file yields many findings (17 for one target example), and
+        # the message said "17 spec file(s)" (review of PR #32).
+        files = list(dict.fromkeys(e.path or e.spec_id or "?" for e in load_errors))
         shown = "; ".join(
             f"{e.path or e.spec_id or '?'}: {e.message[:120]}" for e in load_errors[:5]
         )
-        more = f" (and {len(load_errors) - 5} more)" if len(load_errors) > 5 else ""
+        more = f" (and {len(load_errors) - 5} more problem(s))" if len(load_errors) > 5 else ""
         raise ValueError(
-            f"{len(load_errors)} spec file(s) failed to load and would silently leave the "
+            f"{len(files)} spec file(s) failed to load and would silently leave the "
             f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first."
         )
     all_specs = registry.list()
@@ -1004,6 +1007,14 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         for _, target in loaded_targets
     }
 
+    printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
+    # Before anything is sent, the -sV probe pass included, and before the dry-run return:
+    # the dry run is where an operator decides whether to add a judge. The warning used to be
+    # computed after both, so 17 probes went out first and the dry run never showed it.
+    no_judge = _no_judge_warning(selected, routes, judge_target)
+    if no_judge:
+        printer.error(no_judge)
+
     if opts.fingerprint_first and not sends_nothing:
         probe_store = wiring.build_evidence_store(evidence_root, planted_canaries=[])
         for _, target, (mock_scenario, real_target) in routes:
@@ -1114,11 +1125,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
 
     probes_sent = fingerprint_probe_count() if (opts.fingerprint_first and not sends_nothing) else 0
-
-    printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
-    no_judge = _no_judge_warning(selected, routes, judge_target)
-    if no_judge:
-        printer.error(no_judge)
 
     # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
     # loop: `--resume` names a single target, so there is one prior spend to carry.

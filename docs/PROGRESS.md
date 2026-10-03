@@ -3,6 +3,17 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-03 (night): PR #32 reviewed, and the review's findings fixed
+
+- Three reviewers re-ran the four audit commits in isolated worktrees (20:48 to 21:08 CEST) and
+  found that the fixes introduced regressions of their own: a quadratic label regex, old runs
+  refused as tampered, a key with a control character leaking through the HTTP error, an
+  allowlist escape with `//..`, over-confirmation with `--runs 1`, and more. All fixed in one
+  commit with `tests/test_pr32_review_fixes.py` (24 tests that fail on the PR head, plus two
+  positive controls). Still open from the review, deliberately: gzip expansion before the cap
+  (bounded), unvalidated mutation parameters (`translate:klingon`), pooled confidence shown on
+  a per-variant confirmation, and path forms only exotic origins decode.
+
 ## State, 2026-10-03 (evening): full audit, blocks 1, 2, 3 and 5 fixed
 
 - A six-auditor adversarial audit of main `770847e` (12:39 to 13:28 CEST) found about 100

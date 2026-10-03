@@ -103,7 +103,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-28 | u02 | a control framework (AISVS) is mapped by falsification, and a mapping cannot contradict its own classification |
 | A-17 | u02 | every framework field is validated, membership where it drives a denominator |
 | A-18..A-20 | u01 | authorization is reachability, schemes are allowlisted, one answer per target |
-| A-29..A-30 | u01 | a gate keys on what a spec cannot opt out of; the allowlist authorizes the path an origin resolves, on its port, and a fleet's judge only from the fleet file |
+| A-29..A-30 | u01 | a gate keys on what a spec cannot opt out of; the allowlist authorizes the path the client sends, on its port, refuses separator encodings, and a fleet's judge comes only from the fleet file |
 | A-21..A-22 | u14 | a test asserts the claim against the real collaborator, and is deterministic |
 
 The pattern under most of them, worth stating once: **something counted or omitted what did

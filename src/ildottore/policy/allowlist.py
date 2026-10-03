@@ -60,7 +60,12 @@ def _remove_dot_segments(path: str) -> str:
     out: list[str] = []
     for seg in path.split("/"):
         if seg == "..":
-            if out and out[-1] != "":
+            # Pop ANY segment except the leading root one, empty segments included. Refusing
+            # to pop an empty segment made ``/v1/chat/x//../../admin`` resolve to a path under
+            # the prefix here while httpx sent ``/v1/admin``: the gate and the wire disagreed
+            # with no encoding involved (review of PR #32). A differential test against httpx
+            # pins the two together.
+            if len(out) > 1:
                 out.pop()
         elif seg != ".":
             out.append(seg)

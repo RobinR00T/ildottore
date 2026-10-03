@@ -275,26 +275,45 @@ class SqliteRunStore:
     def recorded_evidence(self, run_id: str) -> dict[str, set[str]]:
         """``spec_id -> {sha256}`` of every evidence artifact the run's findings cite.
 
-        The manifest ``replay`` and ``--resume`` check the evidence tree against. Values that
-        are not a plain 64-hex digest are skipped: a run stored before 2026-10-03 has its
-        digests masked, and an absent manifest has to read as "cannot verify", not as
-        "nothing is allowed".
+        The manifest ``replay`` and ``--resume`` check the evidence tree against. A spec is in
+        it only when EVERY reference of its findings is a plain 64-hex digest, and then with
+        the exact set, possibly empty (a finding that cites no evidence: nothing may appear
+        for it). A run stored before 2026-10-03 has some of its digests masked; skipping them
+        one reference at a time left a partial set, and the untouched artifacts of that spec
+        were then refused as tampered (review of PR #32). Such a spec is left out: "cannot
+        verify", never "nothing is allowed".
         """
 
         manifest: dict[str, set[str]] = {}
+        unverifiable: set[str] = set()
         rows = self._conn.execute(
             "SELECT spec_id, evidence_refs_json FROM findings WHERE run_id = ?", (run_id,)
         ).fetchall()
         for row in rows:
+            spec_id = str(row["spec_id"])
             try:
                 refs = json.loads(row["evidence_refs_json"] or "[]")
             except ValueError:
+                unverifiable.add(spec_id)
                 continue
+            digests = manifest.setdefault(spec_id, set())
             for ref in refs if isinstance(refs, list) else []:
                 sha = ref.get("sha256") if isinstance(ref, dict) else None
                 if isinstance(sha, str) and _SHA256.fullmatch(sha):
-                    manifest.setdefault(str(row["spec_id"]), set()).add(sha)
-        return manifest
+                    digests.add(sha)
+                else:
+                    unverifiable.add(spec_id)
+        return {spec: shas for spec, shas in manifest.items() if spec not in unverifiable}
+
+    def knows_run(self, run_id: str) -> bool:
+        """True if this store holds a run row or any finding for ``run_id``."""
+
+        row = self._conn.execute(
+            "SELECT 1 FROM runs WHERE run_id = ? UNION SELECT 1 FROM findings WHERE run_id = ? "
+            "LIMIT 1",
+            (run_id, run_id),
+        ).fetchone()
+        return row is not None
 
     def list_findings(self, run_id: str) -> list[dict[str, Any]]:
         rows = self._conn.execute(

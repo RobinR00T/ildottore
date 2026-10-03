@@ -32,6 +32,9 @@ class LintCode(StrEnum):
     #: A spec claims a framework code its own classification calls out of reach for a black box,
     #: or deliberately untested.
     FRAMEWORK_CLAIM_CONTRADICTED = "FRAMEWORK_CLAIM_CONTRADICTED"
+    #: An installed mutator plugin could not be loaded. A warning: lint goes on with the
+    #: built-ins, and a spec that names the plugin's mutator gets UNKNOWN_MUTATOR_TYPE.
+    MUTATOR_PLUGIN_ERROR = "MUTATOR_PLUGIN_ERROR"
 
 
 class Severity(StrEnum):

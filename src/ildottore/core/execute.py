@@ -155,7 +155,10 @@ async def execute_attempt(
             if not is_env_error(exc):
                 raise
             errors.append(f"{type(exc).__name__}: {exc}")
-            if send_index < policy.max_retries:
+            # ``retryable = False`` (the adapters' convention, read structurally like
+            # ``is_env_error``): a failure that repeats identically, such as a reply over the
+            # size cap, is recorded once instead of being sent three more times.
+            if send_index < policy.max_retries and getattr(exc, "retryable", True) is not False:
                 await do_sleep(policy.delay_for(send_index))
                 continue
             return AttemptResult(

@@ -105,10 +105,16 @@ rather than hidden: the `offensive_simulation` capability is still declared by t
 Checks: `tests/policy/test_policy_audit_2026_10_03.py` (the shipped spec under a capability-only
 pack, every flagged family unmarked, the `run` refusal of an unmarked copy).
 
-**A-30 The allowlist authorizes the path an origin will resolve, on the port it names (added
-2026-10-03).** A path carrying an encoded slash or backslash (`%2f`, `%5c`), a literal backslash
-or a `%25` double encoding is refused, not rewritten: `/v1/chat/..%2f..%2fadmin` passed the
-prefix check and was `/admin` to a decoding origin (audit SEC-03). A bracketed IPv6 host splits
+**A-30 The allowlist authorizes the path the client sends, on the port it names, and refuses
+the encodings an origin could decode into a separator (added 2026-10-03, corrected the same
+evening).** Dot segments are resolved exactly as httpx resolves them, and a differential test
+over generated paths pins the two together: refusing to pop an empty segment let
+`/v1/chat/completions/x//../../../../admin` pass while httpx sent `/v1/admin` (review of
+PR #32). A path carrying an encoded slash or backslash (`%2f`, `%5c`), a literal backslash or a
+`%25` double encoding is refused, not rewritten: `/v1/chat/..%2f..%2fadmin` passed the prefix
+check and was `/admin` to a decoding origin (audit SEC-03). Not covered, stated rather than
+hidden: forms only some origins decode (`;` path parameters, overlong UTF-8, `%u` escapes,
+fullwidth dots). A bracketed IPv6 host splits
 into host and port (`[::1]:8080`), so an IPv6 entry can be pinned (SEC-13), and the scope `fleet`
 generates pins every endpoint to its port. The judge `fleet` authorizes comes from the fleet
 file's own `judge:` block, never from a `--judge` file, which could otherwise name any host and

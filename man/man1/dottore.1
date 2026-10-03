@@ -41,7 +41,7 @@ Identify the model and guardrails behind an endpoint; attack nothing.
 .B fleet
 Expand a fleet.yaml into an authorization scope plus one target file per model; with
 .B --run
-scan them all. Each scope entry is pinned to its host and port. The judge is declared in the
+scan them all. Each http or https scope entry is pinned to its host and port. The judge is declared in the
 fleet file's
 .B judge:
 block, which the scope authorizes and
@@ -63,10 +63,11 @@ List the attack-spec catalogue (filter by --category, --owasp, --tag, --suite).
 Scaffold a new attack spec and empty fixtures.
 .TP
 .B replay
-Re-read a run from stored evidence, sending nothing; with
-.B --run-db
-every artifact is also checked against the hashes the run's findings recorded, so an
-edited artifact renamed to its new hash is refused (exit 3).
+Re-read a run from stored evidence, sending nothing. When the run store
+.RB ( --run-db ,
+default .dottore/runs.sqlite) holds the run, the attempts are also checked against the
+hashes its findings recorded: an artifact added, replaced or deleted after the run is
+refused (exit 3). Without such a store the replay says on stderr that this was not checked.
 .TP
 .B diff
 Compare a run against a baseline and surface regressions (CI-gateable).

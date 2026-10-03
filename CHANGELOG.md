@@ -77,6 +77,51 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (review of PR #32: what the audit fixes introduced or left)
+
+Three reviewers ran the four audit commits in isolated worktrees the same evening and
+reproduced each item. All fixed here, each with a test that fails on the PR head
+(`tests/test_pr32_review_fixes.py`).
+
+- **The label-run regex added for F17 was quadratic** on text the target controls: 48 KB of
+  `token token ...` took 4.9 s to redact, 96 KB 20 s. The run of labels is bounded; 384 KB now
+  takes 0.07 s.
+- **A key with a control character inside it** reached stderr, every report format and the
+  evidence through the HTTP error that quoted it escaped. It is refused before any request,
+  without echoing it, and registered credentials are also masked in their escaped forms.
+- **`replay` and `--resume` refused untouched runs stored before the fix as tampered**: those
+  stores kept a few digests readable by chance, and a partial manifest rejected the other
+  artifacts of that spec. A spec is now checked only when all its digests are readable.
+- **The manifest let some tampering through**: a deleted recorded artifact and an artifact
+  placed under a spec whose finding cites no evidence are now refused, and a replay without a
+  run store holding the run says so on stderr instead of skipping the check silently.
+- **The path allowlist could be escaped with `//..`**, no encoding needed:
+  `/v1/chat/completions/x//../../../../admin` passed while httpx sent `/v1/admin`. Dot
+  segments now resolve exactly as httpx resolves them, pinned by a differential test over
+  9,330 generated paths. Clause A-30 is corrected to say what it covers and what it does not.
+- **Regressions of the masking fixes**: a labelled value starting with a label word
+  (`password: Password!2026x`) was no longer masked; a registered credential inside the mask
+  template (`credential`) nested on every pass and aborted the campaign; a URL password with a
+  raw `@` leaked its tail; a custom spec id was masked with the per-process salt, so
+  `dottore diff` saw two unrelated specs and reported no regression. All fixed; spec ids stay
+  readable in reports, and the JSON report's `run.findings` copy keeps its evidence references
+  readable too (103 of 110 digests were still masked there).
+- **With `--runs 1`, per-variant confirmation over-confirmed**: one exploit among six
+  single-shot variants was a confirmed Critical. A variant decides on its own only with at
+  least 2 attempts; below that the pooled rate decides, as before.
+- **A judge that never returns a parseable verdict** passed specs on the deterministic arms
+  alone; it now counts as no judge (`capability_unavailable`), like an outage.
+- **The MCP adapter read the whole body before applying the 4 MiB cap**; it streams through
+  the same capped reader now. An oversized reply is no longer retried three times.
+- **`dottore lint` crashed on a broken mutator plugin** (exit 1, the code for failed specs); it
+  reports a `MUTATOR_PLUGIN_ERROR` warning and lints with the built-ins.
+- Smaller: CLI error messages go through the redactor (a URL password reached stderr on the
+  scope refusal); the no-judge warning comes before the `-sV` probes and in the dry run; the
+  spec-load refusal counts files, not problems ("14 spec file(s)" for one); a halt says "never
+  ran or did not finish"; a refused `fleet --judge` creates no directory; `replay` labels its
+  last line a pooled rate. Doc claims corrected: "signed scope", "any spelling", "every entry
+  pinned" (not `mock://`), "plans them all" in docs/15, and the replay and cap descriptions.
+
 ### Fixed (full audit of 2026-10-03: policy and authorization)
 
 - **The DL4 two-key gate never fired for the one PII spec the battery ships.** The gate compared
@@ -124,7 +169,8 @@ order, not how any real model behaves: that still needs a live run.
 - **Target replies had no size limit** (three 60 MB replies cost 1.5 GB of memory); bodies
   over 4 MiB are refused unread past the cap as an environment failure for that attempt, which
   also bounds the input to every spec regex.
-- URL paths with a leading `/` are no longer masked as high entropy in status reasons.
+- Lowercase URL paths with a leading `/` are no longer masked as high entropy in status
+  reasons (a path segment with uppercase letters still can be).
 
 ### Fixed (full audit of 2026-10-03: verdicts that left a CI gate green)
 
@@ -140,8 +186,9 @@ order, not how any real model behaves: that still needs a live run.
   dropped it like an abstention and the deterministic arms decided alone; it is now
   `capability_unavailable`, the same as no judge.
 - **One passing attempt made a spec pass** over four environment errors or four
-  compromised-judge attempts. A pass needs a strict majority now, and a compromised judge on
-  any attempt surfaces as inconclusive, with its reason no longer lost when mixed with another.
+  compromised-judge attempts. A pass needs a strict majority now, and a compromised judge
+  turns an otherwise passing spec inconclusive, with its reason no longer lost when mixed with
+  another (a deterministic fail on another attempt still makes the spec fail).
 - **`authz_leak` ignored the identities' own canaries** whenever the spec had one, so a
   cross-tenant leak in the configuration the scope docs recommend scored PASS.
 - **A live run without `--judge`** (74 of 75 specs use it) now warns before sending.

@@ -174,3 +174,11 @@ class InconclusiveReason(StrEnum):
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
     BLOCKED_BY_POLICY = "blocked_by_policy"
     JUDGE_COMPROMISED = "judge_compromised"
+
+
+# A mutation variant decides confirmation and reproducibility ON ITS OWN only with at least
+# this many attempts. Read by the runner (``confirmed``) and the scorer (``k / N``), which is
+# why it lives here. With ``--runs 1`` every variant is 1 of 1, so "the best variant" made any
+# single exploit among six sends confirmed and Critical, where the pooled rate says 1/6 and
+# Low (review of PR #32). Below the minimum, the pooled rate over every attempt decides.
+MIN_VARIANT_ATTEMPTS: int = 2

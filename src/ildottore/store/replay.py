@@ -86,22 +86,37 @@ def replay_run(root: Path, run_id: str) -> ReplayResult:
 
 
 def check_manifest(result: ReplayResult, manifest: dict[str, set[str]]) -> None:
-    """Refuse an attempt artifact the run store never recorded for its spec.
+    """Refuse an evidence tree that differs from what the run store recorded.
 
     Each artifact verifies against its OWN file name, so an edited artifact renamed to its new
     hash verified, and ``--resume`` published it: a clean pass became a confirmed critical
     (audit 2026-10-03, F12). The run store's findings cite the hash of every attempt they
-    were scored from, so an attempt of a spec that has a recorded finding must be one of
-    those. An attempt of a spec with no recorded finding (a campaign killed mid-spec) cannot
-    be checked this way and is let through: that is the known limit, not a pass.
+    were scored from, so for a spec in ``manifest``:
+
+    * an attempt artifact that is not one of the recorded hashes was added or replaced,
+      including one placed under a spec whose finding cites no evidence at all;
+    * a recorded hash with no artifact was deleted (removing every artifact of the failing
+      spec used to replay as a clean run, review of PR #32).
+
+    A spec absent from ``manifest`` cannot be checked this way and is let through: one with no
+    recorded finding (a campaign killed mid-spec), or one stored before digests were kept
+    readable. That is the known limit, not a pass.
     """
 
+    present = set(result.attempt_hashes)
     for digest, attempt in zip(result.attempt_hashes, result.attempts, strict=True):
         recorded = manifest.get(attempt.spec_id)
-        if recorded and digest not in recorded:
+        if recorded is not None and digest not in recorded:
             raise TamperError(
                 f"artifact {digest}.json ({attempt.spec_id}) is not one the run store recorded "
                 "for that spec: it was added or replaced after the run"
+            )
+    for spec_id, recorded in sorted(manifest.items()):
+        missing = sorted(recorded - present)
+        if missing:
+            raise TamperError(
+                f"{len(missing)} artifact(s) the run store recorded for {spec_id} are missing "
+                f"from the evidence tree (first: {missing[0]}.json): removed after the run"
             )
 
 

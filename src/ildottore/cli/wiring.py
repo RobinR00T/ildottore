@@ -519,7 +519,19 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
         # Windows-edited .env made httpx reject the header and quote the key in the error,
         # which reached all four report formats (audit 2026-10-03, SEC-01).
         register_known_secret(raw)
-        return raw.strip() if raw is not None else None
+        if raw is None:
+            return None
+        value = raw.strip()
+        # A control character INSIDE the key (a newline from a pasted multi-line value) cannot
+        # be stripped and can never be a valid header: httpx rejects it and quotes the key,
+        # repr-escaped, in its error. Refused here, before any request, with a message that
+        # names the variable and never the value (review of PR #32).
+        if any(not ch.isprintable() for ch in value):
+            raise ValueError(
+                f"the credential in {name!r} contains a control character (a newline or "
+                "similar); fix the variable, it cannot be sent as a header"
+            )
+        return value
     raise ValueError(f"unsupported auth_ref scheme in {auth_ref!r}; only 'env://NAME' is supported")
 
 

@@ -16,10 +16,11 @@ attribute the taxonomy code.
 > - **10 new specs** closing genuine IoPC gaps, grouped in the new **`nova-iopc`** suite. Each
 >   is single-turn or pinned-multi-turn, with a **deterministic primary evaluator** so the
 >   golden FP/FN gate proves it offline. Those in a flagged family are marked `test_only`; the
->   mark does **not** switch them off. All 13 specs of the suite run by default
->   (`run --suite nova-iopc --dry-run` plans them all), the phishing-lure, disinformation and
->   worm-propagation probes included. Only specs declaring `requires_policy` are off, and none
->   of this suite does. (Corrected 2026-10-03: this line said "`test_only` (OFF by default)".)
+>   mark does **not** switch them off. No spec of the suite is off by policy: only specs
+>   declaring `requires_policy` are, and none of this suite does. All 13 are planned for a
+>   target that declares the capabilities they need (tools, memory), the phishing-lure,
+>   disinformation and worm-propagation probes included; a plain chatbot target plans 7 and
+>   skips 6 for capability. (Corrected 2026-10-03: this line said "`test_only` (OFF by default)".)
 > - Battery: **67 specs, 13 suites, 1 pack** (was 57 / 12 / 1).
 > - **No runtime dependency** on the PromptIntel feed and **no raw feed payload shipped**: the
 >   harmful subset (working malware / ransomware / weaponized lures) is covered by safe proxies

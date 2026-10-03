@@ -163,7 +163,7 @@ The judge goes in the fleet file too, as a `judge:` block (`id`, `endpoint`, `mo
 to `judge.yaml` and `--run` uses it. A `--judge judge.yaml` is accepted only when it names the
 same id, endpoint and credential as the block. Every generated scope entry is pinned to its
 host and port (`localhost:11434`), so a local model does not authorize the machine's other
-ports.
+ports (an offline `mock://` entry sends nothing and keeps a bare host).
 
 Keys are never written to the file: each entry names an env var (`api_key_env`), resolved
 only at send time. `provider` is inferred from the endpoint (`/chat/completions` -> openai,
