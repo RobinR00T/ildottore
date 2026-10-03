@@ -31,8 +31,11 @@ reference (`auth_ref: env://…`), never written to a file.
 
 It wires a model as an LLM-as-judge behind the `semantic_judge` secondary evaluator. On a
 live scan without it, `semantic_judge` abstains (`capability_unavailable`) and findings that
-depend on it come back inconclusive. Deterministic evaluators decide first regardless, and
-the judge never overrides a deterministic verdict.
+depend on it come back inconclusive. Deterministic evaluators decide first regardless: a
+deterministic fail always wins, and the judge cannot turn it into a pass. When every
+deterministic evaluator passes, a judge fail still decides; whether that kind of finding should
+gate CI is open (OD-19). A live run without `--judge` warns before sending, and a judge outage
+counts as no judge, never as a pass.
 
 ### Can the judge itself be fooled by a prompt injection?
 

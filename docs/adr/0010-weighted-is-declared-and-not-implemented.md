@@ -45,14 +45,30 @@ indirect-injection specs were.
 **C. Leave it, documented as dead.** Costs nothing; leaves 33 specs declaring a behaviour that
 does not exist.
 
+## Amendment (same day, after the full audit)
+
+The audit of the whole repository that afternoon found one consequence of the runner's rule this
+ADR had not seen. When every deterministic evaluator passes and the judge says `fail`, the
+attempt is a `fail`; the per-attempt aggregate hides the disagreement, so across the runs the
+finding comes out **confirmed** and trips `--fail-on`. The FAQ, the README and the manual all
+said the judge never overrides a deterministic verdict. The judge is the one evaluator a target
+can prompt-inject, so a confirmed finding decided by it alone is exactly the kind CI should not
+gate on without corroboration.
+
 ## Recommendation
 
-**B.** The runner's rule is the right one for this product, and the defect is that four documents
-describe a different one. A then becomes a decision nobody should take by accident, which is
-the point of writing it down.
+**B, with one change: a fail decided only by the judge is reported but `needs-review`.** Keep
+the runner's priority (a deterministic fail is never outvoted), document it, rename the value,
+and make the confirmed gate require a deterministic fail somewhere in the confirming variant. A
+judge-only finding still appears in every report and still counts in the spec's status; it
+stops gating CI unless `--include-needs-review` is passed. The documents now describe today's
+behaviour and point here, so nothing reads as decided until this is.
 
 ## Consequences
 
 If B: a schema enum gains a value and deprecates one, `docs/04` §2 and u06 §2 are rewritten,
 the 33 specs are migrated mechanically (asserted, not hoped), and `evaluators/combine.py` loses
 or quarantines its weighted path. No verdict changes, because the runner already behaves this way.
+The amendment changes one thing that users see: a judge-only fail moves from `confirmed` to
+`needs-review`, so a CI gate that was red on such a finding turns green unless it passes
+`--include-needs-review`.

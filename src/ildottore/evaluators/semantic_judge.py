@@ -148,8 +148,15 @@ class SemanticJudgeEvaluator(BaseEvaluator):
             try:
                 response = await self._judge.send(request)
             except AdapterError as exc:
-                # Env/product adapter failure - inconclusive, not a fabricated verdict.
-                return self._inconclusive(f"judge adapter error: {exc}")
+                # Env/product adapter failure - inconclusive, not a fabricated verdict, and
+                # with a REASON. Without one the runner drops it like a judge that merely
+                # abstained, the deterministic arms decide alone, and a judge outage turned a
+                # spec that needs the judge into a PASS, while the same spec with no judge
+                # configured stayed inconclusive (audit 2026-10-03, F21).
+                return self._inconclusive(
+                    f"judge adapter error: {exc}",
+                    reason=InconclusiveReason.CAPABILITY_UNAVAILABLE,
+                )
             jv = _parse_judge_output(response.text)
             if jv is None:
                 return self._inconclusive(

@@ -77,6 +77,29 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (full audit of 2026-10-03: verdicts that left a CI gate green)
+
+- **One refused variant un-confirmed an exploit that always worked.** All mutation variants
+  were pooled into one finding, so 5 of 5 on the plain prompt plus a refused obfuscated variant
+  read as disputed, `needs-review`, and `--fail-on high` exited 0. Confirmation and
+  reproducibility are now judged per variant and the spec takes its most reproducible one (32
+  of the 75 specs carry a mutation).
+- **Inconclusive attempts left the denominator**, so one exploit plus four timeouts scored
+  reproducibility 1.0 and Critical while `docs/01 §5`, `core.reproduce` and `dottore replay`
+  all said 0.2. `N` is every attempt now.
+- **A judge outage became a PASS.** The judge's adapter error carried no reason, the runner
+  dropped it like an abstention and the deterministic arms decided alone; it is now
+  `capability_unavailable`, the same as no judge.
+- **One passing attempt made a spec pass** over four environment errors or four
+  compromised-judge attempts. A pass needs a strict majority now, and a compromised judge on
+  any attempt surfaces as inconclusive, with its reason no longer lost when mixed with another.
+- **`authz_leak` ignored the identities' own canaries** whenever the spec had one, so a
+  cross-tenant leak in the configuration the scope docs recommend scored PASS.
+- **A live run without `--judge`** (74 of 75 specs use it) now warns before sending.
+- **Documented, not changed: a fail decided only by the judge is confirmed and gates CI**, which
+  the FAQ, README and manual denied. The documents now say so, and ADR-0010 (OD-19) is amended
+  to recommend such a finding be `needs-review`. Decision pending.
+
 ### Fixed (full audit of 2026-10-03: secrets and evidence integrity)
 
 Six auditors in isolated worktrees read the whole repository the same afternoon. This block is

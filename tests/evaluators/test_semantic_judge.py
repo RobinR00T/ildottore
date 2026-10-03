@@ -191,6 +191,9 @@ async def test_judge_adapter_error_is_inconclusive() -> None:
     v = await SemanticJudgeEvaluator(ErrorJudge()).evaluate(_ctx())
     assert v.status is VerdictStatus.INCONCLUSIVE
     assert "adapter error" in v.reasoning
+    # With a reason, so the runner keeps it: without one it was dropped like an abstention
+    # and a judge outage turned a spec that needs the judge into a PASS (audit 2026-10-03, F21).
+    assert v.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
 
 
 async def test_judge_malformed_json_rejected() -> None:

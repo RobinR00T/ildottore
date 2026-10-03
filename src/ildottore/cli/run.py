@@ -30,6 +30,7 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ildottore.cli import resume as resume_mod
 from ildottore.cli import wiring
@@ -43,7 +44,7 @@ from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
 from ildottore.shared.digest import spec_digests, target_digest
-from ildottore.shared.enums import Category
+from ildottore.shared.enums import Category, EvaluatorType
 from ildottore.shared.models import (
     AttackSpec,
     Finding,
@@ -505,6 +506,32 @@ def fingerprint_probe_count() -> int:
     # as 24 while a pass really sent 28.
     return sum(
         getattr(layer, "probe_count", 1) for layer in wiring.build_fingerprint_engine().layers
+    )
+
+
+def _no_judge_warning(
+    selected: list[AttackSpec], routes: list[Any], judge_target: Target | None
+) -> str | None:
+    """Say, before sending, that a live run without ``--judge`` will decide little.
+
+    74 of the 75 shipped specs carry ``semantic_judge``. A live deep run without a judge
+    ended with pass 1, fail 0, inconclusive 74 and exit 0, and neither the run nor the dry run
+    said why (audit 2026-10-03, R13). An offline mock decides on its fixtures, so it is exempt.
+    """
+
+    if judge_target is not None or not any(route[2][1] is not None for route in routes):
+        return None
+    judged = sum(
+        1
+        for spec in selected
+        if any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators)
+    )
+    if not judged:
+        return None
+    return (
+        f"warning: no --judge on a live target: {judged} of {len(selected)} selected specs use "
+        "semantic_judge and come back inconclusive wherever their deterministic evaluators do "
+        "not decide. Pass --judge <judge-target.yaml> for a decisive run."
     )
 
 
@@ -1077,6 +1104,9 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     probes_sent = fingerprint_probe_count() if (opts.fingerprint_first and not sends_nothing) else 0
 
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
+    no_judge = _no_judge_warning(selected, routes, judge_target)
+    if no_judge:
+        printer.error(no_judge)
 
     # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
     # loop: `--resume` names a single target, so there is one prior spend to carry.
