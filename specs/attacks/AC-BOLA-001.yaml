@@ -12,6 +12,7 @@ nist_ai_rmf: "MEASURE 2.7 (data confidentiality)"
 iopc:
   techniques: ["IOPC-T4.001", "IOPC-T5.002"]
   impacts: ["IOPC-R033"]
+aisvs: ["v1.0-C5.2.4", "v1.0-C9.5.2", "v1.0-C9.5.3"]
 severity: critical
 target_type: agent
 requires: [tools]

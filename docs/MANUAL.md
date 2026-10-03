@@ -340,6 +340,7 @@ to paste into a document.
 ```bash
 dottore coverage                      # every axis, with the gaps named
 dottore coverage --framework iopc     # one framework
+dottore coverage --framework aisvs    # OWASP AISVS, one line per level
 dottore coverage --suite nova-iopc    # what a single suite covers
 dottore coverage --json               # for a dashboard or a report generator
 ```
@@ -351,6 +352,9 @@ Battery coverage (75 specs, no scan performed)
   MITRE ATLAS tactics (2026.09)       13/16   81%
   IoPC techniques (live-2026-09-19)   27/30   90%
   IoPC impacts (live-2026-09-19)      23/23  100%
+  OWASP AISVS 1.0, level 1             5/51    9%
+  OWASP AISVS 1.0, level 2            12/95   12%
+  OWASP AISVS 1.0, level 3             0/45    0%
 
   Out of reach for a black-box runtime scanner, OWASP LLM Top 10 (2025):
     LLM03
@@ -383,7 +387,34 @@ repository ships, the trust prompt shown before it is opened, the plugins and sk
 installs) are a different target class: they act on the machine opening the project, not on
 the model's replies, so no request this tool sends can exercise them and none of these figures
 covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never reach a numerator (a Responsible-AI
-`RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%.
+`RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%, and a spec file
+that fails to load is named in a warning instead of quietly leaving the spec count.
+
+**Why the AISVS figures are low, and should be.** OWASP AISVS lists 191 *controls* ("verify
+that a classifier screens every prompt"), not attacks. A black-box scanner never sees the
+classifier, the policy engine or the log, so it cannot verify that a control exists; it can only
+catch one failing. A spec's `aisvs` list therefore means: a **failure** of this spec is evidence
+that these controls are absent or ineffective. A pass means these probes did not falsify them,
+never that they are verified (clause A-28). Most of the standard is out of reach from outside by
+construction (training data, infrastructure, cryptographic identity, logging), and the gaps
+print in the same three groups as every other axis, with the reason. Some out-of-reach rows are
+operator processes this tool can serve as the **instrument** for even though no reply shows
+them: re-running the same battery after a model change and comparing the runs with `dottore
+diff` (C3.2, C11.1.2; `diff` compares verdicts per spec id and does not check that both runs used
+the same spec content, so pin the battery version beside the runs), or using a campaign's stored
+probes as test traffic for the operator's logging and alerting (C12.1, C12.2).
+
+Read the 17 covered requirements with four cautions. **Nine** of them (C5.2.2, C5.2.4, C8.1.3,
+C9.3.5, C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need something the
+operator provides: a seeded corpus or tool, a target that exposes its tool trace, or two
+identities. Today the runner sends a live target the prompt, the system prompt and the media, not
+a spec's documents, tool definitions or memory seed (OD-18), so eight of the 17 are exercisable
+by the tool alone. C10.4.2 is an MCP control: it applies only where the tools are served over
+MCP, while its two specs run against any tool-using agent. C9.5.4 also needs the
+`offensive_simulation` policy layer, off by default. And the rows are not independent evidence:
+`DL-XTENANT-001` carries four of them and `AC-BOLA-001` three, so one failure lights several
+controls. The first mapping claimed 37; an audit read every spec behind them and kept these 17,
+and the reasons are pinned in `tests/cli/test_coverage_cmd.py`.
 
 ### `mock_scenario`, the offline replay selector
 
@@ -407,7 +438,8 @@ read only the response text); `comprehending` decides exactly what `bare` decide
 ## 6. The attack battery
 
 75 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
-the Nova IoPC taxonomy. Every spec carries its framework mapping, including an optional
+the Nova IoPC taxonomy, and mapped by falsification to the OWASP AISVS controls they can catch
+failing. Every spec carries its framework mapping, including an optional
 two-axis `iopc:` block (`techniques` = the how, `impacts` = the damage), and the run report
 measures coverage against the pinned IoPC universe, so "we passed" always comes with "of what".
 `dottore registry ls` prints the live list; the columns are `id`, OWASP tag, band, category,

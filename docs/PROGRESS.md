@@ -3,6 +3,30 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-03: OWASP AISVS as a fourth coverage axis, and an audit that found more
+
+- **OWASP AISVS 1.0 pinned** (`shared/aisvs.py`, 191 requirements from upstream `05c62d1`,
+  IDs and section headings only: the text is CC-BY-SA). Optional `aisvs:` list on a spec, read
+  by falsification only (clause A-28): a failure is evidence a control is absent, a pass
+  verifies nothing. `dottore coverage` prints one line per level: **5/51, 12/95, 0/45**.
+- **The first mapping claimed 37 covered; an independent audit kept 17.** Bucket membership and
+  which spec carries which row are both pinned in `tests/cli/test_coverage_cmd.py`.
+- **New lint code `FRAMEWORK_CLAIM_CONTRADICTED`**: a spec may not claim a control the same
+  table classifies as out of reach or deliberately untested.
+- **The same audit found product defects outside AISVS**, verified in the code and not fixed in
+  this change: the runner never delivers a spec's documents, tool definitions or memory seed
+  to a live target (`core/runner.py` `_build_request`), while `docs/01` §4 says it does (32 of
+  75 specs depend on it); `evaluator_logic: weighted` (33 specs) is implemented nowhere in the
+  run or lint path: both let any deterministic fail decide, the weighted vote lives only in
+  `evaluators/combine.py`, which neither calls, and the runner's docstring says it honours the
+  field; `JB-MULTILINGUAL-001` sends English (the translate mutator glosses one word);
+  `PI-INDIRECT-RAG-001` and `PI-INDIRECT-TOOL-001` still fail a refusal that names what it
+  refuses; stored probes carry no timestamp (`Attempt` has no time field and the CLI never
+  passes `started_at`/`finished_at`, so both are null in SQLite and in the report). Next, before
+  any live run.
+
+---
+
 ## State, 2026-10-03: two open decisions before any live run
 
 - **OD-18 (ADR-0009): a spec's setup never reaches a live target.** 32 of 75 specs depend on

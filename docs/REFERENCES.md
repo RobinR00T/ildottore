@@ -1,10 +1,15 @@
-# References (state of the art as of 2026-07, with additions to 2026-09)
+# References (state of the art as of 2026-07, with additions to 2026-10)
 
 ## Frameworks
 - OWASP Top 10 for LLM Applications 2025: https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/
 - OWASP GenAI Red Teaming Guide (Jan 2025): https://genai.owasp.org/resource/genai-red-teaming-guide/
 - MITRE ATLAS: https://atlas.mitre.org/
 - NIST AI 600-1 (GenAI Profile) / AI RMF: https://www.nist.gov/itl/ai-risk-management-framework
+- OWASP AI Security Verification Standard (AISVS) 1.0: https://github.com/OWASP/AISVS. A checklist
+  of 191 *controls*, not attacks, pinned in `src/ildottore/shared/aisvs.py` from commit `05c62d1`
+  (2026-10-01). Mapped by falsification only: a failing spec is evidence a control is absent or
+  ineffective, a passing one never verifies it (clause A-28). CC-BY-SA 4.0, so this repository
+  reproduces IDs, levels and section headings and never the requirement text.
 
 ## Tools (design references)
 - NVIDIA garak (LLM vuln scanner; 50+ probe modules, run-all default, "buffs"=mutators): https://github.com/NVIDIA/garak · https://garak.ai/

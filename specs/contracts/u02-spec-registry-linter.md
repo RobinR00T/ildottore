@@ -115,6 +115,31 @@ A SECURE marker may come from none of them: an echo is never evidence of securit
 (the six replies, plus the six exploits, because an oracle re-keyed to remove a false positive
 must not lose the true one).
 
+**A-28 A control framework is mapped by falsification, and a mapping cannot contradict its own
+classification (added 2026-10-03).** OWASP AISVS lists *controls* ("verify that a classifier
+screens every prompt"), not attacks, and a black-box runtime scanner never sees the classifier.
+So a spec's `aisvs` list means one thing only: a FAIL of this spec is evidence that the control is
+absent or ineffective. A PASS means these probes did not falsify it, never that it is verified,
+and no report, document or summary may phrase it otherwise. Two refusals make that checkable:
+
+* an ID outside the pinned table (`shared/aisvs.py`, transcribed from upstream with its commit)
+  is `UNKNOWN_FRAMEWORK_CODE`, the A-17 rule applied to a fourth universe;
+* an ID the same table classifies as out of reach or deliberately untested is
+  `FRAMEWORK_CLAIM_CONTRADICTED`. One of the two statements is false: either the spec claims
+  more than a black box can show, or the requirement belongs back in the roadmap. Coverage
+  consults the classification only for codes nothing covers, so without this refusal a spec
+  mapping, say, "models run in isolated sandboxes" would be counted and the reason dropped,
+  with nobody deciding which was true. `dottore coverage` does not lint, so it applies the same
+  rule itself: a contradicted claim is reported under `off_universe` and counted nowhere.
+
+The field is **outside** the resume digest: it feeds `dottore coverage`, never a run artifact,
+and inside it made a campaign halted before the mapping landed unresumable after it.
+
+Only IDs, levels and section headings are reproduced: AISVS is CC-BY-SA 4.0 and this repository
+is MIT, so requirement text stays upstream. Checked by `tests/registry/test_linter.py` and
+`tests/shared/test_aisvs.py`; bucket membership is pinned per axis in
+`tests/cli/test_coverage_cmd.py` (A-26).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
 - MUST NOT author, mutate, or "fix" spec/suite/pack YAML (u13 owns content).

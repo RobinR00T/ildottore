@@ -14,6 +14,7 @@ nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
   techniques: ["IOPC-T3.001", "IOPC-T1.002"]
   impacts: ["IOPC-R028"]
+aisvs: ["v1.0-C2.1.3", "v1.0-C2.2.3", "v1.0-C9.3.5"]
 severity: critical
 target_type: agent
 requires: [multimodal, tools]

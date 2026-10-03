@@ -36,6 +36,8 @@ __all__ = [
 
 import re
 
+from ildottore.shared.aisvs import AISVS_NOT_TESTED_BY_DESIGN, AISVS_OUT_OF_REACH
+
 #: Which OWASP edition the ``owasp`` codes on our specs belong to, printed next to every
 #: OWASP figure. Not decoration: OWASP published a **renumbered** list in August 2026 (the
 #: exact day is secondary-sourced: the project page still lists 2025 as latest, so treat
@@ -223,6 +225,10 @@ OUT_OF_REACH: dict[str, str] = {
         "exhibits: there is no reply that settles it. Moved here from the by-design list, "
         "where it did not belong: no version of this product would make it testable"
     ),
+    # The 105 AISVS requirements a black box cannot reach, each with its reason, kept in
+    # ``shared.aisvs`` next to the table they classify and merged here so one lookup serves
+    # every axis. Their IDs (``v1.0-C...``) cannot collide with the codes above.
+    **AISVS_OUT_OF_REACH,
 }
 
 #: Framework values this scanner **deliberately does not test**, with the reason. Every one is a
@@ -238,6 +244,7 @@ NOT_TESTED_BY_DESIGN: dict[str, str] = {
         "acquiring access to an AI system: the scanner only touches endpoints it is already "
         "authorized for, which is an authorization policy rather than a limit of reach"
     ),
+    **AISVS_NOT_TESTED_BY_DESIGN,
 }
 
 # Deliberately in NEITHER dict, and therefore in the roadmap: "Command and Control". The first

@@ -37,6 +37,16 @@ enforced rather than suggested:
 
 The full list of rules bought with defects is in `docs/00-ai-build-playbook.md` §0b.
 
+## Mapping a spec to OWASP AISVS
+
+AISVS lists controls, not attacks, so the optional `aisvs:` list on a spec claims one thing: a
+**failure** of this spec is evidence that those controls are absent or ineffective. Add an ID
+only when that sentence is true of your oracle, not when the spec is merely about the same
+topic. A passing spec never verifies a control, and nothing you write should say it does
+(clause A-28). `dottore lint` refuses an ID that is not in the standard and one that
+`src/ildottore/shared/aisvs.py` classifies as out of reach or untested; if you believe the
+classification is wrong, change it there, with the argument, and the pinned test with it.
+
 ## Commits & PRs
 - Conventional Commits; signed (GPG) where possible.
 - Each PR updates docs touched + `CHANGELOG.md` + `docs/PROGRESS.md`.

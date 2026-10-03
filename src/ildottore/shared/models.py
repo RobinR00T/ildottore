@@ -89,6 +89,8 @@ class MitreAtlas(_SchemaMirror):
 # needs ``\Z``. Same intent, different anchor, because the engines differ.
 _IOPC_TECHNIQUE_PATTERN = r"^IOPC-T[1-9][0-9]*\.[0-9]{3}$"
 _IOPC_IMPACT_PATTERN = r"^IOPC-R[0-9]{3}$"
+# OWASP AISVS requirement IDs (``shared.aisvs``), same anchor note as above.
+_AISVS_PATTERN = r"^v1\.0-C[1-9][0-9]?\.[1-9][0-9]?\.[1-9][0-9]?$"
 
 
 class IoPC(_SchemaMirror):
@@ -231,6 +233,9 @@ class AttackSpec(_SchemaMirror):
     mitre_atlas: MitreAtlas
     nist_ai_rmf: str
     iopc: IoPC | None = None
+    #: OWASP AISVS 1.0 requirement IDs whose control a FAIL of this spec is evidence against.
+    #: Falsification only: a PASS never verifies a control (``shared.aisvs``).
+    aisvs: list[Annotated[str, Field(pattern=_AISVS_PATTERN)]] | None = None
     severity: Severity
     target_type: TargetType
     requires: list[RequiresCapability]

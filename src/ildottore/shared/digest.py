@@ -40,7 +40,13 @@ DIGEST_PREFIX: Final = "sha256:v2:"
 #: the `vulnerable`/`hardened` mock scenarios replay it as the target's own answers, so for an
 #: offline run it decides the verdict. Excluding it would be right for one kind of run and a
 #: false negative for the other, and a false negative is the direction that costs.
-_COSMETIC_FIELDS: Final = frozenset({"name", "description", "preconditions"})
+#:
+#: `aisvs` is **outside**, and the reason is the same criterion read the other way. It feeds
+#: `dottore coverage`, which reads the specs and not a run, so no run artifact carries it, and
+#: hashing it made a campaign halted before the AISVS mapping landed unresumable after it, over a
+#: field the run never reads (measured 2026-10-03). If the run report ever rolls findings up by
+#: AISVS ID, it moves inside.
+_COSMETIC_FIELDS: Final = frozenset({"name", "description", "preconditions", "aisvs"})
 
 #: Target fields outside the digest: they say nothing about what is on the other end of the
 #: wire. Everything else is in, including `endpoint`, `model`, `provider` and `capabilities`.

@@ -438,3 +438,59 @@ def test_a_malformed_pattern_is_left_to_the_evaluator_config_rule() -> None:
         prompt="anything",
     )
     assert _check_oracle_markers(spec) == []
+
+
+# --- AISVS: the control framework (added 2026-10-03) ----------------------------------
+
+
+def _lint_with_aisvs(tmp_path: Path, ids: str, name: str) -> list[object]:
+    return _lint_with_iopc(tmp_path, f"aisvs: {ids}\n", name)
+
+
+def test_unknown_aisvs_id_is_a_lint_error_once(tmp_path: Path) -> None:
+    """Well-formed, absent from the standard, and repeated: one refusal, naming the edition.
+
+    ``v1.0-C2.1.9`` has the right shape and C2.1 stops at 8, so the schema lets it through and
+    only the pinned table can refuse it.
+    """
+
+    errors = _lint_with_aisvs(tmp_path, "['v1.0-C2.1.9', 'v1.0-C2.1.9']", "aisvsbad")
+    offending = [e for e in errors if e.code is LintCode.UNKNOWN_FRAMEWORK_CODE]
+    assert len(offending) == 1
+    assert "v1.0-C2.1.9" in offending[0].message
+    assert "AISVS 1.0" in offending[0].message
+
+
+def test_an_aisvs_id_classified_untestable_is_a_contradiction(tmp_path: Path) -> None:
+    """A spec cannot claim evidence against a control the classification calls invisible.
+
+    C4.1.1 (models run in isolated sandboxes) is out of reach from outside; C10.2.1 (MCP
+    servers validate tokens) is deliberately untested. A spec mapping either contradicts
+    ``shared.aisvs``, and coverage would otherwise count the spec and drop the reason in
+    silence, with nobody deciding which of the two was true.
+    """
+
+    errors = _lint_with_aisvs(tmp_path, "['v1.0-C4.1.1', 'v1.0-C10.2.1']", "aisvsclash")
+    clashes = [e for e in errors if e.code is LintCode.FRAMEWORK_CLAIM_CONTRADICTED]
+    assert {next(c for c in ("C4.1.1", "C10.2.1") if c in e.message) for e in clashes} == {
+        "C4.1.1",
+        "C10.2.1",
+    }
+
+
+def test_testable_aisvs_ids_lint_clean(tmp_path: Path) -> None:
+    errors = _lint_with_aisvs(tmp_path, "['v1.0-C2.1.6', 'v1.0-C7.3.2']", "aisvsgood")
+    assert [
+        e
+        for e in errors
+        if e.code in (LintCode.UNKNOWN_FRAMEWORK_CODE, LintCode.FRAMEWORK_CLAIM_CONTRADICTED)
+    ] == []
+
+
+@pytest.mark.parametrize("bad", ["C2.1.6", "v1.0-C2.1", "v1.01-C2.1.6", "v1.0-c2.1.6"])
+def test_malformed_aisvs_id_is_refused_by_the_schema(tmp_path: Path, bad: str) -> None:
+    """The citation form is the standard's own (``v1.0-C<ch>.<sec>.<n>``): a bare ``C2.1.6``
+    would stop meaning the same requirement when 1.01 renumbers."""
+
+    errors = _lint_with_aisvs(tmp_path, f"['{bad}']", "aisvsshape")
+    assert any(e.code in (LintCode.SCHEMA, LintCode.PARSE_ERROR) for e in errors), errors
