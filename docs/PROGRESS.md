@@ -3,6 +3,16 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-03 (late night): PR #32 merged, block 4 (budget and rate) fixed
+
+- PR #32 squash-merged as `8b77636` after green CI, all five commits GPG-verified.
+- Block 4 on `fix/audit-block4-budget`: the judge and the identity sweep inside the ceiling and the
+  rate gate (`core.metering`), one retry layer, billed tokens recorded and failed reservations
+  released, `--rate <= 0` refused, the estimate and derived ceilings counting the judge, and
+  the tautological spend tests replaced. Every fix mutation-checked.
+- Open: blocks 6 and 7, F11, the residuals listed in the CHANGELOG entry, and the decisions that
+  are Daniel's (OD-18, OD-19, scope signing, a policy-pack flag, two `-sV` carriers).
+
 ## State, 2026-10-03 (night): PR #32 reviewed, and the review's findings fixed
 
 - Three reviewers re-ran the four audit commits in isolated worktrees (20:48 to 21:08 CEST) and

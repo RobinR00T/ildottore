@@ -154,6 +154,10 @@ async def execute_attempt(
         except BaseException as exc:
             if not is_env_error(exc):
                 raise
+            # No completion was billed for a send that failed: release its reservation (the
+            # request still counts). Kept, it burned the token ceiling on a flaky endpoint.
+            if reserved:
+                ledger.refund_tokens(reserved)
             errors.append(f"{type(exc).__name__}: {exc}")
             # ``retryable = False`` (the adapters' convention, read structurally like
             # ``is_env_error``): a failure that repeats identically, such as a reply over the

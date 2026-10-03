@@ -31,10 +31,12 @@ from ildottore.adapters import (
     OpenAIAdapter,
     RestAdapter,
     RestTemplate,
+    RetryConfig,
 )
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
+from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
 from ildottore.core.runner import CampaignRunner, IdentityProbe, PolicyGate
@@ -572,12 +574,20 @@ def request_url_for(target: Target) -> str | None:
     return f"{parts.scheme}://{parts.netloc}{path}"
 
 
+#: Target and judge adapters used by a campaign retry nothing themselves: ``execute_attempt``
+#: (and, for the judge, ``core.metering.MeteredAdapter``) own the retries and debit and pace
+#: each one. With both layers retrying, a 429 storm made one attempt 12 wire requests, billed
+#: as 4 and paced as 4, in bursts 50 ms apart (audit 2026-10-03, F10).
+NO_ADAPTER_RETRIES = RetryConfig(max_retries=0)
+
+
 def build_real_adapter(
     target: Target,
     allowlist: EndpointAllowlist,
     *,
     api_key: str | None,
     authorized_commands: tuple[str, ...] = (),
+    retry: RetryConfig | None = None,
 ) -> TargetAdapter:
     """Construct the concrete over-the-wire adapter for ``target`` (contract §5).
 
@@ -593,6 +603,7 @@ def build_real_adapter(
     adapter will call.
     """
 
+    extra: dict[str, Any] = {"retry": retry} if retry is not None else {}
     parts = urlsplit(target.endpoint or "")
     origin = f"{parts.scheme}://{parts.netloc}"
     provider = (target.provider or "").strip().lower()
@@ -607,6 +618,7 @@ def build_real_adapter(
                 allowlist=allowlist,
                 api_key=api_key,
                 model=target.model,
+                **extra,
                 transport="stdio",
                 command=tuple(target.command or ()),
                 authorized_commands=authorized_commands,
@@ -619,6 +631,7 @@ def build_real_adapter(
             allowlist=allowlist,
             api_key=api_key,
             model=target.model,
+            **extra,
         )
     # The DECLARED path wins over the provider default: a gateway (Azure OpenAI, LiteLLM, a
     # corporate proxy) hosts the same API under a prefix, and discarding it both sent the
@@ -631,6 +644,7 @@ def build_real_adapter(
             allowlist=allowlist,
             api_key=api_key,
             model=target.model,
+            **extra,
             path_override=declared_path,
         )
     if provider == "anthropic":
@@ -640,6 +654,7 @@ def build_real_adapter(
             allowlist=allowlist,
             api_key=api_key,
             model=target.model,
+            **extra,
             path_override=declared_path,
         )
     template = RestTemplate(path=parts.path or "/")
@@ -650,6 +665,7 @@ def build_real_adapter(
         api_key=api_key,
         model=target.model,
         template=template,
+        **extra,
     )
 
 
@@ -802,7 +818,9 @@ def fingerprint_probe(
     return asyncio.run(build_fingerprint_engine().run(adapter))
 
 
-def build_judge_adapter(scope: Scope, judge_target: Target) -> TargetAdapter:
+def build_judge_adapter(
+    scope: Scope, judge_target: Target, *, meter: SendMeter | None = None
+) -> TargetAdapter:
     """Build the over-the-wire adapter for the ``--judge`` model (contract §5, ADR-0002).
 
     The ``semantic_judge`` evaluator reaches its LLM-as-judge only through a
@@ -816,7 +834,12 @@ def build_judge_adapter(scope: Scope, judge_target: Target) -> TargetAdapter:
     scope_target = scope.target(judge_target.id)
     allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
     api_key = _authorized_api_key(scope, judge_target)
-    return build_real_adapter(judge_target, allowlist, api_key=api_key)
+    if meter is None:
+        return build_real_adapter(judge_target, allowlist, api_key=api_key)
+    # Metered: every judge send is paced and debited from the campaign's own ceilings, and
+    # the wrapper owns the retries so none of them goes uncounted (F6 / F-7 / F10).
+    inner = build_real_adapter(judge_target, allowlist, api_key=api_key, retry=NO_ADAPTER_RETRIES)
+    return MeteredAdapter(inner=inner, meter=meter)
 
 
 def real_adapter_factory(
@@ -840,7 +863,13 @@ def real_adapter_factory(
     allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
     api_key = _authorized_api_key(scope, target)
     commands = tuple(scope_target.commands) if scope_target is not None else ()
-    adapter = build_real_adapter(target, allowlist, api_key=api_key, authorized_commands=commands)
+    adapter = build_real_adapter(
+        target,
+        allowlist,
+        api_key=api_key,
+        authorized_commands=commands,
+        retry=NO_ADAPTER_RETRIES,
+    )
 
     def _factory(_target: Target, _spec: AttackSpec) -> TargetAdapter:
         return adapter
@@ -871,6 +900,7 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
             allowlist,
             api_key=resolve_auth_ref(ident.auth_ref),
             authorized_commands=commands,
+            retry=NO_ADAPTER_RETRIES,
         )
         probes.append(IdentityProbe(identity_id=ident.name, adapter=adapter, canary=ident.canary))
     return probes
@@ -1063,7 +1093,10 @@ def build_runner(
     # A live judge model (--judge) supplies semantic_judge for real runs (and overrides
     # the deterministic scenario-judge offline if given). Absent one, a live run leaves
     # semantic_judge unregistered (it abstains) and an offline run uses the scenario judge.
-    judge_adapter = build_judge_adapter(scope, judge_target) if judge_target is not None else None
+    meter = SendMeter() if judge_target is not None else None
+    judge_adapter = (
+        build_judge_adapter(scope, judge_target, meter=meter) if judge_target is not None else None
+    )
 
     if real_target is not None:
         evaluators = build_evaluator_registry(judge=judge_adapter)
@@ -1110,6 +1143,7 @@ def build_runner(
         # campaign passes ``None`` (see ``execute_run``), which is the one case where
         # ignoring a rate is correct rather than silent, because the CLI prints it.
         rate_rps=rate_rps,
+        send_meter=meter,
     )
     return BuiltRunner(
         runner=runner,
