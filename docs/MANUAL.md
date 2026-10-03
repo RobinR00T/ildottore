@@ -75,7 +75,16 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `requires_policy` (for example PII elicitation, or the agentic-extortion battery) yields a
   `blocked_by_policy` result with **zero** sends. Enabling such a spec is a deliberate
   policy-pack decision, not a default.
-- **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports.
+- **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports. Every
+  credential the tool reads (an `env://` key, a password in an endpoint URL) is registered and
+  masked **by value** wherever it appears, including inside an HTTP library's error message,
+  and stripped of surrounding whitespace before use (a key with a trailing CR from a
+  Windows-edited `.env` used to be quoted, in clear, by the transport error that rejected it).
+  Values shorter than 8 characters are not registered. The 8-hex digest after a mask is salted
+  per process, so a report cannot be used to confirm a guessed password; set
+  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose. What the tool itself
+  generated to point at its evidence (a sha256, the store's own path for it, an attempt id) is
+  left readable in reports.
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
@@ -142,7 +151,10 @@ capabilities: { tools: true }
 
 For a stdio target the scope authorizes by command, not endpoint: add the exact command line
 to the scope target's `commands` list (default-deny). The MCP adapter is read-only for both
-transports (it never calls a tool).
+transports (it never calls a tool). The server process gets a minimal environment (`PATH`,
+`HOME`, locale and temp variables) and **not** the scanner's: it used to inherit every other
+target's API key. A server that needs a variable gets it on the authorized command line
+(`env NAME=value node server.js`), where the scope has to name it.
 
 ### 4.3 `fleet.yaml`, many targets in one file
 
@@ -305,10 +317,16 @@ Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`).
 ### `dottore replay`, reproduce a past run from evidence
 
 ```
-dottore replay RUN_ID [--evidence-root PATH]
+dottore replay RUN_ID [--evidence-root PATH] [--run-db PATH]
 ```
 
-Re-reads a run from stored evidence without re-sending anything. Attack attempts and the
+Re-reads a run from stored evidence without re-sending anything. Each artifact is verified
+against its content hash **and** against the run store: the findings recorded for the run
+list the hash of every attempt they were scored from, so an artifact that was edited and
+renamed to its new hash is refused (exit 3) instead of replaying as genuine, and `--resume`
+refuses it the same way. An attempt of a spec with no recorded finding (a campaign killed
+mid-spec) cannot be checked against that manifest; it is the known limit. Runs stored before
+2026-10-03 kept masked digests and are replayed without the manifest check. Attack attempts and the
 recognition probes sent by `-sV` are listed apart: a probe is not an attempt, so it never enters
 the reproducibility ratio or the attempt count, but it is stored, hashed and replayable like
 one, which is what lets a run answer "what did this tool send my endpoint".

@@ -1157,8 +1157,12 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         state=states[0] if states else "complete",
         reason="; ".join(f"{k}: {v}" for k, v in sorted(incomplete.items())) or None,
     )
+    # Masked before the terminal sees it, for the same reason the reporters mask it (SEC-01).
+    from ildottore.reporting import default_redactor
+
+    _mask = default_redactor()
     for target_id, reason in sorted(incomplete.items()):
-        printer.error(f"error: run on {target_id} did not complete: {reason}")
+        printer.error(f"error: run on {target_id} did not complete: {_mask.redact_text(reason)}")
 
     report_paths = _write_reports(
         opts,

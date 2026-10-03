@@ -579,12 +579,18 @@ def replay(
     evidence_root: Annotated[
         Path, typer.Option("--evidence-root", help="Evidence store root dir.")
     ] = Path(".dottore/evidence"),
+    run_db: Annotated[
+        Path,
+        typer.Option("--run-db", help="Run store; its findings are the evidence manifest."),
+    ] = Path(".dottore/runs.sqlite"),
 ) -> None:
     """Re-read a run from stored evidence (reproducibility, no re-sending)."""
 
+    from ildottore.store import TamperError
+
     try:
-        result = replay_mod.replay(evidence_root, run_id)
-    except (OSError, ValueError) as exc:
+        result = replay_mod.replay(evidence_root, run_id, run_db)
+    except (OSError, ValueError, TamperError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(replay_mod.render_replay(result))

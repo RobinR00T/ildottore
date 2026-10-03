@@ -17,7 +17,13 @@ from __future__ import annotations
 from ildottore.store.evidence_fs import FsEvidenceStore, RedactionLeakError
 from ildottore.store.migrations import SCHEMA_VERSION, connect, current_version, migrate
 from ildottore.store.paths import UnsafePathError, content_hash
-from ildottore.store.replay import ReplayResult, TamperError, replay_run, verify_ref
+from ildottore.store.replay import (
+    ReplayResult,
+    TamperError,
+    check_manifest,
+    replay_run,
+    verify_ref,
+)
 from ildottore.store.run_sqlite import SqliteRunStore, finding_id_of
 
 __all__ = [
@@ -28,6 +34,7 @@ __all__ = [
     "SqliteRunStore",
     "TamperError",
     "UnsafePathError",
+    "check_manifest",
     "connect",
     "content_hash",
     "current_version",

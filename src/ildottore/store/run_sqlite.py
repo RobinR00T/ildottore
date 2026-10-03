@@ -13,11 +13,12 @@ transaction; the connection enforces WAL + foreign keys (``migrations.connect``)
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from ildottore.redactor import Redactor
+from ildottore.redactor import Redactor, redact_evidence_ref, redact_identity
 from ildottore.shared.models import Finding, TestRun
 from ildottore.store import migrations
 
@@ -90,7 +91,8 @@ class SqliteRunStore:
                 {
                     "run_id": run.run_id,
                     "suite_id": self._redact_str(run.suite_ref),
-                    "target_id": self._redact_str(target_id),
+                    # Fixed-salt mask: `--resume` recomputes it to verify the target.
+                    "target_id": None if target_id is None else redact_identity(target_id),
                     "started_at": run.started_at,
                     "finished_at": run.finished_at,
                     "n_runs": len(run.targets) or None,
@@ -119,12 +121,18 @@ class SqliteRunStore:
     def _upsert_finding(self, run_id: str, f: Finding) -> None:
         """Upsert one finding under ``run_id`` (caller owns the transaction)."""
 
-        refs = self._redact_json([ref.model_dump(mode="json") for ref in f.evidence])
-        # The finding_id is a persisted key derived from spec_id/target_id, so it
-        # is redacted like any other stored value (DL2). Redaction is
-        # deterministic for a given salt, so the redacted id still matches on
-        # conflict → idempotency holds.
-        finding_id = self._redact_str(finding_id_of(f))
+        # Evidence references are the tool's own pointers (run id, attempt id, path, sha256),
+        # stored as written: they are the manifest `replay` and `--resume` check the evidence
+        # tree against. Masked, a digest read as `high_entropy` and nothing could tell a
+        # tampered artifact renamed to its new hash from the original (audit 2026-10-03, F12).
+        refs = _dumps_list(
+            [redact_evidence_ref(self._redactor, ref.model_dump(mode="json")) for ref in f.evidence]
+        )
+        # The finding_id is a persisted key derived from spec_id/target_id, so it is masked
+        # like any other stored identifier (DL2), with the FIXED identity salt: the general
+        # redactor's salt is random per process, and a resume in a new process must hit the
+        # same row on conflict or it would duplicate every finding.
+        finding_id = redact_identity(finding_id_of(f))
         self._conn.execute(
             """
             INSERT INTO findings
@@ -251,6 +259,30 @@ class SqliteRunStore:
         ).fetchone()
         return _loads_dict(row["value"] if row is not None else None, column="context_json")
 
+    def recorded_evidence(self, run_id: str) -> dict[str, set[str]]:
+        """``spec_id -> {sha256}`` of every evidence artifact the run's findings cite.
+
+        The manifest ``replay`` and ``--resume`` check the evidence tree against. Values that
+        are not a plain 64-hex digest are skipped: a run stored before 2026-10-03 has its
+        digests masked, and an absent manifest has to read as "cannot verify", not as
+        "nothing is allowed".
+        """
+
+        manifest: dict[str, set[str]] = {}
+        rows = self._conn.execute(
+            "SELECT spec_id, evidence_refs_json FROM findings WHERE run_id = ?", (run_id,)
+        ).fetchall()
+        for row in rows:
+            try:
+                refs = json.loads(row["evidence_refs_json"] or "[]")
+            except ValueError:
+                continue
+            for ref in refs if isinstance(refs, list) else []:
+                sha = ref.get("sha256") if isinstance(ref, dict) else None
+                if isinstance(sha, str) and _SHA256.fullmatch(sha):
+                    manifest.setdefault(str(row["spec_id"]), set()).add(sha)
+        return manifest
+
     def list_findings(self, run_id: str) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             "SELECT * FROM findings WHERE run_id = ? ORDER BY finding_id",
@@ -271,6 +303,15 @@ class SqliteRunStore:
     def _redact_json(self, obj: object) -> str:
         redacted = self._redactor.redact(obj)
         return json.dumps(redacted, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _dumps_list(obj: list[dict[str, Any]]) -> str:
+    """Canonical JSON for a list column."""
+
+    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
 def _dumps(obj: dict[str, Any]) -> str:

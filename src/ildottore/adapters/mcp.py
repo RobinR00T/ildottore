@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -52,6 +53,28 @@ _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 # A recent MCP protocol revision to offer in the initialize handshake. The server echoes the
 # version it actually speaks; we record that, we do not require this exact one.
 _PROTOCOL_VERSION = "2025-06-18"
+
+
+#: What a stdio MCP server under test inherits from the scanner, and nothing else. It used to
+#: inherit the whole environment, every other target's API key included, which handed the
+#: system being scanned the scanner's credentials (audit 2026-10-03, SEC-08). A server that
+#: needs a variable gets it on its authorized command line (``env NAME=value server ...``),
+#: where the operator can see it and the scope has to name it.
+_STDIO_ENV_PASSTHROUGH: tuple[str, ...] = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "SYSTEMROOT",
+)
+
+
+def _stdio_environment() -> dict[str, str]:
+    return {name: os.environ[name] for name in _STDIO_ENV_PASSTHROUGH if name in os.environ}
 
 
 @dataclass
@@ -299,6 +322,7 @@ class MCPAdapter:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            env=_stdio_environment(),
         )
         try:
             init = await self._stdio_rpc(

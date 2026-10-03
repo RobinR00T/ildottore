@@ -90,7 +90,7 @@ dottore coverage [--framework owasp|atlas|iopc|aisvs] [--suite ..] [--json]   # 
 dottore describe PI-DIRECT-001
 dottore lint specs/
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
-dottore replay <run-id> --evidence-root .dottore/evidence   # reproduce a past run
+dottore replay <run-id> --evidence-root .dottore/evidence --run-db .dottore/runs.sqlite   # reproduce a past run, checked against the run store
 
 # Regression gate: compare a run against a stored baseline (CI-gateable)
 dottore diff baseline.json current.json

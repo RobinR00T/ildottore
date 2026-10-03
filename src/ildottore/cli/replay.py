@@ -11,19 +11,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ildottore.store import ReplayResult, replay_run
+from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
 
 __all__ = ["render_replay", "replay"]
 
 
-def replay(evidence_root: Path, run_id: str) -> ReplayResult:
+def replay(evidence_root: Path, run_id: str, run_db: Path | None = None) -> ReplayResult:
     """Reconstruct + hash-verify the attempts stored for ``run_id`` (u10).
 
     Raises :class:`~ildottore.store.replay.TamperError` if any artifact's content no
-    longer matches its content-address - a silent pass would hide corruption.
+    longer matches its content-address, or (when the run store is available) if an artifact
+    is not one the run's findings recorded: verifying a file against its own name alone let
+    an edited artifact, renamed to its new hash, replay as genuine (F12).
     """
 
     result = replay_run(evidence_root, run_id)
+    if run_db is not None and run_db.is_file():
+        store = SqliteRunStore(run_db)
+        try:
+            check_manifest(result, store.recorded_evidence(run_id))
+        finally:
+            store.close()
     if not result.attempts and not result.probes:
         # "no such run" and "a run with no attempts" printed identically (attempts: 0,
         # exploited: 0, exit 0), so a script could not tell a typo from a real result.

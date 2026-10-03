@@ -56,7 +56,10 @@ List the attack-spec catalogue (filter by --category, --owasp, --tag, --suite).
 Scaffold a new attack spec and empty fixtures.
 .TP
 .B replay
-Re-read a run from stored evidence, sending nothing.
+Re-read a run from stored evidence, sending nothing; with
+.B --run-db
+every artifact is also checked against the hashes the run's findings recorded, so an
+edited artifact renamed to its new hash is refused (exit 3).
 .TP
 .B diff
 Compare a run against a baseline and surface regressions (CI-gateable).

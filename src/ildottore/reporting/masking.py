@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from ildottore.redactor import Redactor as _DefaultRedactorImpl
+from ildottore.redactor import redact_evidence_ref
 from ildottore.shared.models import Finding, TestRun
 
 __all__ = ["MaskingContext", "Redactor", "mask_findings", "mask_run", "mask_text"]
@@ -60,11 +61,28 @@ def mask_run(run: TestRun, redactor: Redactor) -> TestRun:
 
 
 def mask_findings(findings: list[Finding], redactor: Redactor) -> list[Finding]:
-    """Return deep-masked copies of ``findings`` (order preserved)."""
+    """Return deep-masked copies of ``findings`` (order preserved).
+
+    Everything the target or the operator wrote is masked. What the tool itself generated to
+    point at its evidence is not: the evidence references (run id, attempt id, path, sha256)
+    and each attempt's id are restored after the pass. Masking them hid nothing, since a
+    digest and a path are not secrets, and it cut the report off from its proof: 107 of 110
+    evidence hashes in a quick-suite report read ``«REDACTED:high_entropy:...»``, so nobody
+    could find, let alone verify, the artifact a finding cited (audit 2026-10-03, R1).
+    """
 
     out: list[Finding] = []
     for finding in findings:
         masked = redactor.redact(finding.model_dump(mode="json"))
+        if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
+            raise TypeError("redactor changed the shape of a finding dump")
+        masked["evidence"] = [
+            redact_evidence_ref(redactor, ref.model_dump(mode="json")) for ref in finding.evidence
+        ]
+        for masked_attempt, attempt in zip(
+            masked.get("attempts") or [], finding.attempts, strict=True
+        ):
+            masked_attempt["attempt_id"] = attempt.attempt_id
         out.append(Finding.model_validate(masked))
     return out
 

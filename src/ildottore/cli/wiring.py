@@ -49,6 +49,7 @@ from ildottore.policy import (
     Scope,
     load_scope,
 )
+from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
@@ -511,7 +512,14 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
         return None
     if auth_ref.startswith("env://"):
         name = auth_ref.removeprefix("env://")
-        return os.environ.get(name)
+        raw = os.environ.get(name)
+        # Registered before it is used, raw AND stripped: every Redactor in the process then
+        # masks it by value, including inside an HTTP library's error text. And stripped,
+        # because a key never carries surrounding whitespace: a trailing CR from a
+        # Windows-edited .env made httpx reject the header and quote the key in the error,
+        # which reached all four report formats (audit 2026-10-03, SEC-01).
+        register_known_secret(raw)
+        return raw.strip() if raw is not None else None
     raise ValueError(f"unsupported auth_ref scheme in {auth_ref!r}; only 'env://NAME' is supported")
 
 
@@ -896,6 +904,11 @@ def load_target(path: Path) -> Target:
     target_id = raw.get("id")
     if not isinstance(target_id, str) or not target_id:
         raise ValueError(f"target file {path} is missing a string 'id'")
+    endpoint_raw = raw.get("endpoint")
+    if isinstance(endpoint_raw, str):
+        # A password in the endpoint URL is a credential the process now holds: mask it by
+        # value everywhere, not only where it still sits inside a URL (SEC-02).
+        register_known_secret(urlsplit(endpoint_raw).password)
     type_raw = raw.get("type", TargetType.MODEL.value)
     try:
         target_type = TargetType(type_raw)

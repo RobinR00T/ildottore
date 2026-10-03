@@ -108,34 +108,39 @@ def run_dir(root: Path, run_id: str) -> Path:
     return _assert_inside(root, root / validate_run_id(run_id))
 
 
+# Every path below is checked to resolve inside the root, not only the run directory: a
+# symlink one level down (``<run>/attempts -> /elsewhere``) was followed, and two foreign
+# attempts were read as the victim run's (audit 2026-10-03, A-16 / SEC-10).
+
+
 def run_doc_path(root: Path, run_id: str) -> Path:
     """Path of the redacted ``TestRun`` document for a run."""
 
-    return run_dir(root, run_id) / _RUN_DOC_NAME
+    return _assert_inside(root, run_dir(root, run_id) / _RUN_DOC_NAME)
 
 
 def attempts_dir(root: Path, run_id: str) -> Path:
     """Directory holding one run's content-addressed attempt artifacts."""
 
-    return run_dir(root, run_id) / _ATTEMPTS_DIR
+    return _assert_inside(root, run_dir(root, run_id) / _ATTEMPTS_DIR)
 
 
 def probes_dir(root: Path, run_id: str) -> Path:
     """Directory holding one run's content-addressed **probe** artifacts (see ``_PROBES_DIR``)."""
 
-    return run_dir(root, run_id) / _PROBES_DIR
+    return _assert_inside(root, run_dir(root, run_id) / _PROBES_DIR)
 
 
 def probe_path(root: Path, run_id: str, sha256: str) -> Path:
     """Path of a single content-addressed probe: ``probes/<sha256>.json``."""
 
-    return probes_dir(root, run_id) / f"{validate_sha256(sha256)}.json"
+    return _assert_inside(root, probes_dir(root, run_id) / f"{validate_sha256(sha256)}.json")
 
 
 def attempt_path(root: Path, run_id: str, sha256: str) -> Path:
     """Path of a single content-addressed attempt: ``attempts/<sha256>.json``."""
 
-    return attempts_dir(root, run_id) / f"{validate_sha256(sha256)}.json"
+    return _assert_inside(root, attempts_dir(root, run_id) / f"{validate_sha256(sha256)}.json")
 
 
 def relative_uri(root: Path, path: Path) -> str:

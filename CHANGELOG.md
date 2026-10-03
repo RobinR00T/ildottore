@@ -77,6 +77,37 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (full audit of 2026-10-03: secrets and evidence integrity)
+
+Six auditors in isolated worktrees read the whole repository the same afternoon. This block is
+what they found about secrets and the chain of custody; each item has a regression test in
+`tests/policy/test_redaction_audit_2026_10_03.py` or `tests/store/test_evidence_manifest.py`.
+
+- **An API key could reach all four report formats in clear.** A key with a trailing CR (a
+  Windows-edited `.env`) made the HTTP library reject the header and quote it in its error;
+  that error became the run status reason, which bypassed masking in every reporter and on
+  stderr. Credentials the tool reads are now registered and masked by value in every
+  redactor, stripped before use, and the status reason is masked once, before any writer.
+- **A password in an endpoint URL** was printed by `--dry-run`, `-sn` and `-v` and stored in
+  the JSON report; URL passwords are masked and registered.
+- **The redaction digest was unsalted** (32 bits of HMAC), so a report could confirm a guessed
+  password offline. Salted per process; `ILDOTTORE_REDACTION_SALT` pins it on purpose. Stored
+  target and finding ids use a fixed identity salt so `--resume` still recognises them.
+- **One reply could abort a campaign.** `token=token=token= X` never reached a redaction fixed
+  point, which the evidence store treats as a leak risk; and `password: password: X` masked the
+  label words and stored `X` in clear. Redaction now runs to a bounded fixed point and a run of
+  labels is consumed as one.
+- **Reports masked the pointers to their own evidence** (107 of 110 digests in a quick-suite
+  report), so a finding could not be traced to its artifact. Tool-generated digests, the
+  store's own paths and attempt ids are kept readable; everything else is masked as before.
+- **An edited artifact renamed to its new hash replayed as genuine and `--resume` published
+  it.** The run store keeps the evidence digests unmasked and `replay` (new `--run-db`) and
+  `--resume` refuse an artifact the run's findings never recorded.
+- **A stdio MCP server inherited the scanner's environment**, every other target's key
+  included. It now gets a minimal one.
+- **A symlink below the run directory** (`<run>/attempts`) was followed; every evidence path
+  is now checked to resolve inside the store root.
+
 ### Documentation (the user docs caught up with what shipped)
 
 - **The man page listed neither `coverage`, `calibrate` nor `render-media`**, and described the
