@@ -30,7 +30,15 @@ def test_reports_every_axis_over_the_whole_battery() -> None:
     cov = _coverage()
     assert cov.specs == 75
     keys = [a.key for a in cov.axes]
-    assert keys == ["owasp", "atlas", "iopc_techniques", "iopc_impacts"]
+    assert keys == [
+        "owasp",
+        "atlas",
+        "iopc_techniques",
+        "iopc_impacts",
+        "aisvs_l1",
+        "aisvs_l2",
+        "aisvs_l3",
+    ]
     for axis in cov.axes:
         assert 0.0 <= axis.pct <= 1.0, axis.label
         assert (
@@ -98,6 +106,14 @@ def test_framework_filter_selects_axes() -> None:
     iopc = render_coverage(cov, framework="iopc", show_gaps=False)
     assert "IoPC techniques" in iopc and "IoPC impacts" in iopc
     assert "OWASP" not in iopc
+    aisvs = render_coverage(cov, framework="aisvs", show_gaps=False)
+    assert [line.split(",")[1].split()[:2] for line in aisvs.splitlines() if "AISVS" in line] == [
+        ["level", "1"],
+        ["level", "2"],
+        ["level", "3"],
+    ]
+    assert "IoPC" not in aisvs and "ATLAS" not in aisvs
+    assert "OWASP AISVS" not in render_coverage(cov, framework="owasp", show_gaps=False)
     assert "all" in FRAMEWORK_KEYS
 
 
@@ -283,3 +299,166 @@ def test_the_json_keeps_the_two_lists_apart() -> None:
     assert owasp["missing"] == [], "both OWASP gaps are out of reach, neither is pending"
     assert {entry["code"] for entry in owasp["out_of_reach"]} == {"LLM03", "LLM04"}
     assert all(entry["reason"] for entry in owasp["out_of_reach"])
+
+
+# --- AISVS: a control framework, pinned bucket by bucket (added 2026-10-03) -----------
+
+
+def _aisvs(patterns: str) -> set[str]:
+    """Expand space-separated chapter / section / requirement patterns (``C4 C3.1 C9.2.3``)
+    over the pinned table, written here independently of ``shared.aisvs``'s own grouping so a
+    change there has to be repeated here, next to its argument."""
+
+    from ildottore.shared.aisvs import AISVS_REQUIREMENTS
+
+    out: set[str] = set()
+    for pattern in patterns.split():
+        prefix = f"v1.0-{pattern}"
+        hits = (
+            {prefix}
+            if pattern.count(".") == 2
+            else {c for c in AISVS_REQUIREMENTS if c.startswith(prefix + ".")}
+        )
+        assert hits <= set(AISVS_REQUIREMENTS) and hits, pattern
+        out |= hits
+    return out
+
+
+def test_every_aisvs_requirement_is_pinned_to_its_bucket() -> None:
+    """The four AISVS buckets, written down (clause A-26, A-28).
+
+    The first classification counted 37 requirements as covered. An independent audit the same
+    morning (2026-10-03) read every spec behind them and kept 17: some specs only show the model
+    PROPOSING a tool call where the control is the runtime blocking it, some test the tester's
+    own schema or allowlist instead of the operator's, four send a placeholder instead of a
+    concrete request, and the multilingual spec sends English. The 20 it dropped are in the
+    roadmap below, not deleted, because a better spec could cover them.
+    """
+
+    from ildottore.cli.coverage import battery_coverage
+
+    axes = [a for a in battery_coverage([SPECS]).axes if a.key.startswith("aisvs")]
+    covered = {c for a in axes for c, _ in a.covered}
+    missing = {c for a in axes for c, _ in a.missing}
+    out_of_reach = {c for a in axes for c, _, _ in a.out_of_reach}
+    by_design = {c for a in axes for c, _, _ in a.by_design}
+
+    assert covered == _aisvs(
+        "C2.1.2 C2.1.3 C2.1.6 C2.2.3 C5.2.2 C5.2.4 C7.3.1 C7.3.2 C8.1.3 C9.3.5 C9.3.6 "
+        "C9.5.2 C9.5.3 C9.5.4 C10.4.2 C11.1.1 C11.1.4"
+    )
+    # Roadmap: partial evidence today (W) plus observable-but-unbuilt (G). Not out of reach.
+    assert missing == _aisvs(
+        "C2.1.1 C2.1.4 C2.1.5 C2.1.7 C2.1.8 C2.2.1 C2.2.2 C2.2.4 C5.2.1 C5.3.1 C7.1.1 C7.1.2 "
+        "C7.2.2 C7.3.3 C7.3.4 C7.4.1 C7.4.2 C7.4.3 C8.1.1 C8.2.1 C8.2.3 C8.2.4 C8.3 C9.1.2 "
+        "C9.2.1 C9.2.2 C9.2.4 C9.2.5 C9.2.7 C9.2.10 C9.3.2 C9.3.4 C9.3.7 C9.5.1 C9.5.5 C9.5.6 "
+        "C10.4.1 C11.2.1 C11.2.3 C11.2.5 C11.3.2 C11.3.4 C11.4.1 C11.4.2"
+    )
+    # Includes the operator-side processes this tool can be the instrument for (C3.2, C6.1.4,
+    # C11.1.2/3/5, C1.3.3, the logging and alerting rows of C12): a reply cannot show they ran.
+    assert out_of_reach == _aisvs(
+        "C1 C3 C4 C5.1 C5.2.3 C5.2.5 C5.2.6 C5.2.7 C5.3.2 C6 C7.2.1 C7.2.3 C8.1.2 C8.2.2 "
+        "C8.2.5 C9.1.1 C9.1.3 C9.2.3 C9.2.6 C9.2.8 C9.2.9 C9.3.1 C9.3.3 C9.3.8 C9.4 C9.6 "
+        "C11.1.2 C11.1.3 C11.1.5 C11.2.4 C11.3.1 C11.3.3 C11.4.3 C12"
+    )
+    assert by_design == _aisvs(
+        "C7.4.4 C10.1 C10.2 C10.3 C10.4.3 C10.4.4 C10.4.5 C10.4.6 C10.4.7 C10.4.8 C11.2.2"
+    )
+    assert (len(covered), len(missing), len(out_of_reach), len(by_design)) == (17, 46, 105, 23)
+    assert [a.exercised for a in axes] == [5, 12, 0]
+
+
+def test_each_aisvs_claim_is_carried_by_the_specs_the_audit_kept() -> None:
+    """Which spec carries which control, pinned, because the covered SET above would not move if
+    a spec were added to a row it does not test.
+
+    That was most of what the 2026-10-03 audit removed: ten jailbreak specs on the instruction
+    hierarchy row although none of them sends a system message, a canary spec on the "secrets
+    are not in the model's context" row although the canary is one the tester planted, an MCP
+    server check on the client-screening row. Adding a spec to a row is a claim about its
+    oracle, so it shows up here as a diff.
+    """
+
+    from collections import defaultdict
+
+    from ildottore.cli import wiring
+
+    carried: dict[str, set[str]] = defaultdict(set)
+    for spec in wiring.build_registry([SPECS]).list():
+        for code in spec.aisvs or []:
+            carried[code].add(spec.id)
+
+    assert dict(carried) == {
+        "v1.0-C2.1.2": {"JB-ENCODING-001"},
+        "v1.0-C2.1.3": {
+            "MM-AUD-PROMPTINJECT-001",
+            "MM-IMG-DOC-INJECT-001",
+            "MM-IMG-PROMPTINJECT-001",
+            "MM-IMG-SPLIT-PAYLOAD-001",
+            "MM-IMG-TOOL-EXFIL-001",
+            "PI-DIRECT-001",
+            "PI-INDIRECT-RAG-001",
+            "PI-INDIRECT-TOOL-001",
+        },
+        "v1.0-C2.1.6": {"PI-DIRECT-001", "SP-LEAK-001"},
+        "v1.0-C2.2.3": {
+            "MM-AUD-PROMPTINJECT-001",
+            "MM-IMG-DOC-INJECT-001",
+            "MM-IMG-PROMPTINJECT-001",
+            "MM-IMG-SPLIT-PAYLOAD-001",
+            "MM-IMG-TOOL-EXFIL-001",
+        },
+        "v1.0-C5.2.2": {"DL-XTENANT-001", "EMB-XTENANT-RETRIEVAL-001"},
+        "v1.0-C5.2.4": {"AC-BOLA-001", "DL-XSESSION-001", "DL-XTENANT-001"},
+        "v1.0-C7.3.1": {
+            "JB-ENCODING-001",
+            "JB-LIKERT-001",
+            "JB-MULTILINGUAL-001",
+            "JB-OFFENSIVE-RANSOM-CODEGEN-001",
+            "JB-REFUSAL-SUPPRESS-001",
+            "JB-SEQUENTIAL-001",
+            "JB-TREE-001",
+            "SAFETY-DISINFO-001",
+            "SAFETY-PHISH-BEC-001",
+        },
+        "v1.0-C7.3.2": {
+            "AG-GOAL-THEFT-001",
+            "PI-DIRECT-001",
+            "RECON-MODEL-IDENTITY-001",
+            "RECON-SYSTEM-001",
+            "SP-LEAK-001",
+        },
+        "v1.0-C8.1.3": {"EMB-NEIGHBOR-LEAK-001", "EMB-XTENANT-RETRIEVAL-001"},
+        "v1.0-C9.3.5": {
+            "AG-CODEEXEC-UNEXPECTED-001",
+            "AG-EXTORT-CHAIN-001",
+            "MM-IMG-TOOL-EXFIL-001",
+        },
+        "v1.0-C9.3.6": {"PI-INDIRECT-TOOL-001"},
+        "v1.0-C9.5.2": {"AC-BOLA-001", "DL-XTENANT-001"},
+        "v1.0-C9.5.3": {"AC-BOLA-001", "DL-XTENANT-001"},
+        "v1.0-C9.5.4": {"AG-CRED-SWEEP-001"},
+        "v1.0-C10.4.2": {"AG-TOOLMETA-POISON-001", "PI-INDIRECT-TOOL-001"},
+        "v1.0-C11.1.1": {"SAFETY-DISINFO-001", "SAFETY-PHISH-BEC-001"},
+        "v1.0-C11.1.4": {
+            "JB-ENCODING-001",
+            "JB-LIKERT-001",
+            "JB-OFFENSIVE-RANSOM-CODEGEN-001",
+            "JB-REFUSAL-SUPPRESS-001",
+            "JB-SEQUENTIAL-001",
+            "JB-TREE-001",
+        },
+    }
+
+
+def test_codes_are_listed_in_the_order_a_reader_counts_them() -> None:
+    """String order printed every AISVS chapter from 10 up ahead of chapter 2."""
+
+    from ildottore.cli.coverage import battery_coverage
+
+    by_key = {a.key: a for a in battery_coverage([SPECS]).axes}
+    l1 = [c for c, _ in by_key["aisvs_l1"].missing]
+    assert l1[0] == "v1.0-C2.1.1"
+    assert l1.index("v1.0-C9.3.2") < l1.index("v1.0-C10.4.1") < l1.index("v1.0-C11.2.1")
+    # The zero-padded axes keep the order they always had.
+    assert [c for c, _ in by_key["owasp"].covered] == sorted(c for c, _ in by_key["owasp"].covered)

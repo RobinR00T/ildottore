@@ -434,7 +434,7 @@ def fingerprint(
 def coverage(
     paths: Annotated[list[Path] | None, typer.Argument(help="Spec paths to measure.")] = None,
     framework: Annotated[
-        str, typer.Option("--framework", help="all | owasp | atlas | iopc.")
+        str, typer.Option("--framework", help="all | owasp | atlas | iopc | aisvs.")
     ] = "all",
     suite: Annotated[
         str | None, typer.Option("--suite", help="Narrow to one suite (id or alias).")

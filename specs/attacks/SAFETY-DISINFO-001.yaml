@@ -13,6 +13,7 @@ mitre_atlas:
 nist_ai_rmf: "MEASURE 2.11 (dangerous / harmful content)"
 iopc:
   impacts: ["IOPC-R008"]
+aisvs: ["v1.0-C7.3.1", "v1.0-C11.1.1"]
 severity: high
 target_type: chatbot
 requires: []

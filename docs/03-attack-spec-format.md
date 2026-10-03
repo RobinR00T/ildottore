@@ -15,8 +15,9 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
   (`requires: [rag]`, `requires: [tools]`). Missing capability → `inconclusive`, never a
   false pass/fail.
 - **Framework-mapped.** Every spec carries `owasp`, `mitre_atlas`, `nist_ai_rmf` (and an
-  optional two-axis `iopc:` block, `techniques` + `impacts`, see `docs/15`) so findings
-  roll up to the frameworks operators report against.
+  optional two-axis `iopc:` block, `techniques` + `impacts`, see `docs/15`, plus an optional
+  `aisvs:` list of the OWASP AISVS controls a failure is evidence against) so findings roll up
+  to the frameworks operators report against.
 
 ## 2. Field reference
 
@@ -28,6 +29,7 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 | `category` | ✓ | One of the taxonomy families (`prompt_injection`, `jailbreak`, `data_leakage`, `agent_tool_abuse`, `rag_security`, `output_security`, `availability_cost`). |
 | `owasp` / `mitre_atlas` / `nist_ai_rmf` | ✓ | Framework mappings. |
 | `iopc` | | Nova IoPC mapping on two axes: `techniques` (the how, `IOPC-T<family>.<nnn>`) and `impacts` (the damage, `IOPC-R<nnn>`). Either axis alone is valid. Optional so third-party packs keep validating; the shipped battery is held to it by test. Codes outside the pinned taxonomy are a lint error (`docs/15`). |
+| `aisvs` | | OWASP AISVS 1.0 requirement IDs in the standard's citation form (`v1.0-C2.1.6`) whose control a **FAIL of this spec is evidence against**. Falsification only: a PASS never verifies a control, because a black box never sees the control itself (clause A-28). An ID outside the pinned table is `UNKNOWN_FRAMEWORK_CODE`; an ID the table classifies as out of reach or deliberately untested is `FRAMEWORK_CLAIM_CONTRADICTED`. Optional. IDs only, never the requirement text (CC-BY-SA). |
 | `severity` | ✓ | Author's *a-priori* impact class; final risk is computed (`docs/05`). |
 | `target_type` | ✓ | `model` \| `chatbot` \| `api` \| `agent` \| `rag`. |
 | `requires` | ✓ | Capabilities needed (`rag`, `tools`, `memory`, `system_prompt`). |

@@ -16,10 +16,18 @@ The model-comparison matrix is populated only when the run spans **more than one
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
+from ildottore.shared.aisvs import (
+    AISVS_LEVELS,
+    AISVS_REQUIREMENTS,
+    AISVS_TITLES,
+    AISVS_VERSION,
+    aisvs_universe,
+)
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
     ATLAS_OUT_OF_MATRIX,
@@ -482,6 +490,16 @@ class BatteryCoverage:
     off_universe: tuple[tuple[str, str, str], ...] = ()
 
 
+def _natural(entry: tuple[str, ...]) -> list[object]:
+    """Order codes as a reader counts them: ``C2.1.6`` before ``C10.4.2``.
+
+    Plain string order put every AISVS chapter from 10 up ahead of chapter 2. The other axes are
+    unaffected: OWASP and IoPC codes are zero-padded and ATLAS tactic names carry no digits.
+    """
+
+    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", entry[0])]
+
+
 def _axis(
     key: str,
     label: str,
@@ -495,27 +513,36 @@ def _axis(
     # ``set`` on both sides: a universe with a duplicated entry would otherwise inflate the
     # denominator, and ``seen`` is already a set, so the numerator counts distinct codes.
     distinct = tuple(dict.fromkeys(universe))
-    covered = tuple(sorted((c, title(c)) for c in distinct if c in seen))
+    covered = tuple(sorted(((c, title(c)) for c in distinct if c in seen), key=_natural))
     uncovered = [c for c in distinct if c not in seen]
     missing = tuple(
         sorted(
-            (c, title(c))
-            for c in uncovered
-            if out_of_reach_reason(c) is None and not_tested_by_design_reason(c) is None
+            (
+                (c, title(c))
+                for c in uncovered
+                if out_of_reach_reason(c) is None and not_tested_by_design_reason(c) is None
+            ),
+            key=_natural,
         )
     )
     unreachable = tuple(
         sorted(
-            (c, title(c), reason)
-            for c in uncovered
-            if (reason := out_of_reach_reason(c)) is not None
+            (
+                (c, title(c), reason)
+                for c in uncovered
+                if (reason := out_of_reach_reason(c)) is not None
+            ),
+            key=_natural,
         )
     )
     deliberate = tuple(
         sorted(
-            (c, title(c), reason)
-            for c in uncovered
-            if (reason := not_tested_by_design_reason(c)) is not None
+            (
+                (c, title(c), reason)
+                for c in uncovered
+                if (reason := not_tested_by_design_reason(c)) is not None
+            ),
+            key=_natural,
         )
     )
     return AxisCoverage(
@@ -546,6 +573,7 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
     atlas: set[str] = set()
     tech: set[str] = set()
     impact: set[str] = set()
+    aisvs: set[str] = set()
     off: list[tuple[str, str, str]] = []
 
     for spec in spec_list:
@@ -568,6 +596,11 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
                     impact.add(code)
                 else:
                     off.append((spec.id, "iopc.impacts", code))
+        for code in spec.aisvs or []:
+            if code in AISVS_REQUIREMENTS:
+                aisvs.add(code)
+            else:
+                off.append((spec.id, "aisvs", code))
 
     return BatteryCoverage(
         specs=len(spec_list),
@@ -592,6 +625,19 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
                 IOPC_IMPACT_UNIVERSE,
                 impact,
                 IOPC_IMPACTS,
+            ),
+            # One axis per assigned level. The standard's levels are cumulative, but each
+            # requirement is assigned exactly one, so these partition the 191 and nothing is
+            # counted twice; a reader verifying "level 2" adds the level 1 row to it.
+            *(
+                _axis(
+                    f"aisvs_l{level}",
+                    f"OWASP AISVS {AISVS_VERSION}, level {level}",
+                    aisvs_universe(level),
+                    aisvs,
+                    AISVS_TITLES,
+                )
+                for level in AISVS_LEVELS
             ),
         ),
         off_universe=tuple(sorted(set(off))),

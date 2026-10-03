@@ -340,6 +340,7 @@ to paste into a document.
 ```bash
 dottore coverage                      # every axis, with the gaps named
 dottore coverage --framework iopc     # one framework
+dottore coverage --framework aisvs    # OWASP AISVS, one line per level
 dottore coverage --suite nova-iopc    # what a single suite covers
 dottore coverage --json               # for a dashboard or a report generator
 ```
@@ -351,6 +352,9 @@ Battery coverage (75 specs, no scan performed)
   MITRE ATLAS tactics (2026.09)       13/16   81%
   IoPC techniques (live-2026-09-19)   27/30   90%
   IoPC impacts (live-2026-09-19)      23/23  100%
+  OWASP AISVS 1.0, level 1             5/51    9%
+  OWASP AISVS 1.0, level 2            12/95   12%
+  OWASP AISVS 1.0, level 3             0/45    0%
 
   Out of reach for a black-box runtime scanner, OWASP LLM Top 10 (2025):
     LLM03
@@ -385,6 +389,29 @@ the model's replies, so no request this tool sends can exercise them and none of
 covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never reach a numerator (a Responsible-AI
 `RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%.
 
+**Why the AISVS figures are low, and should be.** OWASP AISVS lists 191 *controls* ("verify
+that a classifier screens every prompt"), not attacks. A black-box scanner never sees the
+classifier, the policy engine or the log, so it cannot verify that a control exists; it can only
+catch one failing. A spec's `aisvs` list therefore means: a **failure** of this spec is evidence
+that these controls are absent or ineffective. A pass means these probes did not falsify them,
+never that they are verified (clause A-28). Most of the standard is out of reach from outside by
+construction (training data, infrastructure, cryptographic identity, logging), and the gaps
+print in the same three groups as every other axis, with the reason. Some out-of-reach rows are
+operator processes this tool can serve as the **instrument** for even though no reply shows
+them: re-running the same battery after a model change (C3.2, C11.1.2, the battery digest proves
+it was the same suite), or using a campaign's stored probes as test traffic for the operator's
+logging and alerting (C12.1, C12.2).
+
+Read the 17 covered requirements with three cautions. Eight of them (C5.2.2, C5.2.4, C8.1.3,
+C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need something the operator
+provides: a seeded corpus or tool, a target that exposes its tool trace, or two identities.
+Today the runner sends a live target the prompt, the system prompt and the media, not a spec's
+documents, tool definitions or memory seed. C9.5.4 also needs the `offensive_simulation` policy
+layer, off by default. And two specs (`AC-BOLA-001`, `DL-XTENANT-001`) carry four rows each, so
+one failure lights four controls: the count is not independent evidence. The first mapping
+claimed 37; an audit read every spec behind them and kept these 17, and the reasons are pinned in
+`tests/cli/test_coverage_cmd.py`.
+
 ### `mock_scenario`, the offline replay selector
 
 An optional key in `target.yaml`, honoured **only** by the offline mock and ignored by every
@@ -407,7 +434,8 @@ read only the response text); `comprehending` decides exactly what `bare` decide
 ## 6. The attack battery
 
 75 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
-the Nova IoPC taxonomy. Every spec carries its framework mapping, including an optional
+the Nova IoPC taxonomy, and mapped by falsification to the OWASP AISVS controls they can catch
+failing. Every spec carries its framework mapping, including an optional
 two-axis `iopc:` block (`techniques` = the how, `impacts` = the damage), and the run report
 measures coverage against the pinned IoPC universe, so "we passed" always comes with "of what".
 `dottore registry ls` prints the live list; the columns are `id`, OWASP tag, band, category,

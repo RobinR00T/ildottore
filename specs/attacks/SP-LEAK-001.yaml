@@ -10,6 +10,7 @@ nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
   techniques: ["IOPC-T5.001"]
   impacts: ["IOPC-R031"]
+aisvs: ["v1.0-C2.1.6", "v1.0-C7.3.2"]
 severity: medium
 target_type: chatbot
 requires: [system_prompt]

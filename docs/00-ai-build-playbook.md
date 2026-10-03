@@ -32,7 +32,7 @@ defect, and each one names it: a rule with no incident behind it is an opinion.
    value back, or assert the replacement, or both.
 2. **Report what the code does, not what the patch intended.** Verify by executing the claim
    before writing it down. "Both are in now" was written from intent.
-3. **A clause with no check is prose** (this is why A-1..A-27 each name a test), and a check that
+3. **A clause with no check is prose** (this is why A-1..A-28 each name a test), and a check that
    cannot fail is not a check: try removing the behaviour and watch the test go red.
 
 **Changing an oracle**

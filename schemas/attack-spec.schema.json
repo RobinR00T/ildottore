@@ -91,6 +91,14 @@
         }
       }
     },
+    "aisvs": {
+      "type": "array",
+      "description": "OWASP AISVS 1.0 requirement IDs (v1.0-C<chapter>.<section>.<n>) whose control a FAIL of this spec is evidence against. Falsification only: a PASS never verifies a control. IDs only; the requirement text is CC-BY-SA and is not reproduced. Optional, so third-party spec packs keep validating.",
+      "items": {
+        "type": "string",
+        "pattern": "^v1\\.0-C[1-9][0-9]?\\.[1-9][0-9]?\\.[1-9][0-9]?\\Z"
+      }
+    },
     "severity": {
       "type": "string",
       "enum": [

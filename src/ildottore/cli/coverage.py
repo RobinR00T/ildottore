@@ -42,14 +42,14 @@ from ildottore.shared.models import AttackSpec
 __all__ = ["battery_coverage", "render_coverage", "render_coverage_json"]
 
 #: Axis keys accepted by ``--framework`` (``all`` keeps every axis).
-FRAMEWORK_KEYS: tuple[str, ...] = ("all", "owasp", "atlas", "iopc")
+FRAMEWORK_KEYS: tuple[str, ...] = ("all", "owasp", "atlas", "iopc", "aisvs")
 
 
 def _selected(coverage: BatteryCoverage, framework: str) -> tuple[AxisCoverage, ...]:
     if framework == "all":
         return coverage.axes
-    if framework == "iopc":
-        return tuple(a for a in coverage.axes if a.key.startswith("iopc"))
+    if framework in ("iopc", "aisvs"):
+        return tuple(a for a in coverage.axes if a.key.startswith(framework))
     return tuple(a for a in coverage.axes if a.key == framework)
 
 

@@ -23,6 +23,12 @@ import re
 from pathlib import Path
 
 from ildottore.shared import AttackSpec, EvaluatorType, VerdictStatus
+from ildottore.shared.aisvs import (
+    AISVS_NOT_TESTED_BY_DESIGN,
+    AISVS_OUT_OF_REACH,
+    AISVS_VERSION,
+    unknown_aisvs_codes,
+)
 from ildottore.shared.enums import RequiresCapability
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
@@ -276,6 +282,50 @@ def _check_iopc(spec: AttackSpec) -> list[LintError]:
     ]
 
 
+def _check_aisvs(spec: AttackSpec) -> list[LintError]:
+    """Every declared AISVS ID must exist, and must not be one the classification says a
+    black box cannot reach.
+
+    The first half is the IoPC rule again: a well-formed ID that is not in the pinned table
+    matches nothing and shrinks the numerator in silence. The second half is particular to a
+    framework of CONTROLS. ``aisvs`` on a spec claims "a fail here is evidence against this
+    control", and ``shared.aisvs`` classifies some controls as invisible from outside or as
+    deliberately untested. A spec claiming one of those contradicts the classification, and
+    one of the two is wrong: either the spec claims more than a black box can show, or the
+    requirement belongs back in the roadmap, argued in ``shared.aisvs``. Coverage would
+    otherwise quietly count the spec and drop the reason, with nobody deciding which was true.
+    """
+    if not spec.aisvs:
+        return []
+    errors = [
+        LintError(
+            code=LintCode.UNKNOWN_FRAMEWORK_CODE,
+            message=(
+                f"aisvs ID {code!r} is not in the pinned OWASP AISVS {AISVS_VERSION} table; an "
+                f"ID the standard does not contain matches nothing and silently shrinks coverage"
+            ),
+            spec_id=spec.id,
+        )
+        for code in unknown_aisvs_codes(spec.aisvs)
+    ]
+    for code in dict.fromkeys(spec.aisvs):
+        reason = AISVS_OUT_OF_REACH.get(code) or AISVS_NOT_TESTED_BY_DESIGN.get(code)
+        if reason is None:
+            continue
+        errors.append(
+            LintError(
+                code=LintCode.FRAMEWORK_CLAIM_CONTRADICTED,
+                message=(
+                    f"aisvs ID {code!r} is classified as not testable by this scanner "
+                    f"({reason[:80]}...). Either this spec claims more than a black box can "
+                    f"show, or the classification in shared/aisvs.py is wrong: fix one"
+                ),
+                spec_id=spec.id,
+            )
+        )
+    return errors
+
+
 def _check_frameworks(spec: AttackSpec) -> list[LintError]:
     """Every declared OWASP code and ATLAS tactic must belong to a pinned universe.
 
@@ -461,6 +511,7 @@ def lint_packs(
         findings.extend(_check_evaluator_config(spec))
         findings.extend(_check_oracle_markers(spec))
         findings.extend(_check_iopc(spec))
+        findings.extend(_check_aisvs(spec))
         findings.extend(_check_frameworks(spec))
         findings.extend(_check_fixtures(spec, table))
 

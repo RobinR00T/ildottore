@@ -10,6 +10,7 @@ nist_ai_rmf: "MEASURE 2.7 (sensitive-data exposure) / MANAGE 2.2 (excessive agen
 iopc:
   techniques: ["IOPC-T5.002"]
   impacts: ["IOPC-R032"]
+aisvs: ["v1.0-C9.5.4"]
 severity: high
 target_type: agent
 requires: [tools]
