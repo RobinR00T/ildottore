@@ -77,6 +77,27 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Added (OWASP AISVS 1.0 as a fourth coverage axis, mapped by falsification)
+
+- **AISVS lists 191 controls, not attacks, and a black box never sees a control.** So the new
+  optional `aisvs:` list on a spec means one thing: a **failure** of this spec is evidence that
+  the control is absent or ineffective. A pass verifies nothing, and nothing may say it does
+  (clause A-28). The table is pinned in `shared/aisvs.py` from `OWASP/AISVS@05c62d1` (51 / 95 /
+  45 by level), IDs and section headings only: the standard is CC-BY-SA and this repository is
+  MIT, so the requirement text stays upstream.
+- **`dottore coverage` prints one line per level: 5/51, 12/95, 0/45.** Every uncovered
+  requirement carries its reason in the same three groups as the other axes. Some out-of-reach
+  rows are operator processes this tool can serve as the instrument for (re-running the same
+  battery after a model change; stored probes as test traffic for logging and alerting).
+- **The first mapping claimed 37 covered; an independent audit kept 17.** It read every spec
+  behind every row: several only show the model *proposing* a tool call where the control is the
+  runtime blocking it, some test the tester's own schema or allowlist, four send a placeholder
+  instead of a concrete request, and the multilingual spec sends English. Bucket membership and
+  which spec carries which row are both pinned in `tests/cli/test_coverage_cmd.py`.
+- **New lint code `FRAMEWORK_CLAIM_CONTRADICTED`**: a spec may not claim a control the same table
+  classifies as out of reach or deliberately untested. One of the two statements would be false.
+- Coverage lists codes in natural order, so AISVS chapter 2 prints before chapter 10.
+
 ### Documentation (two claims the code does not back, and the decisions they need)
 
 - **A spec's setup never reaches a live target.** The runner sends the prompt, the system prompt,
