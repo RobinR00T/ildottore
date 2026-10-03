@@ -34,6 +34,7 @@ injected :class:`ScenarioProvider` so ``core`` never builds a u03 concrete.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -42,9 +43,10 @@ from typing import Protocol, runtime_checkable
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.conversation import reproduce_conversation
 from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error
+from ildottore.core.metering import SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import build_plan
-from ildottore.core.reproduce import DEFAULT_N, reproduce
+from ildottore.core.reproduce import DEFAULT_N, attempt_id_for, reproduce
 from ildottore.shared.enums import MIN_VARIANT_ATTEMPTS, InconclusiveReason, VerdictStatus
 from ildottore.shared.media import MediaError, media_digests
 from ildottore.shared.models import (
@@ -235,6 +237,7 @@ class CampaignRunner:
         wall_clock: Callable[[], float] | None = None,
         rate_rps: float | None = None,
         pacer: RateLimiter | None = None,
+        send_meter: SendMeter | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -281,6 +284,9 @@ class CampaignRunner:
         # fiction. The limiter therefore keeps real loop time, and a test injects a fully
         # controlled ``pacer`` instead.
         self._pacer = pacer if pacer is not None else RateLimiter(rate_rps)
+        # Sends made outside the runner (the --judge model) are metered against this campaign's
+        # ledger and pacer while it runs (audit 2026-10-03, F6 / F-7, core.metering).
+        self._send_meter = send_meter
 
     async def run(
         self,
@@ -351,16 +357,22 @@ class CampaignRunner:
         # Selected specs run under a bounded semaphore; a budget breach halts all.
         selected_specs = [s for s in specs if s.id in selected_ids and s.id not in skipped_ids]
         semaphore = asyncio.Semaphore(self._concurrency)
-        spec_findings, breach_reason, halt_state = await self._run_selected(
-            run_id=run_id,
-            target=target,
-            specs=selected_specs,
-            plan=plan,
-            ledger=ledger,
-            completed=completed,
-            semaphore=semaphore,
-            prior_by_spec=prior_by_spec,
+        metered = (
+            self._send_meter.bound(ledger, self._pacer)
+            if self._send_meter is not None
+            else contextlib.nullcontext()
         )
+        with metered:
+            spec_findings, breach_reason, halt_state = await self._run_selected(
+                run_id=run_id,
+                target=target,
+                specs=selected_specs,
+                plan=plan,
+                ledger=ledger,
+                completed=completed,
+                semaphore=semaphore,
+                prior_by_spec=prior_by_spec,
+            )
         findings.extend(spec_findings)
         if halt_state is not None:
             status = halt_state
@@ -531,7 +543,13 @@ class CampaignRunner:
             # can flag a tenant-scoped canary reaching a non-owner identity. Empty for a single-
             # identity target, so authz_leak stays honestly capability_unavailable there.
             identities_map, canary_owners = await self._gather_identities(
-                target, spec, base_prompt, run_id
+                target,
+                spec,
+                base_prompt,
+                run_id,
+                ledger=ledger,
+                mutators=mutators,
+                completed=completed,
             )
             for mutation in mutators:
                 if multi_turn:
@@ -640,7 +658,15 @@ class CampaignRunner:
     # --- multi-identity (authz_leak, audit M14) ------------------------------
 
     async def _gather_identities(
-        self, target: Target, spec: AttackSpec, base_prompt: str, run_id: str
+        self,
+        target: Target,
+        spec: AttackSpec,
+        base_prompt: str,
+        run_id: str,
+        *,
+        ledger: BudgetLedger,
+        mutators: Sequence[str] = (),
+        completed: set[str] | frozenset[str] = frozenset(),
     ) -> tuple[dict[str, ModelResponse] | None, dict[str, str]]:
         """Send the attack as each authorized identity; collect responses + owner map.
 
@@ -648,9 +674,21 @@ class CampaignRunner:
         provider yields >=2 identities, else ``(None, {})`` so authz_leak stays honestly
         capability_unavailable. Each identity sends with its own credential; a per-identity
         send failure drops that identity rather than sinking the whole spec.
+
+        Each send is paced AND debited: the sweep took no ledger, so ten identities went out
+        under a ceiling of two and the run reported ``complete`` (audit 2026-10-03, F-7). And
+        on a resume where every attempt of the spec is already stored there is nothing left
+        to evaluate, so the sweep is skipped instead of being re-sent (F6).
         """
 
         if self._identity_adapters is None or not _is_multi_identity(spec):
+            return None, {}
+        planned = {
+            attempt_id_for(spec.id, mutation, index)
+            for mutation in mutators
+            for index in range(self._n)
+        }
+        if planned and planned <= completed:
             return None, {}
         probes = list(self._identity_adapters(target))
         if len(probes) < 2:
@@ -666,7 +704,10 @@ class CampaignRunner:
                 # Paced like every other send: an identity sweep is N more requests on the
                 # wire, so it obeys the authorized rate too.
                 await self._pacer.acquire()
+                ledger.debit_request()
                 response = await probe.adapter.send(request)
+            except BudgetExhausted:
+                raise
             except Exception:
                 # A single bad identity (transport/env error) is skipped, not fatal.
                 response = None

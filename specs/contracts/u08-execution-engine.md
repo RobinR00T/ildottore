@@ -120,7 +120,11 @@ clock; the evidence keeps the deterministic one; a test asserts the two are not 
 single-turn **and** multi-turn paths and counts retries. The limiter reached
 `reproduce_conversation` and was not forwarded one hop, so 42% of a full battery's requests ran
 unpaced at 19x the authorized rate while the flag looked wired. A cross-cutting parameter is
-asserted by counting calls at the point of use, never by reading the call site.
+asserted by counting calls at the point of use, never by reading the call site. Amended
+2026-10-03 (audit F-4, F10): the count is now taken through `CampaignRunner.run` for single-turn,
+multi-turn and identity sends, not at two leaf functions, and a campaign's adapters retry
+nothing themselves, so the runner's retries are the only ones and each passes the gate
+(`tests/test_audit_block4_budget.py`).
 
 **A-6 A campaign that did not finish says why.** `CampaignResult` carries the breached axis,
 its ceiling and how many specs never ran. A bare state word is not a reason: a spec that never

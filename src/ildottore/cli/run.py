@@ -260,10 +260,19 @@ class PlanEstimate:
     input_tokens: int
     output_tokens: int
     by_category: dict[str, int]
+    #: Requests to the ``--judge`` model and their rough token volume. Counted apart, because
+    #: they go to another endpoint, and counted at all, because they debit the same ceiling:
+    #: `--estimate --judge` used to print the same figure as without a judge (audit D-28).
+    judge_requests: int = 0
+    judge_tokens: int = 0
 
     @property
     def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
+        return self.input_tokens + self.output_tokens + self.judge_tokens
+
+    @property
+    def total_requests(self) -> int:
+        return self.requests + self.judge_requests
 
 
 @dataclass
@@ -301,11 +310,20 @@ def _effective_mutators(spec: AttackSpec) -> list[str]:
     return list(dict.fromkeys(ordered))
 
 
+#: Requests the judge sends per evaluated attempt (``SemanticJudgeEvaluator`` self-consistency
+#: passes, minimum 2), and the rough token gloss of one: the rubric and delimiters around the
+#: target's reply on the way in, a short JSON verdict on the way out.
+JUDGE_PASSES = 2
+JUDGE_RUBRIC_TOKENS = 400
+JUDGE_OUTPUT_TOKENS = 200
+
+
 def estimate_plan(
     specs: list[AttackSpec],
     runs: int,
     *,
     mutators_by_spec: dict[str, list[str]] | None = None,
+    judge: bool = False,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -320,6 +338,8 @@ def estimate_plan(
     total_requests = 0
     total_in = 0
     total_out = 0
+    judge_requests = 0
+    judge_tokens = 0
     by_category: dict[str, int] = {}
     for spec in specs:
         mutators = (mutators_by_spec or {}).get(spec.id) or _effective_mutators(spec)
@@ -337,12 +357,21 @@ def estimate_plan(
         total_in += requests * in_tokens
         total_out += requests * out_tokens
         by_category[spec.category.value] = by_category.get(spec.category.value, 0) + requests
+        if judge and any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators):
+            # One judgement per attempt (the final reply of a conversation), not per turn.
+            judged = len(mutators) * runs * JUDGE_PASSES
+            judge_requests += judged
+            judge_tokens += judged * (
+                in_tokens + out_tokens + JUDGE_RUBRIC_TOKENS + JUDGE_OUTPUT_TOKENS
+            )
     return PlanEstimate(
         specs=len(specs),
         requests=total_requests,
         input_tokens=total_in,
         output_tokens=total_out,
         by_category=by_category,
+        judge_requests=judge_requests,
+        judge_tokens=judge_tokens,
     )
 
 
@@ -401,10 +430,10 @@ def budgets_for(
 
     o = overrides if overrides is not None else PlanBudgets()
     tokens = int(estimate.total_tokens * BUDGET_HEADROOM)
-    requests = int(estimate.requests * BUDGET_HEADROOM)
+    requests = int(estimate.total_requests * BUDGET_HEADROOM)
     wall_s = DEFAULT_PLAN_BUDGETS.max_wall_s or 0
     if rate_rps is not None and rate_rps > 0:
-        wall_s = max(wall_s, int(estimate.requests / rate_rps * BUDGET_HEADROOM) + 1)
+        wall_s = max(wall_s, int(estimate.total_requests / rate_rps * BUDGET_HEADROOM) + 1)
     return PlanBudgets(
         max_tokens=_axis(
             DEFAULT_PLAN_BUDGETS.max_tokens, tokens, BUDGET_DERIVATION_CAP.max_tokens, o.max_tokens
@@ -437,6 +466,7 @@ def resolve_target_plans(
     fingerprints: dict[str, ModelFingerprint] | None = None,
     adaptive: bool = False,
     budget_overrides: PlanBudgets | None = None,
+    judge: bool = False,
 ) -> list[TargetPlan]:
     """Resolve, per target, exactly what the run would do - without sending anything.
 
@@ -474,7 +504,7 @@ def resolve_target_plans(
                 runnable.append(spec)
             else:
                 blocked.append((spec.id, verdict.reason or "blocked_by_policy"))
-        estimate = estimate_plan(runnable, runs, mutators_by_spec=mutators_by_spec)
+        estimate = estimate_plan(runnable, runs, mutators_by_spec=mutators_by_spec, judge=judge)
         plans.append(
             TargetPlan(
                 target=target,
@@ -574,6 +604,13 @@ def _print_estimate(
         f"estimate: {requests} requests over {specs} spec-runs "
         f"across {len(plans)} target(s) at runs={runs} (no sends made)"
     )
+    judge_requests = sum(p.estimate.judge_requests for p in plans)
+    if judge_requests:
+        judge_tokens = sum(p.estimate.judge_tokens for p in plans)
+        print(
+            f"  + {judge_requests} request(s) to the --judge model (~{judge_tokens} tokens), "
+            "paced and debited from the same ceilings"
+        )
     print(
         f"  ~tokens: {tokens_in} in + {tokens_out} out "
         f"(~{tokens_in + tokens_out} total, rough gloss)"
@@ -680,6 +717,12 @@ def _print_dry_run_plan(
                 for spec_id, reason in plan.blocked_by_policy:
                     print(f"    - {spec_id}: {reason}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
+    judge_requests = sum(p.estimate.judge_requests for p in plans)
+    if judge_requests:
+        print(
+            f"  judge:   +{judge_requests} request(s) to the --judge model, paced and debited "
+            "from the same ceilings"
+        )
     if fingerprint_probes:
         print(
             f"  fingerprint: +{fingerprint_probes} probe(s) per target before the battery "
@@ -748,6 +791,14 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     (a budget ceiling) is reported as such and exits 3.
     """
 
+    # `--rate 0` or a negative rate used to switch pacing OFF (the limiter reads <= 0 as
+    # "unpaced"), and the dry run then described a live target as an offline mock run. A
+    # rate is a ceiling the operator authorizes; zero or less is not one (audit 2026-10-03, R8).
+    if opts.rate is not None and not opts.rate > 0:
+        raise ValueError(
+            f"--rate must be greater than 0 requests per second (got {opts.rate}); omit it to "
+            "use the timing template's rate"
+        )
     if opts.scope is None:
         raise ScopeRequiredError(
             "run requires --scope <scope.yaml>: the authorization record is mandatory "
@@ -933,6 +984,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 max_requests=opts.budget_requests,
                 max_wall_s=opts.budget_wall_s,
             ),
+            judge=judge_target is not None,
         )
         prior_spend = _prior_spend(run_db, opts.resume, provisional[0].budgets)
         if opts.fingerprint_first and prior_spend is not None:
@@ -1060,6 +1112,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             max_requests=opts.budget_requests,
             max_wall_s=opts.budget_wall_s,
         ),
+        judge=judge_target is not None,
     )
 
     # A target with nothing left to run is refused, for the same reason an empty --spec

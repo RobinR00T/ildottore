@@ -77,6 +77,33 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (full audit of 2026-10-03: budget and rate)
+
+- **The `--judge` model and the multi-identity sweep sent outside the request ceiling and the
+  rate gate.** With a judge, `--budget-requests 5` sent 15; ten identities went out under a
+  ceiling of two and the run said `complete`. The judge is now wrapped in a metered adapter bound
+  to the campaign's ledger and pacer, the sweep debits each send, and a resume of a finished
+  spec no longer re-sends the sweep. `--estimate` and `--dry-run` show the judge's requests
+  (`+700` on the bare-model shape of docs/16) and the derived ceilings make room for them.
+- **Retries were nested**: on a 429 storm one attempt was 12 wire requests, billed as 4 and paced
+  as 4, in 50 ms bursts. A campaign's adapters retry nothing themselves now; the runner's
+  retries are the only ones, each paced and debited.
+- **Billed tokens went unrecorded and failed sends kept their reservation.** A reply that crossed
+  the token ceiling was refused by the ledger after the provider had charged it, so the spend
+  a resume inherits was too low; it is recorded now, then the halt. A send that failed releases
+  its reservation, so a flaky endpoint no longer exhausts the ceiling with zero tokens consumed.
+- **`--rate 0` and negative rates switched pacing off** and the dry run called a live target an
+  offline mock. They are refused (exit 3).
+- **Tests that could not fail**: the rate gate is now counted through the whole runner, the
+  resume-spend test counts attempts that really reached the evidence store, the run store's
+  spend merge has a monotonic test, and resuming with a different judge or planning mode has
+  one each (`tests/test_audit_block4_budget.py`; every fix was mutation-checked against its
+  test).
+- Still open: a reply over the token ceiling is recorded but its evidence is dropped; specs
+  with no `sampling.max_tokens` reserve nothing before the send, so concurrent sends can still
+  overshoot the token ceiling (the overshoot is now recorded); and the `-sV` probe adapter keeps
+  its own retries.
+
 ### Fixed (review of PR #32: what the audit fixes introduced or left)
 
 Three reviewers ran the four audit commits in isolated worktrees the same evening and

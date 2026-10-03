@@ -48,6 +48,14 @@ and send it elsewhere. Add the block; `fleet` then writes `judge.yaml` and `--ru
 `--judge` file is still accepted when it names the same id, endpoint and credential. `run`
 with your own scope is unchanged: the judge must be in that scope.
 
+### Do `--budget-requests` and `--rate` count the judge's requests?
+
+Yes, since 2026-10-03. The judge sends two requests per evaluated attempt, and they used to sit
+outside both the request ceiling and the rate gate, so `--budget-requests 5` with a judge sent
+15. They are now paced and debited like the target's, `--estimate` and `--dry-run` show them on
+their own line, and the derived ceilings make room for them. The multi-identity sweep counts
+too.
+
 ### Can the judge itself be fooled by a prompt injection?
 
 That is assumed and defended. The judge gets a per-call random tripwire token; it is flagged

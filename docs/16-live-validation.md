@@ -48,6 +48,11 @@ battery of 75 specs at the default `runs=5`:
 | A bare hosted model (`type: model`, no tools/rag/memory/multimodal) | 34 | 550 | ~395k |
 | A fully capable deployment (`type: agent`, every capability declared) | 67 | 780 (+17 with `-sV`) | ~523k |
 
+With `--judge`, add the judge model's own traffic: for the first shape, `--estimate --judge`
+prints **+700 requests (~954k tokens)** to the judge, two per evaluated attempt. Since
+2026-10-03 those requests are paced and debited from the same ceilings, and the estimate counts
+them; before that, `--estimate --judge` printed the same 550 as without a judge.
+
 Two things that table says out loud:
 
 * **A raw model endpoint cannot exercise the battery.** 39 of 75 specs are capability-gated and
@@ -113,7 +118,7 @@ between (clause A-24).
 * **Keys by env reference only** (`auth_ref: "env://OPENAI_API_KEY"`). A key never belongs in a
   target file, and the evidence store redacts at rest regardless.
 * **Rate.** `--rate 1` is one request per second. Providers rate-limit and so should you: the
-  pacer is shared by the probes and the battery.
+  pacer is shared by the probes, the battery, the identity sweep and the judge.
 * **Judge.** Without `--judge`, `semantic_judge` abstains and the deterministic evaluators
   carry alone. A live run is worth the second model.
 

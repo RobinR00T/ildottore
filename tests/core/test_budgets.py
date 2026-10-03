@@ -72,7 +72,9 @@ def test_add_tokens_reconciliation_can_breach() -> None:
     ledger.debit_request(tokens=10)
     with pytest.raises(BudgetExhausted):
         ledger.add_tokens(45)  # 10 + 45 = 55 > 50
-    assert ledger.snapshot().tokens == 10
+    # The 45 were already billed by the provider: recorded, then the halt (audit F7). The old
+    # behaviour kept 10, so the spend a resume inherits was below what was actually charged.
+    assert ledger.snapshot().tokens == 55
 
 
 def test_check_wall_noop_when_unbounded() -> None:

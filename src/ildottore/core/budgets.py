@@ -206,20 +206,34 @@ class BudgetLedger:
             self._attempts = next_attempts
 
     def add_tokens(self, tokens: int) -> None:
-        """Account tokens observed *after* a response (usage reconciliation); refuse on breach.
+        """Account tokens observed *after* a response (usage reconciliation); halt on breach.
 
-        Providers report actual token usage only in the response, which can exceed
-        the caller's pre-debit estimate. Reconciling here keeps the token ceiling
-        honest without letting a single response silently blow the budget.
+        Providers report actual token usage only in the response, which can exceed the
+        caller's pre-debit estimate. These tokens were already billed, so they are COMMITTED
+        first and the breach is raised after: refusing to record them left the ledger, and the
+        spend a ``--resume`` inherits, below what the provider charged (240 tokens consumed,
+        60 recorded, and the resume granted 40 more; audit 2026-10-03, F7).
         """
 
         if tokens < 0:
             raise ValueError("tokens must be non-negative")
         with self._lock:
-            next_tokens = self._tokens + tokens
-            if self._max_tokens is not None and next_tokens > self._max_tokens:
-                raise BudgetExhausted("max_tokens", self._max_tokens, next_tokens)
-            self._tokens = next_tokens
+            self._tokens += tokens
+            if self._max_tokens is not None and self._tokens > self._max_tokens:
+                raise BudgetExhausted("max_tokens", self._max_tokens, self._tokens)
+
+    def refund_tokens(self, tokens: int) -> None:
+        """Release a pre-send token reservation for a send that produced no completion.
+
+        A send that raised was never billed for its completion; keeping its reservation made a
+        flaky endpoint exhaust the token ceiling with zero tokens consumed and persisted that
+        phantom spend for the resume (audit 2026-10-03, F18). The request itself still counts.
+        """
+
+        if tokens < 0:
+            raise ValueError("tokens must be non-negative")
+        with self._lock:
+            self._tokens = max(0, self._tokens - tokens)
 
     # --- read ----------------------------------------------------------------
 

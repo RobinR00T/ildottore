@@ -114,6 +114,11 @@ store can.
 `--budget-requests` cover fingerprint probes as well as attack traffic. Probes do not travel
 through the runner, so they were bounded by neither: `--budget-requests 2 -sV` sent 30 requests
 and then reported "limit 2, attempted 3", counting only the half that passed the ledger.
+Amended 2026-10-03 (audit F6 / F-7): the multi-identity sweep and the `--judge` model were the
+two remaining exceptions (ten identities under a ceiling of two; `--budget-requests 5` sent 15
+with a judge). The sweep debits the ledger and is skipped on a resume of a finished spec; the
+judge is wrapped in `core.metering.MeteredAdapter`, bound to the campaign's ledger and pacer,
+and the estimate and the derived ceilings count it.
 
 **A-24 A resume is bound to its campaign: the battery, the target, the route, the sample size
 and the money (added 2026-09-22, widened the same night after audit).** Every one of these was
