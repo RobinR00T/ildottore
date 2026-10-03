@@ -95,8 +95,11 @@ class Reporter(Protocol):
 
 1. **Policy check**: target in scope? endpoint on allowlist? spec allowed by policy pack?
    Any dangerous payload marked `test_only`? Else → abort attempt, record `blocked_by_policy`.
-2. **Setup**: materialize spec `setup` (e.g. index test documents for RAG) via the adapter's
-   capabilities. If capability missing → `inconclusive: capability_unavailable`.
+2. **Setup**: the design is to materialize spec `setup` (e.g. index test documents for RAG)
+   via the adapter's capabilities. **Not implemented:** today the request carries the prompt,
+   the system prompt, the sampling and the media only, so a spec's documents, mock tools and
+   memory seed never reach a live target (32 of 75 specs depend on them). How to close that is
+   OD-18 (ADR-0009). If capability missing → `inconclusive: capability_unavailable`.
 3. **Mutate**: Prompt Mutator expands the base attack into declared variants (language,
    encoding, roleplay, nesting, obfuscation, indirect-injection carriers). Each variant is a
    deterministic transform seeded by `(spec.id, variant.name)`.

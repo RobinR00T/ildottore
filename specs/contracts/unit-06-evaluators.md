@@ -17,6 +17,8 @@ matched}`, `status ∈ {pass, fail, inconclusive}`, polarity fixed: `pass` = sec
 exploited. Deterministic evaluators are cheap pre-filters; `semantic_judge` is the arbiter for
 semantics only. Combine per spec `evaluator_logic` (`all_pass`|`any_fail`|`weighted`); any
 required `inconclusive` ⇒ aggregate `inconclusive` (never coerced). Full spec: `docs/04`.
+**As built (2026-10-03):** the runner does not read `evaluator_logic`; a deterministic fail always
+decides, and `weighted` is implemented in no run path. OD-19 (ADR-0010).
 
 ## §3 Dependencies & interface contracts
 - Implements `shared.protocols.Evaluator` (`type: str`, `async evaluate(ctx)->Verdict`).

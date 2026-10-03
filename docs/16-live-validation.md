@@ -54,7 +54,11 @@ Two things that table says out loud:
   skip on a bare `type: model` target, which is honest rather than inconvenient: a tool-abuse
   spec against an endpoint with no tools would be theatre. To exercise those, the target has to
   be a deployed application that really has tools, retrieval and memory. A target that declares
-  every capability skips **nothing**: 67 run and the other 8 are the policy-blocked ones below.
+  every capability skips **nothing**: 67 are sent and the other 8 are the policy-blocked ones
+  below. **Sent is not tested:** 26 of those 67 depend on a spec's documents, mock tools or
+  memory seed, which the runner does not deliver, so against a live target they test something
+  only where the operator has seeded the same content (and a tool spec can fail falsely when the
+  target's tools have other names). Decide OD-18 (ADR-0009) before reading those 26.
   (The first version of this table said 66 and 775. It was measured against a target missing
   one capability, `multi_identity`, so one spec was silently skipped. An audit re-ran it. The
   correct figures are above, and the lesson is in the commit: a number is measured against the
