@@ -28,6 +28,15 @@ Shape::
       - id: my-mcp                       # a Model Context Protocol server (read-only discovery)
         kind: mcp
         endpoint: http://localhost:3000/mcp
+    judge:                               # optional: the LLM-as-judge for semantic_judge
+      id: local-judge
+      endpoint: http://localhost:11434/v1/chat/completions
+      model: llama3.2:3b
+
+The judge is declared here, not only in a ``--judge`` file, because this file is the
+authorization record the generated scope is built from. A judge file that authorized itself
+could name any host and any environment variable, and the scanner would read that credential
+and send it there with the targets' replies (audit SEC-04, 2026-10-03).
 
 ``kind: mcp`` routes to the read-only :class:`~ildottore.adapters.mcp.MCPAdapter`, which
 inspects the server's advertised tool / resource / prompt metadata (it never calls a tool).
@@ -47,6 +56,7 @@ from ildottore.shared.models import Target
 
 __all__ = [
     "FleetConfig",
+    "FleetJudge",
     "FleetTarget",
     "MaterializedFleet",
     "infer_provider",
@@ -71,6 +81,25 @@ class FleetTarget(BaseModel):
     capabilities: dict[str, bool] = Field(default_factory=dict)
 
 
+class FleetJudge(BaseModel):
+    """The LLM-as-judge, declared in the fleet file so that file stays the one authorization.
+
+    ``fleet`` writes it to ``judge.yaml`` next to the targets and authorizes it in the scope.
+    A ``--judge`` file is still accepted, but only when it names this same id, endpoint and
+    credential: the scope entry is built from this declaration, never from the file.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(
+        default="judge", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    )
+    endpoint: str = Field(min_length=1)
+    provider: str | None = None  # inferred from the endpoint if None, as for a target
+    model: str | None = None
+    api_key_env: str | None = None  # env var NAME (never the key value)
+
+
 class FleetConfig(BaseModel):
     """The whole fleet an operator wants to validate."""
 
@@ -78,6 +107,7 @@ class FleetConfig(BaseModel):
 
     version: str = "1"
     targets: list[FleetTarget] = Field(min_length=1)
+    judge: FleetJudge | None = None
 
 
 class MaterializedFleet(BaseModel):
@@ -87,6 +117,7 @@ class MaterializedFleet(BaseModel):
 
     scope_path: Path
     target_paths: list[Path] = Field(default_factory=list)
+    judge_path: Path | None = None  # judge.yaml, written when the fleet declares a judge
     skipped: list[tuple[str, str]] = Field(default_factory=list)  # (target id, reason)
 
 
@@ -119,13 +150,48 @@ def load_fleet(path: str | Path) -> FleetConfig:
     return FleetConfig.model_validate(raw)
 
 
-def _endpoint_yaml(entry: FleetTarget) -> tuple[str, str]:
-    """Return (host, path) for the scope allowlist from an entry's endpoint."""
+_DEFAULT_PORTS = {"https": 443, "http": 80}
 
-    parts = urlsplit(entry.endpoint)
-    host = parts.hostname or entry.endpoint
+
+def _scope_endpoint(endpoint: str) -> tuple[str, str]:
+    """Return (host, path) for the scope allowlist, with the host pinned to its port.
+
+    The generated scope used to write the bare host name, which the allowlist reads as "any
+    port", so a fleet entry for ``localhost:11434`` also authorized ``localhost:2375`` and every
+    other port on that machine (audit SEC-13). The port is the URL's own, or the scheme's
+    default; an IPv6 literal is bracketed so the allowlist can split it. Schemes with no default
+    port (the offline ``mock://``) keep the bare host.
+    """
+
+    parts = urlsplit(endpoint)
     path = parts.path or "/"
-    return host, path
+    host = parts.hostname
+    if not host:
+        return endpoint, path
+    try:
+        port = parts.port or _DEFAULT_PORTS.get(parts.scheme.lower())
+    except ValueError as exc:
+        raise ValueError(f"endpoint {endpoint!r} has an invalid port") from exc
+    shown = f"[{host}]" if ":" in host else host
+    return (f"{shown}:{port}" if port else shown), path
+
+
+def _scope_entry(target_id: str, endpoint: str, api_key_env: str | None) -> dict[str, object]:
+    """One scope target: its endpoint pinned to host, port and path, and its one credential.
+
+    ``identities`` is required (min 1) and is also the credential allowlist: an entry's own
+    ``auth_ref`` must be declared here or resolving it is refused. A keyless entry gets
+    ``env://NONE``, a placeholder no environment defines.
+    """
+
+    host, path = _scope_endpoint(endpoint)
+    auth = f"env://{api_key_env}" if api_key_env else "env://NONE"
+    return {
+        "id": target_id,
+        "base_url": endpoint,
+        "endpoints": [{"host": host, "path_prefixes": [path]}],
+        "identities": [{"name": "default", "auth_ref": auth}],
+    }
 
 
 def _target_doc(entry: FleetTarget) -> dict[str, object]:
@@ -152,48 +218,77 @@ def _target_doc(entry: FleetTarget) -> dict[str, object]:
     return doc
 
 
-def _judge_scope_entry(judge: Target) -> dict[str, object]:
-    """The scope entry that authorizes the ``--judge`` model.
+def _judge_doc(judge: FleetJudge) -> dict[str, object]:
+    """Build ``judge.yaml`` from the fleet's declaration (serialized via safe_dump).
 
-    The judge is a model this tool sends prompts to, so it needs authorizing like any other
-    target. The generated scope used to list only the fleet's own targets, which meant the
-    documented ``fleet --run --judge`` command produced a scope the judge was absent from:
-    every ``semantic_judge`` verdict then came back inconclusive for lack of authorization,
-    with the reason written only into the JSON, and the run exited 0.
+    A judge is a model, sampled at temperature 0 so its verdict on the same reply is stable.
     """
 
-    endpoint = judge.endpoint or ""
-    parsed = urlsplit(endpoint)
-    host = parsed.hostname or endpoint
-    prefix = parsed.path or "/"
-    # ``identities`` is required (min 1) and is also the credential allowlist: the judge's
-    # own ``auth_ref`` must be declared here or resolving it is refused. A keyless local
-    # judge gets ``env://NONE``, the same placeholder the fleet's own entries use.
-    return {
+    doc: dict[str, object] = {
         "id": judge.id,
-        "base_url": endpoint,
-        "endpoints": [{"host": host, "path_prefixes": [prefix]}],
-        "identities": [{"name": "default", "auth_ref": judge.auth_ref or "env://NONE"}],
+        "type": "model",
+        "provider": judge.provider or infer_provider(judge.endpoint),
+        "endpoint": judge.endpoint,
+        "capabilities": {"tools": False, "rag": False},
+        "sampling_defaults": {"temperature": 0.0},
     }
+    if judge.model:
+        doc["model"] = judge.model
+    if judge.api_key_env:
+        doc["auth_ref"] = f"env://{judge.api_key_env}"
+    return doc
 
 
-def _scope_doc(entries: list[FleetTarget], *, judge: Target | None = None) -> dict[str, object]:
+def _check_judge(config: FleetConfig, judge: Target | None) -> None:
+    """Refuse a ``--judge`` file the fleet does not declare, or one that differs from it.
+
+    The judge used to be authorized from the ``--judge`` file itself: its host went into the
+    generated scope and so did its ``auth_ref``. A judge file naming another host and
+    ``env://ANY_VARIABLE`` therefore made the scanner read that variable and send it, with the
+    targets' replies, to a host no authorization record listed, the very thing the scope's
+    credential allowlist exists to prevent (audit SEC-04). The same file passed to ``run`` with
+    a signed scope was refused.
+    """
+
+    declared = config.judge
+    if declared is not None:
+        for target in config.targets:
+            if target.id == declared.id and (
+                target.endpoint != declared.endpoint or target.api_key_env != declared.api_key_env
+            ):
+                raise ValueError(
+                    f"the fleet's judge {declared.id!r} has the id of a target with a different "
+                    "endpoint or credential; give the judge its own id"
+                )
+    if judge is None:
+        return
+    if declared is None:
+        raise ValueError(
+            f"--judge names {judge.id!r}, which the fleet file does not declare. Add a "
+            "`judge:` block to the fleet file with its id, endpoint and api_key_env: the fleet "
+            "file is the authorization record, and a judge file cannot authorize itself"
+        )
+    expected_auth = f"env://{declared.api_key_env}" if declared.api_key_env else None
+    mismatches = [
+        f"{name} {got!r} (the fleet declares {want!r})"
+        for name, got, want in (
+            ("id", judge.id, declared.id),
+            ("endpoint", judge.endpoint, declared.endpoint),
+            ("auth_ref", judge.auth_ref, expected_auth),
+        )
+        if got != want
+    ]
+    if mismatches:
+        raise ValueError("--judge does not match the fleet's judge: " + "; ".join(mismatches))
+
+
+def _scope_doc(config: FleetConfig) -> dict[str, object]:
     """Build the authorization ``scope.yaml`` document (serialized via safe_dump)."""
 
-    targets: list[dict[str, object]] = []
-    for entry in entries:
-        host, path = _endpoint_yaml(entry)
-        auth = f"env://{entry.api_key_env}" if entry.api_key_env else "env://NONE"
-        targets.append(
-            {
-                "id": entry.id,
-                "base_url": entry.endpoint,
-                "endpoints": [{"host": host, "path_prefixes": [path]}],
-                "identities": [{"name": "default", "auth_ref": auth}],
-            }
-        )
-    if judge is not None and judge.id not in {str(t["id"]) for t in targets}:
-        targets.append(_judge_scope_entry(judge))
+    targets = [_scope_entry(e.id, e.endpoint, e.api_key_env) for e in config.targets]
+    judge = config.judge
+    if judge is not None and judge.id not in {e.id for e in config.targets}:
+        targets.append(_scope_entry(judge.id, judge.endpoint, judge.api_key_env))
     return {"version": "1.0", "targets": targets}
 
 
@@ -207,8 +302,9 @@ def materialize_fleet(
     for forward-compatibility with kinds that have no adapter yet (none today). A fleet with
     **no** targets raises rather than writing an empty (min_length) scope.
 
-    ``judge`` (the ``--judge`` target, when one is given) is added to the generated scope, so
-    the LLM-as-judge is authorized rather than silently denied (see :func:`_judge_scope_entry`).
+    A judge declared in the fleet file is authorized in the generated scope and written to
+    ``judge.yaml``, so the LLM-as-judge is not silently denied. ``judge`` (a ``--judge`` file,
+    when one is given) must match that declaration, or this raises (see :func:`_check_judge`).
     """
 
     out = Path(out_dir)
@@ -220,6 +316,8 @@ def materialize_fleet(
             raise ValueError(f"duplicate target id {target.id!r} in fleet")
         seen.add(target.id)
 
+    _check_judge(config, judge)
+
     scannable = list(config.targets)
     skipped: list[tuple[str, str]] = []
 
@@ -227,9 +325,7 @@ def materialize_fleet(
         raise ValueError("fleet has no targets to scan")
 
     scope_path = out / "scope.yaml"
-    scope_path.write_text(
-        yaml.safe_dump(_scope_doc(scannable, judge=judge), sort_keys=False), encoding="utf-8"
-    )
+    scope_path.write_text(yaml.safe_dump(_scope_doc(config), sort_keys=False), encoding="utf-8")
 
     target_paths: list[Path] = []
     for entry in scannable:
@@ -239,4 +335,13 @@ def materialize_fleet(
         )
         target_paths.append(target_path)
 
-    return MaterializedFleet(scope_path=scope_path, target_paths=target_paths, skipped=skipped)
+    judge_path: Path | None = None
+    if config.judge is not None:
+        judge_path = out / "judge.yaml"
+        judge_path.write_text(
+            yaml.safe_dump(_judge_doc(config.judge), sort_keys=False), encoding="utf-8"
+        )
+
+    return MaterializedFleet(
+        scope_path=scope_path, target_paths=target_paths, skipped=skipped, judge_path=judge_path
+    )

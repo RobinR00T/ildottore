@@ -2,6 +2,10 @@
 # Expand it with:   dottore fleet specs/fleet.example.yaml --out .dottore/fleet
 # then scan the generated targets, or add --run to scan immediately.
 #
+# The generated scope pins every endpoint to its host AND port (api.openai.com:443,
+# localhost:11434), so authorizing a local model does not authorize every other port on
+# that machine.
+#
 # API keys are NEVER written here: each entry names an environment variable
 # (api_key_env), resolved only at send time. `provider` is inferred from the endpoint
 # host when omitted (api.openai.com -> openai, api.anthropic.com -> anthropic, else rest).
@@ -35,3 +39,11 @@ targets:
   - id: my-mcp
     kind: mcp
     endpoint: http://localhost:3000/mcp
+
+# Optional: the LLM-as-judge for semantic_judge, authorized from this block (a --judge file
+# must name the same id, endpoint and credential). Written to <out>/judge.yaml.
+judge:
+  id: judge-haiku
+  endpoint: https://api.anthropic.com/v1/messages
+  model: claude-haiku-4-5-20251001
+  api_key_env: ANTHROPIC_API_KEY

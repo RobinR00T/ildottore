@@ -331,7 +331,12 @@ def fleet(
         bool, typer.Option("--run", help="Scan every expanded target immediately.")
     ] = False,
     judge: Annotated[
-        Path | None, typer.Option("--judge", help="Judge model target.yaml (for semantic_judge).")
+        Path | None,
+        typer.Option(
+            "--judge",
+            help="Judge target.yaml; must match the fleet file's `judge:` block, which is "
+            "used on its own when this is omitted.",
+        ),
     ] = None,
     runs: Annotated[int, typer.Option("--runs", help="Reproducibility runs (default 5).")] = 5,
     categories: Annotated[
@@ -344,11 +349,12 @@ def fleet(
     Declares the whole set of targets to validate in one place (hosted LLMs by API-key env
     reference, a local model, a raw URL, or an MCP server). Keys are never written, each
     entry references an env var. With ``--run`` it scans every expanded target right away.
+    A judge is authorized only when the fleet file declares it in a ``judge:`` block.
     """
 
     try:
         cfg = fleet_mod.load_fleet(config)
-        # The judge model goes into the generated scope: it is a target we send prompts to.
+        # The scope is built from the fleet file alone; a --judge file must match its `judge:`.
         judge_target = wiring.load_target(judge) if judge is not None else None
         materialized = fleet_mod.materialize_fleet(cfg, out, judge=judge_target)
     except (ValueError, OSError) as exc:
@@ -358,14 +364,17 @@ def fleet(
     typer.echo(f"scope:   {materialized.scope_path}")
     for path in materialized.target_paths:
         typer.echo(f"target:  {path}")
+    if materialized.judge_path is not None:
+        typer.echo(f"judge:   {materialized.judge_path}")
     for target_id, reason in materialized.skipped:
         typer.echo(f"skipped: {target_id} ({reason})")
+    judge_file = judge if judge is not None else materialized.judge_path
 
     if not run_now:
         joined = " ".join(f'"{p}"' for p in materialized.target_paths)
-        # Carry --judge into the hint: the scope was widened to authorize the judge, and an
-        # operator following a hint that omits it drops the judge from the run.
-        judge_arg = f' --judge "{judge}"' if judge is not None else ""
+        # Carry the judge into the hint: the scope authorizes it, and an operator following a
+        # hint that omits it drops the judge from the run.
+        judge_arg = f' --judge "{judge_file}"' if judge_file is not None else ""
         typer.echo(
             f'\nRun it:\n  dottore run {joined} --scope "{materialized.scope_path}"{judge_arg}'
         )
@@ -374,7 +383,7 @@ def fleet(
     opts = RunOptions(
         targets=list(materialized.target_paths),
         scope=materialized.scope_path,
-        judge=judge,
+        judge=judge_file,
         categories=[c.strip() for c in categories.split(",")] if categories else [],
         runs=runs,
         no_color=no_color,

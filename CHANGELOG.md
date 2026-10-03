@@ -77,6 +77,36 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (full audit of 2026-10-03: policy and authorization)
+
+- **The DL4 two-key gate never fired for the one PII spec the battery ships.** The gate compared
+  the tag `pii_elicitation`; `DL-PII-ELICIT-001` is tagged `pii-elicitation`, so a pack enabling
+  only the `layer_b_pii` capability ran it with neither DL4 key turned. Gate tags are now
+  compared without regard to case or `-`/`_`, and declaring `layer_b_pii` is enough on its own
+  to make a spec a PII-elicitation spec. Its refusal reason no longer cites an
+  `--allow-pii-elicitation` flag that does not exist.
+- **An unmarked spec in a flagged family ran.** The gate read `test_only` as rendering-only and
+  allowed everything, so a copy of a shipped spec with the mark deleted, loaded with
+  `--spec-path`, was sent while `dottore lint` reported `MISSING_TEST_ONLY`. It is now
+  `blocked_by_policy` with zero sends; the family comes from the category. Every shipped spec in
+  a flagged family is marked, so the battery loses nothing. Residual: a copy that keeps the mark
+  and deletes `requires_policy` still runs.
+- **An encoded slash walked out of an authorized path prefix.** `/v1/chat/..%2f..%2fadmin` passed
+  the allowlist and was `/admin` to a decoding origin. Paths with `%2f`, `%5c`, a literal
+  backslash or a `%25` double encoding are refused.
+- **`fleet --judge` authorized whatever the judge file named.** Its host and its `auth_ref` went
+  into the generated scope, so a judge file could make the scanner read any environment
+  variable and send it, with the targets' replies, to a host no authorization record listed.
+  The judge is now declared in the fleet file's `judge:` block, written to `judge.yaml` and used
+  by `--run`; a `--judge` file must match that block or `fleet` refuses (exit 3) and writes
+  nothing.
+- **Fleet scopes authorized every port of each host**, and an IPv6 entry could not be pinned at
+  all. Generated entries are now `host:port` (`localhost:11434`, `api.openai.com:443`), and
+  `[::1]:8080` splits correctly. `examples/scope.local.yaml` pins its port too.
+- `docs/15` said the `nova-iopc` specs were "`test_only` (OFF by default)"; all 13 run by
+  default. Corrected, together with its counts, its evaluator column and where `T8.004` is
+  printed. New clauses A-29 and A-30 in the u01 contract.
+
 ### Fixed (full audit of 2026-10-03: robustness)
 
 - **One non-retryable 4xx aborted the campaign after 539 more sends and saved nothing.** The

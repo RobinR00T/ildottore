@@ -8,7 +8,8 @@ target?* - with a **default-deny** verdict (``docs/02`` S3/S4/S5, contract §2):
 1. target in scope?
 2. endpoint on the allowlist?
 3. spec's category/id enabled by the active pack (and not denied)?
-4. dangerous (``test_only``) payload only where the flag surface permits?
+4. a spec in a flagged family (dangerous outside a test) refused unless it is marked
+   ``test_only`` (S5, u01 §7). The mark does not switch a spec off; an unmarked one is.
 5. layer-B / PII-elicitation specs **off unless the pack enables them**
    (``docs/11`` DL4/DL5).
 6. a spec's declared ``requires_policy`` capabilities all present in the pack's
@@ -30,7 +31,7 @@ from ildottore.config import SafetyFlags
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.errors import PolicyPackError
 from ildottore.policy.scope import Scope
-from ildottore.shared.enums import Category
+from ildottore.shared.enums import FLAGGED_FAMILIES, Category
 from ildottore.shared.models import AttackSpec
 
 __all__ = [
@@ -42,11 +43,15 @@ __all__ = [
     "load_pack",
 ]
 
-# Categories that constitute "layer-B" / PII-elicitation and are off by default
-# (docs/11 §5 DL4/DL5). Layer-B is expressed by the pack's ``enable_layer_b`` flag;
-# a spec is treated as layer-B via its ``requires``/tags below.
+# Tags that make a spec "layer-B" / PII-elicitation, off by default (docs/11 §5 DL4/DL5).
+# Compared after :func:`_tag_key`, so ``pii-elicitation`` and ``pii_elicitation`` are the same
+# tag: the one shipped PII spec spells it with a hyphen, the gate compared the underscore form,
+# and the two-key DL4 gate never fired for it (audit F-22, 2026-10-03).
 _LAYER_B_TAG = "layer_b"
 _PII_ELICIT_TAG = "pii_elicitation"
+# The requires_policy capability that names layer-B PII. A spec declaring it is a
+# PII-elicitation spec whatever its tags say, so dropping a tag cannot drop the DL4 gate.
+_PII_CAPABILITY = "layer_b_pii"
 
 
 class PolicyPack(BaseModel):
@@ -118,18 +123,29 @@ def _blocked(reason: str) -> CheckResult:
     return CheckResult(decision="blocked_by_policy", reason=reason)
 
 
+def _tag_key(tag: str) -> str:
+    """Normalise a tag for comparison: case and ``-``/``_`` spelling do not matter."""
+
+    return tag.strip().lower().replace("-", "_")
+
+
+def _tag_keys(spec: AttackSpec) -> set[str]:
+    return {_tag_key(tag) for tag in spec.tags or []}
+
+
 def _is_layer_b(spec: AttackSpec) -> bool:
     """True if the spec is a layer-B / model-memorization spec (docs/11 §5)."""
 
-    tags = spec.tags or []
-    return _LAYER_B_TAG in tags
+    return _LAYER_B_TAG in _tag_keys(spec)
 
 
 def _is_pii_elicitation(spec: AttackSpec) -> bool:
-    """True if the spec elicits PII about individuals (DL4, off by default)."""
+    """True if the spec elicits PII about individuals (DL4, off by default).
 
-    tags = spec.tags or []
-    return _PII_ELICIT_TAG in tags
+    Either signal is enough: the tag (any spelling) or the ``layer_b_pii`` capability.
+    """
+
+    return _PII_ELICIT_TAG in _tag_keys(spec) or _PII_CAPABILITY in spec.requires_policy
 
 
 def authorize_target(scope: Scope, target_id: str, endpoint: str) -> CheckResult:
@@ -203,19 +219,32 @@ class PolicyEngine:
                 f"spec {spec.id!r} (category {spec.category.value!r}) not enabled by pack"
             )
 
-        # 5. layer-B specs off unless the pack enables them (docs/11 DL4/DL5).
+        # 5. a spec in a flagged family must be marked test_only (S5, u01 §7). The gate used
+        #    to treat the mark as rendering-only and allow everything, so a copy of a shipped
+        #    spec with the two marking lines deleted (or a third-party pack that never had
+        #    them) ran although `dottore lint` reported MISSING_TEST_ONLY (audit SEC-06). The
+        #    family comes from the category, which the spec cannot opt out of; the mark is the
+        #    author's statement that the payload is meant for a controlled test.
+        if spec.category in FLAGGED_FAMILIES and not spec.test_only:
+            return _blocked(
+                f"spec {spec.id!r} is in the flagged family {spec.category.value!r} but is not "
+                "marked test_only (S5); `dottore lint` reports it as MISSING_TEST_ONLY"
+            )
+
+        # 6. layer-B specs off unless the pack enables them (docs/11 DL4/DL5).
         if _is_layer_b(spec) and not self._pack.enable_layer_b:
             return _blocked(f"layer-B spec {spec.id!r} requires pack.enable_layer_b")
 
-        # 6. PII-elicitation off unless BOTH the pack and the run flag allow it (DL4).
+        # 7. PII-elicitation off unless BOTH the pack and the run flag allow it (DL4).
         if _is_pii_elicitation(spec) and not (
             self._pack.allow_pii_elicitation and self._safety.allow_pii_elicitation
         ):
             return _blocked(
-                f"PII-elicitation spec {spec.id!r} requires pack + --allow-pii-elicitation"
+                f"PII-elicitation spec {spec.id!r} needs two keys: the pack's "
+                "allow_pii_elicitation and the run's allow_pii_elicitation safety flag (DL4)"
             )
 
-        # 7. declared capability gate (OD-11, docs/11 §5 / docs/13 §4): a spec that
+        # 8. declared capability gate (OD-11, docs/11 §5 / docs/13 §4): a spec that
         #    requires_policy capabilities runs only when the pack explicitly opts into
         #    every one of them via enabled_capabilities. Default-deny: an empty
         #    enabled_capabilities blocks any spec that requires a capability, so
@@ -227,9 +256,9 @@ class PolicyEngine:
                 f"not enabled by pack {self._pack.name!r}"
             )
 
-        # 8. dangerous payloads must be flagged test_only (S5). A test_only spec is
-        #    allowed to *run* (execution is mocked); only its raw *rendering* is
-        #    gated by --unsafe-render, which u11 enforces. Nothing to block here.
+        # A marked test_only spec runs, against a live target too when the operator points `run`
+        # at one. (No reporter reads the mark today; the HTML reporter's `unsafe_render` switch
+        # governs raw HTML passthrough and has no CLI flag.)
         return _ALLOW
 
     @property

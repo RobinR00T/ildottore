@@ -65,7 +65,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
 - **Authorization-gated.** Every egress is checked against the scope's endpoint allowlist
   (default-deny) before any request leaves the process. An out-of-scope host or off-prefix
   path raises an error and sends nothing. Plain `http` is allowed only to loopback
-  (`localhost`, `127.0.0.1`, `::1`); everything else must be `https`.
+  (`localhost`, `127.0.0.1`, `::1`); everything else must be `https`. A path that carries an
+  encoded slash or backslash (`%2f`, `%5c`), a literal backslash or a double encoding (`%25`)
+  is refused outright: an origin that decodes it would resolve a path outside the prefix the
+  scope authorized (`/v1/chat/..%2f..%2fadmin` is `/admin` to such an origin).
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -75,6 +78,20 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `requires_policy` (for example PII elicitation, or the agentic-extortion battery) yields a
   `blocked_by_policy` result with **zero** sends. Enabling such a spec is a deliberate
   policy-pack decision, not a default.
+- **`test_only` marks a spec; it does not switch it off.** A marked spec runs. What the gate
+  refuses is an **unmarked** spec in a flagged family (`jailbreak`, `data_leakage`,
+  `agent_tool_abuse`, `availability_cost`, `safety_content`): the one `dottore lint` reports as
+  `MISSING_TEST_ONLY`. So a third-party copy of a shipped spec with the mark deleted, loaded with
+  `--spec-path`, is `blocked_by_policy` with zero sends instead of running. The family comes
+  from the spec's category, which a spec cannot opt out of. One limit remains: a copy that keeps
+  `test_only` but deletes `requires_policy` still runs, because nothing outside the spec says
+  which specs are offensive simulations. `--spec-path` is a trust decision; lint what you load.
+- **PII elicitation needs two more keys.** `DL-PII-ELICIT-001` runs only when the policy pack
+  sets `allow_pii_elicitation` **and** the run's safety flag of the same name is on (DL4), on top
+  of the `layer_b_pii` capability. No CLI flag sets the run key today, so the spec cannot be
+  enabled from the command line at all. The gate recognises the spec by its
+  `pii-elicitation` tag in any spelling (`pii_elicitation`, `PII-Elicitation`) or by the
+  `layer_b_pii` capability alone.
 - **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports. Every
   credential the tool reads (an `env://` key, a password in an endpoint URL) is registered and
   masked **by value** wherever it appears, including inside an HTTP library's error message,
@@ -103,7 +120,8 @@ targets:                         # >=1; a target whose id is absent here is refu
     endpoints:                   # default-DENY allowlist; host + allowed path prefixes
       - host: "api.example.com"   # a host with NO port authorizes ANY port on that host
                                   # (over https; plain http stays loopback-only). Write
-                                  # "api.example.com:8443" to pin a single port
+                                  # "api.example.com:8443" to pin a single port, and
+                                  # "[::1]:8080" (brackets) for an IPv6 literal
         path_prefixes: ["/v1/chat/completions"]
     identities:                  # >=1; auth by reference, never a secret value
       - name: default
@@ -281,7 +299,27 @@ dottore fleet CONFIG [--out DIR] [--run] [--judge PATH] [--runs N] [-p CATEGORIE
 
 Expands `CONFIG` (a `fleet.yaml`) into an authorization scope plus one target file per model
 under `--out` (default `.dottore/fleet`). With `--run`, scans every expanded target
-immediately.
+immediately. Every generated scope entry is pinned to its host **and port**
+(`localhost:11434`, `api.openai.com:443`), so authorizing a local model does not authorize
+every other port on that machine.
+
+The LLM-as-judge is declared **in the fleet file**, in a `judge:` block, because that file is
+the authorization record the scope is built from:
+
+```yaml
+judge:
+  id: local-judge
+  endpoint: http://localhost:11434/v1/chat/completions
+  model: llama3.2:3b
+  # api_key_env: ANTHROPIC_API_KEY   # for a hosted judge
+```
+
+`fleet` authorizes it in the scope, writes it to `<out>/judge.yaml`, and `--run` uses it. A
+`--judge PATH` file is still accepted, but only when it names the same `id`, `endpoint` and
+credential as the block; otherwise `fleet` refuses (exit 3) and writes nothing. Until
+2026-10-03 the judge was authorized from the `--judge` file itself, so a judge file naming
+another host and `env://ANY_VARIABLE` made the scanner read that variable and send it, with
+the targets' replies, to a host no authorization record listed.
 
 ### `dottore lint`, validate specs
 

@@ -79,7 +79,7 @@ not a unit-local choice:
 | OD-18 | u08/u04 | a spec's `setup` (documents, mock tools, memory seed) never reaches a live target | conductor | **open, ADR-0009 proposes C: B first, then A (2026-10-03):** `_build_request` sends prompt, system prompt, sampling and media only; 32 of 75 specs depend on setup, 26 of them go out on a fully capable target, and `tool_call` flags a real target's own tools as unauthorized. B = operator declares seeded setup plus a tool-name map, unseeded specs `inconclusive`; A = deliver setup in-band with a tool loop. Before the live validation |
 | OD-19 | u06/u08 | `evaluator_logic: weighted` is declared by 33 specs and implemented in no run path | conductor | **open, ADR-0010 proposes B (2026-10-03):** the runner never reads the field (a deterministic fail decides), the lint fixture engine treats it as `all_pass`, and the vote in `evaluators/combine.py` is called by neither. B = document the runner's rule as the semantics and rename the value; A (implement the vote) would let a judge PASS outvote a leaked canary. **Amended the same day:** a judge-only fail is confirmed and gates CI today; the ADR now recommends it be needs-review |
 
-## Assurance clauses A-1..A-28 (added 2026-09-22, from the audit series)
+## Assurance clauses A-1..A-30 (added 2026-09-22, from the audit series)
 
 Eight adversarial audits over 2026-09-20..22 found defects that a green suite, a clean linter
 and four kept import contracts could not see, because every one of them is a claim the code
@@ -103,6 +103,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-28 | u02 | a control framework (AISVS) is mapped by falsification, and a mapping cannot contradict its own classification |
 | A-17 | u02 | every framework field is validated, membership where it drives a denominator |
 | A-18..A-20 | u01 | authorization is reachability, schemes are allowlisted, one answer per target |
+| A-29..A-30 | u01 | a gate keys on what a spec cannot opt out of; the allowlist authorizes the path an origin resolves, on its port, and a fleet's judge only from the fleet file |
 | A-21..A-22 | u14 | a test asserts the claim against the real collaborator, and is deterministic |
 
 The pattern under most of them, worth stating once: **something counted or omitted what did

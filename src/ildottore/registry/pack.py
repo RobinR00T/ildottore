@@ -16,24 +16,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ildottore.shared import AttackSpec, Category, Pack, Suite
+from ildottore.shared import AttackSpec, Pack, Suite
+from ildottore.shared.enums import FLAGGED_FAMILIES
 
-# Families whose raw payloads are dangerous outside a controlled test and therefore MUST
-# carry ``test_only: true`` (contract §4 KEEP; docs/02 S5, docs/03 §2). Decision logged in
-# contract §9 / notes: derived from docs/02 S5 "dangerous outside a test" + the shipped
-# DOS-TOKEN-FLOOD-001 fixture which sets test_only. Prompt-injection / RAG / output specs
-# are diagnostic (they probe handling), so they are not force-flagged.
-FLAGGED_FAMILIES: frozenset[Category] = frozenset(
-    {
-        Category.JAILBREAK,
-        Category.DATA_LEAKAGE,
-        Category.AGENT_TOOL_ABUSE,
-        Category.AVAILABILITY_COST,
-        # Harmful-content safety probes carry disallowed requests, so they must be test_only
-        # (bias_fairness prompts are benign demographic questions, so they are not flagged).
-        Category.SAFETY_CONTENT,
-    }
-)
+# ``FLAGGED_FAMILIES`` moved to ``shared.enums`` (the policy gate reads it too); re-exported
+# here so ``registry.FLAGGED_FAMILIES`` keeps working.
+__all__ = ["FLAGGED_FAMILIES", "LoadedPack"]
 
 
 class LoadedPack(BaseModel):

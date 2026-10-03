@@ -41,7 +41,14 @@ Identify the model and guardrails behind an endpoint; attack nothing.
 .B fleet
 Expand a fleet.yaml into an authorization scope plus one target file per model; with
 .B --run
-scan them all.
+scan them all. Each scope entry is pinned to its host and port. The judge is declared in the
+fleet file's
+.B judge:
+block, which the scope authorizes and
+.B fleet
+writes to judge.yaml; a
+.B --judge
+file must name the same id, endpoint and credential, or it is refused.
 .TP
 .B lint
 Schema, policy and fixtures-prove-detection lint of the specs.

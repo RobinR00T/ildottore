@@ -37,6 +37,16 @@ deterministic evaluator passes, a judge fail still decides; whether that kind of
 gate CI is open (OD-19). A live run without `--judge` warns before sending, and a judge outage
 counts as no judge, never as a pass.
 
+### Why does `fleet --judge` say the fleet file does not declare the judge?
+
+Since 2026-10-03 the judge `fleet` authorizes comes from the fleet file, in a `judge:` block
+(`id`, `endpoint`, `model`, `api_key_env`), because that file is the authorization record the
+generated scope is built from. Before, the scope took the judge's host and credential from the
+`--judge` file itself, so any judge file could make the scanner read any environment variable
+and send it elsewhere. Add the block; `fleet` then writes `judge.yaml` and `--run` uses it, and a
+`--judge` file is still accepted when it names the same id, endpoint and credential. `run`
+with your own signed scope is unchanged: the judge must be in that scope.
+
 ### Can the judge itself be fooled by a prompt injection?
 
 That is assumed and defended. The judge gets a per-call random tripwire token; it is flagged
@@ -109,7 +119,9 @@ falsely when your tools have other names. How to close that is an open decision 
 
 The authorization gate. The target's endpoint host/path is not in that target's `endpoints`
 allowlist in the scope, or the target id is not among the scope's `targets`. Add the entry
-deliberately; it is not meant to be bypassed.
+deliberately; it is not meant to be bypassed. Two less obvious causes: a host pinned to a port
+(`localhost:11434`) refuses any other port, and a path carrying `%2f`, `%5c`, a backslash or
+`%25` is always refused, because an origin that decodes it may land outside the prefix.
 
 ### Where does evidence live, and is it safe to keep?
 

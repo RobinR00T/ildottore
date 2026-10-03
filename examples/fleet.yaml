@@ -1,6 +1,8 @@
 # fleet.yaml, declare a set of targets once, scan them all.
 # Expand:  dottore fleet examples/fleet.yaml --out .dottore/fleet
-# Scan:    dottore fleet examples/fleet.yaml --run --judge examples/target.judge.yaml
+# Scan:    dottore fleet examples/fleet.yaml --run
+#          (uses the judge declared below; `--judge examples/target.judge.yaml` also works,
+#          because that file names the same id, endpoint and credential)
 #
 # This one is local-only so it runs with no API keys (needs Ollama). For the full menu
 # (hosted OpenAI/Anthropic, a raw REST URL, an MCP server), see specs/fleet.example.yaml.
@@ -17,3 +19,12 @@ targets:
   - id: local-qwen
     endpoint: http://localhost:11434/v1/chat/completions
     model: qwen2.5:1.5b            # ollama pull qwen2.5:1.5b
+
+# The LLM-as-judge for the semantic_judge evaluator. Declared HERE because this file is the
+# authorization record: the generated scope authorizes the judge from this block, never from
+# a --judge file (a judge file that authorized itself could name any host and any env var).
+# `fleet` writes it to <out>/judge.yaml. A hosted judge names its key: api_key_env: NAME.
+judge:
+  id: local-judge
+  endpoint: http://localhost:11434/v1/chat/completions
+  model: llama3.2:3b                # ollama pull llama3.2:3b; a stronger model judges
