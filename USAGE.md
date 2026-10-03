@@ -86,6 +86,7 @@ dottore fleet fleet.yaml --run --judge judge.yaml
 
 # Inspect / author specs
 dottore registry ls [--category .. --owasp .. --suite .. --tag ..]
+dottore coverage [--framework owasp|atlas|iopc|aisvs] [--suite ..] [--json]   # what the battery tests, nothing sent
 dottore describe PI-DIRECT-001
 dottore lint specs/
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
@@ -105,7 +106,7 @@ dottore calibrate report.json labels.yaml
 | `--scope` | **Required** authorization record. Never bypassable. |
 | `-t/--target` (repeatable), positional | target file(s) |
 | `--judge` | judge model `target.yaml` (LLM-as-judge for `semantic_judge` on live scans) |
-| `--suite` | `owasp:llm` (alias of `owasp-llm-top10`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion` |
+| `--suite` | `owasp:llm` (alias of `owasp-llm-top10`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc` |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) at `-T0`. Conflicts with an explicit `--suite` |
 | `--deep` | the full battery (75 specs) with adaptive planning at `-T2` |
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |

@@ -84,6 +84,24 @@ tool (`tools/call`), invoking a target's tools could have real side effects, so 
 read-only by design. Point the `mcp` suite at such a target for the tool-metadata-poisoning
 ("line jumping") check.
 
+### If my system passes Il Dottore, does it meet OWASP AISVS?
+
+No, and the tool never says so. AISVS lists *controls* ("verify that a classifier screens every
+prompt"), and a black-box scanner never sees the classifier. A spec's `aisvs:` list means a
+**failure** is evidence the control is absent or ineffective; a pass means these probes did not
+falsify it. `dottore coverage --framework aisvs` shows what the battery can speak to (17 of 191
+requirements today) and why the rest is out of reach or deliberately untested. Most of the
+standard (training data, infrastructure, logging) needs an audit, not a scan.
+
+### Does Il Dottore send a spec's documents, tools or memory to my target?
+
+Not yet, and this matters for reading a result. Today the runner sends the prompt, the system
+prompt and any media. A spec's `setup.documents`, mock `setup.tools` and `setup.memory_seed`
+are used by the evaluators but never delivered, so the 32 specs that depend on them only test
+something where you have seeded the same content into your deployment, and a tool spec can fail
+falsely when your tools have other names. How to close that is an open decision (OD-18,
+`docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`); decide it before a live campaign.
+
 ### Why does a run refuse my target with "endpoint not allowed by scope"?
 
 The authorization gate. The target's endpoint host/path is not in that target's `endpoints`

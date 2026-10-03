@@ -76,6 +76,7 @@ REGISTRY / AUTHORING
   dottore lint specs/                       schema + policy + fixtures-prove-detection
   dottore new-spec --family <f> --id <ID>   scaffold a spec + empty fixtures
   dottore replay <run-id>                   re-run from stored evidence (reproducibility)
+  dottore coverage [--framework ..]         what the battery tests per framework, nothing sent
 ```
 
 ## 3. Example invocations (the red-teamer's cheat sheet)
