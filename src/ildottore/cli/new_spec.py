@@ -8,6 +8,7 @@ scaffold is valid enough to lint after the author supplies real content.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ildottore.shared.enums import Category
@@ -96,6 +97,13 @@ def write_scaffold(
     never targets the repo ``specs/`` tree - the operator chooses ``out_dir``.
     """
 
+    # The id becomes a file name, so it is checked against the schema's own id shape first:
+    # `--id ../evil` wrote outside --out (audit 2026-10-03, low).
+    if not re.fullmatch(r"[A-Z]+(-[A-Z0-9]+)+", spec_id):
+        raise ValueError(
+            f"invalid spec id {spec_id!r}: use the schema's shape, uppercase segments joined by "
+            "'-' (e.g. PI-XYZ-001)"
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{spec_id}.yaml"
     if path.exists():

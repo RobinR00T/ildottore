@@ -34,7 +34,7 @@ from typing import Any
 
 from ildottore.cli import resume as resume_mod
 from ildottore.cli import wiring
-from ildottore.cli.exit_codes import ExitCode, exit_code_for
+from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import Spend
@@ -775,6 +775,32 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
     print("  reachability is authorization-level (scope + allowlist); no request was sent.")
 
 
+def _validate_options(opts: RunOptions) -> None:
+    """Refuse an option the campaign would only trip over at the end, before anything is sent.
+
+    ``--fail-on bogus`` and an unwritable ``-oA`` path were accepted, the whole campaign ran,
+    and the run then failed with exit 3 on the way out; ``--timeout 0``, ``--concurrency -2``
+    and ``--top-tests -3`` were accepted outright (audit 2026-10-03, R9).
+    """
+
+    fail_on_band(opts.fail_on)
+    if opts.timeout_s is not None and not opts.timeout_s > 0:
+        raise ValueError(f"--timeout must be greater than 0 seconds (got {opts.timeout_s})")
+    if opts.concurrency is not None and opts.concurrency < 1:
+        raise ValueError(f"--concurrency must be at least 1 (got {opts.concurrency})")
+    if opts.top_tests is not None and opts.top_tests < 1:
+        raise ValueError(f"--top-tests must be at least 1 (got {opts.top_tests})")
+    if opts.runs < 1:
+        raise ValueError(f"--runs must be at least 1 (got {opts.runs})")
+    report_paths = list(opts.outputs.values())
+    if opts.output_all_prefix is not None:
+        report_paths.append(opts.output_all_prefix)
+    for path in report_paths:
+        parent = Path(path).parent
+        if not parent.is_dir():
+            raise ValueError(f"cannot write the report {path}: {parent} is not a directory")
+
+
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     """Run a full campaign for every target and return the aggregate outcome.
 
@@ -799,6 +825,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"--rate must be greater than 0 requests per second (got {opts.rate}); omit it to "
             "use the timing template's rate"
         )
+    _validate_options(opts)
     if opts.scope is None:
         raise ScopeRequiredError(
             "run requires --scope <scope.yaml>: the authorization record is mandatory "
@@ -822,6 +849,16 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # present left the false green one character away, because `ScopeTarget.endpoints`
     # defaults to empty and a typo in `host` reads exactly like a missing allowlist.
     loaded_targets = [(path, wiring.load_target(path)) for path in opts.targets]
+    # Two target files with the same id shared one run id and one evidence tree, so one
+    # report held a PASS and a FAIL for the same spec on "the same" target (audit R11).
+    seen_ids: dict[str, Path] = {}
+    for path, target in loaded_targets:
+        if target.id in seen_ids:
+            raise ValueError(
+                f"two target files declare the id {target.id!r} ({seen_ids[target.id]} and "
+                f"{path}); each target in one run needs its own id"
+            )
+        seen_ids[target.id] = path
     judge_target = wiring.load_target(opts.judge) if opts.judge is not None else None
     to_authorize = list(loaded_targets)
     if judge_target is not None and opts.judge is not None:
@@ -1331,7 +1368,19 @@ def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target 
     (contract §5).
     """
 
-    if opts.hardened or wiring.target_uses_mock(target_path):
+    uses_mock = wiring.target_uses_mock(target_path)
+    if opts.hardened and not uses_mock:
+        # It replayed offline fixtures, sent nothing, and published ten passes, "complete" and
+        # exit 0 under the live target's name, with no marker anywhere that it was a replay
+        # (audit 2026-10-03, R3). A clean report about a model nobody contacted is refused.
+        target = wiring.load_target(target_path)
+        raise ValueError(
+            f"--hardened replays the offline hardened fixtures and sends nothing, so it cannot "
+            f"be used with the live target {target.id!r} ({target_path}): the report would "
+            "describe a model that was never contacted. Drop --hardened, or point it at a "
+            "mock target."
+        )
+    if opts.hardened or uses_mock:
         scenario = "hardened" if opts.hardened else wiring.load_mock_scenario(target_path)
         return scenario, None
     return None, wiring.load_target(target_path)

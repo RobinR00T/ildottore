@@ -31,6 +31,7 @@ __all__ = [
     "incomplete_reason",
     "load_findings",
     "render_diff",
+    "report_target",
 ]
 
 
@@ -38,7 +39,10 @@ class DriftClass(StrEnum):
     """Per-spec drift classification (docs/12 P1 "Baseline diff / drift")."""
 
     NEW_FAIL = "new_fail"  # regression: was not failing (or absent), now fails
-    FIXED = "fixed"  # was failing, now not failing
+    FIXED = "fixed"  # was failing, now passes
+    # Was failing, now inconclusive or never sent: not demonstrated fixed. It used to read
+    # FIXED, so a target that went unreachable "fixed" every exploit it had (audit R4).
+    UNVERIFIED = "unverified"
     STILL_FAIL = "still_fail"  # failing in both
     UNCHANGED = "unchanged"  # not failing in both
     ONLY_IN_BASELINE = "only_in_baseline"  # spec dropped since baseline
@@ -98,22 +102,44 @@ def incomplete_reason(path: Path) -> str | None:
 
 
 def load_findings(path: Path) -> dict[str, Finding]:
-    """Load a JSON run report and index its findings by spec id.
+    """Load a JSON run report and index its findings by spec id, for ONE target.
 
     Accepts both the full report envelope written by ``JsonReporter``
     (``{"schema_version": ..., "findings": [...], ...}``) and a bare JSON list of findings,
-    so hand-built fixtures/tests need not construct a full ``TestRun``. Later duplicates of
-    the same ``spec_id`` win (last one in file order) - a report is expected to have at most
-    one finding per spec, but this stays permissive rather than raising on odd input.
+    so hand-built fixtures/tests need not construct a full ``TestRun``.
+
+    A report that covers several targets is refused, and so is one with two findings for the
+    same spec: indexing by spec id kept the last one in file order, so a multi-target report
+    merged its targets and a FAIL on one could be replaced by a PASS on another (audit R4).
+    Compare one target's report at a time.
     """
 
     data = json.loads(path.read_text(encoding="utf-8"))
     raw_findings = data["findings"] if isinstance(data, dict) else data
+    if not isinstance(raw_findings, list):
+        raise ValueError(f"{path}: expected a JSON run report or a list of findings")
+    findings = [Finding.model_validate(raw) for raw in raw_findings]
+    targets = sorted({f.target_id for f in findings})
+    if len(targets) > 1:
+        raise ValueError(
+            f"{path} covers {len(targets)} targets ({', '.join(targets)}); compare one "
+            "target's report at a time"
+        )
     by_spec: dict[str, Finding] = {}
-    for raw in raw_findings:
-        finding = Finding.model_validate(raw)
+    for finding in findings:
+        if finding.spec_id in by_spec:
+            raise ValueError(
+                f"{path} has more than one finding for {finding.spec_id}; compare one run's "
+                "report at a time"
+            )
         by_spec[finding.spec_id] = finding
     return by_spec
+
+
+def report_target(findings: dict[str, Finding]) -> str | None:
+    """The single target a loaded report is about (``None`` for an empty report)."""
+
+    return next((f.target_id for f in findings.values()), None)
 
 
 def _classify(baseline: Finding | None, current: Finding | None) -> DriftClass:
@@ -128,6 +154,8 @@ def _classify(baseline: Finding | None, current: Finding | None) -> DriftClass:
     is_fail = current.status is VerdictStatus.FAIL
     if was_fail and is_fail:
         return DriftClass.STILL_FAIL
+    if was_fail and current.status is not VerdictStatus.PASS:
+        return DriftClass.UNVERIFIED
     if was_fail and not is_fail:
         return DriftClass.FIXED
     if is_fail:  # not was_fail and is_fail
@@ -156,16 +184,23 @@ def compare_runs(baseline: dict[str, Finding], current: dict[str, Finding]) -> D
 
 
 def diff_reports(baseline_path: Path, current_path: Path) -> DriftReport:
-    """Load two JSON run reports from disk and compare them."""
+    """Load two JSON run reports from disk and compare them (same target only)."""
 
     baseline = load_findings(baseline_path)
     current = load_findings(current_path)
+    base_target, current_target = report_target(baseline), report_target(current)
+    if base_target is not None and current_target is not None and base_target != current_target:
+        raise ValueError(
+            f"the baseline is about target {base_target!r} and the current report about "
+            f"{current_target!r}; a drift report compares one target with itself"
+        )
     return compare_runs(baseline, current)
 
 
 _LABELS: dict[DriftClass, str] = {
     DriftClass.NEW_FAIL: "NEW-FAIL",
     DriftClass.FIXED: "FIXED",
+    DriftClass.UNVERIFIED: "UNVERIFIED",
     DriftClass.STILL_FAIL: "STILL-FAIL",
     DriftClass.UNCHANGED: "UNCHANGED",
     DriftClass.ONLY_IN_BASELINE: "ONLY-IN-BASELINE",
@@ -183,7 +218,16 @@ def render_diff(report: DriftReport) -> str:
         lines.append(f"{entry.spec_id:<30}{baseline_s:<14}{current_s:<14}{_LABELS[entry.drift]}")
     regressions = report.regressions
     fixed = sum(1 for e in report.entries if e.drift is DriftClass.FIXED)
-    lines.append(f"specs: {len(report.entries)}  regressions: {len(regressions)}  fixed: {fixed}")
+    unverified = [e.spec_id for e in report.entries if e.drift is DriftClass.UNVERIFIED]
+    lines.append(
+        f"specs: {len(report.entries)}  regressions: {len(regressions)}  fixed: {fixed}"
+        + (f"  unverified: {len(unverified)}" if unverified else "")
+    )
+    if unverified:
+        lines.append(
+            "UNVERIFIED (failed in the baseline, not evaluated now, so not shown fixed): "
+            + ", ".join(unverified)
+        )
     if regressions:
         lines.append("REGRESSIONS: " + ", ".join(e.spec_id for e in regressions))
     return "\n".join(lines)

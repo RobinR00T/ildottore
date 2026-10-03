@@ -77,6 +77,33 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (full audit of 2026-10-03: CLI and reports)
+
+- **`--hardened` against a live target** replayed the offline fixtures, sent nothing, and
+  published ten passes, `complete` and exit 0 under the live target's name. It is refused
+  (exit 3); it still works on a mock target.
+- **`diff` and `calibrate` merged targets**: findings were indexed by spec id with the last one
+  winning, so a multi-target report let a PASS on one target replace a FAIL on another. A report
+  covering several targets, or two reports about different targets, is refused. A spec that
+  failed and is now inconclusive or never sent is `UNVERIFIED`, not `FIXED`.
+- **Usage errors exited 2**, the code for "findings at or above `--fail-on`". They exit 3.
+- **Bad options were accepted until after the campaign** (`--fail-on bogus`, an unwritable
+  `-oA` path) or outright (`--timeout 0`, `--concurrency -2`, `--top-tests -3`). All refused
+  before anything is sent, and so are two target files with the same id, which used to share
+  one run id and one evidence tree.
+- **SARIF kinds**: every non-fail result was `kind: pass` with a band level, so inconclusive and
+  never-sent specs read as passes. Kinds are now `fail`, `pass`, `open` and `notApplicable`, with
+  level `none` for every kind but `fail` (SARIF 3.27.10).
+- **`calibrate`** counted an inconclusive as agreeing with a pass (100% beside DISAGREE lines),
+  printed undefined precision and recall as 0%, rounded 99.6% up to 100% and accepted reports of
+  runs that did not finish. Fixed, and a malformed report exits 3 instead of a traceback.
+- Smaller: `dottore --version` printed 0.0.1 (it reads the package version, 0.1.0); the HTML
+  report is a complete UTF-8 document, not a fragment a browser rendered as mojibake;
+  `new-spec --id ../evil` wrote outside `--out` and is refused.
+- Still open from this block: needs-review and info semantics in the summaries (R5, R6, R14),
+  the multi-target JSON envelope (R10), framework editions in the machine formats (R12), the
+  fingerprint guessing a family from no signal (R16).
+
 ### Fixed (full audit of 2026-10-03: budget and rate)
 
 - **The `--judge` model and the multi-identity sweep sent outside the request ceiling and the

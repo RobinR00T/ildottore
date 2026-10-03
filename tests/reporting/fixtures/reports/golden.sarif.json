@@ -45,7 +45,7 @@
         },
         {
           "kind": "pass",
-          "level": "warning",
+          "level": "none",
           "locations": [
             {
               "logicalLocations": [

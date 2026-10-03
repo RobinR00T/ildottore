@@ -15,6 +15,7 @@ and it reuses ``diff.load_findings`` for the report side. No scoring math (contr
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -66,21 +67,31 @@ class CalibrationReport:
 
     @property
     def agreements(self) -> int:
-        return self.tp + self.tn
+        """Specs whose status matches the label EXACTLY.
+
+        It was ``tp + tn``, so a scanner ``inconclusive`` against an operator ``pass`` counted as
+        agreement and the summary read 100% beside DISAGREE lines (audit R18).
+        """
+
+        return self.scored - len(self.disagreements)
 
     @property
     def agreement_rate(self) -> float:
         return self.agreements / self.scored if self.scored else 0.0
 
     @property
-    def precision(self) -> float:
+    def precision(self) -> float | None:
+        """``None`` when undefined (no scanner fail): printed as n/a, never as 0%."""
+
         denom = self.tp + self.fp
-        return self.tp / denom if denom else 0.0
+        return self.tp / denom if denom else None
 
     @property
-    def recall(self) -> float:
+    def recall(self) -> float | None:
+        """``None`` when undefined (no labelled fail): printed as n/a, never as 0%."""
+
         denom = self.tp + self.fn
-        return self.tp / denom if denom else 0.0
+        return self.tp / denom if denom else None
 
 
 def calibrate(findings: dict[str, Finding], labels: dict[str, VerdictStatus]) -> CalibrationReport:
@@ -122,13 +133,22 @@ def calibrate_reports(report_path: Path, labels_path: Path) -> CalibrationReport
     return calibrate(load_findings(report_path), load_labels(labels_path))
 
 
+def _pct(rate: float | None) -> str:
+    """A percentage floored, never rounded up (99.6% is not 100%), or ``n/a`` when undefined."""
+
+    if rate is None:
+        return "n/a"
+    return f"{math.floor(rate * 100)}%"
+
+
 def render_calibration(report: CalibrationReport) -> str:
     """Render a compact calibration summary (agreement + precision/recall + disagreements)."""
 
     lines = [
         f"calibration: {report.scored} spec(s) scored, "
-        f"agreement {report.agreement_rate:.0%} ({report.agreements}/{report.scored})",
-        f"  precision {report.precision:.0%}  recall {report.recall:.0%}  "
+        f"agreement {_pct(report.agreement_rate)} ({report.agreements}/{report.scored}, "
+        "exact status match)",
+        f"  precision {_pct(report.precision)}  recall {_pct(report.recall)}  "
         f"(tp={report.tp} fp={report.fp} fn={report.fn} tn={report.tn}; fail = positive)",
     ]
     for spec_id, got, want in report.disagreements:
