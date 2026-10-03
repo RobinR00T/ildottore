@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,6 +36,7 @@ from ildottore.adapters.base import (
     AdapterProductError,
     EndpointNotAllowed,
     RetryConfig,
+    read_capped,
 )
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
@@ -52,6 +54,28 @@ _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 # A recent MCP protocol revision to offer in the initialize handshake. The server echoes the
 # version it actually speaks; we record that, we do not require this exact one.
 _PROTOCOL_VERSION = "2025-06-18"
+
+
+#: What a stdio MCP server under test inherits from the scanner, and nothing else. It used to
+#: inherit the whole environment, every other target's API key included, which handed the
+#: system being scanned the scanner's credentials (audit 2026-10-03, SEC-08). A server that
+#: needs a variable gets it on its authorized command line (``env NAME=value server ...``),
+#: where the operator can see it and the scope has to name it.
+_STDIO_ENV_PASSTHROUGH: tuple[str, ...] = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "SYSTEMROOT",
+)
+
+
+def _stdio_environment() -> dict[str, str]:
+    return {name: os.environ[name] for name in _STDIO_ENV_PASSTHROUGH if name in os.environ}
 
 
 @dataclass
@@ -222,22 +246,34 @@ class MCPAdapter:
         attempts = self.retry.max_retries + 1
         for attempt in range(attempts):
             try:
-                response = await client.post(
+                async with client.stream(
+                    "POST",
                     self.base_url,
                     json=body,
                     headers=headers,
                     timeout=self.retry.timeout_s,
                     follow_redirects=False,
-                )
+                ) as streamed:
+                    if streamed.status_code in _RETRYABLE_STATUS:
+                        last = f"HTTP {streamed.status_code}"
+                        raw: bytes | None = None
+                    else:
+                        # Same ceiling as the model adapters (SEC-07), checked while reading:
+                        # an advertised tool list larger than this is not metadata to evaluate.
+                        raw = await read_capped(streamed, f"{self.id}: MCP response")
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last = f"{type(exc).__name__}: {exc}"
                 await self._maybe_backoff(attempt, attempts)
                 continue
-            if response.status_code in _RETRYABLE_STATUS:
-                last = f"HTTP {response.status_code}"
+            if raw is None:
                 await self._maybe_backoff(attempt, attempts)
                 continue
-            return response
+            return httpx.Response(
+                streamed.status_code,
+                headers=streamed.headers,
+                content=raw,
+                request=streamed.request,
+            )
         raise AdapterEnvError(f"{self.id}: exhausted {attempts} attempt(s) to MCP endpoint: {last}")
 
     async def _maybe_backoff(self, attempt: int, attempts: int) -> None:
@@ -299,6 +335,7 @@ class MCPAdapter:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            env=_stdio_environment(),
         )
         try:
             init = await self._stdio_rpc(

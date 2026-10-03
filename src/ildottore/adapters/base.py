@@ -24,6 +24,7 @@ time - contract §4 KEEP; live probing is u09 fingerprint).
 from __future__ import annotations
 
 import asyncio
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -46,12 +47,18 @@ __all__ = [
     "AdapterProductError",
     "BaseAdapter",
     "EndpointNotAllowed",
+    "ResponseTooLarge",
     "RetryConfig",
     "map_logprobs",
+    "read_capped",
 ]
 
 # HTTP statuses that mean "try again later" (transient / env, not a defect).
 _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+#: Largest response body read from a target, in bytes (4 MiB). A model reply is orders of
+#: magnitude smaller; anything above this is refused unread past the cap (SEC-07).
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
 class AdapterError(Exception):
@@ -77,11 +84,44 @@ class AdapterEnvError(AdapterError):
     """
 
 
+class ResponseTooLarge(AdapterEnvError):
+    """A reply over :data:`MAX_RESPONSE_BYTES`: an environment failure that is NOT retried.
+
+    It would come back the same size on every retry, and the runner's retry policy used to
+    send it three more times although the docstring said it was not retried (review of
+    PR #32). ``retryable = False`` is the structural marker ``core.execute`` reads, and
+    ``is_env_error`` says explicitly what the class name no longer does: ``core.execute`` falls
+    back to an ``...EnvError`` name suffix, and without the marker this subclass would have
+    been taken for a product defect and halted the campaign.
+    """
+
+    is_env_error = True
+    retryable = False
+
+
 class AdapterProductError(AdapterError):
     """A real product defect (e.g. a malformed / unparseable success response).
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
+
+
+async def read_capped(response: httpx.Response, label: str) -> bytes:
+    """Read a streamed body, refusing one larger than :data:`MAX_RESPONSE_BYTES`.
+
+    The single cap for every adapter that reads a target over the wire. The check runs per
+    chunk, so an oversized body is abandoned mid-stream instead of being buffered whole and
+    measured afterwards, which is what the MCP adapter did (review of PR #32).
+    """
+
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in response.aiter_bytes():
+        size += len(chunk)
+        if size > MAX_RESPONSE_BYTES:
+            raise ResponseTooLarge(f"{label} exceeded {MAX_RESPONSE_BYTES} bytes; not read further")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @dataclass(frozen=True)
@@ -274,24 +314,30 @@ class BaseAdapter(ABC):
                 # follow_redirects=False per call, defense-in-depth: even if an injected
                 # client enabled redirects, a 3xx to an off-allowlist host is NOT followed
                 # (the allowlist gate runs once, before the loop, audit low).
-                response = await client.post(
+                async with client.stream(
+                    "POST",
                     url,
                     json=body,
                     headers=headers,
                     timeout=self.retry.timeout_s,
                     follow_redirects=False,
-                )
+                ) as response:
+                    if response.status_code in _RETRYABLE_STATUS:
+                        last_env_detail = f"HTTP {response.status_code}"
+                        retry_now = True
+                    else:
+                        retry_now = False
+                        raw = await self._read_capped(response)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_env_detail = f"{type(exc).__name__}: {exc}"
                 await self._maybe_backoff(attempt, attempts)
                 continue
 
-            if response.status_code in _RETRYABLE_STATUS:
-                last_env_detail = f"HTTP {response.status_code}"
+            if retry_now:
                 await self._maybe_backoff(attempt, attempts)
                 continue
 
-            return self._handle_final_response(response)
+            return self._handle_final_response(response, raw)
 
         raise AdapterEnvError(
             f"{self.id}: exhausted {attempts} attempt(s) to {self._request_path}: "
@@ -304,12 +350,24 @@ class BaseAdapter(ABC):
         if attempt < attempts - 1:
             await asyncio.sleep(self.retry.backoff_for(attempt))
 
-    def _handle_final_response(self, response: httpx.Response) -> ModelResponse:
+    async def _read_capped(self, response: httpx.Response) -> bytes:
+        """Read the body, refusing one larger than :data:`MAX_RESPONSE_BYTES`.
+
+        The body used to be read whole, with no limit: three 60 MB replies cost 1.5 GB of
+        memory, 72 s and 180 MB of evidence, and the run still exited 0 (audit 2026-10-03,
+        SEC-07). A target that answers with more than any model reply needs is not a finding
+        to evaluate; it is an environment failure for this attempt, which is inconclusive and
+        is not retried. The cap also bounds the input every spec regex runs over.
+        """
+
+        return await read_capped(response, f"{self.id}: response from {self._request_path}")
+
+    def _handle_final_response(self, response: httpx.Response, raw: bytes) -> ModelResponse:
         """Classify a non-retryable response: 2xx → parse, else product defect."""
 
         if response.is_success:
             try:
-                payload = response.json()
+                payload = json.loads(raw)
             except ValueError as exc:  # non-JSON success body = malformed
                 raise AdapterProductError(
                     f"{self.id}: success response was not valid JSON: {exc}"

@@ -70,7 +70,7 @@ This is the difference between "serious tool" and "scary demo that cries wolf".
 | DL1 | **Prefer synthetic canaries** over real data. The clean, legal way to prove memorization is a marker *you* planted. |
 | DL2 | **Never persist real secrets/PII.** Detectors store a *verdict + type + masked/hashed sample* only; raw values are redacted in evidence, logs and reports. |
 | DL3 | **No real breach dumps ingested.** For breach-correlation use **hashed/truncated indicators** (k-anonymity range, HIBP-style prefix) or synthetic data: never load a raw leaked dataset into the tool. |
-| DL4 | **PII elicitation about real individuals is OFF by default** (`--allow-pii-elicitation`, audited). Synthetic identities first. |
+| DL4 | **PII elicitation about real individuals is OFF by default.** Two keys, both required: the policy pack's `allow_pii_elicitation` and the run's safety flag of the same name (audited). No CLI flag sets the run key today, so the shipped spec cannot be enabled from the command line. The gate knows the spec by its `pii-elicitation` tag regardless of case and of `-` or `_`, or by the `layer_b_pii` capability; until 2026-10-03 it compared only the underscore spelling, and the hyphenated shipped spec was held back by the capability gate alone. Synthetic identities first. |
 | DL5 | **Legal gate.** Probing a third-party model for memorized real PII can implicate GDPR (processing personal data) and copyright. Requires explicit scope authorization, data minimization, and redacted results. The engagement policy pack must enable layer-B specs. |
 | DL6 | **Distinguish leak from fabrication** (§4) before reporting a breach: over-claiming a leak has its own legal/reputational cost. |
 

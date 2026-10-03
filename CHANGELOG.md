@@ -77,6 +77,156 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (review of PR #32: what the audit fixes introduced or left)
+
+Three reviewers ran the four audit commits in isolated worktrees the same evening and
+reproduced each item. All fixed here, each with a test that fails on the PR head
+(`tests/test_pr32_review_fixes.py`).
+
+- **The label-run regex added for F17 was quadratic** on text the target controls: 48 KB of
+  `token token ...` took 4.9 s to redact, 96 KB 20 s. The run of labels is bounded; 384 KB now
+  takes 0.07 s.
+- **A key with a control character inside it** reached stderr, every report format and the
+  evidence through the HTTP error that quoted it escaped. It is refused before any request,
+  without echoing it, and registered credentials are also masked in their escaped forms.
+- **`replay` and `--resume` refused untouched runs stored before the fix as tampered**: those
+  stores kept a few digests readable by chance, and a partial manifest rejected the other
+  artifacts of that spec. A spec is now checked only when all its digests are readable.
+- **The manifest let some tampering through**: a deleted recorded artifact and an artifact
+  placed under a spec whose finding cites no evidence are now refused, and a replay without a
+  run store holding the run says so on stderr instead of skipping the check silently.
+- **The path allowlist could be escaped with `//..`**, no encoding needed:
+  `/v1/chat/completions/x//../../../../admin` passed while httpx sent `/v1/admin`. Dot
+  segments now resolve exactly as httpx resolves them, pinned by a differential test over
+  9,330 generated paths. Clause A-30 is corrected to say what it covers and what it does not.
+- **Regressions of the masking fixes**: a labelled value starting with a label word
+  (`password: Password!2026x`) was no longer masked; a registered credential inside the mask
+  template (`credential`) nested on every pass and aborted the campaign; a URL password with a
+  raw `@` leaked its tail; a custom spec id was masked with the per-process salt, so
+  `dottore diff` saw two unrelated specs and reported no regression. All fixed; spec ids stay
+  readable in reports, and the JSON report's `run.findings` copy keeps its evidence references
+  readable too (103 of 110 digests were still masked there).
+- **With `--runs 1`, per-variant confirmation over-confirmed**: one exploit among six
+  single-shot variants was a confirmed Critical. A variant decides on its own only with at
+  least 2 attempts; below that the pooled rate decides, as before.
+- **A judge that never returns a parseable verdict** passed specs on the deterministic arms
+  alone; it now counts as no judge (`capability_unavailable`), like an outage.
+- **The MCP adapter read the whole body before applying the 4 MiB cap**; it streams through
+  the same capped reader now. An oversized reply is no longer retried three times.
+- **`dottore lint` crashed on a broken mutator plugin** (exit 1, the code for failed specs); it
+  reports a `MUTATOR_PLUGIN_ERROR` warning and lints with the built-ins.
+- Smaller: CLI error messages go through the redactor (a URL password reached stderr on the
+  scope refusal); the no-judge warning comes before the `-sV` probes and in the dry run; the
+  spec-load refusal counts files, not problems ("14 spec file(s)" for one); a halt says "never
+  ran or did not finish"; a refused `fleet --judge` creates no directory; `replay` labels its
+  last line a pooled rate. Doc claims corrected: "signed scope", "any spelling", "every entry
+  pinned" (not `mock://`), "plans them all" in docs/15, and the replay and cap descriptions.
+
+### Fixed (full audit of 2026-10-03: policy and authorization)
+
+- **The DL4 two-key gate never fired for the one PII spec the battery ships.** The gate compared
+  the tag `pii_elicitation`; `DL-PII-ELICIT-001` is tagged `pii-elicitation`, so a pack enabling
+  only the `layer_b_pii` capability ran it with neither DL4 key turned. Gate tags are now
+  compared without regard to case or `-`/`_`, and declaring `layer_b_pii` is enough on its own
+  to make a spec a PII-elicitation spec. Its refusal reason no longer cites an
+  `--allow-pii-elicitation` flag that does not exist.
+- **An unmarked spec in a flagged family ran.** The gate read `test_only` as rendering-only and
+  allowed everything, so a copy of a shipped spec with the mark deleted, loaded with
+  `--spec-path`, was sent while `dottore lint` reported `MISSING_TEST_ONLY`. It is now
+  `blocked_by_policy` with zero sends; the family comes from the category. Every shipped spec in
+  a flagged family is marked, so the battery loses nothing. Residual: a copy that keeps the mark
+  and deletes `requires_policy` still runs.
+- **An encoded slash walked out of an authorized path prefix.** `/v1/chat/..%2f..%2fadmin` passed
+  the allowlist and was `/admin` to a decoding origin. Paths with `%2f`, `%5c`, a literal
+  backslash or a `%25` double encoding are refused.
+- **`fleet --judge` authorized whatever the judge file named.** Its host and its `auth_ref` went
+  into the generated scope, so a judge file could make the scanner read any environment
+  variable and send it, with the targets' replies, to a host no authorization record listed.
+  The judge is now declared in the fleet file's `judge:` block, written to `judge.yaml` and used
+  by `--run`; a `--judge` file must match that block or `fleet` refuses (exit 3) and writes
+  nothing.
+- **Fleet scopes authorized every port of each host**, and an IPv6 entry could not be pinned at
+  all. Generated entries are now `host:port` (`localhost:11434`, `api.openai.com:443`), and
+  `[::1]:8080` splits correctly. `examples/scope.local.yaml` pins its port too.
+- `docs/15` said the `nova-iopc` specs were "`test_only` (OFF by default)"; all 13 run by
+  default. Corrected, together with its counts, its evaluator column and where `T8.004` is
+  printed. New clauses A-29 and A-30 in the u01 contract.
+
+### Fixed (full audit of 2026-10-03: robustness)
+
+- **One non-retryable 4xx aborted the campaign after 539 more sends and saved nothing.** The
+  first spec exception now stops new specs from starting, keeps every finished finding and the
+  spend, and halts the run as `aborted` with the exception named (exit 3).
+- **A campaign killed mid-flight could not be resumed**: the pre-send integrity record left the
+  run's target unrecorded and the unwaivable target check refused it. The target is recorded
+  there now.
+- **An unknown mutation ran the plain prompt under its name**, so the evidence claimed a
+  variant that was never sent, and lint never emitted `UNKNOWN_MUTATOR_TYPE`. Lint refuses it
+  now and the runner makes that spec inconclusive without sending; a parameterized mutation
+  (`translate:fr`) is no longer silently unmutated on multi-turn specs.
+- **`dottore run` silently dropped a spec file that failed to load** and still printed
+  "1 of 1 planned"; it now refuses with exit 3 and points at `dottore lint`.
+- **Target replies had no size limit** (three 60 MB replies cost 1.5 GB of memory); bodies
+  over 4 MiB are refused unread past the cap as an environment failure for that attempt, which
+  also bounds the input to every spec regex.
+- Lowercase URL paths with a leading `/` are no longer masked as high entropy in status
+  reasons (a path segment with uppercase letters still can be).
+
+### Fixed (full audit of 2026-10-03: verdicts that left a CI gate green)
+
+- **One refused variant un-confirmed an exploit that always worked.** All mutation variants
+  were pooled into one finding, so 5 of 5 on the plain prompt plus a refused obfuscated variant
+  read as disputed, `needs-review`, and `--fail-on high` exited 0. Confirmation and
+  reproducibility are now judged per variant and the spec takes its most reproducible one (32
+  of the 75 specs carry a mutation).
+- **Inconclusive attempts left the denominator**, so one exploit plus four timeouts scored
+  reproducibility 1.0 and Critical while `docs/01 §5`, `core.reproduce` and `dottore replay`
+  all said 0.2. `N` is every attempt now.
+- **A judge outage became a PASS.** The judge's adapter error carried no reason, the runner
+  dropped it like an abstention and the deterministic arms decided alone; it is now
+  `capability_unavailable`, the same as no judge.
+- **One passing attempt made a spec pass** over four environment errors or four
+  compromised-judge attempts. A pass needs a strict majority now, and a compromised judge
+  turns an otherwise passing spec inconclusive, with its reason no longer lost when mixed with
+  another (a deterministic fail on another attempt still makes the spec fail).
+- **`authz_leak` ignored the identities' own canaries** whenever the spec had one, so a
+  cross-tenant leak in the configuration the scope docs recommend scored PASS.
+- **A live run without `--judge`** (74 of 75 specs use it) now warns before sending.
+- **Documented, not changed: a fail decided only by the judge is confirmed and gates CI**, which
+  the FAQ, README and manual denied. The documents now say so, and ADR-0010 (OD-19) is amended
+  to recommend such a finding be `needs-review`. Decision pending.
+
+### Fixed (full audit of 2026-10-03: secrets and evidence integrity)
+
+Six auditors in isolated worktrees read the whole repository the same afternoon. This block is
+what they found about secrets and the chain of custody; each item has a regression test in
+`tests/policy/test_redaction_audit_2026_10_03.py` or `tests/store/test_evidence_manifest.py`.
+
+- **An API key could reach all four report formats in clear.** A key with a trailing CR (a
+  Windows-edited `.env`) made the HTTP library reject the header and quote it in its error;
+  that error became the run status reason, which bypassed masking in every reporter and on
+  stderr. Credentials the tool reads are now registered and masked by value in every
+  redactor, stripped before use, and the status reason is masked once, before any writer.
+- **A password in an endpoint URL** was printed by `--dry-run`, `-sn` and `-v` and stored in
+  the JSON report; URL passwords are masked and registered.
+- **The redaction digest was unsalted** (32 bits of HMAC), so a report could confirm a guessed
+  password offline. Salted per process; `ILDOTTORE_REDACTION_SALT` pins it on purpose. Stored
+  target and finding ids use a fixed identity salt so `--resume` still recognises them.
+- **One reply could abort a campaign.** `token=token=token= X` never reached a redaction fixed
+  point, which the evidence store treats as a leak risk; and `password: password: X` masked the
+  label words and stored `X` in clear. Redaction now runs to a bounded fixed point and a run of
+  labels is consumed as one.
+- **Reports masked the pointers to their own evidence** (107 of 110 digests in a quick-suite
+  report), so a finding could not be traced to its artifact. Tool-generated digests, the
+  store's own paths and attempt ids are kept readable; everything else is masked as before.
+- **An edited artifact renamed to its new hash replayed as genuine and `--resume` published
+  it.** The run store keeps the evidence digests unmasked and `replay` (new `--run-db`) and
+  `--resume` refuse an artifact the run's findings never recorded.
+- **A stdio MCP server inherited the scanner's environment**, every other target's key
+  included. It now gets a minimal one.
+- **A symlink below the run directory** (`<run>/attempts`) was followed; every evidence path
+  is now checked to resolve inside the store root.
+
 ### Documentation (the user docs caught up with what shipped)
 
 - **The man page listed neither `coverage`, `calibrate` nor `render-media`**, and described the

@@ -129,9 +129,19 @@ def test_combine_unconsulted_judge_still_dominates() -> None:
 def test_shared_reason_none_when_conflicting() -> None:
     reasons = [
         _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.CAPABILITY_UNAVAILABLE),
-        _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.JUDGE_COMPROMISED),
+        _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.BLOCKED_BY_POLICY),
     ]
     assert R._shared_inconclusive_reason(reasons) is None
+
+
+def test_a_compromised_judge_outranks_any_other_reason() -> None:
+    """F19 (audit 2026-10-03): mixed with a capability gap it came out as no reason at all."""
+
+    reasons = [
+        _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.CAPABILITY_UNAVAILABLE),
+        _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.JUDGE_COMPROMISED),
+    ]
+    assert R._shared_inconclusive_reason(reasons) is InconclusiveReason.JUDGE_COMPROMISED
 
 
 # --- status / repro helpers -------------------------------------------------
@@ -150,12 +160,52 @@ def test_dominant_status_empty() -> None:
     assert R._dominant_status([]) is VerdictStatus.INCONCLUSIVE
 
 
+def _att(verdict: Verdict, mutation: str = "identity") -> Attempt:
+    return Attempt(
+        attempt_id=f"a-{mutation}-{id(verdict)}",
+        spec_id="X",
+        mutation=mutation,
+        request=ModelRequest(prompt="p"),
+        verdict=verdict,
+    )
+
+
 def test_confirmed_requires_fail_and_threshold() -> None:
     spec = make_spec(confidence_threshold=0.95)
     # A fail below threshold is NOT confirmed.
-    assert R._is_confirmed(VerdictStatus.FAIL, [_v(VerdictStatus.FAIL, conf=0.5)], spec) is False
+    assert (
+        R._is_confirmed(VerdictStatus.FAIL, [_att(_v(VerdictStatus.FAIL, conf=0.5))], spec) is False
+    )
     # Non-fail status never confirmed.
-    assert R._is_confirmed(VerdictStatus.PASS, [_v(VerdictStatus.PASS)], spec) is False
+    assert R._is_confirmed(VerdictStatus.PASS, [_att(_v(VerdictStatus.PASS))], spec) is False
+
+
+def test_a_refused_variant_does_not_unconfirm_an_exploit_that_always_works() -> None:
+    """F2 (audit 2026-10-03): 5/5 on the plain prompt plus one refused obfuscated variant was
+    needs-review, so `--fail-on high` exited 0 on an exploitable target."""
+
+    spec = make_spec(confidence_threshold=0.75)
+    attempts = [_att(_v(VerdictStatus.FAIL, conf=1.0)) for _ in range(5)] + [
+        _att(_v(VerdictStatus.PASS), mutation="leetspeak")
+    ]
+    assert R._is_confirmed(VerdictStatus.FAIL, attempts, spec) is True
+    # An intermittent exploit inside ONE variant is still needs-review.
+    mixed = [_att(_v(VerdictStatus.FAIL, conf=1.0)), _att(_v(VerdictStatus.PASS))]
+    assert R._is_confirmed(VerdictStatus.FAIL, mixed, spec) is False
+
+
+def test_a_pass_has_to_be_earned_by_a_majority() -> None:
+    """F8 (audit 2026-10-03): one passing attempt made the spec pass over four errors."""
+
+    env = _v(VerdictStatus.INCONCLUSIVE)
+    assert R._dominant_status([_v(VerdictStatus.PASS), env, env, env, env]) is (
+        VerdictStatus.INCONCLUSIVE
+    )
+    assert R._dominant_status([_v(VerdictStatus.PASS)] * 3 + [env] * 2) is VerdictStatus.PASS
+    compromised = _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.JUDGE_COMPROMISED)
+    assert R._dominant_status([_v(VerdictStatus.PASS)] * 4 + [compromised]) is (
+        VerdictStatus.INCONCLUSIVE
+    )
 
 
 def test_base_prompt_carrier_and_turns() -> None:
@@ -281,13 +331,17 @@ def test_confirmed_false_when_status_fail_but_no_fail_verdicts() -> None:
     # Defensive: status says FAIL but the verdict list carries no fail (shouldn't
     # happen in practice) → not confirmed rather than a divide-by-zero.
     spec = make_spec()
-    assert R._is_confirmed(VerdictStatus.FAIL, [_v(VerdictStatus.PASS)], spec) is False
+    assert R._is_confirmed(VerdictStatus.FAIL, [_att(_v(VerdictStatus.PASS))], spec) is False
 
 
-async def test_product_exception_propagates_through_runner(
+async def test_product_exception_halts_the_campaign_without_masking_it(
     mutators, evaluators, scorer, stores
 ) -> None:
-    """A non-budget adapter exception is a real defect and must not be masked."""
+    """A non-budget adapter exception is a real defect and must not be masked, and it must
+    not cost the work already done either. It used to propagate only after every other spec
+    had run, then discard every finished finding and the spend (audit 2026-10-03, F5). Now
+    the campaign halts as ``aborted`` with the exception named in the reason, which every
+    report shows and the CLI turns into exit 3."""
 
     class ExplodingAdapter:
         id = "t1"
@@ -314,14 +368,16 @@ async def test_product_exception_propagates_through_runner(
         sleep=no_sleep,
         now=lambda: 0.0,
     )
-    import pytest
+    result = await runner.run(run_id="r1", target=make_target(), specs=[make_spec()])
+    assert result.status == "aborted"
+    assert result.status_reason is not None
+    assert "RuntimeError: product defect" in result.status_reason
 
-    with pytest.raises(RuntimeError, match="product defect"):
-        await runner.run(run_id="r1", target=make_target(), specs=[make_spec()])
 
-
-async def test_unregistered_mutation_falls_back_to_identity(evaluators, scorer, stores) -> None:
-    """A mutation not in the registry is applied as identity (unchanged carrier)."""
+async def test_unregistered_mutation_is_refused_for_that_spec(evaluators, scorer, stores) -> None:
+    """A mutation not in the registry used to be applied as identity and recorded under the
+    unknown name, so the evidence claimed a variant that was never sent (audit 2026-10-03,
+    F3 / F-11). The spec is now inconclusive, says why, and sends nothing."""
 
     class NoMutators:
         def has(self, name: str) -> bool:
@@ -347,8 +403,10 @@ async def test_unregistered_mutation_falls_back_to_identity(evaluators, scorer, 
         now=lambda: 0.0,
     )
     result = await runner.run(run_id="r1", target=make_target(), specs=[spec])
-    # identity + unknown_mut both ran (fallback = identity transform), 2 muts x 2 runs.
-    assert len(result.findings[0].attempts) == 4
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    assert finding.attempts == []
+    assert finding.reasoning is not None and "unknown_mutator: unknown_mut" in finding.reasoning
 
 
 def test_combine_deterministic_fail_wins_over_unconsulted_judge() -> None:

@@ -53,7 +53,7 @@ def test_render_replay_has_footer(tmp_path: Path) -> None:
     result = replay_mod.replay(evidence_root, run_id)
     text = replay_mod.render_replay(result)
     assert run_id in text
-    assert "reproducibility:" in text
+    assert "pooled rate:" in text
 
 
 def test_replay_cli(tmp_path: Path) -> None:

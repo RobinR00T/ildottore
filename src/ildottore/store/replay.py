@@ -34,6 +34,8 @@ class ReplayResult:
     #: evidence of what this tool sent, and it is not an attack attempt, so it must never
     #: reach ``n`` or the reproducibility ratio below.
     probes: tuple[Attempt, ...] = ()
+    #: The content hash (artifact file name) of each attempt, in ``attempts`` order.
+    attempt_hashes: tuple[str, ...] = ()
 
     @property
     def n(self) -> int:
@@ -74,11 +76,56 @@ def replay_run(root: Path, run_id: str) -> ReplayResult:
     its filename hash. Returns an empty result if the run has no attempts dir.
     """
 
+    hashed = _load_dir_hashed(paths.attempts_dir(Path(root), run_id))
     return ReplayResult(
         run_id=run_id,
-        attempts=_load_dir(paths.attempts_dir(Path(root), run_id)),
+        attempts=tuple(attempt for _, attempt in hashed),
         probes=_load_dir(paths.probes_dir(Path(root), run_id)),
+        attempt_hashes=tuple(digest for digest, _ in hashed),
     )
+
+
+def check_manifest(result: ReplayResult, manifest: dict[str, set[str]]) -> None:
+    """Refuse an evidence tree that differs from what the run store recorded.
+
+    Each artifact verifies against its OWN file name, so an edited artifact renamed to its new
+    hash verified, and ``--resume`` published it: a clean pass became a confirmed critical
+    (audit 2026-10-03, F12). The run store's findings cite the hash of every attempt they
+    were scored from, so for a spec in ``manifest``:
+
+    * an attempt artifact that is not one of the recorded hashes was added or replaced,
+      including one placed under a spec whose finding cites no evidence at all;
+    * a recorded hash with no artifact was deleted (removing every artifact of the failing
+      spec used to replay as a clean run, review of PR #32).
+
+    A spec absent from ``manifest`` cannot be checked this way and is let through: one with no
+    recorded finding (a campaign killed mid-spec), or one stored before digests were kept
+    readable. That is the known limit, not a pass.
+    """
+
+    present = set(result.attempt_hashes)
+    for digest, attempt in zip(result.attempt_hashes, result.attempts, strict=True):
+        recorded = manifest.get(attempt.spec_id)
+        if recorded is not None and digest not in recorded:
+            raise TamperError(
+                f"artifact {digest}.json ({attempt.spec_id}) is not one the run store recorded "
+                "for that spec: it was added or replaced after the run"
+            )
+    for spec_id, recorded in sorted(manifest.items()):
+        missing = sorted(recorded - present)
+        if missing:
+            raise TamperError(
+                f"{len(missing)} artifact(s) the run store recorded for {spec_id} are missing "
+                f"from the evidence tree (first: {missing[0]}.json): removed after the run"
+            )
+
+
+def _load_dir_hashed(directory: Path) -> tuple[tuple[str, Attempt], ...]:
+    """Like :func:`_load_dir`, keeping each artifact's content hash."""
+
+    if not directory.is_dir():
+        return ()
+    return tuple((a.stem, _load_verified_attempt(a)) for a in sorted(directory.glob("*.json")))
 
 
 def _load_dir(directory: Path) -> tuple[Attempt, ...]:

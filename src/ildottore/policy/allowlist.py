@@ -27,6 +27,27 @@ def _decode_dot_segments(path: str) -> str:
     return path.replace("%2e", ".").replace("%2E", ".")
 
 
+# Sequences an origin may decode into a path separator, or into another percent escape.
+# ``%2f`` is an encoded ``/`` (so ``/v1/chat/..%2f..%2fadmin`` is ``/admin`` to a decoding
+# origin), ``%5c`` an encoded backslash, and ``%25`` re-encodes a ``%`` (``%252f`` decodes to
+# ``%2f``, then to ``/``). Matched case-insensitively.
+_ENCODED_SEPARATORS = ("%2f", "%5c", "%25")
+
+
+def _has_ambiguous_separator(path: str) -> bool:
+    """True if ``path`` carries a separator the gate cannot resolve the way an origin might.
+
+    Refused rather than decoded: rewriting the path would break the property that the gate
+    authorizes exactly what the transport sends. A literal backslash is refused too, since some
+    origins (IIS among them) treat it as ``/``. Only the ``%2e`` dot escape used to be handled,
+    so an encoded slash walked out of an authorized prefix on an authorized host (audit SEC-03,
+    2026-10-03).
+    """
+
+    lowered = path.lower()
+    return "\\" in path or any(seq in lowered for seq in _ENCODED_SEPARATORS)
+
+
 def _remove_dot_segments(path: str) -> str:
     """Resolve ``.``/``..`` segments exactly as the HTTP client will before egress.
 
@@ -39,7 +60,12 @@ def _remove_dot_segments(path: str) -> str:
     out: list[str] = []
     for seg in path.split("/"):
         if seg == "..":
-            if out and out[-1] != "":
+            # Pop ANY segment except the leading root one, empty segments included. Refusing
+            # to pop an empty segment made ``/v1/chat/x//../../admin`` resolve to a path under
+            # the prefix here while httpx sent ``/v1/admin``: the gate and the wire disagreed
+            # with no encoding involved (review of PR #32). A differential test against httpx
+            # pins the two together.
+            if len(out) > 1:
                 out.pop()
         elif seg != ".":
             out.append(seg)
@@ -60,8 +86,25 @@ def _normalize_path(path: str) -> str:
 
 
 def _split_host_port(value: str) -> tuple[str, int | None]:
-    """Split ``host[:port]`` into a lowercased host and an optional int port."""
+    """Split ``host[:port]`` into a lowercased host and an optional int port.
 
+    A bracketed IPv6 literal (``[::1]``, ``[::1]:8080``) is unwrapped. Partitioning it on the
+    first colon used to leave the whole string as the host, so a port-pinned IPv6 entry never
+    matched anything and IPv6 targets could not be pinned to a port at all (audit SEC-13).
+    A bare IPv6 literal (``::1``) is a host with no port.
+    """
+
+    if value.startswith("["):
+        host, bracket, rest = value[1:].partition("]")
+        if not bracket:
+            return value.lower(), None
+        if not rest:
+            return host.lower(), None
+        if rest.startswith(":") and rest[1:].isdigit():
+            return host.lower(), int(rest[1:])
+        return value.lower(), None
+    if value.count(":") > 1:
+        return value.lower(), None
     host, sep, port = value.partition(":")
     if sep and port.isdigit():
         return host.lower(), int(port)
@@ -134,12 +177,15 @@ class EndpointAllowlist:
                 return False
         elif scheme not in ("https", "mock"):
             return False
+        raw_path = parts.path or "/"
+        if _has_ambiguous_separator(raw_path):
+            return False
         # Resolve dot-segments to the path the transport will actually request (S3: the
         # gate and the wire must agree, closes the ``/v1/../admin`` bypass). Percent-encoded
         # dot segments are decoded first: httpx forwards ``%2e%2e`` verbatim, so the gate and
         # the wire still agree, but an origin server that decodes it would resolve a path this
         # allowlist never authorized.
-        path = _remove_dot_segments(_decode_dot_segments(parts.path or "/"))
+        path = _remove_dot_segments(_decode_dot_segments(raw_path))
         # Fill the scheme's default port so a pinned ``host:443`` matches an implicit-port
         # https URL while still rejecting an explicit ``:2375`` on the same host.
         port = parts.port or (443 if parts.scheme == "https" else 80)

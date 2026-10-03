@@ -81,8 +81,8 @@ dottore run --quick -t target.yaml --judge judge.yaml --scope scope.yaml
 # Compare several models on the same suite
 dottore run --suite owasp:llm --compare -t gpt.yaml -t claude.yaml -t local.yaml --scope scope.yaml
 
-# Scan a whole fleet declared in one file
-dottore fleet fleet.yaml --run --judge judge.yaml
+# Scan a whole fleet declared in one file (its `judge:` block is the judge)
+dottore fleet fleet.yaml --run
 
 # Inspect / author specs
 dottore registry ls [--category .. --owasp .. --suite .. --tag ..]
@@ -90,7 +90,7 @@ dottore coverage [--framework owasp|atlas|iopc|aisvs] [--suite ..] [--json]   # 
 dottore describe PI-DIRECT-001
 dottore lint specs/
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
-dottore replay <run-id> --evidence-root .dottore/evidence   # reproduce a past run
+dottore replay <run-id> --evidence-root .dottore/evidence --run-db .dottore/runs.sqlite   # reproduce a past run, checked against the run store
 
 # Regression gate: compare a run against a stored baseline (CI-gateable)
 dottore diff baseline.json current.json
@@ -155,8 +155,15 @@ a scope plus one target file per model:
 
 ```bash
 dottore fleet fleet.yaml --out .dottore/fleet      # generate scope + targets, review them
-dottore fleet fleet.yaml --run --judge judge.yaml  # or scan every target immediately
+dottore fleet fleet.yaml --run                     # or scan every target immediately
 ```
+
+The judge goes in the fleet file too, as a `judge:` block (`id`, `endpoint`, `model`,
+`api_key_env`), because the generated scope is built from that file alone: `fleet` writes it
+to `judge.yaml` and `--run` uses it. A `--judge judge.yaml` is accepted only when it names the
+same id, endpoint and credential as the block. Every generated scope entry is pinned to its
+host and port (`localhost:11434`), so a local model does not authorize the machine's other
+ports (an offline `mock://` entry sends nothing and keeps a bare host).
 
 Keys are never written to the file: each entry names an env var (`api_key_env`), resolved
 only at send time. `provider` is inferred from the endpoint (`/chat/completions` -> openai,

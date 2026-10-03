@@ -148,12 +148,24 @@ class SemanticJudgeEvaluator(BaseEvaluator):
             try:
                 response = await self._judge.send(request)
             except AdapterError as exc:
-                # Env/product adapter failure - inconclusive, not a fabricated verdict.
-                return self._inconclusive(f"judge adapter error: {exc}")
+                # Env/product adapter failure - inconclusive, not a fabricated verdict, and
+                # with a REASON. Without one the runner drops it like a judge that merely
+                # abstained, the deterministic arms decide alone, and a judge outage turned a
+                # spec that needs the judge into a PASS, while the same spec with no judge
+                # configured stayed inconclusive (audit 2026-10-03, F21).
+                return self._inconclusive(
+                    f"judge adapter error: {exc}",
+                    reason=InconclusiveReason.CAPABILITY_UNAVAILABLE,
+                )
             jv = _parse_judge_output(response.text)
             if jv is None:
+                # Same reason as an outage: a judge that never yields a usable verdict (empty
+                # content from a filter, a refusal in prose) is no judge. Without the reason the
+                # runner dropped it and the deterministic arms passed the spec alone, while an
+                # adapter error on the same spec stayed inconclusive (review of PR #32).
                 return self._inconclusive(
-                    "judge output was not valid structured JSON (free text rejected)"
+                    "judge output was not valid structured JSON (free text rejected)",
+                    reason=InconclusiveReason.CAPABILITY_UNAVAILABLE,
                 )
             # Compromised if the judge EMITTED the (per-call, unguessable) control token, it
             # obeyed a control injection. ``observed_injection_attempt`` only casts doubt on a

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import replace
 
 from ildottore.reporting.masking import MaskingContext, Redactor, default_redactor
 from ildottore.reporting.summary import RunStatus, RunSummary, build_run_summary
@@ -56,7 +57,14 @@ class BaseReporter(ABC):
         # a shorter finding list and nothing else, so every format used to render a truncated
         # run as a complete one, over a denominator equal to its own length (contract §6).
         self._planned_specs = planned_specs
-        self._run_status = run_status if run_status is not None else RunStatus()
+        status = run_status if run_status is not None else RunStatus()
+        # The status reason is free text assembled from adapter and transport errors, so it
+        # goes through the same choke point as everything else, here, once, before any writer
+        # can read it. It used to bypass masking, and SARIF and JUnit read it directly: an
+        # HTTP library's error quoting an API key reached all four formats (SEC-01).
+        if status.reason:
+            status = replace(status, reason=self._redactor.redact_text(status.reason))
+        self._run_status = status
 
     def render(self, run: TestRun, findings: list[Finding]) -> bytes:
         """Mask once, summarize once, then delegate to the format writer (pure)."""

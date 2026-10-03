@@ -19,7 +19,7 @@ secrets), optional ≥2 identities (`multi_identity`). Verify file integrity by 
 expose its hash so a run records it (S4). Provide `PolicyEngine.check(target, endpoint, spec)`
 → `allow` | `blocked_by_policy(reason)` answering: target in scope? endpoint on allowlist
 (default-deny, S3)? spec's category/id enabled by the active **policy pack**? dangerous payload
-marked `test_only` (S5)? Layer-B / PII-elicitation specs **off unless the pack enables them**
+marked `test_only` (S5; enforced from the category, A-29)? Layer-B / PII-elicitation specs **off unless the pack enables them**
 (`docs/11 §5`, DL4/DL5). `config.py` sources scanner secrets from **env/vault**, never files.
 `redactor.py` is the single choke point masking secrets/keys/PII in logs, console, evidence and
 reports (S6, DL2); it is import-cheap and dependency-free so every layer can call it.
@@ -92,6 +92,34 @@ passed, with the invariant resting on adapter implementation rather than on the 
 **A-20 One answer per target.** A scope declaring an id twice is refused: `Scope.target()`
 returns the first match, so a permissive entry silently shadowed a narrowing one, including its
 credential allowlist.
+
+**A-29 A gate keys on what a spec cannot opt out of (added 2026-10-03).** The `test_only`
+criterion above is enforced at run time from the spec's **category**: an unmarked spec in a
+flagged family is `blocked_by_policy`. The engine used to read the mark as rendering-only and
+allow everything, so a copy of a shipped spec with the mark deleted, loaded with `--spec-path`,
+was sent while `dottore lint` reported it (audit SEC-06). Tags that drive a gate are compared
+after normalising case and `-`/`_`, and the PII-elicitation gate also keys on the `layer_b_pii`
+capability: the one shipped PII spec was tagged `pii-elicitation`, the gate compared
+`pii_elicitation`, and the two-key DL4 gate never fired for it (audit F-22). Residual, stated
+rather than hidden: the `offensive_simulation` capability is still declared by the spec itself.
+Checks: `tests/policy/test_policy_audit_2026_10_03.py` (the shipped spec under a capability-only
+pack, every flagged family unmarked, the `run` refusal of an unmarked copy).
+
+**A-30 The allowlist authorizes the path the client sends, on the port it names, and refuses
+the encodings an origin could decode into a separator (added 2026-10-03, corrected the same
+evening).** Dot segments are resolved exactly as httpx resolves them, and a differential test
+over generated paths pins the two together: refusing to pop an empty segment let
+`/v1/chat/completions/x//../../../../admin` pass while httpx sent `/v1/admin` (review of
+PR #32). A path carrying an encoded slash or backslash (`%2f`, `%5c`), a literal backslash or a
+`%25` double encoding is refused, not rewritten: `/v1/chat/..%2f..%2fadmin` passed the prefix
+check and was `/admin` to a decoding origin (audit SEC-03). Not covered, stated rather than
+hidden: forms only some origins decode (`;` path parameters, overlong UTF-8, `%u` escapes,
+fullwidth dots). A bracketed IPv6 host splits
+into host and port (`[::1]:8080`), so an IPv6 entry can be pinned (SEC-13), and the scope `fleet`
+generates pins every endpoint to its port. The judge `fleet` authorizes comes from the fleet
+file's own `judge:` block, never from a `--judge` file, which could otherwise name any host and
+any credential and have both written into the scope (SEC-04). Checks: the same file, plus
+`tests/cli/test_fleet.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

@@ -110,6 +110,19 @@ def load_resume_run(
             "Check the run id and --evidence-root; a run that sent nothing has nothing to "
             "continue."
         )
+    if run_db is not None and Path(run_db).is_file():
+        # Each artifact verifies against its own name, so an edited one renamed to its new
+        # hash verified and was published by the resume as part of the finding (F12). The
+        # run store's findings are the manifest; a refusal here is not waivable.
+        from ildottore.store import SqliteRunStore, TamperError, check_manifest
+
+        manifest_store = SqliteRunStore(Path(run_db))
+        try:
+            check_manifest(result, manifest_store.recorded_evidence(run_id))
+        except TamperError as exc:
+            raise ValueError(f"run {run_id!r} cannot be resumed: {exc}") from exc
+        finally:
+            manifest_store.close()
 
     refs = _ref_index(Path(evidence_root), run_id)
     by_spec: dict[str, list[Attempt]] = defaultdict(list)
@@ -157,11 +170,12 @@ def _assert_same_target(
     # tenant-shaped id (`tenant-<32 hex>`, an email) is stored masked and never equalled its
     # own raw value: every resume of such a target was refused with "was made against target
     # '«REDACTED:high_entropy:...»'", which is both false and unrecoverable by any flag. The
-    # masking is deterministic, so redacting this side too restores the comparison.
+    # store masks it with a FIXED identity salt (``redact_identity``), so redacting this side
+    # the same way restores the comparison; the general redactor's salt is random per process.
     if stored is not None and stored != target.id:
-        from ildottore.redactor import Redactor
+        from ildottore.redactor import redact_identity
 
-        if stored == Redactor().redact_text(target.id):
+        if stored == redact_identity(target.id):
             stored = target.id
     if stored is None:
         # A row with no target id verifies nothing, and `_ensure_run_row` can mint exactly such

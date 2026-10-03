@@ -497,11 +497,37 @@ def _check_suite_refs(pack: LoadedPack, registry: Registry) -> list[LintError]:
     return errors
 
 
+def _check_mutators(spec: AttackSpec, known: frozenset[str] | None) -> list[LintError]:
+    """Every declared mutation must name a registered mutator (by base name).
+
+    ``UNKNOWN_MUTATOR_TYPE`` was declared and never emitted: an unknown name passed lint and
+    the runner sent the identity prompt recorded under it, so the evidence claimed a variant
+    that was never sent (audit 2026-10-03, F-11). ``registry`` cannot import ``mutators`` (they
+    are peers), so the caller passes the names; with ``None`` the check is skipped.
+    """
+
+    if known is None:
+        return []
+    return [
+        LintError(
+            code=LintCode.UNKNOWN_MUTATOR_TYPE,
+            message=(
+                f"mutation {mutation!r} names no registered mutator (known: "
+                f"{', '.join(sorted(known))})"
+            ),
+            spec_id=spec.id,
+        )
+        for mutation in dict.fromkeys(spec.mutations or [])
+        if mutation != "identity" and mutation.split(":", 1)[0] not in known
+    ]
+
+
 def lint_packs(
     packs: list[LoadedPack],
     load_errors: list[LintError] | None = None,
     *,
     stub_table: dict[EvaluatorType, StubEvaluator] | None = None,
+    known_mutators: frozenset[str] | None = None,
 ) -> LintReport:
     """Lint an already-loaded pack set + carry forward any load-time findings."""
     table = stub_table if stub_table is not None else DEFAULT_STUB_TABLE
@@ -511,6 +537,7 @@ def lint_packs(
     findings.extend(registry.collisions)
 
     for spec in _unique_specs(packs):
+        findings.extend(_check_mutators(spec, known_mutators))
         findings.extend(_check_test_only(spec))
         findings.extend(_check_framework_map(spec))
         findings.extend(_check_media(spec))
@@ -551,7 +578,10 @@ def lint(
     paths: list[Path],
     *,
     stub_table: dict[EvaluatorType, StubEvaluator] | None = None,
+    known_mutators: frozenset[str] | None = None,
 ) -> LintReport:
     """Load every search path (no exec/no network) and lint the merged result."""
     loaded = load_paths(paths)
-    return lint_packs(loaded.packs, loaded.errors, stub_table=stub_table)
+    return lint_packs(
+        loaded.packs, loaded.errors, stub_table=stub_table, known_mutators=known_mutators
+    )

@@ -271,21 +271,22 @@ def test_requires_policy_allowed_when_capability_enabled() -> None:
 
 
 def test_requires_policy_blocked_if_any_capability_missing() -> None:
-    # ANY missing capability blocks - partial enablement is not enough.
+    # ANY missing capability blocks - partial enablement is not enough. (Not layer_b_pii: a
+    # spec declaring it is a PII-elicitation spec and the DL4 gate answers first.)
     spec = make_spec(
-        "DL-PII-ELICIT-001",
-        category=Category.DATA_LEAKAGE,
-        requires_policy=["layer_b_pii", "offensive_simulation"],
+        "AG-SWEEP-001",
+        category=Category.AGENT_TOOL_ABUSE,
+        requires_policy=["credential_sweep", "offensive_simulation"],
     )
     pack = PolicyPack(
         name="p",
-        allow_categories=[Category.DATA_LEAKAGE],
-        enabled_capabilities=["layer_b_pii"],  # offensive_simulation still missing
+        allow_categories=[Category.AGENT_TOOL_ABUSE],
+        enabled_capabilities=["credential_sweep"],  # offensive_simulation still missing
     )
     res = _engine(pack).check("acme-bot", ENDPOINT, spec)
     assert res.decision == "blocked_by_policy"
     assert "offensive_simulation" in (res.reason or "")
-    assert "layer_b_pii" not in (res.reason or "")  # only the missing one is reported
+    assert "credential_sweep" not in (res.reason or "")  # only the missing one is reported
 
 
 def test_requires_policy_empty_never_gated() -> None:
@@ -299,7 +300,7 @@ def test_pack_enabled_capabilities_defaults_empty() -> None:
 
 
 def test_test_only_spec_still_runs() -> None:
-    # test_only gates raw rendering (u11), not execution - check should allow.
+    # The mark does not switch a spec off: a marked spec is allowed.
     spec = make_spec("PI-DANGER-001", test_only=True)
     assert _engine(BASE_PACK).check("acme-bot", ENDPOINT, spec).allowed
 

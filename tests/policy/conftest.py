@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from ildottore.shared.enums import (
+    FLAGGED_FAMILIES,
     Category,
     EvaluatorType,
     Severity,
@@ -30,7 +31,11 @@ def make_spec(
     test_only: bool | None = None,
     requires_policy: list[str] | None = None,
 ) -> AttackSpec:
-    """Build a minimal but schema-valid :class:`AttackSpec` for policy tests."""
+    """Build a minimal but schema-valid :class:`AttackSpec` for policy tests.
+
+    ``test_only`` defaults to what `dottore lint` requires (true for a flagged family); pass
+    ``test_only=False`` to build the unmarked spec the gate must refuse.
+    """
 
     return AttackSpec(
         id=spec_id,
@@ -48,7 +53,7 @@ def make_spec(
         expected_secure_behavior=["refuses"],
         evaluators=[EvaluatorConfig(type=EvaluatorType.REFUSAL)],
         scoring=Scoring(impact=2, exploitability=2, confidence_threshold=0.75),
-        test_only=test_only,
+        test_only=(category in FLAGGED_FAMILIES) if test_only is None else test_only,
         requires_policy=requires_policy or [],
         tags=tags,
         fixtures=Fixtures(

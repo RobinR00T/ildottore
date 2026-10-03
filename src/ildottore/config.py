@@ -2,9 +2,10 @@
 
 Sources the scanner's own operational secrets (its LLM/judge keys, vault token)
 from the **environment or a pluggable vault**, never from files checked into the
-repo (S6, AGENTS.md §2). Carries the safety-flag surface - ``--unsafe-render``
-(S5, OD-12) and ``--allow-pii-elicitation`` (DL4, OD-11) - as typed config so the
-policy engine and the reporter (u11) can read one authoritative state.
+repo (S6, AGENTS.md §2). Carries the safety-flag surface - ``unsafe_render`` (S5, OD-12) and
+the run-level PII-elicitation key (DL4, OD-11) - as typed config so the policy engine and the
+reporter (u11) can read one authoritative state. No CLI flag sets either of them today, so both
+stay at their default, off.
 
 This module does **no** network I/O and imports nothing from ``adapters``,
 ``core`` or any other unit - only ``shared`` types and the stdlib.

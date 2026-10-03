@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ildottore.registry import LintError, LintReport
+from ildottore.registry import LintCode, LintError, LintReport, Severity
 from ildottore.registry import lint as _lint
 
 EXIT_OK = 0
@@ -23,8 +23,30 @@ EXIT_LINT_FAILED = 1
 
 
 def lint(paths: list[Path]) -> LintReport:
-    """Load + lint the given search paths (contract §5.5 entry point)."""
-    return _lint(paths)
+    """Load + lint the given search paths (contract §5.5 entry point).
+
+    The registered mutator names (built-ins plus installed plugins) are passed in so lint can
+    refuse a mutation that names none of them; ``registry`` cannot import ``mutators`` itself.
+    """
+    from ildottore.mutators import build_default_registry
+
+    # Loading plugins is new here, and a broken one used to crash lint with a traceback and
+    # exit 1, the code for "your specs failed lint" (review of PR #32). It is reported instead.
+    plugin_error: LintError | None = None
+    try:
+        known = frozenset(build_default_registry().names())
+    except Exception as exc:
+        known = frozenset(build_default_registry(discover=False).names())
+        plugin_error = LintError(
+            code=LintCode.MUTATOR_PLUGIN_ERROR,
+            severity=Severity.WARNING,
+            message=f"an installed mutator plugin could not be loaded ({exc}); linted with "
+            "the built-in mutators only",
+        )
+    report = _lint(paths, known_mutators=known)
+    if plugin_error is None:
+        return report
+    return report.model_copy(update={"warnings": [plugin_error, *report.warnings]})
 
 
 def render_json(report: LintReport) -> str:

@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from ildottore.redactor import Redactor as _DefaultRedactorImpl
+from ildottore.redactor import redact_evidence_ref
 from ildottore.shared.models import Finding, TestRun
 
 __all__ = ["MaskingContext", "Redactor", "mask_findings", "mask_run", "mask_text"]
@@ -51,22 +52,63 @@ def mask_run(run: TestRun, redactor: Redactor) -> TestRun:
     """Return a deep-masked copy of ``run`` (every string field redacted).
 
     The redactor walks the model dump preserving shape; the masked dict is re-validated
-    back into a :class:`TestRun` so downstream writers keep the typed, frozen contract.
+    back into a :class:`TestRun` so downstream writers keep the typed, frozen contract. The
+    findings embedded in the run get the same restores as :func:`mask_findings`: the JSON
+    report carries both copies, and only the top-level one used to keep its evidence
+    references readable (103 of 110 digests stayed masked under ``run.findings``).
     """
 
     raw = run.model_dump(mode="json")
     masked = redactor.redact(raw)
+    if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
+        raise TypeError("redactor changed the shape of a run dump")
+    masked["findings"] = [
+        _restore_tool_fields(masked_finding, finding, redactor)
+        for masked_finding, finding in zip(masked.get("findings") or [], run.findings, strict=True)
+    ]
     return TestRun.model_validate(masked)
 
 
-def mask_findings(findings: list[Finding], redactor: Redactor) -> list[Finding]:
-    """Return deep-masked copies of ``findings`` (order preserved)."""
+def _restore_tool_fields(masked: object, finding: Finding, redactor: Redactor) -> dict[str, object]:
+    """Put back, on a masked finding dump, the fields the tool generated rather than read.
 
-    out: list[Finding] = []
-    for finding in findings:
-        masked = redactor.redact(finding.model_dump(mode="json"))
-        out.append(Finding.model_validate(masked))
-    return out
+    The spec id is schema-validated (``shared.models._ID_PATTERN``) and authored, never
+    target text: masking a custom one (``ACME-SYSPROMPT2-DOS-003``) with the per-process salt
+    gave it a different digest in every run, so ``dottore diff`` saw two unrelated specs and
+    reported no regression, and the SARIF rule id changed between runs (review of PR #32).
+    """
+
+    if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
+        raise TypeError("redactor changed the shape of a finding dump")
+    masked["spec_id"] = finding.spec_id
+    masked["evidence"] = [
+        redact_evidence_ref(redactor, ref.model_dump(mode="json")) for ref in finding.evidence
+    ]
+    for masked_attempt, attempt in zip(masked.get("attempts") or [], finding.attempts, strict=True):
+        masked_attempt["attempt_id"] = attempt.attempt_id
+        masked_attempt["spec_id"] = attempt.spec_id
+    return masked
+
+
+def mask_findings(findings: list[Finding], redactor: Redactor) -> list[Finding]:
+    """Return deep-masked copies of ``findings`` (order preserved).
+
+    Everything the target or the operator wrote is masked. What the tool itself generated to
+    point at its evidence is not: the evidence references (run id, attempt id, path, sha256),
+    each attempt's id and the spec id are restored after the pass. Masking them hid nothing,
+    since a digest and a path are not secrets, and it cut the report off from its proof: 107
+    of 110 evidence hashes in a quick-suite report read ``«REDACTED:high_entropy:...»``, so
+    nobody could find, let alone verify, the artifact a finding cited (audit 2026-10-03, R1).
+    """
+
+    return [
+        Finding.model_validate(
+            _restore_tool_fields(
+                redactor.redact(finding.model_dump(mode="json")), finding, redactor
+            )
+        )
+        for finding in findings
+    ]
 
 
 class MaskingContext:

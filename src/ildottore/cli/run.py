@@ -30,6 +30,7 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ildottore.cli import resume as resume_mod
 from ildottore.cli import wiring
@@ -43,7 +44,7 @@ from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
 from ildottore.shared.digest import spec_digests, target_digest
-from ildottore.shared.enums import Category
+from ildottore.shared.enums import Category, EvaluatorType
 from ildottore.shared.models import (
     AttackSpec,
     Finding,
@@ -508,6 +509,32 @@ def fingerprint_probe_count() -> int:
     )
 
 
+def _no_judge_warning(
+    selected: list[AttackSpec], routes: list[Any], judge_target: Target | None
+) -> str | None:
+    """Say, before sending, that a live run without ``--judge`` will decide little.
+
+    74 of the 75 shipped specs carry ``semantic_judge``. A live deep run without a judge
+    ended with pass 1, fail 0, inconclusive 74 and exit 0, and neither the run nor the dry run
+    said why (audit 2026-10-03, R13). An offline mock decides on its fixtures, so it is exempt.
+    """
+
+    if judge_target is not None or not any(route[2][1] is not None for route in routes):
+        return None
+    judged = sum(
+        1
+        for spec in selected
+        if any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators)
+    )
+    if not judged:
+        return None
+    return (
+        f"warning: no --judge on a live target: {judged} of {len(selected)} selected specs use "
+        "semantic_judge and come back inconclusive wherever their deterministic evaluators do "
+        "not decide. Pass --judge <judge-target.yaml> for a decisive run."
+    )
+
+
 def _safe_endpoint(endpoint: str) -> str:
     """Mask an endpoint before printing it. A stdio MCP target's "endpoint" is a COMMAND LINE.
 
@@ -786,7 +813,22 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     for _, candidate in to_authorize:
         wiring.check_target_credential(scope, candidate)
 
-    registry = wiring.build_registry(spec_paths)
+    # A spec file that fails to load is refused, not dropped. `build_registry` keeps only what
+    # parsed, so a one-letter typo removed a spec from the battery and the run still printed
+    # "Specs run: 1 of 1 planned" and `complete` (audit 2026-10-03, F-10).
+    registry, load_errors = wiring.load_registry(spec_paths)
+    if load_errors:
+        # Counted by FILE: one bad file yields many findings (17 for one target example), and
+        # the message said "17 spec file(s)" (review of PR #32).
+        files = list(dict.fromkeys(e.path or e.spec_id or "?" for e in load_errors))
+        shown = "; ".join(
+            f"{e.path or e.spec_id or '?'}: {e.message[:120]}" for e in load_errors[:5]
+        )
+        more = f" (and {len(load_errors) - 5} more problem(s))" if len(load_errors) > 5 else ""
+        raise ValueError(
+            f"{len(files)} spec file(s) failed to load and would silently leave the "
+            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first."
+        )
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
 
@@ -965,6 +1007,14 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         for _, target in loaded_targets
     }
 
+    printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
+    # Before anything is sent, the -sV probe pass included, and before the dry-run return:
+    # the dry run is where an operator decides whether to add a judge. The warning used to be
+    # computed after both, so 17 probes went out first and the dry run never showed it.
+    no_judge = _no_judge_warning(selected, routes, judge_target)
+    if no_judge:
+        printer.error(no_judge)
+
     if opts.fingerprint_first and not sends_nothing:
         probe_store = wiring.build_evidence_store(evidence_root, planted_canaries=[])
         for _, target, (mock_scenario, real_target) in routes:
@@ -1076,8 +1126,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     probes_sent = fingerprint_probe_count() if (opts.fingerprint_first and not sends_nothing) else 0
 
-    printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
-
     # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
     # loop: `--resume` names a single target, so there is one prior spend to carry.
     results: list[CampaignResult] = []
@@ -1157,8 +1205,12 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         state=states[0] if states else "complete",
         reason="; ".join(f"{k}: {v}" for k, v in sorted(incomplete.items())) or None,
     )
+    # Masked before the terminal sees it, for the same reason the reporters mask it (SEC-01).
+    from ildottore.reporting import default_redactor
+
+    _mask = default_redactor()
     for target_id, reason in sorted(incomplete.items()):
-        printer.error(f"error: run on {target_id} did not complete: {reason}")
+        printer.error(f"error: run on {target_id} did not complete: {_mask.redact_text(reason)}")
 
     report_paths = _write_reports(
         opts,
@@ -1365,6 +1417,7 @@ def _persist_run_integrity(
     with SqliteRunStore(Path(run_db)) as store:
         store.save_run_context(
             run_id,
+            target_id=target.id,
             spec_digests=spec_digests(specs),
             context={
                 "target_digest": target_digest(target, mock_scenario=mock_scenario),

@@ -491,3 +491,23 @@ def test_a_campaign_killed_mid_flight_can_still_be_resumed(tmp_path: Path) -> No
 
     outcome = execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
     assert outcome.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}
+
+
+def test_a_live_run_without_a_judge_says_so_before_sending() -> None:
+    """R13 (audit 2026-10-03): 74 of 75 specs use semantic_judge; a live deep run without one
+    ended pass 1, fail 0, inconclusive 74, exit 0, and nothing said why."""
+
+    from ildottore.cli import wiring
+    from ildottore.cli.run import _no_judge_warning
+
+    repo = Path(__file__).resolve().parents[2]
+    spec = next(
+        s for s in wiring.build_registry([repo / "specs"]).list() if s.id == "PI-DIRECT-001"
+    )
+    live = [("t.yaml", object(), (None, object()))]
+    offline = [("t.yaml", object(), ("hardened", None))]
+    assert any(e.type.value == "semantic_judge" for e in spec.evaluators)
+    message = _no_judge_warning([spec], live, None)
+    assert message is not None and "--judge" in message
+    assert _no_judge_warning([spec], offline, None) is None
+    assert _no_judge_warning([spec], live, object()) is None  # type: ignore[arg-type]

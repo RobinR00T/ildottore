@@ -124,15 +124,22 @@ Declare every target in one file, expand it into a scope plus one target file pe
 and scan them all:
 
 ```bash
-dottore fleet examples/fleet.yaml --run --judge examples/target.judge.yaml
+dottore fleet examples/fleet.yaml --run
 # or expand only (review the generated files first):
 dottore fleet examples/fleet.yaml --out .dottore/fleet
 ```
 
-With `--judge`, the generated scope now includes the judge model. It did not until
-2026-09-21, so the judge was unauthorized in the scope this very command produced: every
-`semantic_judge` verdict came back inconclusive for lack of authorization, the reason was
-written only into the JSON report, and the run exited 0.
+`examples/fleet.yaml` declares its judge in a `judge:` block, so the generated scope
+authorizes it and `fleet` writes it to `.dottore/fleet/judge.yaml`. Passing
+`--judge examples/target.judge.yaml` as well also works, because that file names the same
+id, endpoint and (no) credential; a judge file the fleet does not declare is refused (exit 3)
+and nothing is written. Two earlier states of this command: until 2026-09-21 the judge was
+missing from the generated scope, so every `semantic_judge` verdict came back inconclusive
+and the run exited 0; until 2026-10-03 it was authorized from the `--judge` file itself,
+whatever host and environment variable that file named.
+
+The generated scope pins each endpoint to its port (`localhost:11434`), as
+`examples/scope.local.yaml` now does by hand.
 
 ## Scenario F, scan an MCP server (read-only discovery)
 

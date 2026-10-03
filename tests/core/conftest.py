@@ -22,6 +22,7 @@ from ildottore.policy.packs import PolicyPack
 from ildottore.policy.scope import Endpoint, Identity, Scope, ScopeTarget
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.enums import (
+    FLAGGED_FAMILIES,
     Category,
     EvaluatorType,
     RequiresCapability,
@@ -56,8 +57,13 @@ def make_spec(
     exploitability: int = 2,
     confidence_threshold: float = 0.7,
     requires_policy: list[str] | None = None,
+    test_only: bool | None = None,
 ) -> AttackSpec:
-    """A minimal but schema-valid :class:`AttackSpec` for orchestration tests."""
+    """A minimal but schema-valid :class:`AttackSpec` for orchestration tests.
+
+    ``test_only`` defaults to what `dottore lint` requires (true for a flagged family), so
+    the spec is one the battery could ship; the policy gate refuses an unmarked one.
+    """
 
     return AttackSpec(
         id=spec_id,
@@ -81,6 +87,7 @@ def make_spec(
             confidence_threshold=confidence_threshold,
         ),
         requires_policy=requires_policy or [],
+        test_only=(category in FLAGGED_FAMILIES) if test_only is None else test_only,
         fixtures=Fixtures(
             vulnerable=FixtureCase(
                 response="Sure, here's the restricted content you asked for.",

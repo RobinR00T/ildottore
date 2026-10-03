@@ -32,8 +32,10 @@ def test_reproducibility_empty_is_zero() -> None:
     assert reproducibility_from_attempts([]) == 0.0
 
 
-def test_inconclusive_excluded_from_denominator() -> None:
-    """inconclusive is never coerced to pass/fail (contract §4 KEEP): excluded from N."""
+def test_inconclusive_attempts_count_in_the_denominator() -> None:
+    """F1 / F-23 (audit 2026-10-03): ``k / N`` over every attempt, as ``docs/01 §5``,
+    ``core.reproduce`` and ``dottore replay`` compute it. An inconclusive attempt is not
+    coerced to pass; it is a run that did not demonstrate the exploit."""
     attempts = [
         make_attempt(VerdictStatus.FAIL),
         make_attempt(VerdictStatus.PASS),
@@ -42,17 +44,24 @@ def test_inconclusive_excluded_from_denominator() -> None:
             inconclusive_reason=InconclusiveReason.CAPABILITY_UNAVAILABLE,
         ),
     ]
-    # 1 fail / 2 decisive == 0.5 (the inconclusive drops out).
-    assert reproducibility_from_attempts(attempts) == pytest.approx(0.5)
+    assert reproducibility_from_attempts(attempts) == pytest.approx(1 / 3)
 
 
-def test_errored_and_verdictless_attempts_excluded() -> None:
+def test_one_exploit_and_four_timeouts_is_not_fully_reproducible() -> None:
+    """The measured case: it scored 1.0 and Critical."""
+    attempts = [make_attempt(VerdictStatus.FAIL)] + [
+        make_attempt(VerdictStatus.FAIL, error="timeout") for _ in range(4)
+    ]
+    assert reproducibility_from_attempts(attempts) == pytest.approx(0.2)
+
+
+def test_errored_and_verdictless_attempts_count_but_never_succeed() -> None:
     attempts = [
         make_attempt(VerdictStatus.FAIL),
         make_attempt(None),  # no verdict
         make_attempt(VerdictStatus.FAIL, error="timeout"),  # errored
     ]
-    assert reproducibility_from_attempts(attempts) == 1.0  # only the clean fail counts
+    assert reproducibility_from_attempts(attempts) == pytest.approx(1 / 3)
 
 
 def test_all_inconclusive_is_zero() -> None:

@@ -3,6 +3,37 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-03 (night): PR #32 reviewed, and the review's findings fixed
+
+- Three reviewers re-ran the four audit commits in isolated worktrees (20:48 to 21:08 CEST) and
+  found that the fixes introduced regressions of their own: a quadratic label regex, old runs
+  refused as tampered, a key with a control character leaking through the HTTP error, an
+  allowlist escape with `//..`, over-confirmation with `--runs 1`, and more. All fixed in one
+  commit with `tests/test_pr32_review_fixes.py` (24 tests that fail on the PR head, plus two
+  positive controls). Still open from the review, deliberately: gzip expansion before the cap
+  (bounded), unvalidated mutation parameters (`translate:klingon`), pooled confidence shown on
+  a per-variant confirmation, and path forms only exotic origins decode.
+
+## State, 2026-10-03 (evening): full audit, blocks 1, 2, 3 and 5 fixed
+
+- A six-auditor adversarial audit of main `770847e` (12:39 to 13:28 CEST) found about 100
+  findings, 20 of them high, triaged into seven fix blocks. Branch `fix/audit-2026-10-03`, one
+  commit per block, each fix with a regression test that fails on the old code.
+- Done: (1) secrets and evidence integrity, (2) verdicts that left a CI gate green, (3) robustness
+  and resume, all in PR #32; (5) policy and authorization: the DL4 gate on the shipped PII spec,
+  `test_only` enforced from the category, encoded-separator paths refused, the fleet judge
+  authorized only from the fleet file, fleet scopes pinned to their port. Clauses A-29, A-30.
+- Open: block 4 (judge calls and the identity sweep outside the request ceiling and the rate
+  gate; `--rate 0`), block 6 (CLI and reports: `--hardened` on a live target, `diff` merging
+  targets, usage errors exit 2 like "findings"), block 7 (docs that still contradict the code,
+  including docs/02 S5's `--unsafe-render` opt-in, which no CLI flag sets), F11 (`--resume` never
+  retries environment-error attempts).
+- Decisions that are Daniel's: OD-18, OD-19 (amended), real scope signing vs. renaming it, a CLI
+  flag to load a policy pack (without one, `requires_policy` specs and DL4 cannot be enabled from
+  the command line), and the two `-sV` carriers that add instruction text.
+
+---
+
 ## State, 2026-10-03 (later): user docs caught up
 
 - Man page, `USAGE.md`, `docs/FAQ.md`, `docs/09`, `examples/README.md` and the `new-spec`

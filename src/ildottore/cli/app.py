@@ -13,6 +13,7 @@ widens the battery, never the authorization gate (``docs/09 §5``).
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -36,6 +37,7 @@ from ildottore.cli.flags import DEFAULT_TEMPLATE
 from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
 from ildottore.policy.errors import PolicyError
+from ildottore.redactor import Redactor
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
@@ -77,6 +79,26 @@ def _spec_paths(spec: list[Path] | None) -> list[Path]:
 
 
 # --- run -------------------------------------------------------------------------
+
+
+_ARTIFACT_NAME = re.compile(r"(\b[0-9a-f]{64}\.json\b)")
+
+
+def _masked(exc: BaseException) -> str:
+    """An error's text through the redactor before it reaches the terminal.
+
+    Errors quote what the operator wrote, an endpoint URL with its password included: the
+    scope refusal printed ``http://alice:<password>@host/...`` to stderr while reports, evidence
+    and the run store all masked it (review of PR #32, SEC-02 left open on this path).
+    """
+
+    redactor = Redactor()
+    # An evidence file name (``<sha256>.json``) is the tool's own pointer, and the one thing a
+    # tamper refusal needs to show; the entropy rule would otherwise mask it.
+    parts = _ARTIFACT_NAME.split(str(exc))
+    return "".join(
+        part if _ARTIFACT_NAME.fullmatch(part) else redactor.redact_text(part) for part in parts
+    )
 
 
 @app.command()
@@ -295,7 +317,7 @@ def run(
     try:
         outcome = run_mod.execute_run(opts, _spec_paths(spec_path))
     except ScopeRequiredError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     except (PolicyError, AdapterError, TamperError, ValueError, OSError) as exc:
         # TamperError: a stored artifact whose content no longer hashes to its name, which
@@ -308,7 +330,7 @@ def run(
         # ValueError, so it used to escape this handler entirely and surface as a traceback
         # with exit **1**, which in this tool means "findings below the threshold" - a CI
         # step treating 1 as "carry on" would read a refused endpoint as a clean-ish scan.
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
     # The dry-run plan is printed by execute_run itself (it owns the resolved plan);
@@ -331,7 +353,12 @@ def fleet(
         bool, typer.Option("--run", help="Scan every expanded target immediately.")
     ] = False,
     judge: Annotated[
-        Path | None, typer.Option("--judge", help="Judge model target.yaml (for semantic_judge).")
+        Path | None,
+        typer.Option(
+            "--judge",
+            help="Judge target.yaml; must match the fleet file's `judge:` block, which is "
+            "used on its own when this is omitted.",
+        ),
     ] = None,
     runs: Annotated[int, typer.Option("--runs", help="Reproducibility runs (default 5).")] = 5,
     categories: Annotated[
@@ -344,28 +371,32 @@ def fleet(
     Declares the whole set of targets to validate in one place (hosted LLMs by API-key env
     reference, a local model, a raw URL, or an MCP server). Keys are never written, each
     entry references an env var. With ``--run`` it scans every expanded target right away.
+    A judge is authorized only when the fleet file declares it in a ``judge:`` block.
     """
 
     try:
         cfg = fleet_mod.load_fleet(config)
-        # The judge model goes into the generated scope: it is a target we send prompts to.
+        # The scope is built from the fleet file alone; a --judge file must match its `judge:`.
         judge_target = wiring.load_target(judge) if judge is not None else None
         materialized = fleet_mod.materialize_fleet(cfg, out, judge=judge_target)
     except (ValueError, OSError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
     typer.echo(f"scope:   {materialized.scope_path}")
     for path in materialized.target_paths:
         typer.echo(f"target:  {path}")
+    if materialized.judge_path is not None:
+        typer.echo(f"judge:   {materialized.judge_path}")
     for target_id, reason in materialized.skipped:
         typer.echo(f"skipped: {target_id} ({reason})")
+    judge_file = judge if judge is not None else materialized.judge_path
 
     if not run_now:
         joined = " ".join(f'"{p}"' for p in materialized.target_paths)
-        # Carry --judge into the hint: the scope was widened to authorize the judge, and an
-        # operator following a hint that omits it drops the judge from the run.
-        judge_arg = f' --judge "{judge}"' if judge is not None else ""
+        # Carry the judge into the hint: the scope authorizes it, and an operator following a
+        # hint that omits it drops the judge from the run.
+        judge_arg = f' --judge "{judge_file}"' if judge_file is not None else ""
         typer.echo(
             f'\nRun it:\n  dottore run {joined} --scope "{materialized.scope_path}"{judge_arg}'
         )
@@ -374,7 +405,7 @@ def fleet(
     opts = RunOptions(
         targets=list(materialized.target_paths),
         scope=materialized.scope_path,
-        judge=judge,
+        judge=judge_file,
         categories=[c.strip() for c in categories.split(",")] if categories else [],
         runs=runs,
         no_color=no_color,
@@ -386,7 +417,7 @@ def fleet(
     # endpoint into a traceback and exit **1**, which in this tool means "findings below the
     # threshold". Identical condition, identical code path underneath, two exit codes.
     except (ScopeRequiredError, PolicyError, AdapterError, ValueError, OSError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     raise typer.Exit(int(outcome.exit_code))
 
@@ -418,10 +449,10 @@ def fingerprint(
     try:
         fp = fingerprint_mod.fingerprint_target(target, scope, offline=offline)
     except ScopeRequiredError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     except (PolicyError, AdapterError, ValueError, OSError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(fp.model_dump_json(indent=2))
     raise typer.Exit(ExitCode.CLEAN)
@@ -459,7 +490,7 @@ def coverage(
     try:
         result = coverage_mod.battery_coverage(list(paths or DEFAULT_SPEC_PATHS), suite=suite)
     except (OSError, ValueError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     if as_json:
         typer.echo(coverage_mod.render_coverage_json(result, framework=framework, show_gaps=gaps))
@@ -537,7 +568,7 @@ def render_media(
     try:
         carriers = render_media_mod.render_spec_media(_spec_paths(spec_path), spec_id, out_dir)
     except render_media_mod.RenderMediaError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(render_media_mod.render_carrier_report(carriers))
 
@@ -565,7 +596,7 @@ def new_spec(
             return
         path = new_spec_mod.write_scaffold(out_dir, spec_id, family=family, category=category)
     except (ValueError, FileExistsError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(f"wrote {path}")
 
@@ -579,14 +610,22 @@ def replay(
     evidence_root: Annotated[
         Path, typer.Option("--evidence-root", help="Evidence store root dir.")
     ] = Path(".dottore/evidence"),
+    run_db: Annotated[
+        Path,
+        typer.Option("--run-db", help="Run store; its findings are the evidence manifest."),
+    ] = Path(".dottore/runs.sqlite"),
 ) -> None:
     """Re-read a run from stored evidence (reproducibility, no re-sending)."""
 
+    from ildottore.store import TamperError
+
     try:
-        result = replay_mod.replay(evidence_root, run_id)
-    except (OSError, ValueError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        result, warning = replay_mod.replay_checked(evidence_root, run_id, run_db)
+    except (OSError, ValueError, TamperError) as exc:
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    if warning is not None:
+        typer.echo(f"warning: {warning}", err=True)
     typer.echo(replay_mod.render_replay(result))
 
 
@@ -621,7 +660,7 @@ def diff(
                 raise typer.Exit(ExitCode.ERROR)
         report = diff_mod.diff_reports(baseline, current)
     except (OSError, ValueError, KeyError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
     typer.echo(diff_mod.render_diff(report))
@@ -643,7 +682,7 @@ def calibrate(
     try:
         result = calibrate_mod.calibrate_reports(report, labels)
     except (OSError, ValueError, KeyError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
     typer.echo(calibrate_mod.render_calibration(result))

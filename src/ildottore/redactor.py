@@ -35,11 +35,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import math
+import os
 import re
+import secrets
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Protocol
 
 _MASK_TEMPLATE: Final = "«REDACTED:{type}»"
 _MASK_TEMPLATE_HASHED: Final = "«REDACTED:{type}:{digest}»"
@@ -50,11 +54,85 @@ _ALREADY_MASKED: Final = re.compile(r"«REDACTED:[A-Za-z0-9_]+(?::[0-9a-f]{8})?�
 # A value explicitly labelled as a secret (``the api secret is X``, ``password: X``): mask the
 # value (group 1) regardless of its shape/entropy, catching engagement secrets the shape
 # detectors miss. Deliberately narrow to a labelled assignment to avoid over-redacting prose.
-_LABELED_SECRET: Final = re.compile(
-    r"(?i)\b(?:secret|password|passwd|passphrase|api[\s_-]?key|access[\s_-]?key|"
-    r"token|credential|client[\s_-]?secret)s?\b"
-    r"(?:\s+(?:is|are|was|were|=|:))?[\s\"'`:=]{1,4}([^\s\"'`,;)]{6,})"
+#
+# A run of labels is consumed as one (``token=token=token= X``, ``password: password: X``)
+# and the value may not itself be a label: the first version captured the SECOND label as
+# the value, masked the label words and left the real secret in clear, and on the first
+# input it never reached a fixed point, which tripped the store's fail-closed guard and
+# aborted the whole campaign over one reply (audit 2026-10-03, F17).
+#
+# The run is BOUNDED (at most three more labels). Unbounded, every start position consumed
+# the rest of a long run of label words and backtracked through all of it: 48 KB of
+# ``token token ...`` took 4.9 s, 96 KB took 20 s, and a target controls that text (review of
+# PR #32). A longer run still masks its value, from a later start position. A value is
+# refused only when it is a label FOLLOWED by a separator or the end, so ``Password!2026x``
+# after ``password:`` is a value again (the first fix left it in clear).
+_LABEL_WORDS: Final = (
+    r"(?:secret|password|passwd|passphrase|api[\s_-]?key|access[\s_-]?key|"
+    r"token|credential|client[\s_-]?secret)s?"
 )
+_LABEL_SEP: Final = r"[\s\"'`:=]"
+_LABELED_SECRET: Final = re.compile(
+    rf"(?i)\b{_LABEL_WORDS}\b(?:{_LABEL_SEP}{{1,4}}{_LABEL_WORDS}\b){{0,3}}"
+    rf"(?:\s+(?:is|are|was|were|=|:))?{_LABEL_SEP}{{1,4}}"
+    rf"(?!{_LABEL_WORDS}(?:{_LABEL_SEP}|$))([^\s\"'`,;)\x00]{{6,}})"
+)
+
+# --- credentials the tool itself has read ----------------------------------------------
+# The shape detectors above guess. A credential this process resolved (an API key read from
+# ``env://``, a password in an endpoint URL) does not need guessing: it is masked by VALUE,
+# in every Redactor instance, wherever it appears. Before this, a lowercase segmented key, a
+# key under 16 characters or a ``bearer`` value passed unmasked, and a key with a trailing CR
+# reached all four report formats inside an HTTP library's error message (audit 2026-10-03,
+# SEC-01 and SEC-05). Values shorter than ``_KNOWN_MIN_LEN`` are not registered: masking a
+# four-letter string everywhere would rewrite ordinary words in every report.
+_KNOWN_SECRETS: set[str] = set()
+_KNOWN_LOCK: Final = threading.Lock()
+_KNOWN_MIN_LEN: Final = 8
+
+
+def _escaped_forms(value: str) -> set[str]:
+    """The forms ``value`` takes when a library quotes it: ``repr`` and JSON escaping.
+
+    An HTTP library rejecting a header quotes it repr-escaped (``b'Bearer a\\nb'``, with a
+    literal backslash-n), so the raw value with a real newline never matched and the key
+    reached stderr, every report format and the evidence (review of PR #32).
+    """
+
+    forms = {value, value.strip()}
+    for form in list(forms):
+        forms.add(repr(form)[1:-1])
+        forms.add(json.dumps(form)[1:-1])
+    return forms
+
+
+def register_known_secret(value: str | None) -> None:
+    """Mask ``value`` (stripped, and as a library would quote it) by value in every Redactor."""
+
+    if not value:
+        return
+    with _KNOWN_LOCK:
+        for candidate in _escaped_forms(value):
+            if len(candidate) >= _KNOWN_MIN_LEN:
+                _KNOWN_SECRETS.add(candidate)
+
+
+# A password embedded in a URL (``https://user:pass@host``). Only the password is masked:
+# the user and host are what makes an endpoint readable in a report. ``--dry-run``, ``-sn``
+# and ``-v`` printed the whole URL and the JSON report stored it (audit 2026-10-03, SEC-02).
+_URL_USERINFO: Final = re.compile(r"(://[^/\s:@\x00]+:)([^/\s@\x00]+)(@)")
+
+
+def _known_secrets() -> list[str]:
+    with _KNOWN_LOCK:
+        return sorted(_KNOWN_SECRETS, key=len, reverse=True)
+
+
+# The corroboration digest is 32 bits of an HMAC. Unsalted, anyone holding a report could
+# confirm a guessed password offline by computing the same 32 bits, so the default salt is
+# random per process (two occurrences in one run still correlate) unless the operator pins
+# one with ``ILDOTTORE_REDACTION_SALT`` to correlate across runs on purpose.
+_PROCESS_SALT: Final = os.environ.get("ILDOTTORE_REDACTION_SALT") or secrets.token_hex(16)
 
 # A value is "secret-shaped" (worth masking after a label) when it is not a plain lowercase
 # word, i.e. it carries a digit, an uppercase letter, or a symbol. This keeps the labelled
@@ -81,7 +159,10 @@ _ID_SHAPED: Final = re.compile(r"[A-Z]+(?:-(?:[A-Z]+|[0-9]+))+")
 # Lowercase/digit segments joined by ``-``/``_``/``/``: lowercase ids, model names, URL
 # paths and ports. An uppercase letter anywhere disqualifies the token, and a base64 key of
 # this length is never all-lowercase, so this cannot exempt a real credential.
-_PATH_SHAPED: Final = re.compile(r"[a-z0-9]+(?:[-_/][a-z0-9]+)+")
+# An optional leading and trailing ``/`` is part of the shape: an absolute URL path
+# (``/v1/chat/completions``) inside a transport error was masked as high entropy once the run
+# status reason started going through the redactor (2026-10-03).
+_PATH_SHAPED: Final = re.compile(r"/?[a-z0-9]+(?:[-_/][a-z0-9]+)+/?")
 _SEGMENT_SPLIT: Final = re.compile(r"[-_/]")
 # Counter-rule to the two shapes above: a separator-structured token that is hexadecimal all
 # the way through is not an identifier we owe anything to, it is the shape of a UUID-format
@@ -215,12 +296,12 @@ class Redactor:
     def __init__(
         self,
         *,
-        salt: str = "",
+        salt: str | None = None,
         patterns: Sequence[Pattern] | None = None,
         entropy_threshold: float = 3.7,
         entropy_min_len: int = 16,
     ) -> None:
-        self._salt = salt.encode("utf-8")
+        self._salt = (_PROCESS_SALT if salt is None else salt).encode("utf-8")
         self._patterns: list[Pattern] = (
             list(patterns) if patterns is not None else _default_patterns()
         )
@@ -243,20 +324,47 @@ class Redactor:
         return _MASK_TEMPLATE.format(type=pattern.type)
 
     def redact_text(self, text: str) -> str:
-        """Mask every secret/PII occurrence in ``text`` (idempotent)."""
+        """Mask every secret/PII occurrence in ``text`` (idempotent).
+
+        Runs to a **fixed point** (bounded): one pass can expose a value a previous mask was
+        sitting next to, and the evidence store refuses to persist anything for which
+        ``redact(redact(x)) != redact(x)``, so a single reply that needed two passes used to
+        abort the campaign.
+        """
 
         # Drop NUL bytes up front so an attacker cannot forge the internal stash delimiter.
-        text = text.replace("\x00", "")
+        current = text.replace("\x00", "")
+        for _ in range(4):
+            nxt = self._redact_once(current)
+            if nxt == current:
+                return nxt
+            current = nxt
+        return current
 
-        # Protect already-masked tokens from being re-scanned (idempotency).
+    def _redact_once(self, text: str) -> str:
+        # Protect already-masked tokens from being re-scanned (idempotency). This runs FIRST:
+        # a registered credential that is a substring of the mask itself (``credential``)
+        # used to be replaced inside the previous pass's mask, nesting it on every pass, and
+        # the store's fixed-point guard then aborted the campaign (review of PR #32).
         preserved: dict[str, str] = {}
 
-        def _stash(m: re.Match[str]) -> str:
+        def _keep(mask: str) -> str:
             token = f"\x00{len(preserved)}\x00"
-            preserved[token] = m.group(0)
+            preserved[token] = mask
             return token
 
-        working = _ALREADY_MASKED.sub(_stash, text)
+        working = _ALREADY_MASKED.sub(lambda m: _keep(m.group(0)), text)
+
+        # Credentials the tool read, by value, before the URL rule: a password containing a
+        # raw ``@`` is matched whole here, where the URL rule would stop at the first ``@``.
+        for secret in _known_secrets():
+            if secret in working:
+                mask = _MASK_TEMPLATE_HASHED.format(type="credential", digest=self._digest(secret))
+                working = working.replace(secret, _keep(mask))
+        working = _URL_USERINFO.sub(
+            lambda m: m.group(1) + _keep(_MASK_TEMPLATE.format(type="url_password")) + m.group(3),
+            working,
+        )
 
         for pattern in self._patterns:
             if pattern.type == "card":
@@ -303,7 +411,11 @@ class Redactor:
             if _PLAIN_WORD.match(value):  # a plain lowercase word is not a secret
                 return m.group(0)
             masked = _MASK_TEMPLATE_HASHED.format(type="labeled_secret", digest=self._digest(value))
-            return m.group(0).replace(value, masked)
+            # Replace the VALUE's span only. ``str.replace`` over the whole match also
+            # rewrote the label whenever the label text equalled the value.
+            start, end = m.start(1) - m.start(0), m.end(1) - m.start(0)
+            whole = m.group(0)
+            return whole[:start] + masked + whole[end:]
 
         return _LABELED_SECRET.sub(_sub, text)
 
@@ -405,6 +517,49 @@ _DEFAULT = Redactor()
 
 
 def redact(obj: object) -> object:
-    """Module-level convenience over the default (unsalted) redactor."""
+    """Module-level convenience over the process-salted default redactor."""
 
     return _DEFAULT.redact(obj)
+
+
+#: A FIXED salt for identifiers that are compared across processes, not for secrets. The run
+#: store masks a stored ``target_id`` (a tenant-shaped id can look like a key), and ``--resume``
+#: recomputes that mask to check the campaign is resumed against the same target. With the
+#: process-random salt above the two digests would never match, and with no digest at all two
+#: different tenants would mask to the same string and the check would pass for both.
+_IDENTITY = Redactor(salt="ildottore:identity:v1")
+
+
+_SHA256_HEX_RE: Final = re.compile(r"[0-9a-f]{64}")
+
+
+class _Redacts(Protocol):
+    def redact(self, obj: object) -> object: ...
+
+
+def redact_evidence_ref(redactor: _Redacts, ref: Mapping[str, object]) -> dict[str, object]:
+    """Mask an evidence reference, keeping only what the tool itself generated.
+
+    The digest is kept when it is a plain sha256, and the uri when it is the store's own
+    canonical ``.../<sha256>.json`` for that digest: those point at the evidence and are not
+    secrets. Anything else in the reference is masked like any other value, so a reference
+    that did carry foreign text (a planted canary in a uri) is still masked (audit 2026-10-03,
+    R1 and F12: masked digests cut reports off from their proof and blinded the manifest).
+    """
+
+    masked = redactor.redact(dict(ref))
+    if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
+        raise TypeError("redactor changed the shape of an evidence reference")
+    sha = ref.get("sha256")
+    if isinstance(sha, str) and _SHA256_HEX_RE.fullmatch(sha):
+        masked["sha256"] = sha
+        uri = ref.get("uri")
+        if isinstance(uri, str) and uri.endswith(f"{sha}.json"):
+            masked["uri"] = uri
+    return masked
+
+
+def redact_identity(value: str) -> str:
+    """Mask an identifier with the fixed identity salt, so the mask is comparable later."""
+
+    return _IDENTITY.redact_text(value)

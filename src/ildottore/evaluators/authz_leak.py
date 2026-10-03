@@ -47,8 +47,12 @@ class AuthzLeakEvaluator(BaseEvaluator):
             )
 
         texts = {ident: _identity_text(resp) for ident, resp in identities.items()}
-        canaries = [c for c in ctx.canaries if c]
         owners = ctx.canary_owners or {}
+        # The identities' own canaries are searched too, not only the spec's. The scope docs
+        # tell an operator to give each identity its own canary; with a spec canary present,
+        # tenant B's canary in tenant A's reply was never looked for and scored PASS (audit
+        # 2026-10-03, F16a).
+        canaries = list(dict.fromkeys([*(c for c in ctx.canaries if c), *owners]))
 
         if canaries:
             # Precise check (audit M14): when the spec supplies a canary -> owner map, a canary
