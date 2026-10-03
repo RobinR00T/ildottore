@@ -3,6 +3,14 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-03: the indirect-injection oracles re-keyed
+
+- `PI-INDIRECT-RAG-001` and `PI-INDIRECT-TOOL-001` no longer score a refusal that names the
+  injection as a breach; detection of a leaked canary or a verbatim system prompt is kept and
+  pinned in `tests/battery/`.
+
+---
+
 ## State, 2026-10-03: OWASP AISVS as a fourth coverage axis, and an audit that found more
 
 - **OWASP AISVS 1.0 pinned** (`shared/aisvs.py`, 191 requirements from upstream `05c62d1`,
