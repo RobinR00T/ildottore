@@ -112,11 +112,16 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
   readable in every report, in both copies of a finding the JSON report carries, so a custom
   spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
-  prints go through the same redactor. A bare 64-hex value in an error is masked, because the
-  redactor cannot tell a sha256 from a key, so a raw key pasted as an `auth_ref` never prints in
-  clear. Two kinds stay readable: an evidence file name (`<sha256>.json`), and a digest the error
-  itself carries (a scope checksum mismatch prints both the expected and the actual digest; a
-  tamper refusal prints the hash the artifact's content now has).
+  prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. So only
+  what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
+  tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
+  digest of the scope body (`got '<sha256>'`). The `expected` value of that same error is
+  whatever was typed in `checksum:`, so it goes through the redactor like any other text and a
+  64-hex value there is masked. An error quotes an `auth_ref` only when it is a reference (it
+  contains `://`, such as `env://NAME` or `vault://x`); a literal value pasted where a
+  reference belongs is printed as `a literal value (not shown)`, for example `target 'live'
+  auth_ref a literal value (not shown) is not authorized by the scope (declared:
+  'env://LIVE_KEY'); refusing to read an unauthorized credential`.
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
@@ -171,9 +176,11 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 
 `id` and `type` are required; the rest are optional but needed for a live scan. `auth_ref`
 supports only `env://NAME`. Any other scheme is refused before anything is sent, `--dry-run`
-included (`unsupported auth_ref scheme ...; only 'env://NAME' is supported`, exit 3): a
-`vault://` resolver is not built. The secret itself is never written to a file. A `provider`
-other than `openai`, `anthropic` or `mcp` routes to the generic REST adapter. Template:
+included (`unsupported auth_ref scheme in 'vault://kv/live'; only 'env://NAME' is supported`,
+exit 3): a `vault://` resolver is not built. A literal key pasted as the `auth_ref` is refused
+too, and the error says `a literal value (not shown)` instead of quoting it. The secret itself
+is never written to a file. A `provider` other than `openai`, `anthropic` or `mcp` routes to
+the generic REST adapter. Template:
 [`../specs/targets/example-openai.yaml`](../specs/targets/example-openai.yaml).
 
 An **MCP server** target uses `provider: mcp`. Over the wire it declares the Streamable-HTTP
