@@ -84,8 +84,10 @@ The judge implementation **must**:
    `judge_compromised` → `inconclusive` + flagged for the operator.
 6. The judge model runs with pinned params: the first pass at `temperature=0` (the recorded
    verdict), each later self-consistency pass at `temperature=0.5`, so the probe in item 4
-   actually exercises the judge's stability (at a fixed seed and temperature every pass was
-   byte-identical). The judge's requests are not stored in evidence (§5).
+   actually exercises the judge's stability (when every pass used the same settings they were
+   byte-identical). `top_p` is pinned at 1.0; no seed is sent on any pass (the class constant
+   that pins seed 0 is defined and unused). The judge's requests are not stored in evidence
+   (§5).
 
 ## 5. Evidence per verdict
 

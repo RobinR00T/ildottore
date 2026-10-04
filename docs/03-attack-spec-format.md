@@ -35,7 +35,7 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 | `requires` | ✓ | Capabilities needed (`rag`, `tools`, `memory`, `system_prompt`). |
 | `description` | ✓ | What the test validates. |
 | `preconditions` | | Human-readable prerequisites. |
-| `setup` | | Declarative setup: `documents`, `tools` (mock defs), `memory_seed`, `system_prompt`. Only `system_prompt` reaches a live target today: the request carries prompt, system prompt, sampling and media, so `documents`, `tools` and `memory_seed` are honoured by the offline mock and fixtures and never delivered to a real endpoint. 32 of the 75 shipped specs depend on one of the three (OD-18, ADR-0009). |
+| `setup` | | Declarative setup: `documents`, `tools` (mock defs), `memory_seed`, `system_prompt`. Only `system_prompt` reaches a live target today: the request carries prompt, system prompt, sampling and media, so `documents`, `tools` and `memory_seed` are read only by the evaluators, the lint fixture engine and the linter, and never delivered to a target. 32 of the 75 shipped specs depend on one of the three (OD-18, ADR-0009). |
 | `attack` | ✓ | `user_prompt` and/or `carrier` (for indirect injection). |
 | `mutations` | | List of mutation strategies to apply (see §4). |
 | `expected_secure_behavior` | ✓ | Bulleted description of a passing target (drives judge rubric). |

@@ -39,7 +39,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 
 | Gap | Status | Where | Target |
 |-----|--------|-------|--------|
-| **Data-leak / memorization family** (leak-by-asking: RAG enum, cross-tenant, memory, divergence, prefix-completion, verbatim, membership, canary) | 🟡 5 of 11 techniques ship | `docs/11 §1` | MVP‑1 (layer A + divergence + cross-tenant); MVP‑2 (membership). Shipped: `DL-SECRET-CANARY-001`, `DL-XSESSION-001`, `DL-XTENANT-001`, `DL-MEMORIZE-DIVERGENCE-001`, `DL-PII-ELICIT-001` (the last one policy-gated and not enableable from the CLI). RAG enumeration, prefix completion, verbatim copyright, membership, secret-shape elicitation and breach canary have no spec |
+| **Data-leak / memorization family** (leak-by-asking: RAG enum, cross-tenant, memory, divergence, prefix-completion, verbatim, membership, canary) | 🟡 5 of the 12 techniques in `docs/11 §1` ship | `docs/11 §1` | MVP‑1 (layer A + divergence + cross-tenant); MVP‑2 (membership). Shipped: `DL-SECRET-CANARY-001`, `DL-XSESSION-001`, `DL-XTENANT-001`, `DL-MEMORIZE-DIVERGENCE-001`, `DL-PII-ELICIT-001` (the last one policy-gated and not enableable from the CLI). RAG enumeration, system-config elicitation (its system-prompt half is `SP-LEAK-001`), secret-shape elicitation, prefix completion, verbatim copyright, membership and breach canary have no spec |
 | **PII / secret-shape evaluators with FP control** (Luhn, IBAN mod-97, key prefixes, entropy; hallucination ≠ leak) | ✅ | `docs/04`, `docs/11 §4` | MVP‑1 |
 | **Logprobs capture in adapters** (membership inference, confidence side-channels) | ✅ | `docs/00` (stack + Phase D), `docs/01 §3` | capture MVP‑1 · membership MVP‑2 |
 | **Multi-identity / cross-tenant harness** (authz_leak evaluator, ≥2 identities in scope) | ✅ | `docs/00` (Phase A), `docs/01 §6`, `docs/11 §3` | MVP‑1 |
@@ -79,7 +79,7 @@ target, and each is waiting on a decision recorded in `specs/contracts/00-INDEX.
 
 | Decision | What it limits today |
 |---|---|
-| **OD-18** (ADR-0009): a spec's `setup` never reaches a live target | The request carries prompt, system prompt, sampling and media only. 32 of the 75 specs depend on `setup.documents`, `setup.tools` or `setup.memory_seed`; against a live endpoint they run without the documents, tools or memory they were written for. The offline mock and the fixtures do honour them |
+| **OD-18** (ADR-0009): a spec's `setup` never reaches a live target | The request carries prompt, system prompt, sampling and media only. 32 of the 75 specs depend on `setup.documents`, `setup.tools` or `setup.memory_seed`; against a live endpoint they run without the documents, tools or memory they were written for. Only the evaluators, the lint fixture engine and the linter read those fields |
 | **OD-19** (ADR-0010): `evaluator_logic` is declared by all 75 specs (42 `any_fail`, 33 `weighted`) and read by no run path | The runner's fixed rule decides. One consequence: a fail decided by the judge alone, when every deterministic evaluator passed, is `confirmed` and trips `--fail-on`. The ADR recommends making it `needs-review`; not decided |
 | **Policy-pack flag** | The CLI loads no policy pack, so the 8 specs that declare `requires_policy` (the agentic-extortion core and the PII elicitation spec) are always `blocked_by_policy` from `dottore` |
 

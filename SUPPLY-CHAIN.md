@@ -30,7 +30,8 @@ respx, coverage, ruff, mypy, import-linter and two type-stub packages. `bandit` 
   it is not literally "permissive only"; vendoring or patching `certifi` would need a fresh
   review. Re-check the closure when a runtime dependency is added or bumped.
 - **Weekly, grouped Dependabot.** Python deps and the pinned GitHub Actions are scanned weekly and
-  arrive as one grouped PR per ecosystem (`.github/dependabot.yml`). Nothing auto-merges.
+  arrive as grouped PRs (`.github/dependabot.yml`: Python split into a runtime group and a dev
+  group, Actions in one). Nothing auto-merges.
 - **Major bumps of the two runtime pillars (Pydantic, Typer) are held for manual review**, so a
   breaking major never lands unattended.
 - **GitHub Actions pinned to a major version tag** (`actions/checkout@v4`,
@@ -44,9 +45,9 @@ What CI runs (`.github/workflows/ci.yml`, on every pull request, every push to `
 weekly): a static job (ruff lint and format check, `mypy --strict`, import-linter) and the twelve
 ordered gates of `docs/07 §5`: spec lint, import contract, the test suites, the **self-scan**
 (the tool runs its own adversarial judge corpus against itself; any new high/critical flip
-fails CI) and the coverage gate (85%, measured on the aggregate). The scheduled `audit` workflow re-runs the golden snapshot,
-metamorphic, determinism and self-scan nightly, and the static checks, spec lint and full suite
-with coverage weekly. Every workflow runs with `permissions: contents: read`.
+fails CI) and the coverage gate (85%, measured on the aggregate). The scheduled `audit`
+workflow re-runs the golden snapshot, metamorphic, determinism and self-scan nightly, and the
+static checks, spec lint and full suite with coverage weekly. Every workflow runs with `permissions: contents: read`.
 
 **Not in CI: `pip-audit` and `bandit`.** Neither workflow has a step for them. They exist only
 as `make audit` and `make bandit`, which the Makefile labels advisory, and both are part of

@@ -45,7 +45,7 @@ recommends `needs-review`; open).
 3. `pii_detector` (Luhn, IBAN mod-97, locale IDs, entropy) + `secret_shape` + `authz_leak`.
 4. `semantic_judge` with hardening (`docs/04 §4`): data delimiters, structured JSON output,
    injection tripwire, self-consistency, `temperature=0`. (As built: the first pass at 0, later
-   self-consistency passes at 0.5, so the passes are not byte-identical.)
+   self-consistency passes at 0.5, so the passes are not byte-identical; no seed is sent.)
 5. `combine.py` (evaluator_logic).
 
 ## §6 Data/wire shapes
@@ -61,9 +61,9 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `tests/fixtures/labeled/`: including hallucinated-but-valid negatives for pii/secret.
 - **Judge robustness:** `tests/fixtures/adversarial-judge/` → 0 verdict flips (all →
   `inconclusive`/`judge_compromised`).
-- Determinism: judge at `temperature=0` + fixed seed ⇒ stable verdict on replay. (As built, only
-  the first judge pass is at 0 with a fixed seed; `dottore replay` re-reads stored verdicts and
-  does not call the judge again.)
+- Determinism: judge at `temperature=0` + fixed seed ⇒ stable verdict on replay. (As built: only
+  the first judge pass is at temperature 0, and no pass sends a seed; `dottore replay` re-reads
+  stored verdicts and does not call the judge again.)
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden

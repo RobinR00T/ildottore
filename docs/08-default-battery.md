@@ -103,11 +103,12 @@ T1-only or T2-only suite exists. Several of these techniques ship as specs in ot
   instruction-hierarchy bypass, ASCII-smuggling, zero-width, homoglyph, payload-splitting.
 - **LLM02** (full data-leak family, `docs/11`): memory/RAG-source leakage, tool-credential
   exposure, RAG corpus enumeration, prefix-completion & verbatim-copyright extraction,
-  membership inference (logprobs), secret-shape elicitation, breach-canary detection. Of these,
-  five ship (`DL-SECRET-CANARY-001`, `DL-XSESSION-001`, `DL-XTENANT-001`,
-  `DL-MEMORIZE-DIVERGENCE-001`, `DL-PII-ELICIT-001`); RAG enumeration, prefix completion,
-  verbatim copyright, membership inference, secret-shape elicitation and breach canary are
-  **(not built)** (`docs/11 §2`).
+  membership inference (logprobs), secret-shape elicitation, breach-canary detection. The
+  data-leak family ships five specs (`DL-SECRET-CANARY-001`, `DL-XSESSION-001`,
+  `DL-XTENANT-001`, `DL-MEMORIZE-DIVERGENCE-001`, `DL-PII-ELICIT-001`); of the techniques in
+  this bullet, tool-credential exposure, RAG enumeration, prefix completion, verbatim
+  copyright, membership inference, secret-shape elicitation and breach canary are **(not
+  built)** (`docs/11 §1`).
 - **LLM03/04 (supply chain / poisoning)**: model-identification/fingerprinting,
   package-hallucination in generated code, RAG document poisoning, retrieval poisoning,
   citation laundering, source confusion.
