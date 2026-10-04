@@ -201,10 +201,14 @@ def build_evidence_store(
     root: Path,
     *,
     planted_canaries: list[str] | None = None,
+    journal: SqliteRunStore | None = None,
 ) -> FsEvidenceStore:
-    """Content-addressed, redact-at-rest evidence store rooted at ``root`` (u10)."""
+    """Content-addressed, redact-at-rest evidence store rooted at ``root`` (u10).
 
-    return FsEvidenceStore(root, planted_canaries=planted_canaries)
+    ``journal`` (the campaign's run store) records every attempt artifact as it is written.
+    """
+
+    return FsEvidenceStore(root, planted_canaries=planted_canaries, journal=journal)
 
 
 def planted_secrets(specs: list[AttackSpec]) -> list[str]:
@@ -1132,8 +1136,10 @@ def build_runner(
     policy = build_policy_engine(scope, resolved_pack, safety=safety)
     mutators = build_mutator_registry()
     scorer = DefaultRiskScorer()
-    evidence = build_evidence_store(evidence_root, planted_canaries=planted_secrets(specs))
     runs = build_run_store(run_db)
+    evidence = build_evidence_store(
+        evidence_root, planted_canaries=planted_secrets(specs), journal=runs
+    )
     # A live judge model (--judge) supplies semantic_judge for real runs (and overrides
     # the deterministic scenario-judge offline if given). Absent one, a live run leaves
     # semantic_judge unregistered (it abstains) and an offline run uses the scenario judge.

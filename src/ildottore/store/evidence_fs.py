@@ -19,6 +19,7 @@ import re
 import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Protocol
 
 from ildottore.redactor import Pattern, Redactor
 from ildottore.shared.models import Attempt, EvidenceRef
@@ -98,6 +99,14 @@ def _canonical_json(obj: object) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
+class ArtifactJournal(Protocol):
+    """Where attempt artifacts are recorded as they are written (the run store, schema v4)."""
+
+    def record_artifact(self, run_id: str, spec_id: str, sha256: str) -> None: ...
+
+    def confirm_artifact(self, run_id: str, sha256: str) -> None: ...
+
+
 class FsEvidenceStore:
     """Content-addressed, immutable, redact-at-rest evidence store on disk.
 
@@ -113,9 +122,13 @@ class FsEvidenceStore:
         *,
         redactor: Redactor | None = None,
         planted_canaries: Sequence[str] | None = None,
+        journal: ArtifactJournal | None = None,
     ) -> None:
         self._root = Path(root)
         self._redactor = redactor if redactor is not None else Redactor()
+        # Attempt artifacts are journaled in the run store as they are written (schema v4), so
+        # the evidence manifest knows every one even when no finding cites it yet.
+        self._journal = journal
         for canary in planted_canaries or ():
             if canary:
                 # Registered patterns run before the built-ins so a planted
@@ -135,7 +148,7 @@ class FsEvidenceStore:
         same ref (same content → same hash → same path).
         """
 
-        return self._store(run_id, attempt, paths.attempt_path)
+        return self._store(run_id, attempt, paths.attempt_path, journal=self._journal)
 
     def put_probe(self, run_id: str, attempt: Attempt) -> EvidenceRef:
         """Store a **recognition probe** (``-sV``), under ``probes/`` rather than ``attempts/``.
@@ -155,6 +168,8 @@ class FsEvidenceStore:
         run_id: str,
         attempt: Attempt,
         path_for: Callable[[Path, str, str], Path],
+        *,
+        journal: ArtifactJournal | None = None,
     ) -> EvidenceRef:
         # Value-redact the dump with the injected redactor, then mask dict KEYS separately
         # so a secret in a key (e.g. a model-controlled tool-call argument name) is masked
@@ -176,8 +191,15 @@ class FsEvidenceStore:
         target = path_for(self._root, run_id, digest)
         target.parent.mkdir(parents=True, exist_ok=True)
 
+        # Journal first ("pending"), write, then confirm ("written"): a crash between the two
+        # leaves a pending digest the manifest tolerates as missing, never an artifact on disk
+        # that the run store does not know (which the next resume refused as tampered).
+        if journal is not None:
+            journal.record_artifact(run_id, attempt.spec_id, digest)
         if not target.exists():
             self._atomic_write(target, payload)
+        if journal is not None:
+            journal.confirm_artifact(run_id, digest)
 
         return EvidenceRef(
             run_id=run_id,

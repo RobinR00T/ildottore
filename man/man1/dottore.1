@@ -176,7 +176,9 @@ Resolve and validate the plan, authorize every target; send nothing.
 Print a pre-run cost estimate (requests and tokens); send nothing.
 .TP
 .B --resume \fIRUN_ID\fR
-Finish a halted run; completed attempts are not re-sent.
+Finish a halted run; answered attempts are not re-sent, and those that ended in an
+environment error are sent again under the same attempt id (not one a retry would repeat,
+marked [not retryable]).
 .TP
 .B --resume-unverified
 Resume a run whose integrity record is missing (its ceiling then covers this invocation only).

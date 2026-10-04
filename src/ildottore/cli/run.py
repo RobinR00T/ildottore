@@ -40,7 +40,7 @@ from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
-from ildottore.core.runner import CampaignResult
+from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
@@ -631,7 +631,7 @@ def _print_estimate(
         # `--estimate --resume` priced the whole battery, when the point of the flag is to
         # price the work that is LEFT.
         print(
-            f"  minus {already_done} attempt(s) already completed in the resumed run "
+            f"  minus {already_done} request(s) already done in the resumed run "
             f"(~{max(0, requests - already_done)} still to send)"
         )
     if fingerprint_probes:
@@ -1066,6 +1066,8 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             judge=judge_target,
             adaptive=adaptive,
             allow_unverified=opts.resume_unverified,
+            # The modes that send nothing write nothing either: no journal adoption.
+            adopt=not (opts.dry_run or opts.estimate or opts.discovery_only),
         )
         inherited = resume_mod.stored_runs(run_db, opts.resume)
         if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
@@ -1079,10 +1081,16 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             )
             opts.runs = inherited
         if not opts.quiet:
-            done = sum(len(f.attempts) for f in resume_from.findings)
+            done, again = resume_progress(resume_from)
             print(
-                f"resume: {opts.resume} has {done} completed attempt(s) across "
-                f"{len(resume_from.findings)} spec(s); they will not be re-sent"
+                f"resume: {opts.resume} keeps {done} attempt(s) across "
+                f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
+                "would repeat); they will not be re-sent"
+                + (
+                    f"; {again} that ended in an environment error will be sent again"
+                    if again
+                    else ""
+                )
             )
 
     # -sV / -A: fingerprint before attacking, then let the plan use it.
@@ -1254,7 +1262,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             runs=opts.runs,
             quiet=opts.quiet,
             fingerprint_probes=(fingerprint_probe_count() if opts.fingerprint_first else 0),
-            already_done=sum(len(f.attempts) for f in resume_from.findings) if resume_from else 0,
+            already_done=_answered_requests(resume_from, selected),
         )
         return RunOutcome(
             exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True, estimated=True
@@ -1563,6 +1571,32 @@ def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) 
             "start a fresh run."
         )
     return prior
+
+
+def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> int:
+    """The requests a resume will not send again: one per turn of every answered attempt.
+
+    `--estimate --resume` subtracted an attempt count from a request count, so a multi-turn spec
+    was priced at 15 still to send when 12 went out (pre-commit audit of F11).
+    """
+
+    if resume_from is None:
+        return 0
+    turns_by_spec = {
+        spec.id: (
+            len(spec.attack.turns) if spec.attack.turns and len(spec.attack.turns) >= 2 else 1
+        )
+        for spec in specs
+    }
+    answered = answered_attempt_ids(resume_from)
+    seen: set[str] = set()
+    total = 0
+    for finding in resume_from.findings:
+        for attempt in finding.attempts:
+            if attempt.attempt_id in answered and attempt.attempt_id not in seen:
+                seen.add(attempt.attempt_id)
+                total += turns_by_spec.get(finding.spec_id, 1)
+    return total
 
 
 def _persist_run_integrity(

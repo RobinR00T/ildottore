@@ -272,8 +272,84 @@ class SqliteRunStore:
         ).fetchone()
         return _loads_dict(row["value"] if row is not None else None, column="context_json")
 
+    # --- artifact journal (schema v4) ------------------------------------------
+
+    def record_artifact(self, run_id: str, spec_id: str, sha256: str) -> None:
+        """Journal an attempt artifact BEFORE it is written (state ``pending``).
+
+        Idempotent: an artifact already journaled keeps its row and state.
+        """
+
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO artifacts (run_id, spec_id, sha256, state) "
+                "VALUES (?, ?, ?, 'pending')",
+                (run_id, spec_id, sha256),
+            )
+
+    def confirm_artifact(self, run_id: str, sha256: str) -> None:
+        """Mark a journaled artifact as on disk (state ``written``)."""
+
+        with self._conn:
+            self._conn.execute(
+                "UPDATE artifacts SET state = 'written' WHERE run_id = ? AND sha256 = ?",
+                (run_id, sha256),
+            )
+
+    def pending_artifacts(self, run_id: str) -> set[str]:
+        """Digests journaled but never confirmed: a write the process may not have finished.
+
+        A digest a saved finding cites is never pending, whatever its row says: the finding was
+        scored from that artifact, so it was on disk, and a deletion of it must be refused. A
+        crash between the write and the confirm left such a row, and deleting the file then
+        passed the check (pre-commit audit of F11).
+        """
+
+        rows = self._conn.execute(
+            "SELECT sha256 FROM artifacts WHERE run_id = ? AND state = 'pending'", (run_id,)
+        ).fetchall()
+        return {str(row["sha256"]) for row in rows} - self._cited_digests(run_id)
+
+    def recorded_battery(self, run_id: str) -> set[str] | None:
+        """The spec ids the run recorded before it sent anything, or ``None`` if unrecorded."""
+
+        digests = self.get_run_spec_digests(run_id)
+        return set(digests) if digests else None
+
+    def adopt_artifacts(self, run_id: str, artifacts: list[tuple[str, str]]) -> None:
+        """Journal ``(spec_id, sha256)`` pairs as written, in ONE transaction.
+
+        A resume adopts the artifacts already on disk once they pass the check. One row at a
+        time, an interruption left a spec half adopted, and its other artifacts were refused
+        from then on (second audit of F11).
+        """
+
+        with self._conn:
+            self._conn.executemany(
+                "INSERT INTO artifacts (run_id, spec_id, sha256, state) "
+                "VALUES (?, ?, ?, 'written') "
+                "ON CONFLICT(run_id, sha256) DO UPDATE SET state = 'written'",
+                [(run_id, spec_id, sha) for spec_id, sha in artifacts],
+            )
+
+    def _cited_digests(self, run_id: str) -> set[str]:
+        cited: set[str] = set()
+        for row in self._conn.execute(
+            "SELECT evidence_refs_json FROM findings WHERE run_id = ?", (run_id,)
+        ).fetchall():
+            try:
+                refs = json.loads(row["evidence_refs_json"] or "[]")
+            except ValueError:
+                continue
+            for ref in refs if isinstance(refs, list) else []:
+                sha = ref.get("sha256") if isinstance(ref, dict) else None
+                if isinstance(sha, str):
+                    cited.add(sha)
+        return cited
+
     def recorded_evidence(self, run_id: str) -> dict[str, set[str]]:
-        """``spec_id -> {sha256}`` of every evidence artifact the run's findings cite.
+        """``spec_id -> {sha256}`` of every evidence artifact the run's findings cite or the
+        artifact journal recorded.
 
         The manifest ``replay`` and ``--resume`` check the evidence tree against. A spec is in
         it only when EVERY reference of its findings is a plain 64-hex digest, and then with
@@ -303,7 +379,25 @@ class SqliteRunStore:
                     digests.add(sha)
                 else:
                     unverifiable.add(spec_id)
-        return {spec: shas for spec, shas in manifest.items() if spec not in unverifiable}
+        # The journal (schema v4) adds every artifact recorded as it was written, so a spec whose
+        # finding was never saved (an interrupted campaign or resume) is checked too, instead of
+        # being let through, and an artifact a resume added is known before its finding exists.
+        journaled: set[str] = set()
+        for row in self._conn.execute(
+            "SELECT spec_id, sha256 FROM artifacts WHERE run_id = ?", (run_id,)
+        ).fetchall():
+            sha = str(row["sha256"])
+            if _SHA256.fullmatch(sha):
+                spec_id = str(row["spec_id"])
+                manifest.setdefault(spec_id, set()).add(sha)
+                journaled.add(spec_id)
+        # A spec whose findings cite masked digests is checkable again once its artifacts are
+        # journaled (a resume adopts them): the journal holds the real digests.
+        return {
+            spec: shas
+            for spec, shas in manifest.items()
+            if spec not in unverifiable or spec in journaled
+        }
 
     def knows_run(self, run_id: str) -> bool:
         """True if this store holds a run row or any finding for ``run_id``."""

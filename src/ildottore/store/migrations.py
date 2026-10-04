@@ -20,7 +20,7 @@ from typing import Final
 _SCHEMA_SQL_PATH: Final = Path(__file__).with_name("schema.sql")
 
 # The current (latest) schema version. Bump + append to _MIGRATIONS to evolve.
-SCHEMA_VERSION: Final = 3
+SCHEMA_VERSION: Final = 4
 
 
 def _add_run_context_columns(conn: sqlite3.Connection) -> None:
@@ -59,6 +59,23 @@ _MIGRATIONS: Final[list[tuple[int, str | Callable[[sqlite3.Connection], None]]]]
     # write to it would fail with "no such column". Forward-only means adding a step, not
     # editing one that has already been stamped somewhere.
     (3, _add_run_context_columns),
+    # v4: the artifact journal. Every attempt artifact is recorded as it is written ("pending"
+    # before the write, "written" after), so the evidence manifest no longer depends on a
+    # finding having been saved: a resume interrupted mid-spec left artifacts no finding cited,
+    # and the next resume refused the run as tampered (F11, withdrawn on 2026-10-04 for that).
+    (
+        4,
+        """
+        CREATE TABLE IF NOT EXISTS artifacts (
+            run_id   TEXT NOT NULL,
+            spec_id  TEXT NOT NULL,
+            sha256   TEXT NOT NULL,
+            state    TEXT NOT NULL DEFAULT 'pending',
+            PRIMARY KEY (run_id, sha256)
+        );
+        CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts (run_id);
+        """,
+    ),
 ]
 
 

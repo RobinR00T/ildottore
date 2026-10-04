@@ -128,7 +128,10 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
 - **Env-vs-product:** injected rate-limit/timeout ⇒ retry-then-`inconclusive`; injected exploited
   response ⇒ `fail`. `tests/core/test_retry_classification.py`.
 - **Resume:** kill mid-run, resume by `run_id` ⇒ no duplicate attempts, no re-sent completed
-  specs. `tests/core/test_resume.py`.
+  specs. `tests/core/test_resume.py`. (As built since 2026-10-04, F11: an attempt that ended in an
+  environment error is not complete and is sent again under its id; the finding scores one
+  attempt per id, the answered one, and cites every artifact. `tests/test_f11_resume_resends.py`
+  interrupts resumes on purpose.)
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/core` clean; `lint-imports` green
   (core imports interfaces only: asserted).
 

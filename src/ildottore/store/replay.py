@@ -49,10 +49,10 @@ class ReplayResult:
     def effective_attempts(self) -> tuple[Attempt, ...]:
         """One attempt per id, the answered one when an id has several artifacts.
 
-        Defensive: the shipped runner writes one artifact per attempt id. If two ever share one
-        (a re-send of an errored attempt was tried, F11, and withdrawn), both are history and
-        the listing shows them, but only one is the attempt: counting both printed 10 attempts
-        and a 0.60 rate for a spec the report scored 6 of 6.
+        A resume sends an attempt that ended in an environment error again under its id (F11),
+        so the failed try and its re-send can both be on disk. Both are history and the listing
+        shows them, but only one is the attempt: counting both printed 10 attempts and a 0.60
+        rate for a spec the report scored 6 of 6.
         """
 
         kept: dict[str, Attempt] = {}
@@ -113,7 +113,13 @@ def replay_run(root: Path, run_id: str) -> ReplayResult:
     )
 
 
-def check_manifest(result: ReplayResult, manifest: dict[str, set[str]]) -> None:
+def check_manifest(
+    result: ReplayResult,
+    manifest: dict[str, set[str]],
+    pending: frozenset[str] | set[str] = frozenset(),
+    *,
+    battery: frozenset[str] | set[str] | None = None,
+) -> None:
     """Refuse an evidence tree that differs from what the run store recorded.
 
     Each artifact verifies against its OWN file name, so an edited artifact renamed to its new
@@ -126,21 +132,29 @@ def check_manifest(result: ReplayResult, manifest: dict[str, set[str]]) -> None:
     * a recorded hash with no artifact was deleted (removing every artifact of the failing
       spec used to replay as a clean run, review of PR #32).
 
-    A spec absent from ``manifest`` cannot be checked this way and is let through: one with no
-    recorded finding (a campaign killed mid-spec), or one stored before digests were kept
-    readable. That is the known limit, not a pass.
+    Since schema v4 the run store also journals every attempt artifact as it is written, so a
+    spec with no saved finding (a campaign or a resume killed mid-spec) is in ``manifest`` too.
+    ``pending`` are digests journaled before a write that was never confirmed: missing, they
+    are an interrupted write, not a deletion. ``battery`` is the set of spec ids the run
+    recorded before it sent anything: an artifact under any other spec id (one the run never
+    ran) is refused. A battery spec still absent from the manifest (stored before the journal,
+    or before digests were kept readable) cannot be checked this way and is let through. That is
+    the known limit, not a pass.
     """
 
     present = set(result.attempt_hashes)
     for digest, attempt in zip(result.attempt_hashes, result.attempts, strict=True):
         recorded = manifest.get(attempt.spec_id)
+        if recorded is None and battery is not None and attempt.spec_id not in battery:
+            recorded = set()
         if recorded is not None and digest not in recorded:
             raise TamperError(
                 f"artifact {digest}.json ({attempt.spec_id}) is not one the run store recorded "
-                "for that spec: it was added or replaced after the run"
+                "for that spec: it was added or replaced after the run (or written by an older "
+                "version of this tool, which does not journal what it writes)"
             )
     for spec_id, recorded in sorted(manifest.items()):
-        missing = sorted(recorded - present)
+        missing = sorted(recorded - present - set(pending))
         if missing:
             raise TamperError(
                 f"{len(missing)} artifact(s) the run store recorded for {spec_id} are missing "

@@ -3,6 +3,15 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-04 (night): PR #36 merged; F11 built
+
+- PR #36 (leftovers) squash-merged as `8235af3` after green CI and a pre-merge audit.
+- F11 on `fix/f11-resume-retries-env-errors`: a resume sends again the attempts that ended in an
+  environment error, under the same id, and scores one per id. Made safe by the artifact journal
+  (run store schema v4): every attempt artifact is recorded `pending` before it is written and
+  `written` after, and the manifest is findings plus journal. `tests/test_f11_resume_resends.py`
+  interrupts a resume mid-spec and resumes it again.
+
 ## State, 2026-10-04 (evening): PR #35 merged; the audit's leftovers fixed
 
 - PR #35 (residuals and block 7) squash-merged as `d48f5d8` after green CI and a pre-merge audit.

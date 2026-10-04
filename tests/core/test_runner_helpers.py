@@ -8,7 +8,7 @@ from ildottore.shared.enums import (
     InconclusiveReason,
     VerdictStatus,
 )
-from ildottore.shared.models import Attack, Attempt, ModelRequest, Verdict
+from ildottore.shared.models import Attack, Attempt, ModelRequest, ModelResponse, Verdict
 
 from .conftest import (
     HARDENED_RESPONSE,
@@ -235,7 +235,9 @@ def test_build_request_no_media_leaves_metadata_none() -> None:
     assert req.metadata is None
 
 
-def test_completed_attempt_ids_reads_responses_and_errors() -> None:
+def test_completed_attempt_ids_counts_answers_not_errors() -> None:
+    """An attempt that ended in an environment error is sent again by a resume (F11)."""
+
     a1 = Attempt(attempt_id="a1", spec_id="S", request=ModelRequest(prompt="x"), error="boom")
     from ildottore.shared.enums import ScanBand
     from ildottore.shared.enums import VerdictStatus as VS
@@ -259,7 +261,12 @@ def test_completed_attempt_ids_reads_responses_and_errors() -> None:
     from ildottore.shared.models import TestRun
 
     run = TestRun(run_id="r", findings=[finding])
+    assert R._completed_attempt_ids(run) == set()
+    answered = a1.model_copy(update={"error": None, "response": ModelResponse(text="ok")})
+    run = TestRun(run_id="r", findings=[finding.model_copy(update={"attempts": [a1, answered]})])
     assert R._completed_attempt_ids(run) == {"a1"}
+    assert R.resume_progress(run) == (1, 0)
+    assert R.resume_progress(TestRun(run_id="r", findings=[finding])) == (0, 1)
     assert R._completed_attempt_ids(None) == set()
 
 

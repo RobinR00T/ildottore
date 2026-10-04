@@ -77,6 +77,34 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (F11: a resume sends again what ended in an environment error)
+
+- **A run that halted after a network outage could not be finished with fresh answers.** A
+  `--resume` counted every stored attempt as done, the ones that ended in an environment error
+  (a timeout, a 5xx after retries) included, so it only re-scored the inconclusives. It now
+  sends each of those again, under the same attempt id; the failed try stays cited as evidence
+  and the finding scores one attempt per id, the answered one, as `replay` counts. The resume
+  message says how many attempts are kept and how many will be sent again, and
+  `--estimate --resume` subtracts the requests already done (one per turn). An error that would
+  repeat identically (a reply over the size cap) is marked `[not retryable]` and kept, and a
+  resume halted by a ceiling while re-sending keeps the finding a spec already had when that
+  finding held every planned attempt (the first version dropped them, a confirmed critical
+  included, from the report and the SARIF). `replay` now refuses a run whose recorded battery
+  cannot be read, as `--resume` already did.
+- **Why it was withdrawn the first time, and what fixed that:** a resume interrupted mid-spec
+  wrote artifacts no saved finding cited, and the next resume refused the run as tampered. The
+  run store now journals every attempt artifact as it is written (schema v4, table
+  `artifacts`: `pending` before the write, `written` after). The evidence manifest is the union
+  of the findings' references and the journal, so a spec whose finding was never saved is
+  checked too (it used to be let through), an artifact under a spec id outside the battery the
+  run recorded is refused, and a `pending` digest that is missing counts as an interrupted write,
+  not a deletion, unless a finding cites it. A resume adopts the artifacts already on disk into
+  the journal, in one transaction, once they pass the check, so a run started by an older version
+  keeps resuming (resuming with an older version and then with this one is not supported: the
+  older version journals nothing). A halted resume reports a resumed spec's earlier finding only
+  if that finding already held every planned attempt
+  (`tests/test_f11_resume_resends.py`, `tests/cli/test_f11_cli.py`).
+
 ### Fixed (leftovers of the 2026-10-03 audit)
 
 What the earlier passes left open on purpose, each reproduced before it was fixed
