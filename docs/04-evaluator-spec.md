@@ -34,8 +34,11 @@ judge fail decides on its own when every deterministic evaluator passed.
 
 ## 2. Evaluator combination (`evaluator_logic`)
 
-The values a spec can declare. The lint fixture engine reads them; **the runner reads none of
-them** and applies the fixed rule described under `weighted`:
+The values a spec can declare. **The runner reads none of them** and applies the fixed rule
+described under `weighted`. The lint fixture engine (`registry/fixtures_engine._combine`) reads
+the field, but all three values give the same result there: the fixture is `fail` if any
+stubbed evaluator fails, else `pass` (its stubs return only `pass` or `fail`, and the seven
+evaluator types without a stub are skipped):
 
 - `all_pass` (default): every evaluator must return `pass`.
 - `any_fail`: any `fail` → finding.
