@@ -199,7 +199,8 @@ or two formats writing the same file (compared case-insensitively and after Unic
 normalization), is refused before anything is sent.
 .TP
 .B --fail-on \fIBAND\fR
-CI gate on confirmed findings: low|medium|high|critical (default high).
+CI gate on confirmed findings: info|low|medium|high|critical (default high; info gates on
+any confirmed finding).
 .TP
 .B --include-needs-review
 Also gate unconfirmed exploits (an unconfirmed fail). An inconclusive result never gates.

@@ -274,7 +274,7 @@
         },
         "not_exercised": {
           "type": "array",
-          "description": "Spec ids that produced a finding but never sent a request (policy-blocked, or skipped for an undeclared capability). Their framework codes are excluded from every numerator. Optional in report-1.0.",
+          "description": "Spec ids that produced a finding but no reply that could be scored: nothing sent (policy-blocked, or skipped for an undeclared capability), or every send ended in an environment error. Their framework codes are excluded from every numerator. Optional in report-1.0.",
           "items": {
             "type": "string"
           }

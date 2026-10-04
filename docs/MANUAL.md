@@ -125,7 +125,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
   readable in every report, in both copies of a finding the JSON report carries, so a custom
   spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
-  prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. So only
+  prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part of
+  an absolute path that exists on this machine is exempt from the entropy rule (a temp or CI
+  workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and labels
+  in it are still masked, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
   tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
   digest of the scope body (`scope checksum mismatch: the scope body hashes to '<sha256>', not
@@ -306,7 +309,7 @@ required.
 |------|---------|
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
 | `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
-| `--fail-on BAND` | CI gate: `low\|medium\|high\|critical` (default `high`) |
+| `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding) |
 | `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt or its mean confidence is below the spec's `confidence_threshold` (§9). Undecided (`inconclusive`) results never gate, with or without it |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`) |
 | `--run-db PATH` | run store SQLite path |

@@ -98,8 +98,10 @@
       {% if summary.coverage.not_exercised %}
       <p class="coverage-not-exercised">
         Not exercised: <strong>{{ summary.coverage.not_exercised | length }}</strong> spec(s)
-        sent no request (blocked by policy, or a capability the target does not declare), so
-        their framework codes are not counted as covered.
+        got no reply that could be scored (nothing sent: blocked by policy or a capability the
+        target does not declare; or every send ended in an environment error, such as a network
+        failure, a timeout, HTTP 429 or 5xx, a reply over the size cap or one that could not be
+        decoded), so their framework codes are not counted as covered.
       </p>
       {% endif %}
       {% if summary.coverage.off_universe %}

@@ -72,8 +72,8 @@ today.
 Bands apply to the raw float, with no rounding: 11.99 is High. Info is not only "not
 reproduced": an exploit that succeeded once in five attempts (reproducibility 0.2) with impact 1
 and exploitability 3 scores 0.6 and bands Info, so it cannot trip `--fail-on low` even with
-`--include-needs-review` (it exits 1, findings below the gate; the documented bands start at Low,
-although the CLI also accepts an undocumented `--fail-on info`).
+`--include-needs-review` (it exits 1, findings below the gate); only `--fail-on info`, with
+`--include-needs-review` since it is unconfirmed, gates on it.
 
 ## 4. Run summary
 
