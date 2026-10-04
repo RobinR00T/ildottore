@@ -26,10 +26,11 @@ Two roles for fingerprinting: both first-class:
    The alternative was a hand-written "mutators known to work against family X" table. We
    have no empirical basis for one, and shipping it would attach a confidence to a fiction.
 
-   The other hook, `_baseline_resistance` (a per-category expectation read from
-   `guardrails["baseline_resistance"]`), is **dead at both ends**: unwritten by the engine, and
-   the `PlanSelection.baseline_resistance` it fills has no reader anywhere in `src/` (OD-17).
-   Unwritten because: benign probes
+   The other hook, the planner function `core/planner._baseline_resistance`, is **dead at both
+   ends**: it reads a per-category expectation from `guardrails["baseline_resistance"]`, a key no
+   fingerprint layer writes, so it always returns `None`; and the
+   `PlanSelection.baseline_resistance` field it fills has no reader anywhere in `src/` (OD-17).
+   No layer writes the key because benign probes
    cannot measure per-category resistance, so nothing emits it and no result is scored
    relative to an expectation. Tracked in `docs/12`. That one really is inert, and saying so
    is cheaper than a number nobody can defend.
@@ -78,29 +79,79 @@ their own identity).
 | **Guardrail** | benign boundary nudges | pre/post moderation present? canned refusal strings? latency signature of a filter layer? input vs output filtering? |
 | **Statistical (LLMmap-style)** | fixed query battery → embed responses → nearest-neighbor vs signature DB | robust family/version classification when self-report is unreliable |
 
+The table is the design. As built, seven layers run and a pass sends 17 requests on the shipped
+mutator set (each layer declares its `probe_count`, and the plan prints the sum): metadata 1,
+**capability 0** (it reads the capabilities the target file declares and asks the target
+nothing), behavioral 4, tokenizer 1, guardrail 1, statistical 3 and carrier 7 (one per probed
+carrier). The statistical layer embeds nothing: it compares a deterministic feature vector of
+the replies' structure with the signature pack's centroids (OD-9). The CLI builds the seventh,
+carrier, layer; `FingerprintEngine()` on its own has six.
+
 ## 2. Output: `ModelFingerprint`
 
-The shape below is what `dottore fingerprint <target.yaml> --scope <scope.yaml>` prints (keys
-as emitted; the values are illustrative). Capabilities are a guess from probes, under
-`capability_guess`, and carry no context-size field. The carrier-comprehension scores travel as
-an evidence entry (`layer: carrier`).
+The block below is what `dottore fingerprint <target.yaml> --scope <scope.yaml> --offline`
+printed on 2026-10-04 for an offline target with `mock_scenario: comprehending` and
+`capabilities: {tools: false}` (keys and values as emitted). What each key holds:
+
+- `family`: `{guess, confidence, cutoff_hint}`; `guess` is `unknown` with confidence 0.0 when no
+  evidence attributes a family.
+- `version`: `null`, or `{guess, confidence, cutoff_hint}`, the cutoff hint coming from the
+  signature pack.
+- `capability_guess`: **copied from the capabilities the target file declares, not probed.**
+  The capability layer sends nothing (`probe_count = 0`); it reads `adapter.capabilities()`.
+  `json_mode` mirrors the declared `tools` flag and `vision` mirrors `multimodal`; there is no
+  context-size field. When the carrier layer recovered at least one carrier, the key
+  `effective_mutators` lists them best-first: it is the one key the planner reads.
+- `guardrails`: the profile the guardrail layer emits (`input_filter`, `output_filter`,
+  `refusal_style`, `moderation_latency_ms`).
+- `evidence`: `{layer, signal, weight}` per layer hit. The carrier-comprehension scores travel as
+  the `carrier` entry.
+- `spoofing_flags`: see below.
+- `recommended_plan_ref`: always `null`; the u08 planner owns plan building (ADR-0006).
 
 ```json
 {
-  "target_id": "unknown-endpoint-1",
-  "family": {"guess": "anthropic-claude", "confidence": 0.93},
-  "version": {"guess": "claude-opus-4.x", "confidence": 0.71, "cutoff_hint": "…"},
-  "capability_guess": {"tools": true, "json_mode": true, "vision": false, "streaming": true,
-                       "seed": false, "rag": false, "memory": false, "logprobs": false},
-  "guardrails": {"input_filter": true, "output_filter": true,
-                 "refusal_style": "polite-explain", "moderation_latency_ms": 140},
-  "evidence": [{"layer": "metadata", "signal": "system_fingerprint=fp_…", "weight": 0.4},
-               {"layer": "behavioral", "signal": "self-id: 'I am Claude'", "weight": 0.2},
-               {"layer": "statistical", "signal": "nn-dist 0.08 vs claude-opus sig", "weight": 0.4}],
-  "spoofing_flags": ["self_report_conflicts_with_statistical"],   // honesty about contradictions
-  "recommended_plan_ref": "plan_2026_07_07_001"
+  "target_id": "mock-comp",
+  "family": {"guess": "unknown", "confidence": 0.0, "cutoff_hint": null},
+  "version": null,
+  "capability_guess": {"tools": false, "json_mode": false, "vision": false, "streaming": false,
+                       "seed": false, "rag": false, "memory": false, "logprobs": false,
+                       "effective_mutators": ["base64_wrap", "rot13", "translate",
+                                              "zero_width_inject"]},
+  "guardrails": {"input_filter": false, "moderation_latency_ms": null,
+                 "output_filter": false, "refusal_style": "unknown"},
+  "evidence": [
+    {"layer": "capability", "signal": "family=meta-llama|capability tells ['tools=false']", "weight": 0.1},
+    {"layer": "capability", "signal": "family=meta-llama|capability tells ['tools=false']", "weight": 0.1},
+    {"layer": "guardrail", "signal": "guardrail_profile={\"input_filter\": false, \"moderation_latency_ms\": null, \"output_filter\": false, \"refusal_style\": \"unknown\"}", "weight": 0.0},
+    {"layer": "statistical", "signal": "family=meta-llama|version=llama-3-8b|nn-dist 0.2127", "weight": 0.412291},
+    {"layer": "statistical", "signal": "family=meta-llama|version=llama-3.1-70b|nn-dist 0.2127", "weight": 0.412291},
+    {"layer": "carrier", "signal": "carrier_comprehension={\"base64_wrap\": 1.0, \"leetspeak\": 0.0, \"payload_splitting\": 0.0, \"rot13\": 1.0, \"translate\": 1.0, \"unicode_confusable\": 0.0, \"zero_width_inject\": 1.0}", "weight": 0.0}
+  ],
+  "spoofing_flags": ["non_discriminating_target"],
+  "recommended_plan_ref": null
 }
 ```
+
+Note that the statistical and capability evidence above name `meta-llama`, and the family is
+still `unknown`: that is the `non_discriminating_target` flag at work.
+
+**Spoofing flags.** Two are emitted:
+
+- `self_report_conflicts_with_statistical`: a self-report names a family the statistical layer
+  disagrees with; the self-report is then left out of the family tally.
+- `non_discriminating_target`: the target gave the **same reply text to every attributing
+  probe**, with at least three probes answered. The carrier layer's probes are left out of the
+  check, because a target may answer carriers differently (that is what comprehension measures)
+  and every other probe alike. A constant reply carries no signal from the model, so the text
+  layers' evidence is discarded for attribution: only metadata evidence that matched a `model=`
+  field in the response envelope may name the family, and the version is kept only when one
+  version clearly leads (a tie gives no version). With no such evidence the family is
+  `unknown`. The evidence list still shows every layer's hits, and `run -sV` adds "[the target
+  answered every attributing probe alike: no text signal]" to its fingerprint line. Every
+  offline scenario trips it (`bare`, `vulnerable`, `hardened`, and `comprehending`, which gives
+  every non-carrier probe the same "I do not understand" reply); before the flag, a constant mock
+  was named `meta-llama` at 0.67 and a refuse-all target `llama-3-8b` with a 2023-03 cutoff.
 
 - Every fingerprint run is **reproducible** (fixed seeded probe battery, evidence stored like
   any attempt: `docs/07`).
@@ -121,7 +172,8 @@ What the planner does today, with and without a fingerprint:
    rest follow, in declared order. It selects no spec and drops no variant.
 3. **Does not set baseline expectations.** The design was to record the family's known
    resistance and score a result relative to it. That half is the dead `_baseline_resistance`
-   hook described above §1: nothing writes it and nothing reads it (OD-17, ADR-0008). The same
+   hook described above §1: nothing writes the guardrails key it reads, and nothing reads the
+   plan field it fills (OD-17, ADR-0008). The same
    goes for the original idea of weighting variants "historically effective against the
    detected family", which the introduction rejects for lack of an empirical basis.
 4. **Emits an explicit, reviewable `TestPlan`** (which specs, why, which were skipped and why).
@@ -131,8 +183,8 @@ Tailoring is OFF unless a fingerprint exists: only `-sV` (or `-A`, which implies
 one. `--deep` alone switches the planner to adaptive mode, but with no fingerprint there is
 nothing to order by, so the declared order is kept. Without `-sV`/`-A` the full selected suite
 runs untailored (there is no `--no-adaptive` flag on the CLI; the pass-through is the default,
-and `core.planner.build_plan(adaptive=False)` is what implements it), which is what
-apples-to-apples benchmarking across models needs.
+and `core.planner.build_plan(adaptive=False)` is what implements it when `--deep` is absent
+too), which is what apples-to-apples benchmarking across models needs.
 
 ## 4. CLI surface
 

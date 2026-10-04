@@ -59,8 +59,10 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
 - `Capabilities = {tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal,
   audio: bool}` (as built, `shared/models.py`: nine flags, `audio` added with the audio carrier,
   and no `max_context_tokens` field). All must validate vs `schemas/`.
-- Cassettes live under `tests/adapters/cassettes/{openai,anthropic,rest}/` (respx recordings,
-  keys scrubbed). Secrets in requests masked via u01 redactor before any log/evidence write.
+- Cassettes live under `tests/adapters/cassettes/{openai,anthropic,rest}/`. (As built they are
+  hand-written `{status_code, json}` response bodies served by `respx`, not recordings of real
+  traffic, so there is no key to scrub; the MCP adapter's tests stub JSON-RPC inline.) Secrets
+  in requests masked via u01 redactor before any log/evidence write.
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/adapters -q` green; coverage ≥ 90% for `src/ildottore/adapters/`. **Zero live network

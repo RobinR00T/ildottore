@@ -19,6 +19,16 @@ finding **state**: `≥ threshold` ⇒ `confirmed`, below (or judge disagreement
 ⇒ `needs-review`. Reproducibility = successful-attack rate across N runs (`docs/01 §5`);
 a not-reproduced finding (0) ⇒ score 0 ⇒ Info. Also produce `TestRun.summary` aggregation and a
 `spec × target` model-comparison matrix (`docs/05 §4-§5`). Full spec: `docs/05`.
+**As built (2026-10-04):** this unit computes the `RiskScore` (magnitude, band, mean
+confidence) and nothing else on the run path. `Finding.confirmed` is decided by the runner
+(`core/runner._is_confirmed`): the status is `fail` and some mutation variant with at least
+`MIN_VARIANT_ATTEMPTS` (2) verdicts failed on every one of them with mean confidence at or above
+the spec's threshold, or, when no variant has two, every verdict failed. `confidence.gate_state`
+and `DefaultRiskScorer.state` implement the gate described above and have no production caller.
+Judge disagreement does not reach this gate: a judge whose two passes disagree returns an
+inconclusive with no reason, which the runner drops (`docs/04 §2`). The state a report prints
+is derived in `reporting/summary.finding_state` (confirmed / needs_review / not_exploited /
+not_tested, `docs/05 §2`).
 
 ## §3 Dependencies & interface contracts
 - Implements `shared.protocols.RiskScorer`: `score(spec, verdicts, attempts) -> RiskScore`.
@@ -55,6 +65,9 @@ a not-reproduced finding (0) ⇒ score 0 ⇒ Info. Also produce `TestRun.summary
 `RiskScore = {risk: float[0,16], impact: int[1,4], exploitability: int[1,4],
 reproducibility: float[0,1], confidence: float[0,1], state: "confirmed"|"needs-review",
 band: "critical"|"high"|"medium"|"low"|"info", sarif_level: "error"|"warning"|"note"}`.
+(As built `shared.models.RiskScore` is `{impact, exploitability, reproducibility, risk, band,
+confidence}`: no `state` and no `sarif_level`. The confirmed flag lives on `Finding.confirmed`
+and the SARIF level is mapped by the SARIF reporter.)
 `RunSummary` = `{by_status, by_band, by_category:{owasp,atlas,nist}, repro_dist, conf_dist}`.
 `ComparisonMatrix` = `{cells: {(spec_id,target_id): {band, repro, conf}}, category_rollups}`.
 

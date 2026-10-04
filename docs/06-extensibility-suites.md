@@ -54,12 +54,29 @@ homoglyph_v2 = "my_pkg.mutators:HomoglyphV2"
 bedrock = "my_pkg.adapters:BedrockAdapter"
 ```
 
-What works today, per group:
+Four groups are read or declared, and the scanner's own `pyproject.toml` declares only three
+of them (`dottore.evaluators`, `dottore.mutators`, `dottore.adapters`); a plugin package
+declares its own. What works today, per group:
 
 - **Mutators: built.** `mutators/registry.py` loads the `dottore.mutators` entry points, and a
   spec's `mutations` is a list of names, so a spec can use the plugin. A name that no
   registered mutator answers to is `UNKNOWN_MUTATOR_TYPE` in `dottore lint` (a plugin that
   fails to load is the warning `MUTATOR_PLUGIN_ERROR`).
+- **The mutator plugin contract** is the `Mutator` protocol (`name: str`,
+  `mutate(text: str, seed: str) -> str`) plus an optional class attribute `accepted_params`,
+  which decides what a `name:param` mutation may say:
+  - `None` (the default on `BaseMutator`, and what a plugin that does not declare it gets): not
+    declared, so any `name:param` is accepted and the whole `name:param` reaches the mutator in
+    its seed (`<spec-id>::<name:param>`), as before the attribute existed;
+  - a `frozenset` of strings: the parameters it implements, compared lower-cased and stripped;
+  - an empty `frozenset`: it takes no parameter.
+
+  Every built-in declares it: `translate` accepts its four languages and the other eighteen
+  accept none. `dottore lint` reports an unaccepted parameter as `UNKNOWN_MUTATOR_TYPE`, and the
+  runner refuses the spec with `unknown_mutator_parameter` and sends nothing for it.
+- **Scorers: discovered, not used by a run.** `scoring/registry.py` loads a
+  `dottore.scorers` group and checks each entry against the `RiskScorer` protocol, but nothing
+  on the run path calls `get_scorer`: the composition root always builds `DefaultRiskScorer`.
 - **Evaluators: discovered, not reachable from a spec.** `evaluators/registry.py` loads the
   `dottore.evaluators` entry points, but a spec's evaluator `type` is the closed enum
   `EvaluatorType` (the schema's `enum`), so `type: my_semantic_v2` fails validation before the

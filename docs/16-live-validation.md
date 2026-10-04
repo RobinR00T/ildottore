@@ -21,9 +21,9 @@ covered **14 specs**.
 **Not verified.** The full battery against a hosted commercial model; the multimodal and audio
 matrix against a provider that actually accepts image and audio blocks; and `-sV`'s carrier
 measurement against a real model (what CI measures is a simulated decoder, by construction).
-(`_baseline_resistance` in the planner is not on this list: nothing writes it and nothing reads
-it, so a live run cannot exercise it. Populating it from live data is one option of OD-17,
-ADR-0008, and would need code first.)
+(`_baseline_resistance` in the planner is not on this list: no fingerprint layer writes the
+guardrails key it reads and nothing reads the plan field it fills, so a live run cannot exercise
+it. Populating it from live data is one option of OD-17, ADR-0008, and would need code first.)
 
 The distinction matters because "it has never been run for real" is false and was repeated
 here for two days before `docs/PROGRESS.md` was read. What is missing is **breadth**, not the
@@ -39,8 +39,9 @@ first contact.
    which proves the chain and nothing about behaviour. A live pass produces the first real
    carrier-comprehension profile, and it is cheap: 17 requests per target.
 4. **The input `_baseline_resistance` would need, if OD-17 keeps it.** Live verdict
-   distributions are its only honest input, but the hook has no writer and no reader today
-   (`docs/10`), so a live run only collects the data; it does not test the planner.
+   distributions are its only honest input, but nothing writes the key the hook reads and
+   nothing reads the field it fills (`docs/10`), so a live run only collects the data; it does
+   not test the planner.
 
 ## 3. What it costs, measured (not estimated from memory)
 
@@ -72,14 +73,19 @@ Two things that table says out loud:
   one capability, `multi_identity`, so one spec was silently skipped. An audit re-ran it. The
   correct figures are above, and the lesson is in the commit: a number is measured against the
   thing the row claims, or the row says which thing it was measured against.)
-* **Eight specs are blocked by the default policy pack**, on purpose: the offensive-simulation
+* **Eight specs can never pass the default policy pack**, on purpose: the offensive-simulation
   family (`AG-CRED-SWEEP-001`, `AG-DESTRUCTIVE-DBDROP-001`, `AG-EXFIL-EGRESS-001`,
   `AG-EXTORT-CHAIN-001`, `AG-PERSIST-BEACON-001`, `AG-AUTONOMY-SELFCORRECT-001`,
   `JB-OFFENSIVE-RANSOM-CODEGEN-001`) and `DL-PII-ELICIT-001` (`layer_b_pii`). Enabling them is a
   deliberate act in the policy pack, and on someone else's system it needs their authorization
   in writing, not just a flag. Today it is not possible from the command line at all: `dottore`
-  has no option to load a policy pack (and none for the PII run key), so these eight are
-  `blocked_by_policy` on every CLI run. Whether to add one is an open decision.
+  has no option to load a policy pack (and none for the PII run key), so none of these eight
+  sends on any CLI run. Whether to add one is an open decision. On the fully capable target all
+  eight reach the policy gate and are `blocked_by_policy`. On the bare model the capability
+  filter runs first: the six offensive-simulation specs that require `tools` are among the 39
+  capability skips (`inconclusive: capability_unavailable`), and only `DL-PII-ELICIT-001` and
+  `JB-OFFENSIVE-RANSOM-CODEGEN-001` are `blocked_by_policy`, which is the "2 blocked (policy)"
+  the estimate prints for that row.
 
 No per-token pricing is baked into this tool and none should be: multiply the token gloss by
 the rate on your own invoice.
@@ -125,8 +131,11 @@ between (clause A-24).
   target file, and the evidence store redacts at rest regardless.
 * **Rate.** `--rate 1` is one request per second. Providers rate-limit and so should you: the
   pacer is shared by the probes, the battery, the identity sweep and the judge.
-* **Judge.** Without `--judge`, `semantic_judge` abstains and the deterministic evaluators
-  carry alone. A live run is worth the second model.
+* **Judge.** Without `--judge`, `semantic_judge` is not registered on a live run and counts as
+  `inconclusive: capability_unavailable`, which the runner keeps: a spec that declares it (74 of
+  the 75) can still `fail` on a deterministic evaluator, but can never `pass`, and comes back
+  `inconclusive` wherever the deterministic evaluators do not find an exploit. The CLI prints a
+  warning saying so before it sends. A live run is worth the second model.
 
 ## 6. After it
 

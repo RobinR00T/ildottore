@@ -40,14 +40,18 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   `cli` being imported by any package and forbids core/adapters importing `cli` (`docs/01 §2`).
 - KEEP: `--scope` is REQUIRED for any command that sends traffic (`run`, `fingerprint`, `-A`,
   `--quick`, `--deep`); default-deny; `--allow-endpoint`/`--unsafe-render` are audited, never
-  silent. (As built neither flag exists, so nothing widens the allowlist or renders raw
-  payloads from the command line; the KEEP binds whoever adds them.) `--dry-run` resolves +
-  validates and sends nothing.
+  silent. (As built neither flag exists, so nothing widens the allowlist from the command line,
+  and the HTML report never shows prompts; the KEEP binds whoever adds them. The JSON report is
+  another matter: it carries every attempt's request, prompt included, through the redactor,
+  which masks secret, PII and high-entropy shapes only, so the attack text of a `test_only` spec
+  is readable there; no reporter reads `test_only`.) `--dry-run` resolves + validates and sends
+  nothing.
 - KEEP: exit codes `0` clean · `1` findings below `--fail-on` · `2` at/above `--fail-on` · `>2`
   operational error (`docs/09 §4`). As built the operational code is `3`, and it also covers a
   run that did not finish and a command-line usage error (an unknown option exits 3, so it
   cannot be read as "findings at/above"). `--fail-on` gates **confirmed** findings; `--include-needs-review`
-  extends the gate to low-confidence ones.
+  extends the gate to the unconfirmed **fails** only (an inconclusive or a pass never gates,
+  although an inconclusive that was sent reads `needs_review` in the reports, `docs/05 §2`).
 - KEEP: `-T0..-T5` expand to concrete rate/concurrency/timeout defaults in `flags.py` (documented
   table); explicit `--rate/--concurrency/--timeout` override the template.
 - DECIDE (OD-5), resolved as built: there is no `--adaptive` flag. `-sV` and `-A` fingerprint
@@ -72,14 +76,25 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
 - Exit code is a pure function of `(findings, --fail-on, --include-needs-review, error_state)`
   in `exit_codes.py`: no side effects, table-tested.
 - All terminal output honors the central redactor; secrets/PII never printed (`AGENTS.md §2`).
+  (As built, for errors, `cli/app._masked`: URL passwords are masked first, on the whole text.
+  A 64-hex value is then kept readable in exactly two cases: an evidence file name
+  (`<sha256>.json`), and a digest the error itself carries as one the tool computed (the
+  `digests` attribute: on a scope checksum mismatch the digest computed from the body, not the
+  `checksum:` value the operator typed, which goes to the redactor; on a tamper refusal the hash
+  the artifact's content has now). A kept token that overlaps a credential the process
+  registered is masked anyway, and every other 64-hex value goes through the redactor. An error
+  quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
+  literal pasted where a reference belongs prints as "a literal value (not shown)", because the
+  redactor alone caught such a value only by its entropy.)
 
 ## §7 Acceptance criteria (machine-checkable)
-- `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`.
+- `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces
+  85% on the aggregate over `src/ildottore` only; no per-package figure is gated, OD-13.)
 - `ruff check .` + `ruff format --check .` clean; `mypy src/ildottore/cli` clean.
 - `lint-imports` green: `cli` imported by nobody; `core/adapters/evaluators/...` never import
   `cli`; concretes appear **only** in `cli/wiring.py` (import-contract assertion in `docs/07`).
 - **Exit-code golden table** (`tests/cli/test_exit_codes.py`): clean→0, below-threshold→1,
-  at/above→2, operational-error→>2; `--include-needs-review` flips low-confidence into the gate.
+  at/above→2, operational-error→>2; `--include-needs-review` flips unconfirmed fails into the gate.
 - **Scope gate is non-bypassable** (`tests/cli/test_scope_gate.py`): `run`/`fingerprint`/`-A`
   without `--scope` → exit >2 with a clear error and **zero** adapter sends (asserted via fake
   adapter call count). (`--allow-endpoint` emits an audit record: not built, the flag does not
@@ -88,10 +103,16 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   rate/concurrency/timeout; explicit flags override.
 - **CLI-map golden** (`tests/cli/test_flags.py`): every nmap↔dottore mapping in `docs/09 §1` is
   parseable; `docs/09 §3` cheat-sheet invocations parse without error under `--dry-run`. As
-  built the test covers three of the five cheat-sheet lines (the quick scan, `-sV` with
-  multi-format output, `-A`); the `-p ... -T4 --fail-on` and `--compare` lines were checked by
-  hand on 2026-10-04. The `eu:ai-act` preset line was removed from `docs/09 §3` because it exits
-  3 (the preset is not built).
+  built no test runs a cheat-sheet line as written. `test_flags.py` has three tests named after
+  it: `test_cheatsheet_quick_scan_dry_run` asserts that `--quick` is REFUSED (exit 3) on a spec
+  tree without a `quick` suite (`test_quick_narrows_the_battery_against_the_shipped_specs` runs
+  `--quick` against `specs/` and expects exit 0); `test_cheatsheet_sv_suite_multiformat_dry_run`
+  runs `-sV -p pi,leakage -T 4 --fail-on high`, with no `--suite` and no output flag; and
+  `test_cheatsheet_aggressive_adaptive_budget_dry_run` runs `-A`. Nothing covers `--suite
+  owasp:llm`, `-oH`/`-oS`/`-oX` or `--compare`. All five lines of `docs/09 §3` were run by hand
+  under `--dry-run` on 2026-10-04 (the first as written, the others against offline mock target
+  and scope files) and each exited 0. The `eu:ai-act` preset line was removed from `docs/09 §3`
+  because it exits 3 (the preset is not built).
 - **Composition smoke** (`tests/cli/test_wiring.py`): `wiring.build()` returns an engine whose
   injected components satisfy each `shared.protocols` type; no concrete leaks past the root.
 - `--dry-run` sends nothing (fake adapter send-count == 0); `-oA` writes exactly 4 report files.
@@ -155,8 +176,11 @@ a claim about a whole campaign checked only against the invocation in front of i
   write is monotonic per axis, so a refused write can no longer discard a higher token or wall
   figure along with the request count, and the record cannot under-report what was spent.
 * **The judge and the planning mode.** `semantic_judge` decides verdicts, so a different
-  `--judge` mid-campaign arbitrates one report with two models; `--deep`/`-sV` reorder the
-  mutators a spec runs. Both are in the recorded context now.
+  `--judge` mid-campaign arbitrates one report with two models; the planning mode decides the
+  order of the mutators a spec runs. Both are in the recorded context now. (The recorded mode is
+  `adaptive`, set by `-sV`, `-A` or `--deep`. Only a fingerprint reorders anything, so `--deep`
+  alone, which is timing template T2 over the same battery, records adaptive mode without
+  changing any order; a resume must still match it.)
 
 **The target AND ITS ROUTE are the things with no opt-in.** `--resume-unverified` waives the battery, the
 context and the spend, and a second audit pointed it at a run row with no target id and resumed

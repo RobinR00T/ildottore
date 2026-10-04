@@ -50,7 +50,9 @@ does not exist.
 The audit of the whole repository that afternoon found one consequence of the runner's rule this
 ADR had not seen. When every deterministic evaluator passes and the judge says `fail`, the
 attempt is a `fail`; the per-attempt aggregate hides the disagreement, so across the runs the
-finding comes out **confirmed** and trips `--fail-on`. The FAQ, the README and the manual all
+finding comes out **confirmed** and trips `--fail-on` whenever the judge says `fail` on every
+attempt of one mutation variant, which is the rule any fail is confirmed by (precision added
+2026-10-04; the amendment's finding stands). The FAQ, the README and the manual all
 said the judge never overrides a deterministic verdict. The judge is the one evaluator a target
 can prompt-inject, so a confirmed finding decided by it alone is exactly the kind CI should not
 gate on without corroboration.
