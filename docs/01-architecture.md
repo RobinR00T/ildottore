@@ -52,22 +52,31 @@ shared       dependency-free models, protocols, enums (imported by everyone)
 
 - `core` depends on **interfaces**, never concretes. Concretes are injected at the composition
   root, `cli` (`cli/wiring.py`).
-- The peer packages that need only `shared` (`reporting`, `store`, `fingerprint`, `mutators`,
-  `registry`, `scoring`, `testing`) import neither each other nor `core`/`cli`.
+- The peer packages (`reporting`, `store`, `fingerprint`, `mutators`, `registry`, `scoring`)
+  import `shared` (and, for `reporting` and `store`, the leaf module `redactor`), not each
+  other, and not `core`/`cli`. The `.importlinter` independence contract covers exactly these
+  six. `testing`
+  (the golden harness) is in no contract and imports `adapters.mock` for `MockTarget`, so it is
+  not a shared-only peer; the `.importlinter` header comment still lists it as one.
 - Shared, dependency-free models (`AttackSpec`, `Target`, `TestRun`, `Finding`, `Attempt`,
   `Verdict`, `Evidence`) live in `src/ildottore/shared/` and are imported by everyone.
 - Enforced in CI by `import-linter`: four contracts in the standalone `.importlinter` file,
-  deliberately not duplicated in `pyproject.toml`.
+  deliberately not duplicated in `pyproject.toml`: the layers above, the independence of the six
+  peers, `adapters` never importing `evaluators`, and `core` importing no concrete package. That
+  no peer imports `core` or `cli` holds today but is not one of the four contracts.
 
 ## 3. Core interfaces (contracts the AI must implement)
 
 ```python
-# src/ildottore/shared/models.py: dependency-free Pydantic models (see schemas/)
+# src/ildottore/shared/protocols.py: the runtime Protocol seams (all @runtime_checkable).
+# The Pydantic models they take and return live in src/ildottore/shared/models.py.
 
 class TargetAdapter(Protocol):
+    id: str
     async def send(self, request: ModelRequest) -> ModelResponse: ...
     def capabilities(self) -> Capabilities: ...     # tools, rag, memory, streaming, seed,
-    id: str                                          #   logprobs, multi_identity, multimodal
+                                                     #   logprobs, multi_identity, multimodal,
+                                                     #   audio (nine flags, all declared)
     # ModelResponse carries token logprobs when capabilities.logprobs is true (used by
     # logprob_membership + confidence side-channels). A target may expose >1 auth identity
     # (multi_identity) so cross-tenant/authz specs can compare A vs B: see scope, §6.
@@ -76,7 +85,9 @@ class Evaluator(Protocol):
     type: str                                        # "regex_absence", "semantic_judge", ...
     async def evaluate(self, ctx: EvalContext) -> Verdict: ...
     #   Verdict = {status: pass|fail|inconclusive, confidence: float, reasoning: str,
-    #              matched: list[str]}
+    #              matched: list[str], evaluator_type: str,
+    #              inconclusive_reason: capability_unavailable|blocked_by_policy|
+    #                                   judge_compromised|None}
 
 class Mutator(Protocol):
     name: str
@@ -126,7 +137,10 @@ class Reporter(Protocol):
    judge-only fail should be `needs-review`, is open decision OD-19 (ADR-0010). Judge input is
    sandboxed (`docs/04`).
 6. **Score**: reproducibility = successful-attack rate across N, per mutation variant (the
-   spec takes its most reproducible variant); risk per `docs/05`.
+   spec takes its most reproducible variant); risk per `docs/05`. A variant counts on its own
+   only with at least `MIN_VARIANT_ATTEMPTS` attempts (2, defined in `shared/enums.py` because
+   the runner's confirmed rule and the scorer both read it); when no variant has that many
+   (`--runs 1`), reproducibility and confirmation are pooled over every attempt.
 7. **Persist**: attempts → Evidence Store; finding → Run Store. Emit to reporters.
 
 ## 5. Determinism & reproducibility (why this is architectural, not a detail)
