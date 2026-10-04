@@ -183,8 +183,8 @@ Tailoring is OFF unless a fingerprint exists: only `-sV` (or `-A`, which implies
 one. `--deep` alone switches the planner to adaptive mode, but with no fingerprint there is
 nothing to order by, so the declared order is kept. Without `-sV`/`-A` the full selected suite
 runs untailored (there is no `--no-adaptive` flag on the CLI; the pass-through is the default,
-and `core.planner.build_plan(adaptive=False)` is what implements it), which is what
-apples-to-apples benchmarking across models needs.
+and `core.planner.build_plan(adaptive=False)` is what implements it when `--deep` is absent
+too), which is what apples-to-apples benchmarking across models needs.
 
 ## 4. CLI surface
 
