@@ -20,7 +20,8 @@ Give a red teamer who knows `nmap` a productive CLI in 5 minutes (`docs/09`): ta
 scan-type/intensity flags, selectable specs (our "NSE"), multi-format output, sane defaults.
 The CLI **resolves** config → scope → suite/spec selection → engine plan, **delegates** execution
 to `u08` core, **streams** progress, **renders** the summary, and **maps** the outcome to a
-scriptable exit code. Commands: `run` (default when a target is given), `fingerprint` (`-sV`),
+scriptable exit code. Commands: `run` (designed as the default when a target is given; as built
+it must be typed: `dottore target.yaml` answers "No such command"), `fingerprint` (`-sV`),
 `lint` (mounted from u02), `registry`, `describe`, `new-spec`, `replay`. The **scope/allowlist
 gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/01 §6`).
 
@@ -39,14 +40,19 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   `cli` being imported by any package and forbids core/adapters importing `cli` (`docs/01 §2`).
 - KEEP: `--scope` is REQUIRED for any command that sends traffic (`run`, `fingerprint`, `-A`,
   `--quick`, `--deep`); default-deny; `--allow-endpoint`/`--unsafe-render` are audited, never
-  silent. `--dry-run` resolves + validates and sends nothing.
+  silent. (As built neither flag exists, so nothing widens the allowlist or renders raw
+  payloads from the command line; the KEEP binds whoever adds them.) `--dry-run` resolves +
+  validates and sends nothing.
 - KEEP: exit codes `0` clean · `1` findings below `--fail-on` · `2` at/above `--fail-on` · `>2`
-  operational error (`docs/09 §4`). `--fail-on` gates **confirmed** findings; `--include-needs-review`
+  operational error (`docs/09 §4`). As built the operational code is `3`, and it also covers a
+  run that did not finish and a command-line usage error (an unknown option exits 3, so it
+  cannot be read as "findings at/above"). `--fail-on` gates **confirmed** findings; `--include-needs-review`
   extends the gate to low-confidence ones.
 - KEEP: `-T0..-T5` expand to concrete rate/concurrency/timeout defaults in `flags.py` (documented
   table); explicit `--rate/--concurrency/--timeout` override the template.
-- DECIDE (OD-5): whether `--adaptive` is default-ON under `-sV`/`-A` or opt-in: CLI honors the
-  engine default; do not hardcode.
+- DECIDE (OD-5), resolved as built: there is no `--adaptive` flag. `-sV` and `-A` fingerprint
+  and the planner orders mutators by the result; `--deep` sets adaptive mode too, which orders
+  nothing without a fingerprint (`00-INDEX.md` OD-5).
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `app.py` + `flags.py` + `exit_codes.py`: Typer root, `-T` template table, exit-code enum,
@@ -76,11 +82,16 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   at/above→2, operational-error→>2; `--include-needs-review` flips low-confidence into the gate.
 - **Scope gate is non-bypassable** (`tests/cli/test_scope_gate.py`): `run`/`fingerprint`/`-A`
   without `--scope` → exit >2 with a clear error and **zero** adapter sends (asserted via fake
-  adapter call count); `--allow-endpoint` emits an audit record.
+  adapter call count). (`--allow-endpoint` emits an audit record: not built, the flag does not
+  exist.)
 - **`-T` template golden** (`tests/cli/test_timing.py`): `-T0..-T5` expand to the documented
   rate/concurrency/timeout; explicit flags override.
 - **CLI-map golden** (`tests/cli/test_flags.py`): every nmap↔dottore mapping in `docs/09 §1` is
-  parseable; `docs/09 §3` cheat-sheet invocations parse without error under `--dry-run`.
+  parseable; `docs/09 §3` cheat-sheet invocations parse without error under `--dry-run`. As
+  built the test covers three of the five cheat-sheet lines (the quick scan, `-sV` with
+  multi-format output, `-A`); the `-p ... -T4 --fail-on` and `--compare` lines were checked by
+  hand on 2026-10-04. The `eu:ai-act` preset line was removed from `docs/09 §3` because it exits
+  3 (the preset is not built).
 - **Composition smoke** (`tests/cli/test_wiring.py`): `wiring.build()` returns an engine whose
   injected components satisfy each `shared.protocols` type; no concrete leaks past the root.
 - `--dry-run` sends nothing (fake adapter send-count == 0); `-oA` writes exactly 4 report files.
@@ -178,13 +189,16 @@ no work. Checked by `tests/cli/test_resume_integrity.py`.
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
 - MUST NOT provide any way to bypass the scope/allowlist or the redactor (`docs/09 §5`).
-- MUST NOT print or log secrets/PII, raw dangerous payloads (except audited `--unsafe-render`),
+- MUST NOT print or log secrets/PII, raw dangerous payloads (except an audited `--unsafe-render`,
+  which is not built),
   or commit/push from a build loop (`AGENTS.md §2`).
 - MUST NOT be imported by any other package (composition-root direction only).
 - Not its call: adaptive-default decision (OD-5) · judge model (OD-3) · scope signing (OD-2).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-5** whether `--adaptive` defaults ON under `-sV`/`-A` or is opt-in (CLI mirrors engine
-  default; propose opt-in for MVP‑1 to bound cost).
+  default; propose opt-in for MVP‑1 to bound cost). Resolved as built: no flag, `-sV`/`-A` imply
+  adaptive ordering (see §4 and `00-INDEX.md`).
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
+  As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).

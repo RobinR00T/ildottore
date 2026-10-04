@@ -27,10 +27,15 @@ matched}`. `status ∈ {pass, fail, inconclusive}`. **`pass` = the target behave
 > the false-positive discipline and safety rules in `docs/11 §4-§5`: a format-valid hit without
 > corroboration (canary / corpus / cross-identity) is `needs-review`, **never** a confirmed leak.
 
-Deterministic evaluators are preferred as **pre-filters**; the judge is the arbiter only where
-semantics are needed. This keeps most verdicts cheap, reproducible and injection-proof.
+Deterministic evaluators are preferred; the judge adds a semantic reading where a rule cannot.
+This keeps most verdicts cheap, reproducible and injection-proof. The judge is not a tie-breaker
+that only confirms: under the runner's rule (§2) a deterministic fail is never outvoted, but a
+judge fail decides on its own when every deterministic evaluator passed.
 
 ## 2. Evaluator combination (`evaluator_logic`)
+
+The values a spec can declare. The lint fixture engine reads them; **the runner reads none of
+them** and applies the fixed rule described under `weighted`:
 
 - `all_pass` (default): every evaluator must return `pass`.
 - `any_fail`: any `fail` → finding.
@@ -39,8 +44,16 @@ semantics are needed. This keeps most verdicts cheap, reproducible and injection
   inconclusive; otherwise a judge fail; otherwise pass), and the lint fixture engine treats it
   like `all_pass`. The weighted vote in `evaluators/combine.py` is called by neither. Whether to
   document the runner's rule as the semantics or implement the vote is OD-19 (ADR-0010).
-- Any `inconclusive` in a required evaluator makes the aggregate `inconclusive` unless a
-  fallback is declared. **Inconclusive is a first-class outcome, never coerced to pass/fail.**
+- "Deterministic" in that rule means every evaluator other than `semantic_judge`, so a
+  `refusal` or `logprob_membership` fail (confidence below 1.0, §1) decides as a regex does.
+- A consequence the ADR's amendment records: when every deterministic evaluator passes and the
+  judge says `fail`, the attempt is `fail`, and with the judge's confidence at or above the
+  threshold the finding is **`confirmed`** and trips `--fail-on`. ADR-0010 recommends making a
+  judge-only fail `needs-review`; that is not decided (OD-19) and not built.
+- An `inconclusive` decides the aggregate unless a deterministic evaluator failed. A judge that
+  was consulted and merely abstained (low confidence, no reason) is dropped; a judge that was not
+  configured, failed or was compromised is kept as `inconclusive`. There is no fallback field.
+  **Inconclusive is a first-class outcome, never coerced to pass/fail.**
 
 ## 3. Confidence: measured, stored, never faked
 
@@ -69,13 +82,24 @@ The judge implementation **must**:
 5. Include an **injection tripwire**: a control instruction the judge must ignore; if the
    parsed output shows it obeyed the tripwire, the judge run is discarded and marked
    `judge_compromised` → `inconclusive` + flagged for the operator.
-6. The judge model runs with `temperature=0` and pinned params, recorded in evidence.
+6. The judge model runs with pinned params: the first pass at `temperature=0` (the recorded
+   verdict), each later self-consistency pass at `temperature=0.5`, so the probe in item 4
+   actually exercises the judge's stability (when every pass used the same settings they were
+   byte-identical). `top_p` is pinned at 1.0; no seed is sent on any pass (the class constant
+   that pins seed 0 is defined and unused). The judge's requests are not stored in evidence
+   (§5).
 
 ## 5. Evidence per verdict
 
-Every verdict persists: evaluator type + config, inputs seen (masked), matched patterns,
-judge prompt + judge raw output + parsed structure, and the reasoning string. A reviewer must
-be able to re-derive the verdict from stored evidence alone.
+**Design, not yet stored.** Every verdict should persist: evaluator type + config, inputs seen
+(masked), matched patterns, judge prompt + judge raw output + parsed structure, and the
+reasoning string, so a reviewer can re-derive the verdict from stored evidence alone.
+
+What a stored attempt carries today: the request, the response (text, tool calls, logprobs,
+usage, finish reason, provider ids), the sampling, and **one** verdict, the aggregate
+(`evaluator_type: "aggregate"`) with its own reasoning and the union of matched patterns. No
+per-evaluator verdict or config is stored, and nothing of the judge's exchange (prompt, raw
+output, parsed JSON), so a judge verdict cannot be re-derived from evidence.
 
 ## 6. Evaluator self-validation
 

@@ -39,7 +39,10 @@ redactor before serialization**: no reporter ever emits raw sensitive strings.
   (stable key order, sorted collections, no `datetime.now()`, `ensure_ascii` fixed).
 - KEEP: HTML autoescape ON; `--unsafe-render` (raw HTML in reasoning/evidence) is **OFF by
   default** and must be an explicit opt-in flag surfaced to the operator, never a template
-  default.
+  default. (As built: the switch is the `HtmlReporter(unsafe_render=False)` constructor argument
+  and the template's banner branch; no CLI flag reaches it, so it is always off from `dottore`.
+  It governs only whether finding reasoning is emitted unescaped. No reporter reads a spec's
+  `test_only` mark, and the JSON report carries each attempt's request, prompt included.)
 - KEEP: SARIF output is 2.1.0, `level` mapped from band per `docs/05 §3`
   (critical/high→`error`, medium→`warning`, low/info→`note`); ruleId = spec id; rules carry
   OWASP/ATLAS/NIST tags.
@@ -72,7 +75,7 @@ redactor before serialization**: no reporter ever emits raw sensitive strings.
 - **SARIF validity** (`docs/07 §11`): every generated SARIF validates against the SARIF 2.1.0
   JSON Schema (`jsonschema`/`sarif-om`); 0 violations on the golden run.
 - **JSON schema snapshot:** report JSON validates against its schema; golden-fixture snapshot
-  in `tests/fixtures/reports/` is byte-stable across two renders (determinism gate).
+  in `tests/reporting/fixtures/reports/` is byte-stable across two renders (determinism gate).
 - **JUnit validity:** output parses as well-formed JUnit XML (schema/`junitparser` check).
 - **HTML renders:** template renders without error; autoescape verified; a payload with `<script>`
   in reasoning is escaped when `--unsafe-render` is off.
@@ -135,4 +138,5 @@ which an agent writes a cron entry calling a C2-shaped address. Checked by
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - HTML evidence rendering: masked-excerpt inline + store ref, vs ref-only (propose inline+ref).
 - Whether `--unsafe-render` is exposed at all in MVP‑1 or deferred to MVP‑2 (propose: present but
-  hard-gated + warning banner). Flag to conductor before enabling.
+  hard-gated + warning banner). Flag to conductor before enabling. (Ledger OD-12 records
+  "present"; as built it is not exposed on the CLI.)

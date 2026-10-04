@@ -66,8 +66,10 @@ total-fixtures + per-family FP/FN rates (`docs/07 §2`). Full spec: `docs/07 §2
   the fixture declares them (so `logprob_membership` specs are exercisable offline).
 
 ## §7 Acceptance criteria (machine-checkable)
-- `pytest tests/adapters/test_mock.py tests/testing/test_golden.py -q` green;
-  coverage ≥ 90% for `adapters/mock.py` + `testing/golden.py`.
+- `pytest tests/golden/test_mock.py tests/golden/test_golden.py -q` green;
+  coverage ≥ 90% for `adapters/mock.py` + `testing/golden.py`. (Paths corrected 2026-10-04:
+  the gate named `tests/adapters/test_mock.py` and `tests/testing/test_golden.py`, which do not
+  exist, so as written it exited 4.)
 - **Determinism (hard):** property test (Hypothesis): 100 repeated `send()` on the same fixture
   return byte-identical `ModelResponse` (`docs/07 §1 row 9`).
 - **No-network (hard):** test asserts `mock.py` imports nothing from `{httpx, socket, requests,

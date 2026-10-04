@@ -50,7 +50,8 @@ no jailbreak payloads, scope-allowlist-gated.
   version + schema; a pack update must not silently break the loader.
 - KEEP: seeded probe battery (seed = `(target_id, probe.name)`) ⇒ deterministic replay.
 - DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always
-  disables). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs
+  disables). Resolved as built: `-sV` (and `-A`) imply adaptive ordering; there is no
+  `--no-adaptive` flag (`00-INDEX.md` OD-5). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs
   response-feature vector (propose feature-vector + nearest-neighbor to avoid a heavy dep).
 
 ## §5 Implementation plan (each step its own commit, green before next)
@@ -148,6 +149,7 @@ audit removed all three at once and the suite stayed green. Checked by
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-5** (shared w/ u08): adaptive planner default ON with `-sV` vs opt-in. Owner: human.
+  Resolved as built: `-sV`/`-A` imply adaptive ordering, no flag (`00-INDEX.md`).
 - **OD-9** (new): statistical-layer embedding source: bundled embedder vs response
   feature-vector nearest-neighbor. Propose: feature-vector (no heavy/ambiguous-license dep,
   `AGENTS.md §3`). Owner: human / ADR.

@@ -19,9 +19,11 @@ a numeric logprob matched a card/phone shape. Both are fixed with regression tes
 covered **14 specs**.
 
 **Not verified.** The full battery against a hosted commercial model; the multimodal and audio
-matrix against a provider that actually accepts image and audio blocks; `-sV`'s carrier
-measurement against a real model (what CI measures is a simulated decoder, by construction);
-and `_baseline_resistance` in the planner, which needs live data to mean anything.
+matrix against a provider that actually accepts image and audio blocks; and `-sV`'s carrier
+measurement against a real model (what CI measures is a simulated decoder, by construction).
+(`_baseline_resistance` in the planner is not on this list: nothing writes it and nothing reads
+it, so a live run cannot exercise it. Populating it from live data is one option of OD-17,
+ADR-0008, and would need code first.)
 
 The distinction matters because "it has never been run for real" is false and was repeated
 here for two days before `docs/PROGRESS.md` was read. What is missing is **breadth**, not the
@@ -36,7 +38,9 @@ first contact.
 3. **`-sV` against a real model.** The ordering is measured offline against a decoder we wrote,
    which proves the chain and nothing about behaviour. A live pass produces the first real
    carrier-comprehension profile, and it is cheap: 17 requests per target.
-4. **`_baseline_resistance`.** Live verdict distributions are its only honest input.
+4. **The input `_baseline_resistance` would need, if OD-17 keeps it.** Live verdict
+   distributions are its only honest input, but the hook has no writer and no reader today
+   (`docs/10`), so a live run only collects the data; it does not test the planner.
 
 ## 3. What it costs, measured (not estimated from memory)
 
@@ -73,7 +77,9 @@ Two things that table says out loud:
   `AG-EXTORT-CHAIN-001`, `AG-PERSIST-BEACON-001`, `AG-AUTONOMY-SELFCORRECT-001`,
   `JB-OFFENSIVE-RANSOM-CODEGEN-001`) and `DL-PII-ELICIT-001` (`layer_b_pii`). Enabling them is a
   deliberate act in the policy pack, and on someone else's system it needs their authorization
-  in writing, not just a flag.
+  in writing, not just a flag. Today it is not possible from the command line at all: `dottore`
+  has no option to load a policy pack (and none for the PII run key), so these eight are
+  `blocked_by_policy` on every CLI run. Whether to add one is an open decision.
 
 No per-token pricing is baked into this tool and none should be: multiply the token gloss by
 the rate on your own invoice.
@@ -94,7 +100,7 @@ dottore run --spec PI-DIRECT-001 --runs 1 --budget-requests 5 \
   -t target.yaml --scope scope.yaml -oJ first-contact.json
 
 # 3. The recognition pass on its own: 17 requests, and the first real carrier profile.
-dottore fingerprint -t target.yaml --scope scope.yaml
+dottore fingerprint target.yaml --scope scope.yaml
 
 # 4. One suite, paced, with a ceiling you are comfortable paying twice.
 dottore run --suite owasp-llm-top10 --rate 1 --budget-requests 200 \

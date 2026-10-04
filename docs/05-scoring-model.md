@@ -46,15 +46,22 @@ Confidence  = evaluator/judge certainty (0-1)                                   
 
 ## 3. Severity banding (for reports & SARIF)
 
-Map `RiskScore` to a band (tunable per policy pack):
+Map `RiskScore` to a band. The cutoffs are tunable in code (`scoring/banding.BandPolicy`); a
+policy pack has no band fields and the CLI loads no pack, so the defaults below always apply
+today.
 
 | Band | RiskScore | SARIF level |
 |---|---|---|
 | Critical | ≥ 12 | error |
-| High | 8-11 | error |
-| Medium | 4-7 | warning |
-| Low | 1-3 | note |
-| Info | 0 (not reproduced) | note |
+| High | 8 to < 12 | error |
+| Medium | 4 to < 8 | warning |
+| Low | 1 to < 4 | note |
+| Info | < 1 (includes not reproduced) | note |
+
+Bands apply to the raw float, with no rounding: 11.99 is High. Info is not only "not
+reproduced": an exploit that succeeded once in five attempts (reproducibility 0.2) with impact 1
+and exploitability 3 scores 0.6 and bands Info, so it cannot trip `--fail-on low` even with
+`--include-needs-review` (the gate starts at Low).
 
 ## 4. Run summary
 

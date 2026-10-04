@@ -25,7 +25,7 @@ validates **the scanner**, not the targets.
 | 9 | Determinism | **Replay tests** | same suite+target+seed → same finding set; sampling params recorded | pytest |
 | 10 | Scoring | **Property tests** | monotonicity (↑impact ⇒ ↑risk), confidence never changes band, banding boundaries | Hypothesis |
 | 11 | Reporting | **Snapshot + schema tests** | JSON matches schema; SARIF validates against SARIF 2.1.0; JUnit valid; HTML renders; secrets masked | snapshot + validators |
-| 12 | CLI/API | **E2E tests** | `run --suite … --target mock --fail-on high` exits with correct code + artifacts | subprocess/httpx |
+| 12 | CLI | **E2E tests** | `run --suite … -t <mock target.yaml> --scope … --fail-on high` exits with correct code + artifacts (there is no API app) | Typer `CliRunner` |
 | 13 | Availability specs | **Budget/guardrail tests** | DoS specs never exceed token/request/time caps; scanner can't self-DoS | pytest + fake clock |
 | 14 | Boundaries | **Import-linter contract** | package dependency rule (`docs/01 §2`) holds | import-linter |
 | 15 | Safety | **Negative tests** | out-of-scope target refused; dangerous payload without `test_only` rejected; sensitive tool never really executes | pytest |
@@ -59,11 +59,14 @@ validates **the scanner**, not the targets.
 
 ## 4. Test data & fixtures
 
-- `tests/fixtures/vulnerable/` and `tests/fixtures/hardened/` mirror the attack families.
+- The vulnerable and hardened fixtures live **inline in each spec** (`fixtures.vulnerable`,
+  `fixtures.hardened`); there are no `tests/fixtures/vulnerable/` or `tests/fixtures/hardened/`
+  directories. The harness that replays them is `tests/golden/` and `tests/battery/`.
 - `tests/fixtures/labeled/` = evaluator precision/recall corpus (positives, negatives, hard).
 - `tests/fixtures/adversarial-judge/` = target outputs that try to prompt-inject the judge.
-- `tests/cassettes/` = recorded provider interactions (secrets scrubbed) for adapter contract
-  tests. **No real API keys ever committed or used in CI.**
+- `tests/adapters/cassettes/` = recorded provider interactions (secrets scrubbed) for adapter
+  contract tests, one directory per provider. **No real API keys ever committed or used in
+  CI.**
 
 ## 5. CI pipeline (ordered gates)
 

@@ -38,24 +38,31 @@
 
 ## 2. Dependency rule (enforced)
 
-`apps → packages`; within packages the only allowed direction is:
+One distribution, `src/ildottore/` (ADR-0004 replaced the `apps/` + `packages/` layout this
+section first described; there is no `api` app). Dependencies point downward only:
 
 ```
-scanner-core ─► (interfaces of) target-adapters, evaluators, reporting, policy-engine, store
-target-adapters ─► (nothing in this repo except shared models)
-evaluators ─► (shared models; may call an LLM via an adapter *interface* for judge)
+cli          composition root: wires concretes together, may import anything
+core         orchestration: depends on the interfaces in shared.protocols only
+evaluators   may call an LLM for the judge via the adapter interface (§3)
+adapters     enforce the endpoint allowlist at the adapter layer (§6)
+policy       scope / allowlist / packs
+shared       dependency-free models, protocols, enums (imported by everyone)
 ```
 
-- `scanner-core` depends on **interfaces**, never concretes. Concretes are injected at the
-  composition root (`apps/cli`, `apps/api`).
+- `core` depends on **interfaces**, never concretes. Concretes are injected at the composition
+  root, `cli` (`cli/wiring.py`).
+- The peer packages that need only `shared` (`reporting`, `store`, `fingerprint`, `mutators`,
+  `registry`, `scoring`, `testing`) import neither each other nor `core`/`cli`.
 - Shared, dependency-free models (`AttackSpec`, `Target`, `TestRun`, `Finding`, `Attempt`,
-  `Verdict`, `Evidence`) live in a `packages/shared` module imported by everyone.
-- Enforced in CI by `import-linter` (contract in `docs/07`).
+  `Verdict`, `Evidence`) live in `src/ildottore/shared/` and are imported by everyone.
+- Enforced in CI by `import-linter`: four contracts in the standalone `.importlinter` file,
+  deliberately not duplicated in `pyproject.toml`.
 
 ## 3. Core interfaces (contracts the AI must implement)
 
 ```python
-# packages/shared/models.py: dependency-free Pydantic models (see schemas/)
+# src/ildottore/shared/models.py: dependency-free Pydantic models (see schemas/)
 
 class TargetAdapter(Protocol):
     async def send(self, request: ModelRequest) -> ModelResponse: ...
@@ -105,10 +112,15 @@ class Reporter(Protocol):
    deterministic transform seeded by `(spec.id, variant.name)`.
 4. **Execute N times**: send with pinned sampling params (temperature, top_p, seed if the
    provider supports it). Handle rate limit / retries / timeout. Record every attempt.
-5. **Evaluate**: run the evaluator pipeline; combine per the spec's `evaluator_logic`
-   (default: all `regex/rule` must pass AND judge must pass). Judge input is sandboxed
-   (`docs/04`).
-6. **Score**: reproducibility = successful-attack rate across N; risk per `docs/05`.
+5. **Evaluate**: run the evaluator pipeline and combine by the runner's one fixed rule, which
+   does **not** read the spec's `evaluator_logic`: a deterministic `fail` decides; else any
+   `inconclusive` decides; else a judge `fail` decides; else `pass`. The judge therefore
+   decides alone when every deterministic evaluator passed, and today that finding can be
+   `confirmed`. Whether `evaluator_logic` or this rule is the semantics, and whether a
+   judge-only fail should be `needs-review`, is open decision OD-19 (ADR-0010). Judge input is
+   sandboxed (`docs/04`).
+6. **Score**: reproducibility = successful-attack rate across N, per mutation variant (the
+   spec takes its most reproducible variant); risk per `docs/05`.
 7. **Persist**: attempts → Evidence Store; finding → Run Store. Emit to reporters.
 
 ## 5. Determinism & reproducibility (why this is architectural, not a detail)
@@ -127,11 +139,18 @@ scientifically weak. Therefore:
 
 ## 6. Scope / safety gate (Policy Engine)
 
-- `scope.yaml` (signed / checksum-verified) lists authorized targets and an endpoint
-  **allowlist** (host + path prefixes). Requests outside it are refused at the adapter layer.
+- `scope.yaml` is the authorization record: it lists authorized targets and an endpoint
+  **allowlist** (host + path prefixes). Requests outside it are refused by the CLI pre-flight
+  and again at the adapter layer. The file may carry an optional SHA-256 `checksum`, verified
+  when present. That is not a signature: the checksum lives in the file it protects, so it
+  catches accidental change, not an editor who recomputes or deletes it, and nothing requires
+  it. Real signing is open decision OD-2. No run records which scope (or which hash)
+  authorized it.
 - Policy packs declare which attack categories/specs are permitted for a given engagement
   (e.g. "no DoS category against prod"). Data-leak layer-B specs and PII elicitation are
-  **off unless the policy pack enables them** (`docs/11 §5`).
+  **off unless the policy pack enables them** (`docs/11 §5`). The CLI loads no pack today:
+  `run` builds a permissive pack from the selected specs, so every spec that declares
+  `requires_policy` stays blocked; a flag to load a pack is an open decision (`docs/09 §5`).
 - `scope.yaml` may declare **≥2 auth identities** for one target (`multi_identity`) so
   cross-tenant/authz specs can compare identity A vs B. A central **redactor** masks
   secrets/PII in logs, evidence and reports.
