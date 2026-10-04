@@ -30,6 +30,15 @@ naming an unknown mutation is a linter error (u02), never a silent skip.
   execution engine (u08) feeds to the adapter. **No** provider SDKs, no LLM calls (`translate`
   is a deterministic offline table/map, not an API translation: see §4/§9).
 - Registry mirrors u06 pattern: protocol validation at load, clear error on a bad plugin.
+- **As built (2026-10-04):** the protocol is `name: str` + `mutate(text: str, seed: str) -> str`
+  (the seed is the string `<spec-id>::<mutation>`, the full `name:param` included);
+  `BaseMutator.mutate_result` adds the `MutationResult`. A mutator may declare
+  `accepted_params`: `None` (the `BaseMutator` default, and any plugin that does not set it)
+  accepts any `name:param`; a `frozenset` lists the parameters it implements, compared
+  lower-cased and stripped; an empty one means no parameter. All 19 built-ins declare it
+  (`translate`: `es`, `fr`, `de`, `zh`; the rest none). The spec linter (u02, fed the names and
+  parameters by `cli/lint.py`) and the runner (u08) refuse an unaccepted parameter
+  (`UNKNOWN_MUTATOR_TYPE`; `unknown_mutator_parameter`, nothing sent). `docs/06 §3`.
 
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: every strategy is a **pure function** of `(text, seed, params)`; no I/O, no global state,

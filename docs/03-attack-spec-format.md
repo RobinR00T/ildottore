@@ -74,8 +74,25 @@ runs are reproducible. Built-in strategies (19 in the registry):
 `adversarial_poetry`, `adversarial_suffix`, `context_poisoning`, `gray_box`,
 `linguistic_confusion`, `math_problem`.
 
-`translate:<lang>` glosses one word into the target language rather than translating the
-prompt, so it is not yet a per-language battery.
+`translate:<lang>` does not translate the prompt. `<lang>` is one of `es`, `fr`, `de`, `zh`
+(`LANGUAGES` in `mutators/translate.py`). The mutator replaces each space-separated word whose
+lower-cased, punctuation-stripped form is in a 14-word keyword table (`PHRASE_MAP`: ignore,
+previous, instructions, reveal, system, prompt, password, secret, tell, me, the, your, and, all)
+with that language's gloss, dropping the word's punctuation, and leaves every other word in
+English. In `zh` the gloss for "the" is empty, so 13 words change. A prompt written in those
+keywords comes out mostly glossed; an ordinary one changes a word or two: on
+`JB-MULTILINGUAL-001`, `translate:es` changes one word ("the" to "el") and `translate:zh`
+changes none, so that variant sends the identity prompt. A bare `translate` picks one of the
+four languages from a hash of the seed (`de` for that spec) and records it in the provenance.
+It is not a per-language battery.
+
+A `name:param` mutation is checked against the mutator's declared `accepted_params` (`docs/06
+§3`): `translate` accepts its four languages (compared lower-cased and stripped, so
+`translate:ES` is accepted), and every other built-in accepts no parameter. `dottore lint`
+reports an unaccepted one as `UNKNOWN_MUTATOR_TYPE` (for example `translate:klingon`, or
+`rot13:x`), and the runner refuses the spec with `unknown_mutator_parameter` and sends nothing
+for it. Before the check, `translate:klingon` sent a language picked by hash and the evidence
+recorded "klingon".
 
 Mutators are **pluggable** (`docs/06`). A mutation never changes the *intent* of a spec; it
 changes the *carrier/obfuscation*, so the same `expected_secure_behavior` still applies.

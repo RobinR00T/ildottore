@@ -143,7 +143,7 @@ design constraint for the multi-turn schema extension.
 | InputBypass | 🟡 JB-REFUSAL-SUPPRESS | P2 | fold into refusal-suppression mutator |
 | ContextPoisoning | ✅ shipped: `context_poisoning` mutator (JB-CRESCENDO) | P1 | dedicated context-poisoning mutator |
 | PermissionEscalation | 🟡 (→ RBAC pack) | P1 | pairs with access-control pack |
-| Multilingual | 🟡 `translate:` mutator glosses one word per language; no translated battery | P1 | systematic measured battery (also `docs/12`) |
+| Multilingual | 🟡 `translate:` mutator glosses only the words in a 14-word keyword table (es, fr, de, zh) and leaves the rest in English; on `JB-MULTILINGUAL-001` it changes one word or none; no translated battery | P1 | systematic measured battery (also `docs/12`) |
 | AdversarialPoetry | ✅ shipped: `adversarial_poetry` mutator (JB-TREE) | P1 | cheap, effective, novel mutator |
 | MathProblem | ✅ shipped: `math_problem` mutator (JB-LIKERT) | P2 | encoding-style mutator |
 | GrayBox | ✅ shipped: `gray_box` mutator (JB-LINEAR) | P2 | partial-knowledge mutator |
