@@ -2,7 +2,8 @@
 #
 # No run starts without covering every target here. Default-DENY: adapters refuse any host
 # or path not listed under a target's `endpoints`. Plain http is allowed ONLY to loopback.
-# An optional top-level `checksum:` (sha256 of the body) makes the scope tamper-evident.
+# An optional top-level `checksum:` (sha256 of the body) is verified when present, so a scope
+# edited without updating it is refused. It is an integrity check, not a signature.
 # See docs/02-threat-model.md.
 version: "1.0"
 targets:
