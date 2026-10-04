@@ -101,7 +101,7 @@ def safe_load_yaml(text: str) -> Any:
         if node is None:
             return None
         _check_expanded_size(node)
-        return loader.construct_document(node)  # type: ignore[no-untyped-call]
+        return loader.construct_document(node)  # type: ignore[no-untyped-call,unused-ignore]
     except yaml.YAMLError as exc:  # includes ConstructorError for unsafe tags
         # Reason and position only: PyYAML's own text quotes a snippet of the line, which for
         # a file that is not what it claims to be can be someone's credentials.
@@ -109,7 +109,7 @@ def safe_load_yaml(text: str) -> Any:
     except RecursionError as exc:
         raise SafeLoadError("document is nested too deeply") from exc
     finally:
-        loader.dispose()  # type: ignore[no-untyped-call]
+        loader.dispose()  # type: ignore[no-untyped-call,unused-ignore]
 
 
 def _check_expanded_size(root: yaml.Node) -> None:
