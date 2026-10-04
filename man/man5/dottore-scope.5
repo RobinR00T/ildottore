@@ -76,8 +76,9 @@ and
 are required; the rest are needed only for a live scan.
 .B auth_ref
 accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
-refused before anything is sent, --dry-run included. The secret is read at send time and
-never stored. A provider other than openai, anthropic or mcp routes to the generic REST
+refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is
+refused too, and the error prints "a literal value (not shown)" instead of quoting it. The
+secret is read at send time and never stored. A provider other than openai, anthropic or mcp routes to the generic REST
 adapter. An MCP target sets provider "mcp"; over the wire it gives an endpoint, or as a
 local subprocess it sets transport "stdio" and a command argv (authorized via scope commands).
 .SH "FLEET FILE"

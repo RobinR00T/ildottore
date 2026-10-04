@@ -107,9 +107,9 @@ dottore calibrate report.json labels.yaml
 | `--scope` | **Required** authorization record. Never bypassable. |
 | `-t/--target` (repeatable), positional | target file(s) |
 | `--judge` | judge model `target.yaml` (LLM-as-judge for `semantic_judge` on live scans) |
-| `--suite` | `owasp:llm` (alias of `owasp-llm-top10`, as is `baseline`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion` (alias `agentic`), `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`. `run --help` also names `mitre:atlas`: that alias, like `nist:ai`, `eu:ai-act`, `dora` and `iso:42001`, points at no registered suite and exits 3 |
+| `--suite` | `owasp:llm` (alias of `owasp-llm-top10`, as is `baseline`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion` (alias `agentic`), `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`. `mitre:atlas`, `nist:ai`, `eu:ai-act`, `dora` and `iso:42001` are still accepted as aliases but point at no registered suite and exit 3 |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) at `-T0`. Conflicts with an explicit `--suite` |
-| `--deep` | timing `-T2` over the same battery a run with no selection flag gets: it selects no larger suite (on the example target, the same 34 specs, at 2.0 req/s instead of 5.0). By itself it tailors nothing: mutator ordering needs a fingerprint, so it only takes effect with `-sV` (or `-A`). `run --help` still calls it a "deep/agentic suite"; it is not one |
+| `--deep` | timing `-T2` over the same battery a run with no selection flag gets: it selects no larger suite (on the example target, the same 34 specs, at 2.0 req/s instead of 5.0). By itself it tailors nothing: mutator ordering needs a fingerprint, so its adaptive part only takes effect with `-sV` (or `-A`), as `run --help` says |
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |
 | `--spec` / `--exclude` | run/skip specific spec ids or globs (e.g. `PI-*`); repeatable |
 | `--top-tests N` | keep the N highest-signal specs |
@@ -124,9 +124,9 @@ dottore calibrate report.json labels.yaml
 | `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
-| `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.*` |
+| `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent |
 | `--fail-on <band>` | CI gate on confirmed findings (`low\|medium\|high\|critical`, default `high`) |
-| `--include-needs-review` | also gate low-confidence findings |
+| `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`); an `inconclusive` result never gates |
 | `--spec-path` | spec search path (default `specs/`) |
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error
@@ -180,10 +180,14 @@ uses `transport: stdio` + `command` and is launched as a subprocess only if the 
 ## Reading results
 
 A finding separates **risk** from **confidence**: `RiskScore = Impact x Exploitability x
-Reproducibility`, banded critical/high/medium/low/info; confidence gates it as **confirmed**
-vs **needs-review** (a format-valid PII/secret hit without corroboration is *needs-review*,
-never a confirmed leak). Every finding carries evidence (prompt, response, tool traces, the
-aggregate verdict and its reasoning), and `dottore replay` re-derives a run from stored evidence. See
+Reproducibility`, banded critical/high/medium/low/info. Every report gives each finding one of
+four states: **confirmed** (a decisive exploit at or above the confidence threshold, what the
+gate counts), **needs review** (an unconfirmed exploit, or a spec that was sent and could not
+be decided: a format-valid PII/secret hit without corroboration is *inconclusive*, never a
+confirmed leak), **not exploited** (passed) and **not tested** (nothing sent). An unconfirmed
+exploit prints `FAIL (<band>, needs review)` on its progress line. Every finding carries
+evidence (prompt, response, tool traces, the aggregate verdict and its reasoning), and
+`dottore replay` re-derives a run from stored evidence. See
 [`docs/05-scoring-model.md`](docs/05-scoring-model.md).
 
 ## Adding a technique (no core code)

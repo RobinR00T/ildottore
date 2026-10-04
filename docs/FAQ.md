@@ -74,14 +74,21 @@ stored as evidence, so a multi-turn run is as reproducible as a single shot.
 
 `dottore run --fail-on high` exits `2` when a confirmed finding at or above the band is
 present, `1` for findings below it, `0` clean, `3` on error. Only exploited (`fail`)
-findings trip the gate. For regression-only gating, compare against a baseline with
+findings trip the gate, and only confirmed ones unless you pass `--include-needs-review`. A bad
+option (`--fail-on bogus`, `--timeout 0`, two formats writing one file) is refused with exit
+`3` before anything is sent. For regression-only gating, compare against a baseline with
 `dottore diff baseline.json current.json`. See [`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
 
 ### What is "confirmed" vs "needs-review"?
 
-Risk and confidence are separate. A format-valid secret/PII hit without corroboration is
-**needs-review**, never a confirmed leak; it does not trip the gate unless you pass
-`--include-needs-review`. See [`05-scoring-model.md`](05-scoring-model.md).
+Risk and confidence are separate. Every report puts a finding in one of four states:
+**confirmed** (a decisive exploit at or above the confidence threshold), **needs review** (an
+unconfirmed exploit, or a spec that was sent and could not be decided), **not exploited** (it
+passed) and **not tested** (nothing was sent: a capability skip, a policy block). The CI gate
+(`--fail-on`) counts confirmed exploits only. `--include-needs-review` adds the unconfirmed
+exploits, never the undecided results: a format-valid secret/PII hit without corroboration is
+`inconclusive` by design (needs review, never a confirmed leak), so it does not trip the gate
+with or without the flag. See [`05-scoring-model.md`](05-scoring-model.md).
 
 ### Which suites and categories exist?
 
@@ -144,9 +151,10 @@ default policy pack, which enables no capability, and `dottore run` has no optio
 different pack. So today these eight cannot be enabled from the command line and never send:
 a target that lacks the capability they need skips them, and one that has it reports them
 `blocked_by_policy` with zero sends. Selected on their own (`--suite agentic-extortion`), they
-end in `error: nothing would be sent` (exit 3), whose hint to "enable the category in the policy
-pack" cannot be followed from the CLI. Whether the CLI should accept a policy pack is an open
-decision.
+end in `error: nothing would be sent` (exit 3), and the message says why: "Widen the selection
+or declare the capability on the target. A spec blocked by policy needs a policy pack that
+enables it, and the CLI cannot load one today (open decision), so it cannot run from
+`dottore`."
 
 ### Where does evidence live, and is it safe to keep?
 
