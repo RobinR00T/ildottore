@@ -14,7 +14,8 @@ Please report security issues **privately**: do not open a public issue.
 ## Scope & responsible use
 
 Il Dottore is for **authorized** security testing only. It refuses out-of-scope targets by
-design (signed `scope.yaml` + endpoint allowlist), never performs real destructive actions or
+design (a `scope.yaml` authorization record + endpoint allowlist; its optional `checksum:` is an
+integrity check, not a signature), never performs real destructive actions or
 exfiltration (mocks/dry-run + planted canaries), and masks secrets/PII in logs, evidence and
 reports. See `docs/02-threat-model.md` and `docs/11-data-leak-extraction.md §5`.
 

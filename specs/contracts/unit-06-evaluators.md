@@ -39,8 +39,8 @@ arbiter of semantics (ADR-0010 amendment recommends `needs-review`; open).
 - KEEP: data-leak FP discipline: format-valid hit without corroboration (canary/corpus/
   cross-identity) ⇒ `needs-review`, never confirmed (`docs/11 §4`).
 - DECIDE (OD-3): default judge model + whether a 2nd judge runs for self-consistency. (As
-  built: there is no default judge; the judge is the `--judge` target, or the scenario judge
-  offline, and self-consistency is two passes of that one model; no second judge model runs.
+  built: there is no default judge; the judge is the `--judge` target, or offline the scripted
+  judge of the `vulnerable` and `hardened` mocks (`bare` and `comprehending` have none), and self-consistency is two passes of that one model; no second judge model runs.
   Ledger OD-3 records the same.)
 
 ## §5 Implementation plan (each step its own commit, green before next)

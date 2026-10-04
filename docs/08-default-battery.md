@@ -5,7 +5,7 @@ This is the **minimum battery** shipped by default, distilled from the ecosystem
 (OWASP LLM Top 10 2025, MITRE ATLAS, NIST AI RMF and its GenAI Profile, NIST AI 600-1).
 Sources: see `docs/REFERENCES.md`. NIST is a design reference, not a mapping the code checks:
 each spec's `nist_ai_rmf` field carries an AI RMF function/subcategory token (`MEASURE 2.7`,
-`MANAGE 2.2`, `MEASURE 2.11`, `GOVERN 1.1`), validated by shape only; no spec names an AI 600-1
+`MANAGE 2.2`, `MEASURE 2.11`, `GOVERN 1.1`, `MEASURE 2.3`), validated by shape only; no spec names an AI 600-1
 risk category, and `dottore coverage` has no NIST axis.
 
 Status key for this document: items marked **(not built)** are design that has no spec field,

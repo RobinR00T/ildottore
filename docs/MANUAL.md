@@ -116,10 +116,12 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
   tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
   digest of the scope body (`scope checksum mismatch: the scope body hashes to '<sha256>', not
-  to the recorded checksum`). The value typed in `checksum:` is not quoted at all: a real
-  sha256 there would be masked anyway, so it could only ever appear in clear when it was not a
-  digest. A scope file that fails validation names each field and the reason, never the value
-  (pydantic's own message echoes it). An error quotes an `auth_ref` only when it is a reference (it
+  to the recorded checksum`). The value typed in `checksum:` is not quoted at all: the redactor
+  masked a real sha256 there only by its entropy, about 19 times in 20, so what appeared in
+  clear was mostly a value that was not a digest, such as a key typed by mistake. A scope or
+  fleet file that fails validation names each field and the reason, never the value
+  (pydantic's own message echoes it), and a YAML error in a scope, target, fleet or labels file
+  gives the problem with its line and column, without quoting the line. An error quotes an `auth_ref` only when it is a reference (it
   contains `://`, such as `env://NAME` or `vault://x`); a literal value pasted where a
   reference belongs is printed as `a literal value (not shown)`, for example `target 'live'
   auth_ref a literal value (not shown) is not authorized by the scope (declared:
@@ -254,7 +256,7 @@ required.
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
 | `--top-tests INT` | keep the N highest-signal specs |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) and timing `-T0`. Conflicts with an explicit `--suite` (pass one) |
-| `--deep` | timing `-T2` (unless you pass `-T`) over the battery a run with no selection flag already gets: the whole registry, minus what the target cannot run. It does **not** select a larger suite (on the example target, `--dry-run` selects the same 34 specs with or without it, at 2.0 req/s instead of 5.0). By itself it tailors nothing: it switches adaptive planning on (a `--resume` of the run must ask for it too, with `--deep`, `-sV` or `-A`), but the planner orders mutators only from a fingerprint, which only `-sV` or `-A` produces (`run --help`: "adaptive only with -sV") |
+| `--deep` | timing `-T2` (unless you pass `-T`) over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run). It does **not** select a larger suite (on the example target, `--dry-run` selects the same 34 specs with or without it, at 2.0 req/s instead of 5.0). By itself it tailors nothing: it switches adaptive planning on (a `--resume` of the run must ask for it too, with `--deep`, `-sV` or `-A`), but the planner orders mutators only from a fingerprint, which only `-sV` or `-A` produces (`run --help`: "adaptive only with -sV") |
 
 **Discovery and aggression**
 
@@ -289,7 +291,7 @@ required.
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
 | `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
 | `--fail-on BAND` | CI gate: `low\|medium\|high\|critical` (default `high`) |
-| `--include-needs-review` | also gate unconfirmed exploits (a `fail` below the confidence threshold). Undecided (`inconclusive`) results never gate, with or without it |
+| `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt or its mean confidence is below the spec's `confidence_threshold` (§9). Undecided (`inconclusive`) results never gate, with or without it |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`) |
 | `--run-db PATH` | run store SQLite path |
 | `--spec-path PATH` | spec search path (default `specs/`) |
@@ -433,8 +435,8 @@ cannot be checked, and neither can a spec whose findings were stored before 2026
 masked digests (those specs are replayed without the check; the rest of the run is checked).
 Probes are hash-checked but not part of the manifest. The last line is the **pooled** rate
 over every attempt of the run, all specs and variants together; a report's reproducibility is
-per spec and takes the best variant, so the two can differ on the same run. On a run against
-the `vulnerable` mock:
+per spec and takes the best variant, so the two can differ on the same run. On a `--runs 2`
+run against the `vulnerable` mock (the default `--runs 5` gives 355 attempts):
 
 ```
 attempts: 142  exploited: 142  pooled rate: 1.00 (every attempt of the run; a report's reproducibility is per spec, best variant)
@@ -578,9 +580,11 @@ read only the response text); `comprehending` decides exactly what `bare` decide
 
 Both offline fingerprint paths honour the key: `dottore run -sV` and `dottore fingerprint
 --offline` pass the target's `mock_scenario` to the mock. On a `comprehending` target the
-carrier evidence of `fingerprint --offline` shows the split (on the shipped mock:
-`base64_wrap`, `payload_splitting`, `rot13` and `zero_width_inject` at 1.0, `leetspeak`,
-`translate` and `unicode_confusable` at 0.0), and those four are its `effective_mutators`.
+carrier evidence of `fingerprint --offline` shows the split (for a target with id
+`mock-target`: `base64_wrap`, `payload_splitting`, `rot13` and `zero_width_inject` at 1.0,
+`leetspeak`, `translate` and `unicode_confusable` at 0.0), and those four are its
+`effective_mutators`. The carrier probes are seeded by the target id, so `payload_splitting`
+and `translate` can come out the other way, as the `mock-comp` example in `docs/10 §2` shows.
 Every attributing probe gets the same answer from this mock, so the fingerprint is
 `family=unknown` with the `non_discriminating_target` flag (see `dottore fingerprint` above).
 
@@ -767,7 +771,10 @@ adversarial corpus and fails CI on any new high/critical flip.
 **Verdict combination.** Per attempt: a deterministic `fail` beats everything; otherwise an
 inconclusive (a deterministic abstention, an **unconsulted, erroring or compromised** judge)
 makes the attempt inconclusive; otherwise a judge `fail` decides; otherwise `pass`. A judge
-that was consulted and merely abstained (low confidence, unparseable output) is dropped. Per
+that was consulted and merely abstained (confidence below the spec's threshold, or its two
+passes disagreeing) is dropped; an unparseable answer counts like an outage and is kept
+(`capability_unavailable`). Whether a disagreement should be dropped or keep the attempt
+inconclusive is an open question for the maintainer (`docs/04 §2`). Per
 spec, across attempts: any exploited attempt makes it `fail`; a compromised judge on any
 attempt makes it inconclusive; and `pass` needs a strict majority of passing attempts (one
 pass over four errors is inconclusive, not secure). See

@@ -132,9 +132,14 @@ What the blocks left open, fixed after them and audited four times before commit
   versions too. An error now quotes an `auth_ref` only when it is a reference
   (`scheme://NAME`); a literal is "a literal value (not shown)", in the scope refusal, the
   unsupported-scheme error and the `fleet --judge` mismatch alike. A scope checksum mismatch no
-  longer quotes the value typed in `checksum:` (a real digest there was masked anyway, so only
-  a mistyped key ever showed), and a scope that fails validation names each field and the
-  reason without the value pydantic echoed, where the tail of a pasted key survived.
+  longer quotes the value typed in `checksum:` (the redactor masked a real digest there about
+  19 times in 20, so what showed was mostly a mistyped key). A scope or fleet file that fails
+  validation names each field and the reason without the value pydantic echoed (the tail of a
+  pasted key survived its truncation; in a fleet file, `api_key: <key>` written where
+  `api_key_env` belongs was the likeliest case), and a YAML error in a scope, target, fleet or
+  labels file gives the problem, line and column without quoting the line. In `fleet` and
+  `calibrate` a YAML error was an uncaught traceback with exit 1, the code for "findings below
+  the threshold"; it exits 3.
 - Help text: `--suite` names the aliases that exist (`owasp:llm`, `baseline`, `agentic`),
   `--deep` says it is timing template T2 over the same battery (adaptive only with `-sV`), and
   `run` is no longer called the default command. A barren selection no longer tells the

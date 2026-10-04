@@ -38,7 +38,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 | 13 | Availability specs | Budget / guardrail (fake clock) | `core/test_budgets.py`, `core/test_runner_budget.py` (uses `frozen_clock`) |
 | 14 | Boundaries | Import-linter contract | `test_import_contract.py` + `.importlinter` |
 | 15 | Safety | Negative tests | `cli/test_scope_gate.py`, `core/test_policy_gate.py`, `policy/test_{allowlist,scope,packs}.py` |
-| 16 | Meta / regression | Golden-run snapshot | `reporting/test_golden_snapshot.py` + nightly regression (`.github/workflows/audit.yml` / `tests/golden-run/`) |
+| 16 | Meta / regression | Golden-run snapshot | `reporting/test_golden_snapshot.py` (snapshots in `tests/reporting/fixtures/reports/`), run nightly by `.github/workflows/audit.yml` |
 | 17 | Self-scan | Dogfooding | CI job `self-scan` (`ci.yml`): `dottore` run against our own judge, gate on new high/critical |
 | 18 | Metamorphic | Metamorphic tests | `evaluators/test_deterministic.py` (semantics-preserving invariance) + nightly metamorphic run |
 
@@ -46,7 +46,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 
 | Path | Layer | Contents |
 |------|-------|----------|
-| `fixtures/vulnerable/`, `fixtures/hardened/` | 6 | Golden targets mirroring attack families (vulnerable → `fail`, hardened → `pass`). Inline-in-spec fixtures are resolved first (OD-7). |
+| inline `fixtures:` in each spec | 6 | Golden fixtures per attack family (vulnerable → `fail`, hardened → `pass`). Inline only: there is no sidecar fixture directory (OD-7). |
 | `fixtures/labeled/` | 7 | Evaluator precision/recall corpus (positives, negatives, hard cases). |
 | `fixtures/adversarial-judge/` | 8 | Target outputs that try to prompt-inject the judge (must not flip a verdict). |
 | `adapters/cassettes/` | 5 | Recorded provider interactions, secrets scrubbed. **No real API keys, ever.** |

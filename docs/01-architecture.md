@@ -57,7 +57,7 @@ shared       dependency-free models, protocols, enums (imported by everyone)
   other, and not `core`/`cli`. The `.importlinter` independence contract covers exactly these
   six. `testing`
   (the golden harness) is in no contract and imports `adapters.mock` for `MockTarget`, so it is
-  not a shared-only peer; the `.importlinter` header comment still lists it as one.
+  not a shared-only peer, as the `.importlinter` header comment says.
 - Shared, dependency-free models (`AttackSpec`, `Target`, `TestRun`, `Finding`, `Attempt`,
   `Verdict`, `Evidence`) live in `src/ildottore/shared/` and are imported by everyone.
 - Enforced in CI by `import-linter`: four contracts in the standalone `.importlinter` file,

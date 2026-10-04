@@ -143,8 +143,8 @@ Aggressive: -sV plus --deep.
 The T0 battery: selects the quick suite (18 specs) at -T0. Conflicts with --suite.
 .TP
 .B --deep
-Timing template T2 (slower) over the same battery a run with no selection flag gets; it
-selects no larger suite. Mutator ordering needs a fingerprint, so on its own it tailors
+Timing template T2 (slower) over whatever the other flags select (with no selection flag,
+the whole registry minus what the target cannot run); it selects no larger suite. Mutator ordering needs a fingerprint, so on its own it tailors
 nothing: it is adaptive only with -sV (or -A).
 .TP
 .B -T \fI0..5\fR
