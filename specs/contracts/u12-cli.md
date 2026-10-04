@@ -79,13 +79,15 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   (As built, for errors, `cli/app._masked`: URL passwords are masked first, on the whole text.
   A 64-hex value is then kept readable in exactly two cases: an evidence file name
   (`<sha256>.json`), and a digest the error itself carries as one the tool computed (the
-  `digests` attribute: on a scope checksum mismatch the digest computed from the body, not the
-  `checksum:` value the operator typed, which goes to the redactor; on a tamper refusal the hash
-  the artifact's content has now). A kept token that overlaps a credential the process
+  `digests` attribute: on a scope checksum mismatch the digest computed from the body; the
+  `checksum:` value the operator typed is not quoted at all; on a tamper refusal the hash the
+  artifact's content has now). A scope validation error names fields and reasons, never the
+  input value. A kept token that overlaps a credential the process
   registered is masked anyway, and every other 64-hex value goes through the redactor. An error
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
-  redactor alone caught such a value only by its entropy.)
+  redactor alone caught such a value only by its entropy; the `fleet --judge` mismatch follows
+  the same rule.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces

@@ -115,13 +115,16 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. So only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
   tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
-  digest of the scope body (`got '<sha256>'`). The `expected` value of that same error is
-  whatever was typed in `checksum:`, so it goes through the redactor like any other text and a
-  64-hex value there is masked. An error quotes an `auth_ref` only when it is a reference (it
+  digest of the scope body (`scope checksum mismatch: the scope body hashes to '<sha256>', not
+  to the recorded checksum`). The value typed in `checksum:` is not quoted at all: a real
+  sha256 there would be masked anyway, so it could only ever appear in clear when it was not a
+  digest. A scope file that fails validation names each field and the reason, never the value
+  (pydantic's own message echoes it). An error quotes an `auth_ref` only when it is a reference (it
   contains `://`, such as `env://NAME` or `vault://x`); a literal value pasted where a
   reference belongs is printed as `a literal value (not shown)`, for example `target 'live'
   auth_ref a literal value (not shown) is not authorized by the scope (declared:
-  'env://LIVE_KEY'); refusing to read an unauthorized credential`.
+  'env://LIVE_KEY'); refusing to read an unauthorized credential`. The same holds for the
+  judge-file mismatch of `dottore fleet --judge`.
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 

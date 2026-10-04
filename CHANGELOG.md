@@ -130,7 +130,11 @@ What the blocks left open, fixed after them and audited four times before commit
   its entropy, so about one random 64-hex key in 20 (and three 32-hex keys in 4) appeared in
   clear in "not authorized by the scope" and "unsupported auth_ref scheme" errors, on earlier
   versions too. An error now quotes an `auth_ref` only when it is a reference
-  (`scheme://NAME`); a literal is "a literal value (not shown)".
+  (`scheme://NAME`); a literal is "a literal value (not shown)", in the scope refusal, the
+  unsupported-scheme error and the `fleet --judge` mismatch alike. A scope checksum mismatch no
+  longer quotes the value typed in `checksum:` (a real digest there was masked anyway, so only
+  a mistyped key ever showed), and a scope that fails validation names each field and the
+  reason without the value pydantic echoed, where the tail of a pasted key survived.
 - Help text: `--suite` names the aliases that exist (`owasp:llm`, `baseline`, `agentic`),
   `--deep` says it is timing template T2 over the same battery (adaptive only with `-sV`), and
   `run` is no longer called the default command. A barren selection no longer tells the
