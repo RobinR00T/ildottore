@@ -16,8 +16,16 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
 ```
 
-The `[dev]` extra pulls in the toolchain (ruff, mypy, pytest, import-linter, bandit,
-pip-audit) so you can run the gates. For a runtime-only install, drop `[dev]`.
+The `[dev]` extra pulls in the test and lint toolchain (pytest, pytest-asyncio, pytest-cov,
+Hypothesis, respx, coverage, ruff, mypy, import-linter and type stubs). It does **not** include
+bandit or pip-audit, which the last two steps of `make gates` call; install them into the same
+venv to run the whole wall:
+
+```bash
+.venv/bin/python -m pip install bandit pip-audit
+```
+
+For a runtime-only install, drop `[dev]`.
 
 Two console scripts are installed: `dottore` and its short alias `dott`.
 
@@ -30,9 +38,10 @@ Two console scripts are installed: `dottore` and its short alias `dott`.
 make test                              # the full test suite (or: make gates)
 ```
 
-`make gates` runs the same wall as CI: lint, format check, mypy (strict), import
-boundaries, spec lint, the test suite, coverage (>=85%), the self-scan, bandit and
-pip-audit. It is the fastest way to know you are green.
+`make gates` runs what the CI merge gate (`.github/workflows/ci.yml`) runs (lint, format
+check, mypy strict, import boundaries, spec lint, the test suite with coverage >=85%, the
+self-scan) and then two checks CI does not run: bandit and pip-audit. It is the fastest way to
+know you are green.
 
 ## Optional: local models via Ollama (no API key)
 

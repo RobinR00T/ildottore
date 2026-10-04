@@ -10,9 +10,10 @@
 
 **Il Dottore** (`dottore`): a spec-driven security scanner for LLMs and AI apps
 (prompt injection, jailbreak, data leakage/memorization, tool/agent abuse, RAG poisoning,
-excessive agency, insecure output handling, model DoS). Aligned to OWASP LLM Top 10 (2025),
-MITRE ATLAS, NIST AI 600-1. **Thesis:** value = reproducibility + evidence + risk mapping,
-not "many jailbreak prompts". License **MIT**. See `README.md` and `docs/`.
+excessive agency, insecure output handling, model DoS). Mapped to OWASP LLM Top 10 (2025) and
+MITRE ATLAS, with a NIST AI RMF 1.0 subcategory token on every spec (NIST AI 600-1 is a
+reference, not a mapping the code checks). **Thesis:** value = reproducibility + evidence +
+risk mapping, not "many jailbreak prompts". License **MIT**. See `README.md` and `docs/`.
 
 > **Current state → `docs/PROGRESS.md`** (living ledger; read it first for where the build is,
 > open decisions, and the operator to-do). The engine and the `dottore` CLI live in
@@ -98,9 +99,9 @@ Full method: `docs/00-ai-build-playbook.md`.
   absolute repo path explicitly so the reader never has to guess where the work landed. If in
   doubt, confirm with `pwd` + `git rev-parse --show-toplevel` before asserting anything.
 - **Run the WHOLE gate wall, never a subset.** `ruff check` is NOT `ruff format --check`, and
-  neither is the coverage gate. A "all green" claim is only true after `make gates` (the
-  Makefile mirrors `.github/workflows/ci.yml` one-for-one). Twice a green claim was wrong
-  because only `ruff check` had been run.
+  neither is the coverage gate. A "all green" claim is only true after `make gates`, which runs
+  every check of `.github/workflows/ci.yml` plus bandit and pip-audit (CI runs neither). Twice
+  a green claim was wrong because only `ruff check` had been run.
 - **Detect em/en dashes with Python, never a zsh `grep` using a `$'..'` glyph pattern** (in zsh
   that silently matches nothing and reports a false "0 dashes"). House rule: no em dash or en
   dash in ANY produced text (code, comments, docs, commit messages); substitute a colon, comma,
@@ -143,9 +144,14 @@ Full method: `docs/00-ai-build-playbook.md`.
   - Install: `python3 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"` (the
     supported path). There is no `uv.lock`, so `uv sync` resolves fresh instead of
     reproducing a locked set.
-  - **The whole wall (do this before claiming green): `make gates`** (mirrors CI exactly)
-    (ruff lint, ruff format check, mypy strict, import-linter, spec lint, tests, coverage ≥85%,
-    self-scan, bandit, pip-audit). `make fix` autofixes format+lint. Do not hand-run a subset.
+  - **The whole wall (do this before claiming green): `make gates`**: ruff lint, ruff format
+    check, mypy strict, import-linter, spec lint, the full test suite with coverage ≥85% and the
+    self-scan, which is what `.github/workflows/ci.yml` runs (CI splits the tests into ordered
+    gates by directory; `make` runs them in one coverage pass), then bandit and pip-audit, which
+    CI does not run and the `[dev]` extra does not install (`pip install bandit pip-audit`).
+    `.github/workflows/audit.yml` re-runs parts of it on a schedule (nightly regression and
+    self-scan, a weekly static, test and coverage sweep). `make fix` autofixes format+lint. Do
+    not hand-run a subset.
   - Individually: `ruff check . && ruff format --check . && mypy src` · `pytest -q` (coverage
     gate ≥85% core) · `dottore lint specs/` · `lint-imports` · `python -m tests.selfscan.run`
 - **Tests taxonomy:** `docs/07` (schema, unit, property/Hypothesis, adapter cassettes,

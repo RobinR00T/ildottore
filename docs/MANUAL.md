@@ -218,8 +218,7 @@ one target file per model. Template: [`../specs/fleet.example.yaml`](../specs/fl
 ## 5. Command reference
 
 `dottore` is the command; `dott` is a shorter alias. There is no default subcommand: always
-type it (`dottore run ...`). `dottore target.yaml --scope scope.yaml` is a usage error (exit 3),
-even though `dottore --help` still describes `run` as "the default command".
+type it (`dottore run ...`). `dottore target.yaml --scope scope.yaml` is a usage error (exit 3).
 
 ### `dottore run`, run a campaign
 
@@ -234,20 +233,20 @@ required.
 
 | Flag | Meaning |
 |------|---------|
-| `--suite TEXT` | suite id or alias (`owasp:llm`, `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`). Aliases that resolve: `owasp:llm` and `baseline` (both `owasp-llm-top10`), `agentic` (`agentic-extortion`). The `mitre:atlas` alias that `run --help` shows, and `nist:ai`, `eu:ai-act`, `dora`, `iso:42001`, point at no registered suite and exit 3 |
+| `--suite TEXT` | suite id or alias (`owasp:llm`, `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`). Aliases that resolve, the three `run --help` names: `owasp:llm` and `baseline` (both `owasp-llm-top10`), `agentic` (`agentic-extortion`). `mitre:atlas`, `nist:ai`, `eu:ai-act`, `dora` and `iso:42001` are still accepted as aliases but point at no registered suite and exit 3 |
 | `-p/--categories TEXT` | comma-separated categories (`pi,jailbreak,leakage,tool,rag,output,dos,safety,bias`; long forms accepted) |
 | `--spec TEXT` | spec id or glob, e.g. `PI-*` (repeatable) |
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
 | `--top-tests INT` | keep the N highest-signal specs |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) and timing `-T0`. Conflicts with an explicit `--suite` (pass one) |
-| `--deep` | timing `-T2` (unless you pass `-T`) over the battery a run with no selection flag already gets: the whole registry, minus what the target cannot run. It does **not** select a larger suite (on the example target, `--dry-run` selects the same 34 specs with or without it, at 2.0 req/s instead of 5.0). By itself it tailors nothing: mutator ordering needs a fingerprint, which only `-sV` or `-A` produces. `run --help` still calls it a "deep/agentic suite"; it is not one |
+| `--deep` | timing `-T2` (unless you pass `-T`) over the battery a run with no selection flag already gets: the whole registry, minus what the target cannot run. It does **not** select a larger suite (on the example target, `--dry-run` selects the same 34 specs with or without it, at 2.0 req/s instead of 5.0). By itself it tailors nothing: it switches adaptive planning on (a `--resume` of the run must ask for it too, with `--deep`, `-sV` or `-A`), but the planner orders mutators only from a fingerprint, which only `-sV` or `-A` produces (`run --help`: "adaptive only with -sV") |
 
 **Discovery and aggression**
 
 | Flag | Meaning |
 |------|---------|
 | `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
-| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it, and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn` |
+| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn` |
 | `-A` | aggressive: implies `-sV` and `--deep`, so it fingerprints first and runs at `-T2` unless you pass `-T`. There is no separate `--adaptive` flag: mutator ordering is adaptive only when a fingerprint exists, that is with `-sV` or `-A` |
 
 **Judge and execution**
@@ -275,11 +274,13 @@ required.
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
 | `-oA PATH` | write all four to `<prefix>.*` |
 | `--fail-on BAND` | CI gate: `low\|medium\|high\|critical` (default `high`) |
-| `--include-needs-review` | also gate low-confidence findings |
+| `--include-needs-review` | also gate unconfirmed exploits (a `fail` below the confidence threshold). Undecided (`inconclusive`) results never gate, with or without it |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`) |
 | `--run-db PATH` | run store SQLite path |
 | `--spec-path PATH` | spec search path (default `specs/`) |
-| `-q/--quiet`, `-v`, `--no-color` | output verbosity |
+| `-q/--quiet` | suppress the per-spec progress lines |
+| `-v`, `-vv` (`--verbose`, repeatable) | a counter, not a value: `-v` prints the resolved plan, then runs; `-vv` also lists the skipped and blocked spec ids with their reasons (with `--dry-run` too) |
+| `--no-color` | disable colour output |
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3`
 error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` never do. A
@@ -315,6 +316,18 @@ mock, which is what CI and a target whose endpoint is not up both want.
 
 `TARGET` is positional (a `target.yaml`). Attacks nothing; reports the best-effort model and
 guardrail fingerprint. See [`10-fingerprint.md`](10-fingerprint.md).
+
+A target that answers every attributing probe with the same text (a constant mock, an endpoint
+that refuses everything) gives the text layers no signal, so its family is not read from text.
+It is attributed only from a `model=` field in the response envelope, with a version only when
+one clearly leads; with no such field it is `unknown`. Either way `spoofing_flags` carries
+`non_discriminating_target`. The carrier probes are left out of that check, since answering
+carriers differently is what they measure. `run -sV` prints the same fact after the
+fingerprint line; on the offline mock:
+
+```
+fingerprint: mock-target [offline mock: bare] family=unknown (confidence 0.00) [the target answered every attributing probe alike: no text signal]
+```
 
 ### `dottore fleet`, expand and optionally scan a fleet
 
@@ -356,8 +369,9 @@ dottore lint [PATHS]... [--json]
 Schema + policy + fixtures-prove-detection lint. `specs/` resolves as a pack (via
 `pack.yaml`) so discovery loads `attacks/` + `suites/` and skips the loose example YAMLs.
 A mutation must name a registered mutator (built-ins plus installed plugins), or lint reports
-`UNKNOWN_MUTATOR_TYPE`. An installed mutator plugin that cannot be loaded is a
-`MUTATOR_PLUGIN_ERROR` warning, not a crash: lint goes on with the built-ins.
+`UNKNOWN_MUTATOR_TYPE`. The same code covers a `name:param` the mutator does not implement
+(§12). An installed mutator plugin that cannot be loaded is a `MUTATOR_PLUGIN_ERROR` warning,
+not a crash: lint goes on with the built-ins.
 
 ### `dottore describe`, one spec's detail card
 
@@ -533,9 +547,13 @@ live run, and the fingerprint line prints `[offline mock: <scenario>]` so an off
 never read as one. Three specs decide against any fixed-string offline target (their oracles
 read only the response text); `comprehending` decides exactly what `bare` decides, no more.
 
-Only `dottore run -sV` honours `comprehending` today. `dottore fingerprint --offline` on the
-same target file ignores the key and probes the default mock, so its carrier line reads 0.0 for
-every carrier; use `run -sV` (with `--spec` and `--runs 1` to keep it small) to see the split.
+Both offline fingerprint paths honour the key: `dottore run -sV` and `dottore fingerprint
+--offline` pass the target's `mock_scenario` to the mock. On a `comprehending` target the
+carrier evidence of `fingerprint --offline` shows the split (on the shipped mock:
+`base64_wrap`, `payload_splitting`, `rot13` and `zero_width_inject` at 1.0, `leetspeak`,
+`translate` and `unicode_confusable` at 0.0), and those four are its `effective_mutators`.
+Every attributing probe gets the same answer from this mock, so the fingerprint is
+`family=unknown` with the `non_discriminating_target` flag (see `dottore fingerprint` above).
 
 ## 6. The attack battery
 
@@ -787,7 +805,21 @@ A new attack is usually just YAML, no core code:
 Mutators (encoding/obfuscation transforms) let one attack test many bypasses without writing
 new prompts. A spec lists them under `mutations`; a mutation may be parameterized as
 `name:param` (for example `translate:fr` runs the `translate` mutator in French, so one spec
-covers a systematic per-language battery). See [`06-extensibility-suites.md`](06-extensibility-suites.md),
+covers a systematic per-language battery). The parameter is checked against what the mutator
+implements, compared case-insensitively (`translate:ES` is Spanish). `translate` accepts `es`,
+`fr`, `de` and `zh` (a bare `translate` picks one of them from the seed); every other built-in
+mutator takes no parameter. `dottore lint` reports any other parameter as
+`UNKNOWN_MUTATOR_TYPE`:
+
+```
+[ERROR] UNKNOWN_MUTATOR_TYPE (JB-MULTILINGUAL-001): mutation 'translate:klingon': 'klingon' is not a parameter translate accepts (de, es, fr, zh)
+[ERROR] UNKNOWN_MUTATOR_TYPE (JB-MULTILINGUAL-001): mutation 'rot13:x': rot13 takes no parameter
+```
+
+and the runner refuses the spec the same way at run time: nothing is sent for it, and its
+finding is `inconclusive` with the reason `unknown_mutator_parameter: translate:klingon, rot13:x
+names a parameter the mutator does not accept; nothing was sent for this spec`. A plugin
+mutator that does not declare its parameters is not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
 [`03-attack-spec-format.md`](03-attack-spec-format.md) and [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## 13. Troubleshooting
@@ -796,7 +828,7 @@ covers a systematic per-language battery). See [`06-extensibility-suites.md`](06
 |---------|-------------|
 | `target(s) not authorized by the scope` (exit 3) | The bracket says which: `endpoint '<url>' not on allowlist for '<id>'` (the target's endpoint host/path is not in that target's `endpoints`) or `target '<id>' not in scope` (the id is not among the scope's `targets`). Add it deliberately. `endpoint not allowed by scope` is the adapter's second check, met only if the first was bypassed. |
 | Live findings all inconclusive | No `--judge`, so `semantic_judge` abstains. Pass a judge target; deterministic evaluators still fire. |
-| A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all, and the hint in the `nothing would be sent` error ("enable the category in the policy pack") cannot be followed from the command line. Whether it should accept a pack is an open decision. |
+| A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all. Selected alone they end in `nothing would be sent` (exit 3), whose message says so: "A spec blocked by policy needs a policy pack that enables it, and the CLI cannot load one today (open decision), so it cannot run from `dottore`." |
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |

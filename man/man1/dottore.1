@@ -24,9 +24,10 @@ There is no default command: always type the subcommand.
 (alias
 .BR dott )
 examines an AI endpoint, diagnoses its security weaknesses against a declarative attack
-battery aligned to the OWASP LLM Top 10, MITRE ATLAS, NIST AI 600-1 and the Nova IoPC
-taxonomy, mapped by falsification to the OWASP AISVS controls it can catch failing, and
-issues a reproducible, evidence-backed report mapped to operational risk.
+battery mapped to the OWASP LLM Top 10, MITRE ATLAS and the Nova IoPC taxonomy, and by
+falsification to the OWASP AISVS controls it can catch failing, and issues a reproducible,
+evidence-backed report mapped to operational risk. Every spec also carries a NIST AI RMF 1.0
+subcategory token (NIST AI 600-1 is a reference, not a mapping the code checks).
 .PP
 It is a defensive tool. It scans nothing without a
 .I scope.yaml
@@ -108,12 +109,12 @@ Judge model target.yaml (LLM-as-judge for the semantic_judge evaluator on live s
 .SS Selection
 .TP
 .B --suite \fITEXT\fR
-Suite id or alias: owasp-llm-top10 (aliases owasp:llm and baseline), quick, multi-turn,
-access-control, agentic-owasp2026, obfuscation-enhancers, embeddings, agentic-extortion
-(alias agentic), mcp, responsible-ai, guardrail-evasion, multimodal, structured-output,
-nova-iopc. The mitre:atlas alias that the help text names, and nist:ai, eu:ai-act, dora and
-iso:42001, point at no registered suite and exit 3. With no selection flag the run takes the
-whole registry, minus what the target cannot run.
+Suite id (the files in specs/suites/) or alias: owasp-llm-top10 (aliases owasp:llm and
+baseline), quick, multi-turn, access-control, agentic-owasp2026, obfuscation-enhancers,
+embeddings, agentic-extortion (alias agentic), mcp, responsible-ai, guardrail-evasion,
+multimodal, structured-output, nova-iopc. The aliases mitre:atlas, nist:ai, eu:ai-act, dora
+and iso:42001 are still accepted but point at no registered suite and exit 3. With no
+selection flag the run takes the whole registry, minus what the target cannot run.
 .TP
 .B -p, --categories \fITEXT\fR
 Comma-separated categories: pi, jailbreak, leakage, tool, rag, output, dos, safety, bias
@@ -142,9 +143,9 @@ Aggressive: -sV plus --deep.
 The T0 battery: selects the quick suite (18 specs) at -T0. Conflicts with --suite.
 .TP
 .B --deep
-Timing -T2 over the same battery a run with no selection flag gets; it selects no larger
-suite. Mutator ordering needs a fingerprint, so on its own it tailors nothing: use -sV or -A
-for that. (The help text still calls it a "deep/agentic suite".)
+Timing template T2 (slower) over the same battery a run with no selection flag gets; it
+selects no larger suite. Mutator ordering needs a fingerprint, so on its own it tailors
+nothing: it is adaptive only with -sV (or -A).
 .TP
 .B -T \fI0..5\fR
 Timing template (default 3; --quick implies 0, --deep and -A imply 2; an explicit -T always
@@ -202,8 +203,15 @@ Evidence store root (default .dottore/evidence) and run store SQLite path.
 .B --spec-path \fIPATH\fR
 Spec search path (default specs/).
 .TP
-.B --no-color, -q, --quiet, -v, --verbose \fIN\fR
-Output colour and verbosity.
+.B --no-color
+Disable colour output.
+.TP
+.B -q, --quiet
+Suppress the per-spec progress lines.
+.TP
+.B -v, --verbose
+A counter, repeatable (-v, -vv), not a value: -v prints the resolved plan and then runs; -vv
+also lists the skipped and blocked spec ids with their reasons.
 .SH "EXIT STATUS"
 .TP
 .B 0

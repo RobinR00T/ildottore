@@ -6,8 +6,9 @@
 
 Spec-driven security scanner for LLMs and AI applications (prompt injection, jailbreak,
 data leakage, tool/agent abuse, RAG poisoning, excessive agency, insecure output handling,
-model DoS). Aligned to **OWASP LLM Top 10 (2025)**, **MITRE ATLAS** and **NIST AI 600-1
-(GenAI Profile)**.
+model DoS). Mapped to **OWASP LLM Top 10 (2025)** and **MITRE ATLAS**, with a NIST AI RMF 1.0
+subcategory token on every spec (**NIST AI 600-1**, the GenAI Profile, is a reference, not a
+mapping the code checks).
 
 > **Thesis (design north star).** The value of this product is **not** "many jailbreak
 > prompts". It is **reproducibility + evidence + mapping to operational risk**. Every
@@ -60,7 +61,7 @@ New here? Read [`USAGE.md`](USAGE.md) (practical guide) then [`examples/`](examp
 ```text
 ildottore/
   README.md · USAGE.md · INSTALL.md · CONTRIBUTING.md · SECURITY.md · CHANGELOG.md
-  Makefile                         # local task runner mirroring the CI gates
+  Makefile                         # local task runner: `make gates` = the CI checks + bandit + pip-audit
   pyproject.toml                   # package, deps, ruff/mypy/import-linter config
   src/ildottore/
     cli/                           # the `dottore` command (typer): run, fleet, fingerprint, …
@@ -141,7 +142,7 @@ docs/
 ## Development
 
 ```bash
-make            # the full local merge gate (mirrors CI: lint, format, types, tests, coverage)
+make            # the full local merge gate: CI's checks plus bandit and pip-audit (see AGENTS.md)
 make test       # the test suite
 make fix        # autofix formatting + lint
 ```
