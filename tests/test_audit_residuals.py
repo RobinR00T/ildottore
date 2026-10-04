@@ -558,8 +558,9 @@ def test_replay_counts_one_attempt_per_id_and_prefers_the_answered_try() -> None
 
 
 async def test_a_constant_target_is_not_named_from_finish_reason_alone() -> None:
-    """`finish_reason=stop` is in the meta-llama signature and every OpenAI-compatible server
-    sends it; only a `model=` field may attribute a target with no text signal (N2)."""
+    """`finish_reason=stop` was in the meta-llama signature (dropped on 2026-10-05) and every
+    OpenAI-compatible server sends it; only a `model=` field may attribute a target with no text
+    signal (N2)."""
 
     from ildottore.cli import wiring
 

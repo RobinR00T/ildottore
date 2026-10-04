@@ -3,6 +3,22 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-05 (night): PRs #37 to #39 merged; fingerprint attribution fixed
+
+- PR #37 (F11) squash-merged as `03c6d45`, PR #38 (hygiene after the audit: spend on interrupt,
+  closed stores, atomic reports, clearer messages) as `c1e2aee`, PR #39 (the last
+  non-decision findings, below) as `3070aed`, each after green CI and a pre-merge audit. The
+  audit of #38 found a temporary report created world-readable; fixed before the merge.
+- Fingerprint attribution on `fix/fingerprint-attribution`
+  (`tests/fingerprint/test_attribution_audit.py`): ties name nothing; the statistical layer
+  ignores canned replies; declared capabilities are listed with weight 0; envelope-only
+  confidence capped at the metadata weight; `finish_reason` out of the pack, `model=meta-llama`
+  in, `model=` fragments as alternatives; the `model` echo redacted without the entropy rule;
+  live probes report the target file's capabilities; the metadata signatures are `model=` names
+  only. Two pre-commit audit rounds found the last four through the real adapters. The R16
+  entry of the CHANGELOG named the wrong cause (corrected there). Left for Daniel: whether a
+  `model=` name should outrank the statistical layer (short replies land near `meta-llama`).
+
 ## State, 2026-10-05 (night): the last non-decision findings of the 2026-10-03 audit
 
 - On `fix/audit-last-lows` (`tests/test_audit_last_lows.py`): F-20 (the echo lint reads image

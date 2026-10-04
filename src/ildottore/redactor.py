@@ -328,6 +328,22 @@ class Redactor:
 
         self._patterns.insert(0, pattern)
 
+    def without_entropy(self) -> Redactor:
+        """This redactor minus the entropy fallback: same salt, patterns and known credentials.
+
+        For values that are identifiers by construction and that the entropy rule mangles, such
+        as a provider's model name (`meta-llama/Meta-Llama-3-8B-Instruct` has mixed case, so it
+        is not exempt as a path).
+        """
+
+        twin = Redactor(
+            patterns=self._patterns,
+            entropy_threshold=math.inf,
+            entropy_min_len=self._entropy_min_len,
+        )
+        twin._salt = self._salt
+        return twin
+
     def _digest(self, value: str) -> str:
         """Short salted HMAC-SHA256 digest for corroboration (never reversible)."""
 

@@ -5,6 +5,65 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (fingerprint attribution)
+
+The fingerprint still named a model with no signal from it. Measured on main before the fix
+(2026-10-05): a stub alternating two canned answers was `meta-llama`, version `llama-3-8b`, at
+0.65, and still at 0.58 when its response envelope said `gpt-4o`. Two pre-commit audit rounds of
+the fix added findings that only show through the real adapters, fixed here too.
+
+- **A tie named the alphabet's pick.** Every family-wide signal adds the same mass to each
+  version of a family, so the version was decided by name (`llama-3-8b` with its 2023-03
+  cutoff, `gpt-4-turbo`, `claude-opus`). A tie between versions now gives no version, and a tie
+  between families gives `unknown`, up to the rounding of the weights (three 0.133333 tie 0.4).
+- **The statistical layer scored canned replies.** Short, plain canned answers sat close to the
+  `meta-llama` centroid (0.41 of evidence for each of two versions). Its three probes ask for
+  different things, so when they get fewer than three different replies (ignoring surrounding
+  whitespace) it emits nothing.
+- **Declared capabilities counted toward a family.** The capability layer reads what the target
+  file declares about the deployment. A target that gave no other evidence and declared
+  `tools: false` was `meta-llama` at 0.29, and the repo's own gpt-4o example (`tools: false`,
+  `streaming: true`, the whole meta-llama profile) would have tied a real `model=gpt-4o`
+  envelope into `unknown` once live probes read the file. Capability evidence is now listed with
+  weight 0 and never counts; the pack has no capability weight.
+- **An envelope-only attribution was surer than the evidence.** A family named by the metadata
+  layer alone has a share of the mass of 1 (0.52 for a constant target saying `gpt-4o`). It is
+  now capped, with its version, at the pack's metadata weight for the family (0.4).
+- **Envelope fields other than the model name were family signals.** Every OpenAI-compatible
+  server sends `finish_reason=stop`, and the bare key `system_fingerprint` matched any value: a
+  Qwen model behind a server sending `fp_ollama` was `openai-gpt`, version `gpt-4-turbo`, at
+  0.42. Claude's `stop_reason` and `role=assistant` could never match what the Anthropic adapter
+  reports. The pack's metadata signals are now `model=` names only. `model=meta-llama` is listed
+  beside `model=llama` for vLLM names such as `meta-llama/Meta-Llama-3-8B-Instruct`, and an
+  entry's `model=` fragments are alternatives that fill one slot (counted as two, they would
+  have held meta-llama at half its weight).
+- **The live adapters masked mixed-case model names.** The redactor's entropy rule turned the
+  `model` echo `meta-llama/Meta-Llama-3-8B-Instruct` into `«REDACTED:high_entropy:…»`, and
+  `mistralai/Mixtral-8x7B-Instruct-v0.1` or `Llama-3.3-70B-Instruct-Turbo` in part, before the
+  metadata layer read it. A string `model` raw id is now redacted without the entropy rule
+  (`Redactor.without_entropy`), in memory only; patterns and known credentials still apply, and
+  the evidence store, run store and reports still apply the full redactor to what they keep.
+  The trade-off, stated in `docs/02` S6: an unregistered key that only the entropy rule
+  recognises, placed by a target in its `model` field, stays unmasked in memory for the run.
+- **A live probe read the adapter's capabilities, not the target file's.** The OpenAI adapter
+  declares `tools`, `streaming`, `seed` and `logprobs` true, so `tools: false` in `target.yaml`
+  reported `tools: true` in `capability_guess`. `dottore fingerprint` and `run -sV` now report
+  the declared ones.
+- **Correction to the R16 entry below.** It says the constant mock was `meta-llama` at 0.67 "from
+  `finish_reason=stop`". It was not: measured on 2026-10-05, a constant target that sends no
+  `finish_reason` is also `meta-llama`, `llama-3-8b`, at 0.67, from the statistical centroid
+  (0.81 of its evidence mass) and the declared `tools: false`. The R16 fix
+  (`non_discriminating_target`) stands; the stated cause was wrong.
+- **Left open (the owner's call).** The statistical centroids are coarse: short, distinct replies
+  land near `meta-llama` and can outvote a real `model=` name (a gpt-4o or a Claude answering in
+  short sentences was `meta-llama` at 0.39). By design the statistical layer outranks what a
+  target says about itself; whether a model name should win over it is a design decision,
+  recorded in `docs/10 §2` with the envelope cap's cliff.
+- `tests/fingerprint/test_attribution_audit.py`: one test per finding, the adapter ones through
+  `OpenAIAdapter` on a mock transport. The golden `gpt-4o-clean` fixture's family confidence
+  moves from 0.677419 to 0.808219 (no `finish_reason` hit for `meta-llama`, no capability mass).
+  The `docs/10 §2` example is regenerated: it loses its two statistical lines and its capability
+  lines show weight 0.
 ### Fixed (the last open findings of the 2026-10-03 audit)
 
 - **A refusal could still score as exploited through a channel the echo lint did not read**

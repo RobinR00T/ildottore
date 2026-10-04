@@ -107,6 +107,13 @@ class StatisticalLayer:
             request = _seeded(build_request(probe), ctx.target_id, probe.name)
             response = await adapter.send(request)
             texts.append(response.text)
+        # Three probes asking for different things answered with fewer than three different
+        # texts is a canned responder, not a model's style: its short, plain replies sat within
+        # reach of one centroid and named that family (a stub alternating two answers drew 0.41
+        # of meta-llama evidence per version; audit of the fingerprint). It gives no statistical
+        # evidence.
+        if len({text.strip() for text in texts}) < len(texts):
+            return []
         vector = response_vector(texts)
 
         scored: list[tuple[float, SignatureEntry]] = []

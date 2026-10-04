@@ -133,6 +133,9 @@ _DECODED_ENCODINGS: dict[str, int] = {"gzip": 47, "x-gzip": 47, "deflate": 47}
 #: leftovers, 2026-10-04).
 ACCEPT_ENCODING = "gzip, deflate"
 
+#: The raw id that carries the model name the provider echoes; redacted without the entropy rule.
+_MODEL_ID = "model"
+
 
 async def read_capped(response: httpx.Response, label: str) -> bytes:
     """Read a streamed body, refusing one larger than :data:`MAX_RESPONSE_BYTES`.
@@ -367,9 +370,23 @@ class BaseAdapter(ABC):
         return self.base_url.rstrip("/") + self._request_path
 
     def _redact_ids(self, ids: Mapping[str, Any]) -> dict[str, Any]:
-        """Redactor-mask provider request/response ids before they persist."""
+        """Redactor-mask provider request/response ids before they persist.
 
-        return cast("dict[str, Any]", self.redactor.redact(dict(ids)))
+        The ``model`` echo, when it is a string, is a model name, not an opaque id: it skips the
+        entropy rule (patterns and known credentials still apply). Mixed-case names such as
+        ``meta-llama/Meta-Llama-3-8B-Instruct`` were masked as high-entropy before the
+        fingerprint's metadata layer could read them (audit of the fingerprint). This is in
+        memory only: the evidence store, the run store and the reports apply their own full
+        redactor to everything they keep.
+        """
+
+        model = ids.get(_MODEL_ID)
+        if not isinstance(model, str):  # a nested value gets the full redactor
+            return cast("dict[str, Any]", self.redactor.redact(dict(ids)))
+        rest = {key: value for key, value in ids.items() if key != _MODEL_ID}
+        redacted = cast("dict[str, Any]", self.redactor.redact(rest))
+        redacted[_MODEL_ID] = self.redactor.without_entropy().redact_text(model)
+        return {key: redacted[key] for key in ids}
 
     def _check_allowlist(self, url: str) -> None:
         """Refuse an off-allowlist URL **before** any egress (contract §4 KEEP)."""

@@ -2,10 +2,12 @@
 
 The safest layer: it interrogates the **response envelope**, not the model. From a
 single benign send it reads the model echo, the OpenAI ``system_fingerprint``, the
-``finish_reason``/``stop_reason`` vocab, role names, tool-call schema shape, usage
-field names and HTTP-ish ids. It matches these textual fragments against each
-signature entry's ``signals["metadata"]`` list and emits weighted
-:class:`~ildottore.shared.models.FingerprintEvidence` per matching candidate.
+``finish_reason`` vocab, tool-call schema shape, usage field names and HTTP-ish ids. It
+matches these textual fragments against each signature entry's ``signals["metadata"]``
+list and emits weighted :class:`~ildottore.shared.models.FingerprintEvidence` per matching
+candidate. The shipped pack matches only ``model=`` names: the other fields are what
+OpenAI-compatible servers copy from each other, so they named families with no signal from
+the model (audit of the fingerprint).
 
 No model reasoning is exercised - a target that spoofs its ``model`` echo is caught
 later by the statistical layer, and the contradiction becomes a ``spoofing_flag``
@@ -29,6 +31,7 @@ from ildottore.shared.protocols import TargetAdapter
 __all__ = ["MetadataLayer", "envelope_signal"]
 
 _LAYER = "metadata"
+_MODEL_FIELD = "model="
 
 
 def envelope_signal(response: ModelResponse) -> str:
@@ -94,10 +97,18 @@ def _match(pack: SignaturePack, haystack: str) -> list[FingerprintEvidence]:
     out: list[FingerprintEvidence] = []
     for entry in pack.entries:
         fragments = entry.signals.get(_LAYER, [])
-        hits = [f for f in fragments if f.lower() in haystack]
+        # An envelope carries one model name, so an entry's `model=` fragments are alternatives
+        # and fill one slot: `model=llama` and `model=meta-llama` (a vLLM name) can never both
+        # match, and counting them as two capped meta-llama at half its weight (audit of the
+        # fingerprint).
+        names = [f for f in fragments if f.lower().startswith(_MODEL_FIELD)]
+        others = [f for f in fragments if not f.lower().startswith(_MODEL_FIELD)]
+        hits = [f for f in others if f.lower() in haystack]
+        hits += [f for f in names if f.lower() in haystack][:1]
         if not hits:
             continue
-        weight = entry.weights.get(_LAYER, 0.0) * (len(hits) / len(fragments))
+        slots = len(others) + (1 if names else 0)
+        weight = entry.weights.get(_LAYER, 0.0) * (len(hits) / slots)
         out.append(
             FingerprintEvidence(
                 layer=_LAYER,

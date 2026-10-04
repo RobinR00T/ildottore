@@ -320,9 +320,14 @@ def build_probe_adapter(
     if real_target is not None:
         scope_target = scope.target(real_target.id)
         allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
-        return build_real_adapter(
+        live = build_real_adapter(
             real_target, allowlist, api_key=_authorized_api_key(scope, real_target), retry=retry
         )
+        # The fingerprint's capability layer and `capability_guess` read what the TARGET FILE
+        # declares, as docs/10 says. They read the adapter class's defaults (OpenAI: tools,
+        # streaming, seed and logprobs all true), so `tools: false` in target.yaml still fed
+        # `tools=true` to the family signals (audit of the fingerprint).
+        return cast("TargetAdapter", _DeclaredCapabilities(live, real_target.capabilities))
     if mock_scenario == "comprehending" and scenario is None:
         # The one offline target whose answer depends on what was sent, so the carrier layer
         # measures something instead of scoring every carrier zero against a fixed string.
@@ -753,6 +758,24 @@ def check_target_credential(scope: Scope, target: Target) -> None:
     """
 
     _authorized_api_key(scope, target)
+
+
+@dataclass
+class _DeclaredCapabilities:
+    """A live probe adapter that reports the capabilities the target file declares."""
+
+    inner: TargetAdapter
+    declared: Capabilities
+
+    @property
+    def id(self) -> str:
+        return self.inner.id
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        return await self.inner.send(request)
+
+    def capabilities(self) -> Capabilities:
+        return self.declared
 
 
 @dataclass

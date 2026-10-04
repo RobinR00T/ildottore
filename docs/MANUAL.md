@@ -372,6 +372,16 @@ fingerprint line; on the offline mock:
 fingerprint: mock-target [offline mock: bare] family=unknown (confidence 0.00) [the target answered every attributing probe alike: no text signal]
 ```
 
+A name from the envelope alone is reported with at most the metadata weight as confidence (0.4
+in the shipped pack). Four more rules keep a family from being named without a signal: a tie
+between two families gives `unknown` and a tie between versions gives no version; the
+statistical layer emits nothing when its probes get repeated replies; declared capabilities are
+listed in the evidence with weight 0 and never count; and from the envelope only the `model`
+name counts (not `finish_reason`, `system_fingerprint` or other fields compatible servers
+copy). On a live target the capabilities in the fingerprint are the ones the target file
+declares, and a model name such as `meta-llama/Meta-Llama-3-8B-Instruct` reaches the metadata
+layer unmasked. Details in [`10-fingerprint.md`](10-fingerprint.md) §2, "Attribution rules".
+
 ### `dottore fleet`, expand and optionally scan a fleet
 
 ```

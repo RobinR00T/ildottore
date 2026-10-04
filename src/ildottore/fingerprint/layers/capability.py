@@ -8,8 +8,12 @@ this layer reflects the declaration into the fingerprint's ``capability_guess``
 via :func:`capability_guess` and emits per-capability evidence.
 
 No adversarial probing - this is a read of the declared surface plus (where the
-pack declares capability tells) family-attributed evidence when a distinctive
-capability profile matches a signature (e.g. a 200k-context tell).
+pack declares capability tells) the families whose capability profile matches. That
+evidence is **informational and carries weight 0**: the capabilities are what the target
+FILE declares about the deployment, not anything the model did, so they never count toward
+a family. With a weight, the repo's own gpt-4o example (`tools: false`, `streaming: true`)
+matched the meta-llama profile and tied a real `model=gpt-4o` envelope into `unknown`, and a
+target that gave no other evidence was meta-llama at 0.29 (audit of the fingerprint).
 """
 
 from __future__ import annotations
@@ -70,7 +74,6 @@ class CapabilityLayer:
             hits = [f for f in fragments if f.lower() in haystack]
             if not hits:
                 continue
-            weight = entry.weights.get(_LAYER, 0.0) * (len(hits) / len(fragments))
             out.append(
                 FingerprintEvidence(
                     layer=_LAYER,
@@ -79,7 +82,7 @@ class CapabilityLayer:
                     # family-only attribution so a generic ``tools=false`` tell can
                     # never pin a version on an otherwise-blank target.
                     signal=encode_signal(entry.family, None, f"capability tells {hits}"),
-                    weight=round(weight, 6),
+                    weight=0.0,  # declared, not observed: listed, never counted
                 )
             )
         return out

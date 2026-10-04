@@ -81,7 +81,14 @@ confidence, cutoff_hint}`; `recommended_plan_ref` is always null. `spoofing_flag
 every attributing (non-carrier) probe got the same reply text, at least three answered; text
 evidence then does not attribute, only metadata evidence matching a `model=` field names the
 family, a version is kept only when one clearly leads (a tie gives none), and otherwise the
-family is `unknown`.) Signature pack entry: `{family, version, signals:{layer→matcher}, weights}`.
+family is `unknown`. Since 2026-10-05: any tie between families gives `unknown` and any tie
+between versions gives no version; the statistical layer emits nothing when its probes got
+repeated replies; capability-layer evidence carries weight 0 and never counts; a family named by
+the metadata layer alone, and its version, are capped at the pack's metadata weight; an entry's
+`model=` fragments are alternatives; the metadata signatures are `model=` names only; a live
+probe adapter reports the target file's capabilities, and the adapters redact the `model` echo
+without the entropy rule. See `docs/10 §2`, "Attribution rules".) Signature pack entry:
+`{family, version, signals:{layer→matcher}, weights}`.
 `TestPlan = {plan_ref, target_id, selected:list[{spec_id, reason}], skipped:list[{spec_id,
 reason}], mutator_weights, baseline_resistance}`: nothing silently dropped (`docs/07`).
 
