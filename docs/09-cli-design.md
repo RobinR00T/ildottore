@@ -19,7 +19,7 @@ are collected in §5, "Not implemented".
 | Port selection `-p 80,443` | Category selection | `-p pi,jailbreak,leakage` | built |
 | `--top-ports 100` | Top-N highest-signal tests | `--top-tests 20` | built |
 | Timing template `-T0..-T5` | Aggressiveness/rate template `-T0..-T5` | `-T4` | built |
-| Aggressive `-A` | Fingerprint + full battery at T2 + adaptive mutator ordering | `-A` | built (`-A` = `-sV` + `--deep`) |
+| Aggressive `-A` | Fingerprint + timing T2 + adaptive mutator ordering, over the selection the other flags make (the full battery when there is no `--suite`) | `-A` | built (`-A` = `-sV` + `--deep`) |
 | **NSE scripts** `--script` | **Attack specs** (specs ARE our NSE) | `--spec 'PI-*'` | built as `--spec`. A `--script` alias is not |
 | Script categories | Suites | `--suite` | built for the 14 registered suites. Of the regulatory presets only `owasp:llm` resolves (§2) |
 | Output `-oX -oN -oG` | `-oJ` json `-oH` html `-oS` sarif `-oX` junit, `-oA` all four | `-o*` | built |
@@ -31,7 +31,9 @@ are collected in §5, "Not implemented".
 > to nmap.* Declarative, categorized, community-extensible, versioned. "Write a spec" ==
 > "write an NSE script". This is how new techniques land with zero core code (`docs/06`).
 
-## 2. Command surface (built, as `dottore run --help` prints it)
+## 2. Command surface (built; a grouped summary, `dottore run --help` is the authority)
+
+The block below groups the options by purpose and is written by hand; it is not the help text.
 
 ```
 dottore run [<target.yaml> ...] [-t <target.yaml>] --scope <scope.yaml> [options]
@@ -47,7 +49,8 @@ SCAN TYPE
                                     order each spec's mutators by what the target decoded
   -A                                aggressive: -sV + --deep
   --quick                           T0 battery: --suite quick (18 specs) at -T0
-  --deep                            full battery at -T2 (see the note below the block)
+  --deep                            timing template T2; it does not change the selection.
+                                    Adaptive ordering only with -sV (note below the block)
 
 SELECTION
   --suite <id|alias>                any of the 14 registered suite ids, or an alias:
@@ -79,7 +82,9 @@ SAFETY / SCOPE
   --hardened                        replay the hardened fixtures (clean-run smoke)
 
 OUTPUT
-  -oJ file.json  -oH file.html  -oS file.sarif  -oX junit.xml  -oA <prefix> (all)
+  -oJ file.json  -oH file.html  -oS file.sarif  -oX junit.xml
+  -oA <prefix>                             all four: <prefix>.json .html .sarif .xml (a
+                                           prefix ending in one of those has it dropped first)
   --fail-on <low|medium|high|critical>     CI gate (confirmed findings; default high)
   --include-needs-review                   also gate on unconfirmed fails (never on an
                                            inconclusive or a pass)
@@ -106,14 +111,34 @@ OTHER COMMANDS
 battery, so `--deep` alone changes the timing template (T2 instead of T3) and turns on adaptive
 mode. Adaptive mode reorders a spec's mutators by the fingerprint's carrier-comprehension
 result, and only `-sV` produces a fingerprint, so `--deep` without `-sV` keeps every spec's
-declared order (the plan still labels the selection "adaptive-tailored"). `-A` is the form that
-does both. Measured with `--dry-run` on `examples/target.local.yaml` (a chat model with no
+declared order. The mode is still recorded: the in-memory plan is marked adaptive (each
+selection's reason reads "adaptive-tailored", which no output prints), and the run's integrity
+record stores the planning mode, so a `--resume` that changes it is refused. `-A` is the form
+that does both. Measured with `--dry-run` on `examples/target.local.yaml` (a chat model with no
 tools, RAG or memory): no flag, `--deep` and `-A` each select the same 34 specs and 550
 requests; the pacing line reads 5.0 req/s with no flag and 2.0 with `--deep` or `-A`, and `-A`
 adds `+17 probe(s) per target`.
 
 **`runs` comes from the command line.** A spec's own `runs:` and a suite's `default_runs:` are
-not read by the runner: every spec runs `--runs` times (default 5). See `docs/03`.
+not read by the runner: every mutation variant of every spec is sent `--runs` times (default
+5). See `docs/03`.
+
+**Options are validated before the campaign.** `run` refuses, with exit 3 and before the scope
+is loaded or anything is sent: a `--rate` that is not greater than 0; an unknown `--fail-on`
+band; `--timeout` not greater than 0; `--concurrency`, `--top-tests` or `--runs` below 1; a
+report path whose directory does not exist; and two report formats that would write the same
+file (paths compared after resolving, Unicode-normalized and case-folded, because a
+case-insensitive volume treats `R.json` and `r.json` as one file). These used to be accepted,
+and some failed only after the whole campaign had run.
+
+**Resume never re-sends a stored attempt.** `--resume <run-id>` skips every attempt the halted
+run stored, the ones that ended in an environment error (a timeout, a 5xx after retries)
+included: they stay in the report as they were, inconclusive. **Open item (F11).** Re-sending
+those errored attempts on resume was attempted and withdrawn on 2026-10-04. A re-send writes a
+second artifact under the same attempt id, and doing it safely needs evidence references
+persisted as each artifact is written, which the store does not do today (a resume rebuilds the
+references from the stored artifacts, one per artifact). Until then, retrying them takes a
+new run: a resume sends nothing for them.
 
 ## 3. Example invocations (the red-teamer's cheat sheet)
 
