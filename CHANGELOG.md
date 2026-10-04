@@ -142,8 +142,10 @@ What the blocks left open, fixed after them and audited four times before commit
   the threshold"; it exits 3.
 - Help text: `--suite` names the aliases that exist (`owasp:llm`, `baseline`, `agentic`),
   `--deep` says it is timing template T2 over the same battery (adaptive only with `-sV`), and
-  `run` is no longer called the default command. A barren selection no longer tells the
-  operator to enable the category in a policy pack the CLI cannot load.
+  `run` is no longer called the default command, `--include-needs-review` says it gates
+  unconfirmed fails (it said "low-confidence findings"), and `render-media` says it writes
+  image and audio carriers. A barren selection no longer tells the operator to enable the
+  category in a policy pack the CLI cannot load.
 - Defensive, no shipped path produces it: a resume cites one evidence reference per artifact
   (not per attempt id) and `replay` counts one attempt per id, the answered one, listing the
   rest.
