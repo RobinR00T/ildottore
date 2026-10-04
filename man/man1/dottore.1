@@ -70,7 +70,8 @@ hashes its findings recorded: an artifact added, replaced or deleted after the r
 refused (exit 3). Without such a store the replay says on stderr that this was not checked.
 .TP
 .B diff
-Compare a run against a baseline and surface regressions (CI-gateable).
+Compare a run against a baseline of the same target and surface regressions (CI-gateable);
+a report covering several targets is refused.
 .TP
 .B coverage
 What the battery tests, per framework (OWASP LLM, MITRE ATLAS, Nova IoPC, OWASP AISVS by
@@ -144,7 +145,8 @@ Findings present but all below --fail-on.
 At least one gated finding at or above --fail-on.
 .TP
 .B 3
-Operational error (bad scope, unknown suite, I/O).
+Operational error (bad scope, unknown suite, I/O), a usage error (unknown option, bad value),
+or a run that did not finish.
 .PP
 Only an exploited (fail) finding trips the gate; pass and inconclusive never do.
 .SH FILES

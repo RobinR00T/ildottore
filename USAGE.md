@@ -122,7 +122,7 @@ dottore calibrate report.json labels.yaml
 | `--dry-run` | resolve + validate, send nothing |
 | `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
-| `--hardened` | replay hardened fixtures (clean-run smoke) |
+| `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.*` |
 | `--fail-on <band>` | CI gate on confirmed findings (`low\|medium\|high\|critical`, default `high`) |
 | `--include-needs-review` | also gate low-confidence findings |

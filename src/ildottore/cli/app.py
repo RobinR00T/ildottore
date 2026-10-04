@@ -19,6 +19,7 @@ from typing import Annotated
 
 import typer
 
+from ildottore import __version__
 from ildottore.adapters.base import AdapterError
 from ildottore.cli import calibrate as calibrate_mod
 from ildottore.cli import coverage as coverage_mod
@@ -41,8 +42,6 @@ from ildottore.redactor import Redactor
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
-__version__ = "0.0.1"
-
 DEFAULT_SPEC_PATHS = [Path("specs")]
 
 app = typer.Typer(
@@ -56,6 +55,25 @@ registry_app = typer.Typer(help="Inspect the attack-spec registry (read-only).")
 schema_app = typer.Typer(help="Export the generated JSON schemas.")
 app.add_typer(registry_app, name="registry")
 app.add_typer(schema_app, name="schema")
+
+
+# A usage error (an unknown option, a bad value) exits 3, the operational-error code. Click's
+# default is 2, which in this tool means "findings at or above --fail-on", so a CI step with a
+# typo in its flags reported a finding the scan never made (audit 2026-10-03, R17 / A-9).
+# Typer 0.26 raises from its own vendored copy of click, so both classes are set; a Typer
+# without the copy simply skips it.
+def _usage_errors_exit_3() -> None:
+    import importlib
+
+    for name in ("click.exceptions", "typer._click.exceptions"):
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            continue
+        module.UsageError.exit_code = int(ExitCode.ERROR)
+
+
+_usage_errors_exit_3()
 
 
 def _version_callback(value: bool) -> None:
@@ -659,7 +677,7 @@ def diff(
                 )
                 raise typer.Exit(ExitCode.ERROR)
         report = diff_mod.diff_reports(baseline, current)
-    except (OSError, ValueError, KeyError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
@@ -680,8 +698,16 @@ def calibrate(
     """
 
     try:
+        # A halted run's report is missing the specs that never ran; calibrating it measures
+        # the scanner on a battery it did not finish (audit R18).
+        incomplete = diff_mod.incomplete_reason(report)
+        if incomplete is not None:
+            raise ValueError(
+                f"the report describes a run that did not complete ({incomplete}); calibrate "
+                "a complete run"
+            )
         result = calibrate_mod.calibrate_reports(report, labels)
-    except (OSError, ValueError, KeyError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 

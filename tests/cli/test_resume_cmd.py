@@ -139,8 +139,20 @@ def test_resume_refuses_more_than_one_target(tmp_path: Path) -> None:
     target = write_target(tmp_path)
     second = tmp_path / "second"
     second.mkdir()
-    other = write_target(second, target_id="mock-target")
+    # A distinct id, authorized too: two files with the SAME id are now refused earlier (R11).
+    other = write_target(second, target_id="other-target")
     scope = write_scope(tmp_path)
+    scope.write_text(
+        scope.read_text()
+        + "  - id: other-target\n"
+        + '    base_url: "mock://other-target"\n'
+        + "    endpoints:\n"
+        + '      - host: "other-target"\n'
+        + '        path_prefixes: ["/"]\n'
+        + "    identities:\n"
+        + "      - name: default\n"
+        + '        auth_ref: "env://MOCK_KEY"\n'
+    )
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
     opts = _opts(tmp_path, target, scope, resume="run-whatever")
     opts.targets = [target, other]

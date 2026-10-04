@@ -85,11 +85,30 @@ def _rule(spec_id: str, spec: AttackSpec | None) -> dict[str, Any]:
     return rule
 
 
+def _kind(finding: Finding) -> str:
+    """The SARIF ``kind`` (3.27.9): what the tool concluded, not how bad it would be.
+
+    ``fail`` and ``pass`` when the spec decided; ``open`` when it ran and could not decide
+    (inconclusive: "insufficient information to decide whether a problem exists");
+    ``notApplicable`` when nothing was sent for it (a capability skip, a policy block).
+    """
+
+    if finding.status.value == "fail":
+        return "fail"
+    if finding.status.value == "pass":
+        return "pass"
+    return "open" if finding.attempts else "notApplicable"
+
+
 def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
     """Build a SARIF ``result`` for one finding."""
 
     risk = finding.risk
-    level = band_to_level(risk.band)
+    kind = _kind(finding)
+    # SARIF 3.27.10: a result whose kind is not "fail" has level "none". Every non-fail used to
+    # be kind "pass" with a band level, so 41 of 75 specs that were inconclusive or never sent
+    # read as passes, with a level the standard forbids for them (audit 2026-10-03, R7).
+    level = band_to_level(risk.band) if kind == "fail" else "none"
     state = "confirmed" if finding.confirmed else "needs_review"
     message = (
         f"{finding.spec_id} against {finding.target_id}: {finding.status.value} "
@@ -99,7 +118,7 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
         "ruleId": finding.spec_id,
         "ruleIndex": rule_index,
         "level": level,
-        "kind": "fail" if finding.status.value == "fail" else "pass",
+        "kind": kind,
         "message": {"text": message},
         "locations": [
             {

@@ -3,7 +3,17 @@
   `reasoning` and evidence excerpts arrive already masked (base pre-pass). When
   `unsafe_render` is true a warning banner is shown and reasoning is emitted with `|safe`
   (raw HTML) - hard-gated opt-in only (OD-12).
+  A full document with a declared charset: as a bare fragment a browser guessed the encoding
+  and rendered UTF-8 (the masks' guillemets, any non-ASCII reply) as mojibake (audit low).
 #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Il Dottore report: {{ run_id }}</title>
+</head>
+<body>
 <article class="dottore-report">
   <header>
     <h1>Il Dottore: Security Scan Report</h1>
@@ -204,3 +214,5 @@
     </ul>
   </section>
 </article>
+</body>
+</html>

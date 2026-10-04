@@ -252,7 +252,7 @@ required.
 | `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt already stored in the evidence tree, and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N |
 | `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
 | `--compare` | model-comparison matrix across targets (a band per spec x target), printed in the terminal and embedded in the JSON report. The matrix renders for **any** multi-target run; `--compare` states the intent and refuses a single target (exit 3) |
-| `--hardened` | replay hardened fixtures (clean-run smoke) |
+| `--hardened` | replay hardened fixtures (clean-run smoke) on a **mock** target. Refused (exit 3) on a live target: it sends nothing, and used to publish a clean report under the live target's name |
 
 **Output and gating**
 
@@ -268,7 +268,12 @@ required.
 | `-q/--quiet`, `-v`, `--no-color` | output verbosity |
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3`
-error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` never do.
+error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` never do. A
+usage error (an unknown option, a value of the wrong type) is `3` too: the command-line library
+defaults to `2`, which here would read as "findings". Options that can only be wrong
+(`--fail-on bogus`, `--timeout 0`, `--concurrency 0`, `--top-tests 0`, `--rate 0`, a report path
+in a directory that does not exist, two target files with the same id) are refused before
+anything is sent.
 
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts already in the evidence tree are not re-sent, and a resumed spec is scored
@@ -392,9 +397,15 @@ one, which is what lets a run answer "what did this tool send my endpoint".
 dottore diff BASELINE CURRENT
 ```
 
-Both are JSON run reports (`-oJ` output). Classifies each spec id as NEW-FAIL (regression),
-FIXED, STILL-FAIL or UNCHANGED and exits nonzero when any regression is present, so it is
-CI-gateable like `run`.
+Both are JSON run reports (`-oJ` output) **of the same target**. Classifies each spec id as
+NEW-FAIL (regression), FIXED (was failing, now passes), UNVERIFIED (was failing, now
+inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits `2` when any
+regression is present, so it is CI-gateable like `run`. A report covering several targets, or
+two reports about different targets, is refused (exit 3): indexing by spec id used to merge
+targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
+complete is refused too. `dottore calibrate REPORT LABELS` applies the same one-target rule,
+counts agreement as an exact status match, prints an undefined precision or recall as `n/a`
+and floors its percentages (99.6% is shown as 99%, not 100%).
 
 ### `dottore schema export`, the JSON Schemas
 
@@ -712,8 +723,11 @@ Only exploited (`fail`) findings can trip the CI gate, and by default only `conf
 
 ## 10. Reports, evidence and reproducibility
 
-- **Formats.** `-oJ` JSON, `-oH` HTML, `-oS` SARIF (for code-scanning), `-oX` JUnit (for CI
-  test reporting), `-oA <prefix>` writes all four.
+- **Formats.** `-oJ` JSON, `-oH` HTML (a complete UTF-8 document), `-oS` SARIF (for
+  code-scanning), `-oX` JUnit (for CI test reporting), `-oA <prefix>` writes all four. In
+  SARIF a result's `kind` says what was concluded: `fail` (with a level from the band), `pass`,
+  `open` (ran, could not decide) or `notApplicable` (nothing sent: a capability skip or a policy
+  block); every kind other than `fail` has level `none`, as SARIF 3.27.10 requires.
 - **Evidence store.** Every attempt persists its prompt, full response, sampling params, tool
   traces, evaluator reasoning and diffs under `--evidence-root` (default `.dottore/evidence`),
   content-addressed and redacted at rest, in `<run-id>/attempts/`. Recognition traffic from
