@@ -39,9 +39,12 @@ an endpoints allowlist and >=1 identities.
 Host plus path_prefixes pairs (default-deny). Plain http is permitted only to loopback
 (localhost, 127.0.0.1, ::1); everything else must be https. A host with no port authorizes
 every port on it; write host:port to pin one, and [::1]:8080 (brackets) for an IPv6 literal.
-A request path carrying an encoded slash or backslash (%2f, %5c), a literal backslash or a
-double encoding (%25) is refused, since an origin that decodes it may resolve a path outside
-the authorized prefix.
+A request path carrying an encoded slash or backslash (%2f, %5c), a literal backslash, a
+double encoding (%25), a ";" path parameter (literal or %3b), a %uXXXX escape, an overlong or
+impossible UTF-8 sequence, a segment of dots and spaces only (..., ..%20), or a non-ASCII
+character that Unicode normalisation (NFKC) turns into a dot, a slash, a backslash, a percent
+sign or a semicolon is refused, since an origin that decodes it may resolve a path outside the
+authorized prefix.
 .TP
 .B identities
 Named auth references (auth_ref, e.g. env://NAME); the scope never carries a secret value. For

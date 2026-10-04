@@ -3,6 +3,24 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-04 (evening): PR #35 merged; the audit's leftovers fixed
+
+- PR #35 (residuals and block 7) squash-merged as `d48f5d8` after green CI and a pre-merge audit.
+- Leftovers on `fix/audit-leftovers` (`tests/test_audit_leftovers.py`): compressed replies
+  decoded inside the 4 MiB cap (a 200 KB gzip reply allocated about 150 MB; MCP could not read
+  gzip at all); path forms only some origins decode refused; token reservations for specs
+  without `max_tokens`, trued up both ways; `-sV` probe retries paced, recorded and charged;
+  run timestamps; real latency on live routes; the no-judge warning counted over the plan.
+  Four pre-commit audit rounds: the first found that the client could advertise `br`/`zstd`
+  the cap refuses, a resume losing its start time and its probe spend, a literal fullwidth
+  bypass and Anthropic usage never trued up; the next three found test gaps and one
+  regression of mine (one start stamp shared by every target).
+- Stopped by a safety classifier at 17:18 while planning the fix of the multilingual spec's
+  `translate:zh` variant; logged in the safeguard log, not retried, left to Daniel.
+- Daniel's decisions added: a default output limit on the wire; evidence of attempts paid before
+  a budget breach; a time of day on attempts and probes; confidence of the deciding variant
+  (ADR-0003).
+
 ## State, 2026-10-04 (midday): block 6 merged; residuals and block 7 (docs truth) done
 
 - PR #34 (block 6) squash-merged as `0bcf4d1` after green CI.

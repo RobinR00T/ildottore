@@ -239,6 +239,7 @@ class CampaignRunner:
         rate_rps: float | None = None,
         pacer: RateLimiter | None = None,
         send_meter: SendMeter | None = None,
+        timestamp: Callable[[], str] | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -288,6 +289,10 @@ class CampaignRunner:
         # Sends made outside the runner (the --judge model) are metered against this campaign's
         # ledger and pacer while it runs (audit 2026-10-03, F6 / F-7, core.metering).
         self._send_meter = send_meter
+        # Wall-clock time of day for the run's `started_at` / `finished_at`, which no caller
+        # ever filled in: every report and run-store row said null. ``None`` (the default, and
+        # what the determinism tests use) leaves them to the caller.
+        self._timestamp = timestamp
 
     async def run(
         self,
@@ -323,6 +328,11 @@ class CampaignRunner:
         # the SAME substituted canary the evaluator looks for; a spec without the placeholder is
         # returned unchanged.
         specs = [_substitute_run_id(spec, run_id) for spec in specs]
+        if started_at is None:
+            # A resume keeps the start of the run it finishes.
+            started_at = resume_from.started_at if resume_from is not None else None
+        if started_at is None and self._timestamp is not None:
+            started_at = self._timestamp()
 
         plan = self._plan_builder(
             specs,
@@ -379,6 +389,8 @@ class CampaignRunner:
             status = halt_state
 
         findings.sort(key=lambda f: f.spec_id)
+        if finished_at is None and self._timestamp is not None:
+            finished_at = self._timestamp()
         run = self._build_run(
             run_id=run_id,
             target=target,

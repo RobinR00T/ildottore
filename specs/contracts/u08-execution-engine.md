@@ -133,8 +133,9 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
   (core imports interfaces only: asserted).
 
 **A-4 The wall budget MUST measure time (added 2026-09-22).** The composition root injects a
-deterministic counter as the runner's clock so offline evidence records a byte-stable
-`latency_ms`. That counter was also handed to the budget ledger, so `max_wall_s` counted clock
+deterministic counter as the runner's clock so OFFLINE evidence records a byte-stable
+`latency_ms` (a live route gets `time.monotonic` since 2026-10-04: the counter made a 1 ms
+loopback reply read 2000.0 ms). That counter was also handed to the budget ledger, so `max_wall_s` counted clock
 **reads**: 1800 "seconds" was fewer reads than a 72-spec run performs, the default battery
 halted after 45 specs on every invocation, adding a telemetry read anywhere changed which specs
 were scanned, and a **live** run had no time bound at all. The ledger takes a real monotonic

@@ -69,7 +69,20 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   (`localhost`, `127.0.0.1`, `::1`); everything else must be `https`. A path that carries an
   encoded slash or backslash (`%2f`, `%5c`), a literal backslash or a double encoding (`%25`)
   is refused outright: an origin that decodes it would resolve a path outside the prefix the
-  scope authorized (`/v1/chat/..%2f..%2fadmin` is `/admin` to such an origin).
+  scope authorized (`/v1/chat/..%2f..%2fadmin` is `/admin` to such an origin). So are the forms
+  only some origins decode: a `;` path parameter, literal or `%3b` (`..;` is `..` to Tomcat and
+  Jetty), an IIS `%uXXXX` escape, an overlong or impossible UTF-8 sequence (`%c0%ae`, lead bytes
+  from `%f5` up), a segment of dots and spaces only such as `...` or `..%20` (Windows strips
+  trailing dots and spaces), and any non-ASCII character, literal or percent-encoded, that
+  Unicode normalisation (NFKC) turns into a dot, a slash, a backslash, a percent sign or a
+  semicolon (the fullwidth full stop and solidus, the dot leaders, the Greek question mark).
+- **Bounded replies.** A target reply larger than 4 MiB is refused and read no further: the
+  attempt is inconclusive and is not retried. A compressed reply (`gzip` or `deflate`) is
+  decoded inside the same limit, never more than one byte past it, and its compressed size is
+  capped too. The adapters ask only for those two (`Accept-Encoding: gzip, deflate`); any other
+  `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
+  as undecodable, also inconclusive and not retried, except on an error status, which is
+  classified by the status (a `401` stays a `401`).
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -123,8 +136,8 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   (pydantic's own message echoes it), and a YAML error in a scope, target, fleet or labels file
   gives the problem and where PyYAML found it: line and column, plus where the entry it was
   reading starts when PyYAML records that and it differs (a missing space after a colon is
-  reported on the next line); a control character is located by its character offset instead.
-  The line is never quoted. An error quotes an `auth_ref` only when it is a reference (it
+  reported on the next line); a control character is located by its position instead
+  (`at character N`, counted from 1). The line is never quoted. An error quotes an `auth_ref` only when it is a reference (it
   contains `://`, such as `env://NAME` or `vault://x`); a literal value pasted where a
   reference belongs is printed as `a literal value (not shown)`, for example `target 'live'
   auth_ref a literal value (not shown) is not authorized by the scope (declared:
@@ -266,19 +279,19 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
-| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn` |
+| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). The run's `started_at` is stamped before the probe pass |
 | `-A` | aggressive: implies `-sV` and `--deep`, so it fingerprints first and runs at `-T2` unless you pass `-T`. There is no separate `--adaptive` flag: mutator ordering is adaptive only when a fingerprint exists, that is with `-sV` or `-A` |
 
 **Judge and execution**
 
 | Flag | Meaning |
 |------|---------|
-| `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`) |
+| `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`). Without it, a live run (and its `--dry-run`) warns before sending, per live target, how many of the specs that will run there use `semantic_judge` (`33 of the 34 specs that will run on local-llama ...` on the example target): they come back inconclusive wherever no deterministic evaluator decides |
 | `--runs INT` | reproducibility runs (default 5) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep` and `-A` imply 2; an explicit `-T` always wins); higher is faster/louder |
 | `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it). Every send passes it: the battery, each retry (a campaign's adapters do not retry on their own; the runner retries, paced and debited, so a 429 storm is not a burst), the `-sV` probes, the multi-identity sweep and the `--judge` model. Must be greater than 0: `0` or a negative rate is refused (exit 3) instead of silently switching pacing off. **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |
 | `--concurrency INT` | max concurrent specs |
-| `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Tokens a provider reports after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its token reservation. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
+| `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the spec's `sampling.max_tokens` or, when it declares none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0); tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a spec that declares none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
 | `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt already stored in the evidence tree, and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N |

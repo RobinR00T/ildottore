@@ -38,7 +38,7 @@ from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
-from ildottore.core.budgets import Spend
+from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult
 from ildottore.policy import Scope, authorize_target
@@ -353,7 +353,7 @@ def estimate_plan(
         out_tokens = (
             spec.sampling.max_tokens
             if spec.sampling is not None and spec.sampling.max_tokens
-            else 512
+            else DEFAULT_COMPLETION_TOKENS
         )
         total_requests += requests
         total_in += requests * in_tokens
@@ -542,29 +542,39 @@ def fingerprint_probe_count() -> int:
 
 
 def _no_judge_warning(
-    selected: list[AttackSpec], routes: list[Any], judge_target: Target | None
+    plans: list[TargetPlan], routes: list[Any], judge_target: Target | None
 ) -> str | None:
     """Say, before sending, that a live run without ``--judge`` will decide little.
 
     74 of the 75 shipped specs carry ``semantic_judge``. A live deep run without a judge
     ended with pass 1, fail 0, inconclusive 74 and exit 0, and neither the run nor the dry run
     said why (audit 2026-10-03, R13). An offline mock decides on its fixtures, so it is exempt.
+
+    Counted over what each live target will RUN (its plan, after the capability and policy
+    filters), not over the selection: the warning said "74 of 75 selected specs" beside a plan
+    of 34, because skipped and blocked specs are inconclusive with or without a judge.
     """
 
-    if judge_target is not None or not any(route[2][1] is not None for route in routes):
+    if judge_target is not None:
         return None
-    judged = sum(
-        1
-        for spec in selected
-        if any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators)
-    )
-    if not judged:
-        return None
-    return (
-        f"warning: no --judge on a live target: {judged} of {len(selected)} selected specs use "
-        "semantic_judge and come back inconclusive wherever their deterministic evaluators do "
-        "not decide. Pass --judge <judge-target.yaml> for a decisive run."
-    )
+    live = {route[1].id for route in routes if route[2][1] is not None}
+    lines = []
+    for plan in plans:
+        if plan.target.id not in live:
+            continue
+        judged = sum(
+            1
+            for spec in plan.selected
+            if any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators)
+        )
+        if judged:
+            lines.append(
+                f"warning: no --judge on a live target: {judged} of the {len(plan.selected)} "
+                f"specs that will run on {plan.target.id} use semantic_judge and come back "
+                "inconclusive wherever their deterministic evaluators do not decide. Pass "
+                "--judge <judge-target.yaml> for a decisive run."
+            )
+    return "\n".join(lines) or None
 
 
 def _safe_endpoint(endpoint: str) -> str:
@@ -1011,6 +1021,7 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     prior_spend: Spend | None = None
     resume_from: TestRun | None = None
+    provisional: list[TargetPlan] | None = None
     if opts.resume is not None:
         # The budgets are derived from a plan, and the real plan needs the fingerprint, which
         # SENDS. A provisional plan resolved with no fingerprint derives the same ceilings (the
@@ -1110,22 +1121,66 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # Before anything is sent, the -sV probe pass included, and before the dry-run return:
     # the dry run is where an operator decides whether to add a judge. The warning used to be
     # computed after both, so 17 probes went out first and the dry run never showed it.
-    no_judge = _no_judge_warning(selected, routes, judge_target)
+    no_judge = None
+    if judge_target is None and any_live:
+        # Provisional plans (no fingerprint): which specs a target skips or blocks depends on
+        # its declared capabilities and the policy, never on the fingerprint, so the count is
+        # exact before -sV has sent anything.
+        preview = provisional or resolve_target_plans(
+            scope=scope,
+            targets=loaded_targets,
+            specs=selected,
+            runs=opts.runs,
+            rate_rps=pacing_rate,
+            fingerprints={},
+            adaptive=adaptive,
+        )
+        no_judge = _no_judge_warning(preview, routes, judge_target)
     if no_judge:
         printer.error(no_judge)
 
+    probes_sent: dict[str, int] = {}
+    # Each target's start is stamped before its probe pass, which is traffic of that run: the
+    # runner's own stamp came after it (66 s of -sV probes before the recorded start). Without
+    # -sV the runner stamps each target itself; a resume keeps its stored start.
+    starts: dict[str, str] = {}
     if opts.fingerprint_first and not sends_nothing:
         probe_store = wiring.build_evidence_store(evidence_root, planted_canaries=[])
+        probe_ceiling = (
+            opts.budget_requests - (prior_spend.requests if prior_spend is not None else 0)
+            if opts.budget_requests is not None
+            else None
+        )
         for _, target, (mock_scenario, real_target) in routes:
-            fingerprints[target.id] = wiring.fingerprint_probe(
-                scope,
-                target,
-                real_target=real_target,
-                rate_rps=pacing_rate,
-                evidence=probe_store,
-                run_id=run_ids[target.id],
-                mock_scenario=mock_scenario,
-            )
+            if opts.resume is None:
+                starts[target.id] = wiring.utc_timestamp()
+            try:
+                probe_pass = wiring.fingerprint_probe(
+                    scope,
+                    target,
+                    real_target=real_target,
+                    rate_rps=pacing_rate,
+                    evidence=probe_store,
+                    run_id=run_ids[target.id],
+                    mock_scenario=mock_scenario,
+                    max_requests=probe_ceiling,
+                )
+            except wiring.ProbeCeilingReached as exc:
+                if prior_spend is not None:
+                    # A resumed run records what this probe pass spent before refusing: it did
+                    # not, so each retry of the same command spent the ceiling again (60 allowed,
+                    # 106 sent after three tries; pre-commit audit of the leftovers).
+                    _persist_spend(
+                        run_db, run_ids[target.id], prior_spend.plus(Spend(requests=exc.requests))
+                    )
+                raise ValueError(
+                    f"the -sV probe pass on {target.id!r} reached the --budget-requests ceiling "
+                    f"({exc}) after {exc.requests} request(s), before any attack traffic: "
+                    "retries count as requests. Raise the ceiling or drop -sV. The exchanges are "
+                    f"in {evidence_root / run_ids[target.id] / 'probes'}."
+                ) from exc
+            fingerprints[target.id] = probe_pass.fingerprint
+            probes_sent[target.id] = probe_pass.requests
     if fingerprints and not opts.quiet:
         # Which targets were fingerprinted against a canned offline mock rather than over the
         # wire. The line printed `family=meta-llama (confidence 0.67) version=llama-3-8b` for a
@@ -1230,8 +1285,6 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     if opts.dry_run:
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
 
-    probes_sent = fingerprint_probe_count() if (opts.fingerprint_first and not sends_nothing) else 0
-
     # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
     # loop: `--resume` names a single target, so there is one prior spend to carry.
     results: list[CampaignResult] = []
@@ -1277,7 +1330,10 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             # as spend already made. Recording it after the fact (which is what the first fix
             # did) told the next resume what had been spent and never stopped this invocation
             # spending it: `-sV --budget-requests 20` sent 17 probes and then a further 20.
-            prior_spend=(prior_spend or Spend()).plus(Spend(requests=probes_sent)),
+            prior_spend=(prior_spend or Spend()).plus(
+                Spend(requests=probes_sent.get(target.id, 0))
+            ),
+            started_at=starts.get(target.id),
         )
         results.append(result)
         _persist_run_spend(run_db, result)
@@ -1422,6 +1478,7 @@ def _run_one_target(
     resume_from: TestRun | None = None,
     run_id: str | None = None,
     prior_spend: Spend | None = None,
+    started_at: str | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -1463,6 +1520,7 @@ def _run_one_target(
             budgets=budgets,
             resume_from=resume_from,
             prior_spend=prior_spend,
+            started_at=started_at,
         )
     )
 
@@ -1554,16 +1612,20 @@ def _persist_run_spend(run_db: Path, result: CampaignResult) -> None:
     which costs a write per request.
     """
 
+    _persist_spend(run_db, result.run.run_id, result.spend)
+
+
+def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> None:
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
         store.save_run_context(
-            result.run.run_id,
+            run_id,
             spend={
-                "tokens": result.spend.tokens,
-                "requests": result.spend.requests,
-                "attempts": result.spend.attempts,
-                "wall_s": round(result.spend.wall_s, 6),
+                "tokens": spend.tokens,
+                "requests": spend.requests,
+                "attempts": spend.attempts,
+                "wall_s": round(spend.wall_s, 6),
             },
         )
 

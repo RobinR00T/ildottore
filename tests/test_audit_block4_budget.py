@@ -330,7 +330,9 @@ def test_a_failed_send_releases_its_token_reservation() -> None:
             now=lambda: 0.0,
         )
     )
-    assert ledger.snapshot().tokens == 100
+    # 30, the usage the provider reported: since every send reserves an estimate, the unused
+    # part of the reservation is released too (leftovers of the audit, 2026-10-04).
+    assert ledger.snapshot().tokens == 30
     assert ledger.snapshot().requests == 3
 
 

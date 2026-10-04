@@ -119,9 +119,14 @@ over generated paths pins the two together: refusing to pop an empty segment let
 `/v1/chat/completions/x//../../../../admin` pass while httpx sent `/v1/admin` (review of
 PR #32). A path carrying an encoded slash or backslash (`%2f`, `%5c`), a literal backslash or a
 `%25` double encoding is refused, not rewritten: `/v1/chat/..%2f..%2fadmin` passed the prefix
-check and was `/admin` to a decoding origin (audit SEC-03). Not covered, stated rather than
-hidden: forms only some origins decode (`;` path parameters, overlong UTF-8, `%u` escapes,
-fullwidth dots). A bracketed IPv6 host splits
+check and was `/admin` to a decoding origin (audit SEC-03). The forms only some origins decode
+are refused too since 2026-10-04: `;` path parameters (literal or `%3b`), `%uXXXX` escapes,
+overlong or impossible UTF-8 (`%c0`, `%c1`, `%e0%8x`/`%e0%9x`, `%f0%8x`, lead bytes `%f5` and
+up), segments of dots and spaces only (Windows strips them to `..`), and any non-ASCII
+character, literal or percent-encoded, whose NFKC form contains `.`, `/`, `\`, `%` or `;` (a
+literal fullwidth dot passed when only encodings were listed: httpx encodes it after the
+gate). Not covered: legacy code pages (Shift_JIS, GBK, cp1252) and Windows best-fit look-alikes
+that are not NFKC-equivalent (U+2215 and similar). A bracketed IPv6 host splits
 into host and port (`[::1]:8080`), so an IPv6 entry can be pinned (SEC-13), and the scope `fleet`
 generates pins every endpoint to its port. The judge `fleet` authorizes comes from the fleet
 file's own `judge:` block, never from a `--judge` file, which could otherwise name any host and
