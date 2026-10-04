@@ -39,7 +39,7 @@ build must satisfy it.
 
 | Threat | Mitigation |
 |--------|------------|
-| Malicious target output prompt-injects the **judge** and flips verdicts | Judge hardening (`docs/04 §4`): output wrapped in data delimiters, judge told it evaluates untrusted data, self-check probes, disagreement → `inconclusive`. |
+| Malicious target output prompt-injects the **judge** and flips verdicts | Judge hardening (`docs/04 §4`): output wrapped in data delimiters, judge told it evaluates untrusted data, self-check probes, disagreement → `inconclusive`. (Status: the judge evaluator returns `inconclusive` on a disagreement between its two passes, but with no reason, and the runner drops a reasonless judge abstention: the attempt is decided by the deterministic evaluators alone, a `pass` when they all pass, and is `inconclusive` only when the judge is the spec's sole evaluator. Whether a disagreement should keep the attempt `inconclusive`, as this row says, is an open question for the owner, `docs/04 §2`. A judge that emits the tripwire, or reports an injection while saying `secure`, is `judge_compromised` and is kept.) |
 | Evidence contains real leaked secrets | Redactor + at-rest encryption + access controls; canaries preferred over real secrets. (Encryption at rest is MVP-2+ and not built, see S6.) |
 | Spec pack from a third party contains a malicious payload / SSRF carrier | Spec linter + policy pack allowlist + `test_only` enforcement + no network from spec loading (`docs/06 §5`). |
 | Operator scans out of scope | S3/S4 default-deny gate. |

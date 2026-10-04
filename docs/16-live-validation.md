@@ -130,8 +130,11 @@ between (clause A-24).
   target file, and the evidence store redacts at rest regardless.
 * **Rate.** `--rate 1` is one request per second. Providers rate-limit and so should you: the
   pacer is shared by the probes, the battery, the identity sweep and the judge.
-* **Judge.** Without `--judge`, `semantic_judge` abstains and the deterministic evaluators
-  carry alone. A live run is worth the second model.
+* **Judge.** Without `--judge`, `semantic_judge` is not registered on a live run and counts as
+  `inconclusive: capability_unavailable`, which the runner keeps: a spec that declares it (74 of
+  the 75) can still `fail` on a deterministic evaluator, but can never `pass`, and comes back
+  `inconclusive` wherever the deterministic evaluators do not find an exploit. The CLI prints a
+  warning saying so before it sends. A live run is worth the second model.
 
 ## 6. After it
 

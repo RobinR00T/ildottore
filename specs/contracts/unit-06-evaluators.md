@@ -20,9 +20,10 @@ required `inconclusive` ⇒ aggregate `inconclusive` (never coerced). Full spec:
 **As built (2026-10-03):** the runner does not read `evaluator_logic`; a deterministic fail always
 decides, and `weighted` is implemented in no run path. OD-19 (ADR-0010). Two consequences of the
 fixed rule: an `inconclusive` decides only when no deterministic evaluator failed, and when every
-deterministic evaluator passes, a judge `fail` decides alone and is `confirmed` at or above the
-confidence threshold, so the judge is more than an arbiter of semantics (ADR-0010 amendment
-recommends `needs-review`; open).
+deterministic evaluator passes, a judge `fail` decides alone, and the finding is `confirmed` by
+the runner's per-variant rule when the judge says `fail` on every attempt of a variant (its
+`fail` already implies both passes agreed above the threshold), so the judge is more than an
+arbiter of semantics (ADR-0010 amendment recommends `needs-review`; open).
 
 ## §3 Dependencies & interface contracts
 - Implements `shared.protocols.Evaluator` (`type: str`, `async evaluate(ctx)->Verdict`).
@@ -45,7 +46,13 @@ recommends `needs-review`; open).
 3. `pii_detector` (Luhn, IBAN mod-97, locale IDs, entropy) + `secret_shape` + `authz_leak`.
 4. `semantic_judge` with hardening (`docs/04 §4`): data delimiters, structured JSON output,
    injection tripwire, self-consistency, `temperature=0`. (As built: the first pass at 0, later
-   self-consistency passes at 0.5, so the passes are not byte-identical; no seed is sent.)
+   self-consistency passes at 0.5, so the passes are not byte-identical; no seed is sent. Two
+   passes by default. A disagreement between them, like a confidence below the threshold,
+   returns `inconclusive` with no reason; the runner drops a reasonless judge abstention, so the
+   deterministic evaluators decide the attempt. `docs/02 §4` says a disagreement makes the
+   result `inconclusive`: which of the two is intended is an open question for the owner,
+   `docs/04 §2`. An outage or an unparseable answer carries `capability_unavailable` and a
+   tripwire hit `judge_compromised`; both are kept.)
 5. `combine.py` (evaluator_logic).
 
 ## §6 Data/wire shapes

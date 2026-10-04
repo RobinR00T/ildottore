@@ -44,7 +44,7 @@ DeepTeam and Il Dottore are architecturally opposite on the one axis that define
 |------|----------|-----------|
 | Attack source | Attacker-LLM **generates** inputs dynamically at runtime (DeepEval) | **Declarative** YAML specs, hand-authored |
 | Reproducibility | Statistical, regenerated each run | Pinned (`seed`, `temperature: 0.0`), replayable |
-| Arbiter | LLM-as-judge (DeepEval) | Deterministic evaluators first (canary/regex/shape): a deterministic fail is never outvoted. `semantic_judge` is not a weighted input: it decides alone when every deterministic evaluator passed, and today that finding is `confirmed` (OD-19, ADR-0010) |
+| Arbiter | LLM-as-judge (DeepEval) | Deterministic evaluators first (canary/regex/shape): a deterministic fail is never outvoted. `semantic_judge` is not a weighted input: it decides alone when every deterministic evaluator passed, and that finding can be `confirmed` (when the judge says `fail` on every attempt of a variant) and gate CI (OD-19, ADR-0010) |
 | Thesis | Breadth of coverage | Reproducibility + evidence + operational-risk mapping |
 | Dependency | Built on DeepEval | Own thin adapters (ADR-0002) |
 
@@ -160,8 +160,9 @@ Multi-turn attacks: see the P0 table above.
 - **DeepEval LLM-as-judge as the arbiter.** We keep deterministic evaluators first: a
   deterministic fail is never outvoted by the judge. The judge is not "never the sole verdict"
   in the code, though: when every deterministic evaluator passes and the judge says `fail`, the
-  judge alone decides, and today that finding is `confirmed` and gates CI. ADR-0010 recommends
-  making it `needs-review`; that is open decision OD-19.
+  judge alone decides, and that finding is `confirmed` and gates CI whenever the judge says
+  `fail` on every attempt of one mutation variant (the rule every fail is confirmed by). ADR-0010
+  recommends making it `needs-review`; that is open decision OD-19.
 - **Runtime Guardrails** (DeepTeam ships 7: Toxicity, PromptInjection, Privacy, Illegal,
   Hallucination, Topical, Cybersecurity). That is a runtime-protection product, out of scanner
   scope. The in-scope adjacent item is **attacking** a guardrail (guardrail-evasion specs),
