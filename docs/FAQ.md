@@ -74,7 +74,9 @@ stored as evidence, so a multi-turn run is as reproducible as a single shot.
 
 `dottore run --fail-on high` exits `2` when a confirmed finding at or above the band is
 present, `1` for findings below it, `0` clean, `3` on error. Only exploited (`fail`)
-findings trip the gate. For regression-only gating, compare against a baseline with
+findings trip the gate, and only confirmed ones unless you pass `--include-needs-review`. A bad
+option (`--fail-on bogus`, `--timeout 0`, two formats writing one file) is refused with exit
+`3` before anything is sent. For regression-only gating, compare against a baseline with
 `dottore diff baseline.json current.json`. See [`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
 
 ### What is "confirmed" vs "needs-review"?

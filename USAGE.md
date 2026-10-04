@@ -124,7 +124,7 @@ dottore calibrate report.json labels.yaml
 | `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
-| `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.*` |
+| `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent |
 | `--fail-on <band>` | CI gate on confirmed findings (`low\|medium\|high\|critical`, default `high`) |
 | `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`); an `inconclusive` result never gates |
 | `--spec-path` | spec search path (default `specs/`) |
@@ -180,10 +180,14 @@ uses `transport: stdio` + `command` and is launched as a subprocess only if the 
 ## Reading results
 
 A finding separates **risk** from **confidence**: `RiskScore = Impact x Exploitability x
-Reproducibility`, banded critical/high/medium/low/info; confidence gates it as **confirmed**
-vs **needs-review** (a format-valid PII/secret hit without corroboration is *needs-review*,
-never a confirmed leak). Every finding carries evidence (prompt, response, tool traces, the
-aggregate verdict and its reasoning), and `dottore replay` re-derives a run from stored evidence. See
+Reproducibility`, banded critical/high/medium/low/info. Every report gives each finding one of
+four states: **confirmed** (a decisive exploit at or above the confidence threshold, what the
+gate counts), **needs review** (an unconfirmed exploit, or a spec that was sent and could not
+be decided: a format-valid PII/secret hit without corroboration is *inconclusive*, never a
+confirmed leak), **not exploited** (passed) and **not tested** (nothing sent). An unconfirmed
+exploit prints `FAIL (<band>, needs review)` on its progress line. Every finding carries
+evidence (prompt, response, tool traces, the aggregate verdict and its reasoning), and
+`dottore replay` re-derives a run from stored evidence. See
 [`docs/05-scoring-model.md`](docs/05-scoring-model.md).
 
 ## Adding a technique (no core code)

@@ -189,13 +189,19 @@ Replay hardened fixtures (clean-run smoke) on a mock target; refused on a live o
 .SS "Output and gating"
 .TP
 .B -oJ, -oH, -oS, -oX \fIPATH\fR; -oA \fIPREFIX\fR
-Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.*.
+Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.json, .html, .sarif and
+\&.xml. The prefix is extended, never cut (-oA report.v2 writes report.v2.json), and a prefix
+that already ends in one of the four extensions drops it first (-oA report.json writes
+report.json, report.html, report.sarif, report.xml). A report directory that does not exist,
+or two formats writing the same file (compared case-insensitively and after Unicode
+normalization), is refused before anything is sent.
 .TP
 .B --fail-on \fIBAND\fR
 CI gate on confirmed findings: low|medium|high|critical (default high).
 .TP
 .B --include-needs-review
-Also gate low-confidence findings.
+Also gate unconfirmed exploits (an unconfirmed fail). An inconclusive result never gates.
+An unconfirmed fail prints FAIL (<band>, needs review) on its progress line.
 .TP
 .B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR
 Evidence store root (default .dottore/evidence) and run store SQLite path.

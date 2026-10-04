@@ -52,7 +52,8 @@ noise.
 | **Verdict** | Per attempt: `pass` (secure), `fail` (exploited), or `inconclusive`. |
 | **Finding** | A scored, evidenced weakness derived from failing attempts. |
 | **Band** | The severity band of a finding: info / low / medium / high / critical. |
-| **Confidence** | Whether a finding is `confirmed` or `needs-review` (low confidence). Separate from risk. |
+| **Confidence** | How sure the evaluators are of a verdict. An exploited finding is `confirmed` when some mutation variant failed on every attempt with a mean confidence at or above the spec's `confidence_threshold`, and `needs review` otherwise. Separate from risk. |
+| **Finding state** | What every report prints per finding: `confirmed`, `needs_review`, `not_exploited` or `not_tested` (see §9). |
 | **Canary** | A planted secret/marker used to detect leakage without exposing a real secret. |
 | **Mutator** | A payload transform (encoding, obfuscation) applied to an attack to test bypasses. |
 | **Fingerprint** | A best-effort identification of the model + guardrails behind an endpoint. |
@@ -111,7 +112,11 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
   readable in every report, in both copies of a finding the JSON report carries, so a custom
   spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
-  prints go through the same redactor.
+  prints go through the same redactor. A bare 64-hex value in an error is masked, because the
+  redactor cannot tell a sha256 from a key, so a raw key pasted as an `auth_ref` never prints in
+  clear. Two kinds stay readable: an evidence file name (`<sha256>.json`), and a digest the error
+  itself carries (a scope checksum mismatch prints both the expected and the actual digest; a
+  tamper refusal prints the hash the artifact's content now has).
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
@@ -272,7 +277,7 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
-| `-oA PATH` | write all four to `<prefix>.*` |
+| `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
 | `--fail-on BAND` | CI gate: `low\|medium\|high\|critical` (default `high`) |
 | `--include-needs-review` | also gate unconfirmed exploits (a `fail` below the confidence threshold). Undecided (`inconclusive`) results never gate, with or without it |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`) |
@@ -285,10 +290,14 @@ required.
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3`
 error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` never do. A
 usage error (an unknown option, a value of the wrong type) is `3` too: the command-line library
-defaults to `2`, which here would read as "findings". Options that can only be wrong
-(`--fail-on bogus`, `--timeout 0`, `--concurrency 0`, `--top-tests 0`, `--rate 0`, a report path
-in a directory that does not exist, two target files with the same id) are refused before
-anything is sent.
+defaults to `2`, which here would read as "findings". Options that can only be wrong are
+refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
+`--top-tests 0`, `--runs 0`, `--rate 0`, a report path in a directory that does not exist (`-oA`
+expanded to its four files first), two target files with the same id, and two report formats
+that would write the same file (`two report formats would write the same file: <path>`). That
+last check compares the resolved paths case-insensitively and after Unicode normalization,
+because the macOS default volume treats `R.json` and `r.json`, or `café` composed (NFC) and
+decomposed (NFD), as one name; `-oJ out/R.json -oH out/r.json` is refused.
 
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts already in the evidence tree are not re-sent, and a resumed spec is scored
@@ -413,8 +422,18 @@ Two known limits: an attempt of a spec with no recorded finding (a campaign kill
 cannot be checked, and neither can a spec whose findings were stored before 2026-10-03 with
 masked digests (those specs are replayed without the check; the rest of the run is checked).
 Probes are hash-checked but not part of the manifest. The last line is the **pooled** rate
-over every attempt of the run; a report's reproducibility is per spec and takes the best
-variant, so the two can differ on the same run. Attack attempts and the
+over every attempt of the run, all specs and variants together; a report's reproducibility is
+per spec and takes the best variant, so the two can differ on the same run. On a run against
+the `vulnerable` mock:
+
+```
+attempts: 142  exploited: 142  pooled rate: 1.00 (every attempt of the run; a report's reproducibility is per spec, best variant)
+```
+
+The runner writes one artifact per attempt id. Should several artifacts ever share one, replay
+lists them all but counts one per id (the one that got an answer), and says so in a line
+above the totals: `(2 more artifacts share an attempt id with one listed above: one per id is
+counted below)` (`1 more artifact shares` for one). Attack attempts and the
 recognition probes sent by `-sV` are listed apart: a probe is not an attempt, so it never enters
 the reproducibility ratio or the attempt count, but it is stored, hashed and replayable like
 one, which is what lets a run answer "what did this tool send my endpoint".
@@ -755,11 +774,37 @@ Risk and confidence are **separate axes**:
   variant qualifies and the rate is pooled over every attempt (one exploit among six
   single-shot variants is 1/6, not a confirmed Critical). Confidence is deliberately **not** a
   multiplier on risk.
-- **Confidence** gates a finding as `confirmed` or `needs-review`. A format-valid secret/PII
-  hit without corroboration is `needs-review`, never a confirmed leak.
+- **Confidence** gates an exploited finding as `confirmed` or not: confirmed needs some
+  mutation variant that failed on every one of its attempts, with a mean confidence at or above
+  the spec's `confidence_threshold` (with `--runs 1` the attempts are pooled instead). A
+  format-valid secret/PII hit without corroboration is never a confirmed leak: its verdict is
+  `inconclusive` by design (`docs/11 §4`).
 
-Only exploited (`fail`) findings can trip the CI gate, and by default only `confirmed` ones;
-`--include-needs-review` extends the gate to low-confidence findings. See
+Every report puts each finding in one of four **states** (the HTML report's sections, the
+`state` property of a SARIF result, the summary's `confirmed_count` and `needs_review_count`):
+
+| State | Meaning |
+|---|---|
+| `confirmed` | a confirmed exploit (`fail`), as defined above |
+| `needs_review` | an exploit that is not confirmed, or a spec that was sent and ended `inconclusive` (the uncorroborated secret/PII hit above is one) |
+| `not_exploited` | the spec passed |
+| `not_tested` | nothing was sent for it: a capability skip, a policy block, a refused mutation parameter |
+
+"Needs review" counts only the second row: passes and never-sent specs are not padding it, so
+a clean hardened run reports 0. The reproducibility and confidence distributions in the
+summary also leave out specs with no attempts (they measured nothing); `by_status` and
+`by_band` still count them, as `inconclusive` / `info`. In the terminal, an unconfirmed fail
+says so on its progress line, because it does not trip the gate by default. A copy of
+`JB-ROLEPLAY-001` with its `confidence_threshold` raised to 1.0, run against the `vulnerable`
+mock with `--runs 2`, prints this and exits 0 (2 with `--include-needs-review`):
+
+```
+Scanning target [ 1/1 specs ] JB-ROLEPLAY-001 ... FAIL (high, needs review)
+```
+
+Only exploited (`fail`) findings can trip the CI gate, and by default only `confirmed` ones.
+`--include-needs-review` adds the unconfirmed fails; an `inconclusive` result never gates, with
+or without it, so an uncorroborated secret hit cannot fail a build. See
 [`05-scoring-model.md`](05-scoring-model.md).
 
 ## 10. Reports, evidence and reproducibility
@@ -768,7 +813,21 @@ Only exploited (`fail`) findings can trip the CI gate, and by default only `conf
   code-scanning), `-oX` JUnit (for CI test reporting), `-oA <prefix>` writes all four. In
   SARIF a result's `kind` says what was concluded: `fail` (with a level from the band), `pass`,
   `open` (ran, could not decide) or `notApplicable` (nothing sent: a capability skip or a policy
-  block); every kind other than `fail` has level `none`, as SARIF 3.27.10 requires.
+  block); every kind other than `fail` has level `none`, as SARIF 3.27.10 requires. Its `state`
+  property is the finding state of §9.
+- **HTML sections.** After the targets and the summary, the findings are listed in three
+  sections: "Confirmed findings", "Needs review: unconfirmed exploits and undecided results",
+  and "Not exploited or not tested" (passes and never-sent specs).
+- **Framework editions.** OWASP renumbers and ATLAS renames between releases, so the machine
+  formats say which edition a code belongs to. The JSON summary carries an `edition` on each
+  coverage axis (`summary.coverage.owasp.edition` is `2025`, `atlas` is `2026.09`, `iopc` is
+  `live-2026-09-19`); the SARIF run carries `framework_editions` in its `properties`; and every
+  JUnit test suite carries `edition.owasp_llm_top10`, `edition.mitre_atlas`,
+  `edition.nova_iopc` and `edition.owasp_aisvs` properties (AISVS `1.0`).
+- **Several targets in one run.** The JSON report's `run` object lists every target, and its
+  own `findings` and `summary` cover all of them, as the top-level `findings` and `summary` do.
+  Its `run_id` is the last target's; each target's run id is in its findings' evidence
+  references.
 - **Evidence store.** Every attempt persists its prompt, full response, sampling params, tool
   traces and the aggregate verdict with its reasoning (not each evaluator's, and no diff)
   under `--evidence-root` (default `.dottore/evidence`),
