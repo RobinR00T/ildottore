@@ -5,8 +5,8 @@ guide. For the long-form reference see [`docs/MANUAL.md`](docs/MANUAL.md); the d
 corpus lives in [`docs/`](docs/) and `AGENTS.md`; runnable scenarios live in
 [`examples/`](examples/).
 
-> **Authorized testing only.** `dottore` refuses any target not covered by a signed
-> `scope.yaml` (endpoint allowlist, default-deny), never performs real destructive actions
+> **Authorized testing only.** `dottore` refuses any target not covered by a `scope.yaml`
+> authorization record (endpoint allowlist, default-deny), never performs real destructive actions
 > or exfiltration (mocked tools + planted canaries), and masks secrets/PII in logs,
 > evidence and reports. See [`docs/02-threat-model.md`](docs/02-threat-model.md).
 
@@ -37,14 +37,15 @@ targets:
     identities:
       - name: default
         auth_ref: "env://MY_API_KEY"   # reference only; never the secret itself
-# Optional top-level `checksum:` (sha256 of the body) makes the scope tamper-evident.
+# Optional top-level `checksum:` (sha256 of the body): verified when present, so a scope
+# edited without updating it is refused. An integrity check, not a signature.
 ```
 
 `target.yaml`, what you are scanning:
 ```yaml
 id: my-chatbot
 type: chatbot                       # model | chatbot | agent | rag | api
-provider: openai                    # openai-compatible | anthropic | rest
+provider: openai                    # openai (any OpenAI-compatible API) | anthropic | mcp | rest
 endpoint: "https://api.example.com/v1/chat/completions"
 model: "gpt-4o"
 auth_ref: "env://MY_API_KEY"        # never inline secrets
@@ -106,17 +107,17 @@ dottore calibrate report.json labels.yaml
 | `--scope` | **Required** authorization record. Never bypassable. |
 | `-t/--target` (repeatable), positional | target file(s) |
 | `--judge` | judge model `target.yaml` (LLM-as-judge for `semantic_judge` on live scans) |
-| `--suite` | `owasp:llm` (alias of `owasp-llm-top10`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc` |
+| `--suite` | `owasp:llm` (alias of `owasp-llm-top10`, as is `baseline`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion` (alias `agentic`), `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`. `run --help` also names `mitre:atlas`: that alias, like `nist:ai`, `eu:ai-act`, `dora` and `iso:42001`, points at no registered suite and exits 3 |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) at `-T0`. Conflicts with an explicit `--suite` |
-| `--deep` | the full battery (75 specs) with adaptive planning at `-T2` |
+| `--deep` | timing `-T2` over the same battery a run with no selection flag gets: it selects no larger suite (on the example target, the same 34 specs, at 2.0 req/s instead of 5.0). By itself it tailors nothing: mutator ordering needs a fingerprint, so it only takes effect with `-sV` (or `-A`). `run --help` still calls it a "deep/agentic suite"; it is not one |
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |
 | `--spec` / `--exclude` | run/skip specific spec ids or globs (e.g. `PI-*`); repeatable |
 | `--top-tests N` | keep the N highest-signal specs |
-| `-sV` | fingerprint the model first, then order each spec's mutators by the carriers this target still understands (~24 extra probes, paced; never sent under `--dry-run`/`--estimate`/`-sn`) |
+| `-sV` | fingerprint the model first, then order each spec's mutators by the carriers this target still understands (17 extra probes per target, printed in the plan, paced; never sent under `--dry-run`/`--estimate`/`-sn`) |
 | `-sn` | discovery only: authorized endpoint + declared capabilities + what the battery would run. **Sends nothing** |
-| `-A` | aggressive: implies `-sV` + `--deep` |
+| `-A` | aggressive: implies `-sV` + `--deep` (fingerprint first, then `-T2` unless you pass `-T`) |
 | `--runs N` | reproducibility runs (default 5) |
-| `-T 0..5` | timing template (default 3); higher is faster/louder |
+| `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep`/`-A` imply 2; an explicit `-T` wins); higher is faster/louder |
 | `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
 | `--resume RUN_ID` | finish a halted run (exit 3): completed attempts are not re-sent |
 | `--dry-run` | resolve + validate, send nothing |
@@ -128,17 +129,17 @@ dottore calibrate report.json labels.yaml
 | `--include-needs-review` | also gate low-confidence findings |
 | `--spec-path` | spec search path (default `specs/`) |
 
-**Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error.
+**Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error
+(a usage error, such as an unknown option, is `3` too).
 
-`3` covers "the run did not finish" too, and it takes precedence over `2`: see
-[`docs/MANUAL.md`](docs/MANUAL.md) for why, and read `summary.status.reason` before you treat
-it as a flake.
-
-`3` also covers a run that **did not finish**: if a hard budget ceiling halts the campaign,
-the exit code is `3`, the reason is printed, and the report carries
-`summary.status.state = "budget_exhausted"` with `coverage.specs.total` (planned) above
-`coverage.specs.run` (completed). A partial scan is never reported as a clean one.
-Only an **exploited** (`fail`) finding trips the gate; `pass`/`inconclusive` never do.
+`3` also covers a run that **did not finish**, and it takes precedence over `2`. If a hard
+budget ceiling halts the campaign, the exit code is `3`, the reason is printed, and the report
+carries `summary.status.state = "budget_exhausted"` with `coverage.specs.total` (planned) above
+`coverage.specs.run` (completed); a target that was authorized but answered nothing (every
+attempt failed on transport) is `"unreachable"`. A partial scan is never reported as a clean
+one. Read `summary.status.reason` before you treat it as a flake;
+[`docs/MANUAL.md`](docs/MANUAL.md) explains why. Only an **exploited** (`fail`) finding trips
+the gate; `pass`/`inconclusive` never do.
 
 ## Multi-turn attacks
 
@@ -181,8 +182,8 @@ uses `transport: stdio` + `command` and is launched as a subprocess only if the 
 A finding separates **risk** from **confidence**: `RiskScore = Impact x Exploitability x
 Reproducibility`, banded critical/high/medium/low/info; confidence gates it as **confirmed**
 vs **needs-review** (a format-valid PII/secret hit without corroboration is *needs-review*,
-never a confirmed leak). Every finding carries evidence (prompt, response, traces, evaluator
-reasoning), and `dottore replay` re-derives a run from stored evidence. See
+never a confirmed leak). Every finding carries evidence (prompt, response, tool traces, the
+aggregate verdict and its reasoning), and `dottore replay` re-derives a run from stored evidence. See
 [`docs/05-scoring-model.md`](docs/05-scoring-model.md).
 
 ## Adding a technique (no core code)

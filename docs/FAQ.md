@@ -9,16 +9,17 @@ evidence-backed report mapped to operational risk.
 ### How is it different from a prompt-list or a jailbreak repo?
 
 The value is not the prompts. It is **reproducibility + evidence + risk mapping**. Every
-attempt persists its prompt, full response, sampling params, tool traces and evaluator
-reasoning; findings are scored `impact x exploitability x reproducibility` and re-derivable
+attempt persists its prompt, full response, sampling params, tool traces and the aggregate
+verdict with its reasoning; findings are scored `impact x exploitability x reproducibility` and re-derivable
 with `dottore replay`. A finding we cannot reproduce or evidence is treated as noise.
 
 ### Is it safe to run? Will it actually do damage?
 
 No real damage by design. Sensitive tools run as mocks or dry-run, exfiltration targets are
 mock endpoints blocked by the allowlist, and every dangerous payload is flagged
-`test_only`. It scans nothing without a signed `scope.yaml` (endpoint allowlist,
-default-deny), and plain http is allowed only to loopback. See
+`test_only`. It scans nothing without a `scope.yaml` authorization record (endpoint
+allowlist, default-deny), and plain http is allowed only to loopback. The scope's optional
+`checksum:` is an integrity check, verified when present, not a signature. See
 [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
 ### Do I need an API key?
@@ -124,13 +125,28 @@ something where you have seeded the same content into your deployment, and a too
 falsely when your tools have other names. How to close that is an open decision (OD-18,
 `docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`); decide it before a live campaign.
 
-### Why does a run refuse my target with "endpoint not allowed by scope"?
+### Why does a run refuse my target with "target(s) not authorized by the scope"?
 
-The authorization gate. The target's endpoint host/path is not in that target's `endpoints`
-allowlist in the scope, or the target id is not among the scope's `targets`. Add the entry
-deliberately; it is not meant to be bypassed. Two less obvious causes: a host pinned to a port
+The authorization gate, before anything is sent (exit 3). The bracket after the target id names
+the cause: `endpoint '<url>' not on allowlist for '<id>'` means the target's endpoint host/path
+is not in that target's `endpoints` allowlist in the scope; `target '<id>' not in scope` means
+the target id is not among the scope's `targets`. Add the entry deliberately; it is not meant to
+be bypassed. (`endpoint not allowed by scope` is the adapter's own second check, which you
+should only see if the first one was bypassed.) Two less obvious causes: a host pinned to a port
 (`localhost:11434`) refuses any other port, and a path carrying `%2f`, `%5c`, a backslash or
 `%25` is always refused, because an origin that decodes it may land outside the prefix.
+
+### Why is a spec `blocked_by_policy`, and how do I turn it on?
+
+Eight specs declare a `requires_policy` capability: the seven of the `agentic-extortion` suite
+(`offensive_simulation`) and `DL-PII-ELICIT-001` (`layer_b_pii`). The CLI always applies its own
+default policy pack, which enables no capability, and `dottore run` has no option to load a
+different pack. So today these eight cannot be enabled from the command line and never send:
+a target that lacks the capability they need skips them, and one that has it reports them
+`blocked_by_policy` with zero sends. Selected on their own (`--suite agentic-extortion`), they
+end in `error: nothing would be sent` (exit 3), whose hint to "enable the category in the policy
+pack" cannot be followed from the CLI. Whether the CLI should accept a policy pack is an open
+decision.
 
 ### Where does evidence live, and is it safe to keep?
 

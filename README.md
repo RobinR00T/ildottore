@@ -65,7 +65,7 @@ ildottore/
   src/ildottore/
     cli/                           # the `dottore` command (typer): run, fleet, fingerprint, …
     core/                          # runner + multi-turn conversation engine (the orchestrator)
-    adapters/                      # thin over-the-wire clients (openai-compatible, anthropic, rest)
+    adapters/                      # thin over-the-wire clients (openai-compatible, anthropic, rest, read-only mcp)
     evaluators/                    # verdict engine: deterministic-first + semantic_judge
     mutators/                      # payload transforms / obfuscation enhancers
     policy/                        # scope + endpoint allowlist (default-deny authorization gate)
@@ -118,6 +118,8 @@ docs/
   12-gaps-backlog.md            # prioritized coverage roadmap
   13-agentic-abuse-extortion.md # agentic-ransomware (JadePuffer-class) susceptibility
   14-deepteam-gap-analysis.md   # coverage map vs the DeepTeam taxonomy
+  15-nova-iopc-gap-analysis.md  # coverage map vs the Nova IoPC taxonomy
+  16-live-validation.md         # live-run runbook: what is verified, what it costs
   RESPONSIBLE-USE.md            # authorization + safe-by-design charter
   REFERENCES.md                 # sources (OWASP, garak, PyRIT, promptfoo, vendors)
   adr/                          # architecture decision records
@@ -127,10 +129,12 @@ docs/
 
 - **Safe-by-design**: no real destructive actions, no real exfiltration; sensitive tools run
   as mocks/dry-run; every dangerous payload is flagged `test_only: true`.
-- **Authorization-gated**: no target is scanned without an in-scope entry in a signed
-  `scope` file + endpoint allowlist (default-deny; plain http only to loopback).
-- **Evidence-first**: prompt, full response, sampling params, tool traces, evaluator
-  reasoning and diffs are persisted for every attempt, with secrets redacted at rest.
+- **Authorization-gated**: no target is scanned without an in-scope entry in a `scope`
+  authorization record + endpoint allowlist (default-deny; plain http only to loopback). The
+  scope may carry an optional SHA-256 `checksum:`, verified when present: an integrity check,
+  not a signature.
+- **Evidence-first**: prompt, full response, sampling params, tool traces and the aggregate
+  verdict with its reasoning are persisted for every attempt, with secrets redacted at rest.
 - **Deterministic where possible, statistical where not**: LLMs are non-deterministic;
   reproducibility is measured over N runs with pinned sampling params, not assumed.
 

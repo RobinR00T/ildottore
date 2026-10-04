@@ -25,7 +25,7 @@ Two console scripts are installed: `dottore` and its short alias `dott`.
 
 ```bash
 .venv/bin/dottore --help
-.venv/bin/dottore registry ls          # 47 specs, fully offline
+.venv/bin/dottore registry ls          # 75 specs, fully offline
 .venv/bin/dottore lint specs/          # schema + policy + fixtures-prove-detection
 make test                              # the full test suite (or: make gates)
 ```
@@ -67,9 +67,13 @@ cover the host, or the run refuses to send (default-deny).
 
 ## Troubleshooting
 
-- **`endpoint not allowed by scope`**, the target's `endpoint` host/path is not in that
-  target's `endpoints` in the scope, or the target id is not among the scope's `targets`.
-  This is the authorization gate doing its job; add the entry deliberately.
+- **`target(s) not authorized by the scope`** (exit 3, before anything is sent), with the
+  cause in brackets: `endpoint '<url>' not on allowlist for '<id>'` when the target's
+  `endpoint` host/path is not in that target's `endpoints` in the scope, or
+  `target '<id>' not in scope` when the target id is not among the scope's `targets`. This is
+  the authorization gate doing its job; add the entry deliberately. (`endpoint not allowed by
+  scope` is the adapter's own second check, which you should only meet if the first one was
+  bypassed.)
 - **Live findings all come back inconclusive**, the `semantic_judge` evaluator abstains
   without a judge. Pass `--judge <judge-target.yaml>`. Deterministic evaluators still fire
   without it.

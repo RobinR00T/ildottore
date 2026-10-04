@@ -15,8 +15,9 @@ MITRE ATLAS, NIST AI 600-1. **Thesis:** value = reproducibility + evidence + ris
 not "many jailbreak prompts". License **MIT**. See `README.md` and `docs/`.
 
 > **Current state → `docs/PROGRESS.md`** (living ledger; read it first for where the build is,
-> open decisions, and the operator to-do). As of 2026-07-07: Specify stage in progress, no
-> `src/` code yet, `gh` re-auth pending before any push.
+> open decisions, and the operator to-do). The engine and the `dottore` CLI live in
+> `src/ildottore/`; tag `v0.1.0` exists and `main` has moved past it (`git log v0.1.0..main`).
+> This file keeps no dated build snapshot: trust the ledger, not a sentence here.
 
 ## 1. How we build here: specs-driven, not vibecoding
 
@@ -135,10 +136,13 @@ Full method: `docs/00-ai-build-playbook.md`.
 - **Python 3.11+** (dev env is 3.14). `src/` layout, single distribution `ildottore`,
   CLI entry `dottore` (ADR-0004). Pydantic v2 · Typer · httpx · Jinja2 · PyYAML · jsonschema.
 - **Package boundaries (enforced by import-linter):** `shared` ← everyone; `core` depends on
-  *interfaces* only; adapters don't import evaluators; composition happens in `cli`/`api`.
+  *interfaces* only; adapters don't import evaluators; composition happens in `cli` (there is
+  no `api` package).
   See `docs/01 §2-§3`.
 - **Commands:**
-  - Install: `uv sync` (or `pip install -e ".[dev]"`)
+  - Install: `python3 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"` (the
+    supported path). There is no `uv.lock`, so `uv sync` resolves fresh instead of
+    reproducing a locked set.
   - **The whole wall (do this before claiming green): `make gates`** (mirrors CI exactly)
     (ruff lint, ruff format check, mypy strict, import-linter, spec lint, tests, coverage ≥85%,
     self-scan, bandit, pip-audit). `make fix` autofixes format+lint. Do not hand-run a subset.
