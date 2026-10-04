@@ -100,13 +100,19 @@ class Reporter(Protocol):
 
 ## 4. Execution flow (one attack spec against one target)
 
+0. **Capability filter** (at plan time, before anything else): a spec whose `requires` names a
+   capability the target file does not declare is skipped and recorded as `inconclusive:
+   capability_unavailable`. It never reaches the policy check, so a spec that is both
+   capability-gated and policy-gated reports the capability skip on a target without that
+   capability.
 1. **Policy check**: target in scope? endpoint on allowlist? spec allowed by policy pack?
    Any dangerous payload marked `test_only`? Else → abort attempt, record `blocked_by_policy`.
 2. **Setup**: the design is to materialize spec `setup` (e.g. index test documents for RAG)
-   via the adapter's capabilities. **Not implemented:** today the request carries the prompt,
-   the system prompt, the sampling and the media only, so a spec's documents, mock tools and
-   memory seed never reach a live target (32 of 75 specs depend on them). How to close that is
-   OD-18 (ADR-0009). If capability missing → `inconclusive: capability_unavailable`.
+   via the adapter's capabilities. **Not implemented:** today the request carries the prompt
+   (or, for a multi-turn spec, the pinned turns as messages), the system prompt, the sampling,
+   the media and, for the multi-identity sweep, the identity, so a spec's documents, mock tools
+   and memory seed never reach a live target (32 of 75 specs depend on them). How to close that
+   is OD-18 (ADR-0009).
 3. **Mutate**: Prompt Mutator expands the base attack into declared variants (language,
    encoding, roleplay, nesting, obfuscation, indirect-injection carriers). Each variant is a
    deterministic transform seeded by `(spec.id, variant.name)`.

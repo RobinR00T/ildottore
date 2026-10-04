@@ -32,9 +32,13 @@ Primary category: **`agent_tool_abuse`** (LLM06 Excessive Agency); secondary
 A pluggable pack (`docs/06`), **policy-gated OFF by default** like the layer-B data-leak specs
 (`docs/11 §5`): enabled only when the engagement policy pack authorizes offensive-simulation.
 All seven specs declare `requires_policy: [offensive_simulation]`. The CLI loads no policy pack
-(`run` builds a permissive one that never enables a capability), so from `dottore` the seven are
-always `blocked_by_policy`; they can run only through the library API with a pack that enables
-the capability. Whether to add a CLI flag for a pack is an open decision.
+(`run` builds a permissive one that never enables a capability), so from `dottore` none of the
+seven ever sends; they can run only through the library API with a pack that enables the
+capability. Whether to add a CLI flag for a pack is an open decision. The capability filter runs
+before the policy gate, so the finding each one gets depends on the target: the six that declare
+`requires: [tools]` are skipped as `inconclusive: capability_unavailable` on a target without
+`tools` and are `blocked_by_policy` only on a target that declares it;
+`JB-OFFENSIVE-RANSOM-CODEGEN-001` requires nothing and is `blocked_by_policy` everywhere.
 
 | id | Tests |
 |----|-------|

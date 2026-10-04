@@ -81,7 +81,7 @@ target, and each is waiting on a decision recorded in `specs/contracts/00-INDEX.
 |---|---|
 | **OD-18** (ADR-0009): a spec's `setup` never reaches a live target | The request carries prompt, system prompt, sampling and media only. 32 of the 75 specs depend on `setup.documents`, `setup.tools` or `setup.memory_seed`; against a live endpoint they run without the documents, tools or memory they were written for. Only the evaluators, the lint fixture engine and the linter read those fields |
 | **OD-19** (ADR-0010): `evaluator_logic` is declared by all 75 specs (42 `any_fail`, 33 `weighted`) and read by no run path | The runner's fixed rule decides. One consequence: a fail decided by the judge alone, when every deterministic evaluator passed, is `confirmed` and trips `--fail-on`. The ADR recommends making it `needs-review`; not decided |
-| **Policy-pack flag** | The CLI loads no policy pack, so the 8 specs that declare `requires_policy` (the agentic-extortion core and the PII elicitation spec) are always `blocked_by_policy` from `dottore` |
+| **Policy-pack flag** | The CLI loads no policy pack, so the 8 specs that declare `requires_policy` (the seven agentic-extortion specs and the PII elicitation spec) never send from `dottore`. The capability filter runs first: the six of them that require `tools` are skipped as `inconclusive: capability_unavailable` on a target that does not declare it, and reach the policy gate (`blocked_by_policy`) only on one that does. `JB-OFFENSIVE-RANSOM-CODEGEN-001` and `DL-PII-ELICIT-001` require nothing and are `blocked_by_policy` on every target |
 
 ## Standing note
 

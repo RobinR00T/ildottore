@@ -50,6 +50,11 @@ concretes:
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: policy gate is **first** and mandatory (`docs/01 §4.1`); refuse-fail-closed →
   `blocked_by_policy`. Missing capability ⇒ `inconclusive: capability_unavailable`, never a pass.
+  (As built the capability filter comes first: `build_plan` skips a spec whose `requires` the
+  target does not declare, and only the selected specs reach `PolicyEngine.check` in
+  `_run_spec`; the CLI preview in `resolve_target_plans` uses the same order. Nothing is sent
+  either way, but a spec that is both capability-gated and policy-gated reports
+  `capability_unavailable`, not `blocked_by_policy`, on a target without the capability.)
 - KEEP: pin sampling (temperature/top_p/seed-if-supported) per attempt; record request/response
   ids + full sampling config; seed variants by `(spec.id, variant.name)` (`docs/01 §3-§5`).
 - KEEP: **env vs product failure** (`AGENTS.md §2`): rate-limit/timeout/5xx ⇒ retry w/ backoff
@@ -77,6 +82,9 @@ concretes:
 5. `reproduce.py`: run one (spec,variant) N times, aggregate `repro` + per-attempt raw.
 6. `runner.py`: the loop: policy-gate → setup → mutate → reproduce → evaluate/combine → score
    → persist; checkpoint/resume by `run_id`; bounded-concurrency scheduler + circuit-breaker.
+   (As built: plan-time capability filter → policy gate → mutation checks (an unregistered
+   mutator or a parameter the mutator does not accept sends nothing for that spec) → mutate →
+   reproduce → evaluate/combine → score → persist. Setup is not materialized, OD-18.)
 
 ## §6 Data/wire shapes
 `TestPlan = {plan_ref: str, target_id: str, adaptive: bool, fingerprint_ref: str|None,

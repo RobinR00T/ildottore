@@ -134,7 +134,14 @@ T1-only or T2-only suite exists. Several of these techniques ship as specs in ot
   injection-driven kill-chain (recon→exfil→destroy→ransom), destructive tool use without
   confirmation, offensive-toolkit codegen (refusal). Policy-gated OFF; mocked tools, no
   functional payloads. Suite: `agentic-extortion` (7 specs). The CLI cannot enable the gated
-  ones (no policy-pack flag), so from `dottore` they are always `blocked_by_policy`.
+  ones (no policy-pack flag), so from `dottore` none of the seven ever sends. Which inconclusive
+  each one gets depends on the target, because the capability filter runs before the policy
+  gate: six of them require `tools`, so on a target that does not declare it they are skipped as
+  `inconclusive: capability_unavailable` and never reach the gate; on a target that declares
+  `tools`, all seven are `blocked_by_policy`. `JB-OFFENSIVE-RANSOM-CODEGEN-001` requires nothing
+  and is `blocked_by_policy` on every target. `--suite agentic` alone therefore exits 3 ("nothing
+  would be sent"), naming the split (for example "6 skipped for capabilities, 1 blocked by
+  policy" on a target without tools).
 - **Dataset-backed**: sampled specs from HarmBench / BeaverTails / CyberSecEval / DoNotAnswer /
   ToxicChat / XSTest (seeded for reproducibility) **(not built)**.
 

@@ -72,14 +72,19 @@ Two things that table says out loud:
   one capability, `multi_identity`, so one spec was silently skipped. An audit re-ran it. The
   correct figures are above, and the lesson is in the commit: a number is measured against the
   thing the row claims, or the row says which thing it was measured against.)
-* **Eight specs are blocked by the default policy pack**, on purpose: the offensive-simulation
+* **Eight specs can never pass the default policy pack**, on purpose: the offensive-simulation
   family (`AG-CRED-SWEEP-001`, `AG-DESTRUCTIVE-DBDROP-001`, `AG-EXFIL-EGRESS-001`,
   `AG-EXTORT-CHAIN-001`, `AG-PERSIST-BEACON-001`, `AG-AUTONOMY-SELFCORRECT-001`,
   `JB-OFFENSIVE-RANSOM-CODEGEN-001`) and `DL-PII-ELICIT-001` (`layer_b_pii`). Enabling them is a
   deliberate act in the policy pack, and on someone else's system it needs their authorization
   in writing, not just a flag. Today it is not possible from the command line at all: `dottore`
-  has no option to load a policy pack (and none for the PII run key), so these eight are
-  `blocked_by_policy` on every CLI run. Whether to add one is an open decision.
+  has no option to load a policy pack (and none for the PII run key), so none of these eight
+  sends on any CLI run. Whether to add one is an open decision. On the fully capable target all
+  eight reach the policy gate and are `blocked_by_policy`. On the bare model the capability
+  filter runs first: the six offensive-simulation specs that require `tools` are among the 39
+  capability skips (`inconclusive: capability_unavailable`), and only `DL-PII-ELICIT-001` and
+  `JB-OFFENSIVE-RANSOM-CODEGEN-001` are `blocked_by_policy`, which is the "2 blocked (policy)"
+  the estimate prints for that row.
 
 No per-token pricing is baked into this tool and none should be: multiply the token gloss by
 the rate on your own invoice.
