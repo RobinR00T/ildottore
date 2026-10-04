@@ -195,9 +195,11 @@ JSON + HTML report, full self-validation green. MVP‑2/3 per `docs/12-gaps-back
 ## 9. Definition of Done (per unit / PR)
 
 - [ ] Matches contract; deviations captured as ADRs; §9 open decisions logged.
-- [ ] Unit + property + golden tests pass; coverage ≥ 85% core; import-boundary green.
+- [ ] Unit + property + golden tests pass; coverage ≥ 85% (CI measures the aggregate over
+  `src/ildottore`); import-boundary green.
 - [ ] Attack specs ship golden fixtures incl. hallucinated-but-valid negatives (`docs/11 §4`).
-- [ ] Self-scan (SARIF) has no new high/critical in our own code.
+- [ ] Self-scan (SARIF) has no high/critical finding in our own code (it has no baseline: any
+  judge flip fails it).
 - [ ] Docs + `CHANGELOG.md` + `docs/PROGRESS.md` updated.
 
 ## 10. Provenance & references

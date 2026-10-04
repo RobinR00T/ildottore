@@ -63,7 +63,9 @@ to each unit's contract (evaluators own their P/R tests, mutator owns property t
 - No new persisted domain models; consumes `TestRun`/`Finding` shapes only through reporters.
 
 ## §7 Acceptance criteria (machine-checkable, exact commands + gates)
-- `pytest -q` green; **core coverage ≥ 85%** (`docs/07 §3`): `pytest --cov=src/ildottore
+- `pytest -q` green; **core coverage ≥ 85%** (`docs/07 §3`; as built the command below gates
+  the aggregate over `src/ildottore`, and the per-package gate OD-13 decided is not built):
+  `pytest --cov=src/ildottore
   --cov-report=term-missing --cov-fail-under=85`.
 - `lint-imports` green (exit 0) against `.importlinter`; `tests/test_import_contract.py` passes.
 - `ruff check . && ruff format --check . && mypy src` clean.
@@ -76,7 +78,9 @@ to each unit's contract (evaluators own their P/R tests, mutator owns property t
 - Reporting: SARIF validates vs 2.1.0, JUnit valid, secrets masked (layer 11).
 - E2E: `dottore run --suite … --target mock --fail-on high` exits with the correct code +
   writes expected artifacts (layer 12).
-- Self-scan (layer 17): **no new high/critical** in our own LLM-using code, or CI fails.
+- Self-scan (layer 17): **no new high/critical** in our own LLM-using code, or CI fails. (As
+  built there is no baseline: `tests/selfscan/run.py` records every judge flip as a critical
+  finding and exits 1 on any high or critical finding.)
 - CI job order matches `docs/07 §5` (1→12) and fails closed; no-live-socket guard active.
 
 **A-21 A test asserts the claim, against the real collaborator (added 2026-09-22).** Eight
