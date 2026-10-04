@@ -454,8 +454,9 @@ def test_a_campaign_killed_mid_flight_can_still_be_resumed(tmp_path: Path) -> No
     resume was refused outright because the target it belonged to could not be verified. The
     integrity half is known before the first request, so it is written first now.
 
-    The spend of the dead half is still lost, and that is the stated trade: the alternative is
-    a database write per request.
+    The spend of the dead half is recorded too since 2026-10-04: the runner hands it to the
+    store however the campaign stops (it was lost, as a stated trade), and SIGTERM and SIGHUP
+    are turned into Ctrl-C. A SIGKILL, which runs no code at all, still loses it.
     """
 
     from ildottore.core.runner import CampaignRunner
@@ -487,7 +488,8 @@ def test_a_campaign_killed_mid_flight_can_still_be_resumed(tmp_path: Path) -> No
             "the integrity record must exist before the campaign returns, or a crashed run is "
             "unresumable by construction"
         )
-        assert store.get_run_spend(run_id) is None, "the dead half's spend is lost, as stated"
+        spend = store.get_run_spend(run_id)
+        assert spend is not None and spend["requests"] > 0, "the dead half's spend is recorded"
 
     outcome = execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
     assert outcome.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}

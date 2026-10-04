@@ -767,3 +767,454 @@ def test_a_resume_with_sv_keeps_the_start_of_the_run_it_finishes(
     opts.budget_requests = None
     outcome = execute_run(opts, specs)
     assert outcome.results[0].run.started_at == halted.started_at
+
+
+# --- hygiene block: spend recorded however a campaign stops ---------------------------------
+
+
+def test_a_campaign_interrupted_while_sending_records_its_spend(tmp_path: Path) -> None:
+    """Ctrl-C during a send left the spend unrecorded, so a resume's ceiling under-counted it."""
+
+    recorded: list[object] = []
+
+    class Interrupting(_Billed):
+        async def send(self, request: ModelRequest) -> ModelResponse:
+            self.sends += 1
+            if self.sends == 3:
+                raise KeyboardInterrupt
+            return ModelResponse(text="I cannot help with that.", usage={"total_tokens": 10})
+
+    runner = CampaignRunner(
+        policy=AllowAllPolicy(),
+        mutators=build_mutators(discover=False),
+        evaluators=build_evaluators(discover=False),
+        scorer=DefaultRiskScorer(),
+        evidence_store=FsEvidenceStore(tmp_path / "ev"),
+        run_store=SqliteRunStore(tmp_path / "runs.sqlite"),
+        adapter_factory=lambda _t, _s: Interrupting(tokens=10),  # type: ignore[arg-type,return-value]
+        n=5,
+        concurrency=1,
+        sleep=no_sleep,
+        now=lambda: 0.0,
+        spend_sink=recorded.append,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(runner.run(run_id="r1", target=make_target(), specs=[make_spec()]))
+    assert len(recorded) == 1
+    assert recorded[0].requests == 3  # type: ignore[attr-defined]
+
+
+def test_the_cli_closes_the_run_store_it_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ildottore.cli import wiring
+    from ildottore.cli.run import execute_run
+    from tests.cli.conftest import make_spec as cli_spec
+    from tests.cli.conftest import write_scope, write_spec_tree, write_target
+    from tests.cli.test_resume_cmd import _opts
+
+    closed: list[bool] = []
+    original = wiring.BuiltRunner.close
+
+    def spy(self: wiring.BuiltRunner) -> None:
+        closed.append(True)
+        original(self)
+
+    stores: list[object] = []
+
+    def spy_store(self: wiring.BuiltRunner) -> None:
+        stores.append(self.run_store)
+        spy(self)
+
+    monkeypatch.setattr(wiring.BuiltRunner, "close", spy_store)
+    target = write_target(tmp_path, mock_scenario="vulnerable")
+    specs = [write_spec_tree(tmp_path, [cli_spec("PI-DIRECT-001")])]
+    execute_run(_opts(tmp_path, target, write_scope(tmp_path), runs=1), specs)
+    assert closed == [True]
+    store = stores[0]
+    assert store is not None, "the runner's store is handed to BuiltRunner"
+    with pytest.raises(sqlite3.ProgrammingError):
+        store._conn.execute("SELECT 1")  # type: ignore[attr-defined]  # closed
+
+
+# --- hygiene block: CLI errors keep the operator's own paths readable -------------------------
+
+
+def test_a_cli_error_keeps_an_existing_path_readable(tmp_path: Path) -> None:
+    """A temp or CI workspace path read `«REDACTED:high_entropy»` in the report-path errors."""
+
+    import hashlib
+
+    from ildottore.cli.app import _masked
+
+    workspace = tmp_path / "x9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0"
+    workspace.mkdir()
+    shown = _masked(ValueError(f"cannot write the report {workspace}/out/r.json"))
+    assert str(workspace) in shown
+    key = hashlib.sha256(b"a key in a path").hexdigest()
+    shown = _masked(ValueError(f"cannot write {workspace}/{key}/r.json"))
+    assert str(workspace) in shown and key not in shown, "only what exists is kept"
+    url_pw = hashlib.sha256(b"a url password").hexdigest()
+    shown = _masked(ValueError(f"bad endpoint http://bob:{url_pw}@127.0.0.1{workspace}"))
+    assert url_pw not in shown
+    for url in (f"http://127.0.0.1{workspace}/v1", f"http://[::1]{workspace}/v1"):
+        assert str(workspace) not in _masked(ValueError(f"bad endpoint {url}")), (
+            "a URL's path is not a filesystem path"
+        )
+
+
+def test_a_kept_path_still_goes_through_every_rule_but_entropy(tmp_path: Path) -> None:
+    """Keeping a path raw skipped the email and key-shape rules too."""
+
+    from ildottore.cli.app import _masked
+
+    mail = tmp_path / "GoogleDrive-john.doe@example.com"
+    mail.mkdir()
+    shown = _masked(ValueError(f"cannot write {mail}/r.json"))
+    assert "john.doe@example.com" not in shown and str(tmp_path) in shown
+
+
+def test_the_not_exercised_line_names_network_failures_too() -> None:
+    """It said "produced no request" for a spec whose every send failed on the network."""
+
+    from ildottore.cli.render import coverage_lines
+    from ildottore.shared.models import Attempt
+    from tests.reporting.conftest import make_finding
+
+    spec = make_spec("JB-REFUSAL-001")
+    failed = Attempt(
+        attempt_id="a1", spec_id=spec.id, request=ModelRequest(prompt="x"), error="ConnectError"
+    )
+    finding = make_finding(spec.id).model_copy(update={"attempts": [failed]})
+    text = " ".join(coverage_lines([finding], {spec.id: spec}))
+    assert "got no reply that could be scored" in text
+    assert "every send ended in an environment error" in text
+
+
+def test_the_dry_run_names_a_filtered_selection_and_counts_per_target(tmp_path: Path) -> None:
+    """It said "full battery" for `--spec PI-*` and summed the selection across targets."""
+
+    from typer.testing import CliRunner
+
+    from ildottore.cli.app import app
+
+    entries = "".join(
+        f'  - id: {t}\n    base_url: "mock://{t}"\n    endpoints:\n      - host: "{t}"\n'
+        '        path_prefixes: ["/"]\n    identities:\n      - name: default\n'
+        '        auth_ref: "env://NONE"\n'
+        for t in ("ta", "tb")
+    )
+    (tmp_path / "scope.yaml").write_text('version: "1.0"\ntargets:\n' + entries)
+    args = ["run", "--scope", str(tmp_path / "scope.yaml"), "--dry-run", "--no-color"]
+    for t, tools in (("ta", "false"), ("tb", "true")):
+        (tmp_path / f"{t}.yaml").write_text(
+            f"id: {t}\ntype: chatbot\nmock_scenario: vulnerable\ncapabilities:\n  tools: {tools}\n"
+        )
+        args += ["-t", str(tmp_path / f"{t}.yaml")]
+    full = " ".join(CliRunner().invoke(app, args).output.split())
+    assert "battery: full battery," in full and "specs selected per target" in full
+    counts = full.split("battery: full battery, ")[1].split(" specs selected")[0]
+    assert len(set(counts.split(", "))) == 2, "two targets with different capabilities"
+    filtered = " ".join(CliRunner().invoke(app, [*args, "--spec", "PI-DIRECT-001"]).output.split())
+    assert "battery: filtered selection, 1, 1 specs selected per target" in filtered
+    by_category = " ".join(CliRunner().invoke(app, [*args, "-p", "pi"]).output.split())
+    assert "battery: filtered selection," in by_category
+
+
+def test_a_failure_to_record_the_spend_is_a_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ildottore.cli.run import _record_spend_quietly
+    from ildottore.core.budgets import Spend
+
+    blocked = tmp_path / "file"
+    blocked.write_text("not a directory")
+    _record_spend_quietly(blocked / "runs.sqlite", "run-x", Spend(requests=3))
+    assert "could not be recorded" in capsys.readouterr().err
+
+
+def test_the_fail_on_error_lists_info() -> None:
+    from ildottore.cli.exit_codes import fail_on_band
+
+    with pytest.raises(ValueError, match="expected one of: info, low"):
+        fail_on_band("bogus")
+
+
+# --- second audit of the hygiene block -------------------------------------------------------
+
+
+@pytest.mark.skipif(not hasattr(__import__("signal"), "SIGHUP"), reason="POSIX signals")
+def test_sigterm_and_sighup_become_an_interrupt_and_are_restored() -> None:
+    import signal
+
+    from ildottore.cli.run import _termination_as_interrupt
+
+    def custom(_signum: int, _frame: object) -> None:
+        return None
+
+    before_term = signal.signal(signal.SIGTERM, custom)
+    before_hup = signal.signal(signal.SIGHUP, custom)
+    try:
+        with _termination_as_interrupt():
+            assert signal.getsignal(signal.SIGTERM) is signal.default_int_handler
+            assert signal.getsignal(signal.SIGHUP) is signal.default_int_handler
+        assert signal.getsignal(signal.SIGTERM) is custom
+        assert signal.getsignal(signal.SIGHUP) is custom
+    finally:
+        signal.signal(signal.SIGTERM, before_term)
+        signal.signal(signal.SIGHUP, before_hup)
+
+
+@pytest.mark.skipif(not hasattr(__import__("signal"), "SIGHUP"), reason="POSIX signals")
+def test_an_ignored_hangup_stays_ignored() -> None:
+    """`nohup dottore run` aborted on logout once SIGHUP was mapped regardless."""
+
+    import signal
+
+    from ildottore.cli.run import _termination_as_interrupt
+
+    before = signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    try:
+        with _termination_as_interrupt():
+            assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
+    finally:
+        signal.signal(signal.SIGHUP, before)
+
+
+def test_an_interrupted_campaign_whose_spend_cannot_be_written_still_raises_the_interrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A locked database replaced a Ctrl-C with an OperationalError traceback."""
+
+    from ildottore.cli import run as run_mod
+    from tests.cli.conftest import make_spec as cli_spec
+    from tests.cli.conftest import write_scope, write_spec_tree, write_target
+    from tests.cli.test_resume_cmd import _opts
+
+    def locked(*_a: object, **_k: object) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    async def interrupted(self: object, **_k: object) -> object:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_mod, "_persist_spend", locked)
+    monkeypatch.setattr(CampaignRunner, "_run_selected", interrupted)
+    target = write_target(tmp_path, mock_scenario="vulnerable")
+    specs = [write_spec_tree(tmp_path, [cli_spec("PI-DIRECT-001")])]
+    with pytest.raises(KeyboardInterrupt):
+        run_mod.execute_run(_opts(tmp_path, target, write_scope(tmp_path), runs=1), specs)
+    assert "could not be recorded" in capsys.readouterr().err
+
+
+def test_a_path_longer_than_path_max_is_not_walked(tmp_path: Path) -> None:
+    from ildottore.cli.app import _existing_prefixes
+
+    token = str(tmp_path) + "/x" * 2100
+    assert len(token) > 4096
+    assert _existing_prefixes(f"cannot write {token}") == []
+    assert _existing_prefixes(f"cannot write {tmp_path}/x") == [str(tmp_path)]
+
+
+def test_an_interrupted_report_write_leaves_no_truncated_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ildottore.cli import run as run_mod
+    from tests.cli.conftest import make_spec as cli_spec
+    from tests.cli.conftest import write_scope, write_spec_tree, write_target
+    from tests.cli.test_resume_cmd import _opts
+
+    real_replace = run_mod.os.replace
+
+    def fail(source: object, target: object) -> None:
+        if str(source).endswith(".partial"):  # only the report write, not the evidence store
+            raise OSError("interrupted")
+        real_replace(source, target)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(run_mod.os, "replace", fail)
+    target = write_target(tmp_path, mock_scenario="vulnerable")
+    specs = [write_spec_tree(tmp_path, [cli_spec("PI-DIRECT-001")])]
+    opts = _opts(tmp_path, target, write_scope(tmp_path), runs=1)
+    opts.outputs = {"json": tmp_path / "r.json"}
+    with pytest.raises(OSError, match="interrupted"):
+        run_mod.execute_run(opts, specs)
+    assert not (tmp_path / "r.json").exists(), "never a half-written report under its name"
+    assert not list(tmp_path.glob(".*.partial")), "the partial file is removed on failure"
+
+
+def test_the_atomic_report_write_keeps_links_and_modes_and_falls_back(tmp_path: Path) -> None:
+    import os
+    import stat
+
+    from ildottore.cli.run import _write_atomically
+
+    real = tmp_path / "real.json"
+    real.write_text("old")
+    os.chmod(real, 0o600)
+    link = tmp_path / "link.json"
+    link.symlink_to(real)
+    _write_atomically(link, b"new")
+    assert link.is_symlink() and real.read_bytes() == b"new", "written through the link"
+    assert stat.S_IMODE(real.stat().st_mode) == 0o600, "the permission bits are kept"
+
+    locked = tmp_path / "ro"
+    locked.mkdir()
+    report = locked / "r.json"
+    report.write_text("old")
+    os.chmod(locked, 0o500)
+    try:
+        _write_atomically(report, b"new")
+    finally:
+        os.chmod(locked, 0o700)
+    assert report.read_bytes() == b"new", "a read-only directory falls back to a direct write"
+
+
+def test_the_spend_warning_is_redacted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import hashlib
+
+    from ildottore.cli import run as run_mod
+    from ildottore.core.budgets import Spend
+
+    secret = hashlib.sha256(b"a key in an error").hexdigest()
+
+    def leaky(*_a: object, **_k: object) -> None:
+        raise sqlite3.OperationalError(f"token={secret}")
+
+    monkeypatch.setattr(run_mod, "_persist_spend", leaky)
+    run_mod._record_spend_quietly(tmp_path / "runs.sqlite", "run-x", Spend(requests=1))
+    err = capsys.readouterr().err
+    assert "could not be recorded" in err and secret not in err
+
+
+def test_every_surface_names_both_reasons_a_spec_was_not_exercised() -> None:
+    from ildottore.cli.render import coverage_lines
+    from ildottore.shared.enums import ReportFormat
+    from ildottore.shared.models import Attempt
+    from tests.reporting.conftest import make_finding, make_run
+
+    spec = make_spec("JB-REFUSAL-001")
+    failed = Attempt(
+        attempt_id="a1", spec_id=spec.id, request=ModelRequest(prompt="x"), error="ResponseTooLarge"
+    )
+    finding = make_finding(spec.id).model_copy(update={"attempts": [failed]})
+    terminal = " ".join(coverage_lines([finding], {spec.id: spec}))
+    assert "a reply over the size cap" in terminal and "could not be decoded" in terminal
+    from ildottore.cli import wiring
+
+    reporter = wiring.build_reporter(ReportFormat.HTML, specs={spec.id: spec})
+    html = reporter.render(make_run(findings=[finding]), [finding])
+    text = " ".join(html.decode().split())
+    assert "got no reply that could be scored" in text
+    assert "every send ended in an environment error" in text
+
+
+def test_a_failed_partial_write_leaves_the_previous_report_and_no_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from ildottore.cli import run as run_mod
+
+    report = tmp_path / "r.json"
+    report.write_bytes(b"PREVIOUS")
+    real_fdopen = os.fdopen
+
+    class Half:
+        def __init__(self, handle: object) -> None:
+            self.handle = handle
+
+        def __enter__(self) -> Half:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            self.handle.close()  # type: ignore[attr-defined]
+
+        def write(self, data: bytes) -> None:
+            self.handle.write(data[: len(data) // 2])  # type: ignore[attr-defined]
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_mod.os, "fdopen", lambda fd, mode: Half(real_fdopen(fd, mode)))
+    with pytest.raises(KeyboardInterrupt):
+        run_mod._write_atomically(report, b"NEW REPORT CONTENT")
+    assert report.read_bytes() == b"PREVIOUS"
+    assert not list(tmp_path.glob(".*.partial"))
+
+
+def test_a_planted_symlink_at_the_partial_name_is_not_followed(tmp_path: Path) -> None:
+    from ildottore.cli.run import _write_atomically
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("untouched")
+    (tmp_path / ".r.json.partial").symlink_to(victim)
+    _write_atomically(tmp_path / "r.json", b"REPORT")
+    assert victim.read_text() == "untouched"
+    assert (tmp_path / "r.json").read_bytes() == b"REPORT"
+    assert not (tmp_path / "r.json").is_symlink()
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "mkfifo"), reason="POSIX FIFOs")
+def test_a_fifo_report_path_is_written_in_place(tmp_path: Path) -> None:
+    import os
+    import threading
+
+    from ildottore.cli.run import _write_atomically
+
+    fifo = tmp_path / "pipe.json"
+    os.mkfifo(fifo)
+    received: list[bytes] = []
+    reader = threading.Thread(target=lambda: received.append(fifo.read_bytes()), daemon=True)
+    reader.start()
+    _write_atomically(fifo, b"REPORT")
+    reader.join(timeout=10)
+    assert received == [b"REPORT"]
+    assert fifo.is_fifo(), "the pipe is kept, not replaced by a regular file"
+
+
+def test_a_symlink_planted_between_the_unlink_and_the_open_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exclusive, no-follow open is what guards the race the unlink cannot."""
+
+    import os
+
+    from ildottore.cli import run as run_mod
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("untouched")
+    real_open = run_mod.os.open
+
+    def racing_open(path: object, flags: int, mode: int = 0o777) -> int:
+        if str(path).endswith(".partial"):
+            os.symlink(victim, path)  # planted after the unlink, before the open
+        return real_open(path, flags, mode)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(run_mod.os, "open", racing_open)
+    with pytest.raises(OSError):
+        run_mod._write_atomically(tmp_path / "r.json", b"REPORT")
+    assert victim.read_text() == "untouched"
+
+
+def test_the_partial_of_a_private_report_is_never_wider_than_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Created with the umask mode, it was world-readable while it held the full report."""
+
+    import os
+    import stat
+
+    from ildottore.cli import run as run_mod
+
+    report = tmp_path / "r.json"
+    report.write_text("old")
+    os.chmod(report, 0o600)
+    seen: list[int] = []
+    real_fdopen = run_mod.os.fdopen
+
+    def watch(descriptor: int, mode: str) -> object:
+        seen.append(stat.S_IMODE(os.fstat(descriptor).st_mode))  # as created, before writing
+        return real_fdopen(descriptor, mode)
+
+    monkeypatch.setattr(run_mod.os, "fdopen", watch)
+    run_mod._write_atomically(report, b"new")
+    assert seen and seen[0] & 0o077 == 0, f"partial created as {oct(seen[0])}"

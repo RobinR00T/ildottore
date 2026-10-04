@@ -77,6 +77,36 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (hygiene after the audit)
+
+- **A run interrupted with Ctrl-C left its spend unrecorded**, so its resume's ceiling
+  under-counted what had already been sent. The runner records its spend however it stops, and
+  `dottore run` turns SIGTERM and SIGHUP (what `timeout`, `docker stop` and CI timeouts send)
+  into the same interrupt. A SIGKILL still loses it, and so does a Ctrl-C during a resumed run's
+  `-sV` probe pass. An ignored signal stays ignored (`nohup` keeps a scan alive on hangup). If
+  the write made when a run is interrupted fails, it is a warning; a finished run's final write
+  fails as before. Reports are written to a temporary file beside them and renamed into place,
+  so an interruption leaves the previous report or none, never a truncated one: a symlinked
+  report is written through, an existing one keeps its permission bits, the temporary file is
+  created exclusively (never through a planted symlink) and removed on failure. A report path
+  that is not a regular file (a FIFO, a device) and a read-only directory holding a writable
+  report are written in place, as before. Hard links to a report are not kept, and a read-only
+  report in a writable directory is now replaced rather than refused.
+- **The CLI left the campaign's run store open** for the garbage collector, one SQLite
+  connection per target (114 "unclosed database" warnings in the suite, 28 now, from tests).
+- **"Not exercised: N spec(s) produced no request"** was printed for specs whose every send had
+  ended in an environment error. The terminal, the HTML report and the schema say no reply could
+  be scored, and give both reasons.
+- **CLI errors masked the operator's own paths** when a directory name looked random (a macOS
+  temp directory, a CI workspace). The part of an absolute path that exists on the machine is
+  exempt from the entropy rule only; every other rule (emails, key shapes, labels) still applies
+  to it, and the rest of the path is redacted as before.
+- **The dry-run plan said "full battery"** for `--spec PI-*` and summed the selection across
+  targets. It says "filtered selection" when a selection flag is given, and counts per target.
+- `--fail-on info` was accepted and documented nowhere; it is now (it gates on any confirmed
+  finding). The resume help says errors a retry would repeat are not sent again, and the OD-18
+  and OD-19 rows of the ledger state their as-built facts precisely (decisions unchanged).
+
 ### Fixed (F11: a resume sends again what ended in an environment error)
 
 - **A run that halted after a network outage could not be finished with fresh answers.** A
@@ -238,11 +268,12 @@ What the blocks left open, fixed after them and audited in eight rounds before c
 - Defensive, no shipped path produces it: a resume cites one evidence reference per artifact
   (not per attempt id) and `replay` counts one attempt per id, the answered one, listing the
   rest.
-- **Still open:** a resume never re-sends a stored attempt, including one that ended in an
-  environment error (F11). A fix was written and withdrawn after two audits: it needs evidence
-  references persisted as each artifact is written, or an interrupted resume leaves artifacts
-  the run store never recorded. And the judge's self-consistency check: when its two votes
-  disagree the code drops the judge and the deterministic evaluators decide, while the threat
+- **Still open when this section was written:** a resume never re-sent a stored attempt,
+  including one that ended in an environment error (F11). A fix was written and withdrawn after
+  two audits: it needed evidence references persisted as each artifact is written. Built later
+  the same day on an artifact journal (see the F11 entry above). And the judge's
+  self-consistency check: when its two votes disagree the code drops the judge and the
+  deterministic evaluators decide, while the threat
   model says the result becomes inconclusive. That is a decision for the maintainer, recorded
   in the docs as an open question.
 

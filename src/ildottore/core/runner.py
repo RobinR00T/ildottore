@@ -247,6 +247,7 @@ class CampaignRunner:
         pacer: RateLimiter | None = None,
         send_meter: SendMeter | None = None,
         timestamp: Callable[[], str] | None = None,
+        spend_sink: Callable[[Spend], None] | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -300,6 +301,10 @@ class CampaignRunner:
         # ever filled in: every report and run-store row said null. ``None`` (the default, and
         # what the determinism tests use) leaves them to the caller.
         self._timestamp = timestamp
+        # Where the campaign's spend is recorded when it stops, however it stops: the CLI
+        # recorded it only from a returned result, so a run interrupted with Ctrl-C left its
+        # spend unrecorded and a resume's ceiling under-counted it (audit of F11, pre-existing).
+        self._spend_sink = spend_sink
 
     async def run(
         self,
@@ -380,17 +385,21 @@ class CampaignRunner:
             if self._send_meter is not None
             else contextlib.nullcontext()
         )
-        with metered:
-            spec_findings, breach_reason, halt_state = await self._run_selected(
-                run_id=run_id,
-                target=target,
-                specs=selected_specs,
-                plan=plan,
-                ledger=ledger,
-                completed=completed,
-                semaphore=semaphore,
-                prior_by_spec=prior_by_spec,
-            )
+        try:
+            with metered:
+                spec_findings, breach_reason, halt_state = await self._run_selected(
+                    run_id=run_id,
+                    target=target,
+                    specs=selected_specs,
+                    plan=plan,
+                    ledger=ledger,
+                    completed=completed,
+                    semaphore=semaphore,
+                    prior_by_spec=prior_by_spec,
+                )
+        finally:
+            if self._spend_sink is not None:
+                self._spend_sink(ledger.spend())
         findings.extend(spec_findings)
         if halt_state is not None:
             status = halt_state

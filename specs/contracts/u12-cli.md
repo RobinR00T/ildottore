@@ -197,9 +197,11 @@ row that merely lacked the digest key skipped the check silently, with no flag a
 halves used to be written when the campaign returned, so a run killed mid-flight left evidence
 on disk and no row, and its resume was refused outright because the target could not be
 verified: the resume you most want after a crash was the one you could not have. Everything in
-the integrity half is known before the first request. The spend genuinely is not, so a crash
-still loses the dead half's spend and the resume opens at whatever was last recorded, which is
-the stated trade against a database write per request.
+the integrity half is known before the first request. The spend is not; since 2026-10-04 the
+runner hands it to the store however the campaign stops (a ceiling, an abort, Ctrl-C, and SIGTERM
+or SIGHUP, which `execute_run` turns into Ctrl-C). A SIGKILL still loses the dead half's spend,
+and so does a Ctrl-C during a resumed run's `-sV` probe pass; the resume then opens at whatever
+was last recorded: the trade against a database write per request.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the

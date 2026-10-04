@@ -13,6 +13,7 @@ widens the battery, never the authorization gate (``docs/09 §5``).
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Annotated
@@ -103,6 +104,41 @@ def _spec_paths(spec: list[Path] | None) -> list[Path]:
 # refusal needs to show; the entropy rule would otherwise mask it.
 _ARTIFACT_NAME = r"[0-9a-f]{64}\.json"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+# An absolute filesystem path in an error message (`/` not preceded by a word character, `:`,
+# `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after an IPv6 host,
+# credentials or a masked host included).
+_ABS_PATH = re.compile(r"(?<![\w:/\]@»])/[^\s'\"()\[\],;]+")
+#: Longer tokens are not checked (PATH_MAX): each parent costs a filesystem lookup.
+_MAX_PATH_LEN = 4096
+
+
+def _existing_prefixes(text: str) -> list[str]:
+    """The part of each absolute path in ``text`` that exists on this machine.
+
+    Kept readable: the redactor masked any high-entropy segment, so a macOS temp directory or a
+    CI runner's workspace read `«REDACTED:high_entropy»` in "two formats would write the same
+    file" and "is not a directory" errors. What exists on disk is the operator's own tree, not
+    a value they typed; the rest of the path still goes through the redactor.
+    """
+
+    prefixes: list[str] = []
+    for match in _ABS_PATH.finditer(text):
+        token = match.group(0)
+        if len(token) > _MAX_PATH_LEN:
+            continue
+        candidate = Path(token)
+        for path in (candidate, *candidate.parents):
+            shown = str(path)
+            if shown == "/" or not token.startswith(shown):
+                break
+            try:
+                exists = path.exists()
+            except OSError:
+                break
+            if exists:
+                prefixes.append(shown)
+                break
+    return prefixes
 
 
 def _masked(exc: BaseException) -> str:
@@ -113,7 +149,12 @@ def _masked(exc: BaseException) -> str:
     and the run store all masked it (review of PR #32, SEC-02 left open on this path).
     """
 
-    redactor = Redactor()
+    # Every rule but the entropy fallback runs on the whole text first, labels and context
+    # included; the entropy fallback, which cannot tell a sha256 or a random directory name from
+    # a key, runs only on what is not kept below. Keeping a path raw skipped the email and
+    # key-shape rules too (an existing `GoogleDrive-<email>` directory printed the address).
+    plain = Redactor(entropy_threshold=math.inf)
+    entropy = Redactor(patterns=[])
     # A bare digest stays readable only when the error itself carries it as one this tool
     # computed (`digests` on ChecksumMismatchError and TamperError): the redactor cannot tell a
     # sha256 from a 64-hex key, so keeping every bare 64-hex printed a raw key pasted as an
@@ -122,15 +163,23 @@ def _masked(exc: BaseException) -> str:
     carried = [
         d for d in getattr(exc, "digests", ()) if isinstance(d, str) and _SHA256.fullmatch(d)
     ]
-    keep = re.compile(r"(\b(?:" + "|".join([_ARTIFACT_NAME, *carried]) + r")\b)")
     # URL passwords first, on the whole text, so a 64-hex password is never kept as a digest.
     # A kept token that overlaps a registered credential is masked: `sk-<64 hex>` and
     # `<64 hex>-v2` contain one (re-audit of the digest change).
-    parts = keep.split(mask_url_passwords(str(exc)))
+    text = plain.redact_text(mask_url_passwords(str(exc)))
+    paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
+    keep = re.compile(
+        r"(\b(?:"
+        + "|".join([_ARTIFACT_NAME, *carried])
+        + r")\b"
+        + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
+        + ")"
+    )
+    parts = keep.split(text)
     return "".join(
         part
         if keep.fullmatch(part) and not overlaps_known_secret(part.removesuffix(".json"))
-        else redactor.redact_text(part)
+        else entropy.redact_text(part)
         for part in parts
     )
 
@@ -243,7 +292,7 @@ def run(
         typer.Option(
             "--resume",
             help="Finish a halted run: its id. Answered attempts are not re-sent; those that "
-            "ended in an environment error are sent again.",
+            "ended in an environment error are sent again (not one a retry would repeat).",
         ),
     ] = None,
     resume_unverified: Annotated[
@@ -255,7 +304,7 @@ def run(
         ),
     ] = False,
     fail_on: Annotated[
-        str, typer.Option("--fail-on", help="CI gate band (low|medium|high|critical).")
+        str, typer.Option("--fail-on", help="CI gate band (info|low|medium|high|critical).")
     ] = "high",
     include_needs_review: Annotated[
         bool,

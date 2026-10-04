@@ -85,7 +85,7 @@ OUTPUT
   -oJ file.json  -oH file.html  -oS file.sarif  -oX junit.xml
   -oA <prefix>                             all four: <prefix>.json .html .sarif .xml (a
                                            prefix ending in one of those has it dropped first)
-  --fail-on <low|medium|high|critical>     CI gate (confirmed findings; default high)
+  --fail-on <info|low|medium|high|critical> CI gate (confirmed findings; default high)
   --include-needs-review                   also gate on unconfirmed fails (never on an
                                            inconclusive or a pass)
   --compare                                model-comparison matrix (two or more targets)

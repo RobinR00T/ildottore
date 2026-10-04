@@ -90,9 +90,11 @@ async def reproduce(
     :class:`~ildottore.core.budgets.BudgetExhausted` from either debit propagates so
     the runner records ``budget_exhausted`` with whatever ran so far.
 
-    ``completed`` (optional) is a resume set of attempt ids already persisted; a run
-    whose id is in the set is **skipped** (not re-sent) so resume never duplicates a
-    completed attempt (contract §7 resume). Skipped runs are simply absent from the
+    ``completed`` (optional) is a resume set: the attempt ids a prior run already answered
+    (or that failed in a way a retry would repeat); a run whose id is in the set is
+    **skipped** (not re-sent) so resume never duplicates a completed attempt (contract §7
+    resume). An attempt that ended in another environment error is not in it and is sent
+    again under its id (F11). Skipped runs are simply absent from the
     returned list - the caller merges them with the persisted attempts.
     """
 

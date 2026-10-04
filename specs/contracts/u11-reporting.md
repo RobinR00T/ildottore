@@ -105,7 +105,8 @@ survived. A test asserts `run <= total` and that a complete run has them equal.
 
 **A-13 A value that is not counted is reported.** A framework value outside its pinned universe
 never reaches a numerator **and** appears in `coverage.off_universe`; a spec that produced a
-finding without sending a request appears in `coverage.not_exercised` and is credited nothing.
+finding without a reply that could be scored (nothing sent, or every send ended in an environment
+error) appears in `coverage.not_exercised` and is credited nothing.
 A run does not lint, so silently dropping either is how a numerator shrinks with nobody told.
 
 **A-14 Every figure carries its edition, and percentages floor.** OWASP renumbered in 2026 and

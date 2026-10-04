@@ -7,11 +7,16 @@ composition root, which is where the journal is wired (`cli.wiring.build_runner`
 from __future__ import annotations
 
 import json
+import signal
 import sqlite3
+import subprocess
+import sys
 import threading
+import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -33,12 +38,14 @@ _REPLY = {
 
 
 @pytest.fixture
-def stub() -> Iterator[tuple[int, dict[str, bool]]]:
-    state = {"up": False}
+def stub() -> Iterator[tuple[int, dict[str, Any]]]:
+    state: dict[str, Any] = {"up": False, "delay": 0.0, "served": 0}
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
             self.rfile.read(int(self.headers.get("content-length", "0")))
+            state["served"] += 1
+            time.sleep(state["delay"])
             if not state["up"]:
                 self.send_response(503)
                 self.end_headers()
@@ -122,7 +129,7 @@ def _spent(tmp_path: Path, run_id: str) -> int:
 
 
 def test_an_outage_then_an_interrupted_resume_then_a_resume_finishes_clean(
-    tmp_path: Path, stub: tuple[int, dict[str, bool]], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     port, state = stub
     monkeypatch.setattr("ildottore.core.execute.RetryPolicy.delay_for", _no_delay)
@@ -162,7 +169,7 @@ def test_an_outage_then_an_interrupted_resume_then_a_resume_finishes_clean(
 
 
 def test_a_pending_journal_row_without_its_file_is_tolerated_by_replay_and_resume(
-    tmp_path: Path, stub: tuple[int, dict[str, bool]], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A crash between the journal entry and the write: the file was never written."""
 
@@ -198,7 +205,7 @@ def _rows(tmp_path: Path) -> int:
 
 
 def test_a_dry_run_resume_adopts_nothing_and_a_real_one_does(
-    tmp_path: Path, stub: tuple[int, dict[str, bool]], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     port, state = stub
     monkeypatch.setattr("ildottore.core.execute.RetryPolicy.delay_for", _no_delay)
@@ -221,7 +228,7 @@ def test_a_dry_run_resume_adopts_nothing_and_a_real_one_does(
 
 
 def test_an_artifact_under_a_spec_the_run_never_ran_is_refused_by_replay_and_resume(
-    tmp_path: Path, stub: tuple[int, dict[str, bool]], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from ildottore.store import paths
 
@@ -241,3 +248,36 @@ def test_an_artifact_under_a_spec_the_run_never_ran_is_refused_by_replay_and_res
     assert replay.exit_code == 3 and "added or replaced" in replay.output
     resumed = cli.invoke(app, [*base, "--resume", run_id])
     assert resumed.exit_code == 3 and "cannot be resumed" in resumed.output
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+def test_a_sigterm_records_the_spend_so_far(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """What `timeout`, `docker stop` and CI timeouts send: it killed the process outright and
+    the spend was lost."""
+
+    port, state = stub
+    state["up"] = True
+    state["delay"] = 0.3
+    process = subprocess.Popen(  # noqa: S603 - this interpreter running this CLI
+        [sys.executable, "-m", "ildottore.cli.main", *_files(tmp_path, port)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while state["served"] < 2 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert state["served"] >= 2, "the campaign started sending"
+        process.send_signal(signal.SIGTERM)
+        process.wait(timeout=30)
+    finally:
+        if process.poll() is None:
+            process.kill()
+    conn = sqlite3.connect(tmp_path / "runs.sqlite")
+    try:
+        (run_id,) = conn.execute("SELECT run_id FROM runs").fetchone()
+    finally:
+        conn.close()
+    assert _spent(tmp_path, run_id) >= 2, "the requests sent before the SIGTERM are recorded"

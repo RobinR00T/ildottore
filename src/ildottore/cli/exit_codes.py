@@ -50,7 +50,7 @@ BAND_ORDER: dict[str, int] = {
 
 
 def fail_on_band(fail_on: str) -> int:
-    """Map a ``--fail-on`` token (``low|medium|high|critical``) to a band ordinal.
+    """Map a ``--fail-on`` token (``info|low|medium|high|critical``) to a band ordinal.
 
     Accepts both :class:`Severity` and :class:`ScanBand` spellings (they share
     ``low/medium/high/critical``); an unknown token raises ``ValueError`` so a typo
@@ -63,10 +63,7 @@ def fail_on_band(fail_on: str) -> int:
     # Accept Severity spellings that are not bands (none diverge today, but be explicit).
     if token in {s.value for s in Severity}:
         return BAND_ORDER[token]
-    raise ValueError(
-        f"invalid --fail-on {fail_on!r}; expected one of: "
-        f"{', '.join(k for k in BAND_ORDER if k != ScanBand.INFO.value)}"
-    )
+    raise ValueError(f"invalid --fail-on {fail_on!r}; expected one of: {', '.join(BAND_ORDER)}")
 
 
 def _is_gate_candidate(finding: Finding, *, include_needs_review: bool) -> bool:

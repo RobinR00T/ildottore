@@ -38,7 +38,7 @@ from ildottore.adapters import (
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
-from ildottore.core.budgets import BudgetExhausted, BudgetLedger
+from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
@@ -138,6 +138,16 @@ class BuiltRunner:
     scope: Scope
     policy: PolicyEngine
     evidence_root: Path
+    run_store: SqliteRunStore | None = None
+
+    def close(self) -> None:
+        """Close the run store the runner (and its evidence journal) wrote through.
+
+        It was left to the garbage collector, one unclosed SQLite connection per target.
+        """
+
+        if self.run_store is not None:
+            self.run_store.close()
 
 
 # --- registry ---------------------------------------------------------------------
@@ -1113,6 +1123,7 @@ def build_runner(
     mock_scenario: str | None = None,
     real_target: Target | None = None,
     judge_target: Target | None = None,
+    spend_sink: Callable[[Spend], None] | None = None,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -1190,6 +1201,7 @@ def build_runner(
         # coroutines interleaved), so a live run measures with the monotonic clock.
         now=deterministic_clock() if real_target is None else time.monotonic,
         timestamp=utc_timestamp,
+        spend_sink=spend_sink,
         n=n,
         concurrency=concurrency,
         timeout_s=timeout_s,
@@ -1204,6 +1216,7 @@ def build_runner(
         scope=scope,
         policy=policy,
         evidence_root=evidence_root,
+        run_store=runs,
     )
 
 

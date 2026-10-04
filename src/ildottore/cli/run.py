@@ -26,9 +26,15 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import os
+import shutil
+import signal
+import stat
 import sys
 import unicodedata
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -673,6 +679,7 @@ def _print_dry_run_plan(
     quiet: bool = False,
     sending: bool = False,
     detail: int = 0,
+    filtered: bool = False,
 ) -> None:
     """Print the resolved plan (one line under ``--quiet``).
 
@@ -704,7 +711,15 @@ def _print_dry_run_plan(
             f"  target:  {plan.target.id} ({plan.target.type.value}) "
             f"authorized at {_safe_endpoint(plan.endpoint)}"
         )
-    print(f"  battery: {suite or 'full battery'}, {specs} specs selected")
+    # Named for what selected it: "full battery" was printed for `--spec PI-*` too. The count
+    # is per target when there are several, not a sum that read as one battery's size.
+    battery = suite or ("filtered selection" if filtered else "full battery")
+    per_target = (
+        f"{specs} specs selected"
+        if len(plans) <= 1
+        else f"{', '.join(str(len(p.selected)) for p in plans)} specs selected per target"
+    )
+    print(f"  battery: {battery}, {per_target}")
     by_cat: dict[str, int] = {}
     for plan in plans:
         for spec in plan.selected:
@@ -821,7 +836,42 @@ def _validate_options(opts: RunOptions) -> None:
         raise ValueError(f"two report formats would write the same file: {', '.join(duplicates)}")
 
 
+@contextmanager
+def _termination_as_interrupt() -> Iterator[None]:
+    """Turn SIGTERM and SIGHUP into the KeyboardInterrupt Ctrl-C raises, for one campaign.
+
+    The runner records its spend however it stops, but a SIGTERM (what `timeout`, `docker
+    stop`, systemd, Kubernetes and CI timeouts send) or a SIGHUP killed the process outright,
+    so the spend was lost there too (audit of the hygiene block). Restored afterwards; outside
+    the main thread, where signals cannot be set, nothing changes.
+    """
+
+    previous: dict[signal.Signals, Any] = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        # An ignored signal stays ignored: `nohup dottore run` set SIGHUP to SIG_IGN so a scan
+        # survives an SSH logout, and mapping it anyway aborted the scan on hangup.
+        if sig is None or signal.getsignal(sig) is signal.SIG_IGN:
+            continue
+        try:
+            previous[sig] = signal.signal(sig, signal.default_int_handler)
+        except ValueError:
+            break
+    try:
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
+    """Run the campaign :func:`_execute_run` describes, SIGTERM and SIGHUP as Ctrl-C."""
+
+    with _termination_as_interrupt():
+        return _execute_run(opts, spec_paths)
+
+
+def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     """Run a full campaign for every target and return the aggregate outcome.
 
     Order of refusals, all before any adapter exists (contract §4 KEEP, zero sends):
@@ -1281,6 +1331,9 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             quiet=opts.quiet and opts.dry_run,
             sending=not opts.dry_run,
             detail=opts.verbose,
+            filtered=bool(
+                opts.categories or opts.spec_globs or opts.exclude_globs or opts.top_tests
+            ),
         )
     elif pacing_rate is None and opts.rate is not None and not opts.quiet:
         # An ignored flag has to be announced on the path the operator is actually using.
@@ -1500,6 +1553,12 @@ def _run_one_target(
     :func:`budgets_for`); ``fingerprint``/``adaptive`` carry ``-sV``/``-A`` into the plan.
     """
 
+    # A resumed campaign keeps the ORIGINAL run id: the evidence and the store are keyed by
+    # it, and a new id would file the continuation as a separate, equally partial run. The
+    # caller mints it (the probe pass needs it first), and falls back for direct callers.
+    if run_id is None:
+        run_id = resume_from.run_id if resume_from is not None else f"run-{uuid.uuid4().hex[:12]}"
+    campaign_run_id = run_id
     built = wiring.build_runner(
         scope=scope,
         specs=specs,
@@ -1512,25 +1571,25 @@ def _run_one_target(
         mock_scenario=mock_scenario,
         real_target=real_target,
         judge_target=judge_target,
+        # Recorded however the campaign stops, Ctrl-C included, so a resume's ceiling is right.
+        spend_sink=lambda spend: _record_spend_quietly(run_db, campaign_run_id, spend),
     )
-    # A resumed campaign keeps the ORIGINAL run id: the evidence and the store are keyed by
-    # it, and a new id would file the continuation as a separate, equally partial run. The
-    # caller mints it (the probe pass needs it first), and falls back for direct callers.
-    if run_id is None:
-        run_id = resume_from.run_id if resume_from is not None else f"run-{uuid.uuid4().hex[:12]}"
-    return asyncio.run(
-        built.runner.run(
-            run_id=run_id,
-            target=target,
-            specs=specs,
-            fingerprint=fingerprint,
-            adaptive=adaptive,
-            budgets=budgets,
-            resume_from=resume_from,
-            prior_spend=prior_spend,
-            started_at=started_at,
+    try:
+        return asyncio.run(
+            built.runner.run(
+                run_id=run_id,
+                target=target,
+                specs=specs,
+                fingerprint=fingerprint,
+                adaptive=adaptive,
+                budgets=budgets,
+                resume_from=resume_from,
+                prior_spend=prior_spend,
+                started_at=started_at,
+            )
         )
-    )
+    finally:
+        built.close()
 
 
 def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) -> Spend | None:
@@ -1619,7 +1678,7 @@ def _persist_run_integrity(
 
     Everything here is known before the first request, so there is no reason to make a resume
     depend on the campaign finishing. What genuinely cannot be known in advance is the spend,
-    and that is written separately when the campaign returns.
+    and that is written separately, when the campaign stops.
     """
 
     from ildottore.store.run_sqlite import SqliteRunStore
@@ -1638,15 +1697,77 @@ def _persist_run_integrity(
         )
 
 
+def _write_atomically(path: Path, payload: bytes) -> None:
+    """Write ``payload`` beside ``path`` and rename it into place.
+
+    A SIGTERM during the write left a truncated JSON report under its final name, which a CI
+    step would then parse (audit of the hygiene block). A symlinked report is written through
+    (the link is kept), an existing report keeps its permission bits, and the partial file is
+    removed on any failure. The partial is created exclusively and never through a symlink, so
+    one planted at its fixed name in a shared directory cannot redirect the write. A report
+    path that is not a regular file (a FIFO, a device, `/dev/stdout`) is written directly, as is
+    one in a read-only directory holding a writable report. Hard links to an existing report
+    are not kept: the rename gives the name a new file.
+    """
+
+    try:
+        existing = os.stat(path)
+    except FileNotFoundError:
+        existing = None
+    if existing is not None and not stat.S_ISREG(existing.st_mode):
+        path.write_bytes(payload)  # nothing to rename onto
+        return
+    target = Path(os.path.realpath(path))
+    partial = target.with_name(f".{target.name}.partial")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        partial.unlink(missing_ok=True)
+        # Created with the report's own mode, so a 0600 report is never world-readable while
+        # its replacement is being written (pre-merge audit of the hygiene block).
+        mode = stat.S_IMODE(existing.st_mode) if existing is not None else 0o666
+        descriptor = os.open(partial, flags, mode)
+    except PermissionError:
+        path.write_bytes(payload)
+        return
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+        if existing is not None:
+            shutil.copymode(target, partial)
+        os.replace(partial, target)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+
+
 def _persist_run_spend(run_db: Path, result: CampaignResult) -> None:
     """Record what the campaign consumed, once it is known.
 
-    A crash therefore loses the dead half's spend and its resume opens at whatever was last
-    recorded. That is stated rather than hidden: the alternative is debiting continuously,
-    which costs a write per request.
+    The runner also hands its spend to the store however it stops (a ceiling, an abort,
+    Ctrl-C, and SIGTERM or SIGHUP, which ``execute_run`` turns into Ctrl-C). A SIGKILL still
+    loses the dead half's spend, and so does a Ctrl-C during a resumed run's ``-sV`` probe pass
+    (the probes are counted only once the pass returns). Closing those would mean a write per
+    request.
     """
 
     _persist_spend(run_db, result.run.run_id, result.spend)
+
+
+def _record_spend_quietly(run_db: Path, run_id: str, spend: Spend) -> None:
+    """The runner's spend sink: a failure to record is a warning, never the campaign's error.
+
+    Raised from the runner's ``finally``, a locked database replaced a Ctrl-C with an
+    ``OperationalError`` traceback and exit 1, and lost a finished run's findings (audit of the
+    hygiene block). A finished run still records its spend through ``_persist_run_spend``.
+    """
+
+    try:
+        _persist_spend(run_db, run_id, spend)
+    except Exception as exc:  # the database, not the campaign
+        from ildottore.redactor import Redactor
+
+        reason = Redactor().redact_text(str(exc))
+        print(f"warning: the spend of {run_id} could not be recorded: {reason}", file=sys.stderr)
 
 
 def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> None:
@@ -1756,6 +1877,6 @@ def _write_reports(
         )
         payload = reporter.render(run, findings)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
+        _write_atomically(path, payload)
         written.append(path)
     return written

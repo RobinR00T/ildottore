@@ -125,7 +125,7 @@ dottore calibrate report.json labels.yaml
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent |
-| `--fail-on <band>` | CI gate on confirmed findings (`low\|medium\|high\|critical`, default `high`) |
+| `--fail-on <band>` | CI gate on confirmed findings (`info\|low\|medium\|high\|critical`, default `high`; `info` gates on any confirmed finding) |
 | `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`); an `inconclusive` result never gates |
 | `--spec-path` | spec search path (default `specs/`) |
 
