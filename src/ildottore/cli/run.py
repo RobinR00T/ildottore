@@ -1722,7 +1722,10 @@ def _write_atomically(path: Path, payload: bytes) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
         partial.unlink(missing_ok=True)
-        descriptor = os.open(partial, flags, 0o666)
+        # Created with the report's own mode, so a 0600 report is never world-readable while
+        # its replacement is being written (pre-merge audit of the hygiene block).
+        mode = stat.S_IMODE(existing.st_mode) if existing is not None else 0o666
+        descriptor = os.open(partial, flags, mode)
     except PermissionError:
         path.write_bytes(payload)
         return

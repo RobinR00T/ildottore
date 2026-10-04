@@ -1163,9 +1163,58 @@ def test_a_fifo_report_path_is_written_in_place(tmp_path: Path) -> None:
     fifo = tmp_path / "pipe.json"
     os.mkfifo(fifo)
     received: list[bytes] = []
-    reader = threading.Thread(target=lambda: received.append(fifo.read_bytes()))
+    reader = threading.Thread(target=lambda: received.append(fifo.read_bytes()), daemon=True)
     reader.start()
     _write_atomically(fifo, b"REPORT")
     reader.join(timeout=10)
     assert received == [b"REPORT"]
     assert fifo.is_fifo(), "the pipe is kept, not replaced by a regular file"
+
+
+def test_a_symlink_planted_between_the_unlink_and_the_open_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exclusive, no-follow open is what guards the race the unlink cannot."""
+
+    import os
+
+    from ildottore.cli import run as run_mod
+
+    victim = tmp_path / "victim.txt"
+    victim.write_text("untouched")
+    real_open = run_mod.os.open
+
+    def racing_open(path: object, flags: int, mode: int = 0o777) -> int:
+        if str(path).endswith(".partial"):
+            os.symlink(victim, path)  # planted after the unlink, before the open
+        return real_open(path, flags, mode)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(run_mod.os, "open", racing_open)
+    with pytest.raises(OSError):
+        run_mod._write_atomically(tmp_path / "r.json", b"REPORT")
+    assert victim.read_text() == "untouched"
+
+
+def test_the_partial_of_a_private_report_is_never_wider_than_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Created with the umask mode, it was world-readable while it held the full report."""
+
+    import os
+    import stat
+
+    from ildottore.cli import run as run_mod
+
+    report = tmp_path / "r.json"
+    report.write_text("old")
+    os.chmod(report, 0o600)
+    seen: list[int] = []
+    real_fdopen = run_mod.os.fdopen
+
+    def watch(descriptor: int, mode: str) -> object:
+        seen.append(stat.S_IMODE(os.fstat(descriptor).st_mode))  # as created, before writing
+        return real_fdopen(descriptor, mode)
+
+    monkeypatch.setattr(run_mod.os, "fdopen", watch)
+    run_mod._write_atomically(report, b"new")
+    assert seen and seen[0] & 0o077 == 0, f"partial created as {oct(seen[0])}"
