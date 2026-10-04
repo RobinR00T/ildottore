@@ -7,10 +7,11 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 - PR #34 (block 6) squash-merged as `0bcf4d1` after green CI.
 - Standing rule from Daniel (2026-10-04, 09:18): an audit runs before every commit and every
-  merge. The residual patch went through four pre-commit audits; the first three each found
-  something (among them F11 artifacts the run store never recorded after an interrupted
-  resume, a digest exemption that printed unregistered 64-hex keys in clear, and a plugin
-  contract change), each fixed or withdrawn before the next round.
+  merge. The residual patch went through eight pre-commit audit rounds, and the docs through
+  two doc-truth audits. Each round found something (among them F11 artifacts the run store
+  never recorded after an interrupted resume, a digest exemption that printed unregistered
+  64-hex keys in clear, a plugin contract change, and operator values echoed by pydantic and
+  PyYAML errors), fixed or withdrawn before the next round; the last two found only wording.
 - Residuals on `fix/audit-residuals` (`tests/test_audit_residuals.py`): finding states
   (`confirmed`, `needs_review`, `not_exploited`, `not_tested`) used by the summary, HTML,
   SARIF and the progress line (R5, R6, R14); the multi-target envelope (R10); framework
@@ -19,7 +20,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   `fingerprint --offline` honours `mock_scenario`; mutation parameters checked against each
   mutator's `accepted_params` (closes `translate:klingon` from the PR #32 review); report path
   collisions by case and Unicode form; `-oA` with a dotted prefix; CLI errors keep only the
-  digests they carry readable.
+  digests the tool computed readable, never quote a literal `auth_ref`, and scope, target,
+  fleet and labels file errors give the field or line and the reason, never the value.
 - Block 7: user docs, design docs and unit contracts checked claim by claim against the code,
   plus a doc-truth audit of the result.
 - Withdrawn: F11 (resume re-sending attempts that ended in an environment error). It needs

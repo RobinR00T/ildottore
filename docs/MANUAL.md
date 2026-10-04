@@ -121,7 +121,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   clear was mostly a value that was not a digest, such as a key typed by mistake. A scope or
   fleet file that fails validation names each field and the reason, never the value
   (pydantic's own message echoes it), and a YAML error in a scope, target, fleet or labels file
-  gives the problem with its line and column, without quoting the line. An error quotes an `auth_ref` only when it is a reference (it
+  gives the problem and where PyYAML found it: line and column, plus where the entry it was
+  reading starts when PyYAML records that and it differs (a missing space after a colon is
+  reported on the next line); a control character is located by its character offset instead.
+  The line is never quoted. An error quotes an `auth_ref` only when it is a reference (it
   contains `://`, such as `env://NAME` or `vault://x`); a literal value pasted where a
   reference belongs is printed as `a literal value (not shown)`, for example `target 'live'
   auth_ref a literal value (not shown) is not authorized by the scope (declared:

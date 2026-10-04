@@ -79,7 +79,7 @@ order, not how any real model behaves: that still needs a live run.
 
 ### Fixed (full audit of 2026-10-03: residuals of the seven blocks)
 
-What the blocks left open, fixed after them and audited four times before commit
+What the blocks left open, fixed after them and audited in eight rounds before commit
 (`tests/test_audit_residuals.py`).
 
 - **"Needs review" counted everything that was not confirmed.** A clean hardened run read
@@ -137,7 +137,9 @@ What the blocks left open, fixed after them and audited four times before commit
   validation names each field and the reason without the value pydantic echoed (the tail of a
   pasted key survived its truncation; in a fleet file, `api_key: <key>` written where
   `api_key_env` belongs was the likeliest case), and a YAML error in a scope, target, fleet or
-  labels file gives the problem, line and column without quoting the line. In `fleet` and
+  labels file gives the problem, its line and column (and the start of the entry being read,
+  when PyYAML records it), or the character offset of a control character, without quoting
+  the line. In `fleet` and
   `calibrate` a YAML error was an uncaught traceback with exit 1, the code for "findings below
   the threshold"; it exits 3.
 - Help text: `--suite` names the aliases that exist (`owasp:llm`, `baseline`, `agentic`),
