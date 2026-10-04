@@ -21,9 +21,9 @@ covered **14 specs**.
 **Not verified.** The full battery against a hosted commercial model; the multimodal and audio
 matrix against a provider that actually accepts image and audio blocks; and `-sV`'s carrier
 measurement against a real model (what CI measures is a simulated decoder, by construction).
-(`_baseline_resistance` in the planner is not on this list: nothing writes it and nothing reads
-it, so a live run cannot exercise it. Populating it from live data is one option of OD-17,
-ADR-0008, and would need code first.)
+(`_baseline_resistance` in the planner is not on this list: no fingerprint layer writes the
+guardrails key it reads and nothing reads the plan field it fills, so a live run cannot exercise
+it. Populating it from live data is one option of OD-17, ADR-0008, and would need code first.)
 
 The distinction matters because "it has never been run for real" is false and was repeated
 here for two days before `docs/PROGRESS.md` was read. What is missing is **breadth**, not the
@@ -39,8 +39,9 @@ first contact.
    which proves the chain and nothing about behaviour. A live pass produces the first real
    carrier-comprehension profile, and it is cheap: 17 requests per target.
 4. **The input `_baseline_resistance` would need, if OD-17 keeps it.** Live verdict
-   distributions are its only honest input, but the hook has no writer and no reader today
-   (`docs/10`), so a live run only collects the data; it does not test the planner.
+   distributions are its only honest input, but nothing writes the key the hook reads and
+   nothing reads the field it fills (`docs/10`), so a live run only collects the data; it does
+   not test the planner.
 
 ## 3. What it costs, measured (not estimated from memory)
 
