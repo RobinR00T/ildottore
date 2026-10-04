@@ -43,7 +43,12 @@ from typing import Protocol, runtime_checkable
 
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.conversation import reproduce_conversation
-from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error
+from ildottore.core.execute import (
+    NOT_RETRYABLE_MARK,
+    AttemptResult,
+    RetryPolicy,
+    default_is_env_error,
+)
 from ildottore.core.metering import SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import build_plan
@@ -86,6 +91,8 @@ __all__ = [
     "PolicyGate",
     "ScenarioProvider",
     "TestPlanBuilder",
+    "answered_attempt_ids",
+    "resume_progress",
 ]
 
 _BLOCKED = "blocked_by_policy"
@@ -499,11 +506,44 @@ class CampaignRunner:
                 raise outcome  # KeyboardInterrupt / cancellation are not campaign outcomes
             elif outcome is not None:
                 findings.append(outcome)
+        if error is not None or breach is not None:
+            # A resumed spec the halt stopped while it was sending again (F11) still has the
+            # finding the halted run established: report it, as before the re-send existed. A
+            # resume stopped by a ceiling dropped a confirmed critical from the report and the
+            # SARIF (pre-commit audit of F11).
+            # Only a prior that holds every planned attempt is a finished spec: a partial one
+            # stays unfinished, as before, or a halted resume published a PASS from 2 of 6
+            # attempts and "0 specs did not finish" (second audit of F11).
+            reported = {f.spec_id for f in findings}
+            for spec in specs:
+                prior = prior_by_spec.get(spec.id)
+                if prior is None or spec.id in reported:
+                    continue
+                planned = {
+                    attempt_id_for(spec.id, mutation, index)
+                    for mutation in mutators_by_spec.get(spec.id, ["identity"])
+                    for index in range(self._n)
+                }
+                if planned <= {a.attempt_id for a in prior.attempts}:
+                    findings.append(self._prior_finding(spec, target, prior))
+                    reported.add(spec.id)
         if error is not None:
             return findings, error, "aborted"
         if breach is not None:
             return findings, breach, "budget_exhausted"
         return findings, None, None
+
+    def _prior_finding(self, spec: AttackSpec, target: Target, prior: Finding) -> Finding:
+        """The finding a resumed spec had before this invocation, scored from its attempts."""
+
+        attempts = _one_per_attempt_id(list(prior.attempts))
+        return self._score_finding(
+            spec,
+            target,
+            attempts=attempts,
+            verdicts=[a.verdict for a in attempts if a.verdict is not None],
+            evidence=_unique_refs(list(prior.evidence)),
+        )
 
     async def _run_spec(
         self,
@@ -594,7 +634,11 @@ class CampaignRunner:
                         canary_owners=canary_owners,
                     )
                     stored = result.attempt.model_copy(update={"verdict": verdict})
-                    evidence_refs.append(self._evidence.put(run_id, stored))
+                    ref = self._evidence.put(run_id, stored)
+                    # A re-send that failed byte-identically lands on the artifact the prior
+                    # run already cited: cite it once.
+                    if all(ref.sha256 != known.sha256 for known in evidence_refs):
+                        evidence_refs.append(ref)
                     attempts.append(stored)
                     verdicts.append(verdict)
         except MediaError as exc:
@@ -603,6 +647,10 @@ class CampaignRunner:
             # (per-spec isolation, contract §2/§4). Rendering is deterministic, so no partial send.
             return self._media_error_finding(spec, target, reason=f"media_error: {exc}")
 
+        # A re-sent attempt (F11) leaves the failed try and its re-send under one id: score one
+        # per id, keep every artifact cited.
+        attempts = _one_per_attempt_id(attempts)
+        verdicts = [a.verdict for a in attempts if a.verdict is not None]
         return self._score_finding(
             spec, target, attempts=attempts, verdicts=verdicts, evidence=evidence_refs
         )
@@ -1256,13 +1304,66 @@ def _build_summary(findings: list[Finding]) -> TestRunSummary:
 
 
 def _completed_attempt_ids(run: TestRun | None) -> set[str]:
-    """Attempt ids already persisted in a prior partial run (resume skip set)."""
+    """Attempt ids a prior partial run already ANSWERED (the resume skip set).
+
+    An attempt that ended in an environment error is not complete: a resume sends it again,
+    under the same id (F11), unless the error is marked as one that would repeat. It used to
+    count, so a run that halted after a network outage could never be finished with fresh
+    answers; resuming only re-scored the inconclusives. Every error an attempt records is an
+    environment error: a product error propagates.
+    """
 
     if run is None:
         return set()
     ids: set[str] = set()
     for finding in run.findings:
         for attempt in finding.attempts:
-            if attempt.response is not None or attempt.error is not None:
+            # An error that would repeat identically (a reply over the size cap) is kept too:
+            # re-sending it on every resume spends a request for the same refusal.
+            if attempt.response is not None or (attempt.error or "").endswith(NOT_RETRYABLE_MARK):
                 ids.add(attempt.attempt_id)
     return ids
+
+
+def answered_attempt_ids(run: TestRun | None) -> set[str]:
+    """The ids a resume of ``run`` keeps (public name of the resume skip set)."""
+
+    return _completed_attempt_ids(run)
+
+
+def resume_progress(run: TestRun | None) -> tuple[int, int]:
+    """``(answered, to_resend)``: attempt ids a resume keeps and ids it sends again."""
+
+    if run is None:
+        return (0, 0)
+    answered = _completed_attempt_ids(run)
+    seen = {a.attempt_id for finding in run.findings for a in finding.attempts}
+    return (len(answered), len(seen - answered))
+
+
+def _unique_refs(refs: list[EvidenceRef]) -> list[EvidenceRef]:
+    """Evidence references with each artifact once (by digest), in order."""
+
+    seen: set[str | None] = set()
+    unique: list[EvidenceRef] = []
+    for ref in refs:
+        if ref.sha256 is None or ref.sha256 not in seen:
+            unique.append(ref)
+            seen.add(ref.sha256)
+    return unique
+
+
+def _one_per_attempt_id(attempts: list[Attempt]) -> list[Attempt]:
+    """One attempt per id, the answered one when an id has several (a re-sent attempt).
+
+    A resume re-sends an attempt that ended in an environment error under the same id, so the
+    finding can hold the failed try and its re-send. Both artifacts stay cited as evidence;
+    only one is the attempt that is scored, as in ``replay`` (``ReplayResult.n``).
+    """
+
+    kept: dict[str, Attempt] = {}
+    for attempt in attempts:
+        current = kept.get(attempt.attempt_id)
+        if current is None or (current.response is None and attempt.response is not None):
+            kept[attempt.attempt_id] = attempt
+    return list(kept.values())

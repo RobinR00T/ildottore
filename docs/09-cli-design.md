@@ -72,7 +72,7 @@ EXECUTION
   --timeout <s>                     per-attempt timeout
   --budget-tokens / --budget-requests / --budget-wall
                                     hard ceilings; each overrides the one derived from the plan
-  --resume <run-id>                 finish a halted run; completed attempts are not re-sent
+  --resume <run-id>                 finish a halted run; answered attempts are not re-sent
   --resume-unverified               resume a run whose integrity record is missing
 
 SAFETY / SCOPE
@@ -131,14 +131,21 @@ file (paths compared after resolving, Unicode-normalized and case-folded, becaus
 case-insensitive volume treats `R.json` and `r.json` as one file). These used to be accepted,
 and some failed only after the whole campaign had run.
 
-**Resume never re-sends a stored attempt.** `--resume <run-id>` skips every attempt the halted
-run stored, the ones that ended in an environment error (a timeout, a 5xx after retries)
-included: they stay in the report as they were, inconclusive. **Open item (F11).** Re-sending
-those errored attempts on resume was attempted and withdrawn on 2026-10-04. A re-send writes a
-second artifact under the same attempt id, and doing it safely needs evidence references
-persisted as each artifact is written, which the store does not do today (a resume rebuilds the
-references from the stored artifacts, one per artifact). Until then, retrying them takes a
-new run: a resume sends nothing for them.
+**Resume sends again what ended in an environment error (F11, built 2026-10-04).** `--resume
+<run-id>` skips every attempt the halted run ANSWERED and sends again, under the same attempt
+id, each one that ended in an environment error (a timeout, a 5xx after retries, a conversation
+aborted on one), except an error that would repeat identically (a reply over the size cap, an
+undecodable body: recorded with `[not retryable]`). The failed try stays in the evidence tree
+and is cited as evidence; the finding scores one attempt per id, the answered one, as `replay`
+counts. A resume halted by a ceiling while re-sending keeps the finding a spec already had when
+that finding held every planned attempt. The resume message says how many attempts are kept and
+how many will be sent again, and `--estimate --resume` subtracts the requests already done (one
+per turn of each). What made this safe: the run store journals every attempt artifact as it is
+written (schema v4, `pending` before the write and `written` after), so a resume interrupted
+mid-spec leaves no artifact the manifest does not know, and the next resume is not refused as
+tampered (it was, which is why the first attempt was withdrawn). A resume adopts into the
+journal the artifacts already on disk once they pass the check, so a run started by an older
+version keeps resuming.
 
 ## 3. Example invocations (the red-teamer's cheat sheet)
 

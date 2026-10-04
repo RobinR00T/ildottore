@@ -1,10 +1,9 @@
 """Residual findings of the 2026-10-03 audit, fixed after the seven blocks.
 
-F11 (resume re-sending attempts that ended in an environment error) was attempted and
-withdrawn after two pre-commit audits: it needs evidence references persisted as each artifact
-is written, or an interrupted resume leaves artifacts the run store never recorded. The
-pieces that are correct on their own stay: one evidence reference per artifact on resume, and
-one attempt per id in `replay`.
+F11 (resume re-sending attempts that ended in an environment error) was withdrawn here and built
+later the same day, once the run store journaled artifacts as they are written: see
+`tests/test_f11_resume_resends.py`. The pieces kept from the withdrawal: one evidence reference per
+artifact on resume, and one attempt per id in `replay`.
 """
 
 from __future__ import annotations

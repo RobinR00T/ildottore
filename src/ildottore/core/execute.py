@@ -34,6 +34,7 @@ from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampli
 from ildottore.shared.protocols import TargetAdapter
 
 __all__ = [
+    "NOT_RETRYABLE_MARK",
     "AttemptResult",
     "RetryPolicy",
     "default_is_env_error",
@@ -170,11 +171,16 @@ async def execute_attempt(
             # request still counts). Kept, it burned the token ceiling on a flaky endpoint.
             if reserved:
                 ledger.refund_tokens(reserved)
-            errors.append(f"{type(exc).__name__}: {exc}")
+            retryable = getattr(exc, "retryable", True) is not False
+            # A failure that repeats identically is marked, so a resume does not send it again
+            # either (it re-sends the other environment errors, F11).
+            errors.append(
+                f"{type(exc).__name__}: {exc}" + ("" if retryable else NOT_RETRYABLE_MARK)
+            )
             # ``retryable = False`` (the adapters' convention, read structurally like
             # ``is_env_error``): a failure that repeats identically, such as a reply over the
             # size cap, is recorded once instead of being sent three more times.
-            if send_index < policy.max_retries and getattr(exc, "retryable", True) is not False:
+            if send_index < policy.max_retries and retryable:
                 await do_sleep(policy.delay_for(send_index))
                 continue
             return AttemptResult(
@@ -226,6 +232,12 @@ async def _send_with_timeout(
     if timeout_s is None:
         return await adapter.send(request)
     return await asyncio.wait_for(adapter.send(request), timeout=timeout_s)
+
+
+#: Appended to an attempt's error when the failure would repeat identically (``retryable =
+#: False``, such as a reply over the size cap): a resume keeps that attempt instead of sending
+#: it again.
+NOT_RETRYABLE_MARK = " [not retryable]"
 
 
 def reserve_tokens(request: ModelRequest, sampling: Sampling | None) -> int:

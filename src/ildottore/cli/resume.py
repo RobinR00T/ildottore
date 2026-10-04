@@ -63,6 +63,7 @@ def load_resume_run(
     judge: Target | None = None,
     adaptive: bool | None = None,
     allow_unverified: bool = False,
+    adopt: bool = True,
 ) -> TestRun:
     """Rebuild the partial :class:`TestRun` for ``run_id`` from stored evidence.
 
@@ -117,7 +118,27 @@ def load_resume_run(
 
         manifest_store = SqliteRunStore(Path(run_db))
         try:
-            check_manifest(result, manifest_store.recorded_evidence(run_id))
+            check_manifest(
+                result,
+                manifest_store.recorded_evidence(run_id),
+                manifest_store.pending_artifacts(run_id),
+                battery=manifest_store.recorded_battery(run_id),
+            )
+            # Adopt what is on disk into the journal, now that it passed: artifacts written
+            # before the journal existed (a run started by an older version) were otherwise
+            # known to no record once this resume journaled new ones under the same spec, and
+            # the next resume refused the run as tampered (pre-commit audit of F11). A pending
+            # row whose file is present is confirmed the same way.
+            if adopt:
+                manifest_store.adopt_artifacts(
+                    run_id,
+                    [
+                        (attempt.spec_id, digest)
+                        for digest, attempt in zip(
+                            result.attempt_hashes, result.attempts, strict=True
+                        )
+                    ],
+                )
             row = manifest_store.get_run(run_id) or {}
         except TamperError as exc:
             raise ValueError(f"run {run_id!r} cannot be resumed: {exc}") from exc
@@ -129,11 +150,9 @@ def load_resume_run(
     else:
         started_at = None
 
-    # One reference per ARTIFACT, not per attempt id: a defensive invariant. The shipped resume
-    # never re-sends an attempt (errored ones included), so one id has one artifact today; but
-    # indexing by id, if two ever shared one, kept one artifact and cited it twice, and `replay`
-    # then refused the run as tampered (found while trying a re-send of errored attempts, F11,
-    # which was withdrawn on 2026-10-04).
+    # One reference per ARTIFACT, not per attempt id: a resume sends an errored attempt again
+    # under its id (F11), so one id can have the failed try and its re-send on disk. Indexing by
+    # id kept one artifact and cited it twice, and `replay` then refused the run as tampered.
     root = Path(evidence_root)
     by_spec: dict[str, list[Attempt]] = defaultdict(list)
     refs_by_spec: dict[str, list[EvidenceRef]] = defaultdict(list)

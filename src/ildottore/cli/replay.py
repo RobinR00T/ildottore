@@ -48,7 +48,12 @@ def replay_checked(
         store = SqliteRunStore(run_db)
         try:
             if store.knows_run(run_id):
-                check_manifest(result, store.recorded_evidence(run_id))
+                check_manifest(
+                    result,
+                    store.recorded_evidence(run_id),
+                    store.pending_artifacts(run_id),
+                    battery=store.recorded_battery(run_id),
+                )
             else:
                 warning = (
                     f"the run store {run_db} has no record of run {run_id!r}: each artifact "
