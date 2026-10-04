@@ -96,7 +96,9 @@ selected: [{spec_id, reason, mutators: [str], baseline_resistance: float|None}],
 skipped: [{spec_id, reason}], budgets: {max_tokens, max_requests, max_wall_s, max_attempts}}`
 - reviewable, persisted with the run (validates vs the test-plan schema, which is generated on
   demand by `dottore schema export --name test-plan` and not committed under `schemas/`,
-  OD-14).
+  OD-14). (As built the `TestPlan` is not persisted: it lives in the `CampaignResult` of one
+  invocation. What the run store keeps is the integrity context: spec digests, target digest,
+  judge digest, run count and planning mode.)
 `Attempt` carries `{sampling: {temperature, top_p, seed?}, provider_request_id,
 provider_response_id, outcome, env_error?}`. `TestRun.status ∈ {complete, budget_exhausted,
 parked}`; `repro` per finding = `successful_attacks / N`. Nothing emitted here: reporters (u11)
@@ -117,7 +119,12 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
   `inconclusive: capability_unavailable` for the gated specs, never `pass`.
 - **Adaptive plan:** given a fixture `ModelFingerprint`, `planner` drops inapplicable specs and
   logs every skip with a reason; `--no-adaptive` runs the full set. Golden `TestPlan` fixture in
-  `tests/fixtures/plans/`.
+  `tests/fixtures/plans/`. (As built: the planner drops a spec only for a capability the target
+  file does not declare, never because of the fingerprint, and records the reason; a
+  fingerprint only reorders each spec's mutators by carrier comprehension. There is no
+  `--no-adaptive` flag: the non-adaptive pass-through, `build_plan(adaptive=False)`, is what a
+  run without `-sV`, `-A` or `--deep` gets, and `--deep` without `-sV` is adaptive with nothing
+  to order by.)
 - **Env-vs-product:** injected rate-limit/timeout ⇒ retry-then-`inconclusive`; injected exploited
   response ⇒ `fail`. `tests/core/test_retry_classification.py`.
 - **Resume:** kill mid-run, resume by `run_id` ⇒ no duplicate attempts, no re-sent completed

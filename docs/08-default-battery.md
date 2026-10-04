@@ -53,13 +53,14 @@ lessons, §6's design intent), read it as design, not as a shipped feature.
 |---|---|---|---|---|
 | **T0: Quick** | `--quick` | nmap-default equivalent: fast triage, cheap (mostly single-turn; `JB-ROLEPLAY-001` is multi-turn) | 18 | minutes |
 | **T1: Standard** | `--suite owasp:llm` | the OWASP LLM Top 10 2025 suite (design: full coverage) | 18, the same ids as T0 | minutes |
-| **T2: Deep** | `--deep` | the full shipped battery at `-T2` | 75 candidates; a target runs those its capabilities allow | long |
+| **T2: Deep** | `--deep` | the full shipped battery at `-T2` | 75 candidates; a target runs those its declared capabilities and the policy gate allow (67 at most: the 8 policy-gated specs never send from the CLI) | long |
 
 Measured, not designed: `owasp-llm-top10` and `quick` list the same 18 spec ids, so T0 and T1
 are one battery today (T1's design size was ~60). Neither is the default: a `run` with no
 `--suite` selects the full battery, every spec the target can run. The whole battery covers 8
 of the 10 OWASP LLM codes (`dottore coverage --framework owasp`). `--quick` selects the `quick`
-suite at `-T0`. `--deep` runs the full battery at `-T2`, the same selection as no flag;
+suite at `-T0`. `--deep` changes the timing template to `-T2` and not the selection: with no `--suite` it
+runs the full battery, as no flag does;
 adaptive ordering needs a fingerprint, so it applies only with `-sV` (or `-A`, which adds it):
 `docs/09 §2`. `--suite agentic` is not T2: it resolves to `agentic-extortion`, 7 specs. The
 "150+" in the original design table was a target, not a measurement: the battery ships 75
