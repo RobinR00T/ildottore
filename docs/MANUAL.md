@@ -416,6 +416,18 @@ A mutation must name a registered mutator (built-ins plus installed plugins), or
 (§12). An installed mutator plugin that cannot be loaded is a `MUTATOR_PLUGIN_ERROR` warning,
 not a crash: lint goes on with the built-ins.
 
+A spec pack can come from a third party, so lint reads only regular files that resolve inside
+their pack directory (or, for loose specs, the directory they were found in), at most 1 MiB
+each; a file named directly on the command line is read wherever it points. A document that
+expands, counting every alias where it is used, past 100,000 nodes (a long text counts one node
+per 64 characters), or that holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a
+few aliases used to turn a 4 KB file into 52 MB of error text. A YAML error gives the line and
+the reason without quoting the line, a suite or pack error names the field without the value,
+a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
+schema errors are listed per file. An oracle marker that an echo of the
+request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered
+into the spec's images (see `CONTRIBUTING.md`).
+
 ### `dottore describe`, one spec's detail card
 
 ```
@@ -880,6 +892,10 @@ or without it, so an uncorroborated secret hit cannot fail a build. See
   content-addressed and redacted at rest, in `<run-id>/attempts/`. Recognition traffic from
   `-sV` is stored the same way in `<run-id>/probes/`, kept apart so it cannot be counted as
   attack traffic. The run store is a SQLite db (`--run-db`).
+- **File permissions.** Attempt and probe files are readable by their owner only (0600), and
+  so are a run store and a report file the tool creates. A report that already exists keeps
+  its mode when it is rewritten, and so does an existing run store. A report another user must
+  read (a web server, a container running as someone else) needs `chmod 644` once.
 - **Replay.** `dottore replay <run-id>` re-reads a run from stored evidence with no
   re-sending and checks it against the run store, which is what makes a finding auditable
   after the fact.

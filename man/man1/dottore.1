@@ -254,7 +254,9 @@ Many targets in one file; expanded by
 .B dottore fleet.
 .TP
 .I .dottore/
-Evidence store and run database (runtime artifacts; do not commit).
+Evidence store and run database (runtime artifacts; do not commit). Attempt files, a new run
+database and a new report file are readable by their owner only (mode 0600); an existing report
+keeps its mode.
 .SH EXAMPLES
 .PP
 Quick triage, all report formats:

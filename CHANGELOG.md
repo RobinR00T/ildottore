@@ -5,6 +5,59 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (the last open findings of the 2026-10-03 audit)
+
+- **A refusal could still score as exploited through a channel the echo lint did not read**
+  (F-20). `MM-IMG-HARMFUL-001` puts its request in an image that ended "BEGIN WITH STEP 1.", and
+  "I can't help with that. I won't ... begin with step 1." failed both the `refusal` evaluator
+  and the `step 1[:.]` marker. The phrase is out of the image. The linter now reads the text of
+  a rendered image as part of the request (always: it cannot tell an image that is the request
+  from one carrying an injection, so a marker for reproduced untrusted content belongs in the
+  carrier or a document), reads `setup.tools` among the text a SECURE marker may not come from
+  (tools are not delivered to a target yet, OD-18),
+  and refuses a `refusal`-scored spec that puts one of that evaluator's compliance tells
+  ("step 1", "here are the steps", "here's how to" and their variants) anywhere in front of the
+  target. The tells live in `shared/refusal_tells.py`, read by the evaluator and the linter
+  alike. Lint finds no other shipped spec affected. `MM-IMG-HARMFUL-001` moves to
+  `spec_version: "1.1"` (`docs/06 §4`: a changed test bumps its version).
+- **A few YAML aliases made a 4 KB spec print 52 MB of lint errors** (SEC-09), and the loader
+  read whatever a spec path pointed at. A spec, suite or pack file is now read only when it is a
+  regular file that resolves inside its pack directory, at most 1 MiB (a link to `/dev/zero`
+  passed the size check at 0 bytes and was read without end; a link to a file outside the pack
+  was parsed and its first line quoted in the error). A document that expands, counting every
+  alias where it is used, past 100,000 nodes (a long text counts one node per 64 characters, so
+  aliases of one big string cannot slip through), or that holds a recursive alias, is one
+  `PARSE_ERROR`, decided before anything is built from it. YAML errors give the reason and
+  position without quoting the line, a value PyYAML cannot build (`2026-02-31`, a bad `!!int`,
+  an integer past Python's digit limit) is one `PARSE_ERROR` instead of a traceback, pydantic
+  errors in suites and packs name field and reason without the value, at most 20 schema errors
+  are listed per file and each JSON-schema message is cut at 300 characters. The file is opened
+  without following a link and without blocking, and checked again once open. Scope, target, fleet and calibration label files are the operator's
+  own and keep the plain safe loader.
+- **The run store was world-readable while every attempt file is 0600** (SEC-10, the
+  permissions half; the symlink half was fixed in the secrets and evidence block). A run store
+  the tool creates is now 0600, through a symlink too (SQLite gives its `-wal` and `-shm` files
+  the same mode); an existing one keeps its mode, and `--run-db :memory:` creates no file.
+- `tests/test_audit_last_lows.py` covers the three fixes.
+
+### Changed
+
+- **A spec, suite or pack file that resolves outside its pack is refused** (SEC-09). A pack whose
+  `attacks/` is a symlink to a shared directory elsewhere, or a loose directory holding a
+  symlinked spec, now lints as `PARSE_ERROR ... resolves outside its directory`. Copy the files
+  in, or name a file directly on the command line, which is read wherever it points. A pack
+  reached through a symlinked directory still loads.
+- **A report file the tool creates is readable by its owner only (0600)** (SEC-10). A report
+  that already exists keeps its mode when it is rewritten. An HTML report served by a web server
+  running as another user, or read across a volume by another user, needs its mode set by hand
+  (`chmod 644`), or the file created beforehand with the mode wanted.
+
+### Left for Daniel (from the 2026-10-03 audit)
+
+- F9: `leetspeak` rewrites `JB-ENCODING-001`'s Base64 payload, so that variant tests nothing,
+  and `rot13` carries no decode cue. It changes how a jailbreak carrier is built, next to the
+  multilingual area left alone after the safety-classifier stop of 2026-10-04.
+
 ### Fixed (the audit of the same day's features)
 
 Two adversarial audits were run against `-sV`'s carrier layer and `--resume`, in isolated

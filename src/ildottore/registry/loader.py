@@ -26,6 +26,7 @@ from pathlib import Path
 from pydantic import ValidationError as PydanticValidationError
 
 from ildottore.shared import AttackSpec, Pack, Suite
+from ildottore.shared.config_errors import validation_problems
 
 from .errors import LintCode, LintError
 from .pack import LoadedPack
@@ -102,6 +103,16 @@ def _inline_media_assets(data: dict[str, object], spec_dir: Path) -> None:
             )
 
 
+def _problems(exc: PydanticValidationError) -> str:
+    """Field and reason per error, no input value, at most 20 (the rest counted).
+
+    ``str(exc)`` quoted every offending value: a 112 KB suite of aliased text printed 1.2 GB
+    (pre-commit audit of the SEC-09 fix).
+    """
+
+    return validation_problems(exc, limit=20)
+
+
 @dataclass(slots=True)
 class LoadResult:
     """Outcome of a load pass: the packs that parsed + any load-time findings."""
@@ -123,11 +134,13 @@ def _rel(path: Path, root: Path) -> str:
         return str(path)
 
 
-def _load_attack_spec(path: Path, display_root: Path) -> tuple[AttackSpec | None, list[LintError]]:
+def _load_attack_spec(
+    path: Path, display_root: Path, pack_root: Path | None = None
+) -> tuple[AttackSpec | None, list[LintError]]:
     """Parse + schema-validate + construct a single attack spec YAML file."""
     rel = _rel(path, display_root)
     try:
-        data = load_yaml_file(path)
+        data = load_yaml_file(path, root=pack_root)
     except SafeLoadError as exc:
         return None, [LintError(code=LintCode.PARSE_ERROR, message=str(exc), path=rel)]
 
@@ -164,15 +177,19 @@ def _load_attack_spec(path: Path, display_root: Path) -> tuple[AttackSpec | None
         spec = AttackSpec.model_validate(data)
     except PydanticValidationError as exc:
         spec_id = data.get("id") if isinstance(data.get("id"), str) else None
-        return None, [LintError(code=LintCode.SCHEMA, message=str(exc), path=rel, spec_id=spec_id)]
+        return None, [
+            LintError(code=LintCode.SCHEMA, message=_problems(exc), path=rel, spec_id=spec_id)
+        ]
     return spec, []
 
 
-def _load_suite(path: Path, display_root: Path) -> tuple[Suite | None, list[LintError]]:
+def _load_suite(
+    path: Path, display_root: Path, pack_root: Path | None = None
+) -> tuple[Suite | None, list[LintError]]:
     """Parse + construct a suite YAML (Pydantic-first validation, ADR-0006)."""
     rel = _rel(path, display_root)
     try:
-        data = load_yaml_file(path)
+        data = load_yaml_file(path, root=pack_root)
     except SafeLoadError as exc:
         return None, [LintError(code=LintCode.PARSE_ERROR, message=str(exc), path=rel)]
     if not isinstance(data, dict):
@@ -182,7 +199,7 @@ def _load_suite(path: Path, display_root: Path) -> tuple[Suite | None, list[Lint
     try:
         suite = Suite.model_validate(data)
     except PydanticValidationError as exc:
-        return None, [LintError(code=LintCode.SCHEMA, message=str(exc), path=rel)]
+        return None, [LintError(code=LintCode.SCHEMA, message=_problems(exc), path=rel)]
     return suite, []
 
 
@@ -190,7 +207,7 @@ def _load_pack_manifest(path: Path, display_root: Path) -> tuple[Pack | None, li
     """Parse + construct a ``pack.yaml`` manifest (Pydantic-first, ADR-0006)."""
     rel = _rel(path, display_root)
     try:
-        data = load_yaml_file(path)
+        data = load_yaml_file(path, root=path.parent)
     except SafeLoadError as exc:
         return None, [LintError(code=LintCode.PARSE_ERROR, message=str(exc), path=rel)]
     if not isinstance(data, dict):
@@ -202,7 +219,7 @@ def _load_pack_manifest(path: Path, display_root: Path) -> tuple[Pack | None, li
     try:
         manifest = Pack.model_validate(data)
     except PydanticValidationError as exc:
-        return None, [LintError(code=LintCode.SCHEMA, message=str(exc), path=rel)]
+        return None, [LintError(code=LintCode.SCHEMA, message=_problems(exc), path=rel)]
     return manifest, []
 
 
@@ -224,7 +241,7 @@ def _load_pack_dir(pack_dir: Path, display_root: Path) -> LoadResult:
     attacks_dir = pack_dir / "attacks"
     if attacks_dir.is_dir():
         for f in _yaml_files(attacks_dir):
-            spec, errs = _load_attack_spec(f, display_root)
+            spec, errs = _load_attack_spec(f, display_root, pack_dir)
             result.errors.extend(errs)
             if spec is not None:
                 specs.append(spec)
@@ -233,7 +250,7 @@ def _load_pack_dir(pack_dir: Path, display_root: Path) -> LoadResult:
     suites_dir = pack_dir / "suites"
     if suites_dir.is_dir():
         for f in _yaml_files(suites_dir):
-            suite, errs = _load_suite(f, display_root)
+            suite, errs = _load_suite(f, display_root, pack_dir)
             result.errors.extend(errs)
             if suite is not None:
                 suites.append(suite)
@@ -248,7 +265,9 @@ def _load_loose_tree(root: Path, display_root: Path) -> LoadResult:
     files = [root] if root.is_file() else _yaml_files(root)
     specs: list[AttackSpec] = []
     for f in files:
-        spec, errs = _load_attack_spec(f, display_root)
+        # A file named on the command line is the operator's choice; one found in a directory
+        # must resolve inside it, like a pack's.
+        spec, errs = _load_attack_spec(f, display_root, None if root.is_file() else root)
         result.errors.extend(errs)
         if spec is not None:
             specs.append(spec)

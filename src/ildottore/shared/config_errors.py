@@ -21,13 +21,20 @@ if TYPE_CHECKING:  # annotation only: `shared` imports pydantic and the stdlib a
 __all__ = ["validation_problems", "yaml_problem"]
 
 
-def validation_problems(exc: ValidationError) -> str:
-    """``field.path: reason`` for every error, without the input value or a docs URL."""
+def validation_problems(exc: ValidationError, *, limit: int | None = None) -> str:
+    """``field.path: reason`` for every error, without the input value or a docs URL.
 
-    return "; ".join(
-        f"{'.'.join(str(part) for part in err['loc']) or '<root>'}: {err['msg']}"
-        for err in exc.errors(include_input=False, include_url=False)
+    With ``limit``, only the first ``limit`` errors are listed and the rest counted.
+    """
+
+    errors = exc.errors(include_input=False, include_url=False)
+    shown = errors if limit is None else errors[:limit]
+    text = "; ".join(
+        f"{'.'.join(str(part) for part in err['loc']) or '<root>'}: {err['msg']}" for err in shown
     )
+    if len(shown) < len(errors):
+        text += f"; and {len(errors) - len(shown)} more"
+    return text
 
 
 def yaml_problem(exc: yaml.YAMLError) -> str:
