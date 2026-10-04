@@ -39,7 +39,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 
 | Gap | Status | Where | Target |
 |-----|--------|-------|--------|
-| **Data-leak / memorization family** (leak-by-asking: RAG enum, cross-tenant, memory, divergence, prefix-completion, verbatim, membership, canary) | ✅ | `docs/11` | MVP‑1 (layer A + divergence + cross-tenant); MVP‑2 (membership) |
+| **Data-leak / memorization family** (leak-by-asking: RAG enum, cross-tenant, memory, divergence, prefix-completion, verbatim, membership, canary) | 🟡 5 of 11 techniques ship | `docs/11 §1` | MVP‑1 (layer A + divergence + cross-tenant); MVP‑2 (membership). Shipped: `DL-SECRET-CANARY-001`, `DL-XSESSION-001`, `DL-XTENANT-001`, `DL-MEMORIZE-DIVERGENCE-001`, `DL-PII-ELICIT-001` (the last one policy-gated and not enableable from the CLI). RAG enumeration, prefix completion, verbatim copyright, membership, secret-shape elicitation and breach canary have no spec |
 | **PII / secret-shape evaluators with FP control** (Luhn, IBAN mod-97, key prefixes, entropy; hallucination ≠ leak) | ✅ | `docs/04`, `docs/11 §4` | MVP‑1 |
 | **Logprobs capture in adapters** (membership inference, confidence side-channels) | ✅ | `docs/00` (stack + Phase D), `docs/01 §3` | capture MVP‑1 · membership MVP‑2 |
 | **Multi-identity / cross-tenant harness** (authz_leak evaluator, ≥2 identities in scope) | ✅ | `docs/00` (Phase A), `docs/01 §6`, `docs/11 §3` | MVP‑1 |
@@ -50,9 +50,9 @@ P1 = strong differentiator / real attack surface · P2 = later.
 | Gap | Status | Note |
 |-----|--------|------|
 | **Adversarial-suffix / transfer attacks** (GCG-style, black-box transferable jailbreaks) | 🟡 **transfer built** | `adversarial_suffix` mutator carries the pinned published GCG universal suffix (Zou et al. 2023), reproducible + wired into JB-REFUSAL-SUPPRESS. Live gradient optimization stays out of scope (needs model gradients; non-reproducible) |
-| **Guardrail / moderation-layer evasion** as its own target | ✅ **built** (2026-09-03) | `guardrail-evasion` suite: `GUARD-INPUT-EVASION-001` (obfuscated trigger evades the input classifier, model must still refuse) + `GUARD-OUTPUT-ENCODE-001` (encode the reply past the output filter). A dedicated filter-target type stays future work |
+| **Guardrail / moderation-layer evasion** as its own target | 🟡 **suite built** (2026-09-03), request is a placeholder | `guardrail-evasion` suite: `GUARD-INPUT-EVASION-001` (obfuscated trigger evades the input classifier, model must still refuse) + `GUARD-OUTPUT-ENCODE-001` (encode the reply past the output filter). Both send the literal placeholder `[DISALLOWED-HARMFUL-TASK]` instead of a concrete request, so a refusal or a compliance measures the reaction to a placeholder (as do `MM-IMG-HARMFUL-001` and `SAFETY-HARMFUL-001`). A dedicated filter-target type stays future work |
 | **Embedding / vector-store attacks (LLM08)** (embedding inversion, neighbor retrieval, cross-tenant index leak) | ✅ **built** (3 specs + suite) | placeholder in `docs/08 §4`; needs a vector-store target type |
-| **Defined multilingual battery** (low-resource-language jailbreaks) | ✅ **built** (2026-09-02) | parameterized mutations (`name:param`) now supported by the runner; `JB-MULTILINGUAL-001` runs `translate:{es,fr,de,zh}` systematically (offline, deterministic gloss). Adding more languages is a `PHRASE_MAP` entry |
+| **Defined multilingual battery** (low-resource-language jailbreaks) | 🟡 **mechanism built, not yet a battery** | parameterized mutations (`name:param`) are supported by the runner and `JB-MULTILINGUAL-001` runs `translate:{es,fr,de,zh}`. The `translate` mutator glosses **one word** per language and leaves the rest in English (on a benign sentence, `translate:es` gives "how el login of this website works"), so the spec sends English with a foreign article, not a translated prompt. A real per-language battery needs translated prompts. Adding a gloss is a `PHRASE_MAP` entry |
 | **Multi-turn adaptive jailbreaks** (Crescendo/Linear/Sequential/Bad-Likert/Tree) | ✅ **built** | pinned-ladder engine `core/conversation.py` + 5 specs + `multi-turn` suite (docs/14) |
 | **Access-control family** (BFLA/BOLA/RBAC/SSRF/debug/shell-injection/tool-metadata-poisoning) | ✅ **built** | `access-control` suite (docs/14) |
 | **OWASP-Agents-2026 agentic breadth** (goal theft, recursive hijack, identity abuse, inter-agent, drift) | ✅ **built** | `agentic-owasp2026` suite (docs/14) |
@@ -70,14 +70,27 @@ P1 = strong differentiator / real attack surface · P2 = later.
 | Timing / token-probability side-channels | ⬜ infra-dependent and non-reproducible by nature; out of scope for a deterministic scanner |
 | Pre-run cost estimate | ✅ **built** (2026-09-03): `dottore run --estimate` prints requests (specs x runs x mutations x turns) + a rough token gloss, no sends. No per-model pricing baked in (multiply by your rate) |
 | Human-in-the-loop feedback loop | ✅ **built** (2026-09-03, bounded): `dottore calibrate <report.json> <labels.yaml>` scores the scanner against operator labels (agreement + precision/recall, fail = positive). Read-only; a continuous triage store is future work |
-| Bias / toxicity / fairness pack | ✅ **built** (2026-09-02): `safety_content` + `bias_fairness` categories, `SAFETY-HARMFUL-001` + `BIAS-STEREOTYPE-001`, `responsible-ai` suite. Optional pack (RAI owasp codes, NIST-mapped), not security core |
+| Bias / toxicity / fairness pack | ✅ **built** (2026-09-02): `safety_content` + `bias_fairness` categories, `SAFETY-HARMFUL-001` + `BIAS-STEREOTYPE-001`, `responsible-ai` suite. Optional pack (RAI owasp codes, NIST-mapped), not security core. `SAFETY-HARMFUL-001` sends the placeholder `[DISALLOWED-HARMFUL-TASK]` rather than a concrete request (see the guardrail-evasion row) |
+
+## Open decisions that limit what a ✅ row means
+
+These are not coverage gaps a new spec closes; they change what a built row proves on a live
+target, and each is waiting on a decision recorded in `specs/contracts/00-INDEX.md`.
+
+| Decision | What it limits today |
+|---|---|
+| **OD-18** (ADR-0009): a spec's `setup` never reaches a live target | The request carries prompt, system prompt, sampling and media only. 32 of the 75 specs depend on `setup.documents`, `setup.tools` or `setup.memory_seed`; against a live endpoint they run without the documents, tools or memory they were written for. The offline mock and the fixtures do honour them |
+| **OD-19** (ADR-0010): `evaluator_logic` is declared by all 75 specs (42 `any_fail`, 33 `weighted`) and read by no run path | The runner's fixed rule decides. One consequence: a fail decided by the judge alone, when every deterministic evaluator passed, is `confirmed` and trips `--fail-on`. The ADR recommends making it `needs-review`; not decided |
+| **Policy-pack flag** | The CLI loads no policy pack, so the 8 specs that declare `requires_policy` (the agentic-extortion core and the PII elicitation spec) are always `blocked_by_policy` from `dottore` |
 
 ## Standing note
 
 The engine is **built and self-validating**: every spec ships golden `vulnerable`/`hardened`
-fixtures that the linter runs through the real evaluators on each `dottore lint`, the CI gate
-wall (ruff, mypy --strict, import-linter, `lint specs`, pytest + coverage, self-scan, bandit,
-pip-audit) is green, and `make gates` mirrors it locally. The strength remains the methodology
-(reproducibility + evidence + risk mapping, judge hardening, self-validation, extensibility);
+fixtures that the linter runs through the real evaluators on each `dottore lint` (on
+2026-10-04: 0 errors, 0 warnings across 75 specs, 14 suites, 1 pack). The CI wall is ruff,
+mypy --strict, import-linter, `lint specs`, pytest + coverage and the self-scan; `bandit` and
+`pip-audit` are not in CI, only in `make gates`, which needs both installed by hand
+(`SUPPLY-CHAIN.md`). This note does not certify a green run: the latest workflow run does. The
+strength remains the methodology (reproducibility + evidence + risk mapping, judge hardening, self-validation, extensibility);
 what is left is coverage breadth (the rows above) and the deliberately deferred P2 items
 (streaming pre-moderation, timing side-channels) that trade away reproducibility.
