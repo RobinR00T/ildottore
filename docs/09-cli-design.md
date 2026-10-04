@@ -81,7 +81,8 @@ SAFETY / SCOPE
 OUTPUT
   -oJ file.json  -oH file.html  -oS file.sarif  -oX junit.xml  -oA <prefix> (all)
   --fail-on <low|medium|high|critical>     CI gate (confirmed findings; default high)
-  --include-needs-review                   also gate on low-confidence findings
+  --include-needs-review                   also gate on unconfirmed fails (never on an
+                                           inconclusive or a pass)
   --compare                                model-comparison matrix (two or more targets)
   -v, -vv, -q, --no-color
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>
@@ -145,6 +146,8 @@ battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and 
 ## 4. Output ergonomics
 
 - Live progress like nmap: `Scanning target [ 34/60 specs ] PI-DIRECT-001 ... FAIL (high)`.
+  An unconfirmed fail reads `FAIL (high, needs review)`, because it does not trip `--fail-on`
+  unless `--include-needs-review` is given.
 - Terminal summary table by category + severity band + reproducibility.
 - Exit codes (`cli/exit_codes.py`): `0` clean, `1` findings below `--fail-on`, `2` findings
   at/above `--fail-on`, `3` operational error, which includes a run that did not finish and a

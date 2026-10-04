@@ -47,7 +47,8 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   operational error (`docs/09 §4`). As built the operational code is `3`, and it also covers a
   run that did not finish and a command-line usage error (an unknown option exits 3, so it
   cannot be read as "findings at/above"). `--fail-on` gates **confirmed** findings; `--include-needs-review`
-  extends the gate to low-confidence ones.
+  extends the gate to the unconfirmed **fails** only (an inconclusive or a pass never gates,
+  although an inconclusive that was sent reads `needs_review` in the reports, `docs/05 §2`).
 - KEEP: `-T0..-T5` expand to concrete rate/concurrency/timeout defaults in `flags.py` (documented
   table); explicit `--rate/--concurrency/--timeout` override the template.
 - DECIDE (OD-5), resolved as built: there is no `--adaptive` flag. `-sV` and `-A` fingerprint
@@ -79,7 +80,7 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
 - `lint-imports` green: `cli` imported by nobody; `core/adapters/evaluators/...` never import
   `cli`; concretes appear **only** in `cli/wiring.py` (import-contract assertion in `docs/07`).
 - **Exit-code golden table** (`tests/cli/test_exit_codes.py`): clean→0, below-threshold→1,
-  at/above→2, operational-error→>2; `--include-needs-review` flips low-confidence into the gate.
+  at/above→2, operational-error→>2; `--include-needs-review` flips unconfirmed fails into the gate.
 - **Scope gate is non-bypassable** (`tests/cli/test_scope_gate.py`): `run`/`fingerprint`/`-A`
   without `--scope` → exit >2 with a clear error and **zero** adapter sends (asserted via fake
   adapter call count). (`--allow-endpoint` emits an audit record: not built, the flag does not

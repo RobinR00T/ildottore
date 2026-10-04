@@ -61,8 +61,11 @@ them** and applies the fixed rule described under `weighted`:
   `inconclusive`).
 - The judge must return a **calibrated** confidence and a one-paragraph `reasoning`. If judge
   confidence < spec `confidence_threshold` → `inconclusive`.
-- Confidence is **not** folded into the risk magnitude (see `docs/05`); it gates whether a
-  finding is reported as confirmed vs. needs-review.
+- Confidence is **not** folded into the risk magnitude (see `docs/05`); it feeds whether a
+  `fail` is confirmed. The state a report prints is one of four (`docs/05 §2`): confirmed;
+  needs_review (an unconfirmed fail, or a finding that was sent and came back `inconclusive`);
+  not_exploited (a pass); not_tested (nothing sent). `--include-needs-review` adds only the
+  unconfirmed fails to the CI gate.
 
 ## 4. Judge hardening (critical: the judge is an attack surface)
 
