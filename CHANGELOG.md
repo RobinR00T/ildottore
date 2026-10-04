@@ -77,6 +77,83 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (full audit of 2026-10-03: residuals of the seven blocks)
+
+What the blocks left open, fixed after them and audited four times before commit
+(`tests/test_audit_residuals.py`).
+
+- **"Needs review" counted everything that was not confirmed.** A clean hardened run read
+  "Needs review: 75" (R5). Each finding now has one state: `confirmed`, `needs_review` (an
+  unconfirmed fail, or a spec that was sent and ended inconclusive), `not_exploited` (a pass)
+  or `not_tested` (nothing was sent, a capability skip for example). The summary, the HTML
+  sections ("Needs review: unconfirmed exploits and undecided results", "Not exploited or not
+  tested") and the SARIF result state all use it, and a spec that sent nothing no longer
+  dilutes the distributions with zeros (R14).
+- **An unconfirmed fail printed `FAIL (critical)` and the run exited 0** with no word on why
+  (R6). The progress line says `FAIL (critical, needs review)`: it does not trip `--fail-on`
+  unless `--include-needs-review` is given.
+- **The multi-target JSON envelope held the last target only** in `run.findings` and
+  `run.summary`, beside a top-level summary of all of them (R10). It holds every target.
+- **JSON, SARIF and JUnit did not say which framework editions they measured against** (R12,
+  clause A-14); the HTML and the terminal did. JSON carries `summary.coverage.<axis>.edition`,
+  SARIF `framework_editions` in the run properties, JUnit `edition.*` properties. **Schema
+  note:** `edition` is a new optional property and `schema_version` stays `1.0`, so a report
+  from this version fails validation against an older copy of `report-1.0.schema.json`
+  (reports from earlier versions still validate against the new one). Validate with the copy
+  shipped in this version.
+- **The fingerprint named a family from no signal** (R16): a constant mock was meta-llama at
+  0.67, a refuse-all target llama-3-8b with a 2023-03 cutoff, from `finish_reason=stop`, which
+  every OpenAI-compatible server sends. A target that answers every attributing probe with the
+  same text is now attributed only from a `model=` field in its response envelope, with a
+  version only when one clearly leads, otherwise `unknown`, and is flagged
+  `non_discriminating_target`; `run -sV` says so on the fingerprint line. Carrier probes are
+  left out of that check, since answering carriers differently is what they measure.
+- **`dottore fingerprint --offline` ignored the target's `mock_scenario`**, so every carrier
+  scored 0.0 while `run -sV` on the same file measured comprehension.
+- **A mutation parameter was never checked.** `translate:klingon` passed lint, sent a language
+  picked by hash and recorded "klingon"; `rot13:x` sent rot13 recorded as `rot13:x`. Lint and
+  the runner now refuse a parameter the mutator does not implement (the runner sends nothing
+  for that spec and records `unknown_mutator_parameter`), case-insensitively (`translate:ES`
+  works). Mutators declare `accepted_params`; a plugin that declares nothing is not
+  second-guessed (the default is `None`, so the plugin contract is unchanged).
+- **Two report formats could write one file**: paths differing only in case or in Unicode
+  normalization (`café.json` in NFC and NFD) are now refused as one file. `-oA report.v2` wrote
+  `report.json`, `report.html` and so on, dropping `.v2`; it keeps the dotted name now
+  (`report.v2.json`), and a prefix ending in a report extension (`report.json`) is taken as the
+  stem.
+- **CLI errors masked the digests they exist to show**: a scope checksum mismatch hid the hash
+  it names behind «REDACTED», and a tamper refusal the hash the edited content has. An error now
+  keeps readable the digest this tool computed (the scope body's hash, the content hash) and
+  evidence file names; every other 64-hex value goes to the redactor, and a URL password is
+  masked even when it is 64 hex.
+- **A raw key pasted as an `auth_ref` could be printed back.** The redactor caught it only by
+  its entropy, so about one random 64-hex key in 20 (and three 32-hex keys in 4) appeared in
+  clear in "not authorized by the scope" and "unsupported auth_ref scheme" errors, on earlier
+  versions too. An error now quotes an `auth_ref` only when it is a reference
+  (`scheme://NAME`); a literal is "a literal value (not shown)".
+- Help text: `--suite` names the aliases that exist (`owasp:llm`, `baseline`, `agentic`),
+  `--deep` says it is timing template T2 over the same battery (adaptive only with `-sV`), and
+  `run` is no longer called the default command. A barren selection no longer tells the
+  operator to enable the category in a policy pack the CLI cannot load.
+- Defensive, no shipped path produces it: a resume cites one evidence reference per artifact
+  (not per attempt id) and `replay` counts one attempt per id, the answered one, listing the
+  rest.
+- **Still open:** a resume never re-sends a stored attempt, including one that ended in an
+  environment error (F11). A fix was written and withdrawn after two audits: it needs evidence
+  references persisted as each artifact is written, or an interrupted resume leaves artifacts
+  the run store never recorded. And the judge's self-consistency check: when its two votes
+  disagree the code drops the judge and the deterministic evaluators decide, while the threat
+  model says the result becomes inconclusive. That is a decision for the maintainer, recorded
+  in the docs as an open question.
+
+### Documentation (full audit of 2026-10-03: the docs say what the code does)
+
+Block 7 of the audit: user docs, design docs and unit contracts were checked claim by claim
+against the code, in two passes plus a doc-truth audit of the result. User docs (README,
+USAGE, MANUAL, FAQ, man pages, AGENTS.md, examples) and design docs (docs/00 to 16,
+SUPPLY-CHAIN.md, the unit contracts and the OD ledger) now describe what is built and mark
+what is not, and the residual behaviour above is documented where each topic lives.
+
 ### Fixed (full audit of 2026-10-03: CLI and reports)
 
 - **`--hardened` against a live target** replayed the offline fixtures, sent nothing, and
@@ -100,9 +177,8 @@ order, not how any real model behaves: that still needs a live run.
 - Smaller: `dottore --version` printed 0.0.1 (it reads the package version, 0.1.0); the HTML
   report is a complete UTF-8 document, not a fragment a browser rendered as mojibake;
   `new-spec --id ../evil` wrote outside `--out` and is refused.
-- Still open from this block: needs-review and info semantics in the summaries (R5, R6, R14),
-  the multi-target JSON envelope (R10), framework editions in the machine formats (R12), the
-  fingerprint guessing a family from no signal (R16).
+- What this block left open (R5, R6, R10, R12, R14, R16) is fixed in the residuals section
+  above.
 
 ### Fixed (full audit of 2026-10-03: budget and rate)
 

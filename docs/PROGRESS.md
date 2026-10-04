@@ -3,6 +3,35 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-04 (midday): block 6 merged; residuals and block 7 (docs truth) done
+
+- PR #34 (block 6) squash-merged as `0bcf4d1` after green CI.
+- Standing rule from Daniel (2026-10-04, 09:18): an audit runs before every commit and every
+  merge. The residual patch went through four pre-commit audits; the first three each found
+  something (among them F11 artifacts the run store never recorded after an interrupted
+  resume, a digest exemption that printed unregistered 64-hex keys in clear, and a plugin
+  contract change), each fixed or withdrawn before the next round.
+- Residuals on `fix/audit-residuals` (`tests/test_audit_residuals.py`): finding states
+  (`confirmed`, `needs_review`, `not_exploited`, `not_tested`) used by the summary, HTML,
+  SARIF and the progress line (R5, R6, R14); the multi-target envelope (R10); framework
+  editions in JSON, SARIF and JUnit (R12, an additive schema change recorded in the
+  CHANGELOG); no family from a constant target, `non_discriminating_target` (R16);
+  `fingerprint --offline` honours `mock_scenario`; mutation parameters checked against each
+  mutator's `accepted_params` (closes `translate:klingon` from the PR #32 review); report path
+  collisions by case and Unicode form; `-oA` with a dotted prefix; CLI errors keep only the
+  digests they carry readable.
+- Block 7: user docs, design docs and unit contracts checked claim by claim against the code,
+  plus a doc-truth audit of the result.
+- Withdrawn: F11 (resume re-sending attempts that ended in an environment error). It needs
+  evidence references persisted as each artifact is written; the defensive pieces stayed
+  (one reference per artifact on resume, one attempt per id in `replay`).
+- Open: F11; the judge self-consistency behaviour (code drops the judge on disagreement, the
+  threat model says inconclusive); gzip expansion before the size cap; pooled confidence on a
+  per-variant confirmation; exotic path forms; block 4's leftovers (token overshoot without
+  `sampling.max_tokens`, evidence dropped on a token breach, the `-sV` probe adapter's own
+  retries); and Daniel's decisions (OD-18, OD-19, scope signing, a policy-pack flag, the two
+  `-sV` carriers that add instruction text).
+
 ## State, 2026-10-03 (around midnight): block 4 merged, block 6 (CLI and reports) fixed
 
 - PR #33 (block 4) squash-merged as `ac45f92` after green CI.
