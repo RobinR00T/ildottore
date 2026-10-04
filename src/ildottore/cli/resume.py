@@ -14,7 +14,6 @@ findings are a redacted projection, not the attempts themselves.
 
 from __future__ import annotations
 
-import json
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -124,10 +123,24 @@ def load_resume_run(
         finally:
             manifest_store.close()
 
-    refs = _ref_index(Path(evidence_root), run_id)
+    # One reference per ARTIFACT, not per attempt id: a defensive invariant. The shipped resume
+    # never re-sends an attempt (errored ones included), so one id has one artifact today; but
+    # indexing by id, if two ever shared one, kept one artifact and cited it twice, and `replay`
+    # then refused the run as tampered (found while trying a re-send of errored attempts, F11,
+    # which was withdrawn on 2026-10-04).
+    root = Path(evidence_root)
     by_spec: dict[str, list[Attempt]] = defaultdict(list)
-    for attempt in result.attempts:
+    refs_by_spec: dict[str, list[EvidenceRef]] = defaultdict(list)
+    for digest, attempt in zip(result.attempt_hashes, result.attempts, strict=True):
         by_spec[attempt.spec_id].append(attempt)
+        refs_by_spec[attempt.spec_id].append(
+            EvidenceRef(
+                run_id=run_id,
+                attempt_id=attempt.attempt_id,
+                uri=paths.relative_uri(root, paths.attempt_path(root, run_id, digest)),
+                sha256=digest,
+            )
+        )
 
     findings = [
         Finding(
@@ -137,7 +150,7 @@ def load_resume_run(
             risk=RESUME_PLACEHOLDER_RISK,
             confirmed=False,
             attempts=attempts,
-            evidence=[refs[a.attempt_id] for a in attempts if a.attempt_id in refs],
+            evidence=refs_by_spec[spec_id],
         )
         for spec_id, attempts in sorted(by_spec.items())
     ]
@@ -351,33 +364,3 @@ def _assert_same_context(
             "others over "
             f"{runs}, on the same reproducibility axis. Resume at --runs {stored_runs}."
         )
-
-
-def _ref_index(evidence_root: Path, run_id: str) -> dict[str, EvidenceRef]:
-    """Map ``attempt_id`` to the reference of the artifact that holds it.
-
-    The artifact's file NAME is its content hash, so the ref is recovered by reading the
-    directory rather than by re-hashing the model: a re-hash drifts the moment the redactor
-    or the dump shape changes, and would then point at a file that does not exist. Parsed
-    rather than string-matched for the same reason (the stored form is canonical JSON with
-    no spaces, so ``'"attempt_id": "x"'`` silently matches nothing).
-    """
-
-    directory = paths.attempts_dir(Path(evidence_root), run_id)
-    index: dict[str, EvidenceRef] = {}
-    if not directory.is_dir():
-        return index
-    for artifact in sorted(directory.glob("*.json")):
-        try:
-            payload = json.loads(artifact.read_text(encoding="utf-8"))
-        except ValueError:
-            continue  # replay_run already hash-verifies; an unparseable file is not a ref
-        attempt_id = payload.get("attempt_id")
-        if isinstance(attempt_id, str):
-            index[attempt_id] = EvidenceRef(
-                run_id=run_id,
-                attempt_id=attempt_id,
-                uri=paths.relative_uri(Path(evidence_root), artifact),
-                sha256=artifact.stem,
-            )
-    return index

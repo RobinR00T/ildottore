@@ -23,6 +23,7 @@ class LinguisticConfusionMutator(BaseMutator):
 
     name = "linguistic_confusion"
     reversible = False
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         return f"{_PREAMBLE}{text}", {

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 
+from ildottore.fingerprint.attribution import parse_signal
 from ildottore.fingerprint.base import FingerprintLayer, ProbeContext
 from ildottore.fingerprint.combine import CombinedFingerprint, combine
 from ildottore.fingerprint.layers import default_layers
@@ -26,10 +27,13 @@ from ildottore.fingerprint.layers.carrier import CARRIER_PROBE_DETAIL, effective
 from ildottore.fingerprint.layers.guardrail import GUARDRAIL_PROFILE_DETAIL
 from ildottore.fingerprint.signatures import SignaturePack, load_pack
 from ildottore.shared.models import (
+    Capabilities,
     FingerprintEvidence,
     FingerprintGuess,
     JsonDict,
     ModelFingerprint,
+    ModelRequest,
+    ModelResponse,
 )
 from ildottore.shared.protocols import TargetAdapter
 
@@ -74,11 +78,27 @@ class FingerprintEngine:
         target_id = adapter.id
         ctx = ProbeContext(target_id=target_id, signature_pack=self._pack)
 
+        # The carrier layer's probes are left out of the check: a target can answer carriers
+        # differently (that is what comprehension measures) and every attributing probe alike.
+        recorder = _RecordingAdapter(adapter)
         evidence: list[FingerprintEvidence] = []
         for layer in self._layers:
-            evidence.extend(await layer.probe(adapter, ctx))
+            target_for_layer = adapter if layer.layer == _CARRIER_LAYER else recorder
+            evidence.extend(await layer.probe(target_for_layer, ctx))
 
         fused = combine(evidence)
+        if recorder.non_discriminating():
+            # Every attributing probe got the same text, so nothing the text layers matched
+            # came from the model: a constant mock was named meta-llama at 0.67 and a
+            # refuse-all target llama-3-8b with a 2023-03 cutoff (audit 2026-10-03, R16). The
+            # response ENVELOPE (a provider's `model` field) is not text and still counts, so
+            # only the metadata layer's evidence is kept; without it, unknown, and said so.
+            from_envelope = _from_model_field(evidence)
+            fused = CombinedFingerprint(
+                family=from_envelope.family,
+                version=from_envelope.version,
+                spoofing_flags=[*fused.spoofing_flags, NON_DISCRIMINATING_FLAG],
+            )
         guardrails = _guardrails_from_evidence(evidence)
         caps = capability_guess(adapter.capabilities())
         # The one key the PLANNER reads (``core.planner._order_family_effective``). Without
@@ -99,6 +119,66 @@ class FingerprintEngine:
             spoofing_flags=fused.spoofing_flags,
             recommended_plan_ref=None,  # ADR-0006: u08 owns plan building.
         )
+
+
+#: Flag set when the target answered every attributing probe identically: the text layers had
+#: no signal, so the family comes from the response envelope alone or is unknown.
+NON_DISCRIMINATING_FLAG = "non_discriminating_target"
+
+_CARRIER_LAYER = "carrier"
+_METADATA_LAYER = "metadata"
+
+#: Fewer answered probes than this is too little to call a target constant.
+_MIN_PROBES_FOR_CONSTANT = 3
+
+
+def _from_model_field(evidence: list[FingerprintEvidence]) -> CombinedFingerprint:
+    """Attribute from the envelope's ``model`` field alone, for a target with no text signal.
+
+    Only metadata evidence that matched a ``model=`` fragment names the model. The rest of the
+    envelope does not: ``finish_reason=stop`` is in the meta-llama signature and every
+    OpenAI-compatible server sends it, so a constant target behind such a server was still
+    named meta-llama with a 2023-03 cutoff (re-audit of R16). A version is kept only when one
+    clearly leads; a tie was broken alphabetically and named the wrong model.
+    """
+
+    kept = [
+        ev
+        for ev in evidence
+        if ev.layer == _METADATA_LAYER and "model=" in parse_signal(ev.signal).detail
+    ]
+    fused = combine(kept)
+    if fused.version is None:
+        return fused
+    masses: dict[str, float] = {}
+    for ev in kept:
+        attr = parse_signal(ev.signal)
+        if attr.family == fused.family.guess and attr.version is not None and ev.weight > 0:
+            masses[attr.version] = masses.get(attr.version, 0.0) + ev.weight
+    top = sorted(masses.values(), reverse=True)
+    if len(top) > 1 and top[0] == top[1]:
+        return CombinedFingerprint(family=fused.family, version=None, spoofing_flags=[])
+    return fused
+
+
+class _RecordingAdapter:
+    """Passes every probe through and keeps the reply texts, to see whether they ever differ."""
+
+    def __init__(self, inner: TargetAdapter) -> None:
+        self._inner = inner
+        self.id = inner.id
+        self.texts: list[str] = []
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        response = await self._inner.send(request)
+        self.texts.append((response.text or "").strip())
+        return response
+
+    def capabilities(self) -> Capabilities:
+        return self._inner.capabilities()
+
+    def non_discriminating(self) -> bool:
+        return len(self.texts) >= _MIN_PROBES_FOR_CONSTANT and len(set(self.texts)) <= 1
 
 
 def _guardrails_from_evidence(evidence: list[FingerprintEvidence]) -> JsonDict:

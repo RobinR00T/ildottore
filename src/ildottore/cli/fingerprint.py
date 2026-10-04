@@ -77,6 +77,16 @@ def fingerprint_target(
     )
     if real_target is not None:
         wiring.check_target_credential(scope, real_target)
-    adapter = wiring.build_probe_adapter(scope, target, real_target=real_target, scenario=scenario)
+    # The target's own mock_scenario steers the offline mock, as it does under `run -sV`: the
+    # comprehending scenario printed 0.0 for every carrier here because it was not passed on
+    # (audit 2026-10-03, D-09).
+    mock_scenario = (
+        wiring.load_mock_scenario(target_path)
+        if real_target is None and scenario is None and wiring.target_uses_mock(target_path)
+        else None
+    )
+    adapter = wiring.build_probe_adapter(
+        scope, target, real_target=real_target, scenario=scenario, mock_scenario=mock_scenario
+    )
     engine = wiring.build_fingerprint_engine()
     return asyncio.run(engine.run(adapter))

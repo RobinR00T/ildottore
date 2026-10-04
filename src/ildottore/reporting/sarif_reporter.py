@@ -24,8 +24,9 @@ import jsonschema
 
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
-from ildottore.reporting.summary import RunSummary
+from ildottore.reporting.summary import RunSummary, finding_state
 from ildottore.shared.enums import ReportFormat, ScanBand
+from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import AttackSpec, Finding
 
 __all__ = ["SARIF_SCHEMA_VERSION", "SarifReporter", "band_to_level", "load_sarif_schema"]
@@ -109,7 +110,7 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
     # be kind "pass" with a band level, so 41 of 75 specs that were inconclusive or never sent
     # read as passes, with a level the standard forbids for them (audit 2026-10-03, R7).
     level = band_to_level(risk.band) if kind == "fail" else "none"
-    state = "confirmed" if finding.confirmed else "needs_review"
+    state = finding_state(finding)
     message = (
         f"{finding.spec_id} against {finding.target_id}: {finding.status.value} "
         f"(band={risk.band.value}, risk={risk.risk:g}, state={state})"
@@ -186,6 +187,8 @@ class SarifReporter(BaseReporter):
                     "properties": {
                         "run_id": ctx.run.run_id,
                         "run_status": self._run_status.state,
+                        # The editions the rule tags refer to (A-14, audit R12).
+                        "framework_editions": framework_editions(),
                     },
                 }
             ],

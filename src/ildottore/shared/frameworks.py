@@ -26,6 +26,7 @@ __all__ = [
     "OWASP_LLM_TOTAL",
     "OWASP_LLM_UNIVERSE",
     "OWASP_RAI_UNIVERSE",
+    "framework_editions",
     "malformed_nist_mapping",
     "nist_subcategories",
     "not_tested_by_design_reason",
@@ -265,3 +266,17 @@ def out_of_reach_reason(code: str) -> str | None:
     """Why ``code`` is not something a black-box runtime scanner can cover, or ``None``."""
 
     return OUT_OF_REACH.get(code)
+
+
+def framework_editions() -> dict[str, str]:
+    """The edition of every framework a finding is mapped to, for the machine formats (A-14)."""
+
+    from ildottore.shared.aisvs import AISVS_VERSION
+    from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION
+
+    return {
+        "owasp_llm_top10": OWASP_LLM_EDITION,
+        "mitre_atlas": ATLAS_MATRIX_RELEASE,
+        "nova_iopc": IOPC_TAXONOMY_VERSION,
+        "owasp_aisvs": AISVS_VERSION,
+    }

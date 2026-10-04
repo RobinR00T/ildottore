@@ -32,7 +32,8 @@ def test_hand_labeled_counts() -> None:
     assert summary.by_framework.owasp == {"LLM01": 1, "LLM02": 1}
     assert summary.by_framework.nist == {"MAP": 1, "MEASURE": 1}
     assert summary.confirmed_count == 1
-    assert summary.needs_review_count == 1
+    # The unconfirmed one is a PASS: not an exploit, so not "needs review" (audit R5).
+    assert summary.needs_review_count == 0
 
 
 def test_missing_spec_counts_as_unknown() -> None:

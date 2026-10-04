@@ -20,6 +20,7 @@ offline stub evaluator table.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 from ildottore.shared import AttackSpec, EvaluatorType, VerdictStatus
@@ -497,29 +498,56 @@ def _check_suite_refs(pack: LoadedPack, registry: Registry) -> list[LintError]:
     return errors
 
 
-def _check_mutators(spec: AttackSpec, known: frozenset[str] | None) -> list[LintError]:
-    """Every declared mutation must name a registered mutator (by base name).
+def _check_mutators(
+    spec: AttackSpec,
+    known: frozenset[str] | None,
+    params: Mapping[str, frozenset[str]] | None = None,
+) -> list[LintError]:
+    """Every declared mutation must name a registered mutator, with a parameter it accepts.
 
     ``UNKNOWN_MUTATOR_TYPE`` was declared and never emitted: an unknown name passed lint and
     the runner sent the identity prompt recorded under it, so the evidence claimed a variant
-    that was never sent (audit 2026-10-03, F-11). ``registry`` cannot import ``mutators`` (they
-    are peers), so the caller passes the names; with ``None`` the check is skipped.
+    that was never sent (audit 2026-10-03, F-11). The same held one level down for a
+    parameter: ``translate:klingon`` passed, a language picked by hash was sent, and the
+    evidence said "klingon" (review of PR #32). ``registry`` cannot import ``mutators`` (they
+    are peers), so the caller passes the names and each mutator's accepted parameters; with
+    ``None`` the check is skipped.
     """
 
     if known is None:
         return []
-    return [
-        LintError(
-            code=LintCode.UNKNOWN_MUTATOR_TYPE,
-            message=(
-                f"mutation {mutation!r} names no registered mutator (known: "
-                f"{', '.join(sorted(known))})"
-            ),
-            spec_id=spec.id,
-        )
-        for mutation in dict.fromkeys(spec.mutations or [])
-        if mutation != "identity" and mutation.split(":", 1)[0] not in known
-    ]
+    findings: list[LintError] = []
+    for mutation in dict.fromkeys(spec.mutations or []):
+        if mutation == "identity":
+            continue
+        base, _, param = mutation.partition(":")
+        if base not in known:
+            findings.append(
+                LintError(
+                    code=LintCode.UNKNOWN_MUTATOR_TYPE,
+                    message=(
+                        f"mutation {mutation!r} names no registered mutator (known: "
+                        f"{', '.join(sorted(known))})"
+                    ),
+                    spec_id=spec.id,
+                )
+            )
+            continue
+        accepted = (params or {}).get(base)
+        if param and accepted is not None and param.strip().lower() not in accepted:
+            findings.append(
+                LintError(
+                    code=LintCode.UNKNOWN_MUTATOR_TYPE,
+                    message=(
+                        f"mutation {mutation!r}: {param!r} is not a parameter {base} accepts "
+                        f"({', '.join(sorted(accepted))})"
+                        if accepted
+                        else f"mutation {mutation!r}: {base} takes no parameter"
+                    ),
+                    spec_id=spec.id,
+                )
+            )
+    return findings
 
 
 def lint_packs(
@@ -528,6 +556,7 @@ def lint_packs(
     *,
     stub_table: dict[EvaluatorType, StubEvaluator] | None = None,
     known_mutators: frozenset[str] | None = None,
+    mutator_params: Mapping[str, frozenset[str]] | None = None,
 ) -> LintReport:
     """Lint an already-loaded pack set + carry forward any load-time findings."""
     table = stub_table if stub_table is not None else DEFAULT_STUB_TABLE
@@ -537,7 +566,7 @@ def lint_packs(
     findings.extend(registry.collisions)
 
     for spec in _unique_specs(packs):
-        findings.extend(_check_mutators(spec, known_mutators))
+        findings.extend(_check_mutators(spec, known_mutators, mutator_params))
         findings.extend(_check_test_only(spec))
         findings.extend(_check_framework_map(spec))
         findings.extend(_check_media(spec))
@@ -579,9 +608,14 @@ def lint(
     *,
     stub_table: dict[EvaluatorType, StubEvaluator] | None = None,
     known_mutators: frozenset[str] | None = None,
+    mutator_params: Mapping[str, frozenset[str]] | None = None,
 ) -> LintReport:
     """Load every search path (no exec/no network) and lint the merged result."""
     loaded = load_paths(paths)
     return lint_packs(
-        loaded.packs, loaded.errors, stub_table=stub_table, known_mutators=known_mutators
+        loaded.packs,
+        loaded.errors,
+        stub_table=stub_table,
+        known_mutators=known_mutators,
+        mutator_params=mutator_params,
     )

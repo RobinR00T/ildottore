@@ -44,7 +44,7 @@ jobs:
         run: python -m pip install -e ".[dev]"
 
       # Layer 16 - golden-run regression snapshot. A frozen reference run must produce a stable
-      # report; the snapshot diff is conductor-reviewed (OD, contract §9 → tests/golden-run/).
+      # report; the snapshot diff is conductor-reviewed (snapshots in tests/reporting/fixtures/reports/).
       - name: "Regression · golden-run snapshot"
         run: pytest -q tests/reporting/test_golden_snapshot.py
 

@@ -541,8 +541,11 @@ def test_a_barren_selection_is_refused(tmp_path: Path) -> None:
         tmp_path,
         [make_spec("AG-TOOLS-001").model_copy(update={"requires": [RequiresCapability.TOOLS]})],
     )
-    with pytest.raises(ValueError, match="nothing would be sent"):
+    with pytest.raises(ValueError, match="nothing would be sent") as refused:
         execute_run(_opts(tmp_path, target, scope), [specs])
+    # The hint used to say "enable the category in the policy pack", which the CLI cannot do.
+    assert "declare the capability on the target" in str(refused.value)
+    assert "cannot load one today" in str(refused.value)
 
 
 def test_an_explicit_timing_template_beats_the_intensity_flags() -> None:

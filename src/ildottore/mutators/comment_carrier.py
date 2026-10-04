@@ -24,6 +24,7 @@ class MarkdownCommentCarrierMutator(BaseMutator):
 
     name = "markdown_comment_carrier"
     reversible = True
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         carried = f"{_VISIBLE}\n\n[//]: # ({text})"
@@ -35,6 +36,7 @@ class HtmlCommentCarrierMutator(BaseMutator):
 
     name = "html_comment_carrier"
     reversible = True
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         carried = f"{_VISIBLE}\n\n<!-- {text} -->"

@@ -47,14 +47,18 @@ def test_evidence_ref_rendered() -> None:
 
 
 def test_confirmed_and_needs_review_sections() -> None:
+    """Passes and never-sent specs are not "needs review" (audit R5)."""
+
     findings = [
         make_finding("PI-DEMO-001", confirmed=True),
+        make_finding("PI-DEMO-003", confirmed=False),
         make_finding("DL-DEMO-002", confirmed=False, status=VerdictStatus.INCONCLUSIVE),
     ]
     run = make_run(findings=findings)
     html = _html(HtmlReporter(), run)
     assert "Confirmed findings (1)" in html
-    assert "Needs review (1)" in html
+    assert "Needs review: unconfirmed exploits and undecided results (2)" in html
+    assert "Not exploited or not tested (0)" in html
 
 
 def test_model_comparison_table_multi_target() -> None:

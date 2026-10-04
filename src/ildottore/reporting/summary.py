@@ -30,6 +30,7 @@ from ildottore.shared.aisvs import (
     AISVS_VERSION,
     aisvs_universe,
 )
+from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
     ATLAS_OUT_OF_MATRIX,
@@ -68,6 +69,7 @@ __all__ = [
     "RunSummary",
     "build_battery_coverage",
     "build_run_summary",
+    "finding_state",
     "pct_display",
 ]
 
@@ -377,6 +379,29 @@ def _build_coverage(
     )
 
 
+def finding_state(finding: Finding) -> str:
+    """The review state every report prints for one finding.
+
+    * ``confirmed``: an exploit above the confidence threshold (what the CI gate counts);
+    * ``needs_review``: an exploit below it, or a result that was sent and could not be
+      decided (an uncorroborated secret shape is inconclusive by design, docs/11 §4);
+    * ``not_exploited``: the spec passed;
+    * ``not_tested``: nothing was sent for it (a capability skip, a policy block).
+
+    Every finding that was not a confirmed fail used to read ``needs_review``, passes and
+    never-sent specs included, so a clean hardened run reported "Needs review: 75" (audit R5).
+    Only an unconfirmed FAIL can trip the gate, and only with ``--include-needs-review``.
+    """
+
+    if finding.confirmed:
+        return "confirmed"
+    if finding.status is VerdictStatus.FAIL:
+        return "needs_review"
+    if finding.status is VerdictStatus.PASS:
+        return "not_exploited"
+    return "needs_review" if finding.attempts else "not_tested"
+
+
 def build_run_summary(
     findings: list[Finding],
     specs: dict[str, AttackSpec] | None = None,
@@ -407,12 +432,17 @@ def build_run_summary(
     for finding in findings:
         by_status[finding.status.value] += 1
         by_band[finding.risk.band.value] += 1
-        repro_values.append(finding.risk.reproducibility)
-        conf_values.append(finding.risk.confidence)
+        # A spec nothing was sent for (a capability skip, a policy block) measured nothing, so
+        # it stays out of the reproducibility and confidence distributions it used to dilute
+        # with zeros (audit R14). It is still counted in by_status and by_band ("info").
+        if finding.attempts:
+            repro_values.append(finding.risk.reproducibility)
+            conf_values.append(finding.risk.confidence)
         targets.add(finding.target_id)
-        if finding.confirmed:
+        state = finding_state(finding)
+        if state == "confirmed":
             confirmed += 1
-        else:
+        elif state == "needs_review":
             needs_review += 1
         spec = spec_map.get(finding.spec_id)
         if spec is None:

@@ -86,6 +86,11 @@ class BaseMutator:
 
     name: str = ""
     reversible: bool = False
+    #: The ``name:<param>`` values this mutator implements, compared lower-cased. Empty: it
+    #: takes none, so lint and the runner refuse ``rot13:x`` instead of sending rot13 recorded
+    #: as ``rot13:x``. ``None`` (the default, so a plugin's contract is unchanged): not
+    #: declared, and any parameter is passed through in the seed. Every built-in declares it.
+    accepted_params: frozenset[str] | None = None
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         """Return the mutated text plus provenance. Overridden by every strategy."""

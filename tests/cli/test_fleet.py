@@ -325,3 +325,16 @@ def test_an_ipv6_endpoint_is_pinned_and_still_authorized(tmp_path: Path) -> None
 
     assert authorize_target(scope, "v6", "http://[::1]:8080/v1/chat/completions").allowed
     assert not authorize_target(scope, "v6", "http://[::1]:9090/v1/chat/completions").allowed
+
+
+def test_a_literal_key_in_the_judge_file_is_not_quoted_back(tmp_path: Path) -> None:
+    """The mismatch message quoted the judge's `auth_ref`; a key pasted there printed in clear
+    whenever its entropy was below the redactor's threshold (fifth audit of the residuals)."""
+
+    key = "797c48a81f494d0f3e8d13bd49459b6f"
+    judge_path = tmp_path / "judge.yaml"
+    judge_path.write_text(_JUDGE_FILE + f'auth_ref: "{key}"\n', encoding="utf-8")
+    cfg = fleet_mod.load_fleet(_fleet_with_judge(tmp_path))
+    with pytest.raises(ValueError, match="auth_ref a literal value") as refused:
+        fleet_mod.materialize_fleet(cfg, tmp_path / "out", judge=wiring.load_target(judge_path))
+    assert key not in str(refused.value)

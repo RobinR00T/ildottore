@@ -21,7 +21,16 @@ from ildottore.store import paths
 
 
 class TamperError(RuntimeError):
-    """A stored artifact's content no longer matches its content-address hash."""
+    """A stored artifact's content no longer matches its content-address hash.
+
+    ``digests`` are the hashes this tool computed and the message quotes bare (not as
+    ``<hash>.json``): the CLI keeps them readable and passes every other 64-hex token to the
+    redactor.
+    """
+
+    def __init__(self, message: str, *, digests: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.digests = digests
 
 
 @dataclass(frozen=True)
@@ -37,18 +46,34 @@ class ReplayResult:
     #: The content hash (artifact file name) of each attempt, in ``attempts`` order.
     attempt_hashes: tuple[str, ...] = ()
 
+    def effective_attempts(self) -> tuple[Attempt, ...]:
+        """One attempt per id, the answered one when an id has several artifacts.
+
+        Defensive: the shipped runner writes one artifact per attempt id. If two ever share one
+        (a re-send of an errored attempt was tried, F11, and withdrawn), both are history and
+        the listing shows them, but only one is the attempt: counting both printed 10 attempts
+        and a 0.60 rate for a spec the report scored 6 of 6.
+        """
+
+        kept: dict[str, Attempt] = {}
+        for attempt in self.attempts:
+            current = kept.get(attempt.attempt_id)
+            if current is None or (current.response is None and attempt.response is not None):
+                kept[attempt.attempt_id] = attempt
+        return tuple(kept.values())
+
     @property
     def n(self) -> int:
-        """Number of attempts (the ``N`` in ``repro = successes / N``)."""
+        """Number of attempts (the ``N`` in ``repro = successes / N``), one per attempt id."""
 
-        return len(self.attempts)
+        return len(self.effective_attempts())
 
     def successful_attacks(self) -> int:
         """Attempts whose verdict is ``fail`` (= target exploited; ``docs/04``)."""
 
         return sum(
             1
-            for a in self.attempts
+            for a in self.effective_attempts()
             if a.verdict is not None and a.verdict.status is VerdictStatus.FAIL
         )
 
@@ -65,7 +90,10 @@ def _load_verified_attempt(artifact: Path) -> Attempt:
     expected = artifact.stem  # filename (minus .json) == content hash
     actual = paths.content_hash(payload)
     if actual != expected:
-        raise TamperError(f"artifact hash mismatch for {artifact.name}: content hashes to {actual}")
+        raise TamperError(
+            f"artifact hash mismatch for {artifact.name}: content hashes to {actual}",
+            digests=(actual,),
+        )
     return Attempt.model_validate_json(payload)
 
 

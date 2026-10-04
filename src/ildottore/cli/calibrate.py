@@ -22,6 +22,7 @@ from pathlib import Path
 import yaml
 
 from ildottore.cli.diff import load_findings
+from ildottore.shared.config_errors import yaml_problem
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import Finding
 
@@ -37,7 +38,10 @@ __all__ = [
 def load_labels(path: Path) -> dict[str, VerdictStatus]:
     """Load an operator labels file (``spec_id -> pass|fail|inconclusive``, YAML or JSON)."""
 
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    try:
+        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:  # was a traceback and exit 1, "findings below the threshold"
+        raise ValueError(f"labels file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"labels file {path} must be a mapping of spec_id -> verdict")
     labels: dict[str, VerdictStatus] = {}

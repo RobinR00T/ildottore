@@ -35,6 +35,7 @@ class LeetspeakMutator(BaseMutator):
 
     name = "leetspeak"
     reversible = False
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         return text.translate(_LEET_MAP), {"scheme": "leetspeak", "note": "lossy obfuscation"}

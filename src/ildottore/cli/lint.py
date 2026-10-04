@@ -34,16 +34,22 @@ def lint(paths: list[Path]) -> LintReport:
     # exit 1, the code for "your specs failed lint" (review of PR #32). It is reported instead.
     plugin_error: LintError | None = None
     try:
-        known = frozenset(build_default_registry().names())
+        registry = build_default_registry()
     except Exception as exc:
-        known = frozenset(build_default_registry(discover=False).names())
+        registry = build_default_registry(discover=False)
         plugin_error = LintError(
             code=LintCode.MUTATOR_PLUGIN_ERROR,
             severity=Severity.WARNING,
             message=f"an installed mutator plugin could not be loaded ({exc}); linted with "
             "the built-in mutators only",
         )
-    report = _lint(paths, known_mutators=known)
+    known = frozenset(registry.names())
+    params = {
+        name: frozenset(accepted)
+        for name in known
+        if (accepted := getattr(registry.get(name), "accepted_params", None)) is not None
+    }
+    report = _lint(paths, known_mutators=known, mutator_params=params)
     if plugin_error is None:
         return report
     return report.model_copy(update={"warnings": [plugin_error, *report.warnings]})

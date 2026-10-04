@@ -25,6 +25,7 @@ class AdversarialPoetryMutator(BaseMutator):
 
     name = "adversarial_poetry"
     reversible = False
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         wrapped = f"{_PREAMBLE}{text}{_CODA}"
