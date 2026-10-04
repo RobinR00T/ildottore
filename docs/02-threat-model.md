@@ -30,8 +30,9 @@ build must satisfy it.
 - The tool assists **authorized** security testing only. The scope file *is* the
   authorization record. Runs are meant to be auditable (who/what/when/scope-hash). Today a run
   records the *what* (spec digests, target digest, judge digest, run count, planning mode) and
-  not the rest: no operator, no scope hash, and `started_at` / `finished_at` are empty in the
-  run store and in the JSON report.
+  *when* (`started_at` / `finished_at`, UTC, in the run store and the JSON report, since
+  2026-10-04; a resume keeps the start of the run it finishes), and not the rest: no operator
+  and no scope hash. Attempts and probes carry no time of their own.
 - This is a defensive/assurance tool: it validates that a model or AI app resists known
   attack classes. It is not a jailbreak-as-a-service.
 

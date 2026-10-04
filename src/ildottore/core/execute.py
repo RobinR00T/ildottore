@@ -28,7 +28,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from ildottore.core.budgets import BudgetLedger
+from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger
 from ildottore.core.pacing import RateLimiter
 from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
@@ -38,6 +38,7 @@ __all__ = [
     "RetryPolicy",
     "default_is_env_error",
     "execute_attempt",
+    "reserve_tokens",
 ]
 
 
@@ -134,10 +135,11 @@ async def execute_attempt(
     clock = now if now is not None else asyncio.get_event_loop().time
     errors: list[str] = []
 
-    # Reserve the request's own max_tokens BEFORE the send so the token ceiling is a
-    # pre-spend cap (a breach raises before any provider spend), not a post-hoc tally that a
-    # concurrent burst could overshoot (audit M12). The actual usage is reconciled after.
-    reserved = sampling.max_tokens if sampling is not None and sampling.max_tokens else 0
+    # Reserve the request's tokens BEFORE the send so the token ceiling is a pre-spend cap (a
+    # breach raises before any provider spend), not a post-hoc tally that a concurrent burst
+    # could overshoot (audit M12). The actual usage is reconciled after.
+    estimate = reserve_tokens(request, sampling)
+    declared_cap = sampling is not None and bool(sampling.max_tokens)
 
     total_sends = policy.max_retries + 1
     for send_index in range(total_sends):
@@ -146,7 +148,17 @@ async def execute_attempt(
         # ledger records spend, the pacer decides when spending may happen.
         if pacer is not None:
             await pacer.acquire()
-        # Budget is debited per *send* (retries count) so a storm can't self-DoS.
+        # Budget is debited per *send* (retries count) so a storm can't self-DoS. A DEFAULT
+        # estimate (no `max_tokens`) larger than the whole token ceiling is clamped to what is
+        # left: it is a guess, not a limit the provider enforces, and unclamped it refused every
+        # send under a ceiling below 513 tokens. Under any larger ceiling the full estimate is
+        # reserved, so concurrent sends cannot all slip under it together.
+        reserved = estimate
+        if not declared_cap:
+            ceiling = ledger.token_ceiling()
+            remaining = ledger.remaining_tokens()
+            if ceiling is not None and estimate > ceiling and remaining:
+                reserved = remaining
         ledger.debit_request(tokens=reserved)
         started = clock()
         try:
@@ -216,21 +228,82 @@ async def _send_with_timeout(
     return await asyncio.wait_for(adapter.send(request), timeout=timeout_s)
 
 
-def _reconcile_tokens(ledger: BudgetLedger, response: ModelResponse, reserved: int = 0) -> None:
-    """Reconcile the pre-send ``reserved`` token estimate with the actual reported usage.
+def reserve_tokens(request: ModelRequest, sampling: Sampling | None) -> int:
+    """The tokens a send may consume, debited before it: input estimate plus output cap.
 
-    ``reserved`` was already debited before the send (the pre-spend cap). Here we add only the
-    OVERAGE (``actual - reserved``) when the provider reports using more than reserved, so the
-    ledger never under-counts; a response that used fewer than reserved keeps the (conservative)
-    reservation. A breach raises :class:`BudgetExhausted` from the ledger (surfaced to the runner).
+    Only the spec's ``max_tokens`` used to be reserved, and nothing at all for the 35 shipped
+    specs that declare none, so four concurrent sends all passed the ceiling check before any
+    reply came back: ``--budget-tokens 2500`` recorded 4000 (leftovers of the 2026-10-03 audit).
+    The estimate is the one ``--estimate`` prints: input as text length / 4, output as
+    ``max_tokens`` or :data:`DEFAULT_COMPLETION_TOKENS`. It bounds the spend only when the
+    provider honours that output limit; a reply that uses more is still recorded in full.
     """
 
-    usage = response.usage
-    if not isinstance(usage, dict):
+    texts = [request.system_prompt or "", request.prompt or ""]
+    for message in request.messages or []:
+        content = message.get("content")
+        texts.append(content if isinstance(content, str) else "")
+    input_tokens = max(1, sum(len(text) for text in texts) // 4)
+    output = sampling.max_tokens if sampling is not None and sampling.max_tokens else None
+    return input_tokens + (output if output is not None else DEFAULT_COMPLETION_TOKENS)
+
+
+def _reconcile_tokens(ledger: BudgetLedger, response: ModelResponse, reserved: int = 0) -> None:
+    """True the pre-send ``reserved`` estimate up or down to the usage the provider reports.
+
+    ``reserved`` was already debited before the send (the pre-spend cap). A reply that used
+    more adds the overage, so the ledger never under-counts (a breach raises
+    :class:`BudgetExhausted` after recording it); one that used less releases the rest, now
+    that every send reserves a default estimate. Without a reported usage the reservation
+    stands: the conservative figure is the only one there is.
+    """
+
+    total = _reported_total(response.usage)
+    if total is None:
         return
-    total = usage.get("total_tokens")
-    if isinstance(total, int) and not isinstance(total, bool) and total > reserved:
+    if total > reserved:
         ledger.add_tokens(total - reserved)
+    elif total < reserved:
+        ledger.refund_tokens(reserved - total)
+
+
+def _reported_total(usage: object) -> int | None:
+    """The total tokens a reply reports, in either provider's shape, or ``None``.
+
+    OpenAI reports ``total_tokens``; Anthropic reports only ``input_tokens`` and
+    ``output_tokens``, so its replies were never trued up (1034 tokens billed, the 513 reserved
+    recorded; pre-commit audit of the leftovers). ``prompt_tokens`` + ``completion_tokens`` is
+    the OpenAI shape without the total, and ``tokens`` a single-figure key of the mapping a
+    REST template's ``usage_path`` points at (the adapter keeps only a mapping there; a REST
+    target from ``target.yaml`` sets no ``usage_path`` and reports no usage).
+    """
+
+    if not isinstance(usage, dict):
+        return None
+
+    def count(key: str) -> int | None:
+        value = usage.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+        return None
+
+    total = count("total_tokens")
+    if total is None:
+        total = count("tokens")  # a key of the mapping at a REST template's `usage_path`
+    if total is not None:
+        return total
+    for first, second in (
+        ("input_tokens", "output_tokens"),
+        ("prompt_tokens", "completion_tokens"),
+    ):
+        a, b = count(first), count(second)
+        if a is not None and b is not None:
+            # Anthropic bills prompt-cache reads and writes as input too.
+            cached = (count("cache_creation_input_tokens") or 0) + (
+                count("cache_read_input_tokens") or 0
+            )
+            return a + b + cached
+    return None
 
 
 def _attempt(

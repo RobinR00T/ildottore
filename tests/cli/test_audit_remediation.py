@@ -424,12 +424,13 @@ def test_a_real_run_does_fingerprint_when_asked(
 
     calls: list[str] = []
 
-    def _probe(_scope: object, target: object, **_kw: object) -> ModelFingerprint:
+    def _probe(_scope: object, target: object, **_kw: object) -> wiring.ProbePass:
         calls.append(getattr(target, "id", "?"))
-        return ModelFingerprint(
+        fingerprint = ModelFingerprint(
             target_id="mock-target",
             family=FingerprintGuess(guess="llama", confidence=0.5),
         )
+        return wiring.ProbePass(fingerprint=fingerprint, requests=17)
 
     monkeypatch.setattr(wiring, "fingerprint_probe", _probe)
     target = write_target(tmp_path, mock_scenario="hardened")

@@ -110,7 +110,7 @@ async def test_discovery_renders_poisoned_catalogue() -> None:
     assert "<IMPORTANT>" in resp.text
     assert resp.tool_calls == []  # safe-by-design: discovery never invokes a tool
     assert resp.raw_ids["mcp_server"] == "files-mcp"
-    assert resp.usage == {"tools": 2, "resources": 1, "prompts": 0}
+    assert resp.usage == {"tools": 2, "resources": 1, "prompts": 0, "total_tokens": 0}
     assert resp.finish_reason == "mcp_discovery"
 
     # No tools/call was ever issued.
@@ -247,7 +247,7 @@ async def test_stdio_discovery_renders_catalogue(tmp_path: Path) -> None:
     assert "stdio-mcp" in resp.text
     assert "attacker@evil.test" in resp.text and "<IMPORTANT>" in resp.text
     assert resp.tool_calls == []  # discovery never calls a tool
-    assert resp.usage == {"tools": 1, "resources": 0, "prompts": 0}
+    assert resp.usage == {"tools": 1, "resources": 0, "prompts": 0, "total_tokens": 0}
 
 
 async def test_stdio_unauthorized_command_refused_zero_spawn(tmp_path: Path) -> None:

@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -36,6 +38,7 @@ from ildottore.adapters import (
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
+from ildottore.core.budgets import BudgetExhausted, BudgetLedger
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
@@ -74,6 +77,8 @@ __all__ = [
     "MOCK_SCENARIOS",
     "PROBE_SPEC_ID",
     "BuiltRunner",
+    "ProbeCeilingReached",
+    "ProbePass",
     "bare_adapter_factory",
     "build_evidence_store",
     "build_fingerprint_engine",
@@ -105,6 +110,7 @@ __all__ = [
     "scope_endpoint_of",
     "shown_auth_ref",
     "target_uses_mock",
+    "utc_timestamp",
 ]
 
 #: The offline mock-replay scenarios a ``target.yaml`` may select via ``mock_scenario``.
@@ -280,9 +286,13 @@ def build_probe_adapter(
     real_target: Target | None = None,
     scenario: MockScenario | None = None,
     mock_scenario: str | None = None,
+    retry: RetryConfig | None = None,
 ) -> TargetAdapter:
     """The adapter a fingerprint/discovery probe should talk to (``-sV``, ``dottore
     fingerprint``).
+
+    ``retry`` reaches a live adapter only: ``-sV`` passes :data:`NO_ADAPTER_RETRIES` and lets a
+    :class:`MeteredAdapter` own the retries, so each one is paced and debited.
 
     ``real_target`` (a non-mock ``target.yaml``) probes the live provider through the same
     scope-bound allowlist the campaign will use, so ``-sV`` fingerprints the thing it is
@@ -297,7 +307,7 @@ def build_probe_adapter(
         scope_target = scope.target(real_target.id)
         allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
         return build_real_adapter(
-            real_target, allowlist, api_key=_authorized_api_key(scope, real_target)
+            real_target, allowlist, api_key=_authorized_api_key(scope, real_target), retry=retry
         )
     if mock_scenario == "comprehending" and scenario is None:
         # The one offline target whose answer depends on what was sent, so the carrier layer
@@ -332,6 +342,12 @@ def mock_adapter_factory(target: Target, spec: AttackSpec) -> TargetAdapter:
         capabilities=target.capabilities,
     )
     return MockTarget(scenario, id=target.id)
+
+
+def utc_timestamp() -> str:
+    """The current UTC time as ISO 8601 with seconds and a ``Z``: a run's start and end."""
+
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def deterministic_clock() -> Callable[[], float]:
@@ -726,31 +742,6 @@ def check_target_credential(scope: Scope, target: Target) -> None:
 
 
 @dataclass
-class _PacedAdapter:
-    """Wraps an adapter so every probe passes the campaign's rate gate (S8).
-
-    A fingerprint pass is ~28 requests per target (the carrier layer alone is one per
-    registered mutator), and they went out unpaced because they do not travel through the
-    runner: the rate ceiling was enforced on the attack path and nowhere else. Same ceiling,
-    same gate, one decorator.
-    """
-
-    inner: TargetAdapter
-    pacer: RateLimiter
-
-    @property
-    def id(self) -> str:
-        return self.inner.id
-
-    async def send(self, request: ModelRequest) -> ModelResponse:
-        await self.pacer.acquire()
-        return await self.inner.send(request)
-
-    def capabilities(self) -> Capabilities:
-        return self.inner.capabilities()
-
-
-@dataclass
 class _RecordingAdapter:
     """Wraps a probe adapter so every recognition exchange lands in the evidence store.
 
@@ -806,6 +797,23 @@ class _RecordingAdapter:
         return response
 
 
+class ProbeCeilingReached(Exception):
+    """A ``-sV`` probe pass reached ``--budget-requests``; ``requests`` is what it really sent."""
+
+    def __init__(self, requests: int, reason: str) -> None:
+        super().__init__(reason)
+        self.requests = requests
+
+
+@dataclass(frozen=True)
+class ProbePass:
+    """What a ``-sV`` probe pass produced and how many requests it really sent."""
+
+    fingerprint: ModelFingerprint
+    #: Wire sends, retries included: what the request ceiling is charged with.
+    requests: int
+
+
 def fingerprint_probe(
     scope: Scope,
     target: Target,
@@ -815,24 +823,43 @@ def fingerprint_probe(
     evidence: FsEvidenceStore | None = None,
     run_id: str | None = None,
     mock_scenario: str | None = None,
-) -> ModelFingerprint:
+    max_requests: int | None = None,
+) -> ProbePass:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
     Scope-bound: a live target is probed through its allowlisted endpoint with its
     authorized credential, an offline target through the deterministic mock. ``rate_rps``
     paces the probes exactly like the attack traffic; ``None`` leaves them unpaced, which is
     what an offline mock wants.
+
+    Every wire send is paced, debited against ``max_requests`` and recorded, retries included.
+    The live probe adapter used to keep its own two retries under one pacer slot: on a target
+    answering 429 to every first send, 17 nominal probes were 34 requests, half of them 53 ms
+    after the last, and the ledger was charged 17 (leftovers of the 2026-10-03 audit). Same
+    shape as the judge: no adapter retries, a :class:`MeteredAdapter` owns them. A breach of
+    ``max_requests`` raises :class:`ProbeCeilingReached`, carrying the requests really sent so
+    the caller can record them.
     """
 
     adapter = build_probe_adapter(
-        scope, target, real_target=real_target, mock_scenario=mock_scenario
+        scope,
+        target,
+        real_target=real_target,
+        mock_scenario=mock_scenario,
+        retry=NO_ADAPTER_RETRIES,
     )
-    if rate_rps is not None and rate_rps > 0:
-        adapter = cast("TargetAdapter", _PacedAdapter(adapter, RateLimiter(rate_rps)))
     if evidence is not None and run_id is not None:
-        # Recording wraps the pacing, so what is stored is what went on the wire.
+        # Recording is innermost, so what is stored is every send that went on the wire.
         adapter = cast("TargetAdapter", _RecordingAdapter(adapter, evidence, run_id))
-    return asyncio.run(build_fingerprint_engine().run(adapter))
+    meter = SendMeter()
+    ledger = BudgetLedger(max_requests=max_requests)
+    metered = MeteredAdapter(inner=adapter, meter=meter)
+    try:
+        with meter.bound(ledger, RateLimiter(rate_rps)):
+            fingerprint = asyncio.run(build_fingerprint_engine().run(metered))
+    except BudgetExhausted as exc:
+        raise ProbeCeilingReached(ledger.spend().requests, str(exc)) from exc
+    return ProbePass(fingerprint=fingerprint, requests=ledger.spend().requests)
 
 
 def build_judge_adapter(
@@ -1152,7 +1179,11 @@ def build_runner(
         adapter_factory=factory,
         endpoint_for=scope_endpoint_for(scope),
         identity_adapters=identity_adapters,
-        now=deterministic_clock(),
+        # The counter keeps OFFLINE evidence byte-stable; on a live route it made `latency_ms`
+        # fiction (a 1 ms loopback reply stored as 2000.0 or 4000.0, depending on how the
+        # coroutines interleaved), so a live run measures with the monotonic clock.
+        now=deterministic_clock() if real_target is None else time.monotonic,
+        timestamp=utc_timestamp,
         n=n,
         concurrency=concurrency,
         timeout_s=timeout_s,

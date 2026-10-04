@@ -504,10 +504,14 @@ def test_a_live_run_without_a_judge_says_so_before_sending() -> None:
     spec = next(
         s for s in wiring.build_registry([repo / "specs"]).list() if s.id == "PI-DIRECT-001"
     )
-    live = [("t.yaml", object(), (None, object()))]
-    offline = [("t.yaml", object(), ("hardened", None))]
+    from types import SimpleNamespace
+
+    target = SimpleNamespace(id="t")
+    plans = [SimpleNamespace(target=target, selected=[spec])]
+    live = [("t.yaml", target, (None, object()))]
+    offline = [("t.yaml", target, ("hardened", None))]
     assert any(e.type.value == "semantic_judge" for e in spec.evaluators)
-    message = _no_judge_warning([spec], live, None)
+    message = _no_judge_warning(plans, live, None)  # type: ignore[arg-type]
     assert message is not None and "--judge" in message
-    assert _no_judge_warning([spec], offline, None) is None
-    assert _no_judge_warning([spec], live, object()) is None  # type: ignore[arg-type]
+    assert _no_judge_warning(plans, offline, None) is None  # type: ignore[arg-type]
+    assert _no_judge_warning(plans, live, object()) is None  # type: ignore[arg-type]

@@ -118,10 +118,16 @@ def load_resume_run(
         manifest_store = SqliteRunStore(Path(run_db))
         try:
             check_manifest(result, manifest_store.recorded_evidence(run_id))
+            row = manifest_store.get_run(run_id) or {}
         except TamperError as exc:
             raise ValueError(f"run {run_id!r} cannot be resumed: {exc}") from exc
         finally:
             manifest_store.close()
+        # The start of the run being finished: a resume used to restamp it with its own start.
+        stored_start = row.get("started_at")
+        started_at = stored_start if isinstance(stored_start, str) and stored_start else None
+    else:
+        started_at = None
 
     # One reference per ARTIFACT, not per attempt id: a defensive invariant. The shipped resume
     # never re-sends an attempt (errored ones included), so one id has one artifact today; but
@@ -154,7 +160,7 @@ def load_resume_run(
         )
         for spec_id, attempts in sorted(by_spec.items())
     ]
-    return TestRun(run_id=run_id, targets=[target], findings=findings)
+    return TestRun(run_id=run_id, targets=[target], findings=findings, started_at=started_at)
 
 
 def _assert_same_target(

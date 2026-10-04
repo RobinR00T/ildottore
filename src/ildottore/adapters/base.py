@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -42,12 +43,14 @@ from ildottore.shared.models import (
 )
 
 __all__ = [
+    "ACCEPT_ENCODING",
     "AdapterEnvError",
     "AdapterError",
     "AdapterProductError",
     "BaseAdapter",
     "EndpointNotAllowed",
     "ResponseTooLarge",
+    "ResponseUndecodable",
     "RetryConfig",
     "map_logprobs",
     "read_capped",
@@ -99,11 +102,36 @@ class ResponseTooLarge(AdapterEnvError):
     retryable = False
 
 
+class ResponseUndecodable(AdapterEnvError):
+    """A reply whose ``Content-Encoding`` cannot be decoded: unsupported, stacked or corrupt.
+
+    The reply cannot be evaluated, so the attempt is inconclusive, and it would come back the
+    same on a retry. Before, httpx's own ``DecodingError`` escaped every adapter's handler
+    (it is not a ``TransportError``), and the MCP adapter rebuilt an already decoded body
+    under its ``gzip`` header and failed to decode it a second time.
+    """
+
+    is_env_error = True
+    retryable = False
+
+
 class AdapterProductError(AdapterError):
     """A real product defect (e.g. a malformed / unparseable success response).
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
+
+
+#: The ``Content-Encoding`` values :func:`read_capped` decodes itself, with the ``wbits`` zlib
+#: needs: 47 detects a gzip or a zlib header; raw deflate is tried when "deflate" has neither.
+_DECODED_ENCODINGS: dict[str, int] = {"gzip": 47, "x-gzip": 47, "deflate": 47}
+
+#: The ``Accept-Encoding`` every adapter sends: exactly what :func:`read_capped` decodes. Left to
+#: httpx, the header grows ``br`` and ``zstd`` whenever ``brotli`` or ``zstandard`` happens to
+#: be importable, and a server that took the offer would have every reply refused as
+#: undecodable: every attempt inconclusive, a silent false negative (pre-commit audit of the
+#: leftovers, 2026-10-04).
+ACCEPT_ENCODING = "gzip, deflate"
 
 
 async def read_capped(response: httpx.Response, label: str) -> bytes:
@@ -112,16 +140,88 @@ async def read_capped(response: httpx.Response, label: str) -> bytes:
     The single cap for every adapter that reads a target over the wire. The check runs per
     chunk, so an oversized body is abandoned mid-stream instead of being buffered whole and
     measured afterwards, which is what the MCP adapter did (review of PR #32).
+
+    The body is read RAW and decoded here, never more than one byte past the cap. httpx
+    decompressed each network chunk (up to 64 KiB read) whole before the cap could look at it,
+    so a 200 KB gzip reply allocated about 150 MB on its way to being refused. The compressed
+    bytes are capped too, so an endless stream of empty deflate blocks ends.
+
+    An error status whose body cannot be decoded returns an empty body: the status is what
+    classifies that reply, and a 401 must not turn into an inconclusive "undecodable".
     """
+
+    try:
+        return await _read_decoded(response, label)
+    except ResponseUndecodable:
+        if response.is_success:
+            raise
+        return b""
+
+
+async def _read_decoded(response: httpx.Response, label: str) -> bytes:
+    """:func:`read_capped` without the error-status leniency."""
+
+    def too_large() -> ResponseTooLarge:
+        return ResponseTooLarge(f"{label} exceeded {MAX_RESPONSE_BYTES} bytes; not read further")
+
+    if response.is_stream_consumed:
+        # A transport that handed over a body httpx had already read and decoded (a test
+        # double built with `content=`): there is no raw stream left, only the result.
+        if len(response.content) > MAX_RESPONSE_BYTES:
+            raise too_large()
+        return response.content
+
+    encoding = response.headers.get("content-encoding", "").strip().lower()
+    if encoding in ("", "identity"):
+        decoder = None
+    elif encoding in _DECODED_ENCODINGS:
+        decoder = zlib.decompressobj(_DECODED_ENCODINGS[encoding])
+    else:
+        raise ResponseUndecodable(f"{label} uses Content-Encoding {encoding!r}, not decoded")
 
     chunks: list[bytes] = []
     size = 0
-    async for chunk in response.aiter_bytes():
-        size += len(chunk)
-        if size > MAX_RESPONSE_BYTES:
-            raise ResponseTooLarge(f"{label} exceeded {MAX_RESPONSE_BYTES} bytes; not read further")
-        chunks.append(chunk)
+    raw_size = 0
+    first = True
+    async for raw in response.aiter_raw():
+        raw_size += len(raw)
+        if raw_size > MAX_RESPONSE_BYTES:
+            raise too_large()
+        if decoder is None:
+            pieces = [raw]
+        else:
+            if first and encoding == "deflate" and raw and raw[0] & 0x0F != 8:
+                decoder = zlib.decompressobj(-zlib.MAX_WBITS)  # raw deflate, no zlib header
+            pieces = _inflate(decoder, raw, MAX_RESPONSE_BYTES + 1 - size, label)
+        first = False
+        for piece in pieces:
+            size += len(piece)
+            if size > MAX_RESPONSE_BYTES:
+                raise too_large()
+            chunks.append(piece)
+    if decoder is not None:
+        try:
+            chunks.append(decoder.flush())
+        except zlib.error as exc:
+            raise ResponseUndecodable(f"{label}: corrupt {encoding} body ({exc})") from exc
+        if not decoder.eof and raw_size:
+            raise ResponseUndecodable(f"{label}: truncated {encoding} body")
     return b"".join(chunks)
+
+
+def _inflate(decoder: Any, data: bytes, room: int, label: str) -> list[bytes]:
+    """Decompress ``data`` without producing more than ``room`` bytes (one past the cap)."""
+
+    pieces: list[bytes] = []
+    try:
+        while data and room > 0:
+            piece = decoder.decompress(data, room)
+            pieces.append(piece)
+            room -= len(piece)
+            data = decoder.unconsumed_tail
+    except zlib.error as exc:
+        raise ResponseUndecodable(f"{label}: corrupt compressed body ({exc})") from exc
+    return pieces
 
 
 @dataclass(frozen=True)
@@ -318,7 +418,7 @@ class BaseAdapter(ABC):
                     "POST",
                     url,
                     json=body,
-                    headers=headers,
+                    headers={**headers, "accept-encoding": ACCEPT_ENCODING},
                     timeout=self.retry.timeout_s,
                     follow_redirects=False,
                 ) as response:

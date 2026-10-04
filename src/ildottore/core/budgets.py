@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from ildottore.shared.models import PlanBudgets
 
 __all__ = [
+    "DEFAULT_COMPLETION_TOKENS",
     "BudgetExhausted",
     "BudgetLedger",
     "BudgetSnapshot",
@@ -89,6 +90,12 @@ class BudgetSnapshot:
     max_requests: int | None
     max_attempts: int | None
     max_wall_s: int | None
+
+
+#: Output tokens reserved before a send whose spec declares no ``sampling.max_tokens``, and
+#: priced by ``--estimate`` for the same requests: one figure for both, so the estimate and the
+#: ceiling agree. It is an accounting figure, not a limit sent to the provider.
+DEFAULT_COMPLETION_TOKENS = 512
 
 
 class BudgetLedger:
@@ -221,6 +228,19 @@ class BudgetLedger:
             self._tokens += tokens
             if self._max_tokens is not None and self._tokens > self._max_tokens:
                 raise BudgetExhausted("max_tokens", self._max_tokens, self._tokens)
+
+    def token_ceiling(self) -> int | None:
+        """The token ceiling, or ``None`` when there is none."""
+
+        return self._max_tokens
+
+    def remaining_tokens(self) -> int | None:
+        """Tokens left under the ceiling, or ``None`` when there is no token ceiling."""
+
+        with self._lock:
+            if self._max_tokens is None:
+                return None
+            return max(0, self._max_tokens - self._tokens)
 
     def refund_tokens(self, tokens: int) -> None:
         """Release a pre-send token reservation for a send that produced no completion.

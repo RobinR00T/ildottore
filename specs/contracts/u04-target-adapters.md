@@ -37,6 +37,16 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   returns `inconclusive: capability_unavailable` (ADR-0005). `seed` unsupported ⇒ record best-effort
   determinism, do not fake a seed.
 - KEEP: NO live keys in CI: every provider path is contract-tested with recorded **respx** cassettes.
+- KEEP (as built, SEC-07 and 2026-10-04): every body read over the wire goes through
+  `base.read_capped`: 4 MiB (`MAX_RESPONSE_BYTES`), checked per chunk. The body is read raw and
+  `gzip`/`deflate` are decoded there with a bounded `zlib` call, so a compression bomb never
+  inflates past the cap (httpx inflated each network chunk whole first: a 200 KB gzip reply
+  allocated about 150 MB); the compressed bytes are capped too. Every request sends
+  `Accept-Encoding: gzip, deflate` (`base.ACCEPT_ENCODING`), so httpx never offers `br` or
+  `zstd` it cannot hand to the cap. Any other `Content-Encoding`, or a corrupt or truncated
+  body, is `ResponseUndecodable` on a 2xx; an error status keeps its status classification
+  with an empty body. Both errors are environment failures with `retryable = False`. The MCP
+  adapter's `notifications/initialized` reply is streamed and never read.
 - KEEP: capabilities are **static per adapter+config** (declared), not inferred by probing at send
   time; live capability probing belongs to u09 fingerprint, not here.
 - DECIDE (OD-1, ADR-0005 Accepted): OpenAI `logprobs.content[].logprob`+`top_logprobs` vs Anthropic

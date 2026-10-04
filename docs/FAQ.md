@@ -140,8 +140,11 @@ is not in that target's `endpoints` allowlist in the scope; `target '<id>' not i
 the target id is not among the scope's `targets`. Add the entry deliberately; it is not meant to
 be bypassed. (`endpoint not allowed by scope` is the adapter's own second check, which you
 should only see if the first one was bypassed.) Two less obvious causes: a host pinned to a port
-(`localhost:11434`) refuses any other port, and a path carrying `%2f`, `%5c`, a backslash or
-`%25` is always refused, because an origin that decodes it may land outside the prefix.
+(`localhost:11434`) refuses any other port, and a path carrying `%2f`, `%5c`, a backslash,
+`%25`, a `;` or `%3b`, a `%uXXXX` escape, an overlong UTF-8 sequence, a segment of dots and
+spaces only (`...`, `..%20`), or a non-ASCII character that Unicode normalisation turns into a
+dot, a slash or a semicolon (a fullwidth dot, for example) is always refused, because an origin
+that decodes it may land outside the prefix.
 
 ### Why is a spec `blocked_by_policy`, and how do I turn it on?
 

@@ -8,8 +8,10 @@ matching is pure string/URL parsing.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections.abc import Iterable
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from ildottore.policy.scope import Endpoint, ScopeTarget
 
@@ -31,7 +33,37 @@ def _decode_dot_segments(path: str) -> str:
 # ``%2f`` is an encoded ``/`` (so ``/v1/chat/..%2f..%2fadmin`` is ``/admin`` to a decoding
 # origin), ``%5c`` an encoded backslash, and ``%25`` re-encodes a ``%`` (``%252f`` decodes to
 # ``%2f``, then to ``/``). Matched case-insensitively.
-_ENCODED_SEPARATORS = ("%2f", "%5c", "%25")
+_ENCODED_SEPARATORS = ("%2f", "%5c", "%25", "%3b")
+
+# Forms only some origins decode, refused for the same reason (left open by the review of
+# PR #32, closed 2026-10-04): a ``;`` path parameter (Tomcat and Jetty read ``..;`` as ``..``),
+# an IIS ``%uXXXX`` escape, and an overlong UTF-8 sequence (``%c0%ae`` is ``.`` and ``%c0%af``
+# is ``/`` to a lenient decoder; never valid UTF-8), including the 5- and 6-byte forms and every
+# lead byte from F5 up, none of which UTF-8 allows.
+_ORIGIN_DECODED = re.compile(r";|%u[0-9a-f]{4}|%c[01]|%e0%[89]|%f0%8|%f[5-9a-f]", re.IGNORECASE)
+
+
+def _normalizes_to_separator(path: str) -> bool:
+    """True if a non-ASCII character of ``path``, literal or percent-encoded, becomes a dot, a
+    slash, a backslash, a percent sign or a semicolon under NFKC, as on an origin that
+    normalises Unicode, or if a segment is made only of dots and spaces.
+
+    The fullwidth full stop and solidus, the one- and two-dot leaders and the small full stop
+    all do. Listing their encodings missed the literal forms: httpx encodes a literal fullwidth
+    dot (U+FF0E) on the way out, after the gate had passed it (pre-commit audit of the leftovers).
+    """
+
+    decoded = unquote(path, errors="replace")
+    for char in decoded:
+        if ord(char) > 0x7F and any(c in "./\\%;" for c in unicodedata.normalize("NFKC", char)):
+            return True
+    # A segment of dots and spaces only, other than `.` and `..` (resolved above): Windows
+    # strips trailing dots and spaces, so `..%20` and `...` are `..` to such an origin. Read
+    # after NFKC, so a no-break or ideographic space counts as a space.
+    normalized = unicodedata.normalize("NFKC", decoded)
+    return any(
+        seg not in (".", "..") and seg and set(seg) <= {".", " "} for seg in normalized.split("/")
+    )
 
 
 def _has_ambiguous_separator(path: str) -> bool:
@@ -45,7 +77,12 @@ def _has_ambiguous_separator(path: str) -> bool:
     """
 
     lowered = path.lower()
-    return "\\" in path or any(seq in lowered for seq in _ENCODED_SEPARATORS)
+    return (
+        "\\" in path
+        or any(seq in lowered for seq in _ENCODED_SEPARATORS)
+        or _ORIGIN_DECODED.search(path) is not None
+        or _normalizes_to_separator(path)
+    )
 
 
 def _remove_dot_segments(path: str) -> str:

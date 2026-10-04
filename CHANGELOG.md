@@ -77,6 +77,66 @@ order, not how any real model behaves: that still needs a live run.
   the package is not on PyPI. It installs from the repository at a pinned tag, so a pipeline
   gate cannot change meaning between runs.
 
+### Fixed (leftovers of the 2026-10-03 audit)
+
+What the earlier passes left open on purpose, each reproduced before it was fixed
+(`tests/test_audit_leftovers.py`, `tests/adapters/test_response_cap.py`).
+
+- **A compression bomb inflated past the response cap.** httpx decompressed each network
+  chunk (up to 64 KiB read) whole before the 4 MiB cap looked at it, so a 200 KB gzip reply
+  allocated about 150 MB on its way to being refused. The body is now read raw and
+  `gzip`/`deflate` are decoded inside the cap, never a byte past it (peak about 9 MB), and the
+  compressed bytes are capped too. The adapters ask only for those two encodings: left to
+  httpx, `Accept-Encoding` grows `br` and `zstd` whenever their packages are importable. Any
+  other `Content-Encoding`, or a corrupt or truncated body, is a non-retried environment
+  failure (`ResponseUndecodable`) on a 2xx (httpx's own `DecodingError` escaped every adapter's
+  handler); an error status keeps its status. The MCP adapter could not read any gzip reply
+  (it decoded the body a second time), and buffered its `notifications/initialized` reply
+  whole, outside the cap: it is streamed and never read now.
+- **Path forms only some origins decode** passed the allowlist: a `;` path parameter (`..;` is
+  `..` to Tomcat and Jetty), an IIS `%uXXXX` escape, overlong UTF-8 (`%c0%ae` is `.` to a
+  lenient decoder), and any non-ASCII character, literal or encoded, that Unicode normalisation
+  turns into a dot, a slash, a backslash, a percent sign or a semicolon (fullwidth dots, dot
+  leaders, the Greek question mark), an encoded `;` (`%3b`), UTF-8 lead bytes from `%f5` up and
+  segments of dots and spaces only (`..%20`, `...`). All refused.
+- **The token ceiling did not hold under concurrency.** Specs with no `sampling.max_tokens`
+  (35 of the 75 shipped) reserved nothing, so four concurrent sends all passed the check
+  before any reply came back: 2000 tokens recorded under a 1200 ceiling. Every send now
+  reserves input (text length / 4) plus `max_tokens` or 512, the figures `--estimate` already
+  prints, and the reservation is trued up to the reported usage in both directions, in either
+  provider's shape (Anthropic reports no `total_tokens`; its prompt-cache tokens count, and an
+  MCP discovery reports 0). The 512 is an accounting figure, not
+  a limit sent to the provider: a longer reply still overshoots, and is recorded. Under a small
+  ceiling, concurrent reservations can halt a run early with tokens unspent; the judge, the
+  identity sweep and the probes still charge requests only.
+- **`-sV` probe retries were neither paced nor counted.** The live probe adapter kept its own
+  two retries inside one pacer slot: on a target answering 429 to every first try, 17 nominal
+  probes were 34 requests, the retries 53 ms after each 429, and the ledger was charged 17.
+  The probe adapter now retries nothing itself; a metered wrapper owns the retries, as for the
+  judge, so every send is paced, recorded in `probes/` and charged to `--budget-requests`, and
+  a probe pass that reaches the ceiling stops the run (exit 3). A resumed run records what that
+  probe pass spent before refusing, so retrying the same command cannot spend the ceiling
+  again.
+- **`started_at` and `finished_at` were null** in every report and run-store row: no caller
+  set them. They hold UTC ISO 8601 times now, each target's start stamped before its own
+  `-sV` probes; a resume keeps the start of the run it finishes.
+- **Live `latency_ms` was made up.** The deterministic counter that keeps offline evidence
+  byte-stable was wired on live routes too, so a 1 ms loopback reply read 2000.0 or 4000.0 ms.
+  A live route uses the monotonic clock.
+- **The no-judge warning counted the selection, not the plan**: "74 of 75 selected specs"
+  beside "34 specs selected". It now says, per live target, how many of the specs that will
+  run there use `semantic_judge` (33 of 34 on the example target).
+- **Decisions for the maintainer, measured and not taken:** sending a default output limit on
+  the wire for specs that declare none (it would bound the token spend, and could cut a long
+  reply short); what to store for attempts already paid when a budget breach halts a variant
+  (they are discarded today, and a resume re-sends and re-bills them; storing them needs a
+  verdict for the attempts the judge can no longer score); a time of day on attempts and probes
+  (it touches the shared `Attempt` model and makes every evidence hash unique per run); and
+  whether a confirmed finding's confidence should be the deciding variant's, as its
+  reproducibility and its confirmation already are, instead of the mean over every attempt
+  (ADR-0003). Also left to the maintainer: the multilingual spec's `translate:zh` variant,
+  which an investigation found to send the base prompt unchanged.
+
 ### Fixed (full audit of 2026-10-03: residuals of the seven blocks)
 
 What the blocks left open, fixed after them and audited in eight rounds before commit
@@ -138,10 +198,9 @@ What the blocks left open, fixed after them and audited in eight rounds before c
   pasted key survived its truncation; in a fleet file, `api_key: <key>` written where
   `api_key_env` belongs was the likeliest case), and a YAML error in a scope, target, fleet or
   labels file gives the problem, its line and column (and the start of the entry being read,
-  when PyYAML records it), or the character offset of a control character, without quoting
-  the line. In `fleet` and
-  `calibrate` a YAML error was an uncaught traceback with exit 1, the code for "findings below
-  the threshold"; it exits 3.
+  when PyYAML records it), or the position of a control character (counted from 1), without
+  quoting the line. In `fleet` and `calibrate` a YAML error was an uncaught traceback with
+  exit 1, the code for "findings below the threshold"; it exits 3.
 - Help text: `--suite` names the aliases that exist (`owasp:llm`, `baseline`, `agentic`),
   `--deep` says it is timing template T2 over the same battery (adaptive only with `-sV`), and
   `run` is no longer called the default command, `--include-needs-review` says it gates

@@ -32,6 +32,7 @@ from typing import Any
 import httpx
 
 from ildottore.adapters.base import (
+    ACCEPT_ENCODING,
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
@@ -179,13 +180,18 @@ class MCPAdapter:
         headers = self._headers(session_id)
         body = {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
         try:
-            await client.post(
+            # Streamed and never read: the reply to a notification is ignored, and `client.post`
+            # buffered it whole, uncapped and decompressed by httpx (a 4 MiB cap everywhere
+            # else, and none on this one call).
+            async with client.stream(
+                "POST",
                 self.base_url,
                 json=body,
                 headers=headers,
                 timeout=self.retry.timeout_s,
                 follow_redirects=False,
-            )
+            ):
+                pass
         except (httpx.TimeoutException, httpx.TransportError):
             # A lost notification is non-fatal: the list calls below will surface a real fault.
             return
@@ -268,9 +274,16 @@ class MCPAdapter:
             if raw is None:
                 await self._maybe_backoff(attempt, attempts)
                 continue
+            # `raw` is already decoded: rebuilt under its `Content-Encoding: gzip` header, httpx
+            # decoded it a second time and failed with a DecodingError nothing caught.
+            kept = [
+                (name, value)
+                for name, value in streamed.headers.multi_items()
+                if name.lower() not in ("content-encoding", "content-length")
+            ]
             return httpx.Response(
                 streamed.status_code,
-                headers=streamed.headers,
+                headers=kept,
                 content=raw,
                 request=streamed.request,
             )
@@ -284,6 +297,7 @@ class MCPAdapter:
         headers = {
             "content-type": "application/json",
             "accept": "application/json, text/event-stream",
+            "accept-encoding": ACCEPT_ENCODING,
         }
         if session_id:
             headers["mcp-session-id"] = session_id
@@ -474,5 +488,12 @@ class MCPAdapter:
             logprobs=None,
             finish_reason="mcp_discovery",
             raw_ids=self.redactor.redact(raw_ids),
-            usage={"tools": len(tools), "resources": len(resources), "prompts": len(prompts)},
+            # Discovery bills no model tokens. Saying so lets the token ledger release the send's
+            # reservation; without a token field it kept about 514 tokens per MCP attempt.
+            usage={
+                "tools": len(tools),
+                "resources": len(resources),
+                "prompts": len(prompts),
+                "total_tokens": 0,
+            },
         )
