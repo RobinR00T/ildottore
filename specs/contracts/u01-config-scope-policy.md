@@ -16,11 +16,14 @@ Config, scope authorization, policy packs and the central redactor. 9-section an
 Load and validate `scope.yaml` (the **authorization record**, S4): parse targets, per-target
 endpoint allowlist (host + path prefixes), ≥1 auth identity ref (`auth_ref`, never inline
 secrets), optional ≥2 identities (`multi_identity`). Verify file integrity by **checksum** and
-expose its hash so a run records it (S4). Provide `PolicyEngine.check(target, endpoint, spec)`
+expose its hash so a run records it (S4). (As built: the checksum is optional, verified only when
+present, and unkeyed, so it is not a signature (OD-2); `scope_hash()` is exposed and has no
+caller, so no run records it, audit D-17.) Provide `PolicyEngine.check(target, endpoint, spec)`
 → `allow` | `blocked_by_policy(reason)` answering: target in scope? endpoint on allowlist
 (default-deny, S3)? spec's category/id enabled by the active **policy pack**? dangerous payload
 marked `test_only` (S5; enforced from the category, A-29)? Layer-B / PII-elicitation specs **off unless the pack enables them**
 (`docs/11 §5`, DL4/DL5). `config.py` sources scanner secrets from **env/vault**, never files.
+(A target's `auth_ref` resolves `env://` only; `vault://` is deferred and raises.)
 `redactor.py` is the single choke point masking secrets/keys/PII in logs, console, evidence and
 reports (S6, DL2); it is import-cheap and dependency-free so every layer can call it.
 
@@ -40,12 +43,16 @@ reports (S6, DL2); it is import-cheap and dependency-free so every layer can cal
   never reaches a log line, evidence blob or report (DL2, S6). Redaction is idempotent.
 - KEEP: no network I/O during scope/pack loading (SSRF-safe spec loading, `docs/02 §4`).
 - KEEP: `test_only` payloads never rendered raw without `--unsafe-render` (S5): u01 exposes the
-  flag state; rendering is u11.
-- DECIDE (OD-2): scope.yaml signing: SHA-256 checksum now, sigstore later.
+  flag state; rendering is u11. (As built: `config.SafetyFlags.unsafe_render` exists, off; no
+  CLI flag sets it.)
+- DECIDE (OD-2): scope.yaml signing: SHA-256 checksum now, sigstore later. (The checksum half is
+  built and optional; signing is still open.)
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing, `--unsafe-render`
-   and `--allow-pii-elicitation` flag surface.
+   and `--allow-pii-elicitation` flag surface. (As built: the typed `SafetyFlags` carry both
+   values, default off; neither is a CLI flag, so the DL4 run key cannot be turned on from
+   `dottore`.)
 2. `redactor.py`: pattern registry (key prefixes `sk-`/`ghp_`/`AKIA`/`xoxb-`/JWT/PEM + PII:
    email/phone/card/IBAN/national-id/IP), masking with type-tag, structural walk over dict/list.
 3. `scope.py`: schema-validated loader + SHA-256 integrity + hash accessor.

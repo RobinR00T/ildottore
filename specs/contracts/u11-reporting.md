@@ -22,13 +22,22 @@ status, severity banding (`docs/05 §3`), framework rollup (OWASP LLM / ATLAS / 
 model-comparison matrix (`docs/05 §5`) when the run spans >1 target. Confirmed vs needs-review
 findings are surfaced separately (`docs/05 §2`). **All secrets/PII are masked via the central
 redactor before serialization**: no reporter ever emits raw sensitive strings.
+**As built (2026-10-04):** every format prints one of four states per finding, from
+`summary.finding_state(finding)`: `confirmed`; `needs_review` (an unconfirmed fail, or a finding
+that was sent and came back inconclusive); `not_exploited` (a pass); `not_tested` (nothing
+sent). The HTML report has three finding sections: "Confirmed findings (n)", "Needs review:
+unconfirmed exploits and undecided results (n)" and "Not exploited or not tested (n)". The JSON
+`confirmed_count` and `needs_review_count` count the first two states only, and SARIF carries
+the state in each result's `properties.state`.
 
 ## §3 Dependencies & interface contracts
 - Implements `shared.protocols.Reporter` (`format: str`, `render(run, findings) -> bytes`).
 - Consumes `shared.models.{TestRun, Finding, RiskScore, Verdict, Attempt, Evidence}`: read-only
   stable interface registry (`docs/01 §3`, `00-INDEX` §"Shared interface registry").
 - Banding + confirmed/needs-review state are **read from** `RiskScore`/`Finding` as produced by
-  u07; this unit does not compute or re-derive scores or bands.
+  u07; this unit does not compute or re-derive scores or bands. (As built `Finding.confirmed` is
+  set by the runner, u08, and the four-way display state is derived here by `finding_state` from
+  `confirmed`, `status` and whether any attempt was sent; nothing re-decides confirmation.)
 - Redaction goes through the central redactor from u01 (`docs/11 §5`), injected as an interface
   (`Redactor` protocol): not re-implemented here.
 - Evidence bytes/refs are read via u10's `EvidenceRef`/store interface; reports embed refs +
@@ -39,7 +48,13 @@ redactor before serialization**: no reporter ever emits raw sensitive strings.
   (stable key order, sorted collections, no `datetime.now()`, `ensure_ascii` fixed).
 - KEEP: HTML autoescape ON; `--unsafe-render` (raw HTML in reasoning/evidence) is **OFF by
   default** and must be an explicit opt-in flag surfaced to the operator, never a template
-  default.
+  default. (As built: the switch is the `HtmlReporter(unsafe_render=False)` constructor argument
+  and the template's banner branch; no CLI flag reaches it, so it is always off from `dottore`.
+  It governs only whether finding reasoning is emitted unescaped. No reporter reads a spec's
+  `test_only` mark, and the JSON report carries each attempt's request, prompt included. That
+  text goes through the redactor, which masks secret, PII and high-entropy shapes and nothing
+  else, so the attack text of a `test_only` spec is readable in the JSON report. The HTML report
+  shows no prompts.)
 - KEEP: SARIF output is 2.1.0, `level` mapped from band per `docs/05 §3`
   (critical/high→`error`, medium→`warning`, low/info→`note`); ruleId = spec id; rules carry
   OWASP/ATLAS/NIST tags.
@@ -72,7 +87,7 @@ redactor before serialization**: no reporter ever emits raw sensitive strings.
 - **SARIF validity** (`docs/07 §11`): every generated SARIF validates against the SARIF 2.1.0
   JSON Schema (`jsonschema`/`sarif-om`); 0 violations on the golden run.
 - **JSON schema snapshot:** report JSON validates against its schema; golden-fixture snapshot
-  in `tests/fixtures/reports/` is byte-stable across two renders (determinism gate).
+  in `tests/reporting/fixtures/reports/` is byte-stable across two renders (determinism gate).
 - **JUnit validity:** output parses as well-formed JUnit XML (schema/`junitparser` check).
 - **HTML renders:** template renders without error; autoescape verified; a payload with `<script>`
   in reasoning is escaped when `--unsafe-render` is off.
@@ -96,7 +111,11 @@ A run does not lint, so silently dropping either is how a numerator shrinks with
 **A-14 Every figure carries its edition, and percentages floor.** OWASP renumbered in 2026 and
 ATLAS renames tactics between releases, so a bare "not covered: LLM03" reads as the opposite
 claim to a reader holding the other edition. `100%` requires `exercised >= total`: rounding
-published 199/200 as complete.
+published 199/200 as complete. As built the machine formats carry the editions too: the JSON
+report puts an `edition` on each coverage axis (`owasp`, `atlas`, `iopc`), SARIF has
+`runs[0].properties.framework_editions` and JUnit an `edition.*` property block on each
+testsuite, the last two for OWASP LLM, MITRE ATLAS, Nova IoPC and OWASP AISVS
+(`shared.frameworks.framework_editions`).
 
 **A-15 The machine formats carry the run state.** SARIF sets `invocations[0].executionSuccessful`
 and JUnit emits an `<error>` when a campaign did not finish. Those two are what CI reads, and
@@ -135,4 +154,5 @@ which an agent writes a cron entry calling a C2-shaped address. Checked by
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - HTML evidence rendering: masked-excerpt inline + store ref, vs ref-only (propose inline+ref).
 - Whether `--unsafe-render` is exposed at all in MVP‑1 or deferred to MVP‑2 (propose: present but
-  hard-gated + warning banner). Flag to conductor before enabling.
+  hard-gated + warning banner). Flag to conductor before enabling. (Ledger OD-12 records
+  "present"; as built it is not exposed on the CLI.)

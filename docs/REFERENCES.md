@@ -4,7 +4,10 @@
 - OWASP Top 10 for LLM Applications 2025: https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/
 - OWASP GenAI Red Teaming Guide (Jan 2025): https://genai.owasp.org/resource/genai-red-teaming-guide/
 - MITRE ATLAS: https://atlas.mitre.org/
-- NIST AI 600-1 (GenAI Profile) / AI RMF: https://www.nist.gov/itl/ai-risk-management-framework
+- NIST AI 600-1 (GenAI Profile) / AI RMF: https://www.nist.gov/itl/ai-risk-management-framework.
+  A design reference. Specs carry AI RMF (NIST AI 100-1) function/subcategory tokens in
+  `nist_ai_rmf`, validated by shape only (the subcategory list is not transcribed); no spec maps
+  an AI 600-1 risk category, and `dottore coverage` has no NIST axis.
 - OWASP AI Security Verification Standard (AISVS) 1.0: https://github.com/OWASP/AISVS. A checklist
   of 191 *controls*, not attacks, pinned in `src/ildottore/shared/aisvs.py` from commit `05c62d1`
   (2026-10-01). Mapped by falsification only: a failing spec is evidence a control is absent or

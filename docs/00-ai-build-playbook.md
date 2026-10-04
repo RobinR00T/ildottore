@@ -48,7 +48,13 @@ defect, and each one names it: a rule with no incident behind it is an opinion.
    visible and arguable; a missed exploit is a clean report. Test both directions, always.
 7. **Adding an evaluator changes the aggregate.** A third deterministic vote under `weighted`
    pushed a real disclosure from 1-of-2 (fail) to 1-of-3 (pass), so the "fix" scored worse than
-   the bug. Re-run the aggregate, not just the new evaluator.
+   the bug. Re-run the aggregate, not just the new evaluator. (Correction, 2026-10-04: that
+   arithmetic is the 0.5-threshold vote in `evaluators/combine.py`, which no run path calls. A
+   scan uses the runner's fixed rule, where any deterministic fail decides, so 1 fail in 3 is
+   still `fail`; the lint fixture engine treats `weighted` as `all_pass`, same result. Both were
+   already so when this rule was written. So the incident was not a scan verdict; which path
+   produced it is not recorded. The lesson stands for any aggregate that counts votes, and
+   whether `weighted` should ever vote is OD-19.)
 8. **A gap you decide to keep goes in the spec, not in a test.** A test that pins a weakness in
    place is a test that argues against fixing it.
 
@@ -189,9 +195,11 @@ JSON + HTML report, full self-validation green. MVP‑2/3 per `docs/12-gaps-back
 ## 9. Definition of Done (per unit / PR)
 
 - [ ] Matches contract; deviations captured as ADRs; §9 open decisions logged.
-- [ ] Unit + property + golden tests pass; coverage ≥ 85% core; import-boundary green.
+- [ ] Unit + property + golden tests pass; coverage ≥ 85% (CI measures the aggregate over
+  `src/ildottore`); import-boundary green.
 - [ ] Attack specs ship golden fixtures incl. hallucinated-but-valid negatives (`docs/11 §4`).
-- [ ] Self-scan (SARIF) has no new high/critical in our own code.
+- [ ] Self-scan (SARIF) has no high/critical finding in our own code (it has no baseline: any
+  judge flip fails it).
 - [ ] Docs + `CHANGELOG.md` + `docs/PROGRESS.md` updated.
 
 ## 10. Provenance & references

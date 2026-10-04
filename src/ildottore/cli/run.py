@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import sys
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,6 +53,7 @@ from ildottore.shared.models import (
     PlanBudgets,
     Target,
     TestRun,
+    TestRunSummary,
 )
 
 __all__ = [
@@ -792,13 +794,21 @@ def _validate_options(opts: RunOptions) -> None:
         raise ValueError(f"--top-tests must be at least 1 (got {opts.top_tests})")
     if opts.runs < 1:
         raise ValueError(f"--runs must be at least 1 (got {opts.runs})")
-    report_paths = list(opts.outputs.values())
-    if opts.output_all_prefix is not None:
-        report_paths.append(opts.output_all_prefix)
+    report_paths = list(_report_outputs(opts).values())
     for path in report_paths:
         parent = Path(path).parent
         if not parent.is_dir():
             raise ValueError(f"cannot write the report {path}: {parent} is not a directory")
+    # Two formats pointed at one path: the second silently overwrote the first (audit low).
+    # Compared case-folded: on a case-insensitive volume (the macOS default) `R.json` and
+    # `r.json` are one file, and the JSON report was lost to the HTML (pre-commit audit).
+    # Unicode-normalized too: APFS treats `café` in NFC and in NFD as one name.
+    resolved = [
+        unicodedata.normalize("NFC", str(Path(path).resolve())).casefold() for path in report_paths
+    ]
+    duplicates = sorted({path for path in resolved if resolved.count(path) > 1})
+    if duplicates:
+        raise ValueError(f"two report formats would write the same file: {', '.join(duplicates)}")
 
 
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
@@ -1135,6 +1145,11 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     else "family=unknown"
                 )
                 + (f" version={version.guess}" if version is not None else "")
+                + (
+                    " [the target answered every attributing probe alike: no text signal]"
+                    if "non_discriminating_target" in fingerprint.spoofing_flags
+                    else ""
+                )
             )
     plans = resolve_target_plans(
         scope=scope,
@@ -1165,8 +1180,9 @@ def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     if barren and not opts.discovery_only:
         raise ValueError(
             "nothing would be sent: every selected spec is unrunnable on "
-            f"{'; '.join(barren)}. Widen the selection, declare the capability on the "
-            "target, or enable the category in the policy pack."
+            f"{'; '.join(barren)}. Widen the selection or declare the capability on the "
+            "target. A spec blocked by policy needs a policy pack that enables it, and the CLI "
+            "cannot load one today (open decision), so it cannot run from `dottore`."
         )
 
     # Resolved BEFORE the three modes that send nothing, so a typo in the id is caught by the
@@ -1567,6 +1583,36 @@ def _print_progress(
             printer.progress(i, total, spec.id, finding)
 
 
+def _envelope_summary(findings: list[Finding]) -> TestRunSummary:
+    by_status: dict[str, int] = {}
+    by_band: dict[str, int] = {}
+    for finding in findings:
+        by_status[finding.status.value] = by_status.get(finding.status.value, 0) + 1
+        by_band[finding.risk.band.value] = by_band.get(finding.risk.band.value, 0) + 1
+    return TestRunSummary(by_status=by_status, by_band=by_band, total=len(findings))
+
+
+def _report_outputs(opts: RunOptions) -> dict[str, Path]:
+    """Every report path the options ask for, ``-oA PREFIX`` expanded to four files.
+
+    The prefix is extended, not suffix-swapped: ``with_suffix`` turned ``-oA report.v2`` into
+    ``report.json``, dropping the last dotted part (audit low).
+    """
+
+    outputs = dict(opts.outputs)
+    if opts.output_all_prefix is not None:
+        prefix = opts.output_all_prefix
+        # A prefix that already ends in one of the four extensions is a base name with that
+        # extension, not part of it: `-oA report.json` writes report.json, report.html and so
+        # on, as it always did, instead of report.json.json.
+        if prefix.suffix.lower() in (".json", ".html", ".sarif", ".xml"):
+            prefix = prefix.with_suffix("")
+        extensions = {"json": ".json", "html": ".html", "sarif": ".sarif", "junit": ".xml"}
+        for fmt, ext in extensions.items():
+            outputs.setdefault(fmt, prefix.with_name(prefix.name + ext))
+    return outputs
+
+
 def _write_reports(
     opts: RunOptions,
     results: list[CampaignResult],
@@ -1594,14 +1640,18 @@ def _write_reports(
         for result in results:
             for target in result.run.targets:
                 seen.setdefault(target.id, target)
-        run = run.model_copy(update={"targets": list(seen.values())})
-    outputs = dict(opts.outputs)
-    if opts.output_all_prefix is not None:
-        prefix = opts.output_all_prefix
-        outputs.setdefault("json", prefix.with_suffix(".json"))
-        outputs.setdefault("html", prefix.with_suffix(".html"))
-        outputs.setdefault("sarif", prefix.with_suffix(".sarif"))
-        outputs.setdefault("junit", prefix.with_suffix(".xml"))
+        # The envelope's own findings and summary cover every target too. They held the LAST
+        # target only, beside a top-level summary of all of them, so the same JSON document
+        # gave two answers (audit R10). The run id stays the last target's; each target's own
+        # id is in its findings' evidence references.
+        run = run.model_copy(
+            update={
+                "targets": list(seen.values()),
+                "findings": list(findings),
+                "summary": _envelope_summary(findings),
+            }
+        )
+    outputs = _report_outputs(opts)
 
     written: list[Path] = []
     for fmt, path in outputs.items():

@@ -50,8 +50,10 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ildottore.cli.wiring import shown_auth_ref
+from ildottore.shared.config_errors import validation_problems, yaml_problem
 from ildottore.shared.models import Target
 
 __all__ = [
@@ -144,10 +146,21 @@ def infer_provider(endpoint: str) -> str:
 def load_fleet(path: str | Path) -> FleetConfig:
     """Parse + validate a ``fleet.yaml`` (no code execution, no network)."""
 
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    # Neither error quotes the file: an `api_key: <key>` written where `api_key_env` belongs
+    # was echoed back by pydantic, and a YAML error escaped as a traceback with exit 1, the code
+    # for "findings below the threshold" (fifth audit of the residuals).
+    try:
+        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ValueError(f"fleet file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"fleet file {path} must be a mapping at top level")
-    return FleetConfig.model_validate(raw)
+    try:
+        return FleetConfig.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"fleet file {path} failed validation: {validation_problems(exc)}"
+        ) from exc
 
 
 _DEFAULT_PORTS = {"https": 443, "http": 80}
@@ -270,7 +283,7 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
         )
     expected_auth = f"env://{declared.api_key_env}" if declared.api_key_env else None
     mismatches = [
-        f"{name} {got!r} (the fleet declares {want!r})"
+        f"{name} {_shown(name, got)} (the fleet declares {_shown(name, want)})"
         for name, got, want in (
             ("id", judge.id, declared.id),
             ("endpoint", judge.endpoint, declared.endpoint),
@@ -280,6 +293,14 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
     ]
     if mismatches:
         raise ValueError("--judge does not match the fleet's judge: " + "; ".join(mismatches))
+
+
+def _shown(field: str, value: str | None) -> str:
+    """A judge field as an error may quote it: an ``auth_ref`` literal never (it is a key)."""
+
+    if field == "auth_ref" and value is not None:
+        return shown_auth_ref(value)
+    return repr(value)
 
 
 def _scope_doc(config: FleetConfig) -> dict[str, object]:

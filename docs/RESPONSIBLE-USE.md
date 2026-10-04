@@ -10,8 +10,9 @@ cause real-world harm, refusing it is the correct behavior, and nothing here cha
 
 ## 1. What this is
 A spec-driven security scanner ("nmap-for-AI") that tests whether an LLM or AI application
-resists known attack classes, aligned to **OWASP LLM Top 10 (2025)**, **MITRE ATLAS**, and
-**NIST AI 600-1**. It is the same category of tool as NVIDIA **garak**, Microsoft **PyRIT**,
+resists known attack classes, mapped to **OWASP LLM Top 10 (2025)** and **MITRE ATLAS**, with
+NIST AI RMF function tokens on every spec (**NIST AI 600-1** is a reference, not a mapping the
+code checks). It is the same category of tool as NVIDIA **garak**, Microsoft **PyRIT**,
 and **promptfoo**: published, industry-standard, defensive red-team/assurance tooling. Its
 value proposition is *reproducibility + evidence + risk mapping*, i.e. producing an auditable
 assurance report, not offensive capability.
@@ -20,10 +21,11 @@ assurance report, not offensive capability.
 - **Owner:** Dani Solis <daniel.solis@zynap.com> (a personal open-source project).
 - **Context:** authorized product development and security research. License **MIT**.
 - **Operating rule (enforced in code):** the tool refuses to scan any target that is not
-  covered by a signed `scope.yaml` authorization record with an endpoint allowlist
-  (default-deny). The scope file *is* the authorization; runs are auditable (who / what / when
-  / scope hash). Using it against systems you are not authorized to test is prohibited and may
-  be illegal.
+  covered by a `scope.yaml` authorization record with an endpoint allowlist (default-deny).
+  The scope file *is* the authorization. It is not signed: an optional SHA-256 `checksum:` makes
+  edits detectable (whether to add real signing is open decision OD-2). Runs record what was
+  sent and what came back as evidence, but not who ran them, when, or the scope's hash. Using
+  it against systems you are not authorized to test is prohibited and may be illegal.
 
 ## 3. Safe-by-design: the controls that are actually implemented
 These are not aspirations; they are enforced by the code and covered by tests

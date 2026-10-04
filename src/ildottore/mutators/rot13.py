@@ -19,6 +19,7 @@ class Rot13Mutator(BaseMutator):
 
     name = "rot13"
     reversible = True
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         transformed = codecs.encode(text, "rot_13")

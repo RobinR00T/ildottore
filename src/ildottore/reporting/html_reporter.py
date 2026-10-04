@@ -27,6 +27,7 @@ from ildottore.reporting.summary import (
     OWASP_LLM_EDITION,
     RunStatus,
     RunSummary,
+    finding_state,
     pct_display,
 )
 from ildottore.shared.enums import ReportFormat, VerdictStatus
@@ -119,7 +120,7 @@ class HtmlReporter(BaseReporter):
             "reproducibility": finding.risk.reproducibility,
             "confidence": finding.risk.confidence,
             "confirmed": finding.confirmed,
-            "state": "confirmed" if finding.confirmed else "needs_review",
+            "state": finding_state(finding),
             "reasoning": _excerpt(finding.reasoning),
             "name": spec.name if spec is not None else None,
             "owasp": spec.owasp if spec is not None else "unknown",
@@ -133,8 +134,10 @@ class HtmlReporter(BaseReporter):
         template = env.get_template("report.html.j2")
         findings_view = [self._finding_view(f) for f in ctx.findings]
         # Confirmed vs needs-review surfaced separately (docs/05 §2).
-        confirmed = [f for f in findings_view if f["confirmed"]]
-        needs_review = [f for f in findings_view if not f["confirmed"]]
+        confirmed = [f for f in findings_view if f["state"] == "confirmed"]
+        # Passes and never-sent specs are listed apart instead of padding needs review (R5).
+        needs_review = [f for f in findings_view if f["state"] == "needs_review"]
+        not_exploited = [f for f in findings_view if f["state"] in ("not_exploited", "not_tested")]
         html = template.render(
             run_id=ctx.run.run_id,
             suite_ref=ctx.run.suite_ref,
@@ -153,6 +156,7 @@ class HtmlReporter(BaseReporter):
             comparison=summary.model_comparison,
             confirmed=confirmed,
             needs_review=needs_review,
+            not_exploited=not_exploited,
             unsafe_render=self._unsafe_render,
             unsafe_banner=UNSAFE_RENDER_BANNER,
         )

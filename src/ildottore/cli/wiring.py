@@ -55,6 +55,7 @@ from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
+from ildottore.shared.config_errors import yaml_problem
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.models import (
     AttackSpec,
@@ -102,6 +103,7 @@ __all__ = [
     "scenario_judge_adapter",
     "scope_endpoint_for",
     "scope_endpoint_of",
+    "shown_auth_ref",
     "target_uses_mock",
 ]
 
@@ -497,6 +499,18 @@ def scenario_adapter_factory(
 # --- real (over-the-wire) adapters --------------------------------------------------
 
 
+def shown_auth_ref(auth_ref: str) -> str:
+    """How an error may quote an ``auth_ref``: a reference (``scheme://NAME``) as written, a
+    literal never.
+
+    A raw key pasted where a reference belongs used to be quoted back. The CLI's redactor
+    masked it only when its entropy was high enough: about 1 in 20 random 64-hex keys and 3 in 4
+    32-hex keys were printed in clear (fourth audit of the residuals).
+    """
+
+    return repr(auth_ref) if "://" in auth_ref else "a literal value (not shown)"
+
+
 def resolve_auth_ref(auth_ref: str | None) -> str | None:
     """Resolve a target's ``auth_ref`` **reference** to its secret value (S6).
 
@@ -534,7 +548,9 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
                 "similar); fix the variable, it cannot be sent as a header"
             )
         return value
-    raise ValueError(f"unsupported auth_ref scheme in {auth_ref!r}; only 'env://NAME' is supported")
+    raise ValueError(
+        f"unsupported auth_ref scheme in {shown_auth_ref(auth_ref)}; only 'env://NAME' is supported"
+    )
 
 
 #: The path each provider's API lives at when the operator declares only an origin. Used by
@@ -688,10 +704,11 @@ def _authorized_api_key(scope: Scope, target: Target) -> str | None:
     if scope_target is not None:
         authorized = {i.auth_ref for i in scope_target.identities}
         if target.auth_ref not in authorized:
+            declared = ", ".join(shown_auth_ref(ref) for ref in sorted(authorized))
             raise ValueError(
-                f"target {target.id!r} auth_ref {target.auth_ref!r} is not authorized by the "
-                f"scope (declared: {sorted(authorized)}); refusing to read an unauthorized "
-                "credential"
+                f"target {target.id!r} auth_ref {shown_auth_ref(target.auth_ref)} is not "
+                f"authorized by the scope (declared: {declared}); refusing to read an "
+                "unauthorized credential"
             )
     return resolve_auth_ref(target.auth_ref)
 
@@ -925,7 +942,7 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
-        raise ValueError(f"target file {path} is not valid YAML: {exc}") from exc
+        raise ValueError(f"target file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} must be a mapping at top level")
     return raw

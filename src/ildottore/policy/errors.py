@@ -22,7 +22,16 @@ class ChecksumMismatchError(ScopeError):
     def __init__(self, expected: str, actual: str) -> None:
         self.expected = expected
         self.actual = actual
-        super().__init__(f"scope checksum mismatch: expected {expected!r}, got {actual!r}")
+        # The digest the CLI may print in clear: the one this tool computed. ``expected`` is
+        # whatever the operator typed in the ``checksum:`` field and is not quoted at all: the
+        # redactor masked a real sha256 there as high entropy about 19 times in 20, so it
+        # mostly appeared in clear when it was NOT a digest, a key typed by mistake (audits of
+        # the residuals).
+        self.digests = (actual,)
+        super().__init__(
+            f"scope checksum mismatch: the scope body hashes to {actual!r}, not to the "
+            "recorded checksum"
+        )
 
 
 class IdentityError(PolicyError):

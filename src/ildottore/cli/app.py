@@ -38,7 +38,7 @@ from ildottore.cli.flags import DEFAULT_TEMPLATE
 from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
 from ildottore.policy.errors import PolicyError
-from ildottore.redactor import Redactor
+from ildottore.redactor import Redactor, mask_url_passwords, overlaps_known_secret
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
@@ -99,7 +99,10 @@ def _spec_paths(spec: list[Path] | None) -> list[Path]:
 # --- run -------------------------------------------------------------------------
 
 
-_ARTIFACT_NAME = re.compile(r"(\b[0-9a-f]{64}\.json\b)")
+# An evidence file name (``<sha256>.json``) is the tool's own pointer, and the one thing a tamper
+# refusal needs to show; the entropy rule would otherwise mask it.
+_ARTIFACT_NAME = r"[0-9a-f]{64}\.json"
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def _masked(exc: BaseException) -> str:
@@ -111,11 +114,24 @@ def _masked(exc: BaseException) -> str:
     """
 
     redactor = Redactor()
-    # An evidence file name (``<sha256>.json``) is the tool's own pointer, and the one thing a
-    # tamper refusal needs to show; the entropy rule would otherwise mask it.
-    parts = _ARTIFACT_NAME.split(str(exc))
+    # A bare digest stays readable only when the error itself carries it as one this tool
+    # computed (`digests` on ChecksumMismatchError and TamperError): the redactor cannot tell a
+    # sha256 from a 64-hex key, so keeping every bare 64-hex printed a raw key pasted as an
+    # `auth_ref` in clear (third audit of the residuals). The rest is redacted in context,
+    # labels included. The sha256 filter also keeps a malformed value out of the pattern.
+    carried = [
+        d for d in getattr(exc, "digests", ()) if isinstance(d, str) and _SHA256.fullmatch(d)
+    ]
+    keep = re.compile(r"(\b(?:" + "|".join([_ARTIFACT_NAME, *carried]) + r")\b)")
+    # URL passwords first, on the whole text, so a 64-hex password is never kept as a digest.
+    # A kept token that overlaps a registered credential is masked: `sk-<64 hex>` and
+    # `<64 hex>-v2` contain one (re-audit of the digest change).
+    parts = keep.split(mask_url_passwords(str(exc)))
     return "".join(
-        part if _ARTIFACT_NAME.fullmatch(part) else redactor.redact_text(part) for part in parts
+        part
+        if keep.fullmatch(part) and not overlaps_known_secret(part.removesuffix(".json"))
+        else redactor.redact_text(part)
+        for part in parts
     )
 
 
@@ -153,7 +169,10 @@ def run(
     ] = None,
     suite: Annotated[
         str | None,
-        typer.Option("--suite", help="Suite id/alias (owasp:llm, mitre:atlas, …)."),
+        typer.Option(
+            "--suite",
+            help="Suite id (the files in specs/suites/) or alias: owasp:llm, baseline, agentic.",
+        ),
     ] = None,
     categories: Annotated[
         str | None,
@@ -176,7 +195,13 @@ def run(
         bool, typer.Option("-A", help="Aggressive: -sV + deep + adaptive.")
     ] = False,
     quick: Annotated[bool, typer.Option("--quick", help="T0 minimum battery.")] = False,
-    deep: Annotated[bool, typer.Option("--deep", help="T2 deep/agentic suite.")] = False,
+    deep: Annotated[
+        bool,
+        typer.Option(
+            "--deep",
+            help="Timing template T2 (slower) over the same battery; adaptive only with -sV.",
+        ),
+    ] = False,
     template: Annotated[
         int | None,
         typer.Option("-T", help="Timing template 0..5 (default 3; --quick/--deep imply one)."),
@@ -232,7 +257,13 @@ def run(
         str, typer.Option("--fail-on", help="CI gate band (low|medium|high|critical).")
     ] = "high",
     include_needs_review: Annotated[
-        bool, typer.Option("--include-needs-review", help="Also gate low-confidence findings.")
+        bool,
+        typer.Option(
+            "--include-needs-review",
+            help="Also gate unconfirmed fails (not reproduced on every attempt of one variant, "
+            "or with --runs 1 of the spec, or below the confidence threshold). Undecided "
+            "results never gate.",
+        ),
     ] = False,
     compare: Annotated[bool, typer.Option("--compare", help="Model-comparison matrix.")] = False,
     hardened: Annotated[
@@ -258,7 +289,7 @@ def run(
     ] = False,
     verbose: Annotated[int, typer.Option("-v", "--verbose", count=True, help="Verbosity.")] = 0,
 ) -> None:
-    """Run a campaign against one or more targets (the default command)."""
+    """Run a campaign against one or more targets."""
 
     targets = list(target or []) + list(target_pos or [])
     outputs: dict[str, Path] = {}
@@ -577,10 +608,11 @@ def render_media(
     out_dir: Annotated[Path, typer.Option("--out", help="Output directory.")] = Path(),
     spec_path: Annotated[list[Path] | None, typer.Option("--spec-path")] = None,
 ) -> None:
-    """Render a multimodal spec's image carrier(s) to disk to inspect them (read-only, no target).
+    """Render a multimodal spec's media carrier(s) to disk to inspect them (read-only, no target).
 
-    Writes one PNG per ``attack.media`` part and prints each path, size and SHA-256 digest (the
-    same chain-of-custody hash a run records). Sends nothing.
+    Writes one file per ``attack.media`` part, named by its rendered type (``.png`` for an image,
+    ``.wav`` for audio), and prints each path, size and SHA-256 digest (the same
+    chain-of-custody hash a run records). Sends nothing.
     """
 
     try:

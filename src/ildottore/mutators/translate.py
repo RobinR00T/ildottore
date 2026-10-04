@@ -8,8 +8,9 @@ is deterministic and offline.
 
 The strategy ``name`` is the bare ``translate``; the target language is read from the
 ``(spec.id, mutation.name)`` seed so a spec declaring ``translate:es`` vs ``translate:fr``
-routes deterministically. When the seed does not name a language, the default is ``es`` and
-the language is otherwise picked deterministically from the seed hash. Untranslated words
+routes deterministically. When the seed does not name a language (a bare ``translate``), the
+language is picked deterministically from the seed hash; ``DEFAULT_LANG`` is exported but not
+used for that. Lint and the runner refuse a parameter outside ``LANGUAGES``. Untranslated words
 pass through unchanged (intent-preserving best-effort gloss), so ``reversible=False`` and
 the chosen language is recorded in provenance.
 """
@@ -105,6 +106,9 @@ class TranslateMutator(BaseMutator):
 
     name = "translate"
     reversible = False
+    #: The ``translate:<lang>`` parameters this mutator really implements. Lint and the runner
+    #: refuse any other, so the evidence never names a language that was not sent.
+    accepted_params: frozenset[str] = frozenset(LANGUAGES)
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         lang = _resolve_lang(seed)

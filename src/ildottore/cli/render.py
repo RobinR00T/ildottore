@@ -55,7 +55,10 @@ def progress_line(index: int, total: int, spec_id: str, finding: Finding) -> str
 
     status = finding.status.value.upper()
     band = finding.risk.band.value
-    return f"Scanning target [ {index}/{total} specs ] {spec_id} ... {status} ({band})"
+    # An unconfirmed fail does not trip the CI gate unless --include-needs-review is given. It
+    # printed "FAIL (critical)" and the run exited 0 with no word on why (audit R6).
+    review = ", needs review" if finding.status.value == "fail" and not finding.confirmed else ""
+    return f"Scanning target [ {index}/{total} specs ] {spec_id} ... {status} ({band}{review})"
 
 
 @dataclass(frozen=True)

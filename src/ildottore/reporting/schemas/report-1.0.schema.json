@@ -208,6 +208,10 @@
             },
             "impacts": {
               "$ref": "#/definitions/codeCoverage"
+            },
+            "edition": {
+              "type": "string",
+              "description": "Edition or release of the framework this axis is measured against (clause A-14). Optional in report-1.0 so an older document still validates; a consumer validating a new report needs this copy of the schema (report-1.0 grows additively)."
             }
           }
         },
@@ -342,6 +346,10 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "edition": {
+          "type": "string",
+          "description": "Edition or release of the framework this axis is measured against (clause A-14). Optional in report-1.0 so an older document still validates; a consumer validating a new report needs this copy of the schema (report-1.0 grows additively)."
         }
       }
     },

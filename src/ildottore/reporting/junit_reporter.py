@@ -20,8 +20,9 @@ from xml.etree import ElementTree as ET  # nosec B405
 
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
-from ildottore.reporting.summary import RunSummary
+from ildottore.reporting.summary import RunSummary, finding_state
 from ildottore.shared.enums import ReportFormat, VerdictStatus
+from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import Finding
 
 __all__ = ["JunitReporter"]
@@ -50,7 +51,7 @@ class JunitReporter(BaseReporter):
         detail = (
             f"band={finding.risk.band.value} risk={finding.risk.risk:g} "
             f"confidence={finding.risk.confidence:g} "
-            f"state={'confirmed' if finding.confirmed else 'needs_review'}"
+            f"state={finding_state(finding)}"
         )
         if finding.status is VerdictStatus.FAIL:
             failure = ET.SubElement(
@@ -96,6 +97,10 @@ class JunitReporter(BaseReporter):
                     "time": "0",
                 },
             )
+            # Which edition the suite name (an OWASP code) belongs to (A-14, audit R12).
+            properties = ET.SubElement(suite, "properties")
+            for name, edition in framework_editions().items():
+                ET.SubElement(properties, "property", {"name": f"edition.{name}", "value": edition})
             for finding in findings:
                 suite.append(self._testcase(finding))
             total_tests += len(findings)

@@ -15,9 +15,10 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ildottore.policy.errors import ChecksumMismatchError, ScopeError
+from ildottore.shared.config_errors import validation_problems, yaml_problem
 
 
 class Endpoint(BaseModel):
@@ -151,14 +152,20 @@ def load_scope(
     try:
         data = yaml.safe_load(raw_text)
     except yaml.YAMLError as exc:
-        raise ScopeError(f"invalid YAML in scope file {file_path}: {exc}") from exc
+        raise ScopeError(f"invalid YAML in scope file {file_path}: {yaml_problem(exc)}") from exc
 
     if not isinstance(data, dict):
         raise ScopeError(f"scope file {file_path} must be a mapping at top level")
 
     try:
         scope = Scope.model_validate(data)
-    except Exception as exc:  # pydantic.ValidationError → typed ScopeError
+    except ValidationError as exc:
+        # Location and reason only: pydantic's own text echoes the offending input, and in a
+        # scope that can be a key pasted as an `auth_ref` (fourth audit of the residuals).
+        raise ScopeError(
+            f"scope file {file_path} failed validation: {validation_problems(exc)}"
+        ) from exc
+    except Exception as exc:  # a validator that raised something pydantic did not wrap
         raise ScopeError(f"scope file {file_path} failed validation: {exc}") from exc
 
     # A duplicate id is refused, not resolved. ``Scope.target()`` returns the FIRST match,

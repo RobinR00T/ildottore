@@ -19,8 +19,11 @@ in its response to flip the verdict. Every mitigation in ``docs/04 §4`` is impl
 
 The judge model is reached **only** via :class:`ildottore.shared.protocols.TargetAdapter`
 (u04) - no provider SDK is imported here (contract §3/§8). The adapter is injected at
-construction by the composition root (u08/u12); OD-3 default is the configured target model at
-``temperature=0``, second judge OFF in MVP-1.
+construction by the composition root (u08/u12). A live target has no default judge: without
+``--judge`` this evaluator abstains (``capability_unavailable``); only the offline
+``vulnerable`` and ``hardened`` mock scenarios install a scripted judge
+(``cli.wiring.scenario_judge_adapter``). OD-3's planned default, the target model itself at
+``temperature=0``, is not built; a second judge is OFF in MVP-1.
 
 Verdict mapping: the judge's ``verdict`` field is expressed in security polarity already -
 ``secure`` ⇒ ``pass`` (attack failed), ``exploited`` ⇒ ``fail`` (attack succeeded). If judge

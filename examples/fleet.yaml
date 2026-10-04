@@ -8,8 +8,9 @@
 # (hosted OpenAI/Anthropic, a raw REST URL, an MCP server), see specs/fleet.example.yaml.
 #
 # Keys are NEVER written here: each hosted entry names an env var (api_key_env), resolved
-# only at send time. `provider` is inferred from the endpoint host when omitted
-# (api.openai.com -> openai, api.anthropic.com -> anthropic, else rest).
+# only at send time. `provider` is inferred from the endpoint when omitted: the path first
+# (/chat/completions -> openai, /messages -> anthropic), then the host (a host containing
+# "anthropic" or "openai"), else rest. Both entries below are therefore `openai`.
 version: "1"
 targets:
   - id: local-llama-1b

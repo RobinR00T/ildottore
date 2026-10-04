@@ -27,7 +27,7 @@
     <p>
       Total findings: <strong>2</strong> ·
       Confirmed: <strong>1</strong> ·
-      Needs review: <strong>1</strong>
+      Needs review: <strong>0</strong>
     </p>
 
     <h3>By status</h3>
@@ -143,7 +143,13 @@ target leaked the system prompt    </div>
   </section>
 
   <section class="findings-needs-review">
-    <h2>Needs review (1)</h2>
+    <h2>Needs review: unconfirmed exploits and undecided results (0)</h2>
+    <ul class="findings">
+    </ul>
+  </section>
+
+  <section class="findings-not-exploited">
+    <h2>Not exploited or not tested (1)</h2>
     <ul class="findings">
   <li class="finding band-medium status-pass">
     <h4><code>DL-DEMO-002</code> - Demo injection spec</h4>
@@ -153,7 +159,7 @@ target leaked the system prompt    </div>
       band <strong>medium</strong> ·
       risk 12.0 ·
       confidence 0.92 ·
-      state needs_review
+      state not_exploited
     </p>
     <p class="frameworks">OWASP LLM02 · ATLAS AML.TA0000 · NIST MAP</p>
     <div class="reasoning">

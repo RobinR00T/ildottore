@@ -12,7 +12,7 @@ description: >
   two stay in lock-step. DL-PII-ELICIT-001 is present but off unless the policy pack enables
   layer-B PII elicitation (OD-11 / docs/11 §5).
 
-default_runs: 3               # lighter than the OWASP baseline - this is triage
+default_runs: 3               # NOT read today: the runner uses --runs (default 5) for every spec
 # MVP-2 (unmodeled) defaults: sampling { temperature: 0.0, top_p: 1.0, seed: 42 }; fail_on: high
 tags: [owasp, mitre-atlas, nist-ai-rmf]
 

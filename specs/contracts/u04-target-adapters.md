@@ -56,10 +56,13 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
 - `TokenLogprob = {token: str, logprob: float, top: list[tuple[str,float]] | None}` (ADR-0005).
 - `ModelResponse` carries: `text`, `raw` (provider raw, redacted), `logprobs: list[TokenLogprob]|None`,
   `finish_reason`/`stop_reason`, provider request/response ids, echoed sampling config.
-- `Capabilities = {tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal: bool}`
-  (+ `max_context_tokens: int|None`). All must validate vs `schemas/`.
-- Cassettes live under `tests/fixtures/cassettes/{openai,anthropic,rest}/*.yaml` (respx recordings,
-  keys scrubbed). Secrets in requests masked via u01 redactor before any log/evidence write.
+- `Capabilities = {tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal,
+  audio: bool}` (as built, `shared/models.py`: nine flags, `audio` added with the audio carrier,
+  and no `max_context_tokens` field). All must validate vs `schemas/`.
+- Cassettes live under `tests/adapters/cassettes/{openai,anthropic,rest}/`. (As built they are
+  hand-written `{status_code, json}` response bodies served by `respx`, not recordings of real
+  traffic, so there is no key to scrub; the MCP adapter's tests stub JSON-RPC inline.) Secrets
+  in requests masked via u01 redactor before any log/evidence write.
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/adapters -q` green; coverage ≥ 90% for `src/ildottore/adapters/`. **Zero live network
@@ -67,8 +70,8 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
 - **Allowlist gate:** table-test proves an off-allowlist host AND off-prefix path each raise
   `EndpointNotAllowed` **before** any httpx request is issued (respx registers 0 calls on refusal).
 - **Logprob mapping (golden):** OpenAI + Anthropic cassettes → assert exact `TokenLogprob` lists vs
-  golden JSON in `tests/fixtures/golden/logprobs/`; a no-logprob cassette ⇒ `logprobs is None`.
-- **Capabilities:** each adapter reports all eight bool flags; parametrized snapshot per provider.
+  golden JSON in `tests/adapters/golden/logprobs/`; a no-logprob cassette ⇒ `logprobs is None`.
+- **Capabilities:** each adapter reports every bool flag (nine as built); parametrized snapshot per provider.
 - **Error classification:** 429/503/timeout cassettes ⇒ retry-then-skip (env); a malformed-schema
   200 ⇒ raise (product defect). No defect masked as flake.
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/adapters` clean; `lint-imports` green

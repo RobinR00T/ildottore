@@ -22,6 +22,7 @@ class GrayBoxMutator(BaseMutator):
 
     name = "gray_box"
     reversible = False
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         return f"{_PREAMBLE}{text}", {"framing": "gray_box", "note": "embedded ask is verbatim"}

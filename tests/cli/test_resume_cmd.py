@@ -250,3 +250,23 @@ def test_a_tampered_artifact_exits_three_from_the_cli(tmp_path: Path) -> None:
     )
     assert res.exit_code == 3, res.output
     assert "hash mismatch" in res.output
+    # The hash the content has now is the evidence of the edit: the redactor masked it as high
+    # entropy until the error carried it as a digest this tool computed.
+    from ildottore.store import paths
+
+    assert paths.content_hash(artifact.read_text(encoding="utf-8")) in res.output
+
+
+def test_resume_cites_every_artifact_once_by_its_own_hash(tmp_path: Path) -> None:
+    """One reference per artifact, whose URI resolves to it and whose sha256 is its name."""
+
+    _, _specs, run_id = _truncate_a_run(tmp_path)
+    root = tmp_path / "ev"
+    stems = {p.stem for p in (root / run_id / "attempts").glob("*.json")}
+    run = load_resume_run(root, run_id, TARGET)
+    refs = [ref for finding in run.findings for ref in finding.evidence]
+    assert len(refs) == len(stems) == sum(len(f.attempts) for f in run.findings)
+    for ref in refs:
+        path = root / ref.uri
+        assert path.is_file() and path.stem == ref.sha256
+    assert {ref.sha256 for ref in refs} == stems

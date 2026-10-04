@@ -21,6 +21,7 @@ class Base64WrapMutator(BaseMutator):
 
     name = "base64_wrap"
     reversible = True
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         blob = base64.b64encode(text.encode("utf-8")).decode("ascii")

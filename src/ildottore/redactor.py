@@ -123,6 +123,21 @@ def register_known_secret(value: str | None) -> None:
 _URL_USERINFO: Final = re.compile(r"(://[^/\s:@\x00]+:)([^/\s@\x00]+)(@)")
 
 
+def overlaps_known_secret(value: str) -> bool:
+    """True if ``value`` is, contains, or is part of a credential this process registered."""
+
+    with _KNOWN_LOCK:
+        return any(value in secret or secret in value for secret in _KNOWN_SECRETS)
+
+
+def mask_url_passwords(text: str) -> str:
+    """Mask only the password of every ``scheme://user:password@host`` in ``text``."""
+
+    return _URL_USERINFO.sub(
+        lambda m: m.group(1) + _MASK_TEMPLATE.format(type="url_password") + m.group(3), text
+    )
+
+
 def _known_secrets() -> list[str]:
     with _KNOWN_LOCK:
         return sorted(_KNOWN_SECRETS, key=len, reverse=True)

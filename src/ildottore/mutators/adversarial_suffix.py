@@ -28,6 +28,7 @@ class AdversarialSuffixMutator(BaseMutator):
 
     name = "adversarial_suffix"
     reversible = False
+    accepted_params: frozenset[str] = frozenset()  # takes no `name:param`
 
     def _transform(self, text: str, seed: str) -> tuple[str, dict[str, object]]:
         mutated = f"{text} {_GCG_SUFFIX}"

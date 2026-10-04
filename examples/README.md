@@ -89,6 +89,9 @@ brew install ollama && ollama serve &
 ollama pull llama3.2:1b        # target
 ollama pull llama3.2:3b        # judge
 
+# reports/ is gitignored, so a fresh clone lacks it; without it the run refuses before
+# sending (cannot write the report reports/local.json: reports is not a directory, exit 3)
+mkdir -p reports
 dottore run --quick \
   -t examples/target.local.yaml \
   --judge examples/target.judge.yaml \
@@ -105,6 +108,7 @@ The key is referenced by env-var, never written to a file:
 
 ```bash
 export OPENAI_API_KEY=sk-...            # matches auth_ref in target.openai.yaml
+mkdir -p reports                        # the report directory must exist, as in Scenario C
 dottore run --suite owasp:llm -sV \
   -t examples/target.openai.yaml \
   --scope examples/scope.openai.yaml \
@@ -148,6 +152,7 @@ handshake, lists its tools / resources / prompts, and flags tool-metadata poison
 ("line jumping") in the advertised descriptions. It never calls a tool.
 
 ```bash
+mkdir -p reports                        # the report directory must exist, as in Scenario C
 dottore run --suite mcp \
   -t examples/target.mcp.yaml \
   --scope examples/scope.mcp.yaml \

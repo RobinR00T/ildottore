@@ -208,9 +208,16 @@
   </section>
 
   <section class="findings-needs-review">
-    <h2>Needs review ({{ needs_review | length }})</h2>
+    <h2>Needs review: unconfirmed exploits and undecided results ({{ needs_review | length }})</h2>
     <ul class="findings">
       {% for f in needs_review %}{{ finding_card(f) }}{% endfor %}
+    </ul>
+  </section>
+
+  <section class="findings-not-exploited">
+    <h2>Not exploited or not tested ({{ not_exploited | length }})</h2>
+    <ul class="findings">
+      {% for f in not_exploited %}{{ finding_card(f) }}{% endfor %}
     </ul>
   </section>
 </article>

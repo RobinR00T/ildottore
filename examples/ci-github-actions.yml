@@ -25,6 +25,11 @@ jobs:
       - name: Install Il Dottore
         # Not on PyPI (`pip install ildottore` 404s): install from the repository, pinned to
         # a tag so a pipeline gate cannot change meaning under you between runs.
+        # Caveat: v0.1.0 is the only tag and predates two behaviours these gates rely on, as
+        # USAGE.md and docs/MANUAL.md describe them: exit 3 for a run that did not finish
+        # (budget halt, unreachable target) and `dottore diff` refusing an incomplete report.
+        # Until a later release is tagged, pin a commit of main that has them (@<commit-sha>)
+        # rather than v0.1.0, or know that this pin gates without them.
         run: pip install "git+https://github.com/RobinR00T/ildottore@v0.1.0"
 
       - name: Scan (fail the build on confirmed high/critical)

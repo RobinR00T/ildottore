@@ -3,7 +3,7 @@
 :class:`CampaignRunner` drives ``docs/01 §4`` for a whole campaign against one
 target:
 
-    policy-gate → capability-gate → mutate → reproduce (N sends) → evaluate/combine
+    capability-gate → policy-gate → mutate → reproduce (N sends) → evaluate/combine
     → score → persist (Evidence + Run/Findings) → checkpoint.
 
 Everything downstream is injected through the shared **protocols** (``docs/01 §3``,
@@ -13,9 +13,10 @@ evaluator/mutator/scorer/store seams and a small structural :class:`PolicyGate`.
 
 Discipline the runner enforces (contract §2/§4 KEEP):
 
-* **Policy first, mandatory.** A spec that fails the gate produces a
-  ``blocked_by_policy`` finding and **zero** adapter sends.
-* **Capability gating** ⇒ ``inconclusive: capability_unavailable`` (never a pass).
+* **Capability gating first** ⇒ ``inconclusive: capability_unavailable`` (never a pass): a
+  spec needing a capability the target lacks is skipped before the policy gate is consulted.
+* **Policy, mandatory.** A spec that fails the gate produces a ``blocked_by_policy`` finding
+  and **zero** adapter sends.
 * **Env-vs-product.** A retry-exhausted env error is ``inconclusive``; only a real
   exploited response is ``fail``.
 * **Hard budgets.** Any :class:`~ildottore.core.budgets.BudgetExhausted` halts the
@@ -528,6 +529,18 @@ class CampaignRunner:
                     "for this spec (run `dottore lint` to catch it before a campaign)"
                 ),
             )
+        # A parameter the mutator does not implement (translate:klingon) was sent as a language
+        # picked by hash and recorded under the name it asked for (review of PR #32).
+        bad_params = [m for m in mutators if m != "identity" and not self._param_accepted(m)]
+        if bad_params:
+            return self._media_error_finding(
+                spec,
+                target,
+                reason=(
+                    f"unknown_mutator_parameter: {', '.join(bad_params)} names a parameter the "
+                    "mutator does not accept; nothing was sent for this spec"
+                ),
+            )
 
         adapter = self._adapter_factory(target, spec)
         multi_turn = _is_multi_turn(spec)
@@ -656,6 +669,20 @@ class CampaignRunner:
         )
 
     # --- multi-identity (authz_leak, audit M14) ------------------------------
+
+    def _param_accepted(self, mutation: str) -> bool:
+        """True unless ``mutation`` carries a parameter its mutator declares it does not take.
+
+        Compared case-insensitively, as the mutators read their parameter (``translate:ES``
+        was sent correctly before the check existed). A mutator that declares nothing (a
+        plugin that does not subclass ``BaseMutator``) is not second-guessed.
+        """
+
+        base, _, param = mutation.partition(":")
+        if not param:
+            return True
+        accepted = getattr(self._mutators.get(base), "accepted_params", None)
+        return accepted is None or param.strip().lower() in accepted
 
     async def _gather_identities(
         self,
@@ -1033,12 +1060,12 @@ def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec) -> Verdict:
             reasoning="no evaluator verdicts to combine",
             evaluator_type="aggregate",
         )
-    # A *consulted* judge that merely abstained (plain low-confidence / parse-fail, reason
-    # None) is dropped so it cannot sink a decisive verdict (docs/04 §0, the judge is one
-    # weighted input, never the sole arbiter). But an *unconsulted* judge
-    # (capability_unavailable, no --judge wired) and a *compromised* judge (judge_compromised)
-    # are KEPT so an unconfigured run stays honestly inconclusive and a prompt-injected judge
-    # is surfaced, not silently discarded.
+    # A *consulted* judge that merely abstained (low confidence, or its two passes disagreeing:
+    # reason None) is dropped so it cannot sink a decisive verdict (docs/04 §0, the judge is one
+    # weighted input, never the sole arbiter). But an *unconsulted* or unusable judge
+    # (capability_unavailable: no --judge wired, an outage, or an unparseable answer) and a
+    # *compromised* judge (judge_compromised) are KEPT so an unconfigured run stays honestly
+    # inconclusive and a prompt-injected judge is surfaced, not silently discarded.
     effective = [
         v
         for v in verdicts

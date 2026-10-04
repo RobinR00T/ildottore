@@ -16,6 +16,8 @@ from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
 from ildottore.reporting.summary import Coverage, ModelComparison, RunSummary
 from ildottore.shared.enums import ReportFormat
+from ildottore.shared.frameworks import ATLAS_MATRIX_RELEASE, OWASP_LLM_EDITION
+from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION
 
 __all__ = ["JsonReporter", "summary_to_wire"]
 
@@ -41,20 +43,27 @@ def _comparison_to_wire(comparison: ModelComparison) -> dict[str, Any]:
 
 
 def _coverage_to_wire(coverage: Coverage) -> dict[str, Any]:
+    # Each axis names the edition it is measured against (clause A-14): OWASP renumbered in
+    # 2026 and ATLAS renames tactics between releases, so a bare "LLM03 not covered" reads as
+    # the opposite claim to a reader holding the other edition. The HTML and terminal printed
+    # it; the JSON did not (audit R12).
     return {
         "owasp": {
+            "edition": OWASP_LLM_EDITION,
             "categories": list(coverage.owasp_categories),
             "exercised": coverage.owasp_exercised,
             "total": coverage.owasp_total,
             "pct": coverage.owasp_pct,
         },
         "atlas": {
+            "edition": ATLAS_MATRIX_RELEASE,
             "tactics": list(coverage.atlas_tactics),
             "exercised": coverage.atlas_exercised,
             "total": coverage.atlas_total,
             "pct": coverage.atlas_pct,
         },
         "iopc": {
+            "edition": IOPC_TAXONOMY_VERSION,
             "techniques": {
                 "codes": list(coverage.iopc_techniques),
                 "exercised": coverage.iopc_techniques_exercised,

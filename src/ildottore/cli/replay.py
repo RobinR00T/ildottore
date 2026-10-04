@@ -85,6 +85,12 @@ def render_replay(result: ReplayResult) -> str:
     # together. A report's reproducibility is per spec and takes the best variant, so the two
     # read differently on the same run (0.25 here, 1.0 in the report) and the bare word
     # "reproducibility" let them be compared as if they were one measure (review of PR #32).
+    history = len(result.attempts) - result.n
+    if history:
+        lines.append(
+            f"  ({history} more artifact{' shares' if history == 1 else 's share'} an attempt "
+            "id with one listed above: one per id is counted below)"
+        )
     lines.append(
         f"attempts: {result.n}  exploited: {result.successful_attacks()}  "
         f"pooled rate: {result.reproducibility():.2f} (every attempt of the run; a report's "
