@@ -14,6 +14,12 @@ evaluators,scoring,reporting,policy,mutators,registry,fingerprint,store,cli}`. P
 boundaries from `docs/01 §2` are enforced logically via **import-linter** (config in
 `pyproject.toml`), not via separate distributions. CLI entry point: `dottore`.
 
+As built (note added 2026-10-04): the import-linter contracts live in the standalone
+`.importlinter` file, deliberately not duplicated in `pyproject.toml` (both would define the
+root package twice); the layout also has a `testing` package (the golden harness) and two leaf
+modules, `config.py` and `redactor.py`; `pyproject.toml` installs the CLI as both `dottore` and
+`dott`.
+
 ## Consequences
 - (+) Standard, installable (`pip install -e .`), PyPI-ready, simple imports.
 - (+) Boundaries still enforced (import-linter contract): the architecture rule survives.

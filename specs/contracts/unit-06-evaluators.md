@@ -18,7 +18,12 @@ exploited. Deterministic evaluators are cheap pre-filters; `semantic_judge` is t
 semantics only. Combine per spec `evaluator_logic` (`all_pass`|`any_fail`|`weighted`); any
 required `inconclusive` ⇒ aggregate `inconclusive` (never coerced). Full spec: `docs/04`.
 **As built (2026-10-03):** the runner does not read `evaluator_logic`; a deterministic fail always
-decides, and `weighted` is implemented in no run path. OD-19 (ADR-0010).
+decides, and `weighted` is implemented in no run path. OD-19 (ADR-0010). Two consequences of the
+fixed rule: an `inconclusive` decides only when no deterministic evaluator failed, and when every
+deterministic evaluator passes, a judge `fail` decides alone, and the finding is `confirmed` by
+the runner's per-variant rule when the judge says `fail` on every attempt of a variant (its
+`fail` already implies both passes agreed above the threshold), so the judge is more than an
+arbiter of semantics (ADR-0010 amendment recommends `needs-review`; open).
 
 ## §3 Dependencies & interface contracts
 - Implements `shared.protocols.Evaluator` (`type: str`, `async evaluate(ctx)->Verdict`).
@@ -28,23 +33,37 @@ decides, and `weighted` is implemented in no run path. OD-19 (ADR-0010).
 
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: deterministic evaluators emit confidence `1.0` (or `0.0`⇒`inconclusive` on ambiguity).
+  (As built, audit F-24: `refusal` emits 0.95 / 0.8 / 0.7 and `logprob_membership` 0.55 to 0.9,
+  yet the runner's rule treats every evaluator other than `semantic_judge` as deterministic, so
+  a fail from either decides like a regex. Same family as OD-19.)
 - KEEP: data-leak FP discipline: format-valid hit without corroboration (canary/corpus/
   cross-identity) ⇒ `needs-review`, never confirmed (`docs/11 §4`).
-- DECIDE (OD-3): default judge model + whether a 2nd judge runs for self-consistency.
+- DECIDE (OD-3): default judge model + whether a 2nd judge runs for self-consistency. (As
+  built: there is no default judge; the judge is the `--judge` target, or offline the scripted
+  judge of the `vulnerable` and `hardened` mocks (`bare` and `comprehending` have none), and self-consistency is two passes of that one model; no second judge model runs.
+  Ledger OD-3 records the same.)
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `base.py` + `registry.py` (protocol, entry-point discovery per `docs/06`).
 2. Deterministic set: regex_absence/presence, exact_match, refusal, secret_leakage, tool_call.
 3. `pii_detector` (Luhn, IBAN mod-97, locale IDs, entropy) + `secret_shape` + `authz_leak`.
 4. `semantic_judge` with hardening (`docs/04 §4`): data delimiters, structured JSON output,
-   injection tripwire, self-consistency, `temperature=0`.
+   injection tripwire, self-consistency, `temperature=0`. (As built: the first pass at 0, later
+   self-consistency passes at 0.5, so the passes are not byte-identical; no seed is sent. Two
+   passes by default. A disagreement between them, like a confidence below the threshold,
+   returns `inconclusive` with no reason; the runner drops a reasonless judge abstention, so the
+   deterministic evaluators decide the attempt. `docs/02 §4` says a disagreement makes the
+   result `inconclusive`: which of the two is intended is an open question for the owner,
+   `docs/04 §2`. An outage or an unparseable answer carries `capability_unavailable` and a
+   tripwire hit `judge_compromised`; both are kept.)
 5. `combine.py` (evaluator_logic).
 
 ## §6 Data/wire shapes
 `Verdict = {status: "pass"|"fail"|"inconclusive", confidence: float[0,1], reasoning: str,
 matched: list[str], evaluator_type: str, inconclusive_reason: InconclusiveReason|None}` (set
 `inconclusive_reason` whenever status is `inconclusive`; closed StrEnum per u00/ADR-0006). Judge raw+parsed output persisted to evidence
-(masked). PII/secret hits stored **typed + masked/hashed only** (`docs/11 §5`).
+(masked). (Not built: a stored attempt carries only the aggregate verdict; no per-evaluator
+verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/secret hits stored **typed + masked/hashed only** (`docs/11 §5`).
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/evaluators -q` green; coverage ≥ 90% for this package.
@@ -52,7 +71,9 @@ matched: list[str], evaluator_type: str, inconclusive_reason: InconclusiveReason
   `tests/fixtures/labeled/`: including hallucinated-but-valid negatives for pii/secret.
 - **Judge robustness:** `tests/fixtures/adversarial-judge/` → 0 verdict flips (all →
   `inconclusive`/`judge_compromised`).
-- Determinism: judge at `temperature=0` + fixed seed ⇒ stable verdict on replay.
+- Determinism: judge at `temperature=0` + fixed seed ⇒ stable verdict on replay. (As built: only
+  the first judge pass is at temperature 0, and no pass sends a seed; `dottore replay` re-reads
+  stored verdicts and does not call the judge again.)
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden

@@ -15,25 +15,30 @@ dottore \- spec-driven security scanner for LLMs and AI applications (nmap-for-A
 \fIfleet.yaml\fR [\fB--run\fR] [\fB--judge\fR \fIjudge.yaml\fR]
 .br
 .B dottore
-.I "lint | describe | registry | new-spec | replay | diff | schema"
+.I "lint | describe | registry | coverage | new-spec | replay | diff | calibrate | render-media | schema"
 [\fIARGS\fR]
+.PP
+There is no default command: always type the subcommand.
 .SH DESCRIPTION
 .B dottore
 (alias
 .BR dott )
 examines an AI endpoint, diagnoses its security weaknesses against a declarative attack
-battery aligned to the OWASP LLM Top 10, MITRE ATLAS, NIST AI 600-1 and the Nova IoPC
-taxonomy, mapped by falsification to the OWASP AISVS controls it can catch failing, and
-issues a reproducible, evidence-backed report mapped to operational risk.
+battery mapped to the OWASP LLM Top 10, MITRE ATLAS and the Nova IoPC taxonomy, and by
+falsification to the OWASP AISVS controls it can catch failing, and issues a reproducible,
+evidence-backed report mapped to operational risk. Every spec also carries a NIST AI RMF 1.0
+subcategory token (NIST AI 600-1 is a reference, not a mapping the code checks).
 .PP
-It is a defensive tool. It scans nothing without a signed
+It is a defensive tool. It scans nothing without a
 .I scope.yaml
-(endpoint allowlist, default-deny), never performs real destructive actions or
+authorization record (endpoint allowlist, default-deny), never performs real destructive actions or
 exfiltration (mocked tools and planted canaries), and redacts secrets and PII at rest.
 .SH COMMANDS
 .TP
 .B run
-Run a campaign against one or more targets (the default command).
+Run a campaign against one or more targets. It is not a default command:
+.B dottore target.yaml --scope scope.yaml
+is a usage error (exit 3).
 .TP
 .B fingerprint
 Identify the model and guardrails behind an endpoint; attack nothing.
@@ -82,11 +87,16 @@ reach for a black-box scanner, deliberately not tested), each with its reason.
 Compare a run's findings against operator labels (human in the loop).
 .TP
 .B render-media
-Render a multimodal spec's image carriers to disk for inspection; no target.
+Render a multimodal spec's carriers to disk for inspection (a PNG for an image part, the
+pinned WAV for an audio part) and print each path, media type, size and SHA-256; no target.
 .TP
 .B schema export
 Print the JSON Schemas that validate every spec.
 .SH "RUN OPTIONS"
+The full list, as
+.B dottore run --help
+prints it.
+.SS Targets and authorization
 .TP
 .B --scope \fIPATH\fR
 REQUIRED authorization record. Never bypassable.
@@ -96,43 +106,118 @@ Target file(s); repeatable. Targets may also be positional.
 .TP
 .B --judge \fIPATH\fR
 Judge model target.yaml (LLM-as-judge for the semantic_judge evaluator on live scans).
+.SS Selection
 .TP
 .B --suite \fITEXT\fR
-Suite id or alias: owasp:llm, quick, multi-turn, access-control, agentic-owasp2026,
-obfuscation-enhancers, embeddings, agentic-extortion.
+Suite id (the files in specs/suites/) or alias: owasp-llm-top10 (aliases owasp:llm and
+baseline), quick, multi-turn, access-control, agentic-owasp2026, obfuscation-enhancers,
+embeddings, agentic-extortion (alias agentic), mcp, responsible-ai, guardrail-evasion,
+multimodal, structured-output, nova-iopc. The aliases mitre:atlas, nist:ai, eu:ai-act, dora
+and iso:42001 are still accepted but point at no registered suite and exit 3. With no
+selection flag the run takes the whole registry, minus what the target cannot run.
 .TP
 .B -p, --categories \fITEXT\fR
-Comma-separated categories: pi, jailbreak, leakage, tool, rag, output, dos.
+Comma-separated categories: pi, jailbreak, leakage, tool, rag, output, dos, safety, bias
+(long forms accepted).
 .TP
 .B --spec \fITEXT\fR, --exclude \fITEXT\fR
 Run or skip specific spec ids or globs (e.g. PI-*); repeatable.
 .TP
-.B --quick, --deep
-T0 minimum battery / T2 deep-agentic suite.
+.B --top-tests \fIN\fR
+Keep the N highest-signal specs.
+.SS "Discovery and intensity"
 .TP
-.B -sn, -sV, -A
-Discovery only / fingerprint first / aggressive (-sV + deep + adaptive).
+.B -sn
+Discovery only: the authorized endpoint, the declared capabilities and what the battery would
+run. Sends nothing.
+.TP
+.B -sV
+Fingerprint before attacking, then order each spec's mutators by the carriers the target
+still understands. 17 probes per target, printed in the plan, paced by --rate; not sent under
+--dry-run, --estimate or -sn.
+.TP
+.B -A
+Aggressive: -sV plus --deep.
+.TP
+.B --quick
+The T0 battery: selects the quick suite (18 specs) at -T0. Conflicts with --suite.
+.TP
+.B --deep
+Timing template T2 (slower) over whatever the other flags select (with no selection flag,
+the whole registry minus what the target cannot run); it selects no larger suite. Mutator ordering needs a fingerprint, so on its own it tailors
+nothing: it is adaptive only with -sV (or -A).
+.TP
+.B -T \fI0..5\fR
+Timing template (default 3; --quick implies 0, --deep and -A imply 2; an explicit -T always
+wins). Higher is faster and louder.
+.SS "Pacing and budgets"
+.TP
+.B --rate \fIFLOAT\fR
+Max requests per second across the whole campaign (greater than 0). Not applied to an offline
+mock run, and the plan says so.
+.TP
+.B --budget-tokens \fIN\fR, --budget-requests \fIN\fR, --budget-wall \fISECONDS\fR
+Hard token, request and wall-clock ceilings, overriding the ones derived from the plan.
+.TP
+.B --concurrency \fIN\fR
+Max concurrent specs.
+.TP
+.B --timeout \fISECONDS\fR
+Per-attempt timeout.
 .TP
 .B --runs \fIN\fR
 Reproducibility runs (default 5).
-.TP
-.B -T \fI0..5\fR
-Timing template (default 3); higher is faster and louder.
+.SS "Plan, resume and smoke"
 .TP
 .B --dry-run
-Resolve and validate the plan; send nothing.
+Resolve and validate the plan, authorize every target; send nothing.
+.TP
+.B --estimate
+Print a pre-run cost estimate (requests and tokens); send nothing.
+.TP
+.B --resume \fIRUN_ID\fR
+Finish a halted run; completed attempts are not re-sent.
+.TP
+.B --resume-unverified
+Resume a run whose integrity record is missing (its ceiling then covers this invocation only).
 .TP
 .B --compare
-Model-comparison matrix across targets.
+Model-comparison matrix across targets (needs two or more).
+.TP
+.B --hardened
+Replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one.
+.SS "Output and gating"
 .TP
 .B -oJ, -oH, -oS, -oX \fIPATH\fR; -oA \fIPREFIX\fR
-Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.*.
+Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.json, .html, .sarif and
+\&.xml. The prefix is extended, never cut (-oA report.v2 writes report.v2.json), and a prefix
+that already ends in one of the four extensions drops it first (-oA report.json writes
+report.json, report.html, report.sarif, report.xml). A report directory that does not exist,
+or two formats writing the same file (compared case-insensitively and after Unicode
+normalization), is refused before anything is sent.
 .TP
 .B --fail-on \fIBAND\fR
 CI gate on confirmed findings: low|medium|high|critical (default high).
 .TP
 .B --include-needs-review
-Also gate low-confidence findings.
+Also gate unconfirmed exploits (an unconfirmed fail). An inconclusive result never gates.
+An unconfirmed fail prints FAIL (<band>, needs review) on its progress line.
+.TP
+.B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR
+Evidence store root (default .dottore/evidence) and run store SQLite path.
+.TP
+.B --spec-path \fIPATH\fR
+Spec search path (default specs/).
+.TP
+.B --no-color
+Disable colour output.
+.TP
+.B -q, --quiet
+Suppress the per-spec progress lines.
+.TP
+.B -v, --verbose
+A counter, repeatable (-v, -vv), not a value: -v prints the resolved plan and then runs; -vv
+also lists the skipped and blocked spec ids with their reasons.
 .SH "EXIT STATUS"
 .TP
 .B 0
@@ -146,7 +231,10 @@ At least one gated finding at or above --fail-on.
 .TP
 .B 3
 Operational error (bad scope, unknown suite, I/O), a usage error (unknown option, bad value),
-or a run that did not finish.
+or a run that did not finish (a hard budget ceiling halted it, or every attempt failed on
+transport). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
+confirmed exploits, so read summary.status.reason before treating 3 as a retryable
+infrastructure error.
 .PP
 Only an exploited (fail) finding trips the gate; pass and inconclusive never do.
 .SH FILES

@@ -73,8 +73,11 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 ## §7 Acceptance criteria (machine-checkable)
 - `dottore lint specs/` exits 0: all 18 specs + 2 suites schema-valid (u02 gate), no unknown
   `evaluator.type`/`mutation`/`requires` name, no duplicate `id`, every `test_only` family flagged.
-- `pytest tests/specs -q` green (u03 golden harness): for **every** spec the scanner **flags the
-  `vulnerable` fixture (`fail`)** and **passes the `hardened` fixture (`pass`)**: 18/18, no skips.
+- `pytest tests/battery tests/golden -q` green (u03 golden harness; CI gate 5): for **every**
+  spec the scanner **flags the `vulnerable` fixture (`fail`)** and **passes the `hardened`
+  fixture (`pass`)**: 18/18 at the time this contract was written, no skips. (Path corrected
+  2026-10-04: there is no `tests/specs`. The battery has since grown to 75 specs and 14 suites,
+  which `dottore lint specs/` checks.)
 - Data-leak FP gate: each hallucinated-but-valid negative fixture yields `needs-review`/
   `inconclusive`, **never `fail`** (asserts `docs/11 §4` discipline). `DoS-TOKEN-AMP-001` has a
   `budget` block; `DL-PII-ELICIT-001` has `test_only: true`: both asserted in tests.

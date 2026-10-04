@@ -16,16 +16,16 @@ validates **the scanner**, not the targets.
 |---|---|---|---|---|
 | 1 | Models/specs | **Schema validation** | every YAML spec/suite/target/pack validates | JSON Schema + Pydantic |
 | 2 | Spec linter | **Static checks** | no id collisions, valid framework maps, `test_only` on flagged families, evaluator types exist | custom + CI |
-| 3 | Units | **Unit tests** | each function/class in isolation; coverage gate ≥ 85% core | pytest |
+| 3 | Units | **Unit tests** | each function/class in isolation; coverage gate ≥ 85% core (as built, measured on the aggregate over `src/ildottore`; no per-package gate) | pytest |
 | 4 | Mutator | **Property-based tests** | mutations are deterministic given a seed; preserve intent; round-trip where reversible | Hypothesis |
-| 5 | Adapters | **Contract tests + recorded cassettes** | request bytes match provider contract; allowlist enforced; retries/timeouts/rate-limit behave; **no live keys in CI** | pytest + VCR/cassettes |
+| 5 | Adapters | **Contract tests + cassettes** | request bytes match provider contract; allowlist enforced; retries/timeouts/rate-limit behave; **no live keys in CI** | pytest + `respx` serving hand-written cassettes |
 | 6 | **Golden targets** | **Detection-accuracy tests** | scanner FLAGS the vulnerable fixture and PASSES the hardened fixture, per spec | MockTarget + fixtures |
 | 7 | Evaluators | **Labeled precision/recall** | each evaluator's P/R vs a labeled corpus stays above threshold | pytest + labeled data |
 | 8 | Judge | **Robustness / injection tests** | a target that injects the judge cannot flip a verdict (→ `inconclusive`/`judge_compromised`) | adversarial fixtures |
 | 9 | Determinism | **Replay tests** | same suite+target+seed → same finding set; sampling params recorded | pytest |
 | 10 | Scoring | **Property tests** | monotonicity (↑impact ⇒ ↑risk), confidence never changes band, banding boundaries | Hypothesis |
 | 11 | Reporting | **Snapshot + schema tests** | JSON matches schema; SARIF validates against SARIF 2.1.0; JUnit valid; HTML renders; secrets masked | snapshot + validators |
-| 12 | CLI/API | **E2E tests** | `run --suite … --target mock --fail-on high` exits with correct code + artifacts | subprocess/httpx |
+| 12 | CLI | **E2E tests** | `run --suite … -t <mock target.yaml> --scope … --fail-on high` exits with correct code + artifacts (there is no API app) | Typer `CliRunner` |
 | 13 | Availability specs | **Budget/guardrail tests** | DoS specs never exceed token/request/time caps; scanner can't self-DoS | pytest + fake clock |
 | 14 | Boundaries | **Import-linter contract** | package dependency rule (`docs/01 §2`) holds | import-linter |
 | 15 | Safety | **Negative tests** | out-of-scope target refused; dangerous payload without `test_only` rejected; sensitive tool never really executes | pytest |
@@ -42,7 +42,11 @@ validates **the scanner**, not the targets.
   - `fixtures.hardened`: a response that refuses/ignores the attack → scanner **must** `pass`.
 - CI runs every spec against both fixtures. This is the FP/FN gate: a spec whose fixtures
   don't produce the expected verdicts **cannot be merged** (ties into `docs/06`
-  "self-proving specs").
+  "self-proving specs"). It happens twice, differently. `dottore lint` (gate 1) evaluates the
+  fixtures with the offline stub table in `registry/fixtures_engine.py`, which has stubs for
+  seven of the 14 evaluator types and skips the rest, and combines them as any-fail whatever
+  the spec's `evaluator_logic` says (every value takes the same path). The battery tests
+  (gate 5) drive the golden harness with the real evaluator each spec lists first.
 - Aggregate metric published per build: **spec detection accuracy** = (correct verdicts on
   fixtures) / (total fixtures), plus per-family FP and FN rates.
 
@@ -55,23 +59,36 @@ validates **the scanner**, not the targets.
 | Evaluator recall (per evaluator, labeled corpus) | ≥ 0.85 |
 | Judge injection-resistance (adversarial suite) | 0 verdict flips (all → inconclusive/blocked) |
 | Determinism replay | 100% stable finding set at fixed seed |
-| Core coverage | ≥ 85% |
+| Core coverage (as built, the aggregate over `src/ildottore` is what is gated; OD-13) | ≥ 85% |
 
 ## 4. Test data & fixtures
 
-- `tests/fixtures/vulnerable/` and `tests/fixtures/hardened/` mirror the attack families.
+- The vulnerable and hardened fixtures live **inline in each spec** (`fixtures.vulnerable`,
+  `fixtures.hardened`); there are no `tests/fixtures/vulnerable/` or `tests/fixtures/hardened/`
+  directories. The harness that replays them is `src/ildottore/testing/golden.py` (`run_spec`,
+  `run_all`, through `MockTarget`). `tests/golden/` tests the harness with a stub evaluator;
+  `tests/battery/` runs every shipped spec's fixtures through it with the real evaluator each
+  spec lists first.
 - `tests/fixtures/labeled/` = evaluator precision/recall corpus (positives, negatives, hard).
 - `tests/fixtures/adversarial-judge/` = target outputs that try to prompt-inject the judge.
-- `tests/cassettes/` = recorded provider interactions (secrets scrubbed) for adapter contract
-  tests. **No real API keys ever committed or used in CI.**
+- `tests/adapters/cassettes/` = provider-shaped response bodies for the adapter contract
+  tests, one directory each for `openai`, `anthropic` and `rest`. Each file is a hand-written
+  `{status_code, json}` pair (ids such as `chatcmpl-tool` and `call_1`), not a recording of real
+  traffic, served to `httpx` by `respx`. The MCP adapter's tests stub their JSON-RPC exchanges
+  inline with `respx` and have no cassette directory. **No real API keys ever committed or used
+  in CI.**
 
 ## 5. CI pipeline (ordered gates)
 
 1. `lint specs/` (schema + static). 2. import-boundary contract. 3. unit + property.
 4. adapter contract (cassettes). 5. **golden-target detection-accuracy** (hard gate).
 6. evaluator P/R gate. 7. judge-robustness gate. 8. determinism replay. 9. reporting/schema
-(SARIF/JUnit valid). 10. E2E CLI. 11. self-scan (SARIF): fail on new high/critical.
-12. coverage gate. Nightly: full regression golden-run snapshot + metamorphic suite.
+(SARIF/JUnit valid). 10. E2E CLI. 11. self-scan (SARIF): fail on any high/critical finding
+(there is no baseline, so "new" does not apply: every judge flip is recorded as a critical
+finding and fails the gate). 12. coverage gate (`--cov-fail-under=85` on the aggregate; the
+threshold is a command-line flag in `ci.yml`, `audit.yml` and the Makefile, not a
+`pyproject.toml` setting, whose `[tool.coverage.run]` sets only the source and branch
+coverage). Nightly: full regression golden-run snapshot + metamorphic suite.
 
 ## 6. Manual / exploratory validation (before each MVP sign-off)
 

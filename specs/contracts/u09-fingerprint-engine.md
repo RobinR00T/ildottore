@@ -50,7 +50,8 @@ no jailbreak payloads, scope-allowlist-gated.
   version + schema; a pack update must not silently break the loader.
 - KEEP: seeded probe battery (seed = `(target_id, probe.name)`) ⇒ deterministic replay.
 - DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always
-  disables). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs
+  disables). Resolved as built: `-sV` (and `-A`) imply adaptive ordering; there is no
+  `--no-adaptive` flag (`00-INDEX.md` OD-5). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs
   response-feature vector (propose feature-vector + nearest-neighbor to avoid a heavy dep).
 
 ## §5 Implementation plan (each step its own commit, green before next)
@@ -71,7 +72,16 @@ no jailbreak payloads, scope-allowlist-gated.
 capabilities:{tools,json_mode,vision,streaming,seed,max_context_tokens}, guardrails:{input_filter,
 output_filter,refusal_style,moderation_latency_ms}, evidence:list[{layer,signal,weight}],
 spoofing_flags:list[str], recommended_plan_ref}` (exact shape in `docs/10 §2`). `Evidence` per
-`shared.models`. Signature pack entry: `{family, version, signals:{layer→matcher}, weights}`.
+`shared.models`. (As built, 2026-10-04: the key is `capability_guess`, copied from the target's
+declared capabilities, not probed: `{tools, json_mode (= tools), vision (= multimodal),
+streaming, seed, rag, memory, logprobs}` plus `effective_mutators` when the carrier layer
+recovered any; no `max_context_tokens`. `family` and a non-null `version` are `{guess,
+confidence, cutoff_hint}`; `recommended_plan_ref` is always null. `spoofing_flags` can hold
+`self_report_conflicts_with_statistical` and `non_discriminating_target`: the second is set when
+every attributing (non-carrier) probe got the same reply text, at least three answered; text
+evidence then does not attribute, only metadata evidence matching a `model=` field names the
+family, a version is kept only when one clearly leads (a tie gives none), and otherwise the
+family is `unknown`.) Signature pack entry: `{family, version, signals:{layer→matcher}, weights}`.
 `TestPlan = {plan_ref, target_id, selected:list[{spec_id, reason}], skipped:list[{spec_id,
 reason}], mutator_weights, baseline_resistance}`: nothing silently dropped (`docs/07`).
 
@@ -148,6 +158,7 @@ audit removed all three at once and the suite stayed green. Checked by
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-5** (shared w/ u08): adaptive planner default ON with `-sV` vs opt-in. Owner: human.
+  Resolved as built: `-sV`/`-A` imply adaptive ordering, no flag (`00-INDEX.md`).
 - **OD-9** (new): statistical-layer embedding source: bundled embedder vs response
   feature-vector nearest-neighbor. Propose: feature-vector (no heavy/ambiguous-license dep,
   `AGENTS.md §3`). Owner: human / ADR.

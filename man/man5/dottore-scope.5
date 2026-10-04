@@ -13,7 +13,9 @@ referenced by environment variable and resolved only at send time.
 .SH "SCOPE FILE"
 The authorization record. No scanning command runs without it. Default-deny: any host or
 path not under a target's endpoints is never contacted. An optional top-level checksum
-(sha256 of the body) makes it tamper-evident.
+(sha256 of the body, the checksum line excluded) is verified when present, so a scope edited
+without updating it is refused. It is an integrity check, not a signature: anyone who can edit
+the file can recompute it. The run does not record the scope's hash.
 .PP
 .nf
 version: "1.0"
@@ -51,14 +53,16 @@ to the tenant-scoped marker it owns; authz_leak flags that canary reaching anoth
 Authorized stdio MCP command lines (exact match). Default-deny: a stdio MCP server is launched
 only if its command line appears here, mirroring the endpoint allowlist for wire transports.
 .PP
-Policy-gated specs (those declaring requires_policy, e.g. PII elicitation or agentic
-extortion) are gated by the run's policy pack, not the scope: the default CLI pack enables no
-capabilities, so such specs are reported blocked_by_policy with zero sends.
+Policy-gated specs (the 8 declaring requires_policy: the agentic-extortion suite and PII
+elicitation) are gated by the run's policy pack, not the scope. The CLI always applies its own
+default pack, which enables no capabilities, and has no option to load another, so these specs
+cannot be enabled from the command line and never send (blocked_by_policy with zero sends).
+Whether the CLI should accept a pack is an open decision.
 .SH "TARGET FILE"
 .nf
 id: my-chatbot          # must match a target id in the scope's targets
 type: chatbot           # model | chatbot | agent | rag | api
-provider: openai        # openai (and openai-compatible) | anthropic | rest
+provider: openai        # openai (and openai-compatible) | anthropic | mcp | rest
 endpoint: "https://api.example.com/v1/chat/completions"
 model: "gpt-4o"
 auth_ref: "env://MY_API_KEY"
@@ -71,8 +75,11 @@ and
 .B type
 are required; the rest are needed only for a live scan.
 .B auth_ref
-accepts env://NAME (and vault://... in production); the secret is read at send time and
-never stored. An MCP target sets provider "mcp"; over the wire it gives an endpoint, or as a
+accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
+refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is
+refused too, and the error prints "a literal value (not shown)" instead of quoting it. The
+secret is read at send time and never stored. A provider other than openai, anthropic or mcp routes to the generic REST
+adapter. An MCP target sets provider "mcp"; over the wire it gives an endpoint, or as a
 local subprocess it sets transport "stdio" and a command argv (authorized via scope commands).
 .SH "FLEET FILE"
 .nf

@@ -35,7 +35,7 @@ noted, over the wire.
 - ✅ **Operator surface**: `fleet` (many targets in one file), `run --estimate` (pre-run request +
   token gloss, zero sends), `calibrate` (score findings against operator labels, HITL),
   `render-media` (preview a multimodal carrier), fingerprinting, MANUAL / FAQ / INSTALL / examples /
-  man pages, and `make gates` mirroring the CI wall.
+  man pages, and `make gates` (everything CI runs, plus bandit and pip-audit).
 
 ## Near-term (candidates, not committed)
 
