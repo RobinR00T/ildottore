@@ -80,13 +80,18 @@ their own identity).
 
 ## 2. Output: `ModelFingerprint`
 
+The shape below is what `dottore fingerprint <target.yaml> --scope <scope.yaml>` prints (keys
+as emitted; the values are illustrative). Capabilities are a guess from probes, under
+`capability_guess`, and carry no context-size field. The carrier-comprehension scores travel as
+an evidence entry (`layer: carrier`).
+
 ```json
 {
   "target_id": "unknown-endpoint-1",
   "family": {"guess": "anthropic-claude", "confidence": 0.93},
   "version": {"guess": "claude-opus-4.x", "confidence": 0.71, "cutoff_hint": "…"},
-  "capabilities": {"tools": true, "json_mode": true, "vision": false,
-                   "streaming": true, "seed": false, "max_context_tokens": 200000},
+  "capability_guess": {"tools": true, "json_mode": true, "vision": false, "streaming": true,
+                       "seed": false, "rag": false, "memory": false, "logprobs": false},
   "guardrails": {"input_filter": true, "output_filter": true,
                  "refusal_style": "polite-explain", "moderation_latency_ms": 140},
   "evidence": [{"layer": "metadata", "signal": "system_fingerprint=fp_…", "weight": 0.4},
@@ -99,32 +104,40 @@ their own identity).
 
 - Every fingerprint run is **reproducible** (fixed seeded probe battery, evidence stored like
   any attempt: `docs/07`).
-- **Signature DB** is a versioned, pluggable data pack (`frameworks/`-style, `docs/06`): new
-  models = update the signature pack, not the code. Ships with a self-test corpus.
+- **Signature DB** is a versioned data pack, not code: it ships in-repo under
+  `src/ildottore/fingerprint/signatures/`, validated by `fingerprint/signatures.py` on load, so
+  new models = update the signature pack, not the engine. Ships with a self-test corpus.
 
 ## 3. Adaptive test-plan tailoring (the first-pass role)
 
-Given a `ModelFingerprint`, the planner:
+What the planner does today, with and without a fingerprint:
 
-1. **Filters by capability**: no `tools` ⇒ drop `agent_tool_abuse`; no `rag` ⇒ drop RAG specs
-   (or mark `inconclusive: capability_unavailable`).
-2. **Selects family-effective specs/mutators**: e.g. weight encoding/roleplay variants that
-   are historically effective against the detected family; skip variants known to be no-ops.
-3. **Sets baseline expectations**: records the family's known resistance so a result is scored
-   *relative to expectation* (a jailbreak that works on a normally-hardened family is more
-   notable).
+1. **Filters by capability**, from the capabilities the **target file declares**, not from the
+   fingerprint, and with or without `-sV`: no `tools` ⇒ the specs that require tools are
+   skipped as `inconclusive: capability_unavailable` (never a pass), and likewise for `rag`,
+   `memory`, `logprobs`, `multi_identity` and the rest.
+2. **Orders each spec's mutators by carrier comprehension** (built, see the introduction above
+   §1): the carriers the target recovered move to the front, in the spec's declared order; the
+   rest follow, in declared order. It selects no spec and drops no variant.
+3. **Does not set baseline expectations.** The design was to record the family's known
+   resistance and score a result relative to it. That half is the dead `_baseline_resistance`
+   hook described above §1: nothing writes it and nothing reads it (OD-17, ADR-0008). The same
+   goes for the original idea of weighting variants "historically effective against the
+   detected family", which the introduction rejects for lack of an empirical basis.
 4. **Emits an explicit, reviewable `TestPlan`** (which specs, why, which were skipped and why).
    Nothing is silently dropped: skipped tests are logged (per `docs/07` "no silent caps").
 
-Tailoring is OFF unless you ask for it: without `-sV`/`-A`/`--deep` the full selected
-suite runs untailored (there is no `--no-adaptive` flag on the CLI; the pass-through is the
-default, and `core.planner.build_plan(adaptive=False)` is what implements it), which is what
+Tailoring is OFF unless a fingerprint exists: only `-sV` (or `-A`, which implies it) produces
+one. `--deep` alone switches the planner to adaptive mode, but with no fingerprint there is
+nothing to order by, so the declared order is kept. Without `-sV`/`-A` the full selected suite
+runs untailored (there is no `--no-adaptive` flag on the CLI; the pass-through is the default,
+and `core.planner.build_plan(adaptive=False)` is what implements it), which is what
 apples-to-apples benchmarking across models needs.
 
 ## 4. CLI surface
 
 ```bash
-dottore fingerprint <target> --scope scope.yaml          # standalone recognition, no attacks
+dottore fingerprint target.yaml --scope scope.yaml       # standalone recognition, no attacks
 dottore run -sn -t target.yaml --scope scope.yaml        # discovery only: sends NOTHING
 dottore run -sV --suite owasp:llm -t target.yaml ...     # fingerprint → tailored scan
 dottore run --suite owasp:llm ...                        # no -sV ⇒ no tailoring (parity)

@@ -18,8 +18,8 @@ build must satisfy it.
 | S1 | **No real destructive actions.** Any tool with side effects (email/calendar/file/HTTP-write/shell/db-write) runs as a **mock or dry-run**; the scanner records the *intent* to call, never executes it. |
 | S2 | **No real exfiltration.** Data-leakage tests use **canaries** (unique tokens planted by the scanner): detection = "did the canary appear in output", never real secrets. |
 | S3 | **Endpoint allowlist.** Adapters refuse any host/path not in the scope allowlist. Default-deny. |
-| S4 | **Authorization gate.** No run starts without a valid `scope.yaml` covering every target; scope file integrity is checksum-verified and the run records its hash. |
-| S5 | **Payload marking.** Every payload that would be dangerous outside a test is `test_only: true` and tagged; reports never render raw dangerous payloads without a `--unsafe-render` opt-in. |
+| S4 | **Authorization gate.** No run starts without a valid `scope.yaml` covering every target; scope file integrity is checksum-verified and the run records its hash. (Status: the first half holds. The integrity half does not yet: the scope's SHA-256 `checksum` is optional, verified only when present, and lives in the file it protects, so an editor can recompute or delete it. It is a checksum, not a signature; real signing is open decision OD-2. No run records the scope hash: `policy.scope_hash()` has no caller, and neither the run store nor any report carries it.) |
+| S5 | **Payload marking.** Every payload that would be dangerous outside a test is `test_only: true` and tagged; reports never render raw dangerous payloads without a `--unsafe-render` opt-in. (Status: the marking is enforced at run time from the spec's category, so an unmarked spec in a flagged family is `blocked_by_policy` (A-29). The opt-in is not built: there is no `--unsafe-render` flag. The HTML reporter has an internal `unsafe_render` switch, off by default and set by nothing, that only decides whether finding reasoning is HTML-escaped; autoescape stays on and the HTML report does not show prompts. No reporter reads `test_only`, and the JSON report carries each attempt's request, prompt included, as text.) |
 | S6 | **Secret masking.** Secrets/keys are masked in logs, console and reports by a central redactor; evidence stored encrypted at rest (MVP‑2+). |
 | S7 | **Judge isolation.** The LLM judge treats target output as **untrusted data**, never as instructions (see `docs/04 §4`). A target that jailbreaks our judge must not flip a verdict. |
 | S8 | **Rate & cost caps.** Hard token, request, attempt and wall-clock budgets (`core/budgets.py`), sized from the resolved plan so a ceiling never truncates a scan in silence, **plus** an enforced request-rate ceiling (`core/pacing.py`, `--rate` / `-T`): one shared gate for the whole campaign, so concurrency cannot multiply it, and retries count against it. The scanner cannot be turned into a DoS weapon by a spec. (The rate half of this row was aspirational until 2026-09-21: `--rate` was parsed and dropped, so `--rate 0.0001` finished eighteen specs in 0.67s. Pacing is not applied to an offline mock run, where nothing leaves the process, and the resolved plan states that explicitly. The `--judge` model and the multi-identity sweep sent outside both halves until 2026-10-03; they now pass the same gate and debit the same ceilings, retries happen in one layer so each one counts, and `--rate` must be greater than 0.) |
@@ -28,7 +28,10 @@ build must satisfy it.
 ## 3. Legal / ethical framing
 
 - The tool assists **authorized** security testing only. The scope file *is* the
-  authorization record. Runs are auditable (who/what/when/scope-hash).
+  authorization record. Runs are meant to be auditable (who/what/when/scope-hash). Today a run
+  records the *what* (spec digests, target digest, judge digest, run count, planning mode) and
+  not the rest: no operator, no scope hash, and `started_at` / `finished_at` are empty in the
+  run store and in the JSON report.
 - This is a defensive/assurance tool: it validates that a model or AI app resists known
   attack classes. It is not a jailbreak-as-a-service.
 
@@ -37,7 +40,7 @@ build must satisfy it.
 | Threat | Mitigation |
 |--------|------------|
 | Malicious target output prompt-injects the **judge** and flips verdicts | Judge hardening (`docs/04 §4`): output wrapped in data delimiters, judge told it evaluates untrusted data, self-check probes, disagreement → `inconclusive`. |
-| Evidence contains real leaked secrets | Redactor + at-rest encryption + access controls; canaries preferred over real secrets. |
+| Evidence contains real leaked secrets | Redactor + at-rest encryption + access controls; canaries preferred over real secrets. (Encryption at rest is MVP-2+ and not built, see S6.) |
 | Spec pack from a third party contains a malicious payload / SSRF carrier | Spec linter + policy pack allowlist + `test_only` enforcement + no network from spec loading (`docs/06 §5`). |
 | Operator scans out of scope | S3/S4 default-deny gate. |
 | Cost blow-up (recursive/expensive specs) | S8 budgets, enforced in the runner, not the spec. |

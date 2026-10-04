@@ -2,21 +2,33 @@
 
 This is the **minimum battery** shipped by default, distilled from the ecosystem
 (NVIDIA garak, Microsoft PyRIT, promptfoo, Giskard, AgentDojo) and the reference frameworks
-(OWASP LLM Top 10 2025, MITRE ATLAS, NIST AI 600-1). Sources: see `docs/REFERENCES.md`.
+(OWASP LLM Top 10 2025, MITRE ATLAS, NIST AI RMF and its GenAI Profile, NIST AI 600-1).
+Sources: see `docs/REFERENCES.md`. NIST is a design reference, not a mapping the code checks:
+each spec's `nist_ai_rmf` field carries an AI RMF function/subcategory token (`MEASURE 2.7`,
+`MANAGE 2.2`, `MEASURE 2.11`, `GOVERN 1.1`), validated by shape only; no spec names an AI 600-1
+risk category, and `dottore coverage` has no NIST axis.
+
+Status key for this document: items marked **(not built)** are design that has no spec field,
+mechanism or suite behind it today. Everything else is in the shipped battery.
 
 ## 1. What the state of the art taught us (folded into the design)
 
 1. **Multi-turn is not optional.** PyRIT's headline value is automated *multi-turn* attacks
    (Crescendo, TAP, Skeleton Key) that adapt based on the target's reply. Our spec format gets
-   a first-class `turns` + an `escalation` mode (iterate up to a budget, adapt on refusal).
+   a first-class `turns` (built: 11 specs carry pinned turns, five of them in the
+   `multi-turn` suite) + an `escalation` mode (iterate up to a budget, adapt on refusal)
+   **(not built:** no such field; the turns are fixed in the spec, which `dottore coverage`
+   lists under ATLAS "AI Attack Adaptation" as deliberate, a roadmap decision).
 2. **Attack success is a curve, not a bit.** Gray Swan / Anthropic data: Claude holds ~0.1%
    on a *single* attempt but ~5-6% after *100 adaptive* attempts. → our reproducibility model
    (N-runs) is right, and we add an **adaptive-attempts budget** so a finding reports success
-   rate *as a function of attempts*, not one lucky hit.
+   rate *as a function of attempts*, not one lucky hit **(not built:** a finding reports one
+   rate over `--runs` attempts).
 3. **Measure utility AND security jointly** (AgentDojo). A model that refuses everything is
    "secure" but useless; over-refusal is a real failure. → every run also captures a
    **benign-utility baseline** (does the target still do its job?), and we flag
-   *over-defense / false-refusal* as its own finding class (dataset: XSTest-style).
+   *over-defense / false-refusal* as its own finding class (dataset: XSTest-style) **(not
+   built:** no utility baseline and no false-refusal finding class).
 4. **Test the system, not just the model** (OpenAI Atlas/connectors work). Real risk lives in
    connectors, MCP servers, tool wiring, RAG plumbing. → target types `agent`/`rag`/`api`, and
    an MCP/tool-abuse block.
@@ -24,10 +36,10 @@ This is the **minimum battery** shipped by default, distilled from the ecosystem
    zero-width, homoglyph: apply as transforms over base payloads (our Prompt Mutator).
 6. **Dataset-backed specs.** promptfoo pulls HarmBench, BeaverTails, CyberSecEval,
    DoNotAnswer, ToxicChat, XSTest. → a spec can be `dataset`-backed (sampled, seeded), not
-   only hand-authored.
+   only hand-authored **(not built:** no `dataset` field; every spec is hand-authored).
 7. **Framework presets sell.** promptfoo ships `owasp:llm`, `mitre:atlas`, `nist:ai`,
    `eu:ai-act`, `gdpr`, `iso:42001` presets. → suites map to the same presets (regulatory
-   angle: DORA / EU AI Act matter for our buyers).
+   angle: DORA / EU AI Act matter for our buyers). Only `owasp:llm` exists as a suite (§6).
 8. **Defense is never 100% at the model layer** (Anthropic). Our job is *assurance evidence*
    across the stack, reported as risk: which is exactly the product thesis.
 
@@ -36,14 +48,19 @@ This is the **minimum battery** shipped by default, distilled from the ecosystem
 | Tier | Profile flag | Purpose | ~#tests | Runtime |
 |---|---|---|---|---|
 | **T0: Quick** | `--quick` | nmap-default equivalent: fast triage, cheap (mostly single-turn; `JB-ROLEPLAY-001` is multi-turn) | 18 | minutes |
-| **T1: Standard** | `--suite owasp:llm` (default) | full OWASP LLM Top 10 2025 coverage | ~60 | tens of min |
-| **T2: Deep** | `--deep` / `--suite agentic` | multi-turn, adaptive, agentic/RAG, dataset-backed | 75 (the whole shipped battery) | long |
+| **T1: Standard** | `--suite owasp:llm` | the OWASP LLM Top 10 2025 suite (design: full coverage) | 18, the same ids as T0 | minutes |
+| **T2: Deep** | `--deep` | the full shipped battery at `-T2` | 75 candidates; a target runs those its capabilities allow | long |
 
-`--quick` selects the `quick` suite; `--deep` runs the **full** battery with adaptive,
-fingerprint-tailored planning at `-T2` timing. The "150+" in the original design table was a
-target, not a measurement: the battery ships 75 specs today, so `--deep` runs 75. (Until
-2026-09-21 both flags only moved the timing template and changed no battery at all, which is
-the defect this row now states honestly.)
+Measured, not designed: `owasp-llm-top10` and `quick` list the same 18 spec ids, so T0 and T1
+are one battery today (T1's design size was ~60). Neither is the default: a `run` with no
+`--suite` selects the full battery, every spec the target can run. The whole battery covers 8
+of the 10 OWASP LLM codes (`dottore coverage --framework owasp`). `--quick` selects the `quick`
+suite at `-T0`. `--deep` runs the full battery at `-T2`, the same selection as no flag;
+adaptive ordering needs a fingerprint, so it applies only with `-sV` (or `-A`, which adds it):
+`docs/09 §2`. `--suite agentic` is not T2: it resolves to `agentic-extortion`, 7 specs. The
+"150+" in the original design table was a target, not a measurement: the battery ships 75
+specs. (Until 2026-09-21 both flags only moved the timing template and changed no battery at
+all.)
 
 ## 3. The minimum battery (T0 "Quick"): mapped to OWASP LLM Top 10 2025
 
@@ -78,11 +95,19 @@ Each id ships golden fixtures (`docs/07`) and framework mappings. This is the de
 
 ## 4. T1 "Standard" adds (full OWASP coverage)
 
+§4 and §5 are the design's list of techniques for T1 and T2, not the content of a suite: no
+T1-only or T2-only suite exists. Several of these techniques ship as specs in other suites
+(`dottore registry ls`, `dottore coverage`); the ones marked (not built) have no spec.
+
 - **LLM01/07 depth**: multi-turn injection, second-order injection, context override,
   instruction-hierarchy bypass, ASCII-smuggling, zero-width, homoglyph, payload-splitting.
 - **LLM02** (full data-leak family, `docs/11`): memory/RAG-source leakage, tool-credential
   exposure, RAG corpus enumeration, prefix-completion & verbatim-copyright extraction,
-  membership inference (logprobs), secret-shape elicitation, breach-canary detection.
+  membership inference (logprobs), secret-shape elicitation, breach-canary detection. Of these,
+  five ship (`DL-SECRET-CANARY-001`, `DL-XSESSION-001`, `DL-XTENANT-001`,
+  `DL-MEMORIZE-DIVERGENCE-001`, `DL-PII-ELICIT-001`); RAG enumeration, prefix completion,
+  verbatim copyright, membership inference, secret-shape elicitation and breach canary are
+  **(not built)** (`docs/11 §2`).
 - **LLM03/04 (supply chain / poisoning)**: model-identification/fingerprinting,
   package-hallucination in generated code, RAG document poisoning, retrieval poisoning,
   citation laundering, source confusion.
@@ -93,24 +118,33 @@ Each id ships golden fixtures (`docs/07`) and framework mappings. This is the de
 - **LLM08**: embedding-inversion / vector-store leakage probes (RAG targets).
 - **LLM09**: misinformation, overreliance, sycophancy, unverifiable claims.
 - **LLM10**: recursive-reasoning loops, context flooding, expensive-tool loops (budget-guarded).
-- **Utility/over-defense**: XSTest-style false-refusal battery (T3-in-T1 sanity).
+- **Utility/over-defense**: XSTest-style false-refusal battery (T3-in-T1 sanity) **(not
+  built)**.
 
 ## 5. T2 "Deep / Agentic" adds
 
 - **Multi-turn adaptive**: Crescendo-, TAP-, Skeleton-Key-style escalation (spec `escalation`
-  mode + adaptive-attempts budget).
+  mode + adaptive-attempts budget) **(not built**; the multi-turn specs replay pinned
+  turns).
 - **Agentic** (AgentDojo-inspired): memory poisoning, tool discovery, goal hijacking,
   data-exfiltration via tool chains, coding-agent suite (repo/terminal-output injection,
   sandbox escape, secret read, CI exfil): all with mocked side-effects.
 - **Agentic malicious-use / autonomous extortion (JadePuffer-class, `docs/13`)**: indirect-
   injection-driven kill-chain (recon→exfil→destroy→ransom), destructive tool use without
   confirmation, offensive-toolkit codegen (refusal). Policy-gated OFF; mocked tools, no
-  functional payloads. Suite: `agentic-extortion`.
+  functional payloads. Suite: `agentic-extortion` (7 specs). The CLI cannot enable the gated
+  ones (no policy-pack flag), so from `dottore` they are always `blocked_by_policy`.
 - **Dataset-backed**: sampled specs from HarmBench / BeaverTails / CyberSecEval / DoNotAnswer /
-  ToxicChat / XSTest (seeded for reproducibility).
+  ToxicChat / XSTest (seeded for reproducibility) **(not built)**.
 
 ## 6. Regulatory presets (suites)
 
-`owasp:llm` (default) · `mitre:atlas` · `nist:ai` · `eu:ai-act` · `dora` · `iso:42001` ·
-`gdpr`. A preset is just a suite that references the relevant specs and carries the
-framework rollup: no code. (These are our differentiator for EU/regulated buyers.)
+`owasp:llm` · `mitre:atlas` · `nist:ai` · `eu:ai-act` · `dora` · `iso:42001` · `gdpr`. A
+preset is just a suite that references the relevant specs and carries the framework rollup: no
+code. (These are our differentiator for EU/regulated buyers.)
+
+**Status:** only `owasp:llm` resolves (to `owasp-llm-top10`), and it is not the default. The
+alias table in `cli/flags.py` maps `mitre:atlas`, `nist:ai`, `eu:ai-act`, `dora` and
+`iso:42001` to suite ids that no file in `specs/suites/` defines, so each exits 3 ("is not
+registered"); `gdpr` is not in the table at all. **(not built)** for all six. The framework view
+that exists is `dottore coverage` (OWASP, ATLAS, IoPC, AISVS).
