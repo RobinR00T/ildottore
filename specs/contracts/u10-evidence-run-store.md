@@ -60,6 +60,12 @@ the u00 protocols:
 - **SQLite tables:** `runs(run_id PK, suite_id, target_id, started_at, finished_at, n_runs,
   status, meta_json)`; `findings(run_id FK, finding_id, spec_id, status, severity, repro,
   confidence, evidence_refs_json, PRIMARY KEY(run_id, finding_id))`; `schema_version(version)`.
+- **As built (checked 2026-10-04 on an offline run):** `runs` also carries `spec_digests_json`,
+  `spend_json` and `context_json` (target digest, judge digest, run count, planning mode), which
+  bind a resume to its campaign. `started_at` and `finished_at` are written as NULL (no producer
+  sets them), and no column records the operator or the scope hash (audit D-17). No `run.json` is
+  written: `store.paths.run_doc_path()` exists and has no caller, so a run directory holds
+  `attempts/` (and `probes/` after `-sV`) only, and the run record is the SQLite row.
 - Detector-hit fields carry **masked/hashed** values only (`docs/11 §5` DL2); no raw logprob
   secrets, no canary plaintext.
 

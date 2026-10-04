@@ -26,6 +26,9 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 - Depends on **u00 only**. Consumes `shared.models.AttackSpec` (+ suite/pack models if in u00,
   else define pack/suite Pydantic models locally against `schemas/`): must validate vs
   `schemas/attack-spec.schema.json` / `schemas/suite.schema.json` / `schemas/pack.schema.json`.
+  (As built: only `schemas/attack-spec.schema.json` is committed; the suite and pack schemas are
+  generated on demand from the Pydantic models, `dottore schema export --name suite|pack`,
+  OD-14.)
 - Registry is a plain library object (no protocol in `docs/01 §3`); it is injected at the
   composition root (u12). Exposes: `list(filter=category|owasp|tag|pack) -> list[AttackSpec]`,
   `get(id) -> AttackSpec`, `resolve(suite_id) -> list[AttackSpec]`, `packs() -> list[Pack]`.

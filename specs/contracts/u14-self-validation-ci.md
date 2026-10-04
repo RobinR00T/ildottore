@@ -33,7 +33,7 @@ to each unit's contract (evaluators own their P/R tests, mutator owns property t
   `shared` (+ adapter *interface* for judge); composition only in `cli`/`api`.
 
 ## §4 Known constraints: KEEP / DECIDE
-- KEEP: **no live API keys in CI**: adapters exercised only via `tests/cassettes/`
+- KEEP: **no live API keys in CI**: adapters exercised only via `tests/adapters/cassettes/`
   (`docs/07 §4`); a CI guard fails if any test opens a real socket to a provider host.
 - KEEP: gates are **ordered and fail-closed**: a later gate never runs green over an earlier
   red; golden-fixture accuracy (layer 6) and self-scan (layer 17) are hard merge blockers.
@@ -118,4 +118,5 @@ precondition is asserted with a message that names the cause.
 - Whether `audit.yml` "workflow permissions read/write" is auto-set or left operator-pending
   (propose operator-pending, documented in workflow header).
 - Nightly regression golden-run baseline location + diff-review owner (propose `tests/golden-run/`,
-  conductor reviews the snapshot diff).
+  conductor reviews the snapshot diff). As built: no `tests/golden-run/`; the nightly snapshot is
+  `tests/reporting/test_golden_snapshot.py` against `tests/reporting/fixtures/reports/`.

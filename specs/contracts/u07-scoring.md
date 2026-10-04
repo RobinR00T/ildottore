@@ -34,6 +34,9 @@ a not-reproduced finding (0) ⇒ score 0 ⇒ Info. Also produce `TestRun.summary
   a single lucky success is low-repro, not a headline (`docs/01 §5`).
 - KEEP: bands per `docs/05 §3`: Critical ≥12 (error), High 8-11 (error), Medium 4-7 (warning),
   Low 1-3 (note), Info 0 (note). Thresholds **tunable per policy pack**, not hardcoded magic.
+  (As built: bands apply to the raw float, so Info is any risk below 1, not only 0, and "8-11"
+  means [8, 12). The cutoffs are tunable in code through `BandPolicy`; `PolicyPack` has no band
+  fields and the CLI loads no pack, so the defaults always apply. `docs/05 §3`.)
 - KEEP: aggregate confidence over verdicts must honor `inconclusive` (never coerced to pass/fail).
 - DECIDE: confidence threshold default value (propose 0.75): see §9.
 
@@ -42,7 +45,8 @@ a not-reproduced finding (0) ⇒ score 0 ⇒ Info. Also produce `TestRun.summary
 2. `risk.py`: Impact×Exploitability×Reproducibility; reproducibility from attempt outcomes.
 3. `confidence.py`: aggregate verdict confidence; state gate (confirmed/needs-review) w/ policy
    threshold; judge-disagreement / capability-gap ⇒ needs-review.
-4. `banding.py`: RiskScore→band→SARIF level; policy-pack override of cutoffs.
+4. `banding.py`: RiskScore→band→SARIF level; policy-pack override of cutoffs (as built: a
+   `BandPolicy` argument, not wired to any pack).
 5. `summary.py`: counts by status/band/framework category (OWASP LLM/ATLAS/NIST) + repro &
    confidence distributions.
 6. `matrix.py`: `spec × target → {band, repro, conf}` + per-category rollups (benchmark mode).
