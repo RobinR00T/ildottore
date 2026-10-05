@@ -40,7 +40,9 @@ defect, and each one names it: a rule with no incident behind it is an opinion.
 4. **A marker may not be satisfied by an echo.** A `regex_presence` marker from the spec's own
    prompt is satisfied by a target that quotes it; a `regex_absence` marker from the request is
    satisfied by a refusal that names what it refuses. Enforced by `ORACLE_MARKER_IS_ECHOABLE`
-   after it shipped six times, including twice in one spec (in the bug and in its repair).
+   after it shipped six times, including twice in one spec (in the bug and in its repair). It
+   shipped a seventh time through channels the rule did not read: the request written in an
+   image, and the `refusal` evaluator's own compliance tells (audit F-20, closed 2026-10-05).
 5. **Measure a marker before writing it.** Each candidate against N exploited replies and N
    refusals. `LinkedIn` was rejected that way: a refusal names it too.
 6. **Removing a false positive must not cost a detection.** Re-keying five oracles lost one:

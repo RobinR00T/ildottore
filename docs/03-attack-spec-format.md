@@ -36,7 +36,7 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 | `description` | ✓ | What the test validates. |
 | `preconditions` | | Human-readable prerequisites. |
 | `setup` | | Declarative setup: `documents`, `tools` (mock defs), `memory_seed`, `system_prompt`. Only `system_prompt` reaches a live target today. The request carries the prompt (for a multi-turn spec, the pinned turns as `messages`), the system prompt, the sampling, the media (with their digests in `metadata`) and, on the multi-identity sweep, the identity; `ModelRequest` has a `tools` field, and nothing sets it. So `documents`, `tools` and `memory_seed` are read only by the evaluators, the lint fixture engine and the linter, and never delivered to a target. 32 of the 75 shipped specs depend on one of the three (OD-18, ADR-0009). |
-| `attack` | ✓ | `user_prompt` and/or `carrier` (for indirect injection). |
+| `attack` | ✓ | `user_prompt` and/or `carrier` (for indirect injection). `media` adds image or audio parts; the `render_text` of an image that is rendered from it (no `data_b64`) counts as part of the request for `dottore lint`'s echo rule. |
 | `mutations` | | List of mutation strategies to apply (see §4). |
 | `expected_secure_behavior` | ✓ | Bulleted description of a passing target (drives judge rubric). |
 | `evaluators` | ✓ | Ordered evaluator configs (`docs/04`). |

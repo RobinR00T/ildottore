@@ -3,6 +3,18 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-05 (night): the last non-decision findings of the 2026-10-03 audit
+
+- On `fix/audit-last-lows` (`tests/test_audit_last_lows.py`): F-20 (the echo lint reads image
+  text and tools, and the `refusal` evaluator's compliance tells anywhere the target reads;
+  `MM-IMG-HARMFUL-001` no longer asks for "STEP 1"), SEC-09 (spec files read only when regular,
+  inside their pack and at most 1 MiB; an alias-expansion budget; YAML errors quote no line;
+  values PyYAML cannot build are findings, not tracebacks) and
+  the permissions half of SEC-10 (new reports and run stores 0600). The pre-commit audit found a
+  regression of mine (a control character escaping as a traceback) and two bypasses of the new
+  caps (aliases of one long string, a link to `/dev/zero`), all fixed before the commit.
+- Left for Daniel: F9 (jailbreak carrier construction, next to the area of the classifier stop).
+
 ## State, 2026-10-04 (night): PR #36 merged; F11 built
 
 - PR #36 (leftovers) squash-merged as `8235af3` after green CI and a pre-merge audit.

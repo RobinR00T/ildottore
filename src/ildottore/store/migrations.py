@@ -12,6 +12,7 @@ re-run on an already-current DB does nothing and returns the current version.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -86,11 +87,32 @@ def connect(db_path: Path) -> sqlite3.Connection:
     """
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    _create_private(db_path)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def _create_private(db_path: Path) -> None:
+    """Create a new database file readable by its owner only; leave an existing one alone.
+
+    sqlite3 creates the file with the process umask, usually world-readable, while every
+    attempt artifact is 0600, and the run store holds what the reports are built from (audit
+    SEC-10 of 2026-10-03). SQLite gives the ``-wal`` and ``-shm`` files the database file's mode.
+    """
+
+    if str(db_path) == ":memory:":
+        return  # no file: `--run-db :memory:` left a stray empty file named ":memory:"
+    # Through a symlink to the file it names, which may not exist yet: O_EXCL on the link
+    # itself fails, and sqlite3 then created the target with the umask (pre-commit audit).
+    target = os.path.realpath(db_path)
+    try:
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError:
+        return  # it exists (keep its mode), or sqlite3 will report why it cannot be opened
+    os.close(descriptor)
 
 
 def current_version(conn: sqlite3.Connection) -> int:

@@ -1702,12 +1702,13 @@ def _write_atomically(path: Path, payload: bytes) -> None:
 
     A SIGTERM during the write left a truncated JSON report under its final name, which a CI
     step would then parse (audit of the hygiene block). A symlinked report is written through
-    (the link is kept), an existing report keeps its permission bits, and the partial file is
-    removed on any failure. The partial is created exclusively and never through a symlink, so
-    one planted at its fixed name in a shared directory cannot redirect the write. A report
-    path that is not a regular file (a FIFO, a device, `/dev/stdout`) is written directly, as is
-    one in a read-only directory holding a writable report. Hard links to an existing report
-    are not kept: the rename gives the name a new file.
+    (the link is kept), an existing report keeps its permission bits, a new one is readable by
+    its owner only (0600), and the partial file is removed on any failure. The partial is
+    created exclusively and never through a symlink, so one planted at its fixed name in a
+    shared directory cannot redirect the write. A report path that is not a regular file (a
+    FIFO, a device, `/dev/stdout`) is written directly, as is one in a read-only directory
+    holding a writable report. Hard links to an existing report are not kept: the rename gives
+    the name a new file.
     """
 
     try:
@@ -1723,8 +1724,9 @@ def _write_atomically(path: Path, payload: bytes) -> None:
     try:
         partial.unlink(missing_ok=True)
         # Created with the report's own mode, so a 0600 report is never world-readable while
-        # its replacement is being written (pre-merge audit of the hygiene block).
-        mode = stat.S_IMODE(existing.st_mode) if existing is not None else 0o666
+        # its replacement is being written (pre-merge audit of the hygiene block). A new report
+        # is readable by its owner only, like the evidence it is built from (audit SEC-10).
+        mode = stat.S_IMODE(existing.st_mode) if existing is not None else 0o600
         descriptor = os.open(partial, flags, mode)
     except PermissionError:
         path.write_bytes(payload)
