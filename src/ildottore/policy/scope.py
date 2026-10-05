@@ -11,6 +11,7 @@ without a shape change).
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -115,15 +116,17 @@ def _strip_checksum_line(raw_text: str) -> str:
     """Return the scope body with any top-level ``checksum:`` line removed.
 
     The integrity token is computed over the body *excluding* the recorded
-    checksum, so a scope can carry its own hash without a chicken-and-egg loop.
+    checksum, so a scope can carry its own hash without a chicken-and-egg loop. Only a line
+    that starts at column 0 is that key: an indented ``checksum:`` line (inside a folded
+    command line, say) was dropped too, so the digest and the checksum did not cover it and two
+    scopes authorizing different commands had one hash (pre-commit audit of D-17).
     """
 
-    kept = [
-        line
-        for line in raw_text.splitlines(keepends=True)
-        if not line.lstrip().startswith("checksum:")
-    ]
-    return "".join(kept)
+    # Lines end at "\n" only: `str.splitlines` also cut at U+0085, U+2028 and U+2029, so a
+    # `checksum:` "line" could start inside a value (delta audit of D-17). Whether the line
+    # removed was really the top-level key is checked by the loader, which parses the rest.
+    lines = re.split(r"(?<=\n)", raw_text)  # each line keeps its "\n", as before
+    return "".join(line for line in lines if not line.startswith("checksum:"))
 
 
 def load_scope(
@@ -132,7 +135,22 @@ def load_scope(
     verifier: IntegrityVerifier | None = None,
     require_checksum: bool = False,
 ) -> Scope:
-    """Load, validate and integrity-check a ``scope.yaml`` file.
+    """Load, validate and integrity-check a ``scope.yaml`` file (:func:`load_scope_with_digest`)."""
+
+    return load_scope_with_digest(path, verifier=verifier, require_checksum=require_checksum)[0]
+
+
+def load_scope_with_digest(
+    path: str | Path,
+    *,
+    verifier: IntegrityVerifier | None = None,
+    require_checksum: bool = False,
+) -> tuple[Scope, str]:
+    """Load, validate and integrity-check a ``scope.yaml`` file, and digest what was loaded.
+
+    The digest is :func:`scope_hash` computed over the same bytes that were parsed, so a run
+    records the record that authorized it, not a second read of a file that may have changed
+    in between (audit D-17, threat model S4).
 
     * Parses YAML with a **safe** loader - no code execution, no network.
     * Validates the :class:`Scope` model (default-deny: unknown fields rejected).
@@ -184,21 +202,40 @@ def load_scope(
             )
         seen.add(entry.id)
 
-    body = _strip_checksum_line(raw_text).encode("utf-8")
+    stripped = _strip_checksum_line(raw_text)
+    if stripped != raw_text:
+        # The body the checksum and the run's digest cover must say exactly what was loaded,
+        # bar the checksum. A quoted value may continue at column 0 (`- "python srv` then a
+        # line `checksum: --port 1"`), and removing that line changed the command without
+        # changing the digest: two scopes authorizing different commands had one checksum.
+        try:
+            rest = safe_yaml.safe_load(stripped)
+        except yaml.YAMLError:
+            rest = None
+        expected = {key: value for key, value in data.items() if key != "checksum"}
+        if rest != expected:
+            raise ScopeError(
+                f"scope file {file_path}: a line starting with `checksum:` is part of another "
+                "value, so the checksum would not cover it; keep `checksum:` as one top-level "
+                "line and move the value"
+            )
+    body = stripped.encode("utf-8")
     if scope.checksum is not None:
         if not verifier.verify(body, scope.checksum):
             raise ChecksumMismatchError(scope.checksum, verifier.compute(body))
     elif require_checksum:
         raise ScopeError(f"scope file {file_path} is missing a required checksum")
 
-    return scope
+    return scope, verifier.compute(body)
 
 
 def scope_hash(path: str | Path, *, verifier: IntegrityVerifier | None = None) -> str:
-    """Return the integrity token over a scope file's body (recorded by a run, S4).
+    """Return the integrity token over a scope file's body, to write as its ``checksum:``.
 
     Stable across calls for identical bytes; excludes the recorded ``checksum``
-    line so it equals the value a well-formed scope carries.
+    line so it equals the value a well-formed scope carries. It does not validate: a file the
+    loader refuses (a ``checksum:`` line inside another value) can share its value with one
+    that loads. What a run records comes from :func:`load_scope_with_digest`, which refuses it.
     """
 
     verifier = verifier if verifier is not None else Sha256Verifier()

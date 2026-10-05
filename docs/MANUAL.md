@@ -157,7 +157,8 @@ Required for every scanning command. An optional top-level `checksum:` (sha256 o
 the `checksum:` line itself excluded) is verified when present: a scope edited without
 updating it is refused (exit 3). It is an integrity check, not a signature: anyone who can edit
 the file can recompute it, and nothing requires one. Signing is not built; whether to add it is
-an open decision (OD-2). The run does not record the scope's hash, nor who ran it.
+an open decision (OD-2). Every run records the scope's SHA-256 (in the run store and every
+report, see §10); it does not record who ran it.
 
 ```yaml
 version: "1.0"
@@ -893,6 +894,20 @@ or without it, so an uncorroborated secret hit cannot fail a build. See
   `live-2026-09-19`); the SARIF run carries `framework_editions` in its `properties`; and every
   JUnit test suite carries `edition.owasp_llm_top10`, `edition.mitre_atlas`,
   `edition.nova_iopc` and `edition.owasp_aisvs` properties (AISVS `1.0`).
+- **The scope a run went out under.** Every report names the authorization record of the
+  invocation that wrote it, by the SHA-256 of the scope text it parsed: `run.scope_sha256` in
+  JSON, `scope_sha256` in the SARIF run `properties`, a `scope_sha256` property on every JUnit
+  framework suite, and a "Scope (SHA-256)" line in the HTML header. To reproduce it, read the file
+  as UTF-8, turn CRLF and lone CR into LF, delete every line that starts with `checksum:` at
+  column 0 together with its LF, and hash the rest; for a well-formed scope it equals its
+  `checksum`. A line starting with `checksum:` that belongs to another value (a quoted command
+  continued at column 0) is refused when the scope loads, since the checksum would not cover it.
+  The run store keeps each scope the run went out under, in order (`context_json.scope_sha256s`,
+  recorded on a resume with `-sV` before its probe pass, otherwise with each run's integrity
+  record (after a fresh run's probes, before its attack traffic), appended whenever it differs
+  from the last; `"unrecorded"` first for a run recorded before this): a resume under a different
+  scope file is not refused, it is recorded and noted on stderr. The digest names the file; it
+  does not prove who wrote it (the scope is checksummed, not signed: OD-2).
 - **Several targets in one run.** The JSON report's `run` object lists every target, and its
   own `findings` and `summary` cover all of them, as the top-level `findings` and `summary` do.
   Its `run_id` is the last target's; each target's run id is in its findings' evidence

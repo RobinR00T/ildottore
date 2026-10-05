@@ -5,6 +5,40 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (the scope a run went out under)
+
+- **A run records which authorization record it ran under** (threat model S4, audit D-17).
+  `policy.scope_hash()` existed with no caller, so no run said which `scope.yaml` authorized it.
+  `load_scope_with_digest()` returns the scope with the SHA-256 of the text it parsed (the
+  top-level `checksum:` line aside, so it equals a well-formed `checksum`), and `dottore run`
+  records it, on a resume with `-sV` before its probe pass, otherwise with each run's integrity
+  record (after a fresh run's probes, before its attack traffic): the run store appends it to
+  `context_json.scope_sha256s` whenever it differs from the last entry (`"unrecorded"` first for a
+  run recorded before this), in one immediate transaction that a later context write keeps, and
+  every report carries the `scope_sha256` of the invocation that wrote it (`run` in JSON, the
+  SARIF run `properties`, a JUnit framework-suite property, the HTML header). Report masking keeps
+  it readable only in the exact shape of a SHA-256. A resume under a different scope file is not
+  refused (that would be a policy, the owner's call): it is recorded and noted on stderr. The
+  operator is still not recorded, and the scope is still checksummed rather than signed (OD-2).
+  `docs/MANUAL.md` gives the recipe to reproduce the digest.
+- **Schema note:** the JSON report's `run` object gains `scope_sha256` (null when no scope was
+  loaded); `run` was already free-form in `report-1.0.schema.json`, so `schema_version` stays
+  `1.0`. The report snapshots are regenerated.
+
+### Fixed (the scope checksum's coverage)
+
+- **The checksum could leave part of a value out.** The body it covers (and now the run's
+  digest) dropped every line starting with `checksum:` after its indentation, and lines were
+  cut at U+0085, U+2028 and U+2029 too, so a `checksum:` "line" inside a folded or quoted
+  command line was not covered: two scopes authorizing different stdio commands had one
+  checksum. Lines are split at `\n` only and only one starting at column 0 is left out now, and
+  the loader parses the
+  rest and requires it to be exactly what it loaded bar the checksum: a quoted command that
+  continues at column 0 with `checksum:` is refused with a message to move it. A scope with one
+  top-level `checksum:` line verifies as before; one whose whole document is indented (its
+  top-level keys at column 2) now fails its checksum, closed rather than open.
+- Tests: `tests/test_scope_digest.py`.
+
 ### Fixed (a phone or card number glued to its own label)
 
 - **`Tel.555-123-4567`, `tel_4155550142` and `card_4111111111111111` reached the reports in

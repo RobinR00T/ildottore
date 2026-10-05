@@ -3,6 +3,15 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-05 (afternoon): the scope a run went out under (D-17)
+
+- On `feat/record-scope-hash` (`tests/test_scope_digest.py`): every run records the SHA-256 of
+  the scope body that authorized it, in the run store (every scope of the run, in order) and in
+  the four report formats; a resume under another scope is recorded and noted, not refused.
+  The operator is still not recorded; signing is still OD-2. The checksum covers a whole value
+  now (a `checksum:` line inside another value is refused).
+- PR #43 (a phone or card number glued to its own label) squash-merged as `9d09486`.
+
 ## State, 2026-10-05 (afternoon): PRs #41 and #42 merged; labelled numbers
 
 - PR #41 (date shape tightened and shared with `pii_detector`) and PR #42 (its tests and

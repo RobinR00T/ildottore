@@ -242,6 +242,7 @@
     ],
     "finished_at": "2026-01-01T00:05:00Z",
     "run_id": "golden-1",
+    "scope_sha256": null,
     "started_at": "2026-01-01T00:00:00Z",
     "suite_ref": "suites/owasp-core",
     "summary": {

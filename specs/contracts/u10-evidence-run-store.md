@@ -64,17 +64,21 @@ the u00 protocols:
   `spend_json` and `context_json` (target digest, judge digest, run count, planning mode), which
   bind a resume to its campaign. `started_at` and `finished_at` hold UTC ISO 8601 times since
   2026-10-04 (the CLI passes a timestamp source to the runner; before, no producer set them and
-  both were NULL), and no column records the operator or the scope hash (audit D-17). Schema v4
-  (2026-10-04) adds `artifacts(run_id, spec_id, sha256, state, PRIMARY KEY(run_id, sha256))`: the
-  evidence store journals every attempt artifact through the run store, `pending` before the write
-  and `written` after, and `recorded_evidence` unions it with the findings' references, so the
-  manifest covers a spec whose finding was never saved and tolerates a missing `pending` digest
-  (an interrupted write) unless a finding cites it; an artifact under a spec id outside the
-  recorded battery (`recorded_battery`, the `spec_digests_json` keys) is refused; a resume adopts
-  present artifacts into the journal in one transaction (`adopt_artifacts`) after the check
-  passes. This is what makes F11 (a resume re-sending errored attempts) safe. No `run.json` is
-  written: `store.paths.run_doc_path()` exists and has no caller, so a run directory holds
-  `attempts/` (and `probes/` after `-sV`) only, and the run record is the SQLite row.
+  both were NULL). No column records the operator; the scope digest lives in `context_json` as
+  `scope_sha256s`: each scope the run went out under, appended (on a resume with `-sV` before its
+  probe pass, otherwise with the integrity record) whenever it differs from the last entry,
+  `"unrecorded"` first for a run recorded before 2026-10-05, in an immediate transaction
+  (`add_run_scope`) that a context rewrite preserves (audit D-17). Schema v4 (2026-10-04) adds
+  `artifacts(run_id, spec_id, sha256, state, PRIMARY KEY(run_id, sha256))`: the evidence store
+  journals every attempt artifact through the run store, `pending` before the write and `written`
+  after, and `recorded_evidence` unions it with the findings' references, so the manifest covers a
+  spec whose finding was never saved and tolerates a missing `pending` digest (an interrupted
+  write) unless a finding cites it; an artifact under a spec id outside the recorded battery
+  (`recorded_battery`, the `spec_digests_json` keys) is refused; a resume adopts present artifacts
+  into the journal in one transaction (`adopt_artifacts`) after the check passes. This is what
+  makes F11 (a resume re-sending errored attempts) safe. No `run.json` is written:
+  `store.paths.run_doc_path()` exists and has no caller, so a run directory holds `attempts/` (and
+  `probes/` after `-sV`) only, and the run record is the SQLite row.
 - Detector-hit fields carry **masked/hashed** values only (`docs/11 §5` DL2); no raw logprob
   secrets, no canary plaintext.
 

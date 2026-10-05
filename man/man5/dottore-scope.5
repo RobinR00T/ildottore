@@ -15,7 +15,9 @@ The authorization record. No scanning command runs without it. Default-deny: any
 path not under a target's endpoints is never contacted. An optional top-level checksum
 (sha256 of the body, the checksum line excluded) is verified when present, so a scope edited
 without updating it is refused. It is an integrity check, not a signature: anyone who can edit
-the file can recompute it. The run does not record the scope's hash.
+the file can recompute it. A line starting with checksum: that belongs to another value is
+refused. Every run records the same sha256 in its run store and in every report, so a report
+names the authorization record it ran under.
 .PP
 .nf
 version: "1.0"

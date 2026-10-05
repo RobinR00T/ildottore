@@ -189,6 +189,8 @@ class SarifReporter(BaseReporter):
                         "run_status": self._run_status.state,
                         # The editions the rule tags refer to (A-14, audit R12).
                         "framework_editions": framework_editions(),
+                        # The authorization record the run went out under (S4, audit D-17).
+                        **({"scope_sha256": ctx.run.scope_sha256} if ctx.run.scope_sha256 else {}),
                     },
                 }
             ],

@@ -101,6 +101,10 @@ class JunitReporter(BaseReporter):
             properties = ET.SubElement(suite, "properties")
             for name, edition in framework_editions().items():
                 ET.SubElement(properties, "property", {"name": f"edition.{name}", "value": edition})
+            if ctx.run.scope_sha256:  # the authorization record (S4, audit D-17)
+                ET.SubElement(
+                    properties, "property", {"name": "scope_sha256", "value": ctx.run.scope_sha256}
+                )
             for finding in findings:
                 suite.append(self._testcase(finding))
             total_tests += len(findings)
