@@ -140,7 +140,13 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   gives the problem and where PyYAML found it: line and column, plus where the entry it was
   reading starts when PyYAML records that and it differs (a missing space after a colon is
   reported on the next line); a control character is located by its position instead
-  (`at character N`, counted from 1). The line is never quoted. An error quotes an `auth_ref` only when it is a reference (it
+  (`at character N`, counted from 1). The line is never quoted. A key written twice in one
+  mapping (two `endpoints:` under one target, two `endpoint:` in a target file) is refused the
+  same way, instead of keeping the last value as PyYAML does: `found a key written twice in one
+  mapping, first at line 5, column 5 and again at line 11, column 5`. Keys pulled in by a `<<`
+  merge can still be overridden; a map merged in is checked too, and two `<<` in one mapping are
+  refused (merge several maps with one list, `<<: [*a, *b]`). An error quotes an `auth_ref`
+  only when it is a reference (it
   contains `://`, such as `env://NAME` or `vault://x`); a literal value pasted where a
   reference belongs is printed as `a literal value (not shown)`, for example `target 'live'
   auth_ref a literal value (not shown) is not authorized by the scope (declared:
@@ -432,7 +438,8 @@ their pack directory (or, for loose specs, the directory they were found in), at
 each; a file named directly on the command line is read wherever it points. A document that
 expands, counting every alias where it is used, past 100,000 nodes (a long text counts one node
 per 64 characters), or that holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a
-few aliases used to turn a 4 KB file into 52 MB of error text. A YAML error gives the line and
+few aliases used to turn a 4 KB file into 52 MB of error text. A key written twice in one
+mapping is a `PARSE_ERROR` too. A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. An oracle marker that an echo of the

@@ -5,6 +5,26 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a YAML key written twice)
+
+- **A key written twice in one mapping is refused, not resolved to the last value.** PyYAML
+  keeps the last one without a word, so a scope target with two `endpoints:` lists authorized
+  only what the second one said, while a reviewer reading the first one approved something
+  else; the same held for two `endpoint:` in a target file, two keys in a fleet, labels or
+  policy-pack file, and two keys in a spec. `safe_yaml.SafeValueLoader`, which every loader
+  uses, now refuses it with a fixed message and both positions (`found a key written twice in
+  one mapping, first at line 5, column 5 and again at line 11, column 5`), quoting neither the
+  key nor the value. In `dottore lint` it is a `PARSE_ERROR`. Keys pulled in by a `<<` merge
+  are not duplicates and can still be overridden, wherever the merged map is anchored; a map
+  merged in is checked as well (an inline `<<: {endpoints: [a], endpoints: [b]}` was the
+  pre-commit audit's way past the first version), and two `<<` in one mapping are refused
+  (merge several maps with one list, `<<: [*a, *b]`). Keys equal once built (`true` and `True`,
+  `1` and `1.0`, `~` and `null`) are one key, as in the dict PyYAML returns, and a `!!set` that
+  names one member twice is refused too. The in-repo signature pack goes through the same
+  loader now (it called `yaml.safe_load` directly) and its YAML error no longer quotes the
+  line. No YAML file in the repository repeats a key or merges twice, and a test keeps it so
+  (`tests/test_yaml_duplicate_keys.py`).
+
 ### Added (the scope a run went out under)
 
 - **A run records which authorization record it ran under** (threat model S4, audit D-17).
