@@ -3,6 +3,13 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-05 (late night): PR #40 merged; the date shape tightened
+
+- PR #40 (fingerprint attribution and the audit follow-ups) squash-merged as `7496237` after
+  green CI and a pre-merge audit; its low finding (part of a card glued before a date stays
+  readable) is fixed on `fix/date-shape-tightening`, with the `pii_detector` evaluator now
+  sharing the redactor's date shape (`tests/test_date_shape_tightening.py`).
+
 ## State, 2026-10-05 (night): PRs #37 to #39 merged; fingerprint attribution fixed
 
 - PR #37 (F11) squash-merged as `03c6d45`, PR #38 (hygiene after the audit: spend on interrupt,

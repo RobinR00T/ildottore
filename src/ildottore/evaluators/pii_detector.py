@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 
 from ildottore.evaluators.base import BaseEvaluator, mask_value, shannon_entropy
+from ildottore.redactor import glued_to_identifier, is_date_stamp
 from ildottore.shared.enums import EvaluatorType
 from ildottore.shared.models import EvalContext, Verdict
 
@@ -97,7 +98,9 @@ def _detect(text: str) -> list[PIIHit]:
 
     for m in _CARD_RE.finditer(text):
         digits = re.sub(r"\D", "", m.group(0))
-        if luhn_ok(digits):
+        # A dashed date-time has a card's length and passes Luhn 6 seconds values in 60.
+        stamp = is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start()))
+        if luhn_ok(digits) and not stamp:
             hits.append(PIIHit("card", m.group(0)))
 
     for m in _IBAN_RE.finditer(text):
@@ -129,6 +132,17 @@ def _detect_phones(text: str, hits: list[PIIHit]) -> None:
         # A pure dotted-quad is an IP, already captured.
         if _IPV4_RE.fullmatch(raw.strip()):
             continue
+        # A date, a dated model name or a run id is not a number to call: a reply quoting
+        # `claude-sonnet-4-5-20250929` was a phone hit and turned a clean PASS into needs-review.
+        if is_date_stamp(raw, after_identifier=glued_to_identifier(text, m.start())):
+            continue
+        # This pattern may start on a digit glued to a letter (`o3-2025-04-16`, `v3-20241226`),
+        # where the redactor's starts after it: drop that first version segment and check the
+        # rest as a dated identifier, so the evaluator and the reports agree (delta audit).
+        if m.start() and text[m.start() - 1].isalpha():
+            rest = re.sub(r"^(?:0|[1-9]\d?)[.-]", "", raw)
+            if rest != raw and is_date_stamp(rest, after_identifier=True):
+                continue
         hits.append(PIIHit("phone", raw))
 
 
