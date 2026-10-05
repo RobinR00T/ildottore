@@ -23,16 +23,22 @@ versioning: [SemVer](https://semver.org/).
   exemption: a reply quoting `claude-sonnet-4-5-20250929` or `gpt-4.1-2025-04-14` was a phone
   hit, a dashed date-time was a card or a phone hit every time, and every `YYYY-MM-DD HH:MM`
   was a phone hit, so a clean PASS became needs-review. It now uses the redactor's date shape
-  (`redactor.is_date_stamp`, `redactor.glued_to_identifier`), the same rule the reports use;
+  (`redactor.is_date_stamp`, `redactor.glued_to_identifier`), the same date rule the reports use;
   where its phone pattern starts on the digit glued to a letter (`o3-2025-04-16`,
   `deepseek-v3-20241226`), it drops that segment and checks the rest. Real cards and phone
   numbers are still detected, the Dutch form included, glued to a word or not.
-- Known, not fixed (older than this block): the card rule runs before the phone rule and can
-  split a contrived run (a dotted phone sandwiched between two dates); a sentence-final period
-  after a dated name (`gpt-4.1-2025-04-14.`) or a parenthesis after it still lets the phone
-  rule take it; the redactor never masks a phone glued behind `.`, `_` or a letter
-  (`Tel.555-123-4567`); a microsecond fraction (`13:20:51.123456`) reads as a phone.
-- Tests: `tests/test_date_shape_tightening.py`.
+- Known, not fixed (older than this block unless marked): the card rule runs before the phone
+  rule and can split a contrived run (a dotted phone sandwiched between two dates); a
+  sentence-final period after a name ending in a dashed date (`gpt-4.1-2025-04-14.`), or a
+  number in parentheses after it (`gpt-4.1-2025-04-14 (2)`), lets the phone rule take it; the
+  redactor never masks a phone glued behind `.`, `_` or a letter (`Tel.555-123-4567`), and its
+  phone and the evaluator's phone patterns differ there; a microsecond fraction
+  (`13:20:51.123456`) reads as a phone. New with this block, narrow: an international number
+  written without `+`, glued to a word, whose subscriber part reads as a date
+  (`tel-49-30-20120512`) is exempt in the evaluator as in the redactor.
+- Tests: `tests/test_date_shape_tightening.py`, with the bounds the pre-merge audit of #41 found
+  untested (a 4-digit first segment, inner segments, a clock after a range, the card rule's
+  identifier glue).
 
 ### Fixed (follow-ups of the #39 audit, and a redactor false positive)
 
@@ -1340,7 +1346,8 @@ Both corrections are below, and so is the number the first round got wrong.
   timestamp survived: the `T` and the colons break the pattern, so only bare dates and dated
   names were hit.) Same remedy as the entropy fallback above, exempt **by shape**: a match
   is spared only when the whole of it is a calendar-valid date stamp (`YYYY-MM-DD` or
-  `YYYYMMDD`), optionally preceded by up to three short version segments (`4-1-`, `4.1-`)
+  `YYYYMMDD`), optionally preceded by up to three short version segments (`4-1-`, `4.1-`;
+  narrowed on 2026-10-05, see "the date-stamp exemption, tightened and shared" above)
   and followed by at most one `HH`/`HHMM`/`HHMMSS` clock. The same bound applies as for ids:
   no segment can carry a number, so `20250805-600123456789` is still masked whole, and real
   numbers keep their mask in every notation (`+34 600 123 456`, `+1 (555) 123-4567`,
