@@ -5,6 +5,32 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (follow-ups of the #39 audit, and a redactor false positive)
+
+- **The operator's files quoted a value YAML could not build.** `auth_ref: !!int <value>` in a
+  scope printed `invalid literal for int() with base 10: '<value>'`, and the target, fleet,
+  labels and policy-pack loaders did the same, against what their error helpers promise. The
+  spec loader's handling moved to a leaf module, `safe_yaml`, used by all six loaders: such a
+  value is a YAML error with a fixed message and its position. The policy-pack loader also
+  quoted the offending line and pydantic's input value; it now gives reason, position and field
+  like the others. The labels loader no longer quotes an invalid verdict, and YAML nested
+  thousands of levels deep is an error in all six loaders instead of a `RecursionError`.
+- **Spec files are read in blocking mode after the checks** (a mount answering "try again" to a
+  non-blocking descriptor would have given a short or empty read), opened in binary mode where
+  the platform distinguishes it, and a spec `id` longer than 128 characters is no longer
+  attached to every error (a 1 MB id printed 21 MB). The size refusal reads "document is too
+  large", since it also applies to a flat file with no aliases.
+- **A dashed date-time stamp was masked as a phone number.** A directory or id stamped
+  `2026-07-09-13-20-51` lost its clock to the phone rule, because the date exemption admitted a
+  clock only as `HHMMSS`; in a CLI error that also cost the existing path the readability
+  `docs/MANUAL.md` promises, since the masked token no longer existed on disk. The clock may now
+  join its parts with `-` or `:`; a digit run behind a date is still masked. The card rule
+  (Luhn) masked 6 seconds values in 60 of such a stamp; the same date shape exempts it there.
+  Still open (already on main): a dashed phone number glued in front of a date stays readable
+  (`415-555-0142-2026-09-20`), because the version prefix the date shape admits can hold it.
+- Tests: `tests/test_audit_last_lows.py` (pre-merge audit of #39 section),
+  `tests/policy/test_redactor.py`, `tests/test_audit_leftovers.py`.
+
 ### Fixed (fingerprint attribution)
 
 The fingerprint still named a model with no signal from it. Measured on main before the fix
@@ -52,7 +78,7 @@ the fix added findings that only show through the real adapters, fixed here too.
 - **Correction to the R16 entry below.** It says the constant mock was `meta-llama` at 0.67 "from
   `finish_reason=stop`". It was not: measured on 2026-10-05, a constant target that sends no
   `finish_reason` is also `meta-llama`, `llama-3-8b`, at 0.67, from the statistical centroid
-  (0.81 of its evidence mass) and the declared `tools: false`. The R16 fix
+  (0.81 of its 1.01 of evidence mass, 80%) and the declared `tools: false`. The R16 fix
   (`non_discriminating_target`) stands; the stated cause was wrong.
 - **Left open (the owner's call).** The statistical centroids are coarse: short, distinct replies
   land near `meta-llama` and can outvote a real `model=` name (a gpt-4o or a Claude answering in
@@ -64,6 +90,7 @@ the fix added findings that only show through the real adapters, fixed here too.
   moves from 0.677419 to 0.808219 (no `finish_reason` hit for `meta-llama`, no capability mass).
   The `docs/10 §2` example is regenerated: it loses its two statistical lines and its capability
   lines show weight 0.
+
 ### Fixed (the last open findings of the 2026-10-03 audit)
 
 - **A refusal could still score as exploited through a channel the echo lint did not read**
@@ -91,8 +118,9 @@ the fix added findings that only show through the real adapters, fixed here too.
   an integer past Python's digit limit) is one `PARSE_ERROR` instead of a traceback, pydantic
   errors in suites and packs name field and reason without the value, at most 20 schema errors
   are listed per file and each JSON-schema message is cut at 300 characters. The file is opened
-  without following a link and without blocking, and checked again once open. Scope, target, fleet and calibration label files are the operator's
-  own and keep the plain safe loader.
+  without following a link and without blocking, and checked again once open. Scope, target,
+  fleet and calibration label files are the operator's own and are not capped (they share the
+  handling of values YAML cannot build, see the follow-ups above).
 - **The run store was world-readable while every attempt file is 0600** (SEC-10, the
   permissions half; the symlink half was fixed in the secrets and evidence block). A run store
   the tool creates is now 0600, through a symlink too (SQLite gives its `-wal` and `-shm` files

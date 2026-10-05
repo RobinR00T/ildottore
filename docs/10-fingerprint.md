@@ -208,7 +208,11 @@ answering in short sentences, with its model name in the envelope, was `meta-lla
 the statistical layer outranks what a target says about itself, so whether a `model=` name
 should win over it is the owner's call. The envelope cap is a cliff: one more weak hit from
 another layer (a generic refusal phrase several families share) lifts a family named by its
-envelope above 0.4. A capability weight in a custom pack is ignored.
+envelope above 0.4, and a family named only by what the model says about itself ("I am Claude,
+made by Anthropic") is not capped (0.52), although that is the weakest channel. A target that
+answers two of the three statistical probes alike switches the statistical layer off, so a
+self-report it would have contradicted raises no spoofing flag. A capability weight in a custom
+pack is ignored.
 
 Within a family, the shipped pack's versions share every signal except the behavioral
 fragments, so a version is named only from what the model says about itself (for example

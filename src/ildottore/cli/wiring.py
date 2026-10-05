@@ -1003,8 +1003,10 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
 
     import yaml
 
+    from ildottore import safe_yaml
+
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = safe_yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise ValueError(f"target file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):

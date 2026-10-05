@@ -39,7 +39,8 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   present**; in u02's own tests it runs against a stub evaluator table (u06 not yet built in W1).
 
 ## §4 Known constraints: KEEP / DECIDE
-- KEEP: load path = parse (`yaml.safe_load`) → schema-validate → model-construct → register.
+- KEEP: load path = parse (PyYAML's safe loader, through `ildottore.safe_yaml`) →
+  schema-validate → model-construct → register.
   (Since 2026-10-05, audit SEC-09: only a regular file that resolves inside its pack directory,
   at most 1 MiB, is read; a document that expands, counting every alias where it is used, past
   100,000 nodes (a text counts one node per 64 characters) or holds a recursive alias is a

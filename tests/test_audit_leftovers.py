@@ -840,6 +840,17 @@ def test_the_cli_closes_the_run_store_it_opened(
 # --- hygiene block: CLI errors keep the operator's own paths readable -------------------------
 
 
+def test_a_cli_error_keeps_an_existing_dated_directory_readable(tmp_path: Path) -> None:
+    """The phone rule read the dashed clock of `...-2026-07-09-13-20-51-...` as a number; the
+    masked token no longer existed on disk, so the whole path went to the entropy rule."""
+
+    from ildottore.cli.app import _masked
+
+    stamped = tmp_path / "export-2026-07-09-13-20-51-ff1bc959c022456f8cd065c7172c9e98"
+    stamped.mkdir()
+    assert str(stamped) in _masked(ValueError(f"{stamped}/r.json is not a directory"))
+
+
 def test_a_cli_error_keeps_an_existing_path_readable(tmp_path: Path) -> None:
     """A temp or CI workspace path read `«REDACTED:high_entropy»` in the report-path errors."""
 

@@ -18,6 +18,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   only. Two pre-commit audit rounds found the last four through the real adapters. The R16
   entry of the CHANGELOG named the wrong cause (corrected there). Left for Daniel: whether a
   `model=` name should outrank the statistical layer (short replies land near `meta-llama`).
+- On the same branch, the follow-ups of the #39 pre-merge audit (the operator's files no longer
+  quote a value YAML cannot build: a shared `safe_yaml` loader; spec reads in blocking mode; long
+  ids not attached) and a redactor fix (a dashed date-time stamp is not a phone number).
 
 ## State, 2026-10-05 (night): the last non-decision findings of the 2026-10-03 audit
 

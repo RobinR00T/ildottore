@@ -103,6 +103,20 @@ def _inline_media_assets(data: dict[str, object], spec_dir: Path) -> None:
             )
 
 
+def _short_id(data: dict[str, object]) -> str | None:
+    """The spec's ``id`` to attach to its findings, when it is a plausible id.
+
+    Attached to every schema error, a 1 MB id printed 21 MB for one spec (pre-merge audit of
+    #39); a real id is short.
+    """
+
+    value = data.get("id")
+    return value if isinstance(value, str) and len(value) <= _MAX_ID_CHARS else None
+
+
+_MAX_ID_CHARS = 128
+
+
 def _problems(exc: PydanticValidationError) -> str:
     """Field and reason per error, no input value, at most 20 (the rest counted).
 
@@ -155,7 +169,7 @@ def _load_attack_spec(
 
     schema_errors = validate_attack_spec_schema(data)
     if schema_errors:
-        spec_id = data.get("id") if isinstance(data.get("id"), str) else None
+        spec_id = _short_id(data)
         return None, [
             LintError(code=LintCode.SCHEMA, message=msg, path=rel, spec_id=spec_id)
             for msg in schema_errors
@@ -166,7 +180,7 @@ def _load_attack_spec(
     try:
         _inline_media_assets(data, path.parent)
     except _AssetError as exc:
-        spec_id = data.get("id") if isinstance(data.get("id"), str) else None
+        spec_id = _short_id(data)
         return None, [
             LintError(code=LintCode.ASSET_ERROR, message=str(exc), path=rel, spec_id=spec_id)
         ]
@@ -176,7 +190,7 @@ def _load_attack_spec(
     try:
         spec = AttackSpec.model_validate(data)
     except PydanticValidationError as exc:
-        spec_id = data.get("id") if isinstance(data.get("id"), str) else None
+        spec_id = _short_id(data)
         return None, [
             LintError(code=LintCode.SCHEMA, message=_problems(exc), path=rel, spec_id=spec_id)
         ]

@@ -720,7 +720,8 @@ resolves to bytes at load time behind a path-traversal guard (no absolute path, 
 under the spec directory). It runs only against a target that declares the `audio` capability (a
 speech-in model), and the OpenAI adapter sends it as an `input_audio` block. The carrier bytes are
 elided from evidence (the `asset` reference and `media_sha256` digest are kept), so a large clip
-does not bloat the record.
+does not bloat the record. An asset file may be up to 25 MiB; a carrier inlined as `data_b64`
+counts toward the 1 MiB limit of the spec file itself.
 
 ```yaml
 attack:

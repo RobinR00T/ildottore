@@ -53,7 +53,8 @@ shared       dependency-free models, protocols, enums (imported by everyone)
 - `core` depends on **interfaces**, never concretes. Concretes are injected at the composition
   root, `cli` (`cli/wiring.py`).
 - The peer packages (`reporting`, `store`, `fingerprint`, `mutators`, `registry`, `scoring`)
-  import `shared` (and, for `reporting` and `store`, the leaf module `redactor`), not each
+  import `shared` (and, for `reporting` and `store`, the leaf module `redactor`; for
+  `registry`, the leaf module `safe_yaml`), not each
   other, and not `core`/`cli`. The `.importlinter` independence contract covers exactly these
   six. `testing`
   (the golden harness) is in no contract and imports `adapters.mock` for `MockTarget`, so it is

@@ -152,7 +152,7 @@ def test_an_alias_bomb_is_one_short_finding(tmp_path: Path) -> None:
     assert len(bomb) < 4096
     report = lint([_pack_with(tmp_path, bomb)])
     assert [e.code for e in report.errors] == [LintCode.PARSE_ERROR]
-    assert "too large once every alias is expanded" in report.errors[0].message
+    assert "document is too large" in report.errors[0].message
     assert sum(len(e.message) for e in report.errors) < 500
 
 
@@ -164,16 +164,17 @@ def test_a_recursive_alias_is_refused(tmp_path: Path) -> None:
 def test_an_oversized_spec_file_is_refused_unread(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from ildottore.registry import schema
     from ildottore.registry.schema import MAX_YAML_BYTES
 
     pack = _pack_with(tmp_path, "#" * (MAX_YAML_BYTES + 1) + "\n")
-    real_open = Path.open
+    real_open = schema.os.open
 
-    def guarded(self: Path, *args: object, **kwargs: object) -> object:
-        assert self.name != "X.yaml", "the oversized spec was opened"
-        return real_open(self, *args, **kwargs)  # type: ignore[call-overload]
+    def guarded(path: object, *args: object, **kwargs: object) -> int:
+        assert not str(path).endswith("X.yaml"), "the oversized spec was opened"
+        return real_open(path, *args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(Path, "open", guarded)
+    monkeypatch.setattr(schema.os, "open", guarded)
     report = lint([pack])
     assert any("-byte cap" in e.message for e in report.errors)
 
@@ -406,3 +407,156 @@ def test_a_new_report_is_readable_by_its_owner_only(tmp_path: Path) -> None:
     os.chmod(report, 0o644)
     _write_atomically(report, b"{}")
     assert stat.S_IMODE(report.stat().st_mode) == 0o644, "an existing report keeps its mode"
+
+
+# --- pre-merge audit of #39 ----------------------------------------------------------------
+
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+def _open_descriptors() -> int:
+    return len(os.listdir("/dev/fd"))
+
+
+def test_a_spec_linked_and_named_directly_loads_clean(tmp_path: Path) -> None:
+    """Opening the unresolved path with O_NOFOLLOW would refuse every such link (ELOOP)."""
+
+    from ildottore.registry import load_path
+
+    real = tmp_path / "PI-DIRECT-001.yaml"
+    real.write_text((REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text())
+    link = tmp_path / "link.yaml"
+    link.symlink_to(real)
+    result = load_path(link)
+    assert result.errors == []
+    assert [s.id for p in result.packs for s in p.specs] == ["PI-DIRECT-001"]
+
+
+def test_a_file_swapped_for_a_pipe_after_the_checks_is_refused_without_a_leak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ildottore.registry import schema
+    from ildottore.registry.schema import SafeLoadError, load_yaml_file
+
+    spec = tmp_path / "s.yaml"
+    spec.write_text("id: X\n")
+    fifo = tmp_path / "p"
+    os.mkfifo(fifo)
+    as_pipe = os.stat(fifo)
+    monkeypatch.setattr(schema.os, "fstat", lambda _fd: as_pipe)
+    before = _open_descriptors()
+    with pytest.raises(SafeLoadError, match="not a regular file"):
+        load_yaml_file(spec)
+    assert _open_descriptors() == before
+
+
+def test_a_link_swapped_in_after_resolution_is_not_followed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ildottore.registry.schema import SafeLoadError, load_yaml_file
+
+    target = tmp_path / "t.yaml"
+    target.write_text("id: X\n")
+    link = tmp_path / "l.yaml"
+    link.symlink_to(target)
+    # As if the path were swapped for a link between `resolve` and `open`.
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: self)
+    before = _open_descriptors()
+    with pytest.raises(SafeLoadError, match="cannot read the file"):
+        load_yaml_file(link)
+    assert _open_descriptors() == before
+
+
+def test_an_oversized_id_is_not_attached_to_every_error(tmp_path: Path) -> None:
+    report = lint([_pack_with(tmp_path, f"id: {'X' * 500}\nname: 1\n")])
+    assert report.errors and all(e.spec_id is None for e in report.errors)
+
+
+def test_the_operators_files_quote_no_value_yaml_cannot_build(tmp_path: Path) -> None:
+    """`!!int <value>` printed `invalid literal for int() with base 10: '<value>'`."""
+
+    from ildottore.cli import wiring
+    from ildottore.cli.calibrate import load_labels
+    from ildottore.cli.fleet import load_fleet
+    from ildottore.policy.packs import load_pack
+    from ildottore.policy.scope import load_scope
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("id: !!int sk-quoted-secret\n")
+    for loader in (load_scope, wiring.load_target, load_fleet, load_labels, load_pack):
+        with pytest.raises(Exception) as caught:
+            loader(bad)
+        assert "sk-quoted-secret" not in str(caught.value), loader.__name__
+        assert "cannot build this value" in str(caught.value), loader.__name__
+
+
+# --- final audit of the fingerprint PR ---------------------------------------------------
+
+
+def test_a_spec_loads_where_set_blocking_does_not_exist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows has no O_NONBLOCK and no set_blocking for files: the call is skipped there."""
+
+    from ildottore.registry import schema
+
+    spec = tmp_path / "s.yaml"
+    spec.write_text("id: X\n")
+    monkeypatch.delattr(schema.os, "O_NONBLOCK", raising=False)
+    monkeypatch.delattr(schema.os, "set_blocking", raising=False)
+    assert schema.load_yaml_file(spec) == {"id": "X"}
+
+
+def test_the_read_itself_is_blocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ildottore.registry import schema
+
+    spec = tmp_path / "s.yaml"
+    spec.write_text("id: X\n")
+    seen: list[bool] = []
+    real_fdopen = schema.os.fdopen
+
+    def watch(descriptor: int, *args: object, **kwargs: object) -> object:
+        seen.append(os.get_blocking(descriptor))
+        return real_fdopen(descriptor, *args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(schema.os, "fdopen", watch)
+    schema.load_yaml_file(spec)
+    assert seen == [True]
+
+
+def test_every_loader_handles_deep_nesting_and_bad_bools() -> None:
+    """Both are YAML errors that `yaml_problem` (what every loader prints) renders without the
+    value; `str()` of a PyYAML error still quotes the line, which is why no loader uses it."""
+
+    import yaml
+
+    from ildottore.safe_yaml import safe_load
+    from ildottore.shared.config_errors import yaml_problem
+
+    for text, reason in [
+        ("a: " + "[" * 20000 + "]" * 20000, "nested too deeply"),
+        ("a: !!bool maybe", "cannot build this value"),
+    ]:
+        with pytest.raises(yaml.YAMLError) as caught:
+            safe_load(text)
+        shown = yaml_problem(caught.value)
+        assert reason in shown and "maybe" not in shown
+
+
+def test_the_labels_and_policy_pack_errors_quote_no_value(tmp_path: Path) -> None:
+    from ildottore.cli.calibrate import load_labels
+    from ildottore.policy.packs import load_pack
+
+    labels = tmp_path / "labels.yaml"
+    labels.write_text("PI-DIRECT-001: sk-quoted-verdict\n")
+    with pytest.raises(ValueError) as caught:
+        load_labels(labels)
+    assert "sk-quoted-verdict" not in str(caught.value)
+
+    pack = tmp_path / "pack.yaml"
+    pack.write_text("name: p\nenabled_capabilities: sk-quoted-capability\n")
+    with pytest.raises(Exception) as caught_pack:
+        load_pack(pack)
+    assert "sk-quoted-capability" not in str(caught_pack.value)
+    assert "enabled_capabilities" in str(caught_pack.value)

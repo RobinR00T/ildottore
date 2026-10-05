@@ -52,6 +52,7 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ildottore import safe_yaml
 from ildottore.cli.wiring import shown_auth_ref
 from ildottore.shared.config_errors import validation_problems, yaml_problem
 from ildottore.shared.models import Target
@@ -150,7 +151,7 @@ def load_fleet(path: str | Path) -> FleetConfig:
     # was echoed back by pydantic, and a YAML error escaped as a traceback with exit 1, the code
     # for "findings below the threshold" (fifth audit of the residuals).
     try:
-        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        raw = safe_yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise ValueError(f"fleet file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):

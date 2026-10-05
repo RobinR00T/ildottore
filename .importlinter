@@ -16,7 +16,7 @@
 # The peer packages that need only `shared` (reporting, store, fingerprint, mutators,
 # registry, scoring) sit in their own independent band above `policy` - none of them import
 # each other, and none import core/cli. `testing` (the offline golden harness) imports
-# `adapters.mock` and is in no contract. `config` and `redactor` are leaf
+# `adapters.mock` and is in no contract. `config`, `redactor` and `safe_yaml` are leaf
 # top-level modules with no in-repo imports; they live in the shared band.
 #
 # Two edges below are load-bearing and documented, NOT accidents:

@@ -21,6 +21,7 @@ from pathlib import Path
 
 import yaml
 
+from ildottore import safe_yaml
 from ildottore.cli.diff import load_findings
 from ildottore.shared.config_errors import yaml_problem
 from ildottore.shared.enums import VerdictStatus
@@ -39,7 +40,7 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
     """Load an operator labels file (``spec_id -> pass|fail|inconclusive``, YAML or JSON)."""
 
     try:
-        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        raw = safe_yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:  # was a traceback and exit 1, "findings below the threshold"
         raise ValueError(f"labels file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
@@ -49,8 +50,9 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
         try:
             labels[str(spec_id)] = VerdictStatus(str(verdict).strip().lower())
         except ValueError as exc:
+            # The spec id is the location; the value is not quoted (the other loaders' rule).
             raise ValueError(
-                f"labels file {path}: spec {spec_id!r} has invalid verdict {verdict!r}; "
+                f"labels file {path}: spec {spec_id!r} has an invalid verdict; "
                 f"expected one of {', '.join(v.value for v in VerdictStatus)}"
             ) from exc
     return labels
