@@ -104,6 +104,9 @@ async def test_real_pii_is_still_detected(pii: str) -> None:
         ("build-1234-20260920", "1234"),  # a 3- or 4-digit first segment is no version
         ("tel-1-555-0142-2026-09-20", "555"),  # nor an inner one
         ("2026-09-01-2026-09-30-10", "2026-09-30"),  # a clock after a range is not admitted
+        ("build-123-20260920", "123"),  # a 3-digit first segment
+        ("id-1-555-2026-09-20", "555"),  # a 3-digit inner segment
+        ("x.4-1-20250805-143003", "20250805"),  # the card rule needs the glue: a dot is not
     ],
 )
 def test_bounds_of_the_shape_are_masked(text: str, vanishes: str) -> None:
