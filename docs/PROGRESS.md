@@ -3,6 +3,15 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-05 (afternoon): PRs #41 and #42 merged; labelled numbers
+
+- PR #41 (date shape tightened and shared with `pii_detector`) and PR #42 (its tests and
+  wording) squash-merged as `3f738a8` and `b214b9b`. A phone or card number glued to its own
+  label (`Tel.555-123-4567`, `card_4111111111111111`) is masked on
+  `fix/redactor-labelled-pii` (`tests/test_labelled_numbers.py`).
+- Stopped by a safety classifier at 14:11 while starting the argument-value oracle from the
+  CounterSteer paper; logged, not retried, left to Daniel.
+
 ## State, 2026-10-05 (late night): PR #40 merged; the date shape tightened
 
 - PR #40 (fingerprint attribution and the audit follow-ups) squash-merged as `7496237` after

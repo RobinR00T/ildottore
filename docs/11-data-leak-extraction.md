@@ -68,7 +68,8 @@ format-valid hit is **not** proof of a real leak. Scoring rules:
   `pii_detector` uses the redactor's date shape, so the evaluator and the reports apply the
   same date rule (their phone patterns still differ at the edges, listed as known in the
   CHANGELOG). A version prefix before the date counts only behind an identifier, so a number
-  written like a prefix and a date (`06-20120512`) is still a phone.
+  written like a prefix and a date (`06-20120512`) is still a phone, and so is a prefixed date
+  right after a phone label (`tel-49-30-20120512`); a plain date after a label is still a date.
 - `logprob_membership` results are **statistical**: reported with the score and threshold,
   framed as "likely memorized", never as certainty.
 

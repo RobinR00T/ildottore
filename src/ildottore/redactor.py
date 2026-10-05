@@ -80,6 +80,31 @@ _LABELED_SECRET: Final = re.compile(
     rf"(?!{_LABEL_WORDS}(?:{_LABEL_SEP}|$))([^\s\"'`,;)\x00]{{6,}})"
 )
 
+# --- phone and card numbers glued to their own label ------------------------------------
+# The phone and card patterns refuse to start inside a word (``(?<![\w.])``, ``\b``), so that
+# version strings, numeric ids and digests are not masked as numbers. That also let a number glued
+# to its own label through: ``Tel.555-123-4567``, ``tel_4155550142``, ``card_4111111111111111``. The
+# label decides it: right after a phone or card word (not inside a longer word), a digit run is
+# masked whatever glues it. The label has to start a word (not after a letter, a digit or ``_``:
+# a label in the middle of an opaque token would cut a number out of it and leave the rest
+# readable, where the entropy rule masks the whole token). A mask's own type name is no label:
+# earlier masks are set aside before the patterns run, and a mask holds no digit run. An
+# unlabelled run glued to a word (``user_4155550142``) is still left alone: by shape it is an
+# id as often as a number.
+_LABEL_TAIL: Final = r"(?:[\s._:=#-]{0,3}(?:no|nr|num|number)\.?)?[\s._:=#-]{0,3}"
+_PHONE_WORDS: Final = (
+    r"(?:tel|telf|tlf|tfno|phone|mobile|mob|movil|móvil|cell|fax|telefono|teléfono)"
+)
+LABELLED_PHONE: Final = re.compile(
+    rf"(?i)(?<!\w){_PHONE_WORDS}{_LABEL_TAIL}(\+?\d[\d\s().-]{{7,}}\d)(?!\d)"
+)
+# The same label, ending right where a phone match starts (``follows_phone_label``).
+_PHONE_LABEL_BEFORE: Final = re.compile(rf"(?i)(?<!\w){_PHONE_WORDS}{_LABEL_TAIL}\Z")
+LABELLED_CARD: Final = re.compile(
+    r"(?i)(?<!\w)(?:card|cc|pan|visa|mastercard|amex|tarjeta)"
+    rf"{_LABEL_TAIL}((?:\d[ -]?){{12,18}}\d)(?!\d)"
+)
+
 # --- credentials the tool itself has read ----------------------------------------------
 # The shape detectors above guess. A credential this process resolved (an API key read from
 # ``env://``, a password in an endpoint URL) does not need guessing: it is masked by VALUE,
@@ -245,6 +270,16 @@ def is_date_stamp(text: str, *, after_identifier: bool = False) -> bool:
     if _DATE_STAMP.fullmatch(core):
         return True
     return after_identifier and _DATE_SHAPED.fullmatch(core) is not None
+
+
+def follows_phone_label(text: str, start: int) -> bool:
+    """True if the text right before ``start`` is a phone label (``tel-``, ``Phone number: ``).
+
+    A prefixed date right after a label is a number, not a dated id: the ``pii_detector`` uses this
+    to keep a date-shaped one (``tel-49-30-20120512``) a phone hit, as the redactor masks it.
+    """
+
+    return _PHONE_LABEL_BEFORE.search(text[max(0, start - 40) : start]) is not None
 
 
 def glued_to_identifier(text: str, start: int) -> bool:
@@ -432,11 +467,15 @@ class Redactor:
         )
 
         for pattern in self._patterns:
+            # A labelled number first, whole: the plain pattern would take its unglued tail and
+            # leave the head (`fax.0034-` before a masked `600-123456`).
             if pattern.type == "card":
+                working = self._redact_labelled_number(pattern, LABELLED_CARD, working)
                 working = self._redact_cards(pattern, working)
             elif pattern.type == "pem_private_key":
                 working = self._redact_pem(pattern, working)
             elif pattern.type == "phone":
+                working = self._redact_labelled_number(pattern, LABELLED_PHONE, working)
                 working = self._redact_phones(pattern, working)
             else:
                 working = pattern.regex.sub(self._make_sub(pattern), working)
@@ -483,6 +522,29 @@ class Redactor:
             return whole[:start] + masked + whole[end:]
 
         return _LABELED_SECRET.sub(_sub, text)
+
+    def _redact_labelled_number(
+        self, pattern: Pattern, labelled: re.Pattern[str], text: str
+    ) -> str:
+        """Mask the number glued to a phone or card label (the number only, not the label).
+
+        Runs with the matching detector, so a redactor built without it does not grow it. A
+        card still has to pass Luhn, and a plain date stamp is still not a number; the version
+        prefix a date may carry behind an identifier is not admitted after a label
+        (``tel-49-30-20120512`` is a phone), as ``pii_detector`` reads it.
+        """
+
+        def _sub(m: re.Match[str]) -> str:
+            number = m.group(1)
+            if is_date_stamp(number):
+                return m.group(0)
+            if pattern.type == "card" and not _luhn_ok(re.sub(r"\D", "", number)):
+                return m.group(0)
+            start, end = m.start(1) - m.start(0), m.end(1) - m.start(0)
+            whole = m.group(0)
+            return whole[:start] + self._mask_token(pattern, number) + whole[end:]
+
+        return labelled.sub(_sub, text)
 
     def _redact_cards(self, pattern: Pattern, text: str) -> str:
         """Card matcher with a Luhn guard to cut valid-shape false positives."""

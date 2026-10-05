@@ -5,6 +5,40 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a phone or card number glued to its own label)
+
+- **`Tel.555-123-4567`, `tel_4155550142` and `card_4111111111111111` reached the reports in
+  clear.** The redactor's phone and card patterns refuse to start inside a word (so that version
+  strings, numeric ids and digests stay readable), which also let a number glued to its own label
+  through. The label now decides it: right after a phone word (`tel`, `phone`, `mobile`, `fax`,
+  `tfno`, `móvil`, `teléfono`...) or a card word (`card`, `cc`, `pan`, `visa`, `tarjeta`...),
+  optionally with `no`/`number`, a digit run is masked whatever glues it, whole
+  (`fax.0034-600-123456` used to keep `0034-`). A card still has to pass Luhn and a plain date
+  after a label is still a date; the version prefix a date may carry behind an identifier is not
+  admitted after a label, so `tel-49-30-20120512` is a phone. The label has to start a word:
+  inside a longer word (`hotel_`, `telemetry_`) or after a digit or `_` (`x1tel_`, the middle of
+  an opaque token, and so a snake_case field: `user_phone_4155550142`, `credit_card_4111...` stay
+  readable, as on main) it is no label, so the rule does not cut a number out of a run of word
+  characters; after `-`, `+`, `/` or `=` inside a token it still can (about 3 UUIDs in a million),
+  as the plain phone rule already does far more often. An unlabelled run glued to a word stays
+  readable: by shape it is an id (`user_4155550142`, `run_123456789`) as often as a number. The
+  rule runs with its detector, so a redactor built without the phone or card pattern does not gain
+  it. What it also masks, as the price of trusting the label: an epoch or a version after one
+  (`cell_1700000000`, `phone_2.10.123456`), the digit of a numbered field (`tel1 4155550142`), and
+  a dated id after one (`mobile-1-20250805`); a card number after a phone label is masked as a
+  phone.
+- **The `pii_detector` evaluator agrees.** It keeps a prefixed date after a phone label a phone
+  hit (`redactor.follows_phone_label`) and finds a card glued to its label
+  (`redactor.LABELLED_CARD`), counting that occurrence once and every other copy of the number
+  as its own hit, so a canary written twice still corroborates.
+- Checked against every tracked line of the repo, old and new: the redactor changes only the
+  examples this section and the previous ones add (`tel.06-20120512` and `tel06-20120512` in
+  their tests are now masked) and keeps one space it used to swallow after a masked card; the
+  evaluator gains hits only on those examples.
+- Tests: `tests/test_labelled_numbers.py`, and three bound cases from the pre-merge audit of
+  #42 in `tests/test_date_shape_tightening.py` (a 3-digit first or inner segment, the card
+  rule's glue).
+
 ### Fixed (the date-stamp exemption, tightened and shared)
 
 - **A number in front of a date stayed readable.** The date shape admitted up to three version
@@ -27,15 +61,15 @@ versioning: [SemVer](https://semver.org/).
   where its phone pattern starts on the digit glued to a letter (`o3-2025-04-16`,
   `deepseek-v3-20241226`), it drops that segment and checks the rest. Real cards and phone
   numbers are still detected, the Dutch form included, glued to a word or not.
-- Known, not fixed (older than this block unless marked): the card rule runs before the phone
-  rule and can split a contrived run (a dotted phone sandwiched between two dates); a
-  sentence-final period after a name ending in a dashed date (`gpt-4.1-2025-04-14.`), or a
-  number in parentheses after it (`gpt-4.1-2025-04-14 (2)`), lets the phone rule take it; the
-  redactor never masks a phone glued behind `.`, `_` or a letter (`Tel.555-123-4567`), and its
-  phone and the evaluator's phone patterns differ there; a microsecond fraction
-  (`13:20:51.123456`) reads as a phone. New with this block, narrow: an international number
-  written without `+`, glued to a word, whose subscriber part reads as a date
-  (`tel-49-30-20120512`) is exempt in the evaluator as in the redactor.
+- Known, not fixed (older than this block): the card rule runs before the phone rule and can
+  split a contrived run (a dotted phone sandwiched between two dates); a sentence-final
+  period after a name ending in a dashed date (`gpt-4.1-2025-04-14.`) lets
+  the redactor's phone rule take the name (the evaluator's does not), a number in parentheses
+  after it (`gpt-4.1-2025-04-14 (2)`) is a phone to both, and a microsecond fraction
+  (`13:20:51.123456`) reads as a phone to the redactor. A number glued to its own label
+  (`Tel.555-123-4567`, `tel-49-30-20120512`) was a further case, closed in the next section; an
+  unlabelled number glued to a word stays readable in the reports, where the evaluator's
+  broader phone pattern reports a phone (`user_4155550142`) but no card (`x_4111111111111111`).
 - Tests: `tests/test_date_shape_tightening.py`, with the bounds the pre-merge audit of #41 found
   untested (a 4-digit first segment, inner segments, a clock after a range, the card rule's
   identifier glue).
