@@ -27,7 +27,8 @@ Design (contract §4, §6; ``docs/11 §5`` DL2):
   separators, which is also how a date, a dated model suffix and a run id are punctuated.
   A match that is entirely a calendar-valid date stamp is likewise exempt *by shape*
   (see ``_DATE_STAMP``), and a short version prefix only behind an identifier
-  (``_DATE_SHAPED``); a real number, whose groups never form that shape, still gets masked.
+  (``_DATE_SHAPED``); a real number in its usual groupings still gets masked (the known
+  exceptions are listed in the CHANGELOG).
 
 Verifier / pattern set is extensible via :meth:`Redactor.register`.
 """

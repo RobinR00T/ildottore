@@ -138,7 +138,7 @@ def _detect_phones(text: str, hits: list[PIIHit]) -> None:
             continue
         # This pattern may start on a digit glued to a letter (`o3-2025-04-16`, `v3-20241226`),
         # where the redactor's starts after it: drop that first version segment and check the
-        # rest as a dated identifier, so the evaluator and the reports agree (delta audit).
+        # rest as a dated identifier, so both apply the same date rule (delta audit).
         if m.start() and text[m.start() - 1].isalpha():
             rest = re.sub(r"^(?:0|[1-9]\d?)[.-]", "", raw)
             if rest != raw and is_date_stamp(rest, after_identifier=True):
