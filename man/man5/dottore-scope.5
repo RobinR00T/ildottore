@@ -9,7 +9,10 @@ authorizes a scan; the
 describes what is scanned; the
 .I fleet
 declares many targets at once. Secrets are never written into any of them: keys are
-referenced by environment variable and resolved only at send time.
+referenced by environment variable and resolved only at send time. A key written twice in one
+mapping is refused in all three, with where it was first written and where again, instead of
+keeping the last value. Keys brought in by a << merge can still be overridden; two << in one
+mapping are refused too, so merge several maps with one list (<<: [*a, *b]).
 .SH "SCOPE FILE"
 The authorization record. No scanning command runs without it. Default-deny: any host or
 path not under a target's endpoints is never contacted. An optional top-level checksum

@@ -44,9 +44,10 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   (Since 2026-10-05, audit SEC-09: only a regular file that resolves inside its pack directory,
   at most 1 MiB, is read; a document that expands, counting every alias where it is used, past
   100,000 nodes (a text counts one node per 64 characters) or holds a recursive alias is a
-  `PARSE_ERROR` before anything is built from it; a YAML error gives reason and position, never
-  a quoted line; at most 20 schema errors are listed per file, each JSON-schema message cut at
-  300 characters, and a pydantic error names field and reason, never the value.)
+  `PARSE_ERROR` before anything is built from it, and so is a key written twice in one mapping
+  (since 2026-10-06; a `<<` merge can still be overridden); a YAML error gives reason and
+  position, never a quoted line; at most 20 schema errors are listed per file, each JSON-schema
+  message cut at 300 characters, and a pydantic error names field and reason, never the value.)
   No `eval`, no `!!python` tags, no `import`, no socket. Enforced by test (§7).
 - KEEP: id immutability + collision = **lint error, not a warning** (`docs/06 §4`); later-pack
   override of an existing id is an error unless an explicit `extends` is declared.

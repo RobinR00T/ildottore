@@ -3,6 +3,14 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-06 (night): a YAML key written twice
+
+- On `fix/yaml-duplicate-keys` (`tests/test_yaml_duplicate_keys.py`): a key written twice in
+  one YAML mapping is refused with its position in every loader (scope, target, fleet, labels,
+  policy pack, signature pack, specs) instead of keeping the last value; `<<` merges still
+  override, a merged map is checked too and two `<<` in one mapping are refused. No YAML file
+  in the repository repeated a key.
+
 ## State, 2026-10-05 (afternoon): the scope a run went out under (D-17)
 
 - On `feat/record-scope-hash` (`tests/test_scope_digest.py`): every run records the SHA-256 of

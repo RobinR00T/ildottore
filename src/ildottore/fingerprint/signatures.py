@@ -22,6 +22,9 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ildottore import safe_yaml
+from ildottore.shared.config_errors import yaml_problem
+
 __all__ = [
     "CorpusCase",
     "SignatureEntry",
@@ -127,9 +130,10 @@ def _read_yaml(path: Path) -> Any:
     except OSError as exc:  # missing/unreadable pack is a hard load failure
         raise SignaturePackError(f"cannot read signature file {path}: {exc}") from exc
     try:
-        return yaml.safe_load(raw)
+        return safe_yaml.safe_load(raw)
     except yaml.YAMLError as exc:
-        raise SignaturePackError(f"invalid YAML in {path}: {exc}") from exc
+        # Reason and position, no quoted line, like the operator-file loaders.
+        raise SignaturePackError(f"invalid YAML in {path}: {yaml_problem(exc)}") from exc
 
 
 def load_pack(path: Path | None = None) -> SignaturePack:
