@@ -26,7 +26,8 @@ Design (contract §4, §6; ``docs/11 §5`` DL2):
 * **Dated identifiers**: the ``phone`` detector reads ``-``/``.``/space as digit-group
   separators, which is also how a date, a dated model suffix and a run id are punctuated.
   A match that is entirely a calendar-valid date stamp is likewise exempt *by shape*
-  (see ``_DATE_SHAPED``); a real number, which never carries one, still gets masked.
+  (see ``_DATE_STAMP``), and a short version prefix only behind an identifier
+  (``_DATE_SHAPED``); a real number, whose groups never form that shape, still gets masked.
 
 Verifier / pattern set is extensible via :meth:`Redactor.register`.
 """
@@ -191,34 +192,64 @@ _SEGMENT_SPLIT: Final = re.compile(r"[-_/]")
 _HEX_SEGMENT: Final = re.compile(r"[0-9a-fA-F]+")
 _HEX_EXEMPTION_MIN_LEN: Final = 16
 
-# --- date-shape exemption for the ``phone`` detector -----------------------------------
+# --- date-shape exemption for the ``phone`` and ``card`` detectors ---------------------
 # The phone pattern accepts ``-``/``.``/space as group separators, which is exactly how a
-# dated identifier is punctuated, so ``2026-09-20``, ``gpt-4o-mini-2024-07-18``,
+# dated identifier is punctuated, so ``2026-09-20``, ``gpt-4.1-2025-04-14``,
 # ``claude-opus-4-1-20250805`` and ``run-20260920-143000`` all read as phone numbers and
 # rendered as ``claude-opus-«REDACTED:phone»`` in every report. The model name reaches a
 # report via ``Target.model`` / ``Target.name`` and the run's date fields, so the report
-# could not name the model it had just tested.
+# could not name the model it had just tested. A dashed date-time has the length of a card
+# and passes Luhn for 6 seconds values in 60.
 #
 # Same remedy as the entropy fallback above: exempt **by shape**, never by loosening the
 # detector. A candidate is exempt only when the whole match is a calendar-valid date stamp
-# (``YYYY-MM-DD`` or ``YYYYMMDD``), optionally preceded by up to three short version
-# segments (``4-1-`` in ``claude-opus-4-1-20250805``, ``4.1-`` in ``gpt-4.1-2025-04-14``)
-# and followed by at most one clock time (``-143000`` in a run id, ``-13-20-51`` in a
-# directory stamped ``2026-07-09-13-20-51``).
+# (``YYYY-MM-DD`` or ``YYYYMMDD``) followed by at most one clock time (``-143000`` in a run
+# id, ``-13-20-51`` in a directory stamped ``2026-07-09-13-20-51``), or two dates joined by
+# ``-`` or a space (a range). Only when the match is glued to an identifier, a letter or digit
+# then ``-`` right before it (``claude-opus-4-1-20250805``), may up to three version segments
+# of one or two digits precede the date (``4-1-``, ``4.1-``), the first without a leading
+# zero. Standalone, or with a leading zero, that prefix is the shape of a real number: a Dutch
+# mobile is written ``06-20120512``; and four-digit segments let a phone or the tail of a card
+# ride in front of a date, ``415-555-0142-2026-09-20`` (audits of 2026-10-05).
 #
 # The bound is that no segment can carry a phone: the date stamp is exactly 8 digits with a
-# ``19``/``20`` century, a valid month and a valid day; every other segment is at most 4
-# digits (version) or a valid ``HH``/``HHMM``/``HHMMSS`` (clock, its parts optionally joined by
-# ``-`` or ``:``). So a real number keeps its
-# mask - ``555-123-4567`` has no 4-digit year, ``+34 600 123 456`` and ``+1 (555) 123-4567``
-# carry a ``+``/parens the shape does not admit - and a long opaque run cannot ride along
-# behind a date (``20250805-600123456789`` is masked whole, as ``600123456789`` is no clock).
-_DATE_SHAPED: Final = re.compile(
-    r"(?:\d{1,4}[.-]){0,3}"  # optional version prefix: 4-1-, 4.1-, 1-2-3-
+# ``19``/``20`` century, a valid month and a valid day; a version segment is at most 2 digits
+# and only behind an identifier; a clock is a valid ``HH``/``HHMM``/``HHMMSS`` (its parts
+# optionally joined by ``-`` or ``:``). So a real number keeps its mask - ``555-123-4567``
+# has no 4-digit year, ``+34 600 123 456`` and ``+1 (555) 123-4567`` carry a ``+``/parens the
+# shape does not admit - and a long opaque run cannot ride along behind a date
+# (``20250805-600123456789`` is masked whole, as ``600123456789`` is no clock).
+_DATE: Final = (
     r"(?:(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"  # YYYY-MM-DD
     r"|(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))"  # YYYYMMDD
-    r"(?:[-_ T](?:[01]\d|2[0-3])(?:[-:]?[0-5]\d){0,2})?"  # optional HH / HH-MM / HH-MM-SS
 )
+_CLOCK: Final = r"(?:[-_ T](?:[01]\d|2[0-3])(?:[-:]?[0-5]\d){0,2})?"  # HH / HH-MM / HH-MM-SS
+_DATE_STAMP: Final = re.compile(rf"{_DATE}{_CLOCK}|{_DATE}[- ]{_DATE}")
+# Behind an identifier only; the first segment has no leading zero, which a phone prefix has
+# (`06-20120512`, a Dutch mobile).
+_DATE_SHAPED: Final = re.compile(rf"(?:(?:0|[1-9]\d?)[.-](?:\d{{1,2}}[.-]){{0,2}})?{_DATE}{_CLOCK}")
+_GLUE: Final = frozenset("-")
+
+
+def is_date_stamp(text: str, *, after_identifier: bool = False) -> bool:
+    """True if ``text`` (a separator at either end aside) is a date stamp the redactor exempts.
+
+    ``after_identifier`` admits the short version prefix (``4-1-20250805``); see
+    :func:`glued_to_identifier`. Shared by the redactor's phone and card rules and by the
+    ``pii_detector`` evaluator, which flagged ``claude-sonnet-4-5-20250929`` as a phone and a
+    dashed date-time as a card or a phone.
+    """
+
+    core = text.strip(" -")
+    if _DATE_STAMP.fullmatch(core):
+        return True
+    return after_identifier and _DATE_SHAPED.fullmatch(core) is not None
+
+
+def glued_to_identifier(text: str, start: int) -> bool:
+    """True if the match at ``start`` follows a letter or digit and a ``-`` (an id)."""
+
+    return start >= 2 and text[start - 1] in _GLUE and text[start - 2].isalnum()
 
 
 @dataclass(frozen=True)
@@ -459,7 +490,8 @@ class Redactor:
             digits = re.sub(r"\D", "", m.group(0))
             # A date-time stamp (`2026-07-09-13-20-01`, 14 digits) passes Luhn for 6 seconds in
             # 60; the date shape exempts it here as it does from the phone rule.
-            if _DATE_SHAPED.fullmatch(m.group(0).rstrip(" -")):  # the match takes a trailing -
+            # The match can take a trailing - or space; a version prefix only behind an id.
+            if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
                 return m.group(0)
             if 13 <= len(digits) <= 19 and _luhn_ok(digits):
                 return self._mask_token(pattern, m.group(0))
@@ -470,12 +502,12 @@ class Redactor:
     def _redact_phones(self, pattern: Pattern, text: str) -> str:
         """Phone matcher with a date-shape guard to cut dated-identifier false positives.
 
-        A match that is entirely a date / dated version suffix / run id (``_DATE_SHAPED``)
+        A match that is entirely a date / dated version suffix / run id (:func:`is_date_stamp`)
         is left as written; everything else is masked exactly as before.
         """
 
         def _sub(m: re.Match[str]) -> str:
-            if _DATE_SHAPED.fullmatch(m.group(0)):
+            if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
                 return m.group(0)
             return self._mask_token(pattern, m.group(0))
 

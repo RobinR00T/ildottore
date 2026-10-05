@@ -5,6 +5,35 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (the date-stamp exemption, tightened and shared)
+
+- **A number in front of a date stayed readable.** The date shape admitted up to three version
+  segments of up to four digits before the date, anywhere, so a dashed phone number
+  (`415-555-0142-2026-09-20`), a Dutch mobile (`06-20120512`) or, once the card rule also used
+  the shape, the last digits of a card split by the 19-digit limit (`...-4111-1111-2026-05-09`)
+  passed as a dated identifier. A version prefix is now one or two digits per segment, the
+  first without a leading zero, and only behind an identifier (a letter or digit and a `-`
+  right before it): `4-1-` in `claude-opus-4-1-20250805` and `4.1-` in `gpt-4.1-2025-04-14`
+  still pass. A date range is admitted explicitly, joined by `-` or a space
+  (`2026-09-01-2026-09-30`, `2026-09-01 2026-09-30`, the second masked before), since the
+  phone rule took it once the prefix shrank; a clock after a range is masked. An identifier
+  with a 3- or 4-digit segment before a date (`build-1234-20260920`) is now masked. Found by the
+  pre-merge audit of #40 and two pre-commit audits of this block.
+- **The `pii_detector` evaluator read dated names and stamps as PII.** It had no date
+  exemption: a reply quoting `claude-sonnet-4-5-20250929` or `gpt-4.1-2025-04-14` was a phone
+  hit, a dashed date-time was a card or a phone hit every time, and every `YYYY-MM-DD HH:MM`
+  was a phone hit, so a clean PASS became needs-review. It now uses the redactor's date shape
+  (`redactor.is_date_stamp`, `redactor.glued_to_identifier`), the same rule the reports use;
+  where its phone pattern starts on the digit glued to a letter (`o3-2025-04-16`,
+  `deepseek-v3-20241226`), it drops that segment and checks the rest. Real cards and phone
+  numbers are still detected, the Dutch form included, glued to a word or not.
+- Known, not fixed (older than this block): the card rule runs before the phone rule and can
+  split a contrived run (a dotted phone sandwiched between two dates); a sentence-final period
+  after a dated name (`gpt-4.1-2025-04-14.`) or a parenthesis after it still lets the phone
+  rule take it; the redactor never masks a phone glued behind `.`, `_` or a letter
+  (`Tel.555-123-4567`); a microsecond fraction (`13:20:51.123456`) reads as a phone.
+- Tests: `tests/test_date_shape_tightening.py`.
+
 ### Fixed (follow-ups of the #39 audit, and a redactor false positive)
 
 - **The operator's files quoted a value YAML could not build.** `auth_ref: !!int <value>` in a
@@ -14,7 +43,8 @@ versioning: [SemVer](https://semver.org/).
   value is a YAML error with a fixed message and its position. The policy-pack loader also
   quoted the offending line and pydantic's input value; it now gives reason, position and field
   like the others. The labels loader no longer quotes an invalid verdict, and YAML nested
-  thousands of levels deep is an error in all six loaders instead of a `RecursionError`.
+  hundreds of levels deep (about 500 with Python's default recursion limit) is an error in all
+  six loaders instead of a `RecursionError`.
 - **Spec files are read in blocking mode after the checks** (a mount answering "try again" to a
   non-blocking descriptor would have given a short or empty read), opened in binary mode where
   the platform distinguishes it, and a spec `id` longer than 128 characters is no longer
@@ -26,8 +56,8 @@ versioning: [SemVer](https://semver.org/).
   `docs/MANUAL.md` promises, since the masked token no longer existed on disk. The clock may now
   join its parts with `-` or `:`; a digit run behind a date is still masked. The card rule
   (Luhn) masked 6 seconds values in 60 of such a stamp; the same date shape exempts it there.
-  Still open (already on main): a dashed phone number glued in front of a date stays readable
-  (`415-555-0142-2026-09-20`), because the version prefix the date shape admits can hold it.
+  A dashed phone number glued in front of a date stayed readable (`415-555-0142-2026-09-20`);
+  closed by the date shape's tightening (the section above this one).
 - Tests: `tests/test_audit_last_lows.py` (pre-merge audit of #39 section),
   `tests/policy/test_redactor.py`, `tests/test_audit_leftovers.py`.
 

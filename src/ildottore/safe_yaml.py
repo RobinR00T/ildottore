@@ -39,7 +39,7 @@ def safe_load(text: str) -> Any:
     loader = SafeValueLoader(text)
     try:
         return loader.get_single_data()  # type: ignore[no-untyped-call,unused-ignore]
-    except RecursionError as exc:  # thousands of nested levels: an error, not a traceback
+    except RecursionError as exc:  # hundreds of nested levels: an error, not a traceback
         raise yaml.composer.ComposerError(
             None, None, "document is nested too deeply", None
         ) from exc
