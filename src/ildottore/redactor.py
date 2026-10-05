@@ -203,11 +203,13 @@ _HEX_EXEMPTION_MIN_LEN: Final = 16
 # detector. A candidate is exempt only when the whole match is a calendar-valid date stamp
 # (``YYYY-MM-DD`` or ``YYYYMMDD``), optionally preceded by up to three short version
 # segments (``4-1-`` in ``claude-opus-4-1-20250805``, ``4.1-`` in ``gpt-4.1-2025-04-14``)
-# and followed by at most one clock time (``-143000`` in a run id).
+# and followed by at most one clock time (``-143000`` in a run id, ``-13-20-51`` in a
+# directory stamped ``2026-07-09-13-20-51``).
 #
 # The bound is that no segment can carry a phone: the date stamp is exactly 8 digits with a
 # ``19``/``20`` century, a valid month and a valid day; every other segment is at most 4
-# digits (version) or a valid ``HH``/``HHMM``/``HHMMSS`` (clock). So a real number keeps its
+# digits (version) or a valid ``HH``/``HHMM``/``HHMMSS`` (clock, its parts optionally joined by
+# ``-`` or ``:``). So a real number keeps its
 # mask - ``555-123-4567`` has no 4-digit year, ``+34 600 123 456`` and ``+1 (555) 123-4567``
 # carry a ``+``/parens the shape does not admit - and a long opaque run cannot ride along
 # behind a date (``20250805-600123456789`` is masked whole, as ``600123456789`` is no clock).
@@ -215,7 +217,7 @@ _DATE_SHAPED: Final = re.compile(
     r"(?:\d{1,4}[.-]){0,3}"  # optional version prefix: 4-1-, 4.1-, 1-2-3-
     r"(?:(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"  # YYYY-MM-DD
     r"|(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))"  # YYYYMMDD
-    r"(?:[-_ T](?:[01]\d|2[0-3])(?:[0-5]\d){0,2})?"  # optional HH / HHMM / HHMMSS
+    r"(?:[-_ T](?:[01]\d|2[0-3])(?:[-:]?[0-5]\d){0,2})?"  # optional HH / HH-MM / HH-MM-SS
 )
 
 
@@ -328,6 +330,22 @@ class Redactor:
 
         self._patterns.insert(0, pattern)
 
+    def without_entropy(self) -> Redactor:
+        """This redactor minus the entropy fallback: same salt, patterns and known credentials.
+
+        For values that are identifiers by construction and that the entropy rule mangles, such
+        as a provider's model name (`meta-llama/Meta-Llama-3-8B-Instruct` has mixed case, so it
+        is not exempt as a path).
+        """
+
+        twin = Redactor(
+            patterns=self._patterns,
+            entropy_threshold=math.inf,
+            entropy_min_len=self._entropy_min_len,
+        )
+        twin._salt = self._salt
+        return twin
+
     def _digest(self, value: str) -> str:
         """Short salted HMAC-SHA256 digest for corroboration (never reversible)."""
 
@@ -439,6 +457,10 @@ class Redactor:
 
         def _sub(m: re.Match[str]) -> str:
             digits = re.sub(r"\D", "", m.group(0))
+            # A date-time stamp (`2026-07-09-13-20-01`, 14 digits) passes Luhn for 6 seconds in
+            # 60; the date shape exempts it here as it does from the phone rule.
+            if _DATE_SHAPED.fullmatch(m.group(0).rstrip(" -")):  # the match takes a trailing -
+                return m.group(0)
             if 13 <= len(digits) <= 19 and _luhn_ok(digits):
                 return self._mask_token(pattern, m.group(0))
             return m.group(0)

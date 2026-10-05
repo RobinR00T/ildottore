@@ -17,6 +17,7 @@ from typing import Protocol, runtime_checkable
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ildottore import safe_yaml
 from ildottore.policy.errors import ChecksumMismatchError, ScopeError
 from ildottore.shared.config_errors import validation_problems, yaml_problem
 
@@ -150,7 +151,7 @@ def load_scope(
         raise ScopeError(f"cannot read scope file {file_path}: {exc}") from exc
 
     try:
-        data = yaml.safe_load(raw_text)
+        data = safe_yaml.safe_load(raw_text)
     except yaml.YAMLError as exc:
         raise ScopeError(f"invalid YAML in scope file {file_path}: {yaml_problem(exc)}") from exc
 

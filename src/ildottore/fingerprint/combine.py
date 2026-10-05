@@ -15,21 +15,27 @@ every layer and fuses it into per-field guesses (contract §5 step 6):
   **excluded** from the family tally on conflict so it can never inflate the guess
   (contract §7: "0 cases where a spoofed self-id silently wins").
 
-The combiner is pure and deterministic: ties break by name so replay is stable.
+The combiner is pure and deterministic. A tie between the two leading families gives
+``unknown`` and a tie between versions gives no version (a tie used to be broken by name, so
+the alphabet chose); ranking helpers still order ties by name so replay is stable.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ildottore.fingerprint.attribution import parse_signal
 from ildottore.fingerprint.layers.behavioral import SELF_REPORT_DETAIL
 from ildottore.shared.models import FingerprintEvidence, FingerprintGuess
 
-__all__ = ["CombinedFingerprint", "combine", "rank_families", "rank_versions"]
+__all__ = ["SPOOF_FLAG", "CombinedFingerprint", "combine", "rank_families", "rank_versions"]
 
 _STAT_LAYER = "statistical"
-_SPOOF_FLAG = "self_report_conflicts_with_statistical"
+SPOOF_FLAG = "self_report_conflicts_with_statistical"
+#: Evidence weights are rounded to six decimals, so a sum of several carries an error of a few
+#: millionths: three 0.133333 weights are 0.399999, which must still tie with 0.4.
+_TIE_TOLERANCE = 1e-5
 
 
 @dataclass(frozen=True)
@@ -69,7 +75,7 @@ def combine(evidence: list[FingerprintEvidence]) -> CombinedFingerprint:
         and stat_family is not None
         and self_report_family != stat_family
     ):
-        spoofing_flags.append(_SPOOF_FLAG)
+        spoofing_flags.append(SPOOF_FLAG)
         excluded_self_report = True
 
     family_mass = _family_mass(evidence, exclude_self_report=excluded_self_report)
@@ -160,13 +166,23 @@ def _family_mass(
     return mass
 
 
+def _tied(first: float, second: float) -> bool:
+    """Equal up to the rounding of evidence weights (see :data:`_TIE_TOLERANCE`)."""
+
+    return math.isclose(first, second, rel_tol=0.0, abs_tol=_TIE_TOLERANCE)
+
+
 def _guess_from_mass(mass: dict[str, float]) -> FingerprintGuess:
     """Pick the top family; empty ⇒ an explicit unknown at confidence 0."""
 
     if not mass:
         return FingerprintGuess(guess="unknown", confidence=0.0)
     total = sum(mass.values())
-    top_family = max(sorted(mass), key=lambda fam: mass[fam])
+    ranked = sorted(mass, key=lambda fam: (-mass[fam], fam))
+    if len(ranked) > 1 and _tied(mass[ranked[0]], mass[ranked[1]]):
+        # A tie names no family: it used to be broken by name, so the alphabet picked it.
+        return FingerprintGuess(guess="unknown", confidence=0.0)
+    top_family = ranked[0]
     return FingerprintGuess(
         guess=top_family,
         confidence=_confidence(mass[top_family], total),
@@ -187,7 +203,13 @@ def _version_guess(evidence: list[FingerprintEvidence], family: str) -> Fingerpr
     if not mass:
         return None
     total = sum(mass.values())
-    top_version = max(sorted(mass), key=lambda ver: mass[ver])
+    ranked = sorted(mass, key=lambda ver: (-mass[ver], ver))
+    if len(ranked) > 1 and _tied(mass[ranked[0]], mass[ranked[1]]):
+        # A tie names no version. Every family-wide signal adds the same mass to each version of
+        # the family (the pack shares fragments and centroids between them), so the name decided:
+        # llama-3-8b with a 2023-03 cutoff, gpt-4-turbo, claude-opus (audit of the fingerprint).
+        return None
+    top_version = ranked[0]
     return FingerprintGuess(
         guess=top_version,
         confidence=_confidence(mass[top_version], total),

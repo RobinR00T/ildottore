@@ -372,6 +372,16 @@ fingerprint line; on the offline mock:
 fingerprint: mock-target [offline mock: bare] family=unknown (confidence 0.00) [the target answered every attributing probe alike: no text signal]
 ```
 
+A name from the envelope alone is reported with at most the metadata weight as confidence (0.4
+in the shipped pack). Four more rules keep a family from being named without a signal: a tie
+between two families gives `unknown` and a tie between versions gives no version; the
+statistical layer emits nothing when its probes get repeated replies; declared capabilities are
+listed in the evidence with weight 0 and never count; and from the envelope only the `model`
+name counts (not `finish_reason`, `system_fingerprint` or other fields compatible servers
+copy). On a live target the capabilities in the fingerprint are the ones the target file
+declares, and a model name such as `meta-llama/Meta-Llama-3-8B-Instruct` reaches the metadata
+layer unmasked. Details in [`10-fingerprint.md`](10-fingerprint.md) §2, "Attribution rules".
+
 ### `dottore fleet`, expand and optionally scan a fleet
 
 ```
@@ -710,7 +720,8 @@ resolves to bytes at load time behind a path-traversal guard (no absolute path, 
 under the spec directory). It runs only against a target that declares the `audio` capability (a
 speech-in model), and the OpenAI adapter sends it as an `input_audio` block. The carrier bytes are
 elided from evidence (the `asset` reference and `media_sha256` digest are kept), so a large clip
-does not bloat the record.
+does not bloat the record. An asset file may be up to 25 MiB; a carrier inlined as `data_b64`
+counts toward the 1 MiB limit of the spec file itself.
 
 ```yaml
 attack:

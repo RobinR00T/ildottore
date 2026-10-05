@@ -25,12 +25,14 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ildottore import safe_yaml
 from ildottore.config import SafetyFlags
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.errors import PolicyPackError
 from ildottore.policy.scope import Scope
+from ildottore.shared.config_errors import validation_problems, yaml_problem
 from ildottore.shared.enums import FLAGGED_FAMILIES, Category
 from ildottore.shared.models import AttackSpec
 
@@ -92,14 +94,21 @@ def load_pack(path: str | Path) -> PolicyPack:
     except OSError as exc:  # pragma: no cover - filesystem error surface
         raise PolicyPackError(f"cannot read policy pack {file_path}: {exc}") from exc
     try:
-        data = yaml.safe_load(raw_text)
+        data = safe_yaml.safe_load(raw_text)
     except yaml.YAMLError as exc:
-        raise PolicyPackError(f"invalid YAML in policy pack {file_path}: {exc}") from exc
+        # Reason and position, no quoted line, like the scope and target loaders.
+        raise PolicyPackError(
+            f"invalid YAML in policy pack {file_path}: {yaml_problem(exc)}"
+        ) from exc
     if not isinstance(data, dict):
         raise PolicyPackError(f"policy pack {file_path} must be a mapping at top level")
     try:
         return PolicyPack.model_validate(data)
-    except Exception as exc:  # pydantic.ValidationError → typed PolicyPackError
+    except ValidationError as exc:  # field and reason, never the value
+        raise PolicyPackError(
+            f"policy pack {file_path} failed validation: {validation_problems(exc)}"
+        ) from exc
+    except Exception as exc:  # a validator that raised something pydantic did not wrap
         raise PolicyPackError(f"policy pack {file_path} failed validation: {exc}") from exc
 
 

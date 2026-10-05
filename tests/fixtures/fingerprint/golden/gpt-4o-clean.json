@@ -2,7 +2,7 @@
   "target_id": "golden-target",
   "family": {
     "guess": "openai-gpt",
-    "confidence": 0.677419,
+    "confidence": 0.808219,
     "cutoff_hint": null
   },
   "version": {
@@ -29,53 +29,43 @@
   "evidence": [
     {
       "layer": "metadata",
-      "signal": "family=openai-gpt|version=gpt-4o|metadata tells ['system_fingerprint', 'finish_reason', 'model=gpt']",
+      "signal": "family=openai-gpt|version=gpt-4o|metadata tells ['model=gpt']",
       "weight": 0.4
     },
     {
       "layer": "metadata",
-      "signal": "family=openai-gpt|version=gpt-4-turbo|metadata tells ['system_fingerprint', 'finish_reason', 'model=gpt']",
+      "signal": "family=openai-gpt|version=gpt-4-turbo|metadata tells ['model=gpt']",
       "weight": 0.4
     },
     {
-      "layer": "metadata",
-      "signal": "family=meta-llama|version=llama-3.1-70b|metadata tells ['finish_reason=stop']",
-      "weight": 0.2
-    },
-    {
-      "layer": "metadata",
-      "signal": "family=meta-llama|version=llama-3-8b|metadata tells ['finish_reason=stop']",
-      "weight": 0.2
+      "layer": "capability",
+      "signal": "family=anthropic-claude|capability tells ['streaming=true']",
+      "weight": 0.0
     },
     {
       "layer": "capability",
       "signal": "family=anthropic-claude|capability tells ['streaming=true']",
-      "weight": 0.1
-    },
-    {
-      "layer": "capability",
-      "signal": "family=anthropic-claude|capability tells ['streaming=true']",
-      "weight": 0.1
+      "weight": 0.0
     },
     {
       "layer": "capability",
       "signal": "family=openai-gpt|capability tells ['tools=true']",
-      "weight": 0.1
+      "weight": 0.0
     },
     {
       "layer": "capability",
       "signal": "family=openai-gpt|capability tells ['tools=true']",
-      "weight": 0.1
+      "weight": 0.0
     },
     {
       "layer": "capability",
       "signal": "family=meta-llama|capability tells ['streaming=true']",
-      "weight": 0.1
+      "weight": 0.0
     },
     {
       "layer": "capability",
       "signal": "family=meta-llama|capability tells ['streaming=true']",
-      "weight": 0.1
+      "weight": 0.0
     },
     {
       "layer": "behavioral",

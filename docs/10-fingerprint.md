@@ -82,15 +82,17 @@ their own identity).
 The table is the design. As built, seven layers run and a pass sends 17 requests on the shipped
 mutator set (each layer declares its `probe_count`, and the plan prints the sum): metadata 1,
 **capability 0** (it reads the capabilities the target file declares and asks the target
-nothing), behavioral 4, tokenizer 1, guardrail 1, statistical 3 and carrier 7 (one per probed
-carrier). The statistical layer embeds nothing: it compares a deterministic feature vector of
-the replies' structure with the signature pack's centroids (OD-9). The CLI builds the seventh,
-carrier, layer; `FingerprintEngine()` on its own has six.
+nothing; its evidence is listed with weight 0 and never counts toward a family), behavioral 4,
+tokenizer 1, guardrail 1, statistical 3 and carrier 7 (one per probed carrier). The metadata
+layer still flattens the whole envelope, but the shipped pack matches only the `model` name in
+it (see the attribution rules in §2). The statistical layer embeds nothing: it compares a
+deterministic feature vector of the replies' structure with the signature pack's centroids
+(OD-9). The CLI builds the seventh, carrier, layer; `FingerprintEngine()` on its own has six.
 
 ## 2. Output: `ModelFingerprint`
 
 The block below is what `dottore fingerprint <target.yaml> --scope <scope.yaml> --offline`
-printed on 2026-10-04 for an offline target with `mock_scenario: comprehending` and
+printed on 2026-10-05 for an offline target with `mock_scenario: comprehending` and
 `capabilities: {tools: false}` (keys and values as emitted). What each key holds:
 
 - `family`: `{guess, confidence, cutoff_hint}`; `guess` is `unknown` with confidence 0.0 when no
@@ -121,11 +123,9 @@ printed on 2026-10-04 for an offline target with `mock_scenario: comprehending` 
   "guardrails": {"input_filter": false, "moderation_latency_ms": null,
                  "output_filter": false, "refusal_style": "unknown"},
   "evidence": [
-    {"layer": "capability", "signal": "family=meta-llama|capability tells ['tools=false']", "weight": 0.1},
-    {"layer": "capability", "signal": "family=meta-llama|capability tells ['tools=false']", "weight": 0.1},
+    {"layer": "capability", "signal": "family=meta-llama|capability tells ['tools=false']", "weight": 0.0},
+    {"layer": "capability", "signal": "family=meta-llama|capability tells ['tools=false']", "weight": 0.0},
     {"layer": "guardrail", "signal": "guardrail_profile={\"input_filter\": false, \"moderation_latency_ms\": null, \"output_filter\": false, \"refusal_style\": \"unknown\"}", "weight": 0.0},
-    {"layer": "statistical", "signal": "family=meta-llama|version=llama-3-8b|nn-dist 0.2127", "weight": 0.412291},
-    {"layer": "statistical", "signal": "family=meta-llama|version=llama-3.1-70b|nn-dist 0.2127", "weight": 0.412291},
     {"layer": "carrier", "signal": "carrier_comprehension={\"base64_wrap\": 1.0, \"leetspeak\": 0.0, \"payload_splitting\": 0.0, \"rot13\": 1.0, \"translate\": 1.0, \"unicode_confusable\": 0.0, \"zero_width_inject\": 1.0}", "weight": 0.0}
   ],
   "spoofing_flags": ["non_discriminating_target"],
@@ -133,8 +133,11 @@ printed on 2026-10-04 for an offline target with `mock_scenario: comprehending` 
 }
 ```
 
-Note that the statistical and capability evidence above name `meta-llama`, and the family is
-still `unknown`: that is the `non_discriminating_target` flag at work.
+Note that the capability evidence above names `meta-llama` with weight 0: declared capabilities
+are listed, never counted (see the attribution rules below). The family is `unknown` because the
+target answered every attributing probe alike (the `non_discriminating_target` flag) and its
+envelope has no `model` field. The statistical layer sent its three probes and emitted nothing,
+because they got the same reply.
 
 **Spoofing flags.** Two are emitted:
 
@@ -152,6 +155,69 @@ still `unknown`: that is the `non_discriminating_target` flag at work.
   offline scenario trips it (`bare`, `vulnerable`, `hardened`, and `comprehending`, which gives
   every non-carrier probe the same "I do not understand" reply); before the flag, a constant mock
   was named `meta-llama` at 0.67 and a refuse-all target `llama-3-8b` with a 2023-03 cutoff.
+
+**Attribution rules** (each one closes a case where a target was named without a signal, found
+by the audit of the fingerprint that followed the full audit of 2026-10-03, and by the
+pre-commit audit of its fix; figures measured on 2026-10-05 against the code before the fix):
+
+- **A tie names nothing.** Two families with the same evidence mass give `unknown`; two versions
+  of the guessed family with the same mass give `version: null`. A tie used to be broken by
+  name, and every family-wide signal adds the same mass to each version of the family, so the
+  alphabet picked `llama-3-8b` (with its 2023-03 cutoff), `gpt-4-turbo` or `claude-opus`.
+- **The statistical layer ignores a canned responder.** If its three probes, which ask for
+  different things, get fewer than three different reply texts, it emits no evidence: short,
+  plain canned replies sat close to one centroid and named that family (a stub alternating two
+  answers drew 0.41 of `meta-llama` evidence for each of two versions and was named `meta-llama`,
+  version `llama-3-8b`, at 0.65, and still at 0.58 when its envelope said `gpt-4o`).
+- **Declared capabilities never count.** The capability layer reads what the target file
+  declares about the deployment, not anything the model did, so its evidence is listed with
+  weight 0 (the pack has no capability weight). Counted, a target that gave no other evidence and
+  declared no tools was `meta-llama` at 0.29, and the repo's own gpt-4o example (`tools: false`,
+  `streaming: true`, the whole meta-llama profile) tied a real `model=gpt-4o` envelope into
+  `unknown`.
+- **An envelope-only attribution is capped at the metadata weight.** When only the metadata
+  layer names the family (always the case for a `non_discriminating_target`), its share of the
+  mass is 1 by construction: a constant target whose envelope said `gpt-4o` was named at 0.52 on
+  that one field. The family's confidence, and the version's, are now at most the pack's
+  metadata weight for that family (0.4 in the shipped pack).
+- **Only the `model` name counts from the envelope.** Every OpenAI-compatible server sends
+  `finish_reason=stop`, and the bare key `system_fingerprint` matched whatever value a
+  compatible server put there (or none): a Qwen model behind a server sending
+  `system_fingerprint: fp_ollama` was `openai-gpt`, version `gpt-4-turbo`, at 0.42. Claude's
+  `stop_reason` and `role=assistant` fragments could never match, because the Anthropic adapter
+  reports the stop reason as `finish_reason` and keeps only `id` and `model`, so a real Claude
+  envelope was worth a third of the others. The pack's metadata signals are now `model=` names only.
+  `model=meta-llama` is listed beside `model=llama`, so a vLLM name such as
+  `meta-llama/Meta-Llama-3-8B-Instruct` is recognised, and an entry's `model=` fragments are
+  alternatives that fill one slot (an envelope carries one model name; counted as two, they
+  held meta-llama at half its weight). The live adapters redact a string `model` echo without
+  the entropy rule (patterns and known credentials still apply), in memory only: mixed-case
+  names like that one were masked as high-entropy before the metadata layer could read them.
+  What is stored (evidence, run store, reports) still gets the full redactor, so a stored model
+  name of that shape is masked.
+- **A live probe reports the target file's capabilities.** `dottore fingerprint` and `run -sV`
+  on a live target wrap the adapter so `capability_guess` and the capability layer read the
+  `capabilities` the target file declares, not the adapter's defaults (OpenAI: `tools`,
+  `streaming`, `seed` and `logprobs` all true, so `tools: false` in the file reported
+  `tools: true`).
+
+**Known limits (left open).** The statistical centroids are coarse: short, distinct replies land
+near the `meta-llama` centroid, which can outvote a real `model=` name (a gpt-4o or a Claude
+answering in short sentences, with its model name in the envelope, was `meta-llama` at 0.39 on
+2026-10-05, through the real OpenAI adapter on a mock transport). By design
+the statistical layer outranks what a target says about itself, so whether a `model=` name
+should win over it is the owner's call. The envelope cap is a cliff: one more weak hit from
+another layer (a generic refusal phrase several families share) lifts a family named by its
+envelope above 0.4, and a family named only by what the model says about itself ("I am Claude,
+made by Anthropic") is not capped (0.52), although that is the weakest channel. A target that
+answers two of the three statistical probes alike switches the statistical layer off, so a
+self-report it would have contradicted raises no spoofing flag. A capability weight in a custom
+pack is ignored.
+
+Within a family, the shipped pack's versions share every signal except the behavioral
+fragments, so a version is named only from what the model says about itself (for example
+"sonnet" in its self-description), the weakest and most easily spoofed channel; otherwise the
+version is `null`.
 
 - Every fingerprint run is **reproducible** (fixed seeded probe battery, evidence stored like
   any attempt: `docs/07`).

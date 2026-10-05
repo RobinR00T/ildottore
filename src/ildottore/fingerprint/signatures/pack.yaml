@@ -6,8 +6,6 @@ entries:
   cutoff_hint: 2025-03
   signals:
     metadata: &id001
-    - stop_reason
-    - role=assistant
     - model=claude
     capability: &id002
     - multimodal=true
@@ -23,7 +21,6 @@ entries:
     - i'd be glad to help another way
   weights: &id005
     metadata: 0.4
-    capability: 0.2
     behavioral: 0.3
     tokenizer: 0.25
     guardrail: 0.2
@@ -68,8 +65,6 @@ entries:
   cutoff_hint: 2023-10
   signals:
     metadata: &id007
-    - system_fingerprint
-    - finish_reason
     - model=gpt
     capability: &id008
     - tools=true
@@ -124,8 +119,8 @@ entries:
   cutoff_hint: 2023-12
   signals:
     metadata: &id012
-    - finish_reason=stop
     - model=llama
+    - model=meta-llama
     capability: &id013
     - tools=false
     - streaming=true

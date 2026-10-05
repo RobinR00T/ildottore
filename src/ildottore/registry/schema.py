@@ -28,6 +28,7 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
+from ildottore.safe_yaml import SafeValueLoader
 from ildottore.shared.config_errors import yaml_problem
 
 # Repo layout: <root>/schemas/attack-spec.schema.json ; this file lives at
@@ -54,27 +55,6 @@ class SafeLoadError(Exception):
     """Raised when a document cannot be safely parsed (bad YAML / unsafe tag / too large)."""
 
 
-class _SpecLoader(yaml.SafeLoader):
-    """The safe loader, with a value it cannot build reported as a YAML error.
-
-    PyYAML's constructors raise plain Python errors for an impossible date (`2026-02-31`), an
-    integer past Python's digit limit or a bad `!!int`/`!!float`/`!!bool`/`!!timestamp`, and
-    those escaped as a lint traceback (delta audit of this block). The message is fixed: the
-    original quotes the literal.
-    """
-
-    def construct_object(self, node: yaml.Node, deep: bool = False) -> Any:
-        try:
-            return super().construct_object(node, deep=deep)
-        except (ValueError, KeyError, AttributeError, TypeError, OverflowError) as exc:
-            raise yaml.constructor.ConstructorError(
-                None,
-                None,
-                "cannot build this value (an invalid date, number or tag)",
-                node.start_mark,
-            ) from exc
-
-
 def safe_load_yaml(text: str) -> Any:
     """Parse a YAML document with the safe loader only.
 
@@ -93,7 +73,7 @@ def safe_load_yaml(text: str) -> Any:
     try:
         # Inside the try: the reader rejects a control character as it is built, and that
         # ReaderError used to escape as a traceback (pre-commit audit of this block).
-        loader = _SpecLoader(text)
+        loader = SafeValueLoader(text)
     except yaml.YAMLError as exc:
         raise SafeLoadError(yaml_problem(exc)) from exc
     try:
@@ -140,8 +120,8 @@ def _check_expanded_size(root: yaml.Node) -> None:
         in_progress.discard(key)
         if total > MAX_YAML_NODES:
             raise SafeLoadError(
-                f"document is too large once every alias is expanded (over {MAX_YAML_NODES} "
-                f"nodes, a text counting one node per {_CHARS_PER_NODE} characters)"
+                f"document is too large (over {MAX_YAML_NODES} nodes, counting every alias "
+                f"where it is used and a text as one node per {_CHARS_PER_NODE} characters)"
             )
         sizes[key] = total
         return total
@@ -181,13 +161,22 @@ def load_yaml_file(path: Path, *, root: Path | None = None) -> Any:
     # Opened without following a link and without blocking, then checked again on the open
     # descriptor: a file swapped for a pipe or a link after the checks above cannot hang the
     # read or redirect it (delta audit of this block).
-    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_BINARY", 0)  # Windows would stop a text-mode read at a 0x1A byte
+    )
     try:
         descriptor = os.open(real, flags)
     except OSError as exc:
         raise SafeLoadError(f"cannot read the file: {exc.strerror or exc}") from exc
     try:
         _check_readable(os.fstat(descriptor))
+        # Blocking again for the read: O_NONBLOCK was for the open, and a mount that answered
+        # "try again" would otherwise give a short or empty read (pre-merge audit of #39).
+        if getattr(os, "O_NONBLOCK", 0):  # Windows has no O_NONBLOCK and no set_blocking on files
+            os.set_blocking(descriptor, True)
         with os.fdopen(descriptor, "rb") as handle:
             descriptor = -1  # closed by the handle from here on
             raw = handle.read(MAX_YAML_BYTES + 1)

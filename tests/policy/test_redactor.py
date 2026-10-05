@@ -353,6 +353,13 @@ def test_hex_counter_rule_does_not_re_break_identifiers(token: str) -> None:
         "started 2026-09-20 10:01:00 UTC",
         "2026-01-01T00:00:00Z",  # ISO timestamp (already survived, pinned)
         "v1.2.3-20250805",
+        # A directory stamped with a dashed clock (an export or session folder): masked as a
+        # phone, it cost the CLI the whole existing path it keeps readable (2026-10-05).
+        "export-2026-07-09-13-20-51-ff1bc959",
+        "2026-10-05-01-36",
+        # 14 digits that pass Luhn: the card rule took 6 seconds values in 60 of these.
+        "export-2026-07-09-13-20-01-ff1bc959",
+        "2026-07-09-13-20-01",
     ],
 )
 def test_dated_identifier_is_not_a_phone_number(text: str) -> None:
@@ -391,7 +398,15 @@ def test_date_exemption_does_not_carry_a_digit_run() -> None:
     """The bound: an opaque digit run cannot ride along behind a valid date stamp."""
 
     r = Redactor(salt="s")
-    for text in ["20250805-600123456789", "2026-09-20-4155550142"]:
+    for text in [
+        "20250805-600123456789",
+        "2026-09-20-4155550142",
+        "2026-09-20-12-34-5678",
+        "2026-09-20-12-34-56-12",  # a fourth clock part
+        "2026-09-20-41-55-01",  # no such hour
+        "2026-09-20-12-99",  # no such minute
+        "2026-09-20 12 34 56",  # spaces do not join a clock
+    ]:
         out = r.redact_text(text)
         assert text not in out
         assert "«REDACTED:" in out

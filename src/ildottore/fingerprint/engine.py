@@ -20,8 +20,9 @@ import json
 
 from ildottore.fingerprint.attribution import parse_signal
 from ildottore.fingerprint.base import FingerprintLayer, ProbeContext
-from ildottore.fingerprint.combine import CombinedFingerprint, combine
+from ildottore.fingerprint.combine import SPOOF_FLAG, CombinedFingerprint, combine
 from ildottore.fingerprint.layers import default_layers
+from ildottore.fingerprint.layers.behavioral import SELF_REPORT_DETAIL
 from ildottore.fingerprint.layers.capability import capability_guess
 from ildottore.fingerprint.layers.carrier import CARRIER_PROBE_DETAIL, effective_mutators
 from ildottore.fingerprint.layers.guardrail import GUARDRAIL_PROFILE_DETAIL
@@ -94,10 +95,22 @@ class FingerprintEngine:
             # response ENVELOPE (a provider's `model` field) is not text and still counts, so
             # only the metadata layer's evidence is kept; without it, unknown, and said so.
             from_envelope = _from_model_field(evidence)
+            cap = self._metadata_weight(from_envelope.family.guess)
             fused = CombinedFingerprint(
-                family=from_envelope.family,
-                version=from_envelope.version,
+                family=_capped(from_envelope.family, cap),
+                version=(
+                    None if from_envelope.version is None else _capped(from_envelope.version, cap)
+                ),
                 spoofing_flags=[*fused.spoofing_flags, NON_DISCRIMINATING_FLAG],
+            )
+        elif _from_envelope_only(evidence, fused.family.guess, fused.spoofing_flags):
+            # The same cap when the replies differed but only the envelope named the family (a
+            # canned responder whose `model` says gpt-4o was 0.44, surer than a constant one).
+            cap = self._metadata_weight(fused.family.guess)
+            fused = CombinedFingerprint(
+                family=_capped(fused.family, cap),
+                version=None if fused.version is None else _capped(fused.version, cap),
+                spoofing_flags=fused.spoofing_flags,
             )
         guardrails = _guardrails_from_evidence(evidence)
         caps = capability_guess(adapter.capabilities())
@@ -120,6 +133,19 @@ class FingerprintEngine:
             recommended_plan_ref=None,  # ADR-0006: u08 owns plan building.
         )
 
+    def _metadata_weight(self, family: str) -> float:
+        """The pack's largest metadata weight for ``family``: the cap of an envelope-only name.
+
+        An attribution from the envelope alone has a share of the mass of 1 by construction
+        (nothing else is kept), so a constant target whose envelope said gpt-4o was named at
+        0.52 on that one field (audit of the fingerprint).
+        """
+
+        return max(
+            (e.weights.get(_METADATA_LAYER, 0.0) for e in self._pack.entries if e.family == family),
+            default=0.0,
+        )
+
 
 #: Flag set when the target answered every attributing probe identically: the text layers had
 #: no signal, so the family comes from the response envelope alone or is unknown.
@@ -132,14 +158,43 @@ _METADATA_LAYER = "metadata"
 _MIN_PROBES_FOR_CONSTANT = 3
 
 
+def _from_envelope_only(evidence: list[FingerprintEvidence], family: str, flags: list[str]) -> bool:
+    """True if every counted piece of evidence for ``family`` is from the metadata layer.
+
+    A self-report the combiner left out (it conflicted with the statistical layer) is not
+    counted here either.
+    """
+
+    excluded_self_report = SPOOF_FLAG in flags
+    layers = {
+        ev.layer
+        for ev in evidence
+        if ev.weight > 0
+        and parse_signal(ev.signal).family == family
+        and not (excluded_self_report and parse_signal(ev.signal).detail == SELF_REPORT_DETAIL)
+    }
+    return layers == {_METADATA_LAYER}
+
+
+def _capped(guess: FingerprintGuess, cap: float) -> FingerprintGuess:
+    """``guess`` with its confidence lowered to ``cap`` when above it.
+
+    Applied to the version too, so a custom pack cannot make the version surer than the family.
+    """
+
+    if guess.confidence <= cap:
+        return guess
+    return guess.model_copy(update={"confidence": cap})
+
+
 def _from_model_field(evidence: list[FingerprintEvidence]) -> CombinedFingerprint:
     """Attribute from the envelope's ``model`` field alone, for a target with no text signal.
 
     Only metadata evidence that matched a ``model=`` fragment names the model. The rest of the
-    envelope does not: ``finish_reason=stop`` is in the meta-llama signature and every
-    OpenAI-compatible server sends it, so a constant target behind such a server was still
-    named meta-llama with a 2023-03 cutoff (re-audit of R16). A version is kept only when one
-    clearly leads; a tie was broken alphabetically and named the wrong model.
+    envelope does not: ``finish_reason=stop`` was in the meta-llama signature (dropped since)
+    and every OpenAI-compatible server sends it, so a constant target behind such a server was
+    still named meta-llama with a 2023-03 cutoff (re-audit of R16). A version is kept only when one
+    clearly leads (the combiner gives none on a tie).
     """
 
     kept = [
@@ -147,18 +202,7 @@ def _from_model_field(evidence: list[FingerprintEvidence]) -> CombinedFingerprin
         for ev in evidence
         if ev.layer == _METADATA_LAYER and "model=" in parse_signal(ev.signal).detail
     ]
-    fused = combine(kept)
-    if fused.version is None:
-        return fused
-    masses: dict[str, float] = {}
-    for ev in kept:
-        attr = parse_signal(ev.signal)
-        if attr.family == fused.family.guess and attr.version is not None and ev.weight > 0:
-            masses[attr.version] = masses.get(attr.version, 0.0) + ev.weight
-    top = sorted(masses.values(), reverse=True)
-    if len(top) > 1 and top[0] == top[1]:
-        return CombinedFingerprint(family=fused.family, version=None, spoofing_flags=[])
-    return fused
+    return combine(kept)
 
 
 class _RecordingAdapter:
