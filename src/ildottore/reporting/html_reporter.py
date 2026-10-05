@@ -143,6 +143,7 @@ class HtmlReporter(BaseReporter):
             suite_ref=ctx.run.suite_ref,
             started_at=ctx.run.started_at,
             finished_at=ctx.run.finished_at,
+            scope_sha256=ctx.run.scope_sha256,
             targets=[{"id": t.id, "type": t.type.value, "name": t.name} for t in ctx.run.targets],
             summary=summary_to_wire(summary),
             # Code to title, so the impact axis reads as harm rather than as an opaque id.

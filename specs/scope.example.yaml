@@ -2,8 +2,8 @@
 # Default-DENY: adapters refuse any host or path not listed under a target's `endpoints`.
 # Plain http is allowed ONLY to loopback (localhost, 127.0.0.1, ::1); everything else https.
 # An optional top-level `checksum:` (sha256 of the body) is verified on load when present, so a
-# scope edited without updating it is refused. It is an integrity check, not a signature, and
-# the run does not record the scope's hash.
+# scope edited without updating it is refused. It is an integrity check, not a signature. Every
+# run records the same sha256 in its run store and reports, naming the scope it ran under.
 version: "1.0"
 targets:
   - id: openai-gpt-x-staging          # must match the target file's id (see targets/example-openai.yaml)

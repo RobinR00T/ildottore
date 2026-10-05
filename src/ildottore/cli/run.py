@@ -902,7 +902,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             "and cannot be bypassed by any flag (docs/09 §5)"
         )
 
-    scope = wiring.build_scope(opts.scope)
+    scope, scope_sha256 = wiring.build_scope_with_digest(opts.scope)
 
     # Authorization gate, per target, BEFORE anything else is built or any early return.
     # A target whose id is absent from the scope used to produce a full run of blocked specs
@@ -1197,6 +1197,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     if no_judge:
         printer.error(no_judge)
 
+    if not sends_nothing and opts.resume is not None and opts.fingerprint_first:
+        # A resumed run has its row: with -sV the scope is recorded before the probe pass, its
+        # first traffic. Otherwise each run records it with its integrity record below, before
+        # its attack traffic: a fresh run stopped by its probe pass leaves no run row at all.
+        for _, target, _ in routes:
+            _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=True)
+
     probes_sent: dict[str, int] = {}
     # Each target's start is stamped before its probe pass, which is traffic of that run: the
     # runner's own stamp came after it (66 s of -sV probes before the recorded start). Without
@@ -1369,6 +1376,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             judge=judge_target,
             adaptive=adaptive,
         )
+        _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         result = _run_one_target(
             target=target,
             scope=scope,
@@ -1442,6 +1450,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         specs_by_id,
         planned_specs=planned_specs,
         run_status=run_status,
+        scope_sha256=scope_sha256,
     )
 
     code = exit_code_for(
@@ -1658,6 +1667,32 @@ def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> 
     return total
 
 
+def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool) -> None:
+    """Record the scope this invocation sends under, and say so when it is not the run's last.
+
+    A resume under a different scope.yaml is not refused (that would be a policy of its own);
+    it is recorded, so the run store names each authorization record the run went out under,
+    and noted on stderr (threat model S4, audit D-17).
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)) as store:
+        before, _after = store.add_run_scope(run_id, scope_sha256, resumed=resumed)
+    if before and before[-1] != scope_sha256:
+        first = (
+            "before scope digests were recorded"
+            if before[0] == "unrecorded"
+            else f"under scope sha256 {before[0][:12]}..."
+        )
+        last = "" if len(before) == 1 else f", last ran under {before[-1][:12]}...,"
+        print(
+            f"note: {run_id} started {first}{last} and goes on under {scope_sha256[:12]}...; "
+            "the run store records each scope in order",
+            file=sys.stderr,
+        )
+
+
 def _persist_run_integrity(
     run_db: Path,
     run_id: str,
@@ -1840,6 +1875,7 @@ def _write_reports(
     *,
     planned_specs: int | None = None,
     run_status: RunStatus | None = None,
+    scope_sha256: str | None = None,
 ) -> list[Path]:
     """Render every requested ``-o*`` report to disk; ``-oA`` writes all four formats.
 
@@ -1870,6 +1906,8 @@ def _write_reports(
                 "summary": _envelope_summary(findings),
             }
         )
+    if scope_sha256 is not None:
+        run = run.model_copy(update={"scope_sha256": scope_sha256})
     outputs = _report_outputs(opts)
 
     written: list[Path] = []

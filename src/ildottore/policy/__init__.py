@@ -35,6 +35,7 @@ from ildottore.policy.scope import (
     ScopeTarget,
     Sha256Verifier,
     load_scope,
+    load_scope_with_digest,
     scope_hash,
 )
 
@@ -60,5 +61,6 @@ __all__ = [
     "enabled_specs",
     "load_pack",
     "load_scope",
+    "load_scope_with_digest",
     "scope_hash",
 ]

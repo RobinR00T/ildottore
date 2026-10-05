@@ -471,6 +471,9 @@ class TestRun(_Frozen):
     summary: TestRunSummary = Field(default_factory=TestRunSummary)
     started_at: str | None = None
     finished_at: str | None = None
+    # SHA-256 of the scope.yaml body (its checksum line aside) that authorized this invocation,
+    # so a report says which authorization record it ran under (threat model S4, audit D-17).
+    scope_sha256: str | None = None
 
 
 # =============================================================================

@@ -231,11 +231,66 @@ class SqliteRunStore:
                     "UPDATE runs SET spend_json = ? WHERE run_id = ?",
                     (_dumps(merged), run_id),
                 )
-            if context is not None:
+
+        if context is not None:
+            self._write_context(run_id, context)
+
+    def _write_context(self, run_id: str, context: dict[str, Any]) -> None:
+        """Replace the context, keeping the scope list `add_run_scope` owns (one transaction)."""
+
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            if _SCOPES_KEY not in context:
+                stored = self._context_in_transaction(run_id) or {}
+                if _SCOPES_KEY in stored:
+                    context = {**context, _SCOPES_KEY: stored[_SCOPES_KEY]}
+            self._conn.execute(
+                "UPDATE runs SET context_json = ? WHERE run_id = ?", (_dumps(context), run_id)
+            )
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+
+    def add_run_scope(
+        self, run_id: str, scope_sha256: str, *, resumed: bool = False
+    ) -> tuple[list[str], list[str]]:
+        """Record that ``scope_sha256`` authorized traffic of ``run_id``; return (before, after).
+
+        The context keeps ``scope_sha256s``, the scope of each invocation in order, appended
+        whenever it differs from the last one (so a return to an earlier scope shows too). A
+        ``resumed`` run whose context has no list was recorded before scopes were kept: its list
+        starts with ``"unrecorded"``, so the first scope is not silently taken for the whole
+        run's. One immediate transaction: two resumes of one run id cannot each drop the other's
+        entry (audit D-17).
+        """
+
+        self._ensure_run_row(run_id)
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            context = self._context_in_transaction(run_id) or {}
+            recorded = context.get(_SCOPES_KEY)
+            if isinstance(recorded, list):
+                before = [s for s in recorded if isinstance(s, str)]
+            else:
+                before = [_UNRECORDED_SCOPE] if resumed and context else []
+            after = before if before and before[-1] == scope_sha256 else [*before, scope_sha256]
+            if after != recorded:
                 self._conn.execute(
                     "UPDATE runs SET context_json = ? WHERE run_id = ?",
-                    (_dumps(context), run_id),
+                    (_dumps({**context, _SCOPES_KEY: after}), run_id),
                 )
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+        return before, after
+
+    def _context_in_transaction(self, run_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT context_json AS value FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        return _loads_dict(row["value"] if row is not None else None, column="context_json")
 
     # --- queries (reporting / replay support) --------------------------------
 
@@ -438,6 +493,12 @@ def _dumps_list(obj: list[dict[str, Any]]) -> str:
     """Canonical JSON for a list column."""
 
     return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+#: Context key holding every scope digest that authorized traffic of a run, in order.
+_SCOPES_KEY = "scope_sha256s"
+#: First entry for a run recorded before scope digests were kept.
+_UNRECORDED_SCOPE = "unrecorded"
 
 
 def _dumps(obj: dict[str, Any]) -> str:

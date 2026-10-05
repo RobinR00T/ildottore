@@ -22,6 +22,7 @@
       {% if suite_ref %}<dt>Suite</dt><dd>{{ suite_ref }}</dd>{% endif %}
       {% if started_at %}<dt>Started</dt><dd>{{ started_at }}</dd>{% endif %}
       {% if finished_at %}<dt>Finished</dt><dd>{{ finished_at }}</dd>{% endif %}
+      {% if scope_sha256 %}<dt>Scope (SHA-256)</dt><dd><code>{{ scope_sha256 }}</code></dd>{% endif %}
     </dl>
   </header>
 

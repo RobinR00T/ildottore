@@ -53,6 +53,7 @@ from ildottore.policy import (
     PolicyPack,
     Scope,
     load_scope,
+    load_scope_with_digest,
 )
 from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
@@ -92,6 +93,7 @@ __all__ = [
     "build_run_store",
     "build_runner",
     "build_scope",
+    "build_scope_with_digest",
     "check_target_credential",
     "comprehending_adapter_factory",
     "deterministic_clock",
@@ -1249,6 +1251,12 @@ def build_scope(path: Path) -> Scope:
     """Load + integrity-check a ``scope.yaml`` (u01, S3/S4). Never bypassable."""
 
     return load_scope(path)
+
+
+def build_scope_with_digest(path: Path) -> tuple[Scope, str]:
+    """:func:`build_scope`, plus the SHA-256 of the body it loaded (recorded by a run, S4)."""
+
+    return load_scope_with_digest(path)
 
 
 # Re-export for the scope-gate command (kept explicit so the gate lives in one place).

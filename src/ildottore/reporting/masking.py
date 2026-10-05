@@ -14,11 +14,14 @@ process-wide redactor. Redaction preserves container shape and is idempotent
 
 from __future__ import annotations
 
+import re
 from typing import Protocol, runtime_checkable
 
 from ildottore.redactor import Redactor as _DefaultRedactorImpl
 from ildottore.redactor import redact_evidence_ref
 from ildottore.shared.models import Finding, TestRun
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 __all__ = ["MaskingContext", "Redactor", "mask_findings", "mask_run", "mask_text"]
 
@@ -66,6 +69,10 @@ def mask_run(run: TestRun, redactor: Redactor) -> TestRun:
         _restore_tool_fields(masked_finding, finding, redactor)
         for masked_finding, finding in zip(masked.get("findings") or [], run.findings, strict=True)
     ]
+    # The scope digest is the tool's own SHA-256 of the authorization record; the entropy rule
+    # cannot tell it from a key, and masked it says nothing. Kept only in the shape it has.
+    if run.scope_sha256 is not None and _SHA256.fullmatch(run.scope_sha256):
+        masked["scope_sha256"] = run.scope_sha256
     return TestRun.model_validate(masked)
 
 

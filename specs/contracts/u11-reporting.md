@@ -80,7 +80,10 @@ the state in each result's `properties.state`.
 - JUnit: `<testsuites>`→`<testsuite name=framework>`→`<testcase name=spec_id>` with `<failure>`
   for exploited, `<skipped>` for inconclusive/blocked-by-policy.
 - Masking: every string field passing through `masking.py` is redacted (typed/hashed per
-  `docs/11 §5`); no raw secret/PII reaches any writer.
+  `docs/11 §5`); no raw secret/PII reaches any writer. Fields the tool computed are restored
+  after masking only in their exact shape: evidence references, spec and attempt ids, and
+  (since 2026-10-05) `run.scope_sha256`, which the SARIF run `properties` and a JUnit
+  framework-suite property also carry (audit D-17).
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/reporting -q` green; coverage ≥ 90% for `src/ildottore/reporting`.
