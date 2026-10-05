@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass
 
 from ildottore.evaluators.base import BaseEvaluator, mask_value, shannon_entropy
+from ildottore.redactor import skipped
 from ildottore.shared.enums import EvaluatorType
 from ildottore.shared.models import EvalContext, Verdict
 
@@ -44,7 +45,12 @@ _RULES: tuple[SecretShapeRule, ...] = (
     SecretShapeRule("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), 2.8),
     SecretShapeRule(
         "jwt",
-        re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+        # The `skip` branch steps over a run that holds no token (``redactor.SKIP``): every
+        # `eyJ` of 100 KB of `eyJ-` was a start scanned to the end of the run (1.6 s).
+        re.compile(
+            r"\b(?:eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"
+            r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
+        ),
         3.0,
     ),
     SecretShapeRule(
@@ -66,6 +72,8 @@ def _detect(text: str) -> list[_SecretHit]:
     hits: list[_SecretHit] = []
     for rule in _RULES:
         for m in rule.regex.finditer(text):
+            if skipped(m):
+                continue
             value = m.group(0)
             if rule.kind == "private_key":
                 hits.append(_SecretHit(rule.kind, value))

@@ -174,9 +174,11 @@ def test_the_evaluator_does_not_take_a_dated_id_for_a_labelled_phone(text: str) 
 
 
 def test_the_longest_glued_label_reaches_the_evaluator() -> None:
-    """Label, three separators, `number`, a dash: 18 characters before the number."""
+    """Label, three separators, `number`, a dash: 18 characters before the number, and one
+    more for the character before the label, which decides whether it starts a word."""
 
     assert "phone" in {h.kind for h in _detect("teléfono:: number-49-30-20120512")}
+    assert "phone" not in {h.kind for h in _detect("xteléfono:: number-49-30-20120512")}
 
 
 @pytest.mark.parametrize("digits", ["411111111117", "41111111111111111115"])

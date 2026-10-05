@@ -5,6 +5,57 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (the redactor and the evaluators on hostile text)
+
+- **Echoed masks could corrupt the redaction and abort a campaign.** The token that keeps a mask
+  out of the next patterns' reach used one character to open and to close, so a closing one, a
+  digit of the text and the next opening one formed another token: `«a»«b»0«c»` came back as
+  `«a»«a»1` followed by NUL characters, `«b»` and `«c»` lost, and changed again on every pass,
+  which the evidence store treats as a reason to refuse the reply (and the campaign stops). A
+  target that echoes masks, or a registered credential next to them, was enough. The token now
+  opens with `\x00` and closes with `\x01`, both are dropped from the input first, and the masks
+  are put back in one pass instead of one `str.replace` each (last row of the table below).
+- **A mask written by the target no longer hides what it wraps.** A mask is kept as it is only
+  when its type is one the tool writes (the redactor's rules and the evaluators' type hints; a
+  test keeps the list complete). Any other is read as text: `«REDACTED:<the operator's key>»`
+  kept the key, which the target had received, and the reports printed it. Now the key inside is
+  masked (`«REDACTED:«REDACTED:credential:…»»`), and so is an AWS key, a high-entropy value, or a
+  value that only its label or URL marks secret (`password: «REDACTED:<the password>»`).
+- **`mask_value` returned a value raw** when it held `\x00` or `\x01`: the redactor drops them,
+  so the output differed from the input and was taken as masked. It compares with the input
+  without them now (a shared line or an injected tool argument ending in `\x01` was stored raw).
+- **Seven paths were quadratic in text a target writes.** The phone, email and JWT rules (the
+  JWT one twice, in the redactor and in `secret_shape`) gained a `skip` branch
+  (`redactor.SKIP`): a run that cannot match from its first start is stepped over instead of
+  retried from every later start, and the matches are exactly main's (fuzzed on 2.9 million
+  strings). The backtick rule of `tool_call` no longer has two ambiguous `[^`]*` around its
+  letter, `pii_detector` checks a phone against the hits by position (next item), and the masks
+  are restored in one pass (first item). Each row is one call on main, then now:
+
+  | Input | Read by | main | now |
+  |---|---|---|---|
+  | 99 KB of `1. 2. 3. ` | `redact_text` (phone rule) | 17.8 s | 0.03 s |
+  | 100 KB of `a.` (also `1-`, `a@b.b.…`) | `redact_text` (email rule) | 6.5 s | 0.02 s |
+  | 100 KB of `eyJ-` | the redactor's JWT rule alone | 1.7 s | under 0.001 s |
+  | 100 KB of `eyJ-` | `secret_shape` | 1.6 s | 0.002 s |
+  | 100 KB of `a.` | `pii_detector` (email rule) | 6.6 s | 0.01 s |
+  | an unclosed backtick in 40 KB | `tool_call` | 0.38 s | 0.001 s |
+  | 12,000 emails and 12,000 phones (397 KB) | `pii_detector` | 3.8 s | 0.06 s |
+  | 20,000 echoed masks | `redact_text` (mask restore) | 9.7 s | 0.05 s |
+
+  The response cap is 4 MiB, forty times most of these inputs: a quadratic rule ran for minutes
+  to hours on one reply. The email rule is shared by the redactor and `pii_detector` now
+  (`redactor.EMAIL`).
+- **`pii_detector` skips a phone inside an earlier hit by position**, not by value: a phone was
+  compared with the value of every hit (the 397 KB row above). A number that only repeats digits
+  of a card, IBAN, ID, IP or email elsewhere in the reply is a phone hit now; one inside them is
+  still skipped.
+- Wording and test pins from the pre-merge audits of #43 and #44 (the UUID figure, the space
+  kept after a labelled card only, a card glued to a phone label, the evaluator's 19-character
+  window, a test docstring that claimed a shell ran, a halted-run helper that now asserts it
+  halted).
+- Tests: `tests/test_redactor_robustness.py`.
+
 ### Fixed (a YAML key written twice)
 
 - **A key written twice in one mapping is refused, not resolved to the last value.** PyYAML
@@ -47,13 +98,12 @@ versioning: [SemVer](https://semver.org/).
 
 ### Fixed (the scope checksum's coverage)
 
-- **The checksum could leave part of a value out.** The body it covers (and now the run's
-  digest) dropped every line starting with `checksum:` after its indentation, and lines were
-  cut at U+0085, U+2028 and U+2029 too, so a `checksum:` "line" inside a folded or quoted
-  command line was not covered: two scopes authorizing different stdio commands had one
-  checksum. Lines are split at `\n` only and only one starting at column 0 is left out now, and
-  the loader parses the
-  rest and requires it to be exactly what it loaded bar the checksum: a quoted command that
+- **The checksum could leave part of a value out.** The body it covers (and now the run's digest)
+  dropped every line starting with `checksum:` after its indentation, and lines were cut at
+  U+0085, U+2028 and U+2029 too, so a `checksum:` "line" inside a folded or quoted command line
+  was not covered: two scopes authorizing different stdio commands had one checksum. Lines are
+  split at `\n` only and only lines starting at column 0 are left out now, and the loader parses
+  the rest and requires it to be exactly what it loaded bar the checksum: a quoted command that
   continues at column 0 with `checksum:` is refused with a message to move it. A scope with one
   top-level `checksum:` line verifies as before; one whose whole document is indented (its
   top-level keys at column 2) now fails its checksum, closed rather than open.
@@ -73,21 +123,23 @@ versioning: [SemVer](https://semver.org/).
   inside a longer word (`hotel_`, `telemetry_`) or after a digit or `_` (`x1tel_`, the middle of
   an opaque token, and so a snake_case field: `user_phone_4155550142`, `credit_card_4111...` stay
   readable, as on main) it is no label, so the rule does not cut a number out of a run of word
-  characters; after `-`, `+`, `/` or `=` inside a token it still can (about 3 UUIDs in a million),
-  as the plain phone rule already does far more often. An unlabelled run glued to a word stays
-  readable: by shape it is an id (`user_4155550142`, `run_123456789`) as often as a number. The
-  rule runs with its detector, so a redactor built without the phone or card pattern does not gain
-  it. What it also masks, as the price of trusting the label: an epoch or a version after one
-  (`cell_1700000000`, `phone_2.10.123456`), the digit of a numbered field (`tel1 4155550142`), and
-  a dated id after one (`mobile-1-20250805`); a card number after a phone label is masked as a
-  phone.
+  characters; after `-`, `+`, `/` or `=` inside a token, or at the start of one (a UUID or hex
+  digest that begins with `cc`), it still can: about 2 v4 UUIDs in a million, half of them at the
+  start, where the plain phone rule already cuts about 7 in a hundred. An unlabelled run glued to
+  a word stays readable: by shape it is an id (`user_4155550142`, `run_123456789`) as often as a
+  number. The rule runs with its detector, so a redactor built without the phone or card pattern
+  does not gain it. What it also masks, as the price of trusting the label: an epoch or a version
+  after one (`cell_1700000000`, `phone_2.10.123456`), the digit of a numbered field (`tel1
+  4155550142`), and a dated id after one (`mobile-1-20250805`); a card number glued to a phone
+  label (`tel_4111...`) is masked as a phone, and the evaluator reports nothing for it.
 - **The `pii_detector` evaluator agrees.** It keeps a prefixed date after a phone label a phone
   hit (`redactor.follows_phone_label`) and finds a card glued to its label
   (`redactor.LABELLED_CARD`), counting that occurrence once and every other copy of the number
   as its own hit, so a canary written twice still corroborates.
 - Checked against every tracked line of the repo, old and new: the redactor changes only the
   examples this section and the previous ones add (`tel.06-20120512` and `tel06-20120512` in
-  their tests are now masked) and keeps one space it used to swallow after a masked card; the
+  their tests are now masked) and keeps one space it used to swallow after a masked card that
+  follows a card label (`x 4111111111111111 foo` still loses it, as on main); the
   evaluator gains hits only on those examples.
 - Tests: `tests/test_labelled_numbers.py`, and three bound cases from the pre-merge audit of
   #42 in `tests/test_date_shape_tightening.py` (a 3-digit first or inner segment, the card

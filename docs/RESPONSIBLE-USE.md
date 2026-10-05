@@ -25,8 +25,8 @@ assurance report, not offensive capability.
   The scope file *is* the authorization. It is not signed: an optional SHA-256 `checksum:` makes
   edits detectable (whether to add real signing is open decision OD-2). Runs record what was
   sent and what came back as evidence, when they ran and the SHA-256 of the scope they ran
-  under, but not who ran them. Using
-  it against systems you are not authorized to test is prohibited and may be illegal.
+  under, but not who ran them. Using it against systems you are not authorized to test is
+  prohibited and may be illegal.
 
 ## 3. Safe-by-design: the controls that are actually implemented
 These are not aspirations; they are enforced by the code and covered by tests

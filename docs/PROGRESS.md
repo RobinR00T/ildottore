@@ -3,6 +3,17 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-06 (night): PRs #43 to #45 merged; the redactor on hostile text
+
+- PR #43 (labelled numbers), PR #44 (D-17, the scope a run went out under) and PR #45 (a YAML key
+  written twice) squash-merged as `9d09486`, `0866ba3` and `519aa99`. On `fix/redactor-robustness`
+  (`tests/test_redactor_robustness.py`): the stash-token collision (echoed masks corrupting the
+  redaction and aborting a campaign), a mask written by the target hiding a key, `mask_value`
+  returning a value raw, seven quadratic paths (phone, email, JWT twice, backtick injection,
+  `pii_detector`'s phone check, the mask restore), and the low items of the #43 and #44 audits.
+  The #45 pre-merge audit's findings (two scope identities with one name, the repo-wide YAML
+  test's blind spots, an alias position, doc gaps) are on `fix/scope-duplicate-identities`.
+
 ## State, 2026-10-06 (night): a YAML key written twice
 
 - On `fix/yaml-duplicate-keys` (`tests/test_yaml_duplicate_keys.py`): a key written twice in

@@ -168,7 +168,8 @@ def test_the_documented_recipe_reproduces_the_digest(
 
 
 def test_a_checksum_line_smuggled_into_a_quoted_command_is_refused(tmp_path: Path) -> None:
-    """Both versions had one digest before the re-parse check: the evil one ran `curl`."""
+    """Both versions had one digest before the re-parse check, and the second authorized a
+    different command line (the stdio adapter runs no shell, so the text is extra arguments)."""
 
     from ildottore.policy.errors import ScopeError
 
@@ -251,7 +252,7 @@ def _halted_run(tmp_path: Path) -> tuple[Path, Path, Path, str]:
 
     target, scope = _workspace(tmp_path)
     db = tmp_path / "runs.sqlite"
-    CliRunner().invoke(
+    result = CliRunner().invoke(
         app,
         [
             "run", "-t", str(target), "--scope", str(scope), "--quick", "-sV",
@@ -259,6 +260,7 @@ def _halted_run(tmp_path: Path) -> tuple[Path, Path, Path, str]:
             "--evidence-root", str(tmp_path / "ev"), "--no-color",
         ],
     )  # fmt: skip
+    assert result.exit_code == 3 and "budget ceiling reached" in result.output, result.output
     with closing(sqlite3.connect(db)) as conn:
         (run_id,) = conn.execute("SELECT run_id FROM runs").fetchone()
     return target, scope, db, run_id

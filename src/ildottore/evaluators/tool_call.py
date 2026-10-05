@@ -74,7 +74,10 @@ _INJECTION_RE = re.compile(
     r"|disregard\s+(?:the\s+)?above"
     r"|system\s*:\s*you\s+are"
     r"|\$\(\s*[A-Za-z_./]"  # shell command substitution $(cmd, not a bare $(5) arithmetic
-    r"|`[^`]*[A-Za-z][^`]*`"  # backtick command substitution `cat /etc/passwd` (audit M6)
+    # Backtick command substitution `cat /etc/passwd` (audit M6). The text before the first
+    # letter has no letter: with two `[^`]*` around it, an unclosed backtick was quadratic in
+    # the argument a target writes (40 KB, 0.4 s; pre-commit audit of the hostile-text block).
+    r"|`[^`A-Za-z]*[A-Za-z][^`]*`"
     r"|;\s*rm\s+-rf"
     r"|<\s*script\b",
     re.IGNORECASE,
