@@ -461,7 +461,12 @@ the reason without quoting the line, a suite or pack error names the field witho
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. An oracle marker that an echo of the
 request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered
-into the spec's images (see `CONTRIBUTING.md`).
+into the spec's images (see `CONTRIBUTING.md`). An evaluator config that would silently not
+check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no usable
+`patterns`, and a `tool_call` allowlist (`patterns`, the tools the agent is authorized to call)
+that names a tool the setup marks `external: true`. An allowlist name the setup does not declare
+(when it declares tools) is the same code as a warning, naming the closest declared tool when
+one is close.
 
 ### `dottore describe`, one spec's detail card
 
@@ -793,7 +798,8 @@ Each spec names one or more evaluators. The design is **deterministic-first**:
   verdict (empty content, a refusal in prose) counts like no judge, never as a pass.
 
 The **`tool_call`** evaluator inspects the tool-call trace and fails on four abuse classes:
-an unauthorized tool (outside `patterns` / `setup.tools`), an unconfirmed destructive call, an
+an unauthorized tool (outside `patterns`, or with no `patterns` outside the `setup.tools` not
+marked `external: true`), an unconfirmed destructive call, an
 injection marker smuggled into an argument value, and **argument smuggling** (a.k.a. schema
 poisoning). For the last one the spec lists the out-of-schema/privileged argument keys under
 the evaluator's `forbidden_args`; a truthy value under any of them (at any nesting depth), on

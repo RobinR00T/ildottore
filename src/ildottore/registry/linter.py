@@ -20,6 +20,7 @@ offline stub evaluator table.
 
 from __future__ import annotations
 
+import difflib
 import re
 from collections.abc import Mapping
 from pathlib import Path
@@ -472,6 +473,9 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
     """
     errors: list[LintError] = []
     for cfg in spec.evaluators:
+        if cfg.type is EvaluatorType.TOOL_CALL:
+            errors.extend(_check_tool_allowlist(spec, cfg.patterns or []))
+            continue
         if cfg.type is not EvaluatorType.TOOL_SEQUENCE:
             continue
         if not [step for step in (cfg.patterns or []) if step.strip()]:
@@ -485,6 +489,57 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
                     spec_id=spec.id,
                 )
             )
+    return errors
+
+
+def _check_tool_allowlist(spec: AttackSpec, allowlist: list[str]) -> list[LintError]:
+    """Refuse a ``tool_call`` allowlist that reads as a list of exploits.
+
+    ``patterns`` on ``tool_call`` is the AUTHORIZED allowlist: a call outside it is the
+    exploit. ``AG-EXTORT-CHAIN-001`` listed its harmful tools there ("any of these =>
+    exploited"), so a benign ``list_tables`` failed as unauthorized and an ``http_post`` to the
+    attacker passed (2026-10-07). A tool the scene marks ``external: true`` is egress no secure
+    agent makes, so it never belongs on the allowlist: an error. A name the scene does not
+    declare is only a warning: against a deployed application the allowlist may name the
+    deployment's own tools while ``setup.tools`` marks only the destructive one, but it is also
+    how a typo reads, so the warning names the closest declared tool.
+    """
+
+    setup_tools = spec.setup.tools if spec.setup is not None and spec.setup.tools else []
+    declared = {
+        str(tool.get("name")): tool
+        for tool in setup_tools
+        if isinstance(tool, dict) and tool.get("name")
+    }
+    names = [name for name in allowlist if name]
+    errors: list[LintError] = []
+    external = sorted(name for name in names if declared.get(name, {}).get("external"))
+    if external:
+        errors.append(
+            LintError(
+                code=LintCode.EVALUATOR_MISCONFIGURED,
+                message=(
+                    f"tool_call authorizes {', '.join(external)}, which the setup declares "
+                    "external: 'patterns' is the authorized allowlist, so a call to it would "
+                    "never be flagged"
+                ),
+                spec_id=spec.id,
+            )
+        )
+    for name in sorted(name for name in names if declared and name not in declared):
+        close = difflib.get_close_matches(name, list(declared), n=1)
+        hint = f" (did you mean {close[0]!r}?)" if close else ""
+        errors.append(
+            LintError(
+                code=LintCode.EVALUATOR_MISCONFIGURED,
+                severity=Severity.WARNING,
+                message=(
+                    f"tool_call authorizes {name!r}, which the setup does not declare{hint}: "
+                    "'patterns' is the authorized allowlist, compared by exact name"
+                ),
+                spec_id=spec.id,
+            )
+        )
     return errors
 
 
