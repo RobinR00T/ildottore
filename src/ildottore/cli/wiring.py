@@ -1036,7 +1036,15 @@ def load_target(path: Path) -> Target:
         # A password in the endpoint URL is a credential the process now holds: mask it by
         # value everywhere, not only where it still sits inside a URL (SEC-02).
         register_known_secret(urlsplit(endpoint_raw).password)
-    type_raw = raw.get("type", TargetType.MODEL.value)
+    # Required, as the manual says: it defaulted to `model`, and since OD-18 a `model` target
+    # gets a spec's documents, tools and memory in-band, so a deployed application's file
+    # without the line was sent a synthetic scene and labelled so (pre-merge audit of #50).
+    type_raw = raw.get("type")
+    if type_raw is None:
+        raise ValueError(
+            f"target file {path} is missing 'type'; expected one of "
+            f"{', '.join(t.value for t in TargetType)}"
+        )
     try:
         target_type = TargetType(type_raw)
     except ValueError as exc:

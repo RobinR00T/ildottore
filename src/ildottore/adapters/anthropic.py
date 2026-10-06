@@ -56,8 +56,8 @@ class AnthropicAdapter(BaseAdapter):
 
         return self.tools_enabled
 
-    #: The whole history goes on the wire, so a memory seed reaches the model (OD-18).
-    carries_history = True
+    #: The system prompt goes on the wire, so a memory seed reaches the model (OD-18).
+    carries_system_prompt = True
 
     def capabilities(self) -> Capabilities:
         return Capabilities(

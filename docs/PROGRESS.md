@@ -13,7 +13,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   then a deployed application, which waits for option B. A first local smoke pass (6 setup
   specs against `llama3.2:3b`) delivered the scene end to end. Open, found on the way:
   `AG-WORM-PROPAGATE-001`'s `regex_absence` matches a mention of the worm marker, so a refusal
-  that quotes it fails (on main too; joining round texts makes it reachable in-band).
+  that quotes it fails (on main too; joining round texts makes it reachable in-band), and
+  `MEM-POISON-001`'s regex only matches the planted tag at the end of the reply, so a reply that
+  obeys the memory with the tag first is `inconclusive` without a judge (on main too).
 
 ## State, 2026-10-06 (night): follow-ups of the #46 pre-merge audit
 

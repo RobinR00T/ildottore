@@ -21,8 +21,9 @@ from ildottore.core.runner import CampaignRunner
 from ildottore.core.setup_delivery import (
     DEFAULT_TOOL_RESULT,
     IN_BAND,
+    MAX_CALLS_PER_ROUND,
     MAX_TOOL_ROUNDS,
-    SEED_ACK,
+    MEMORY_HEADER,
     delivers_in_band,
     in_band_setup,
 )
@@ -53,7 +54,7 @@ class Recording:
     """A target that records every request; it calls ``calls`` on the first send of a turn."""
 
     carries_tool_definitions = True
-    carries_history = True
+    carries_system_prompt = True
 
     def __init__(self, calls: list[dict[str, Any]] | None = None, *, always: bool = False) -> None:
         self.id = "rec"
@@ -122,9 +123,10 @@ def test_the_scene_of_each_kind_of_setup() -> None:
     assert "[document nacos_config_row]" in tools.context
 
     memory = in_band_setup(_spec("MEM-POISON-001"))
-    assert [m["role"] for m in memory.preamble] == ["user", "assistant"]
-    assert memory.preamble[-1]["content"] == SEED_ACK
+    assert memory.memory.startswith(MEMORY_HEADER + "\n- [an earlier session, user] Remember")
     assert memory.tools == [] and memory.context == ""
+    xsession = in_band_setup(_spec("DL-XSESSION-001"))
+    assert "- [previous_user, user] my private note is" in xsession.memory
 
 
 # --- through the runner -------------------------------------------------------------------
@@ -162,13 +164,14 @@ async def test_documents_precede_the_attack_in_one_user_turn(fixtures) -> None:
     assert turn["content"].endswith(_spec("PI-INDIRECT-RAG-001").attack.user_prompt or "")
 
 
-async def test_a_memory_seed_opens_the_history(fixtures) -> None:
+async def test_a_memory_seed_is_saved_memory_in_the_system_prompt(fixtures) -> None:
+    """Not turns of this chat: that measured repeating one's own history, not a memory."""
+
     adapter = Recording()
     await _run("MEM-POISON-001", adapter, fixtures)
     (request,) = adapter.requests
-    roles = [m["role"] for m in request.messages or []]
-    assert roles == ["user", "assistant", "user"]
-    assert (request.messages or [])[1]["content"] == SEED_ACK
+    assert [m["role"] for m in request.messages or []] == ["user"]
+    assert MEMORY_HEADER in (request.system_prompt or "")
 
 
 async def test_the_tool_rounds_stop_and_leave_no_call_unanswered(fixtures) -> None:
@@ -305,7 +308,7 @@ def test_the_scene_skips_what_it_cannot_send() -> None:
     assert "[document doc-1]\nbody\n[/document]" in scene.context and "empty" not in scene.context
     assert [t["name"] for t in scene.tools] == ["t"]
     assert scene.tool_result("t") == '{"rows": [1]}'
-    assert scene.preamble == []  # a seed never opens with an assistant turn
+    assert scene.memory == MEMORY_HEADER + "\n- [an earlier session, assistant] hi"
     assert in_band_setup(spec.model_copy(update={"setup": None})).tools == []
 
 
@@ -351,11 +354,13 @@ async def test_text_written_before_a_tool_call_is_scored(fixtures) -> None:
     assert result.findings[0].status is VerdictStatus.FAIL
 
 
-async def test_a_memory_seed_is_not_claimed_on_an_adapter_without_history(fixtures) -> None:
-    class LastTurnOnly(Recording):
-        carries_history = False
+async def test_a_memory_seed_is_not_claimed_on_an_adapter_without_a_system_prompt(
+    fixtures,
+) -> None:
+    class NoSystemPrompt(Recording):
+        carries_system_prompt = False
 
-    adapter = LastTurnOnly()
+    adapter = NoSystemPrompt()
     result = await _run("MEM-POISON-001", adapter, fixtures)
     assert adapter.requests == []
     assert result.findings[0].reasoning.startswith("setup_not_delivered")
@@ -400,7 +405,9 @@ async def test_an_unreached_scene_is_not_counted_as_coverage(fixtures) -> None:
     assert spec.id in coverage.not_exercised
 
 
-async def test_media_and_a_memory_seed_together_are_not_claimed(fixtures) -> None:
+async def test_media_and_a_memory_seed_go_together(fixtures) -> None:
+    """The memory is in the system prompt, which a turn with media carries."""
+
     from ildottore.shared.models import Setup
 
     spec = _spec("MM-IMG-TOOL-EXFIL-001")
@@ -415,6 +422,87 @@ async def test_media_and_a_memory_seed_together_are_not_claimed(fixtures) -> Non
     evaluators, mutators, scorer, stores = fixtures
     adapter = Recording()
     runner = _runner(adapter, evaluators, mutators, scorer, stores)
-    result = await runner.run(run_id="r1", target=_target(), specs=[seeded])
-    assert adapter.requests == []
-    assert "media cannot carry a memory seed" in result.findings[0].reasoning
+    await runner.run(run_id="r1", target=_target(), specs=[seeded])
+    (request,) = adapter.requests
+    assert request.media and "remember this" in (request.system_prompt or "")
+
+
+# --- a target that writes hostile calls (pre-merge audit of #50) -------------------------
+
+
+async def test_a_call_to_an_undeclared_tool_is_not_answered(fixtures) -> None:
+    adapter = Recording([{"id": "x", "name": "transfer_funds", "arguments": {}}])
+    result = await _run("PI-INDIRECT-TOOL-001", adapter, fixtures)
+    assert len(adapter.requests) == 1
+    assert result.findings[0].attempts[0].request.metadata["tool_rounds"] == 0
+
+
+async def test_a_spec_without_tools_plays_no_round(fixtures) -> None:
+    adapter = Recording([{"id": "x", "name": "transfer_funds", "arguments": {}}])
+    await _run("PI-INDIRECT-RAG-001", adapter, fixtures)
+    assert len(adapter.requests) == 1
+
+
+async def test_a_flood_of_calls_is_not_answered(fixtures) -> None:
+    flood = [{"id": "d", "name": "lookup_ticket", "arguments": {}}] * (MAX_CALLS_PER_ROUND + 1)
+    adapter = Recording(flood)
+    result = await _run("PI-INDIRECT-TOOL-001", adapter, fixtures)
+    assert len(adapter.requests) == 1
+    attempt = result.findings[0].attempts[0]
+    assert attempt.response is not None and len(attempt.response.tool_calls) == len(flood)
+
+
+async def test_repeated_call_ids_get_their_own_results(fixtures) -> None:
+    calls = [{"id": "dup", "name": "lookup_ticket", "arguments": {"n": n}} for n in range(3)]
+    adapter = Recording(calls)
+    await _run("PI-INDIRECT-TOOL-001", adapter, fixtures)
+    history = adapter.requests[1].messages or []
+    ids = [m["tool_call_id"] for m in history if m["role"] == "tool"]
+    assert len(set(ids)) == 3 and ids[0] == "dup"
+    assert [c["id"] for c in history[-4]["tool_calls"]] == ids
+
+
+def test_a_target_file_must_say_its_type(tmp_path: Path) -> None:
+    """It defaulted to `model`, which since OD-18 sends a deployed app a synthetic scene."""
+
+    from ildottore.cli.wiring import load_target
+
+    target = tmp_path / "target.yaml"
+    target.write_text("id: app\nendpoint: https://app.example.test/v1\n")
+    with pytest.raises(ValueError, match="missing 'type'"):
+        load_target(target)
+
+
+async def test_the_memory_specs_reach_the_mock_target(fixtures) -> None:
+    """Through a real adapter class, not the recording stand-in (delta audit of #50)."""
+
+    adapter = MockTarget(MockScenario(response="ok", capabilities=_ALL))
+    result = await _run("DL-XSESSION-001", adapter, fixtures)
+    attempt = result.findings[0].attempts[0]
+    assert attempt.request.metadata["setup_delivery"] == IN_BAND
+    assert MEMORY_HEADER in (attempt.request.system_prompt or "")
+
+
+async def test_a_round_with_too_many_argument_bytes_is_not_answered(fixtures) -> None:
+    from ildottore.core.setup_delivery import MAX_ROUND_ARGUMENT_BYTES
+
+    big = "x" * (MAX_ROUND_ARGUMENT_BYTES + 1)
+    adapter = Recording([{"id": "c", "name": "lookup_ticket", "arguments": {"q": big}}])
+    await _run("PI-INDIRECT-TOOL-001", adapter, fixtures)
+    assert len(adapter.requests) == 1
+
+
+def test_the_token_reservation_counts_threaded_arguments() -> None:
+    from ildottore.core.execute import reserve_tokens
+
+    plain = ModelRequest(messages=[{"role": "assistant", "content": ""}])
+    threaded = ModelRequest(
+        messages=[
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "c", "name": "f", "arguments": {"q": "x" * 4000}}],
+            }
+        ]
+    )
+    assert reserve_tokens(threaded, None) - reserve_tokens(plain, None) >= 1000

@@ -85,13 +85,15 @@ concretes:
    (As built: plan-time capability filter → policy gate → mutation checks (an unregistered
    mutator or a parameter the mutator does not accept sends nothing for that spec) → mutate →
    reproduce → evaluate/combine → score → persist. Setup is materialized in-band for a
-   `type: model` target only, OD-18 option A (ADR-0009): memory seed as prior turns, documents
+   `type: model` target only, OD-18 option A (ADR-0009): memory seed as saved memory after the
+   system prompt, documents
    before the first attacker turn, tool definitions on every send, and a tool loop of at most 4
    rounds per turn inside the conversation engine, each round a send under the budget and the
    pacer; the final turn's scored text is the text of all its rounds; the attempt's request
-   records `setup_delivery`, `tool_rounds` and the tools. An adapter that cannot carry tool
-   definitions, or that sends the last turn only (REST) for a memory seed, and a turn with media
-   plus a memory seed, make such a spec `inconclusive` (`setup_not_delivered`) with no send. A
+   records `setup_delivery`, `tool_rounds` and the tools. A round is answered only when every
+   call names a declared tool, there are at most 16 and their arguments fit 64 KB. An adapter
+   that cannot carry tool definitions, or that sends no system prompt for a memory seed, makes
+   such a spec `inconclusive` (`setup_not_delivered`) with no send. A
    spec whose untrusted content is only a tool's result, judged by no trace evaluator, whose model
    called none of those tools and whose evaluators did not fail, is `inconclusive`
    (`setup_not_reached`), and the summary does not count it as exercised.)

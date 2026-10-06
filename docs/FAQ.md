@@ -126,7 +126,8 @@ standard (training data, infrastructure, logging) needs an audit, not a scan.
 ### Does Il Dottore send a spec's documents, tools or memory to my target?
 
 To a bare model, yes; to a deployed application, not yet. When your target is `type: model`
-(a model API), the spec's memory seed goes as prior turns, its documents as retrieved context
+(a model API), the spec's memory seed goes as saved memory from earlier sessions after the
+system prompt, its documents as retrieved context
 before the attack, and its tools as tool definitions; when the model calls one, Il Dottore
 answers with what the spec says the tool returns and lets it continue, for at most 4 rounds.
 That tests how the model handles untrusted content, not your application's own retrieval or

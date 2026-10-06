@@ -178,8 +178,8 @@ class MockTarget:
 
         return self._scenario.capabilities.tools
 
-    #: It reads the history (a tool round ends with its text), as a live chat API would.
-    carries_history = True
+    #: It takes a system prompt, as a live chat API does (OD-18).
+    carries_system_prompt = True
 
     def reset(self) -> None:
         """Reset the internal sequence cursor to 0 (deterministic re-run)."""

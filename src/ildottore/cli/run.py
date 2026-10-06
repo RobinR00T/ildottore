@@ -366,9 +366,11 @@ def estimate_plan(
             scene = in_band_setup(spec)
             if scene.tools and not spec.attack.media:
                 sends_per_turn += MAX_TOOL_ROUNDS
-            seed = "".join(str(turn.get("content", "")) for turn in scene.preamble)
             prompt = (
-                seed + scene.context + prompt + (json.dumps(scene.tools) if scene.tools else "")
+                scene.memory
+                + scene.context
+                + prompt
+                + (json.dumps(scene.tools) if scene.tools else "")
             )
         requests = len(mutators) * runs * n_turns * sends_per_turn
         in_tokens = max(1, len(prompt) // 4)

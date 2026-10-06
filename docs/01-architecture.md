@@ -120,7 +120,8 @@ class Reporter(Protocol):
 1. **Policy check**: target in scope? endpoint on allowlist? spec allowed by policy pack?
    Any dangerous payload marked `test_only`? Else → abort attempt, record `blocked_by_policy`.
 2. **Setup**: against a bare model (a target of `type: model`) the spec's setup is built in the
-   request (OD-18, ADR-0009 option A, 2026-10-06): the memory seed as prior turns, the documents
+   request (OD-18, ADR-0009 option A, 2026-10-06): the memory seed as saved memory from earlier
+   sessions after the system prompt, the documents
    as retrieved context before the attack, the tools as definitions, and a tool loop that answers
    each call with the spec's declared result for at most 4 rounds, each a send under the budget.
    This measures the model's handling of untrusted context, not a deployed application's own

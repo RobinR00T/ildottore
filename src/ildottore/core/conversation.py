@@ -28,13 +28,20 @@ ladder, byte-stable evidence (contract §7). A real over-the-wire adapter ignore
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 
 from ildottore.core.budgets import BudgetLedger
 from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error, execute_attempt
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.reproduce import DEFAULT_N, attempt_id_for
-from ildottore.core.setup_delivery import IN_BAND, MAX_TOOL_ROUNDS, InBandSetup
+from ildottore.core.setup_delivery import (
+    IN_BAND,
+    MAX_CALLS_PER_ROUND,
+    MAX_ROUND_ARGUMENT_BYTES,
+    MAX_TOOL_ROUNDS,
+    InBandSetup,
+)
 from ildottore.shared.models import Attempt, JsonDict, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
 from ildottore.shared.toolcalls import call_arguments, call_id, call_name
@@ -92,8 +99,7 @@ def _aggregate_attempt(
     tool rounds played, so the evidence says the model was measured, not an application.
     """
 
-    preamble = len(setup.preamble) if setup is not None else 0
-    metadata: JsonDict = {"turns": len([m for m in messages[preamble:] if m.get("role") == "user"])}
+    metadata: JsonDict = {"turns": len([m for m in messages if m.get("role") == "user"])}
     if setup is not None:
         metadata["setup_delivery"] = IN_BAND
         metadata["tool_rounds"] = tool_rounds
@@ -154,15 +160,19 @@ async def execute_conversation(
     result whose attempt has ``response=None`` (the runner records ``inconclusive``, never
     a fabricated fail from a half-finished dialogue).
 
-    With an in-band ``setup`` (OD-18) the memory seed opens the history, the retrieved
-    documents precede the first attacker turn, every request carries the tool definitions, and
-    a reply that calls tools is answered with each tool's declared result and sent on, for at
-    most :data:`MAX_TOOL_ROUNDS` rounds a turn, each a send under the budget and the pacer.
-    Calls the rounds leave unanswered are kept in the trace and dropped from the history, so a
-    next turn is never sent after an unanswered call (which an API refuses).
+    With an in-band ``setup`` (OD-18) the retrieved documents precede the first attacker turn
+    (the memory seed is in ``system_prompt``, put there by the runner), every request carries
+    the tool definitions, and a reply that calls tools is answered with each tool's declared
+    result and sent on, for at most :data:`MAX_TOOL_ROUNDS` rounds a turn, each a send under the
+    budget and the pacer. A round is answered only when every call names a declared tool and
+    there are at most :data:`MAX_CALLS_PER_ROUND` of them: the target writes the calls, and an
+    undeclared name, a flood of calls or of argument bytes
+    (:data:`MAX_ROUND_ARGUMENT_BYTES`) is not steered on. Calls left unanswered are kept in
+    the trace and dropped from the history, so a next turn is never sent after an unanswered
+    call (which an API refuses).
     """
 
-    messages: list[JsonDict] = list(setup.preamble) if setup is not None else []
+    messages: list[JsonDict] = []
     tools = list(setup.tools) if setup is not None and setup.tools else None
     last_response: ModelResponse | None = None
     trace_tool_calls: list[JsonDict] = []
@@ -234,25 +244,31 @@ async def execute_conversation(
             if result.attempt.latency_ms is not None:
                 total_latency += result.attempt.latency_ms
                 saw_latency = True
-            answer = setup is not None and bool(response.tool_calls) and rounds < MAX_TOOL_ROUNDS
+            calls = _neutral_calls(response, turn_index, rounds) if setup is not None else []
+            answer = (
+                setup is not None
+                and bool(setup.tools)
+                and bool(calls)
+                and len(calls) <= MAX_CALLS_PER_ROUND
+                and all(setup.declares(str(call["name"])) for call in calls)
+                and _argument_bytes(calls) <= MAX_ROUND_ARGUMENT_BYTES
+                and rounds < MAX_TOOL_ROUNDS
+            )
             # Thread the assistant reply into the history so the next send sees it. Only carry
             # ``tool_calls`` when they are answered next (an unanswered call, or an empty list,
             # is refused by some APIs; adapters also project to their own shape).
-            messages.append(_assistant_turn(response, setup, turn_index, rounds, answer))
+            messages.append(_assistant_turn(response, setup, calls if answer else None))
             if setup is None or not answer:
                 break
             rounds += 1
             tool_rounds += 1
-            for position, call in enumerate(response.tool_calls):
-                name = call_name(call)
+            for call in calls:
                 messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": call_id(
-                            call, _fallback_id(turn_index, rounds - 1, position)
-                        ),
-                        "name": name,
-                        "content": setup.tool_result(name),
+                        "tool_call_id": call["id"],
+                        "name": call["name"],
+                        "content": setup.tool_result(str(call["name"])),
                     }
                 )
             result = await send(turn_index, f"r{rounds}")
@@ -297,18 +313,37 @@ def _fallback_id(turn_index: int, round_index: int, position: int) -> str:
     return f"call_{turn_index}_{round_index}_{position}"
 
 
+def _neutral_calls(response: ModelResponse, turn_index: int, round_index: int) -> list[JsonDict]:
+    """The reply's calls provider-neutral (``id``, ``name``, ``arguments``), each id unique.
+
+    The target writes the ids: two calls under one id would get two results the API cannot
+    tell apart, so a repeated or missing id is replaced by a generated one.
+    """
+
+    calls: list[JsonDict] = []
+    seen: set[str] = set()
+    for position, call in enumerate(response.tool_calls):
+        fallback = _fallback_id(turn_index, round_index, position)
+        identifier = call_id(call, fallback)
+        if identifier in seen:
+            identifier = fallback
+        seen.add(identifier)
+        calls.append({"id": identifier, "name": call_name(call), "arguments": call_arguments(call)})
+    return calls
+
+
+def _argument_bytes(calls: list[JsonDict]) -> int:
+    return len(json.dumps([call["arguments"] for call in calls], default=str).encode("utf-8"))
+
+
 def _assistant_turn(
-    response: ModelResponse,
-    setup: InBandSetup | None,
-    turn_index: int,
-    round_index: int,
-    answered: bool,
+    response: ModelResponse, setup: InBandSetup | None, answered: list[JsonDict] | None
 ) -> JsonDict:
     """The assistant turn threaded into the history.
 
     Outside the in-band scene the calls ride along as the provider wrote them, as before. In it,
-    they go provider-neutral (``id``, ``name``, ``arguments``) when the next send answers them,
-    and are left out when it does not.
+    they go provider-neutral when the next send answers them (``answered``), and are left out
+    when it does not.
     """
 
     turn: JsonDict = {"role": "assistant", "content": response.text}
@@ -317,14 +352,7 @@ def _assistant_turn(
     if setup is None:
         turn["tool_calls"] = [dict(call) for call in response.tool_calls]
     elif answered:
-        turn["tool_calls"] = [
-            {
-                "id": call_id(call, _fallback_id(turn_index, round_index, position)),
-                "name": call_name(call),
-                "arguments": call_arguments(call),
-            }
-            for position, call in enumerate(response.tool_calls)
-        ]
+        turn["tool_calls"] = answered
     return turn
 
 

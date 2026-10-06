@@ -74,3 +74,19 @@ def test_anthropic_drops_a_blank_text_before_a_tool_call(
     history = [dict(_HISTORY[0]), {**_HISTORY[1], "content": "  \n"}, *_HISTORY[2:]]
     body, _ = adapter._build_request(ModelRequest(messages=history, tools=[_NEUTRAL_TOOL]))
     assert [b["type"] for b in body["messages"][1]["content"]] == ["tool_use", "tool_use"]
+
+
+def test_the_real_adapters_say_what_they_carry(
+    openai_allowlist: EndpointAllowlist, anthropic_allowlist: EndpointAllowlist
+) -> None:
+    """The memory specs never ran on a real adapter when these flags were missing."""
+
+    openai = OpenAIAdapter(
+        id="o", base_url="https://api.openai.com", allowlist=openai_allowlist, model="m"
+    )
+    anthropic = AnthropicAdapter(
+        id="a", base_url="https://api.anthropic.com", allowlist=anthropic_allowlist, model="m"
+    )
+    for adapter in (openai, anthropic):
+        assert adapter.carries_system_prompt is True
+        assert adapter.carries_tool_definitions is True

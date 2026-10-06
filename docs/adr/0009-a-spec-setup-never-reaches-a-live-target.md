@@ -40,7 +40,8 @@ The adapters are not the obstacle: the OpenAI and Anthropic adapters already for
 
 **A. Deliver the setup in-band.** Tools go on the wire as tool definitions, with a small loop
 that answers the model's tool call with the spec's `returns` and lets it continue; documents go in
-as retrieved context, marked as such; a memory seed becomes prior turns. This measures how the
+as retrieved context, marked as such; a memory seed becomes prior turns (as built: saved memory
+after the system prompt, see the Decision). This measures how the
 **model** handles untrusted content in its context, which is the core of indirect injection, and
 makes the 26 specs meaningful against a bare model endpoint. It does **not** test the target's
 own retrieval or tool pipeline, and the report has to say so. Cost: a tool loop in `core` (a
@@ -83,13 +84,19 @@ keeps today's behaviour until B lands, and the documents keep saying so.
 
 * **When:** the target is `type: model` and the spec declares `setup.documents`, `setup.tools`
   or `setup.memory_seed`. The attempt's request records `setup_delivery: in_band`.
-* **Memory seed:** each entry becomes a prior turn of the conversation (its `role` and
-  `content`); leading assistant entries are dropped (the history opens with a user turn) and a
-  trailing user turn is followed by a fixed assistant acknowledgement, so the attack is never a
-  second user turn in a row.
+* **Memory seed:** it becomes saved memory from earlier sessions, after the system prompt
+  (`Saved memory from earlier sessions:` then one `- [<session>, <role>] <content>` line an
+  entry), which is where a memory feature puts it. Not prior turns of the same chat: a model
+  repeating "the previous user's" note from its own history leaks nothing across a session, and
+  obeying a tag "the user" asked for in the same chat is not a poisoned memory (pre-merge audit
+  of #50).
 * **Documents:** they precede the attack prompt in the same user turn, as context retrieved from
   a knowledge base (`[document <id>]` ... `[/document]`), not labelled untrusted: telling the model
   would change what is measured.
+* **The target writes the calls:** a round is answered only when every call names a declared
+  tool and there are at most 16; repeated or missing call ids are replaced, and a spec without
+  tools plays no round. A reply of 20,000 calls under one id used to grow each request by
+  megabytes and spend the campaign's token ceiling in four sends.
 * **Tools:** each goes out as a tool definition (its name, its `description` or `The <name>
   tool.`, and an object schema that accepts any arguments). When the model calls tools, every
   call is answered with the spec's `returns` for that tool (`OK` when none is declared) and the
@@ -101,9 +108,9 @@ keeps today's behaviour until B lands, and the documents keep saying so.
   those tools (PI-INDIRECT-TOOL-001: a plain answer without the lookup said nothing).
 * **Adapters:** the request carries provider-neutral tools and tool turns, and the OpenAI and
   Anthropic adapters translate them; the mock answers a tool result with its text and no further
-  calls. An adapter that cannot carry tools, or that sends the last turn only (REST) when there
-  is a memory seed, makes the spec `inconclusive` (`setup_not_delivered`), never a send without
-  them.
+  calls. An adapter that cannot carry tools, or that sends no system prompt (a REST template
+  without a system field) when there is a memory seed, makes the spec `inconclusive`
+  (`setup_not_delivered`), never a send without them.
 * **Not built:** a turn with media is one send with its tools attached, its calls recorded and
-  not answered, and it cannot carry a memory seed (`setup_not_delivered`); B, the
-  operator-seeded declaration and tool-name map for deployed applications.
+  not answered; B, the operator-seeded declaration and tool-name map for deployed
+  applications.

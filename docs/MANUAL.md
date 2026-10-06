@@ -210,16 +210,17 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 `id` and `type` are required; the rest are optional but needed for a live scan. `type: model`
-means a bare model API, and changes what a spec with setup sends: its memory seed goes as prior
-turns, its documents as retrieved context before the attack and its tools as tool definitions,
+means a bare model API, and changes what a spec with setup sends: its memory seed goes as saved
+memory from earlier sessions after the system prompt, its documents as retrieved context before
+the attack and its tools as tool definitions,
 with each tool call answered by the spec's declared result for at most 4 rounds (OD-18 option A).
 Declare `tools`, `rag` and `memory` under `capabilities` to send those specs; each attempt then
 records `setup_delivery: in_band`, and the result says how the model handles untrusted context,
 not how a deployed application does. A spec whose untrusted content is only a tool's result is
 `inconclusive` (`setup_not_reached`) when the model never called that tool and nothing else
 failed, and the coverage figures do not count it; an adapter that cannot carry the scene (no
-tool definitions, or the last turn only for a memory seed, as the REST adapter does) leaves the
-spec `inconclusive: setup_not_delivered` with nothing sent.
+tool definitions, or no system prompt for a memory seed, as a REST template without a system
+field) leaves the spec `inconclusive: setup_not_delivered` with nothing sent.
 
 `auth_ref`
 supports only `env://NAME`. Any other scheme is refused before anything is sent, `--dry-run`

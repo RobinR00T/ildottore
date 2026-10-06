@@ -90,7 +90,6 @@ from ildottore.shared.protocols import (
     RunStore,
     TargetAdapter,
 )
-from ildottore.shared.toolcalls import call_name
 
 __all__ = [
     "CampaignResult",
@@ -741,6 +740,8 @@ class CampaignRunner:
 
         sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
         system_prompt = spec.setup.system_prompt if spec.setup is not None else None
+        if scene is not None:
+            system_prompt = scene.system_prompt(system_prompt)
         mutate_turn: Callable[[str], str] | None = None
         if not _is_multi_turn(spec):
             turns = [self._apply_mutation(spec, mutation, _base_prompt(spec))]
@@ -1148,17 +1149,14 @@ def _undelivered(scene: InBandSetup, spec: AttackSpec, adapter: TargetAdapter) -
     """Why part of an in-band scene could not go out on this adapter, or ``None`` (OD-18).
 
     The attempt would otherwise record ``setup_delivery: in_band`` for a scene the wire never
-    carried: the REST adapter sends the last turn only, so a memory seed was dropped while the
-    evidence said it was delivered (pre-commit audit of OD-18 A), and a turn with media cannot
-    carry a history yet.
+    carried: a REST template without a system field drops the system prompt, and with it the
+    memory seed, while the evidence said it was delivered (pre-commit audit of OD-18 A).
     """
 
     if scene.tools and not getattr(adapter, "carries_tool_definitions", False):
         return "this target's adapter cannot carry tool definitions"
-    if scene.preamble and not getattr(adapter, "carries_history", False):
-        return "this target's adapter sends the last turn only, not a memory seed"
-    if scene.preamble and spec.attack.media:
-        return "a turn with media cannot carry a memory seed yet"
+    if scene.memory and not getattr(adapter, "carries_system_prompt", False):
+        return "this target's adapter sends no system prompt, where the memory seed goes"
     return None
 
 
@@ -1184,8 +1182,14 @@ def _carrier_never_reached(spec: AttackSpec, attempt: Attempt) -> bool:
     carriers = {
         str(tool.get("name")) for tool in setup.tools or [] if tool.get("returns") is not None
     }
-    called = {call_name(call) for call in attempt.response.tool_calls}
-    return bool(carriers) and not carriers & called
+    # Answered, not merely called: a call at the round cap, or in a one-send turn, got no
+    # result, so its carrier never reached the model (pre-merge audit of #50).
+    answered = {
+        str(message.get("name"))
+        for message in attempt.request.messages or []
+        if message.get("role") == "tool"
+    }
+    return bool(carriers) and not carriers & answered
 
 
 def _build_request(
@@ -1213,21 +1217,13 @@ def _build_request(
             metadata=metadata,
         )
     # One send with the scene (the identity sweep, or a turn with media): the documents precede
-    # the prompt, the tools ride along, and a memory seed opens the history (not with media).
+    # the prompt, the tools ride along, and the memory seed follows the system prompt.
     text = scene.context + prompt
     tagged: JsonDict = {**(metadata or {}), "setup_delivery": IN_BAND, "tool_rounds": 0}
     tools = list(scene.tools) or None
-    if scene.preamble and not media:
-        return ModelRequest(
-            messages=[*scene.preamble, {"role": "user", "content": text}],
-            system_prompt=system_prompt,
-            tools=tools,
-            sampling=sampling,
-            metadata=tagged,
-        )
     return ModelRequest(
         prompt=text,
-        system_prompt=system_prompt,
+        system_prompt=scene.system_prompt(system_prompt),
         tools=tools,
         sampling=sampling,
         media=media,
