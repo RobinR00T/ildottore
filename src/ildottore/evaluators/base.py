@@ -30,6 +30,7 @@ from collections.abc import Iterable, Mapping
 from ildottore.redactor import Redactor, visible_stash_delimiters
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
 from ildottore.shared.models import EvalContext, Verdict
+from ildottore.shared.toolcalls import call_arguments, call_name
 
 __all__ = [
     "BaseEvaluator",
@@ -63,37 +64,23 @@ def tool_name(call: Mapping[str, object]) -> str:
     Handles both the flat ``{"name": ...}`` trace and the OpenAI-style
     ``{"function": {"name": ...}}`` nesting; returns ``""`` when neither is present. Shared by
     the ``tool_call`` and ``tool_sequence`` evaluators so the two always agree on *which tool
-    was invoked* (a drift between them would let one flag a call the other could not see).
+    was invoked* (a drift between them would let one flag a call the other could not see), and
+    read through :func:`ildottore.shared.toolcalls.call_name`, as the in-band tool loop reads it.
     """
-    name = call.get("name")
-    if isinstance(name, str):
-        return name
-    fn = call.get("function")
-    if isinstance(fn, Mapping):
-        fn_name = fn.get("name")
-        if isinstance(fn_name, str):
-            return fn_name
-    return ""
+    return call_name(call)
 
 
 def tool_args(call: Mapping[str, object]) -> Mapping[str, object]:
     """Extract the argument mapping from a tool-call dict, tolerant of provider shapes.
 
     Accepts ``arguments`` / ``args`` / ``parameters`` / ``input`` at the top level and the
-    OpenAI-style ``function.arguments`` nesting; returns an empty mapping when none is present.
-    Shared by ``tool_call`` and ``tool_sequence`` so the two never disagree about what a call
-    actually carried.
+    OpenAI-style ``function.arguments`` nesting, each as a mapping or as the JSON string a real
+    OpenAI call carries; returns an empty mapping when none is present. Shared by ``tool_call``
+    and ``tool_sequence`` so the two never disagree about what a call actually carried. The
+    string form used to read as no arguments, so `role: admin` smuggled in a real OpenAI call
+    scored pass where the same call from Anthropic failed (pre-commit audit of OD-18 A).
     """
-    for key in ("arguments", "args", "parameters", "input"):
-        val = call.get(key)
-        if isinstance(val, Mapping):
-            return val
-    fn = call.get("function")
-    if isinstance(fn, Mapping):
-        args = fn.get("arguments")
-        if isinstance(args, Mapping):
-            return args
-    return {}
+    return call_arguments(call)
 
 
 def mask_value(value: str, *, type_hint: str, redactor: Redactor | None = None) -> str:

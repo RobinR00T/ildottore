@@ -1,6 +1,7 @@
 # ADR-0009: a spec's setup never reaches a live target (OD-18)
 
-* **Status:** proposed, awaiting the owner's decision
+* **Status:** accepted on 2026-10-06 by the owner: **C, with A first** (A built in this change; B
+  follows)
 * **Date:** 2026-10-03
 * **Context:** OD-18 in `specs/contracts/00-INDEX.md`; found by the AISVS mapping audit of the
   same day and verified in the code before this was written
@@ -70,3 +71,39 @@ If B: `target.yaml` gains a seeded-setup declaration and a tool-name map, the ru
 before sending, `tool_call` reads the map, and `docs/16`'s estimate table splits "sent" from
 "tested". If A as well: u08 gains a tool loop, the evidence store records the simulated tool
 trace, and the manual says which specs test the model and which test the application.
+
+## Decision (2026-10-06)
+
+The owner chose **C, with A first**, reversing the recommended order: the first live pass is
+against hosted model APIs, where nothing can be seeded, so B alone would leave the 26 specs
+`inconclusive`. A applies to a target of `type: model`; a deployed application (any other type)
+keeps today's behaviour until B lands, and the documents keep saying so.
+
+### A as built
+
+* **When:** the target is `type: model` and the spec declares `setup.documents`, `setup.tools`
+  or `setup.memory_seed`. The attempt's request records `setup_delivery: in_band`.
+* **Memory seed:** each entry becomes a prior turn of the conversation (its `role` and
+  `content`); leading assistant entries are dropped (the history opens with a user turn) and a
+  trailing user turn is followed by a fixed assistant acknowledgement, so the attack is never a
+  second user turn in a row.
+* **Documents:** they precede the attack prompt in the same user turn, as context retrieved from
+  a knowledge base (`[document <id>]` ... `[/document]`), not labelled untrusted: telling the model
+  would change what is measured.
+* **Tools:** each goes out as a tool definition (its name, its `description` or `The <name>
+  tool.`, and an object schema that accepts any arguments). When the model calls tools, every
+  call is answered with the spec's `returns` for that tool (`OK` when none is declared) and the
+  model continues, for at most 4 rounds; each round is a send under the budget and the pacer.
+  The scored response is the text of every round of the final turn (what the model wrote
+  before a call is part of its answer) with every tool call of every round, in order.
+* **A carrier never fetched:** a spec whose untrusted content is only what a tool returns, and
+  which judges no tool trace, is `inconclusive: setup_not_reached` when the model called none of
+  those tools (PI-INDIRECT-TOOL-001: a plain answer without the lookup said nothing).
+* **Adapters:** the request carries provider-neutral tools and tool turns, and the OpenAI and
+  Anthropic adapters translate them; the mock answers a tool result with its text and no further
+  calls. An adapter that cannot carry tools, or that sends the last turn only (REST) when there
+  is a memory seed, makes the spec `inconclusive` (`setup_not_delivered`), never a send without
+  them.
+* **Not built:** a turn with media is one send with its tools attached, its calls recorded and
+  not answered, and it cannot carry a memory seed (`setup_not_delivered`); B, the
+  operator-seeded declaration and tool-name map for deployed applications.

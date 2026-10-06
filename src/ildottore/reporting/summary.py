@@ -30,7 +30,7 @@ from ildottore.shared.aisvs import (
     AISVS_VERSION,
     aisvs_universe,
 )
-from ildottore.shared.enums import VerdictStatus
+from ildottore.shared.enums import SETUP_NOT_REACHED, VerdictStatus
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
     ATLAS_OUT_OF_MATRIX,
@@ -49,7 +49,7 @@ from ildottore.shared.iopc import (
     IOPC_TECHNIQUE_UNIVERSE,
     IOPC_TECHNIQUES,
 )
-from ildottore.shared.models import AttackSpec, Finding
+from ildottore.shared.models import AttackSpec, Attempt, Finding
 
 __all__ = [
     "ATLAS_MATRIX_RELEASE",
@@ -273,6 +273,15 @@ def _build_comparison(
     )
 
 
+def _exercised(attempt: Attempt) -> bool:
+    """True when the attempt reached the target and its scene reached the model."""
+
+    if attempt.response is None:
+        return False
+    verdict = attempt.verdict
+    return verdict is None or not verdict.reasoning.startswith(SETUP_NOT_REACHED)
+
+
 def _build_coverage(
     findings: list[Finding],
     spec_map: dict[str, AttackSpec],
@@ -318,7 +327,9 @@ def _build_coverage(
         # crediting their framework codes inflated the published figure by a whole tactic: a
         # default run claimed 13/16 ATLAS while `Credential Access` was covered solely by
         # `AG-CRED-SWEEP-001`, which the pack blocks and which sent nothing.
-        if not any(a.response is not None for a in finding.attempts):
+        # Nor does one whose in-band scene never reached the model (OD-18): its tool result,
+        # where the untrusted content was, was never fetched (delta audit of OD-18 A).
+        if not any(_exercised(a) for a in finding.attempts):
             not_exercised.append(spec.id)
             continue
 

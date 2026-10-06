@@ -84,7 +84,17 @@ concretes:
    → persist; checkpoint/resume by `run_id`; bounded-concurrency scheduler + circuit-breaker.
    (As built: plan-time capability filter → policy gate → mutation checks (an unregistered
    mutator or a parameter the mutator does not accept sends nothing for that spec) → mutate →
-   reproduce → evaluate/combine → score → persist. Setup is not materialized, OD-18.)
+   reproduce → evaluate/combine → score → persist. Setup is materialized in-band for a
+   `type: model` target only, OD-18 option A (ADR-0009): memory seed as prior turns, documents
+   before the first attacker turn, tool definitions on every send, and a tool loop of at most 4
+   rounds per turn inside the conversation engine, each round a send under the budget and the
+   pacer; the final turn's scored text is the text of all its rounds; the attempt's request
+   records `setup_delivery`, `tool_rounds` and the tools. An adapter that cannot carry tool
+   definitions, or that sends the last turn only (REST) for a memory seed, and a turn with media
+   plus a memory seed, make such a spec `inconclusive` (`setup_not_delivered`) with no send. A
+   spec whose untrusted content is only a tool's result, judged by no trace evaluator, whose model
+   called none of those tools and whose evaluators did not fail, is `inconclusive`
+   (`setup_not_reached`), and the summary does not count it as exercised.)
 
 ## §6 Data/wire shapes
 `TestPlan = {plan_ref: str, target_id: str, adaptive: bool, fingerprint_ref: str|None,

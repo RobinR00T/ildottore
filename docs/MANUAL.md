@@ -209,7 +209,19 @@ capabilities:
 sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
-`id` and `type` are required; the rest are optional but needed for a live scan. `auth_ref`
+`id` and `type` are required; the rest are optional but needed for a live scan. `type: model`
+means a bare model API, and changes what a spec with setup sends: its memory seed goes as prior
+turns, its documents as retrieved context before the attack and its tools as tool definitions,
+with each tool call answered by the spec's declared result for at most 4 rounds (OD-18 option A).
+Declare `tools`, `rag` and `memory` under `capabilities` to send those specs; each attempt then
+records `setup_delivery: in_band`, and the result says how the model handles untrusted context,
+not how a deployed application does. A spec whose untrusted content is only a tool's result is
+`inconclusive` (`setup_not_reached`) when the model never called that tool and nothing else
+failed, and the coverage figures do not count it; an adapter that cannot carry the scene (no
+tool definitions, or the last turn only for a memory seed, as the REST adapter does) leaves the
+spec `inconclusive: setup_not_delivered` with nothing sent.
+
+`auth_ref`
 supports only `env://NAME`. Any other scheme is refused before anything is sent, `--dry-run`
 included (`unsupported auth_ref scheme in 'vault://kv/live'; only 'env://NAME' is supported`,
 exit 3): a `vault://` resolver is not built. A literal key pasted as the `auth_ref` is refused
@@ -619,10 +631,12 @@ probes as test traffic for the operator's logging and alerting (C12.1, C12.2).
 Read the 17 covered requirements with four cautions. **Nine** of them (C5.2.2, C5.2.4, C8.1.3,
 C9.3.5, C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need something the
 operator provides: a seeded corpus or tool, a target that exposes its tool trace, or two
-identities. Today the runner sends a live target the prompt, the system prompt and the media, not
-a spec's documents, tool definitions or memory seed (OD-18), so eight of the 17 are exercisable
-by the tool alone. C10.4.2 is an MCP control: it applies only where the tools are served over
-MCP, while its two specs run against any tool-using agent. C9.5.4 also needs the
+identities. The runner builds a spec's documents, tool definitions and memory seed into the
+request only for a `type: model` target (OD-18 option A, which tests the model rather than an
+application); for any other target it sends the prompt, the system prompt and the media, so
+eight of the 17 are exercisable by the tool alone against a deployed application. C10.4.2 is
+an MCP control: it applies only where the tools are served over MCP, while its two specs run
+against any tool-using agent. C9.5.4 also needs the
 `offensive_simulation` policy layer, which the CLI cannot enable today (§3), so that row cannot
 be exercised from `dottore` at all. And the rows are not independent evidence:
 `DL-XTENANT-001` carries four of them and `AC-BOLA-001` three, so one failure lights several
@@ -814,7 +828,9 @@ are compared ignoring case and surrounding space. A chain that only partly compl
 
 Multi-turn chains are covered: the conversation engine accumulates the tool trace across every
 turn (the aggregate keeps the final turn's text but the whole dialogue's calls, in order), so an
-agent cannot answer on one turn and act on the next to split the chain.
+agent cannot answer on one turn and act on the next to split the chain. With an in-band scene
+(OD-18) the final turn's text is the text of every tool round of that turn, so what the model
+wrote before a call is scored too.
 
 Name matching alone would be **argument-blind**: mailing the record to the user who asked
 completes the same chain as mailing it to an attacker, and failing that is a confident false

@@ -51,6 +51,7 @@ battery of 75 specs at the default `runs=5`:
 | Target shape | Specs run | Requests | Rough token gloss |
 |---|---|---|---|
 | A bare hosted model (`type: model`, no tools/rag/memory/multimodal) | 34 | 550 | ~395k |
+| A hosted model declaring `tools`, `rag` and `memory` (`type: model`, setup in-band, OD-18) | 59 | at most 1,260 | ~849k |
 | A fully capable deployment (`type: agent`, every capability declared) | 67 | 780 (+17 with `-sV`) | ~523k |
 
 With `--judge`, add the judge model's own traffic: for the first shape, `--estimate --judge`
@@ -60,15 +61,20 @@ them; before that, `--estimate --judge` printed the same 550 as without a judge.
 
 Two things that table says out loud:
 
-* **A raw model endpoint cannot exercise the battery.** 39 of 75 specs are capability-gated and
-  skip on a bare `type: model` target, which is honest rather than inconvenient: a tool-abuse
-  spec against an endpoint with no tools would be theatre. To exercise those, the target has to
-  be a deployed application that really has tools, retrieval and memory. A target that declares
-  every capability skips **nothing**: 67 are sent and the other 8 are the policy-blocked ones
-  below. **Sent is not tested:** 26 of those 67 depend on a spec's documents, mock tools or
-  memory seed, which the runner does not deliver, so against a live target they test something
-  only where the operator has seeded the same content (and a tool spec can fail falsely when the
-  target's tools have other names). Decide OD-18 (ADR-0009) before reading those 26.
+* **A raw model endpoint exercises what it declares.** 39 of 75 specs are capability-gated and
+  skip on a bare `type: model` target that declares nothing. Declaring `tools`, `rag` and
+  `memory` on a `type: model` target sends 59: since OD-18 (ADR-0009 option A, 2026-10-06) the
+  spec's documents, tools and memory seed are built into the request, and a tool call is
+  answered with the spec's declared result for at most 4 rounds. That measures how **the
+  model** handles untrusted content in its context; it does not test an application's own
+  retrieval or tools, and each attempt records `setup_delivery: in_band`. The request figure is
+  a ceiling (every tool turn priced at 5 sends; main priced the same 59 specs at 740 before the
+  rounds existed), and the derived budget is sized from it. A target that declares every
+  capability and is not `type: model` skips **nothing**: 67 are sent and the other 8 are the
+  policy-blocked ones below. **There, sent is not tested:** 26 of those 67 depend on a spec's
+  documents, mock tools or memory seed, which reach a deployed application only where the
+  operator has seeded the same content (and a tool spec can fail falsely when the target's tools
+  have other names). Option B of OD-18, the operator's declaration, is still to be built.
   (The first version of this table said 66 and 775. It was measured against a target missing
   one capability, `multi_identity`, so one spec was silently skipped. An audit re-ran it. The
   correct figures are above, and the lesson is in the commit: a number is measured against the

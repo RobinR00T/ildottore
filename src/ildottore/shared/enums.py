@@ -176,6 +176,12 @@ class InconclusiveReason(StrEnum):
     JUDGE_COMPROMISED = "judge_compromised"
 
 
+#: The reasoning prefix of an ``inconclusive`` verdict whose in-band scene never reached the model
+#: (OD-18): its untrusted content was in a tool result no call fetched. The summary does not
+#: count such an attempt as exercising the spec.
+SETUP_NOT_REACHED: str = "setup_not_reached"
+
+
 # A mutation variant decides confirmation and reproducibility ON ITS OWN only with at least
 # this many attempts. Read by the runner (``confirmed``) and the scorer (``k / N``), which is
 # why it lives here. With ``--runs 1`` every variant is 1 of 1, so "the best variant" made any

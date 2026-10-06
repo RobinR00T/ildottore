@@ -125,12 +125,17 @@ standard (training data, infrastructure, logging) needs an audit, not a scan.
 
 ### Does Il Dottore send a spec's documents, tools or memory to my target?
 
-Not yet, and this matters for reading a result. Today the runner sends the prompt, the system
-prompt and any media. A spec's `setup.documents`, mock `setup.tools` and `setup.memory_seed`
-are used by the evaluators but never delivered, so the 32 specs that depend on them only test
-something where you have seeded the same content into your deployment, and a tool spec can fail
-falsely when your tools have other names. How to close that is an open decision (OD-18,
-`docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`); decide it before a live campaign.
+To a bare model, yes; to a deployed application, not yet. When your target is `type: model`
+(a model API), the spec's memory seed goes as prior turns, its documents as retrieved context
+before the attack, and its tools as tool definitions; when the model calls one, Il Dottore
+answers with what the spec says the tool returns and lets it continue, for at most 4 rounds.
+That tests how the model handles untrusted content, not your application's own retrieval or
+tools, and each attempt says `setup_delivery: in_band`. For any other target type the runner
+sends the prompt, the system prompt and any media, so the 32 specs that depend on setup only
+test something where you have seeded the same content into your deployment, and a tool spec can
+fail falsely when your tools have other names. Letting you declare what you seeded is the second
+half of the decision (OD-18 option B, `docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`),
+not built yet.
 
 ### Why does a run refuse my target with "target(s) not authorized by the scope"?
 

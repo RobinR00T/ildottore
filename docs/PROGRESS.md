@@ -3,6 +3,18 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-06 (afternoon): OD-18 decided (C, A first); A built
+
+- PR #48 (the #46 pre-merge follow-ups) squash-merged as `d54097c`. The owner decided OD-18 on
+  2026-10-06: C, with A first, because the first live pass is against hosted model APIs. On
+  `feat/od18-in-band-setup`: a `type: model` target gets a spec's memory seed, documents and
+  tools in-band, with a tool loop of at most 4 rounds (`tests/core/test_in_band_setup.py`). The
+  live passes run in the owner's order: a local model first, then hosted APIs (the owner's keys),
+  then a deployed application, which waits for option B. A first local smoke pass (6 setup
+  specs against `llama3.2:3b`) delivered the scene end to end. Open, found on the way:
+  `AG-WORM-PROPAGATE-001`'s `regex_absence` matches a mention of the worm marker, so a refusal
+  that quotes it fails (on main too; joining round texts makes it reachable in-band).
+
 ## State, 2026-10-06 (night): follow-ups of the #46 pre-merge audit
 
 - PR #47 (the #45 pre-merge follow-ups) squash-merged as `32f4334`. On
