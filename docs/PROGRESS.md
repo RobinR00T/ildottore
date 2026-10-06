@@ -3,36 +3,23 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
-## State, 2026-10-06 (evening): control characters on the terminal
+## State, 2026-10-07 (night): PR #51, format characters and the pre-merge follow-ups
 
-- On `fix/cli-control-chars` (`tests/test_terminal_control_chars.py`), off `d19b221`: every CLI
-  error (`cli/app._masked`) and the paths that bypassed it (`lint` and `coverage` text, the spec
-  name in `registry ls` and `describe`, `diff`, `calibrate` and `replay` lines, the spend and
-  "did not complete" lines) write control characters out after the redactor: C0 and DEL as
-  control pictures (`␊`), C1, U+2028, U+2029 and lone surrogates as Python escapes. A spec file
-  named with a newline printed a GitHub Actions workflow command on stderr (pre-merge audit of PR
-  #49, on main too). A registered credential split by control characters is masked whole on the
-  terminal. `rich` prints the run's error and coverage lines unwrapped and without markup (a wrap
-  at 80 columns could start a line with `::error`; `[/]` in a target's error raised `MarkupError`
-  before the reports were written). `coverage` lists unloaded files as bullets; `diff` and
-  `calibrate` refuse a report whose spec ids are not spec ids; a lone surrogate after a label no
-  longer crashes the masking (on main too); stdout escapes what its encoding lacks;
-  `fingerprint` prints ASCII JSON; a run id with a trailing newline is refused.
-- The pre-commit audit (two reviewers) found 10 of 42 mutants surviving (8 that would reopen a raw
-  line or a leak) and seven defects; the delta audit of those fixes found one regression of mine
-  (`fingerprint`'s JSON invalid on a cp1252 stdout) and two unpinned fixes. All fixed here. Left
-  open, pre-existing on main: the legacy `##[cmd]` form a GitHub runner reads anywhere in a line;
-  the reports and stores keep a credential split by a control character readable (`redact_text`
-  unchanged); a credential split by an invisible format character (U+200B) was neither masked nor
-  shown (on the terminal it is since 2026-10-07, below).
-- `make gates` green: 2,397 tests (195 new), coverage 96.49%. PR #49 touches `_masked` too: the
-  second to merge rebases.
-- 2026-10-07: the owner decided that format characters (Unicode Cf: zero-width characters, the
-  soft hyphen, bidi controls, the byte order mark, tag characters) are written out on the
-  terminal too; `visible_controls` writes them as Python escapes and `mask_split_credentials`
-  ignores them. The reports keep such a credential readable until `fix/redactor-split-credentials`
-  merges, which masks it in `redact_text` itself; the second of the two to merge drops
-  `mask_split_credentials`. `make gates`: 2,426 tests (29 new), coverage 96.49%.
+- The owner decided on 2026-10-07 (in the session that built it) that format characters (Unicode
+  Cf: zero-width characters, the soft hyphen, bidi controls, the byte order mark, tag characters)
+  are written out on the terminal too, in PR #51: `visible_controls` writes them as Python escapes
+  and `mask_split_credentials` ignores them. The reports keep such a credential readable until a
+  separate change masks it in `redact_text` itself; the second of the two to merge drops
+  `mask_split_credentials`.
+- The pre-merge audit of PR #51 found no blocker. Its follow-ups, and those of the delta audit
+  after them, are fixed here: the "no --judge" warning wrote the operator's target id raw (and is
+  on one line now); `--compare` read a target id as markup (`[/]` raised `MarkupError` and no
+  report was written, on main too) and `:warning:` in it as an emoji; `validate_sha256` used
+  `match` with `$`; `fingerprint` keeps pydantic's JSON and escapes DEL and non-ASCII in it,
+  falling back to `json.dumps` on a lone surrogate. Accepted and documented: the text glued to a
+  split credential prints, as main prints it next to the credential in one piece. The legacy
+  `##[cmd]` form is handled in PR #54, stacked on this one.
+- Rebased on `4aa6cef` (PR #53). `make gates`: 2,478 tests (228 new in this PR), coverage 96.50%.
 
 ## State, 2026-10-07 (night): PR #52 merged; an inverted tool allowlist
 
@@ -45,6 +32,31 @@ The carryover ledger. Every agent session updates this so context survives even 
   destructive call counts as confirmation. `AG-CONFIRM-BYPASS-001` says it does;
   `kill_chain_progression` fails any destroy whatever the flag, so `AG-DESTRUCTIVE-DBDROP-001`
   contradicts its own description.
+
+## State, 2026-10-06 (evening): control characters on the terminal
+
+- On `fix/cli-control-chars` (`tests/test_terminal_control_chars.py`), off `d19b221`: every CLI
+  error (`cli/app._masked`) and the paths that bypassed it (`lint` and `coverage` text, the
+  spec name in `registry ls` and `describe`, `diff`, `calibrate` and `replay` lines, the spend and
+  "did not complete" lines) write control characters out after the redactor: C0 and DEL as control
+  pictures (`␊`), C1, U+2028, U+2029 and lone surrogates as Python escapes. A spec file named with
+  a newline printed a GitHub Actions workflow command on stderr (pre-merge audit of PR #49, on main
+  too). A registered credential split by control characters is masked whole on the terminal. `rich`
+  prints the run's error and coverage lines unwrapped and without markup (a wrap at 80 columns
+  could start a line with `::error`; `[/]` in a target's error raised `MarkupError` before the
+  reports were written). `coverage` lists unloaded files as bullets; `diff` and `calibrate` refuse
+  a report whose spec ids are not spec ids; a lone surrogate after a label no longer crashes the
+  masking (on main too); stdout escapes what its encoding lacks; `fingerprint` prints ASCII JSON; a
+  run id with a trailing newline is refused.
+- The pre-commit audit (two reviewers) found 10 of 42 mutants surviving (8 that would reopen a raw
+  line or a leak) and seven defects; the delta audit of those fixes found one regression of mine
+  (`fingerprint`'s JSON invalid on a cp1252 stdout) and two unpinned fixes. All fixed here. Left
+  open, pre-existing on main: the legacy `##[cmd]` form a GitHub runner reads anywhere in a line;
+  the reports and stores keep a credential split by a control character readable (`redact_text`
+  unchanged); a credential split by an invisible format character (U+200B) was neither masked nor
+  shown (on the terminal it is since 2026-10-07, below).
+- `make gates` green: 2,397 tests (195 new), coverage 96.49%. PR #49 touches `_masked` too: the
+  second to merge rebases.
 
 ## State, 2026-10-06 (evening): PR #50 merged; the first full local pass
 

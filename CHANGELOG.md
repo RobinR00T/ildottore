@@ -31,7 +31,8 @@ versioning: [SemVer](https://semver.org/).
   so a key right after a C1 control keeps the word boundary its pattern needs. Split by printable
   characters (a space, or the `[0m` of an escape sequence) a credential is still kept, as before.
 - **Format characters are written out too (decided by the owner on 2026-10-07).** A terminal
-  shows no character of Unicode category Cf: a bidi control (U+202A to U+202E, U+2066 to U+2069)
+  shows almost no character of Unicode category Cf (13 prepended concatenation marks, such as
+  U+0600, have a glyph): a bidi control (U+202A to U+202E, U+2066 to U+2069)
   reorders what is read (Trojan Source, CVE-2021-42574), a zero-width space, a joiner or a soft
   hyphen is invisible, and the tag characters (U+E0001, U+E0020 to U+E007F) carry invisible
   ASCII. `visible_controls` writes every one of them (the 170 of Unicode 16.0, pinned so the
@@ -39,7 +40,9 @@ versioning: [SemVer](https://semver.org/).
   `\xad`, `\U000e0041`), and `mask_split_credentials` ignores them as it ignores the controls:
   written out, a credential split by one would print as two halves around the escape. The cost:
   an emoji written with a zero-width joiner, a right-to-left mark in Arabic or Hebrew text or a
-  soft hyphen shows its escape in an error or a warning.
+  soft hyphen shows its escape in every line this fix writes out (errors, warnings, `describe`,
+  `registry ls`, `lint`, `coverage`), and an existing path holding one, which `_masked` keeps
+  unredacted, no longer reads as the file's name.
 - **A lone surrogate in a labelled value or a PEM body no longer crashes the masking** (on main
   too). The mask's digest encoded the value strictly, so `token=AAAAAAAA` followed by an
   undecodable byte raised `UnicodeEncodeError` inside `_masked`, and the CLI printed the error it
@@ -68,18 +71,28 @@ versioning: [SemVer](https://semver.org/).
 - **The run's error lines and its coverage block are printed as plain, unwrapped text.** `rich`
   wrapped them at 80 columns in a CI log, where a target's error could place `::error` at the start
   of the wrapped line, read `[/]` in it as markup (`MarkupError` on the "did not complete" line,
-  which comes before the reports are written) and `:warning:` as an emoji.
+  which comes before the reports are written) and `:warning:` as an emoji. The "no --judge"
+  warning goes through the same printer, so it is on one line now on every live run, dry run or
+  estimate without `--judge`, and it writes the target id it names out.
+- **`--compare` prints a target id as text** (on main too): `[/]` in one raised `MarkupError` in
+  the comparison table and the run wrote no report; `:warning:` became an emoji.
 - **stdout and stderr write a character their encoding lacks as its escape** (`backslashreplace`)
-  instead of failing: on a cp1252 or ASCII stream (a Windows pipe), a control picture made
-  `registry ls` and `describe` exit 1 with nothing printed. stderr did this already. Each stream
-  gets its own setting back when the command ends, for a caller that runs the app in-process.
-- **`fingerprint` prints its JSON through `json.dumps`, in ASCII.** pydantic left DEL, a C1
-  control, U+2028 and U+2029 that a target echoed raw, and on a cp1252 stdout the stream's own
-  escapes (`\x81`) made the output invalid JSON with exit 0. Every JSON output now escapes every
-  control character (`lint --json`, `coverage --json` and `schema export` already did); an
-  ASCII report is byte-identical to before.
-- **A run id with a trailing newline is refused** (`store/paths.validate_run_id` used `match`,
-  whose `$` let it through, so `replay` printed it on two lines).
+  instead of failing. A control picture is not in cp1252 (a Windows pipe), so `registry ls` and
+  `describe` would exit 1 with nothing printed; main failed the same way on any character cp1252
+  lacks (a CJK spec name), and on an ASCII stdout a full run exited 3 on the `·` of its coverage
+  line. stderr did this already. Each stream gets its own setting back when the command ends, for
+  a caller that runs the app in-process.
+- **`fingerprint` prints its JSON in ASCII.** pydantic left DEL, a C1 control, U+2028 and U+2029
+  raw in a string of the fingerprint (the operator's target id, a signature pack's names), and on a
+  cp1252 stdout the stream's own escapes (`\x81`) made the output invalid JSON with exit 0. DEL and
+  every character outside ASCII are now JSON escapes inside pydantic's own output (`json.dumps`
+  would have written `1e-07` for its `1e-7` and `NaN` for its `null`), so an ASCII fingerprint is
+  byte-identical to before; a lone surrogate, which pydantic cannot write as JSON, falls back to
+  `json.dumps` instead of a traceback. Every JSON output now escapes every control character
+  (`lint --json`, `coverage --json` and `schema export` already did).
+- **A run id or an evidence digest with a trailing newline is refused**
+  (`store/paths.validate_run_id` and `validate_sha256` used `match`, whose `$` let it through, so
+  `replay` printed such a run id on two lines).
 - Not changed, and not covered by this fix:
   - a GitHub Actions runner also reads the legacy `##[error]...` form **anywhere in a line**
     (`ActionCommand.TryParse` in the runner's source, read and not run on a runner), so a pack
@@ -87,21 +100,28 @@ versioning: [SemVer](https://semver.org/).
     neutralises it;
   - the reports, the evidence store and the run store keep a credential split by a control or a
     format character in two readable halves, as on main: `redact_text` is unchanged here, the
-    whole-credential match runs only for the terminal (`fix/redactor-split-credentials` moves it
+    whole-credential match runs only for the terminal (a separate change moves it
     into `redact_text`; the second of the two to merge drops `mask_split_credentials`);
   - the operator's own values in the run's plan lines (target ids and model names under
-    `--dry-run` and `-sn`) and the target ids of the `--compare` table (still read as markup);
+    `--dry-run`, `--estimate` and `-sn`);
+  - invisible characters outside Cf: the variation selectors (U+FE00 to U+FE0F, U+E0100 to
+    U+E01EF), U+034F and U+3164 print raw, so a credential split by one still reads whole;
+  - the text glued to a split credential: masked whole, the key no longer forms one high-entropy
+    token with what is glued to its first half, so that text prints where main masked it together
+    with the first half (and printed the second half); main prints the same for the key in one
+    piece;
   - a `replay` line starts with an attempt id or a probe id read from the evidence tree, so a
     forged tree can still start one.
-- Test: `tests/test_terminal_control_chars.py` (224 cases: every control character and a format
+- Test: `tests/test_terminal_control_chars.py` (228 cases: every control character and a format
   character of each kind through `_masked` and `visible_controls`, every format character of the
-  running Python, a credential split by each class, every occurrence, overlapping
-  and periodic credentials, a lone surrogate after a label, `run`, `lint`, `coverage`,
-  `registry ls`, `describe`, `diff`, `calibrate`, `replay` and `fingerprint` through the CLI, a
-  cp1252 stdout, and the `rich` lines). Against main's code 219 of them fail; the 5 that pass are
-  the two stash delimiters, which the redactor already wrote out, a credential split by either,
-  which it already masked, and the streams keeping their setting, which main never changes.
-  `tests/cli/test_calibrate.py` gives its report a spec id (`A` was none).
+  running Python, a credential split by each class, every occurrence, overlapping and periodic
+  credentials, a lone surrogate after a label, `run`, `lint`, `coverage`, `registry ls`,
+  `describe`, `diff`, `calibrate`, `replay` and `fingerprint` (a lone surrogate included) through
+  the CLI, a cp1252 stdout, the `rich` lines, the "no --judge" warning and the `--compare` table).
+  Against main's code 223 of them fail; the 5 that pass are the two stash delimiters, which the
+  redactor already wrote out, a credential split by either, which it already masked, and the
+  streams keeping their setting, which main never changes. `tests/cli/test_calibrate.py` gives its
+  report a spec id (`A` was none).
 
 ### Fixed (an agentic spec's tool allowlist that read as a list of exploits)
 

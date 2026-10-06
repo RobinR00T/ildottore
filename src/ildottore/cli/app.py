@@ -560,6 +560,30 @@ def fleet(
 # --- fingerprint -----------------------------------------------------------------
 
 
+#: What pydantic's JSON leaves raw that a terminal acts on or cp1252 cannot encode: DEL and every
+#: character outside ASCII (it escapes the C0 controls itself).
+_JSON_NOT_ASCII = re.compile(r"[^\x00-\x7e]")
+
+
+def _json_escape(match: re.Match[str]) -> str:
+    units = match.group(0).encode("utf-16-be")
+    return "".join(
+        f"\\u{int.from_bytes(units[i : i + 2], 'big'):04x}" for i in range(0, len(units), 2)
+    )
+
+
+def _ascii_json(text: str) -> str:
+    """pydantic's JSON with DEL and every character outside ASCII as a JSON escape.
+
+    pydantic left a C1 control, DEL and U+2028 a target echoed raw, and on a cp1252 stdout the
+    stream's own escapes (``\\x81``) are not JSON (delta audit of the control-characters
+    block). ``json.dumps`` escaped them too, but wrote ``1e-07`` for pydantic's ``1e-7`` and
+    ``NaN`` for its ``null`` (pre-merge audit): the numbers and the layout stay pydantic's.
+    """
+
+    return _JSON_NOT_ASCII.sub(_json_escape, text)
+
+
 @app.command()
 def fingerprint(
     target: Annotated[Path, typer.Argument(help="Target file (target.yaml).")],
@@ -589,10 +613,11 @@ def fingerprint(
     except (PolicyError, AdapterError, ValueError, OSError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
-    # Through `json.dumps`, which escapes every character outside ASCII: pydantic left a C1
-    # control, DEL and U+2028 a target echoed raw, and on a cp1252 stdout the stream's own
-    # escapes (`\x81`) are not JSON (delta audit of the control-characters block).
-    typer.echo(json.dumps(fp.model_dump(mode="json"), indent=2))
+    try:
+        shown = _ascii_json(fp.model_dump_json(indent=2))
+    except ValueError:  # a lone surrogate (a target id written `"t\ud800"`), not JSON to pydantic
+        shown = json.dumps(fp.model_dump(mode="json"), indent=2)
+    typer.echo(shown)
     raise typer.Exit(ExitCode.CLEAN)
 
 

@@ -18,7 +18,9 @@ from dataclasses import dataclass
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
+from ildottore.redactor import visible_controls
 from ildottore.reporting.summary import (
     ATLAS_MATRIX_RELEASE,
     OWASP_LLM_EDITION,
@@ -221,7 +223,10 @@ def comparison_table(
     table = Table(title="Il Dottore: model comparison (band per spec x target)")
     table.add_column("Spec", style="cyan")
     for target_id in comparison.target_ids:
-        table.add_column(target_id, justify="center")
+        # A target id is the operator's text, printed as it is: `[/]` in it raised `MarkupError`
+        # and the run wrote no report, and `escape` alone still read `:warning:` as an emoji and
+        # changed backslashes (pre-merge audit of the control-characters block, and its delta).
+        table.add_column(Text(visible_controls(target_id)), justify="center")
     for spec_id in comparison.spec_ids:
         row = [spec_id]
         for target_id in comparison.target_ids:

@@ -59,7 +59,7 @@ def validate_run_id(run_id: str) -> str:
 def validate_sha256(digest: str) -> str:
     """Return ``digest`` if it is a 64-char lowercase hex string, else raise."""
 
-    if not _SHA256_HEX.match(digest):
+    if not _SHA256_HEX.fullmatch(digest):
         raise UnsafePathError(f"not a sha256 hex digest: {digest!r}")
     return digest
 

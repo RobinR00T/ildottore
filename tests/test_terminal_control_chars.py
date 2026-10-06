@@ -732,16 +732,16 @@ def test_fingerprint_prints_ascii_json(monkeypatch: pytest.MonkeyPatch) -> None:
     echoed = "llama-3 " + "".join(map(chr, (0x81, 0x7F, 0x2028, 0x1F642, 0x6771)))
 
     class _Fingerprint:
-        def model_dump(self, *, mode: str) -> dict[str, object]:
-            return {"target_id": "t", "family": {"guess": echoed, "confidence": 0.5}}
-
-        def model_dump_json(self, *, indent: int) -> str:  # what pydantic writes
-            return json.dumps(self.model_dump(mode="json"), ensure_ascii=False, indent=indent)
+        def model_dump_json(self, *, indent: int) -> str:  # as pydantic writes it
+            guess = json.dumps(echoed, ensure_ascii=False)
+            return f'{{\n  "target_id": "t",\n  "weight": 1e-7,\n  "guess": {guess}\n}}'
 
     monkeypatch.setattr(fingerprint_mod, "fingerprint_target", lambda *_a, **_k: _Fingerprint())
     result = CliRunner(charset="cp1252").invoke(app, ["fingerprint", "t.yaml", "--offline"])
     assert result.exit_code == 0, result.output
-    assert result.stdout.isascii() and json.loads(result.stdout)["family"]["guess"] == echoed
+    assert result.stdout.isascii() and json.loads(result.stdout)["guess"] == echoed
+    assert _raw_controls(result.stdout.replace("\n", "")) == [], "DEL is ASCII and a control"
+    assert '"weight": 1e-7,' in result.stdout, "pydantic's numbers, not json.dumps' 1e-07"
 
 
 def test_the_streams_get_their_setting_back_after_the_command(
@@ -760,3 +760,79 @@ def test_a_run_id_with_a_trailing_newline_is_refused() -> None:
     with pytest.raises(UnsafePathError):
         validate_run_id("run-1" + chr(10))
     assert validate_run_id("run-1") == "run-1"
+
+
+def test_a_run_id_and_a_digest_with_a_trailing_newline_are_refused() -> None:
+    from ildottore.store.paths import UnsafePathError, validate_sha256
+
+    digest = "a" * 64
+    assert validate_sha256(digest) == digest
+    with pytest.raises(UnsafePathError):
+        validate_sha256(digest + chr(10))
+
+
+def _live_target_files(root: Path, target_id: str) -> tuple[Path, Path]:
+    scope, target = root / "scope.yaml", root / "target.yaml"
+    scope.write_text(
+        'version: "1.0"\ntargets:\n'
+        f"  - id: {json.dumps(target_id)}\n"
+        '    base_url: "https://api.example.com/v1/chat/completions"\n'
+        '    endpoints:\n      - host: "api.example.com"\n        path_prefixes: ["/v1"]\n'
+        '    identities:\n      - name: default\n        auth_ref: "env://NONE_SET"\n'
+    )
+    target.write_text(
+        f"id: {json.dumps(target_id)}\ntype: model\nprovider: openai\nmodel: gpt-x\n"
+        'endpoint: "https://api.example.com/v1/chat/completions"\nauth_ref: "env://NONE_SET"\n'
+    )
+    return scope, target
+
+
+def test_the_no_judge_warning_writes_the_target_id_out(tmp_path: Path) -> None:
+    scope, target = _live_target_files(tmp_path, "t\n::error title=pwned::from-target-id")
+    result = CliRunner().invoke(
+        app, ["run", "-t", str(target), "--scope", str(scope), "--dry-run", "--quick"]
+    )
+    assert "no --judge on a live target" in result.stderr, result.output
+    assert _injected_lines(result.stderr) == []
+    assert f"t{LF}::error title=pwned::from-target-id" in result.stderr
+
+
+def test_the_compare_table_reads_a_target_id_as_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`[/]` in a target id raised `MarkupError`, and the run wrote no report; escaped as markup
+    only, `:warning:` still became an emoji and backslashes changed."""
+
+    import io
+    from types import SimpleNamespace
+
+    from ildottore.cli import render as render_mod
+
+    ids = ("a[/]", "b\nc", ":warning:", "e" + chr(92), "h" + chr(92) + "[", "[bold]x[/bold]")
+    comparison = SimpleNamespace(target_ids=ids, spec_ids=("PI-X-001",), cells=())
+    monkeypatch.setattr(
+        render_mod,
+        "build_run_summary",
+        lambda *_a, **_k: SimpleNamespace(model_comparison=comparison),
+    )
+    table = render_mod.comparison_table([], {})
+    assert table is not None
+    console = render_mod.Console(width=400, no_color=True, record=True, file=io.StringIO())
+    console.print(table)
+    out = console.export_text()
+    for target_id in ids:
+        assert target_id.replace("\n", LF) in out, target_id
+
+
+def test_fingerprint_prints_a_lone_surrogate_in_a_target_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pydantic cannot write one as JSON: a traceback, exit 1 and nothing printed."""
+
+    from ildottore.cli import fingerprint as fingerprint_mod
+    from ildottore.shared.models import FingerprintGuess, ModelFingerprint
+
+    target_id = "t" + chr(0xD800)
+    fp = ModelFingerprint(target_id=target_id, family=FingerprintGuess(guess="x", confidence=0.5))
+    monkeypatch.setattr(fingerprint_mod, "fingerprint_target", lambda *_a, **_k: fp)
+    result = CliRunner().invoke(app, ["fingerprint", "t.yaml", "--offline"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.isascii() and json.loads(result.stdout)["target_id"] == target_id

@@ -597,9 +597,9 @@ def _no_judge_warning(
         if judged:
             lines.append(
                 f"warning: no --judge on a live target: {judged} of the {len(plan.selected)} "
-                f"specs that will run on {plan.target.id} use semantic_judge and come back "
-                "inconclusive wherever their deterministic evaluators do not decide. Pass "
-                "--judge <judge-target.yaml> for a decisive run."
+                f"specs that will run on {visible_controls(plan.target.id)} use semantic_judge "
+                "and come back inconclusive wherever their deterministic evaluators do not "
+                "decide. Pass --judge <judge-target.yaml> for a decisive run."
             )
     return "\n".join(lines) or None
 
