@@ -358,7 +358,8 @@ def _assert_same_context(
     if stored_target != current_target:
         raise ValueError(
             f"run {run_id!r} was made against a different target than the one resolved now "
-            "(its endpoint, model, capabilities or offline scenario differ, even though the id "
+            "(its endpoint, model, capabilities, offline scenario or seeded_setup differ, even "
+            "though the id "
             "matches). Resuming would publish one target's evidence as another's. Restore the "
             "target as it was, or start a fresh run."
         )

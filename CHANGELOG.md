@@ -5,6 +5,65 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
+
+- **The second half of OD-18** (ADR-0009, C with A first, decided 2026-10-06). A deployed
+  application (any target type but `model`) has its own documents, tools and memory, so a spec
+  that depends on `setup.documents`, `setup.tools` or `setup.memory_seed` used to go out there
+  referring to a scene the target never had: a PASS meant nothing, and a tool call under the
+  deployment's own name failed as "unauthorized". The target file now declares what its operator
+  seeded, under `seeded_setup`: `specs` (ids or `fnmatch` globs), `tools` (a spec's tool name to
+  the deployment's), `granted_tools` (the deployment's own tools outside every scene) and
+  `run_token` (from which each seeded spec's canary is built, `<run_token>-<spec id>`).
+- **A spec the deployment does not hold sends nothing:** `inconclusive: setup_not_seeded` when it
+  is not declared, when its canary has to be in the deployment (in the scene, or planted
+  outside it, as `AC-BOLA-001` does) and no `run_token` is declared (the operator seeds before
+  the run, so a canary bound per run could never be there and `secret_leakage` would be blind),
+  or when two of its own scene tools map to one deployment name; `setup_not_delivered` when it
+  is judged on its tool trace and the adapter reads no tool calls (REST, MCP), where it could
+  only ever pass. The runner and the plan ask the same questions (`setup_delivery.seeding_gap`,
+  of the spec before its canary is bound, and `trace_gap`): the dry run and `--estimate` print
+  "not seeded" (`-vv` gives the reason per spec, and a `seed:` line with each canary to plant),
+  the spec is not counted as exercised, and a target where nothing else runs is refused as
+  having nothing to send. A fully capable deployment that declares nothing now sends 41 specs,
+  not 67; declaring every scene sends 62, and a `run_token` the other 5 (`docs/16` §3,
+  measured with `--estimate`).
+- **A seeded spec** goes out as its plain prompt; each attempt records `setup_delivery: seeded`
+  and the tool-name map applied (`seeded_tools`). The map is applied per spec, to that spec's
+  scene tools, on every key a call's name is read from, before every evaluator; the evidence
+  keeps the calls as made. A call to a granted tool is not unauthorized, unless the name is one
+  of the spec's own scene tools (a grant of `http_post` would re-authorize the egress
+  `AG-EXFIL-EGRESS-001` forbids); its arguments and a destructive name are still judged
+  (`EvalContext.granted_tools`, read by `tool_call`). A seeded spec whose poison is a tool's
+  result is `inconclusive: setup_not_reached` when the reply shows no call to that tool, so a
+  deployment must return its tool calls (one that runs its tools server-side cannot show the
+  poison was fetched); nothing shows that a seeded document or memory was retrieved, which the
+  docs say.
+- **The loader refuses** the block on a `type: model` target (which gets the scene in-band), an
+  unknown key, an empty or non-string entry, a name both mapped and granted, and a `run_token`
+  that is not 8 to 64 plain characters. The block is part of the target's digest only when
+  present, so a run stored before it resumes; a changed declaration refuses the resume, and the
+  refusal names `seeded_setup`. Resuming a run stored before the gate, a spec it now stops is
+  scored from the stored attempts when they are all there, and otherwise kept as evidence,
+  inconclusive, with nothing more sent.
+- **Every offline mock is exempt** (`offline_mock` on `MockTarget` and `ComprehendingMock`):
+  they answer from the spec, not from a deployment, and the plan exempts the same routes. Gated,
+  the offline demo lost 26 of its 67 fails to `setup_not_seeded`; exempt, it scores as before
+  (75 specs, 67 fail, 8 inconclusive). The "Not exercised" line of the summary and the HTML
+  report now names a scene not seeded or not carried, and a tool never reached.
+- **Docs and examples:** `examples/target.app.yaml` and `examples/scope.app.yaml` with Scenario G
+  in `examples/README.md` (its output is the command's real output, and a test pins it); the
+  MANUAL (§4.2, §4.3 and the AISVS cautions), `dottore-scope(5)`, the FAQ, `docs/01`, `docs/03`,
+  `docs/12`, `docs/16`, ADR-0009 ("B as built"), contracts 00-INDEX, u02 and u08, and the target
+  template. `tests/core/test_seeded_setup.py` holds 51 tests. The pre-commit audit found two
+  ways to a false pass (the per-run canary, a grant over a scene tool), a target-wide map that
+  failed other specs, a plan and run that disagreed on the `comprehending` mock, and a seeded
+  tool spec that passed with no visible call; its delta audit, a resume that published the
+  placeholder, a canary planted outside the scene, one canary shared by every seeded spec, a
+  gate that only held through the binding, and trace specs that could only pass through REST;
+  all fixed. Not built: a fleet entry is written as
+  a `chatbot` with no `seeded_setup`, so a spec with a scene is `setup_not_seeded` on it.
+
 ### Fixed (the `-sV` probes' sampling, found by the first live pass)
 
 - **Nine of the 17 fingerprint probes went out with no temperature.** The tokenizer, guardrail and

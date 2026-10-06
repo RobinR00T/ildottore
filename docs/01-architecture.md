@@ -126,10 +126,16 @@ class Reporter(Protocol):
    each call with the spec's declared result for at most 4 rounds, each a send under the budget.
    This measures the model's handling of untrusted context, not a deployed application's own
    retrieval or tools, and the attempt records `setup_delivery: in_band`. Against any other
-   target type the request still carries only the prompt (or the pinned turns), the system
-   prompt, the sampling, the media and, on the multi-identity sweep, the identity, so 32 of the
-   75 specs run there without their documents, tools or memory until option B (the operator
-   declares what is seeded) is built.
+   target type (a deployed application, ADR-0009 option B, 2026-10-07) the scene is the
+   operator's: a spec with setup is sent only when the target file declares it seeded
+   (`seeded_setup.specs`, with a `run_token` when its scene carries the per-run canary), and
+   otherwise is `inconclusive: setup_not_seeded` with nothing sent.
+   A seeded spec goes out as the prompt (or the pinned turns), the system prompt, the sampling,
+   the media and, on the multi-identity sweep, the identity, and records `setup_delivery:
+   seeded`; the evaluators judge its tool calls under the spec's names through
+   `seeded_setup.tools`, and the deployment's own tools listed in `seeded_setup.granted_tools`
+   are not unauthorized unless they name one of the spec's own scene tools. The offline mocks
+   answer from the spec, not from a deployment, and are exempt.
 3. **Mutate**: Prompt Mutator expands the base attack into declared variants (language,
    encoding, roleplay, nesting, obfuscation, indirect-injection carriers). Each variant is a
    deterministic transform seeded by `(spec.id, variant.name)`.

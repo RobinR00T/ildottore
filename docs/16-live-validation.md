@@ -110,7 +110,9 @@ battery of 75 specs at the default `runs=5`:
 |---|---|---|---|
 | A bare hosted model (`type: model`, no tools/rag/memory/multimodal) | 34 | 550 | ~395k |
 | A hosted model declaring `tools`, `rag` and `memory` (`type: model`, setup in-band, OD-18) | 59 | at most 1,260 | ~849k |
-| A fully capable deployment (`type: agent`, every capability declared) | 67 | 780 (+17 with `-sV`) | ~523k |
+| A fully capable deployment (`type: agent`, every capability declared, nothing declared seeded) | 41 | 585 (+17 with `-sV`) | ~412k |
+| The same deployment declaring every scene seeded (`seeded_setup.specs: ["*"]`, OD-18 B) | 62 | 740 | ~497k |
+| ... and a `run_token` for the 5 specs whose canary has to be seeded | 67 | 780 | ~523k |
 
 With `--judge`, add the judge model's own traffic: for the first shape, `--estimate --judge`
 prints **+700 requests (~954k tokens)** to the judge, two per evaluated attempt. Since
@@ -128,11 +130,19 @@ Two things that table says out loud:
   retrieval or tools, and each attempt records `setup_delivery: in_band`. The request figure is
   a ceiling (every tool turn priced at 5 sends; main priced the same 59 specs at 740 before the
   rounds existed), and the derived budget is sized from it. A target that declares every
-  capability and is not `type: model` skips **nothing**: 67 are sent and the other 8 are the
-  policy-blocked ones below. **There, sent is not tested:** 26 of those 67 depend on a spec's
-  documents, mock tools or memory seed, which reach a deployed application only where the
-  operator has seeded the same content (and a tool spec can fail falsely when the target's tools
-  have other names). Option B of OD-18, the operator's declaration, is still to be built.
+  capability and is not `type: model` is a deployed application, and **sends only what it can
+  test**: 41, with the 26 that depend on a spec's documents, mock tools or memory seed reported
+  `inconclusive: setup_not_seeded` and nothing sent for them (OD-18 option B, 2026-10-07). A
+  deployment holds that content only where its operator has seeded it, and its target file says
+  which specs (`seeded_setup.specs`); declared, they go out as the plain prompt, each attempt
+  records `setup_delivery: seeded`, and `seeded_setup.tools` maps the spec's tool names to the
+  deployment's, so a call under the deployment's own name is judged as the spec's tool instead of
+  failing as "unauthorized". Declaring every scene seeded sends 62: five specs
+  (`DL-XSESSION-001`, the three `EMB-*` retrieval specs and `AC-BOLA-001`, whose canary sits in
+  another customer's record) carry a per-run canary that has to be in the deployment, which
+  nobody can seed before the run, so they also need `seeded_setup.run_token`; with it, each gets
+  its own canary to seed and all 67 are sent (the last row; main sent the same 67 before option B,
+  without saying 26 of them meant nothing). The other 8 are the policy-blocked ones below.
   (The first version of this table said 66 and 775. It was measured against a target missing
   one capability, `multi_identity`, so one spec was silently skipped. An audit re-ran it. The
   correct figures are above, and the lesson is in the commit: a number is measured against the

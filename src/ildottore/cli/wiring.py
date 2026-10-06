@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -69,6 +70,7 @@ from ildottore.shared.models import (
     ModelRequest,
     ModelResponse,
     Sampling,
+    SeededSetup,
     Target,
 )
 from ildottore.shared.protocols import Reporter, TargetAdapter
@@ -1078,6 +1080,8 @@ def load_target(path: Path) -> Target:
             raise ValueError(f"target file {path} 'command' must be a list of strings")
         command = command_raw
 
+    seeded = _seeded_setup(path, raw.get("seeded_setup"), target_type)
+
     return Target(
         id=target_id,
         type=target_type,
@@ -1090,7 +1094,86 @@ def load_target(path: Path) -> Target:
         sampling_defaults=sampling,
         transport=transport,
         command=command,
+        seeded_setup=seeded,
     )
+
+
+def provider_returns_tool_calls(target: Target) -> bool:
+    """True when the adapter ``target`` routes to reads tool calls from a reply.
+
+    The OpenAI and Anthropic adapters do; the REST template and the read-only MCP adapter
+    return none, so a seeded spec judged on its tool trace could never fail there (OD-18 B).
+    The runner asks the adapter itself (``returns_tool_calls``); the plan asks this.
+    """
+
+    return (target.provider or "").strip().lower() in ("openai", "anthropic")
+
+
+def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSetup | None:
+    """The ``seeded_setup`` block of a target file (OD-18 option B), checked field by field.
+
+    A ``type: model`` target gets the scene in-band (option A), so the block is refused there
+    rather than silently ignored: one of the two would have been read wrong.
+    """
+
+    if raw is None:
+        return None
+    if target_type is TargetType.MODEL:
+        raise ValueError(
+            f"target file {path} declares 'seeded_setup', which is for a deployed application; "
+            "a 'type: model' target gets a spec's setup in-band"
+        )
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'seeded_setup' must be a mapping")
+    known = ("specs", "tools", "granted_tools", "run_token")
+    unknown = sorted(str(key) for key in raw if key not in known)
+    if unknown:
+        raise ValueError(
+            f"target file {path} 'seeded_setup' has unknown key(s) {', '.join(unknown)}; "
+            "expected 'specs', 'tools', 'granted_tools' and 'run_token'"
+        )
+    specs = raw.get("specs", [])
+    if not (isinstance(specs, list) and all(isinstance(s, str) and s for s in specs)):
+        raise ValueError(f"target file {path} 'seeded_setup.specs' must be a list of spec ids")
+    tools = raw.get("tools", {})
+    if not (
+        isinstance(tools, dict)
+        and all(isinstance(k, str) and isinstance(v, str) and k and v for k, v in tools.items())
+    ):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.tools' must map each spec tool name to the "
+            "deployment's name for it"
+        )
+    # Two spec tools may share a deployment name (`lookup_ticket` and `read_ticket` in two
+    # specs, one `get_ticket` in the deployment): the map is applied per spec, and only two of
+    # one spec's own scene tools sharing a name is refused, for that spec, at run time.
+    deployment_names = list(tools.values())
+    granted = raw.get("granted_tools", [])
+    if not (isinstance(granted, list) and all(isinstance(g, str) and g for g in granted)):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.granted_tools' must be a list of the deployment's "
+            "tool names"
+        )
+    both = sorted(set(granted) & set(deployment_names))
+    if both:
+        raise ValueError(
+            f"target file {path} 'seeded_setup' both maps and grants {', '.join(both)}; a mapped "
+            "tool is one of the spec's scene, a granted one is outside every scene"
+        )
+    token = raw.get("run_token")
+    if token is not None and not (isinstance(token, str) and _RUN_TOKEN.fullmatch(token)):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.run_token' must be 8 to 64 letters, digits, '_' "
+            "or '-' (it replaces {{run_id}} in the canaries the operator seeds)"
+        )
+    return SeededSetup(
+        specs=list(specs), tools=dict(tools), granted_tools=list(granted), run_token=token
+    )
+
+
+#: A run token goes into a canary the evaluators match exactly: plain characters, and long
+#: enough not to occur by chance.
+_RUN_TOKEN = re.compile(r"[A-Za-z0-9_-]{8,64}")
 
 
 def load_mock_scenario(path: Path) -> str:

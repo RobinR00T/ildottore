@@ -12,6 +12,7 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`target.local.yaml`](target.local.yaml) | A local model served by Ollama over the OpenAI-compatible API. |
 | [`target.judge.yaml`](target.judge.yaml) | A second local model used as the LLM-as-judge (`--judge`). |
 | [`target.openai.yaml`](target.openai.yaml) | A hosted model (key by env-var reference, never inline). |
+| [`target.app.yaml`](target.app.yaml) / [`scope.app.yaml`](scope.app.yaml) | A deployed application, with the specs whose scene its operator seeded (`seeded_setup`). |
 | [`fleet.yaml`](fleet.yaml) | Declare several targets in one file and scan them all. |
 | [`target.mcp.yaml`](target.mcp.yaml) / [`scope.mcp.yaml`](scope.mcp.yaml) | A Model Context Protocol server target (read-only discovery). |
 | [`ci-github-actions.yml`](ci-github-actions.yml) | Gate a pipeline on new high/critical findings. |
@@ -161,6 +162,50 @@ dottore run --suite mcp \
 
 Or declare the MCP server in a `fleet.yaml` (`kind: mcp`) and let `dottore fleet` generate its
 scope + target for you.
+
+## Scenario G, scan a deployed application you have seeded
+
+A bare model gets a spec's documents, tools and memory in the request (`type: model`). A
+deployed application has its own, so the spec's scene is yours to seed into it: the ticket
+whose text carries the injection, the knowledge-base page, the saved memory. `target.app.yaml`
+declares which specs you seeded (`seeded_setup.specs`), how your deployment names the spec's
+tools (`seeded_setup.tools`) and which of its own tools it may call outside any scene
+(`seeded_setup.granted_tools`). A spec that needs a scene you did not declare sends nothing:
+
+```bash
+dottore run --dry-run -vv --spec 'PI-INDIRECT-*' --spec 'AG-TOOL-*' \
+  -t examples/target.app.yaml \
+  --scope examples/scope.app.yaml
+```
+
+Real output of that exact command (the `--judge` warning on stderr left out):
+
+```
+dry-run: plan resolved, sent nothing.
+  scope:   examples/scope.app.yaml
+  target:  support-agent-staging (agent) authorized at https://support-agent.example.test/v1/chat/completions
+  battery: filtered selection, 2 specs selected
+    agent_tool_abuse: 1
+    prompt_injection: 1
+  not seeded: 1 spec(s) on support-agent-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
+    - PI-INDIRECT-RAG-001: setup_not_seeded: this spec needs documents, tools or memory in the deployment, and the target file does not declare them seeded (seeded_setup.specs)
+  would send: 20 requests over 2 specs at runs=5
+  pacing:  5.0 req/s ceiling (S8)
+  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+```
+
+`PI-INDIRECT-RAG-001` needs a poisoned document in the knowledge base and is not declared, so
+the run reports it `inconclusive: setup_not_seeded` and sends nothing for it. The two declared
+specs go out as their plain prompts and record `setup_delivery: seeded`. The poisoned ticket of
+`PI-INDIRECT-TOOL-001` reaches the agent only through `lookup_ticket`, which your agent calls
+`get_ticket`: a reply that shows a `get_ticket` call counts as having fetched it, and one that
+shows none is `inconclusive: setup_not_reached`, since nothing says the agent ever read the
+ticket. In `AG-TOOL-UNAUTH-001` the map is what keeps `kb_search` from failing as an
+unauthorized tool; the evidence keeps the deployment's names. A spec whose canary has to be in
+your deployment (none of these two) would carry `eng-2026-q4-<spec id>` in its place, and
+`-vv` would print it on a `seed:` line. The host is `example.test`, so a run without `--dry-run` has nowhere to go: point
+both files at your deployment first. What a seeded spec tests is only as good as what you
+seeded, which the tool cannot check.
 
 ## Add your own attack (no core code)
 

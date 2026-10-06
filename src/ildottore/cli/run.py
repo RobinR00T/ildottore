@@ -48,7 +48,14 @@ from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
-from ildottore.core.setup_delivery import MAX_TOOL_ROUNDS, delivers_in_band, in_band_setup
+from ildottore.core.setup_delivery import (
+    MAX_TOOL_ROUNDS,
+    delivers_in_band,
+    in_band_setup,
+    seeded_canaries,
+    seeding_gap,
+    trace_gap,
+)
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
@@ -305,6 +312,9 @@ class TargetPlan:
     estimate: PlanEstimate
     budgets: PlanBudgets
     mutators_by_spec: dict[str, list[str]]
+    # OD-18 B: specs that need the deployment's scene and that its target file does not declare
+    # seeded. The runner reports them (`setup_not_seeded`) and sends nothing for them.
+    not_seeded: list[tuple[str, str]] = field(default_factory=list)  # (spec id, reason)
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -335,6 +345,7 @@ def estimate_plan(
     mutators_by_spec: dict[str, list[str]] | None = None,
     judge: bool = False,
     target: Target | None = None,
+    fixtures_hold_scene: bool = False,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -342,6 +353,9 @@ def estimate_plan(
     in-band to ``target`` (OD-18) counts each turn with every tool round it may play, so the
     ceilings derived from this cover the worst case: a turn of a tool spec is up to
     ``1 + MAX_TOOL_ROUNDS`` sends, and its input carries the documents and tool definitions.
+    A spec that needs a deployment's scene (OD-18 B) and is not declared seeded sends nothing,
+    so it costs nothing, unless ``fixtures_hold_scene`` (the offline mock, whose fixtures are
+    written for the scene).
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
@@ -357,6 +371,19 @@ def estimate_plan(
     judge_tokens = 0
     by_category: dict[str, int] = {}
     for spec in specs:
+        if (
+            target is not None
+            and not fixtures_hold_scene
+            and (
+                seeding_gap(spec, target)
+                or trace_gap(
+                    spec,
+                    target,
+                    returns_tool_calls=wiring.provider_returns_tool_calls(target),
+                )
+            )
+        ):
+            continue  # setup_not_seeded: the runner sends nothing for it (OD-18 B)
         mutators = (mutators_by_spec or {}).get(spec.id) or _effective_mutators(spec)
         turns = spec.attack.turns
         n_turns = len(turns) if turns is not None and len(turns) >= 2 else 1
@@ -530,8 +557,32 @@ def resolve_target_plans(
                 runnable.append(spec)
             else:
                 blocked.append((spec.id, verdict.reason or "blocked_by_policy"))
+        # The offline mock replays the specs' fixtures, written for the scene, so it holds every
+        # scene; a live deployment holds only those its operator declared seeded (OD-18 B).
+        fixtures_hold_scene = wiring.target_uses_mock(path)
+        # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
+        # declared, a per-run canary with no run_token, two scene tools under one deployment
+        # name, or a trace spec through an adapter that reads no tool calls.
+        calls_visible = wiring.provider_returns_tool_calls(target)
+        not_seeded = [
+            (spec.id, gap)
+            for spec in runnable
+            if not fixtures_hold_scene
+            and (
+                gap := seeding_gap(spec, target)
+                or trace_gap(spec, target, returns_tool_calls=calls_visible)
+            )
+            is not None
+        ]
+        unseeded = {spec_id for spec_id, _ in not_seeded}
+        runnable = [spec for spec in runnable if spec.id not in unseeded]
         estimate = estimate_plan(
-            runnable, runs, mutators_by_spec=mutators_by_spec, judge=judge, target=target
+            runnable,
+            runs,
+            mutators_by_spec=mutators_by_spec,
+            judge=judge,
+            target=target,
+            fixtures_hold_scene=fixtures_hold_scene,
         )
         plans.append(
             TargetPlan(
@@ -545,6 +596,7 @@ def resolve_target_plans(
                 estimate=estimate,
                 budgets=budgets_for(estimate, rate_rps=rate_rps, overrides=budget_overrides),
                 mutators_by_spec=mutators_by_spec,
+                not_seeded=not_seeded,
             )
         )
     return plans
@@ -676,6 +728,7 @@ def _print_estimate(
             f"{len(plan.selected)} specs"
             + (f", {skipped} skipped (capability)" if skipped else "")
             + (f", {blocked} blocked (policy)" if blocked else "")
+            + (f", {len(plan.not_seeded)} not seeded" if plan.not_seeded else "")
         )
     by_category: dict[str, int] = {}
     for plan in plans:
@@ -763,6 +816,21 @@ def _print_dry_run_plan(
             if detail >= 2:
                 for spec_id, reason in plan.blocked_by_policy:
                     print(f"    - {spec_id}: {reason}")
+        if plan.not_seeded:
+            print(
+                f"  not seeded: {len(plan.not_seeded)} spec(s) on {plan.target.id}, their "
+                "scene is not in the deployment as seeded_setup declares it, or their tool "
+                "trace cannot be read through this adapter (-vv says which)"
+            )
+            if detail >= 2:
+                for spec_id, reason in plan.not_seeded:
+                    print(f"    - {spec_id}: {reason}")
+        if detail >= 2:
+            # What the operator plants: each seeded spec's own canary (run_token-<spec id>).
+            for spec in plan.selected:
+                canaries = seeded_canaries(spec, plan.target)
+                if canaries:
+                    print(f"  seed:    {spec.id}: {', '.join(canaries)}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
     judge_requests = sum(p.estimate.judge_requests for p in plans)
     if judge_requests:
@@ -818,6 +886,7 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "
             f"{len(plan.blocked_by_policy)} blocked by policy"
+            + (f", {len(plan.not_seeded)} not seeded" if plan.not_seeded else "")
         )
     print("  reachability is authorization-level (scope + allowlist); no request was sent.")
 
@@ -1313,7 +1382,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # three policy-blocked specs: "3 of 0 planned", exit 0, zero requests.
     barren = [
         f"{p.target.id} ({len(p.skipped_capability)} skipped for capabilities, "
-        f"{len(p.blocked_by_policy)} blocked by policy)"
+        f"{len(p.blocked_by_policy)} blocked by policy"
+        + (f", {len(p.not_seeded)} not seeded" if p.not_seeded else "")
+        + ")"
         for p in plans
         if not p.selected
     ]
@@ -1323,6 +1394,14 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{'; '.join(barren)}. Widen the selection or declare the capability on the "
             "target. A spec blocked by policy needs a policy pack that enables it, and the CLI "
             "cannot load one today (open decision), so it cannot run from `dottore`."
+            + (
+                " A spec counted as not seeded runs once what `--dry-run -vv` names for it is "
+                "fixed: its id in seeded_setup.specs, a seeded_setup.run_token, its own "
+                "deployment name for each of its scene tools in seeded_setup.tools, or an "
+                "adapter that returns tool calls."
+                if any(p.not_seeded for p in plans if not p.selected)
+                else ""
+            )
         )
 
     # Resolved BEFORE the three modes that send nothing, so a typo in the id is caught by the
