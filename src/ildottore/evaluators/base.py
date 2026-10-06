@@ -27,7 +27,7 @@ import math
 from collections import Counter
 from collections.abc import Iterable, Mapping
 
-from ildottore.redactor import Redactor, without_stash_delimiters
+from ildottore.redactor import Redactor, visible_stash_delimiters
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
 from ildottore.shared.models import EvalContext, Verdict
 
@@ -107,9 +107,9 @@ def mask_value(value: str, *, type_hint: str, redactor: Redactor | None = None) 
     """
     red = redactor or _DEFAULT_REDACTOR
     masked = red.redact_text(value)
-    # The redactor drops its two stash delimiters from its input, so a value holding one came
-    # back different with nothing masked, and was returned raw (pre-commit audit).
-    if masked != without_stash_delimiters(value):
+    # The redactor rewrites its two stash delimiters, so a value holding one came back
+    # different with nothing masked, and was returned raw (pre-commit audit).
+    if masked != visible_stash_delimiters(value):
         # The central redactor recognised the shape and typed it.
         return masked
     # Unrecognised by the redactor's pattern set: type it with the caller's hint and a

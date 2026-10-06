@@ -10,20 +10,24 @@ versioning: [SemVer](https://semver.org/).
 - **Echoed masks could corrupt the redaction and abort a campaign.** The token that keeps a mask
   out of the next patterns' reach used one character to open and to close, so a closing one, a
   digit of the text and the next opening one formed another token: `«a»«b»0«c»` came back as
-  `«a»«a»1` followed by NUL characters, `«b»` and `«c»` lost, and changed again on every pass,
+  `«a»«a»1\x002\x00`, `«b»` and `«c»` lost, and changed again on every pass,
   which the evidence store treats as a reason to refuse the reply (and the campaign stops). A
   target that echoes masks, or a registered credential next to them, was enough. The token now
-  opens with `\x00` and closes with `\x01`, both are dropped from the input first, and the masks
-  are put back in one pass instead of one `str.replace` each (last row of the table below).
+  opens with `\x00` and closes with `\x01`. Both are dropped before redacting, so a secret split
+  by them is masked whole (`AKIA\x00IOSF...`, or a key read as UTF-16 with Latin-1); when
+  nothing is masked, the input is redacted again with them written as `␀` and `␁`, so two
+  tool-argument names that differ only by one stay two keys in the stored evidence (main merged
+  them for `\x00`) and a value that joining hid (`bob@corp.io\x00_`) is masked. The masks are
+  put back in one pass instead of one `str.replace` each (last row of the table below).
 - **A mask written by the target no longer hides what it wraps.** A mask is kept as it is only
   when its type is one the tool writes (the redactor's rules and the evaluators' type hints; a
   test keeps the list complete). Any other is read as text: `«REDACTED:<the operator's key>»`
   kept the key, which the target had received, and the reports printed it. Now the key inside is
   masked (`«REDACTED:«REDACTED:credential:…»»`), and so is an AWS key, a high-entropy value, or a
   value that only its label or URL marks secret (`password: «REDACTED:<the password>»`).
-- **`mask_value` returned a value raw** when it held `\x00` or `\x01`: the redactor drops them,
-  so the output differed from the input and was taken as masked. It compares with the input
-  without them now (a shared line or an injected tool argument ending in `\x01` was stored raw).
+- **`mask_value` returned a value raw** when it held `\x00`: the redactor dropped it, so the
+  output differed from the input and was taken as masked (`\x00rm -rf /` was stored as
+  `rm -rf /`). It compares with the input as the redactor rewrites it now.
 - **Seven paths were quadratic in text a target writes.** The phone, email and JWT rules (the
   JWT one twice, in the redactor and in `secret_shape`) gained a `skip` branch
   (`redactor.SKIP`): a run that cannot match from its first start is stepped over instead of

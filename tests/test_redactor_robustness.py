@@ -6,7 +6,7 @@ labelled-number block and of this one:
   (`«a»«b»0«c»` came back as `«a»«a»1` and NUL characters, changing on every pass, which the
   evidence store treats as a reason to abort the campaign);
 - a mask the target wrote was kept as it was, with the operator's key inside it;
-- `mask_value` returned a value raw when it held a character the redactor drops;
+- `mask_value` returned a value raw when it held a character the redactor rewrites;
 - the phone, email and JWT rules, `secret_shape`'s JWT rule, the backtick rule of `tool_call`
   and `pii_detector`'s phone check were quadratic.
 """
@@ -31,7 +31,7 @@ from ildottore.redactor import Redactor, register_known_secret
         "«REDACTED:a»«REDACTED:b»0«REDACTED:c»",
         "«REDACTED:x»12«REDACTED:y»3«REDACTED:z»",
         "«REDACTED:card»0" * 50,
-        "\x00«REDACTED:a»\x01\x00«REDACTED:b»\x01",  # forged delimiters are dropped
+        "\x00«REDACTED:a»\x01\x00«REDACTED:b»\x01",  # forged delimiters are made visible
     ],
 )
 def test_echoed_masks_are_kept_as_they_are_and_redaction_is_idempotent(text: str) -> None:
@@ -39,7 +39,7 @@ def test_echoed_masks_are_kept_as_they_are_and_redaction_is_idempotent(text: str
     once = redactor.redact_text(text)
     assert "\x00" not in once and "\x01" not in once
     assert redactor.redact_text(once) == once
-    expected = text.replace("\x00", "").replace("\x01", "")
+    expected = text.replace("\x00", "\u2400").replace("\x01", "\u2401")
     assert once == expected, "nothing in the input needed masking"
 
 
@@ -159,9 +159,39 @@ def test_a_registered_credential_named_like_a_mask_type_does_not_nest_the_mask()
 
 # No value here can appear in a mask (its digest is hex): `ab` did, 2.7% of the time.
 @pytest.mark.parametrize("value", ["a shared line\x01", "\x00rm -rf /", "xyz\x00\x01"])
-def test_mask_value_never_returns_a_value_holding_a_dropped_character(value: str) -> None:
+def test_mask_value_never_returns_a_value_holding_a_rewritten_character(value: str) -> None:
     out = mask_value(value, type_hint="shared_line")
     assert out.startswith("«REDACTED:shared_line:") and value.strip("\x00\x01") not in out
+
+
+@pytest.mark.parametrize(
+    ("text", "masked_as"),
+    [
+        ("AKIA\x00IOSFODNN7EXAMPLE", "«REDACTED:aws_access_key:"),
+        ("card 4111\x001111\x001111\x001111", "«REDACTED:card»"),
+        ("bob\x00@corp.io", "«REDACTED:email»"),
+        # Joined, these are no email and no phone (`bob@corp.io_`); apart, they are.
+        ("bob@corp.io\x00_", "«REDACTED:email»"),
+        ("call 600123456\x00x", "«REDACTED:phone»"),
+        # A key read as UTF-16 with Latin-1: a NUL after every character.
+        ("\x00".join("sk-" + "Ab3dE5fG7hJ9kL1mN3pQ5rS7") + "\x00", "«REDACTED:openai_key:"),
+    ],
+)
+def test_a_secret_split_by_a_stash_delimiter_is_still_masked(text: str, masked_as: str) -> None:
+    """Writing the delimiters as `␀` kept these apart and in clear (pre-merge audit)."""
+
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text(text)
+    assert masked_as in out and "\x00" not in out
+    assert redactor.redact_text(out) == out
+
+
+def test_two_names_that_differ_by_a_stash_delimiter_stay_two() -> None:
+    """Dropping `\\x01` made `cmd` and `cmd\\x01` one key in the stored evidence."""
+
+    redactor = Redactor(salt="s")
+    keys = {redactor.redact_text(k) for k in ("cmd", "cmd\x01", "cmd\x00", "cmd\x00\x01")}
+    assert len(keys) == 4
 
 
 _HOSTILE = {
@@ -179,7 +209,7 @@ _HOSTILE = {
 
 @pytest.mark.parametrize("text", list(_HOSTILE.values()), ids=list(_HOSTILE))
 def test_hostile_text_is_redacted_and_scanned_in_linear_time(text: str) -> None:
-    """Main took 3.3 to 17.8 s on each of these; now 0.06 s or less."""
+    """Main took 3.3 to 21 s on each of these; now 0.06 s or less."""
 
     started = time.perf_counter()
     Redactor(salt="s").redact_text(text)

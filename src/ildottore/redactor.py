@@ -81,14 +81,23 @@ def skipped(match: re.Match[str]) -> bool:
     return SKIP in match.re.groupindex and match.group(SKIP) is not None
 
 
-def without_stash_delimiters(text: str) -> str:
-    """``text`` without the two characters the redactor reserves for its stash tokens.
+#: What the stash delimiters in a text are written as: their control-picture characters.
+_VISIBLE: Final = str.maketrans({_STASH_OPEN: "\u2400", _STASH_CLOSE: "\u2401"})
 
-    :meth:`Redactor.redact_text` drops them from its input so a target cannot forge a token;
+
+def visible_stash_delimiters(text: str) -> str:
+    """``text`` with the two characters the redactor reserves for its stash tokens made visible.
+
+    It is what :meth:`Redactor.redact_text` returns when it masks nothing (``␀`` and ``␁``):
     a caller comparing the output with the input to see whether anything was masked compares
-    with this instead (``mask_value``), or a value ending in ``\\x01`` looked masked.
+    with this instead (``mask_value``). A value holding ``\\x00`` came back changed with nothing
+    masked, and was stored raw.
     """
 
+    return text.translate(_VISIBLE)
+
+
+def _without_stash_delimiters(text: str) -> str:
     return text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
 
 
@@ -484,8 +493,20 @@ class Redactor:
         abort the campaign.
         """
 
-        # Drop the stash delimiters up front so an attacker cannot forge one.
-        current = without_stash_delimiters(text)
+        # The stash delimiters are dropped first, so an attacker cannot forge a token, and a
+        # secret split by them is whole again: `AKIA\x00IOSF...` and a key read as UTF-16 with
+        # Latin-1 (`s\x00k\x00-\x00...`) are masked. When nothing is masked, the input is
+        # redacted again with them made visible instead, so two names that differ only by one
+        # (`cmd`, `cmd\x01`) stay two keys in the stored evidence, and what joining the pieces
+        # hid is masked: `bob@corp.io\x00_` is no email once joined (pre-merge audit).
+        stripped = _without_stash_delimiters(text)
+        joined = self._to_fixed_point(stripped)
+        if joined != stripped or stripped == text:  # masked, or no delimiter to show
+            return joined
+        return self._to_fixed_point(visible_stash_delimiters(text))
+
+    def _to_fixed_point(self, text: str) -> str:
+        current = text
         for _ in range(4):
             nxt = self._redact_once(current)
             if nxt == current:
