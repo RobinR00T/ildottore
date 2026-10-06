@@ -143,20 +143,22 @@ def test_a_spec_path_that_does_not_exist_is_named_not_counted_as_a_broken_file(
 
 
 def test_a_reply_flooded_with_its_own_canary_costs_no_memory() -> None:
-    """Listing every occurrence held 308 MB for 4 MiB of `ZZ-1-b` (pre-merge audit)."""
+    """Listing every occurrence held 308 MB for 4 MiB of `ZZ-1-b` (pre-merge audit).
 
-    import time
+    Memory only: under coverage and tracemalloc the time is the runner's (0.5 s here, 6.5 s on
+    CI for 4 MiB), so a time limit would test the machine. 1 MiB still held about 77 MB.
+    """
+
     import tracemalloc
 
     from ildottore.evaluators.authz_leak import _canaries_found
 
-    flood = "ZZ-1-b " * (4 * 1024 * 1024 // 7)
+    flood = "ZZ-1-b " * (1024 * 1024 // 7)
     tracemalloc.start()
-    started = time.perf_counter()
     try:
         found = _canaries_found({"a": "ok", "b": flood}, ["ZZ-1", "ZZ-1-b"])
         peak = tracemalloc.get_traced_memory()[1]
     finally:
         tracemalloc.stop()
     assert found == {"a": set(), "b": {"ZZ-1-b"}}
-    assert peak < 1_000_000 and time.perf_counter() - started < 3.0
+    assert peak < 1_000_000
