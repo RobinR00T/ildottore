@@ -3,6 +3,20 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-06 (midday): a load refusal names its spec file
+
+- PR #48 (the #46 pre-merge follow-ups) squash-merged as `d54097c`. On
+  `fix/spec-load-error-names` (`tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
+  that fails to load printed its path as `«REDACTED:high_entropy:…».yaml` (found by the #47
+  pre-merge audit); it names `attacks/DL-PII-ELICIT-001.yaml` now, kept only when it is an entry
+  on disk under a spec path, nothing the entropy rule reads as a token is glued to it, and it
+  does not overlap a registered credential. A kept token in a CLI error that is part of a
+  registered credential (from 8 characters) prints as `«REDACTED:credential»` instead of going
+  to the entropy rule. The pre-commit audit (3,996 cases main against branch, no secret exposed)
+  found two test gaps and four low items, all fixed; `no_known_secrets` moved to
+  `tests/conftest.py`. `make gates` green: 2,172 tests (2,158 on `d54097c`), coverage 96.26%,
+  `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+
 ## State, 2026-10-06 (night): follow-ups of the #46 pre-merge audit
 
 - PR #47 (the #45 pre-merge follow-ups) squash-merged as `32f4334`. On

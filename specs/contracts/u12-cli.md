@@ -82,8 +82,14 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   `digests` attribute: on a scope checksum mismatch the digest computed from the body; the
   `checksum:` value the operator typed is not quoted at all; on a tamper refusal the hash the
   artifact's content has now). A scope validation error names fields and reasons, never the
-  input value. A kept token that overlaps a credential the process
-  registered is masked anyway, and every other 64-hex value goes through the redactor. An error
+  input value. A spec file a load refusal names is kept readable when it is a relative path to
+  an entry on disk under a spec path (the `spec_files` attribute of `SpecLoadError`) and no
+  token character of the entropy rule (`[\w+/=-]`) is glued to it where it matched; what the
+  loader quotes from inside the file goes through the redactor (the name is the spec tree
+  author's choice, the operator's or an installed pack's, not a value of the run). A kept token
+  that is part of a credential the process registered, from 8 characters, prints as
+  `«REDACTED:credential»` (one that contains a registered credential loses it to the value rule
+  first), and every other 64-hex value goes through the redactor. An error
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
   redactor alone caught such a value only by its entropy; the `fleet --judge` mismatch follows
