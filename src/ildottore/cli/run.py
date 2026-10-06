@@ -51,6 +51,7 @@ from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_p
 from ildottore.core.setup_delivery import MAX_TOOL_ROUNDS, delivers_in_band, in_band_setup
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
+from ildottore.redactor import Redactor, visible_controls
 from ildottore.reporting import RunStatus
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import Category, EvaluatorType
@@ -1456,12 +1457,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         state=states[0] if states else "complete",
         reason="; ".join(f"{k}: {v}" for k, v in sorted(incomplete.items())) or None,
     )
-    # Masked before the terminal sees it, for the same reason the reporters mask it (SEC-01).
-    from ildottore.reporting import default_redactor
-
-    _mask = default_redactor()
-    for target_id, reason in sorted(incomplete.items()):
-        printer.error(f"error: run on {target_id} did not complete: {_mask.redact_text(reason)}")
+    # Masked before the terminal sees it, for the same reason the reporters mask it (SEC-01),
+    # by the redactor `default_redactor()` gives them.
+    for line in _incomplete_lines(incomplete, Redactor()):
+        printer.error(line)
 
     report_paths = _write_reports(
         opts,
@@ -1487,6 +1486,21 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         report_paths=report_paths,
         incomplete=incomplete,
     )
+
+
+def _incomplete_lines(incomplete: dict[str, str], redactor: Redactor) -> list[str]:
+    """One error line per target whose run did not complete, ready for the terminal.
+
+    The reason quotes a target's transport error, which reached stderr with its control
+    characters raw, and a credential split by one in two readable halves (pre-merge audit of
+    PR #49). The target id is the operator's, written out too.
+    """
+
+    return [
+        f"error: run on {visible_controls(target_id)} did not complete: "
+        f"{redactor.for_terminal(reason)}"
+        for target_id, reason in sorted(incomplete.items())
+    ]
 
 
 def _unreachable_reason(result: CampaignResult) -> str | None:
@@ -1825,9 +1839,7 @@ def _record_spend_quietly(run_db: Path, run_id: str, spend: Spend) -> None:
     try:
         _persist_spend(run_db, run_id, spend)
     except Exception as exc:  # the database, not the campaign
-        from ildottore.redactor import Redactor
-
-        reason = Redactor().redact_text(str(exc))
+        reason = Redactor().for_terminal(str(exc))
         print(f"warning: the spend of {run_id} could not be recorded: {reason}", file=sys.stderr)
 
 

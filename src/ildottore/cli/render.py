@@ -254,7 +254,13 @@ class ProgressPrinter:
         not noise: it is the one line that tells the operator the report below is partial.
         """
 
-        Console(stderr=True, no_color=self._console.no_color, highlight=False).print(message)
+        # As text, on its own line: it quotes a target's error. `rich` read `[/]` in it as
+        # markup (`MarkupError`, a traceback before the reports were written), `:warning:` as
+        # an emoji, and wrapped it at 80 columns in a CI log, where a wrap can start a line
+        # with `::error` (pre-merge audit of PR #49). Its lines are the caller's.
+        Console(stderr=True, no_color=self._console.no_color, highlight=False).print(
+            message, markup=False, emoji=False, soft_wrap=True
+        )
 
     def progress(self, index: int, total: int, spec_id: str, finding: Finding) -> None:
         """Print one progress line (suppressed under ``-q``)."""
@@ -280,5 +286,6 @@ class ProgressPrinter:
         matrix = comparison_table(findings, specs)
         if matrix is not None:
             self._console.print(matrix)
+        # Plain and unwrapped, like `error`: the off-universe line quotes a pack's values.
         for line in coverage_lines(findings, specs, planned_specs=planned_specs):
-            self._console.print(line)
+            self._console.print(line, markup=False, emoji=False, soft_wrap=True)

@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ildottore.cli import wiring
+from ildottore.redactor import visible_controls
 from ildottore.registry import LintError
 from ildottore.shared.models import AttackSpec
 
@@ -85,7 +86,7 @@ def unloaded_warnings(errors: list[LintError]) -> list[str]:
     failed = len(errors) - len(missing)
     notes = []
     if missing:
-        notes.append(f"warning: spec path(s) not found: {', '.join(missing)}")
+        notes.append(f"warning: spec path(s) not found: {visible_controls(', '.join(missing))}")
     if failed:
         notes.append(
             f"warning: the spec paths gave {failed} load error(s); the specs, suites or packs "
@@ -99,5 +100,9 @@ def render_spec_rows(specs: list[AttackSpec]) -> list[str]:
 
     if not specs:
         return ["(no specs match)"]
-    rows = [f"{s.id}\t{s.owasp}\t{s.severity.value}\t{s.category.value}\t{s.name}" for s in specs]
+    # The name is the pack author's, written out; the tabs between columns stay tabs.
+    rows = [
+        f"{s.id}\t{s.owasp}\t{s.severity.value}\t{s.category.value}\t{visible_controls(s.name)}"
+        for s in specs
+    ]
     return rows

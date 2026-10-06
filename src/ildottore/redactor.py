@@ -35,6 +35,7 @@ Verifier / pattern set is extensible via :meth:`Redactor.register`.
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 import hmac
 import json
@@ -43,6 +44,7 @@ import os
 import re
 import secrets
 import threading
+from array import array
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Protocol
@@ -103,6 +105,46 @@ def visible_stash_delimiters(text: str) -> str:
 
 def _without_stash_delimiters(text: str) -> str:
     return text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
+
+
+#: What a terminal or a CI log reader acts on instead of showing: the C0 controls, DEL, the C1
+#: controls (U+0085, the next-line control, among them), the line and paragraph separators, and
+#: lone surrogates. A Linux file name with a byte that is not UTF-8 arrives as one, which a strict
+#: stream cannot encode and a `surrogateescape` stream writes back as the raw byte, a C1 control
+#: for 0x80 to 0x9f.
+_CONTROL_RANGES: Final = ((0x00, 0x1F), (0x7F, 0x9F), (0x2028, 0x2029), (0xD800, 0xDFFF))
+_TERMINAL_CONTROLS: Final = re.compile(
+    "[" + "".join(f"{chr(low)}-{chr(high)}" for low, high in _CONTROL_RANGES) + "]"
+)
+#: The same characters, for ``str.translate`` to drop: a regex ``sub`` took 9 MB a megabyte.
+_DROP_CONTROLS: Final = dict.fromkeys(
+    code for low, high in _CONTROL_RANGES for code in range(low, high + 1)
+)
+
+
+def _visible_control(match: re.Match[str]) -> str:
+    code = ord(match.group(0))
+    if code < 0x20:
+        return chr(0x2400 + code)  # its control picture, as the stash delimiters are written
+    if code == 0x7F:
+        return "\u2421"
+    return f"\\x{code:02x}" if code < 0x100 else f"\\u{code:04x}"
+
+
+def visible_controls(text: str) -> str:
+    """``text`` with every character a terminal acts on written out, for printing.
+
+    A C0 control and DEL become their control pictures (``\\n`` is ``␊``, ``ESC`` is ``␛``, DEL
+    is ``␡``), as :func:`visible_stash_delimiters` writes ``\\x00`` and ``\\x01`` (``␀``,
+    ``␁``). A C1 control, a separator and a lone surrogate, which have no picture, become the
+    escape Python writes for them (``\\x85``, ``\\u2028``, ``\\udc9b``). The result holds no
+    character of :data:`_TERMINAL_CONTROLS`, so it is its own fixed point. A spec file named
+    ``x\\n::error ...`` printed a line GitHub Actions reads as a workflow command (pre-merge
+    audit of PR #49). It runs after the redactor: escaping first would hide from it a credential
+    split by a control character, and it would read the escapes as text.
+    """
+
+    return _TERMINAL_CONTROLS.sub(_visible_control, text)
 
 
 #: The email shape; a ``skip`` match is a run of address characters with no address in it.
@@ -486,7 +528,13 @@ class Redactor:
     def _digest(self, value: str) -> str:
         """Short salted HMAC-SHA256 digest for corroboration (never reversible)."""
 
-        return hmac.new(self._salt, value.encode("utf-8"), hashlib.sha256).hexdigest()[:8]
+        # `surrogatepass`: a lone surrogate (an undecodable byte of a file name) in a labelled
+        # value or a PEM body raised `UnicodeEncodeError` here, and the CLI then printed the
+        # error it was masking as a traceback, credential included (pre-commit audit of the
+        # control-characters block). Text without one encodes to the same bytes as before.
+        return hmac.new(
+            self._salt, value.encode("utf-8", "surrogatepass"), hashlib.sha256
+        ).hexdigest()[:8]
 
     def _mask_token(self, pattern: Pattern, value: str) -> str:
         if pattern.hashed:
@@ -513,6 +561,89 @@ class Redactor:
         if joined != stripped or stripped == text:  # masked, or no delimiter to show
             return joined
         return self._to_fixed_point(visible_stash_delimiters(text))
+
+    def for_terminal(self, text: str) -> str:
+        """``text`` redacted and with its control characters written out, for printing.
+
+        :meth:`mask_split_credentials`, then :meth:`redact_text`, then
+        :func:`visible_controls`. Errors and warnings quote a target's reply, a report's
+        reason or a pack's file names, and reached stderr with their control characters raw.
+        """
+
+        return visible_controls(self.redact_text(self.mask_split_credentials(text)))
+
+    def mask_split_credentials(self, text: str) -> str:
+        """``text`` with every registered credential masked whole, control characters ignored.
+
+        The redactor finds a registered credential by value, so one split by a newline was
+        printed in two readable halves (split by ``\\x00`` it was masked: :meth:`redact_text`
+        drops its stash delimiters first). Text bound for the terminal keeps its control
+        characters and writes them out instead (:func:`visible_controls`), so this runs first.
+        A credential is matched in the text with every control character removed, and the
+        stretch of the text it covers, the control characters inside it included, becomes the
+        mask :meth:`redact_text` gives the credential in one piece. Every occurrence is masked,
+        split or not, and overlapping ones as one: masking one of two overlapping credentials
+        would leave the other's tail readable. Text without a control character is returned
+        as it is, for the redactor alone.
+        """
+
+        if not _TERMINAL_CONTROLS.search(text):
+            return text
+        wanted: dict[str, str] = {}
+        for secret in _known_secrets():
+            joined = secret.translate(_DROP_CONTROLS)
+            # A key read with a trailing CR registers both forms: the mask is the one
+            # `redact_text` gives the form without it (pre-commit audit of this block).
+            if len(joined) >= _KNOWN_MIN_LEN and (joined == secret or joined not in wanted):
+                wanted[joined] = secret
+        if not wanted:
+            return text
+        clean = text.translate(_DROP_CONTROLS)
+        present = [(joined, secret) for joined, secret in wanted.items() if joined in clean]
+        if not present:
+            return text
+        # Where each piece of the clean text starts, in it and in the text. Only now, and in
+        # arrays: built for every text it took about 140 MB a megabyte of controls.
+        clean_starts = array("q")
+        text_starts = array("q")
+        position = size = 0
+        for match in _TERMINAL_CONTROLS.finditer(text):
+            if match.start() > position:
+                clean_starts.append(size)
+                text_starts.append(position)
+                size += match.start() - position
+            position = match.end()
+        if position < len(text):
+            clean_starts.append(size)
+            text_starts.append(position)
+
+        def _in_text(index: int) -> int:
+            piece = bisect.bisect_right(clean_starts, index) - 1
+            return text_starts[piece] + index - clean_starts[piece]
+
+        spans: list[tuple[int, int, str]] = []
+        for joined, secret in present:
+            found = clean.find(joined)
+            while found != -1:
+                spans.append((_in_text(found), _in_text(found + len(joined) - 1) + 1, secret))
+                found = clean.find(joined, found + 1)
+        merged: list[tuple[int, int, str]] = []
+        for start, end, secret in sorted(spans):
+            if merged and start < merged[-1][1]:
+                first, last, named = merged[-1]
+                longer = secret if len(secret) > len(named) else named
+                merged[-1] = (first, max(last, end), longer)
+            else:
+                merged.append((start, end, secret))
+        out: list[str] = []
+        cursor = 0
+        for start, end, secret in merged:
+            digest = self._digest(secret)
+            out.append(text[cursor:start])
+            out.append(_MASK_TEMPLATE_HASHED.format(type="credential", digest=digest))
+            cursor = end
+        out.append(text[cursor:])
+        return "".join(out)
 
     def _to_fixed_point(self, text: str) -> str:
         current = text

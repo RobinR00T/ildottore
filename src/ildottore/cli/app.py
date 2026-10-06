@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import math
 import re
+import sys
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 
@@ -39,7 +41,12 @@ from ildottore.cli.flags import DEFAULT_TEMPLATE
 from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
 from ildottore.policy.errors import PolicyError
-from ildottore.redactor import Redactor, mask_url_passwords, overlaps_known_secret
+from ildottore.redactor import (
+    Redactor,
+    mask_url_passwords,
+    overlaps_known_secret,
+    visible_controls,
+)
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
@@ -83,14 +90,35 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit(ExitCode.CLEAN)
 
 
+def _streams_escape_what_they_cannot_encode(ctx: typer.Context) -> None:
+    """Write a character the terminal's encoding lacks as its escape instead of failing.
+
+    Control characters are written out as control pictures (``visible_controls``), which a
+    cp1252 or ASCII stream cannot encode: `registry ls` exited 1 and printed nothing on such a
+    stream when a spec's name held a newline (pre-commit audit of the control-characters
+    block). stderr already does this by default; stdout raised. Each stream gets its own
+    setting back when the command ends, for a caller that runs the app in its own process.
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        errors = getattr(stream, "errors", None)
+        if reconfigure is not None and errors is not None:
+            reconfigure(errors="backslashreplace")
+            ctx.call_on_close(partial(reconfigure, errors=errors))
+
+
 @app.callback()
 def _root(
+    ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option("--version", callback=_version_callback, is_eager=True, help="Show version."),
     ] = False,
 ) -> None:
     """Il Dottore root - see ``dottore <command> --help`` for each command."""
+
+    _streams_escape_what_they_cannot_encode(ctx)
 
 
 def _spec_paths(spec: list[Path] | None) -> list[Path]:
@@ -147,6 +175,12 @@ def _masked(exc: BaseException) -> str:
     Errors quote what the operator wrote, an endpoint URL with its password included: the
     scope refusal printed ``http://alice:<password>@host/...`` to stderr while reports, evidence
     and the run store all masked it (review of PR #32, SEC-02 left open on this path).
+
+    They also quote what a third party wrote, a spec file name of a pack included, and printed
+    its control characters raw: a file named ``x\\n::error ...`` made a line GitHub Actions
+    reads as a workflow command (pre-merge audit of PR #49). A registered credential split by
+    control characters is masked whole first, and the control characters are written out last,
+    after every mask (``visible_controls``).
     """
 
     # Every rule but the entropy fallback runs on the whole text first, labels and context
@@ -166,7 +200,7 @@ def _masked(exc: BaseException) -> str:
     # URL passwords first, on the whole text, so a 64-hex password is never kept as a digest.
     # A kept token that overlaps a registered credential is masked: `sk-<64 hex>` and
     # `<64 hex>-v2` contain one (re-audit of the digest change).
-    text = plain.redact_text(mask_url_passwords(str(exc)))
+    text = plain.redact_text(mask_url_passwords(plain.mask_split_credentials(str(exc))))
     paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
     keep = re.compile(
         r"(\b(?:"
@@ -176,11 +210,13 @@ def _masked(exc: BaseException) -> str:
         + ")"
     )
     parts = keep.split(text)
-    return "".join(
-        part
-        if keep.fullmatch(part) and not overlaps_known_secret(part.removesuffix(".json"))
-        else entropy.redact_text(part)
-        for part in parts
+    return visible_controls(
+        "".join(
+            part
+            if keep.fullmatch(part) and not overlaps_known_secret(part.removesuffix(".json"))
+            else entropy.redact_text(part)
+            for part in parts
+        )
     )
 
 
@@ -553,7 +589,10 @@ def fingerprint(
     except (PolicyError, AdapterError, ValueError, OSError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
-    typer.echo(fp.model_dump_json(indent=2))
+    # Through `json.dumps`, which escapes every character outside ASCII: pydantic left a C1
+    # control, DEL and U+2028 a target echoed raw, and on a cp1252 stdout the stream's own
+    # escapes (`\x81`) are not JSON (delta audit of the control-characters block).
+    typer.echo(json.dumps(fp.model_dump(mode="json"), indent=2))
     raise typer.Exit(ExitCode.CLEAN)
 
 
@@ -729,7 +768,8 @@ def replay(
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     if warning is not None:
-        typer.echo(f"warning: {warning}", err=True)
+        # It names the --run-db path; written out like an error (`_masked`).
+        typer.echo(f"warning: {visible_controls(warning)}", err=True)
     typer.echo(replay_mod.render_replay(result))
 
 
@@ -754,9 +794,11 @@ def diff(
         for label, path in (("baseline", baseline), ("current", current)):
             incomplete = diff_mod.incomplete_reason(path)
             if incomplete is not None:
+                # The reason is the report's, and quotes a target's transport error.
                 typer.echo(
                     f"error: the {label} report describes a run that did not complete "
-                    f"({incomplete}). Its missing specs would diff as ONLY-IN-BASELINE, "
+                    f"({visible_controls(incomplete)}). Its missing specs would diff as "
+                    "ONLY-IN-BASELINE, "
                     "which is not a regression, so the comparison would read clean. "
                     "Re-run that scan, or diff two complete reports.",
                     err=True,

@@ -87,7 +87,17 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
   redactor alone caught such a value only by its entropy; the `fleet --judge` mismatch follows
-  the same rule.)
+  the same rule. Last, after every mask, `_masked` writes every control character out
+  (`redactor.visible_controls`: C0 and DEL as control pictures, C1, U+2028, U+2029 and lone
+  surrogates as Python escapes), and a registered credential split by control characters is
+  masked whole before the redactor runs (`Redactor.mask_split_credentials`). The other terminal
+  paths that print what a pack, a report or a target wrote do the same (`Redactor.for_terminal`
+  where the text is redacted), the `rich` lines of a run are printed as plain, unwrapped text, and
+  `diff`/`calibrate` refuse a report spec id that is not a spec id: no line of those paths starts
+  with such text, except a `replay` line, which starts with an attempt or probe id read from the
+  evidence tree. The JSON outputs escape every control character (`fingerprint` through
+  `json.dumps`). This does not stop the legacy `##[cmd]` form a GitHub runner reads anywhere in a
+  line, and it does not cover the operator's own values in the plan lines.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces

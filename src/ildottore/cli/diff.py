@@ -15,12 +15,13 @@ small pure helper (dict-in, dataclass-out, no I/O) so it is unit-testable withou
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
 from ildottore.shared.enums import VerdictStatus
-from ildottore.shared.models import Finding
+from ildottore.shared.models import SPEC_ID_PATTERN, Finding
 
 __all__ = [
     "DriftClass",
@@ -101,6 +102,9 @@ def incomplete_reason(path: Path) -> str | None:
     return f"{state}: {reason}" if reason else state
 
 
+_SPEC_ID = re.compile(SPEC_ID_PATTERN)
+
+
 def load_findings(path: Path) -> dict[str, Finding]:
     """Load a JSON run report and index its findings by spec id, for ONE target.
 
@@ -119,6 +123,13 @@ def load_findings(path: Path) -> dict[str, Finding]:
     if not isinstance(raw_findings, list):
         raise ValueError(f"{path}: expected a JSON run report or a list of findings")
     findings = [Finding.model_validate(raw) for raw in raw_findings]
+    # Every row of `dottore diff` starts with a spec id, so a report holding `::error ...` there
+    # printed a line a CI runner reads as a workflow command, control characters or not
+    # (pre-commit audit of the control-characters block). A report this tool wrote holds spec
+    # ids only, which the spec schema shapes.
+    for finding in findings:
+        if not _SPEC_ID.fullmatch(finding.spec_id):
+            raise ValueError(f"{path}: {finding.spec_id!r} is not a spec id; is this a run report?")
     targets = sorted({f.target_id for f in findings})
     if len(targets) > 1:
         raise ValueError(

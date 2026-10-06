@@ -50,7 +50,8 @@ def validate_run_id(run_id: str) -> str:
     NUL or exotic character - the id becomes a directory name verbatim.
     """
 
-    if not _RUN_ID_PATTERN.match(run_id) or run_id in {".", ".."}:
+    # `fullmatch`: with `match`, the `$` of the pattern let a trailing newline through.
+    if not _RUN_ID_PATTERN.fullmatch(run_id) or run_id in {".", ".."}:
         raise UnsafePathError(f"unsafe run_id: {run_id!r}")
     return run_id
 

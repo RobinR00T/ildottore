@@ -5,6 +5,95 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (control characters on the terminal)
+
+- **Pre-existing on main (`d54097c`, and `d19b221`), found by the pre-merge audit of PR #49 and
+  reproduced:** every CLI error goes through `cli/app._masked`, which redacted secrets and left
+  control characters as they were. A spec file whose name holds a newline (a third-party pack
+  author chooses file names, `docs/02` §4) made `dottore run` print on stderr
+  `... failed to load ...: attacks/x` and, on a line of its own,
+  `::error title=pwned::injected.yaml: ...`, which a GitHub Actions runner reads as a workflow
+  command. `_masked` now writes every control character out, after the redactor
+  (`visible_controls`): a C0 control and DEL as their control pictures (a newline as `␊`, ESC as
+  `␛`, DEL as `␡`, as the redactor already wrote `␀` and `␁`), and a C1 control, U+2028, U+2029
+  and a lone surrogate, which have no picture, as the escape Python writes (`\x85`, `\u2028`,
+  `\udc9b`). A lone surrogate is how an undecodable byte of a Linux file name arrives: a
+  `surrogateescape` stream wrote it back raw (a C1 control for 0x80 to 0x9f), a strict one could
+  not encode it.
+- **A registered credential split by control characters is masked whole on the terminal.** The
+  redactor finds one by value, so split by a newline it was printed in two readable halves (split
+  by `\x00` or `\x01` it was masked, because the redactor drops its stash delimiters first).
+  `Redactor.mask_split_credentials` looks for every registered credential in the text without its
+  control characters and masks the stretch it covers with the mask the redactor gives it in one
+  piece, digest included (a key read with a trailing CR gets the mask of the key without it);
+  every occurrence is masked, and overlapping credentials as one. It runs before the redactor, so
+  a key pattern cannot take a split key's head and leave its tail, and the escaping runs after it,
+  so a key right after a C1 control keeps the word boundary its pattern needs. Split by printable
+  characters (a space, or the `[0m` of an escape sequence) a credential is still kept, as before.
+- **A lone surrogate in a labelled value or a PEM body no longer crashes the masking** (on main
+  too). The mask's digest encoded the value strictly, so `token=AAAAAAAA` followed by an
+  undecodable byte raised `UnicodeEncodeError` inside `_masked`, and the CLI printed the error it
+  was masking as a traceback, `::error` line and credential included. The digest now encodes with
+  `surrogatepass`, which leaves every other value's digest as it was.
+- The same text reached the terminal raw on paths that bypass `_masked`, now written out the same
+  way (`visible_controls`, or `Redactor.for_terminal` where the text is redacted): the text output
+  of `dottore lint` (a pack's file names and the values its messages quote) and of
+  `dottore coverage` (the files that failed to load and why), a spec's name in `registry ls` (the
+  tabs between columns stay tabs) and every field of `describe`, a missing `--spec-path` in the
+  registry warning, a halted report's reason in `dottore diff`, a labels file's
+  spec ids in `dottore calibrate`, the attempt and probe lines of `dottore replay` (a probe's
+  stored transport error) and its warning, the spend warning and the "run on <target> did not
+  complete" line, which quotes a target's error.
+- **`dottore diff` and `dottore calibrate` refuse a report whose `spec_id` is not a spec id** (the
+  schema's `^[A-Z]+(-[A-Z0-9]+)+$`, exit 3). Every row of `diff` starts with one, so a crafted
+  report holding `::error ...` there printed a workflow command with no control character at all;
+  a report this tool wrote holds no other.
+- **`describe` prints each field on one line.** A description with a paragraph break printed its
+  next paragraph at the start of a line, which a pack author controls; three shipped specs have
+  one (AG-CODEEXEC-UNEXPECTED-001, DOS-RESOURCE-HIJACK-001, RECON-MODEL-IDENTITY-001) and now
+  show it as `␊`.
+- **`dottore coverage` lists each file that failed to load as a bullet**
+  (`    - <path>  <message>`). The line began with the file name, so a file named `::error ...`
+  started a line a runner trims and reads as a command, with no control character at all.
+- **The run's error lines and its coverage block are printed as plain, unwrapped text.** `rich`
+  wrapped them at 80 columns in a CI log, where a target's error could place `::error` at the start
+  of the wrapped line, read `[/]` in it as markup (`MarkupError` on the "did not complete" line,
+  which comes before the reports are written) and `:warning:` as an emoji.
+- **stdout and stderr write a character their encoding lacks as its escape** (`backslashreplace`)
+  instead of failing: on a cp1252 or ASCII stream (a Windows pipe), a control picture made
+  `registry ls` and `describe` exit 1 with nothing printed. stderr did this already. Each stream
+  gets its own setting back when the command ends, for a caller that runs the app in-process.
+- **`fingerprint` prints its JSON through `json.dumps`, in ASCII.** pydantic left DEL, a C1
+  control, U+2028 and U+2029 that a target echoed raw, and on a cp1252 stdout the stream's own
+  escapes (`\x81`) made the output invalid JSON with exit 0. Every JSON output now escapes every
+  control character (`lint --json`, `coverage --json` and `schema export` already did); an
+  ASCII report is byte-identical to before.
+- **A run id with a trailing newline is refused** (`store/paths.validate_run_id` used `match`,
+  whose `$` let it through, so `replay` printed it on two lines).
+- Not changed, and not covered by this fix:
+  - a GitHub Actions runner also reads the legacy `##[error]...` form **anywhere in a line**
+    (`ActionCommand.TryParse` in the runner's source, read and not run on a runner), so a pack
+    file named `x ##[error]...` still reaches a log line; neither the CLI nor this fix
+    neutralises it;
+  - the reports, the evidence store and the run store keep a credential split by a control
+    character in two readable halves, as on main: `redact_text` is unchanged, the whole-credential
+    match runs only for the terminal;
+  - a credential split by an invisible format character (U+200B, U+00AD, U+2060, U+FEFF) is
+    neither masked nor written out, on the terminal or anywhere else, as on main; nor are the
+    bidirectional formatting characters (U+202A to U+202E, U+2066 to U+2069) written out;
+  - the operator's own values in the run's plan lines (target ids and model names under
+    `--dry-run` and `-sn`) and the target ids of the `--compare` table (still read as markup);
+  - a `replay` line starts with an attempt id or a probe id read from the evidence tree, so a
+    forged tree can still start one.
+- Test: `tests/test_terminal_control_chars.py` (195 cases: every control character through
+  `_masked` and `visible_controls`, a credential split by each class, every occurrence, overlapping
+  and periodic credentials, a lone surrogate after a label, `run`, `lint`, `coverage`,
+  `registry ls`, `describe`, `diff`, `calibrate`, `replay` and `fingerprint` through the CLI, a
+  cp1252 stdout, and the `rich` lines). Against main's code 190 of them fail; the 5 that pass are
+  the two stash delimiters, which the redactor already wrote out, a credential split by either,
+  which it already masked, and the streams keeping their setting, which main never changes.
+  `tests/cli/test_calibrate.py` gives its report a spec id (`A` was none).
+
 ### Fixed (an agentic spec's tool allowlist that read as a list of exploits)
 
 - **`AG-EXTORT-CHAIN-001` authorized the attack and flagged the health check.** `patterns` on

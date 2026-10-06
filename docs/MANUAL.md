@@ -152,6 +152,24 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `target 'live' auth_ref a literal value (not shown) is not authorized by the scope (declared:
   'env://LIVE_KEY'); refusing to read an unauthorized credential`. The same holds for the
   judge-file mismatch of `dottore fleet --judge`.
+- **Errors, warnings and the inspection commands print no raw control character.** An error, a
+  warning, the text output of `lint`, `coverage`, `diff`, `calibrate` and `replay`, and a spec's
+  name in `registry ls` and `describe` quote file names and values that a pack author, a report or
+  a target wrote: a spec file named `x`, a newline and `::error ...` printed a line a GitHub
+  Actions runner reads as a workflow command. A C0 control and DEL are written as their control
+  pictures (a newline as `␊`, ESC as `␛`, DEL as `␡`, as the redactor writes `␀` and `␁`), and a
+  C1 control, U+2028, U+2029 and a lone surrogate (an undecodable byte of a Linux file name) as
+  the escape Python writes (`\x85`, `\u2028`, `\udc9b`). This happens after the redactor, and a
+  registered credential split by control characters is masked whole first; split by spaces or
+  other printable characters it is still kept. `dottore coverage` lists each file that failed to
+  load as a bullet, so no line starts with a file name, `diff` and `calibrate` refuse a report
+  whose spec ids are not spec ids (each `diff` row starts with one), and the run prints its error
+  and coverage lines unwrapped, so a wrap at 80 columns in a CI log cannot start one with
+  `::error`. A character the output's encoding lacks is written as its escape. Not covered: a
+  GitHub runner also reads the legacy `##[error]` form anywhere in a line, which nothing here
+  neutralises; the reports and the evidence keep a credential split by a control character
+  readable; a forged evidence tree can still start a `replay` line with an id. The JSON outputs
+  escape every control character (`fingerprint` through `json.dumps` too).
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 

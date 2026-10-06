@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ildottore.redactor import visible_controls
 from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
 
 __all__ = ["render_replay", "replay", "replay_checked"]
@@ -77,7 +78,9 @@ def render_replay(result: ReplayResult) -> str:
     lines = [f"run: {result.run_id}"]
     for attempt in result.attempts:
         status = attempt.verdict.status.value if attempt.verdict is not None else "?"
-        lines.append(f"  {attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}  {status}")
+        # Read back from the evidence tree, written out as every other stored text is.
+        fields = visible_controls(f"{attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}")
+        lines.append(f"  {fields}  {status}")
     if result.probes:
         # Recognition traffic, listed apart and never folded into the counts below: this is
         # the answer to "what did this tool send my endpoint", which a fingerprint pass could
@@ -85,7 +88,7 @@ def render_replay(result: ReplayResult) -> str:
         lines.append(f"  probes ({len(result.probes)}, recognition traffic from -sV):")
         for probe in result.probes:
             answered = "answered" if probe.response is not None else f"no answer ({probe.error})"
-            lines.append(f"    {probe.attempt_id}  {answered}")
+            lines.append(f"    {visible_controls(f'{probe.attempt_id}  {answered}')}")
     # Labelled "pooled": it is k / N over every attempt of the run, all specs and variants
     # together. A report's reproducibility is per spec and takes the best variant, so the two
     # read differently on the same run (0.25 here, 1.0 in the report) and the bare word
