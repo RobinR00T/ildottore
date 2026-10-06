@@ -3,6 +3,16 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-06 (night): follow-ups of the #46 pre-merge audit
+
+- PR #47 (the #45 pre-merge follow-ups) squash-merged as `32f4334`. On
+  `fix/redactor-followups`: a registered credential written as a mask's digest, evidence keys
+  that mask to one name, the cost of the `skip` branches on clean text (+31% to about +8% over
+  `519aa99`, before #46), and the `mask_value` note. Open: nested repetitive canaries chosen by
+  the operator cost seconds in `authz_leak`; a plugin's own `mask_value` type is read as text
+  again (documented); a registered credential split around one or several mask digests, like one
+  split by spaces, is kept.
+
 ## State, 2026-10-06 (night): PR #46 merged; the #45 pre-merge follow-ups
 
 - PR #46 (the redactor and the evaluators on hostile text) squash-merged as `94aca32`. On

@@ -103,7 +103,9 @@ def mask_value(value: str, *, type_hint: str, redactor: Redactor | None = None) 
     ``type_hint`` is used verbatim when the central redactor does not recognise the
     value's shape (so a caller-typed hit - e.g. ``iban``, ``card`` - is still typed).
     A salted corroboration hash is appended so two occurrences of the same value can be
-    correlated without revealing it.
+    correlated without revealing it. The redactor keeps a mask as written only when its type is
+    one the tool writes (``redactor._OWN_MASK_TYPES`` and its patterns' types): a ``type_hint``
+    outside them is read as text again on the next redaction, so a new hint goes on that list.
     """
     red = redactor or _DEFAULT_REDACTOR
     masked = red.redact_text(value)

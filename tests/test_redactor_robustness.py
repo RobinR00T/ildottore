@@ -14,6 +14,7 @@ labelled-number block and of this one:
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import pytest
 
@@ -114,7 +115,7 @@ def test_every_mask_type_the_tool_writes_is_kept_as_written() -> None:
         written |= set(re.findall(r'type_hint="(\w+)"', code))
         written |= set(re.findall(r'PIIHit\("(\w+)"', code))
         written |= set(re.findall(r'SecretShapeRule\(\s*"(\w+)"', code))
-        written |= set(re.findall(r'Pattern\("(\w+)"', code))
+        written |= set(re.findall(r'Pattern\(\s*"(\w+)"', code))
         written |= set(re.findall(r'_MASK_TEMPLATE(?:_HASHED)?\.format\(type="(\w+)"', code))
     assert len(written) >= 15
     kept = redactor_mod._OWN_MASK_TYPES | {p.type for p in redactor_mod._default_patterns()}
@@ -259,3 +260,115 @@ def test_a_phone_inside_an_email_is_that_email_and_a_repeated_number_is_a_phone(
     # The same digits elsewhere were skipped when the check compared values.
     kinds = [(h.kind, h.value) for h in _detect("600123456@example.com or 600123456")]
     assert ("phone", "600123456") in kinds
+
+
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_registered_credential_written_as_a_digest_is_masked() -> None:
+    """A mask of a type the tool writes kept a registered 8-hex credential as its digest."""
+
+    register_known_secret("deadbeef")
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text("pin «REDACTED:card:deadbeef»")
+    assert "deadbeef" not in out and "«REDACTED:credential:" in out
+    assert redactor.redact_text(out) == out
+    assert redactor.redact_text("«REDACTED:card:0123abcd»") == "«REDACTED:card:0123abcd»"
+
+
+def test_evidence_keys_that_mask_to_one_name_are_all_kept(tmp_path: Path) -> None:
+    """`a@x.io` and `b@y.io` both read `«REDACTED:email»`: the second replaced the first."""
+
+    from ildottore.store.evidence_fs import FsEvidenceStore
+
+    store = FsEvidenceStore(tmp_path, redactor=Redactor(salt="s"))
+    masked = store._mask_keys({"a@x.io": 1, "b@y.io": 2, "plain": {"c@z.io": 3, "d@w.io": 4}})
+    assert masked == {
+        "«REDACTED:email»": 1,
+        "«REDACTED:email», #2": 2,
+        "plain": {"«REDACTED:email»": 3, "«REDACTED:email», #2": 4},
+    }
+    assert store._mask_keys(masked) == masked
+
+
+def test_numbered_evidence_keys_pass_the_leak_guard(tmp_path: Path) -> None:
+    """` (2)` after a date made a phone, and the guard refused the reply (abort)."""
+
+    from ildottore.shared.models import ModelResponse
+    from ildottore.store.evidence_fs import FsEvidenceStore
+    from tests.store.conftest import make_attempt
+
+    store = FsEvidenceStore(tmp_path, redactor=Redactor(salt="s"))
+    args = {f"{who}@x.io {tail}": n for n, who in enumerate("abc") for tail in ("2026-10-06",)}
+    args |= {"a@x.io ext 555-0142": 7, "b@x.io ext 555-0142": 8, "c@x.io 123456": 9}
+    # A label and a value it refuses at the end of a string: `, #2` ended that (pre-merge audit).
+    args |= {f"{w}@x.io {tail}": 10 for w in "ab" for tail in ("password: Secret", "token Tokens")}
+    args |= {f"{w}@x.io api key is SECRETS": 11 for w in "ab"}
+    attempt = make_attempt().model_copy(
+        update={"response": ModelResponse(text="ok", tool_calls=[{"name": "f", "arguments": args}])}
+    )
+    ref = store.put("run-1", attempt)
+    assert ref.sha256 is not None
+
+
+def test_ten_thousand_keys_after_a_label_word_pass_the_leak_guard(tmp_path: Path) -> None:
+    """` #10000` after `token` was a labelled secret, and the guard refused the reply."""
+
+    from ildottore.shared.models import ModelResponse
+    from ildottore.store.evidence_fs import FsEvidenceStore
+    from tests.store.conftest import make_attempt
+
+    store = FsEvidenceStore(tmp_path, redactor=Redactor(salt="s"))
+    for label in ("token", "password:", "api key is", "secret ="):
+        args = {f"u{i}@x.io {label}": i for i in range(10001)}
+        response = ModelResponse(text="ok", tool_calls=[{"name": "f", "arguments": args}])
+        assert store.put("run-1", make_attempt().model_copy(update={"response": response}))
+
+
+def test_numbering_that_redaction_swallows_is_refused_not_looped(tmp_path: Path) -> None:
+    """From 10^8 the number reads as a phone; no reply holds that many keys, but no loop."""
+
+    from ildottore.store.evidence_fs import FsEvidenceStore, RedactionLeakError
+
+    class SwallowsNumbers(Redactor):
+        def redact_text(self, text: str) -> str:  # every key masks to one name, every number
+            return "«REDACTED:email», #«REDACTED:phone»" if ", #" in text else "«REDACTED:email»"
+
+    store = FsEvidenceStore(tmp_path, redactor=SwallowsNumbers(salt="s"))
+    with pytest.raises(RedactionLeakError, match="could not be told apart"):
+        store._mask_keys({"a@x.io": 1, "b@x.io": 2, "c@x.io": 3})
+
+
+def test_many_evidence_keys_that_collide_are_numbered_in_linear_time(tmp_path: Path) -> None:
+    from ildottore.store.evidence_fs import FsEvidenceStore
+
+    store = FsEvidenceStore(tmp_path, redactor=Redactor(salt="s"))
+    # 24,000 keys: 0.55 s here, 1.6 s under a CI-like coverage tracer; counting each base from
+    # 1 again took 31 s (quadratic), so 15 s separates the two on a slower runner too.
+    keys = {f"user{i}@x.io": i for i in range(24000)}
+    started = time.perf_counter()
+    masked = store._mask_keys(keys)
+    assert time.perf_counter() - started < 15.0 and len(masked) == 24000
+
+
+def test_the_skip_branches_take_only_long_runs() -> None:
+    """Unbounded, they matched every word of a clean text, a callback each (+31% on main)."""
+
+    from ildottore.redactor import EMAIL, skipped
+
+    phone = next(p for p in redactor_mod._default_patterns() if p.type == "phone").regex
+    assert EMAIL.search("plain words and v3 run ids") is None
+    assert phone.search("call 12 34 or 555-0142") is None
+    long_run = EMAIL.search("x" * 64)
+    assert long_run is not None and skipped(long_run)
+    digits = phone.search("1. " * 22)
+    assert digits is not None and skipped(digits)
+
+
+@pytest.mark.parametrize("text", ["a" * 63 + ".", "1 " * 31 + "1.", "x" * 64])
+def test_runs_around_the_skip_length_are_scanned_as_before(text: str) -> None:
+    """The `skip` branch takes runs of 64 or more only; around that length nothing changes."""
+
+    redactor = Redactor(salt="s")
+    for probe in (text, text + "@corp.io", "+34 " + text, text + " bob@corp.io"):
+        out = redactor.redact_text(probe)
+        assert redactor.redact_text(out) == out
+    assert "bob@corp.io" not in redactor.redact_text(text + " bob@corp.io")
