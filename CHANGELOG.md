@@ -5,6 +5,35 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (the `-sV` probes' sampling, found by the first live pass)
+
+- **Nine of the 17 fingerprint probes went out with no temperature.** The tokenizer, guardrail and
+  carrier layers built their requests with an empty sampling (only the other three pinned
+  temperature 0), and a live Ollama sampled them at its default of 1.0, so each was one draw.
+  Pinned, the next live pass stopped: the `rot13` carrier probe made `llama3.2:3b` loop until the
+  30-second timeout, three times, and the fingerprint exited 3, because no probe capped its reply.
+  Every probe now goes out with `PROBE_SAMPLING` (`fingerprint/base.py`): temperature 0 and a
+  512-token reply cap, which cannot change the statistical or carrier result (a reply long enough
+  to be cut is farther from every statistical centroid than a match allows, and a carrier scores
+  only on a short reply); the phrase-matching layers would miss a tell written after token 512,
+  which no reply to those layers' probes came near in the three live runs (the longest, the
+  guardrail nudge, was 163 tokens). The third live pass sent 17 requests, all at temperature 0, in
+  22 seconds, and its output was byte-identical to the first pass's.
+  `tests/fingerprint/test_carrier_layer.py` checks every probe the engine sends.
+- **`docs/16` §1 records the pass:** family `meta-llama` at 0.4 from the envelope's `model` name
+  (the envelope-only cap), no version (the pack's two Llama versions tie on that name, and Llama
+  3.2 is not in it); nothing from the text layers (asked again by hand, the model calls itself a
+  2021 BERT variant); this target's carrier profile, the first from a real model, with four
+  carriers recovered (`payload_splitting`, `translate`, `unicode_confusable`,
+  `zero_width_inject`) and three not (`base64_wrap`, `leetspeak`, `rot13`); the guardrail layer
+  flagged nothing. Its "decline" refusal is not in the layer's phrase list, and adding it would
+  not help as the layer stands: it reads any refusal as an output filter while its probe asks
+  for one. `docs/10` (§2 and §6) and the u09 contract now say what determinism the probes have
+  (the seed is metadata, not sent); §2 of `docs/16`, its runbook step and the MANUAL's
+  `comprehending` note point at the pass. The MANUAL and `dottore-scope(5)` now say that a
+  target file's `sampling_defaults` is parsed and applied to nothing (every shipped spec, the
+  judge and the probes pin their own sampling), an open question.
+
 ### Fixed (an agentic spec's tool allowlist that read as a list of exploits)
 
 - **`AG-EXTORT-CHAIN-001` authorized the attack and flagged the health check.** `patterns` on

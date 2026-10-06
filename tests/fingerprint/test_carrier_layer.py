@@ -351,3 +351,38 @@ def test_the_marker_is_matched_through_zero_width_padding() -> None:
     padded = "​".join(CARRIER_MARKER)
     assert _comprehended(padded) == 1.0
     assert _comprehended(f"﻿{CARRIER_MARKER}‍") == 1.0
+
+
+def test_every_probe_is_sent_at_temperature_zero_and_capped() -> None:
+    """Three layers built their probes with an empty sampling, so 9 of the 17
+    probes went out with no temperature and a live Ollama sampled them at its default of 1.0
+    (first live ``-sV`` pass, 2026-10-07). A fingerprint read at temperature 1 is one draw."""
+
+    from ildottore.cli.run import fingerprint_probe_count
+    from ildottore.fingerprint.base import PROBE_MAX_TOKENS
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.id = "recorder"
+            self.requests: list[ModelRequest] = []
+
+        async def send(self, request: ModelRequest) -> ModelResponse:
+            self.requests.append(request)
+            return ModelResponse(text="hello")
+
+        def capabilities(self) -> Capabilities:
+            return Capabilities()
+
+    target = _Recorder()
+    asyncio.run(wiring.build_fingerprint_engine().run(target))  # type: ignore[arg-type]
+    assert len(target.requests) == fingerprint_probe_count()
+    unpinned = [
+        (r.metadata or {}).get("probe")
+        for r in target.requests
+        if r.sampling is None or r.sampling.temperature != 0.0
+    ]
+    assert unpinned == []
+    # And capped: at temperature 0 a 3B model looped on a carrier it could not read until the
+    # 30 s timeout, three times, and the live pass stopped (2026-10-07).
+    uncapped = [r for r in target.requests if r.sampling.max_tokens != PROBE_MAX_TOKENS]
+    assert uncapped == []
