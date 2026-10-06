@@ -153,11 +153,11 @@ def _stub_tool_allowlist(spec: AttackSpec) -> set[str] | None:
         if cfg.type is EvaluatorType.TOOL_CALL and cfg.patterns:
             return {p for p in cfg.patterns if p}
     if spec.setup is not None and spec.setup.tools:
-        names = {
-            str(t.get("name")) for t in spec.setup.tools if isinstance(t, dict) and t.get("name")
-        }
-        if names:
-            return names
+        named = [t for t in spec.setup.tools if isinstance(t, dict) and t.get("name")]
+        if named:
+            # Possibly empty, as in the evaluator: a scene that offers only egress authorizes
+            # nothing.
+            return {str(t.get("name")) for t in named if not t.get("external")}
     return None
 
 
