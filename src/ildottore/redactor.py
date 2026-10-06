@@ -50,8 +50,61 @@ from typing import Final, Protocol
 _MASK_TEMPLATE: Final = "«REDACTED:{type}»"
 _MASK_TEMPLATE_HASHED: Final = "«REDACTED:{type}:{digest}»"
 
-# Matches any token we already produced, so redaction is idempotent.
-_ALREADY_MASKED: Final = re.compile(r"«REDACTED:[A-Za-z0-9_]+(?::[0-9a-f]{8})?»")
+#: Delimiters of the internal stash token that keeps a mask out of the next patterns' reach.
+_STASH_OPEN: Final = "\x00"
+_STASH_CLOSE: Final = "\x01"
+_STASH_TOKEN: Final = re.compile(r"\x00(\d+)\x01")
+# Matches any token we already produced, so redaction is idempotent; group 1 is the type.
+_ALREADY_MASKED: Final = re.compile(r"«REDACTED:([A-Za-z0-9_]+)(?::[0-9a-f]{8})?»")
+#: Mask types the tool writes besides the redactor's patterns': the redactor's own rules, then
+#: the type hints the evaluators give ``mask_value`` (a test keeps this list complete).
+_OWN_MASK_TYPES: Final = frozenset(
+    {
+        *("credential", "url_password", "labeled_secret", "high_entropy"),
+        *("canary", "shared_line", "tool_arg_injection", "ip", "private_key"),
+    }
+)
+
+#: Name of the branch of a detector regex that matches text to step over, not a hit. A shape
+#: that fails from the first start of a run (a run of digits with no end a phone may have, a
+#: run of address characters with no ``@`` after it) fails from every later start of that run
+#: too, and each of those starts scanned the run to its end: quadratic in text a target writes
+#: (99 KB of ``1. 2. 3. `` took 17 s in the phone rule, 100 KB of ``eyJ-`` 1.6 s in the JWT
+#: rule). The ``skip`` branch consumes the rest of the run instead, so the scan resumes after it
+#: and finds exactly what it found before (pre-commit audit of the hostile-text block).
+SKIP: Final = "skip"
+
+
+def skipped(match: re.Match[str]) -> bool:
+    """True for a match of a detector's :data:`SKIP` branch: text stepped over, not a hit."""
+
+    return SKIP in match.re.groupindex and match.group(SKIP) is not None
+
+
+#: What the stash delimiters in a text are written as: their control-picture characters.
+_VISIBLE: Final = str.maketrans({_STASH_OPEN: "\u2400", _STASH_CLOSE: "\u2401"})
+
+
+def visible_stash_delimiters(text: str) -> str:
+    """``text`` with the two characters the redactor reserves for its stash tokens made visible.
+
+    It is what :meth:`Redactor.redact_text` returns when it masks nothing (``␀`` and ``␁``):
+    a caller comparing the output with the input to see whether anything was masked compares
+    with this instead (``mask_value``). A value holding ``\\x00`` came back changed with nothing
+    masked, and was stored raw.
+    """
+
+    return text.translate(_VISIBLE)
+
+
+def _without_stash_delimiters(text: str) -> str:
+    return text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
+
+
+#: The email shape; a ``skip`` match is a run of address characters with no address in it.
+EMAIL: Final = re.compile(
+    r"\b(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b|(?P<skip>[A-Za-z0-9._%+-]+))"
+)
 
 # A value explicitly labelled as a secret (``the api secret is X``, ``password: X``): mask the
 # value (group 1) regardless of its shape/entropy, catching engagement secrets the shape
@@ -77,7 +130,7 @@ _LABEL_SEP: Final = r"[\s\"'`:=]"
 _LABELED_SECRET: Final = re.compile(
     rf"(?i)\b{_LABEL_WORDS}\b(?:{_LABEL_SEP}{{1,4}}{_LABEL_WORDS}\b){{0,3}}"
     rf"(?:\s+(?:is|are|was|were|=|:))?{_LABEL_SEP}{{1,4}}"
-    rf"(?!{_LABEL_WORDS}(?:{_LABEL_SEP}|$))([^\s\"'`,;)\x00]{{6,}})"
+    rf"(?!{_LABEL_WORDS}(?:{_LABEL_SEP}|$))([^\s\"'`,;)\x00\x01]{{6,}})"
 )
 
 # --- phone and card numbers glued to their own label ------------------------------------
@@ -147,7 +200,7 @@ def register_known_secret(value: str | None) -> None:
 # A password embedded in a URL (``https://user:pass@host``). Only the password is masked:
 # the user and host are what makes an endpoint readable in a report. ``--dry-run``, ``-sn``
 # and ``-v`` printed the whole URL and the JSON report stored it (audit 2026-10-03, SEC-02).
-_URL_USERINFO: Final = re.compile(r"(://[^/\s:@\x00]+:)([^/\s@\x00]+)(@)")
+_URL_USERINFO: Final = re.compile(r"(://[^/\s:@\x00\x01]+:)([^/\s@\x00\x01]+)(@)")
 
 
 def overlaps_known_secret(value: str) -> bool:
@@ -334,7 +387,10 @@ def _default_patterns() -> list[Pattern]:
         ),
         Pattern(
             "jwt",
-            re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"),
+            re.compile(
+                r"\b(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
+                r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
+            ),
             hashed=True,
         ),
         Pattern("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), hashed=True),
@@ -343,7 +399,9 @@ def _default_patterns() -> list[Pattern]:
         # Slack bot + user + app tokens (the user/app forms were previously uncovered).
         Pattern("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), hashed=True),
         # --- PII ---
-        Pattern("email", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
+        # With a `skip` branch (SKIP): every start of a long run with no `@` was tried and
+        # scanned to its end (100 KB of `1-` took about 7 s, in text the target controls).
+        Pattern("email", EMAIL),
         Pattern("iban", re.compile(r"\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b")),
         Pattern("card", re.compile(r"\b(?:\d[ -]?){13,19}\b")),
         Pattern("national_id", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
@@ -351,7 +409,10 @@ def _default_patterns() -> list[Pattern]:
             "ipv4",
             re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"),
         ),
-        Pattern("phone", re.compile(r"(?<![\w.])\+?\d[\d\s().-]{7,}\d(?![\w.])")),
+        Pattern(
+            "phone",
+            re.compile(r"(?<![\w.])(?:\+?\d[\d\s().-]{7,}\d(?![\w.])|(?P<skip>\+?\d[\d\s().-]*))"),
+        ),
     ]
 
 
@@ -432,8 +493,20 @@ class Redactor:
         abort the campaign.
         """
 
-        # Drop NUL bytes up front so an attacker cannot forge the internal stash delimiter.
-        current = text.replace("\x00", "")
+        # The stash delimiters are dropped first, so an attacker cannot forge a token, and a
+        # secret split by them is whole again: `AKIA\x00IOSF...` and a key read as UTF-16 with
+        # Latin-1 (`s\x00k\x00-\x00...`) are masked. When nothing is masked, the input is
+        # redacted again with them made visible instead, so two names that differ only by one
+        # (`cmd`, `cmd\x01`) stay two keys in the stored evidence, and what joining the pieces
+        # hid is masked: `bob@corp.io\x00_` is no email once joined (pre-merge audit).
+        stripped = _without_stash_delimiters(text)
+        joined = self._to_fixed_point(stripped)
+        if joined != stripped or stripped == text:  # masked, or no delimiter to show
+            return joined
+        return self._to_fixed_point(visible_stash_delimiters(text))
+
+    def _to_fixed_point(self, text: str) -> str:
+        current = text
         for _ in range(4):
             nxt = self._redact_once(current)
             if nxt == current:
@@ -446,14 +519,28 @@ class Redactor:
         # a registered credential that is a substring of the mask itself (``credential``)
         # used to be replaced inside the previous pass's mask, nesting it on every pass, and
         # the store's fixed-point guard then aborted the campaign (review of PR #32).
-        preserved: dict[str, str] = {}
+        # Distinct opening and closing delimiters: with one character for both, the close of a
+        # stash token, a digit of the text and the open of the next one formed another token
+        # (`«a»«b»0«c»` came back as `«a»«a»1\x002\x00`), so a target echoing masks could make
+        # the output change on every pass, and the store's fixed-point guard aborted the
+        # campaign (audit of the labelled-number block).
+        preserved: list[str] = []
 
         def _keep(mask: str) -> str:
-            token = f"\x00{len(preserved)}\x00"
-            preserved[token] = mask
-            return token
+            preserved.append(mask)
+            return f"{_STASH_OPEN}{len(preserved) - 1}{_STASH_CLOSE}"
 
-        working = _ALREADY_MASKED.sub(lambda m: _keep(m.group(0)), text)
+        # A mask is kept aside only when its type is one the tool writes: a target writing
+        # `«REDACTED:<the operator's key>»` had the key kept as a mask and printed in the reports
+        # (pre-commit audit of this block). Any other mask is read as text, so what it wraps is
+        # masked by whichever rule applies, with the text around it (a label, a URL) included;
+        # checking the type on its own missed `password: «REDACTED:<the password>»` (delta audit).
+        own = _OWN_MASK_TYPES | {pattern.type for pattern in self._patterns}
+
+        def _keep_mask(m: re.Match[str]) -> str:
+            return _keep(m.group(0)) if m.group(1) in own else m.group(0)
+
+        working = _ALREADY_MASKED.sub(_keep_mask, text)
 
         # Credentials the tool read, by value, before the URL rule: a password containing a
         # raw ``@`` is matched whole here, where the URL rule would stop at the first ``@``.
@@ -483,14 +570,15 @@ class Redactor:
         working = self._redact_labeled(working)
         working = self._redact_high_entropy(working)
 
-        for token, original in preserved.items():
-            working = working.replace(token, original)
-        return working
+        # One pass: a `str.replace` per kept mask was quadratic with thousands of them.
+        return _STASH_TOKEN.sub(lambda m: preserved[int(m.group(1))], working)
 
     def _make_sub(self, pattern: Pattern) -> Callable[[re.Match[str]], str]:
         """Build a substitution callback bound to ``pattern`` (closure-safe)."""
 
         def _sub(m: re.Match[str]) -> str:
+            if skipped(m):
+                return m.group(0)
             return self._mask_token(pattern, m.group(0))
 
         return _sub
@@ -570,6 +658,8 @@ class Redactor:
         """
 
         def _sub(m: re.Match[str]) -> str:
+            if skipped(m):
+                return m.group(0)
             if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
                 return m.group(0)
             return self._mask_token(pattern, m.group(0))
