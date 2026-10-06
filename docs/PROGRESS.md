@@ -3,6 +3,36 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (night): log commands in the middle of a line
+
+- PR #54, on `fix/cli-legacy-workflow-commands` (`tests/test_terminal_log_commands.py`), stacked
+  on PR #51 (`796c07c`, still open): `visible_controls` also writes the second `#` of
+  `##<letters>[` as `\x23`, so GitHub's legacy `##[cmd]` and Azure's `##vso[area.event]`, which
+  a runner reads anywhere in a line, no longer reach a log line whole; the off-universe values
+  of `coverage` and of the run's summary and the `-vv` plan's reasons (a pack's
+  `requires_policy`), all printed as a `repr`, go through it too. The `-vv` plan was found by the
+  pre-commit audit (two reviewers): annotation, `set-output` and `add-mask` on the GitHub runner,
+  `task.setvariable` on the Azure parser. The delta audit added the resume note, which quoted
+  scope digests read back from the run store raw.
+- Verified with the runners' own code, not on a hosted runner: the CLI's output from main, PR
+  #51 and this branch (17 outputs each) fed to actions/runner `67f01c2`'s `OutputManager` with
+  its real `ActionCommandManager` (scratch L0 test): on main and PR #51 every line with `##[`
+  was a command (annotations, `add-mask` masking `FAIL` in later lines, `set-output`
+  `verdict=clean`), from this branch none. Azure through the agent's `Command.TryParse`
+  (`59c86a8`): `task.logissue` and `task.setvariable` before, none after. PR #51 opened one more
+  such line (the run's off-universe warning, which `rich` markup used to cut). Again after the
+  rebase onto the reworked PR #51 (`796c07c`): 11 of 18 outputs with a command on GitHub and 5
+  on Azure from PR #51 alone, none from this branch.
+- Open for the owner: OD-20, the JSON outputs keep `##[` as it is (by instruction) and still
+  carry a command when printed to a log; option B escapes the `[` as `\u005b`. A real GitHub
+  Actions run was not done: it needs a push to a fork or scratch repo, which waits for approval.
+- Found on the way, not fixed (pre-existing on main): a `regex_absence` pattern that is not a
+  valid regex makes `dottore lint` exit 1 with a `re.PatternError` traceback
+  (`registry/fixtures_engine.py`) instead of a lint error.
+- `make gates` green on `796c07c` plus this branch: 2,518 tests (40 new; 26 fail on PR #51's
+  code), coverage 96.57%. The suite prints `ResourceWarning`s for unclosed sqlite connections
+  (28 lines, the same on PR #51's tree without this branch); not fixed here.
+
 ## State, 2026-10-07 (night): PR #51, format characters and the pre-merge follow-ups
 
 - The owner decided on 2026-10-07 (in the session that built it) that format characters (Unicode
@@ -51,10 +81,11 @@ The carryover ledger. Every agent session updates this so context survives even 
 - The pre-commit audit (two reviewers) found 10 of 42 mutants surviving (8 that would reopen a raw
   line or a leak) and seven defects; the delta audit of those fixes found one regression of mine
   (`fingerprint`'s JSON invalid on a cp1252 stdout) and two unpinned fixes. All fixed here. Left
-  open, pre-existing on main: the legacy `##[cmd]` form a GitHub runner reads anywhere in a line;
+  open, pre-existing on main: the legacy `##[cmd]` form a GitHub runner reads anywhere in a line
+  (written out since 2026-10-07 in PR #54, above);
   the reports and stores keep a credential split by a control character readable (`redact_text`
   unchanged); a credential split by an invisible format character (U+200B) was neither masked nor
-  shown (on the terminal it is since 2026-10-07, below).
+  shown (on the terminal it is since 2026-10-07, above).
 - `make gates` green: 2,397 tests (195 new), coverage 96.49%. PR #49 touches `_masked` too: the
   second to merge rebases.
 

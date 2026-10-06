@@ -154,8 +154,11 @@ def _off_universe_lines(coverage: BatteryCoverage) -> list[str]:
         "pinned universe or contradicting its classification (run `dottore lint` to refuse "
         "them):",
     ]
+    # `repr` writes a control character out, not a log command: a tactic `##[warning]x` raised
+    # an annotation on a GitHub runner (`visible_controls`).
     lines.extend(
-        f"    {spec_id}  {field} = {value!r}" for spec_id, field, value in coverage.off_universe
+        f"    {spec_id}  {field} = {visible_controls(repr(value))}"
+        for spec_id, field, value in coverage.off_universe
     )
     return lines
 

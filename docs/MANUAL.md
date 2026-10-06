@@ -170,9 +170,14 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   a bullet, so no line starts with a file name, `diff` and `calibrate` refuse a report whose spec
   ids are not spec ids (each `diff` row starts with one), and the run prints its error and
   coverage lines unwrapped, so a wrap at 80 columns in a CI log cannot start one with `::error`. A
-  character the output's encoding lacks is written as its escape. The JSON outputs escape every
-  control character, `fingerprint`'s included. Not covered: a GitHub runner also reads the legacy
-  `##[error]` form anywhere in a line, which nothing here neutralises; the reports and the
+  character the output's encoding lacks is written as its escape. A runner also reads a command in
+  the middle of a line (GitHub's legacy `##[error]`, Azure Pipelines'
+  `##vso[task.setvariable ...]`), so the same output writes the second `#` of `##<letters>[` as
+  `\x23`: a spec named `Direct ##[add-mask]FAIL` is listed as `Direct #\x23[add-mask]FAIL`. The
+  JSON outputs escape every control character, `fingerprint`'s included, but keep a value as it
+  is, `##[` included, so a JSON output printed to a CI log can still carry a command: write it to
+  a file (`--json > out.json`, and `dottore fingerprint > fp.json`, which always prints JSON) in a
+  pipeline that runs third-party packs. Not covered: the reports and the
   evidence keep a credential split by a control or format character readable; a forged evidence
   tree can still start a `replay` line with an id; invisible characters outside Cf (variation
   selectors, U+034F, U+3164) are not written out.

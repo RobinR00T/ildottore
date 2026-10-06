@@ -5,6 +5,77 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (CI log commands in the middle of a line)
+
+- **Left open by PR #51, pre-existing on main (`d19b221`, and `4aa6cef`), and confirmed with the
+  runners' own code:** a GitHub Actions runner reads the legacy `##[<command>]` form anywhere in a
+  line of a step's output, not only at its start, so a third-party pack still reached the log with
+  a command after PR #51. A spec file named `x ##[error file=a.py,line=1]pwned.yaml` reached the
+  error of `dottore run` (stderr) and the unloaded list of `dottore coverage` (stdout); a spec named
+  `Direct ##[add-mask]FAIL` the end of a line of `registry ls` and `describe`; a framework value
+  `##[warning]x` the off-universe warning of `coverage` and of the run's summary.
+- **How it was verified (2026-10-07, not on a hosted runner):** what `dottore` printed, from main,
+  from PR #51 and from this branch (17 outputs each), was fed line by line to the runner's own
+  `OutputManager` with its real `ActionCommandManager` (actions/runner `67f01c2`, v2.338.0, as a
+  scratch L0 test in its test project, .NET SDK 8.0.425). Every line with `##[` in it was taken
+  as a command, on main and on PR #51: `error` and `warning` annotations, with the `file` the
+  name gave; `add-mask`, after which the log printed `... FAIL (high)` as `... *** (high)`; and
+  `set-output`, which set the step output `verdict=clean`. On main `rich` read the `[warning]`
+  of the summary line as markup and dropped it; PR #51 prints that line plain, so on its branch
+  that line reached the log too. From this branch, no line was taken as a command. Captured
+  again after PR #51 was reworked (`796c07c`, on `4aa6cef`): 11 of its 18 outputs, the `-vv`
+  plan included, still carried a command for the GitHub runner and 5 for the Azure parser; this
+  branch on top of it, none.
+- **`visible_controls` writes the second `#` of `##<letters>[` as `\x23`:** `##[error]` prints
+  as `#\x23[error]`, `##vso[task.setvariable ...]` as `#\x23vso[task.setvariable ...]`. Every
+  terminal path that writes control characters out (errors through `_masked`,
+  `Redactor.for_terminal`, the text output of `lint`, `coverage`, `registry ls`, `describe`,
+  `diff`, `calibrate` and `replay`) does it too, after the redactor, and so do the two lines that
+  printed a pack's value as its `repr` (the off-universe values of `coverage` and of the run's
+  summary), which escapes control characters and not this, the reasons the `-vv` plan of
+  `dottore run` gives for a refused spec, which quote a pack's `requires_policy` values the same
+  way (and, defensively, those for a skipped one, which are fixed text today), and the scope
+  digests the resume note quotes from the run store, which keeps any string there (an edited
+  or restored store printed `##[error]...`, or a newline and `::error`, found by the delta
+  audit). The result is its own fixed point; text without `##<letters>[` is written
+  out exactly as PR #51 wrote it.
+- **The `-vv` plan was found by the pre-commit audit**, after the first capture: from a spec
+  whose `requires_policy` held `x ##[error file=src/app.py,line=1,title=Il Dottore]...`,
+  `##[set-output name=verdict]clean` or `##[add-mask]FAIL`, the runner raised the annotation (its
+  `file`, `line` and `title` as written), set the output and added the mask, and the Azure parser
+  took `##vso[task.setvariable variable=DOTTORE_GATE]pass`; the command's data ends with the rest
+  of the line (`'] not enabled by pack 'cli-default'`). The default policy pack enables no
+  capability, so any such spec is refused and listed. From this branch, nothing.
+- **Azure Pipelines' `##vso[`: written out too.** The agent's parser (`Command.TryParse`,
+  microsoft/azure-pipelines-agent `59c86a8`) looks for `##vso[` with an ordinal `IndexOf`
+  anywhere in a line; its own test parses `>>>   ##vso[area.event k1=v1;]msg`. Run the same way
+  (a scratch L0 test in its test project, on net8.0, through `Command.TryParse` alone, not the
+  agent's command manager): the lines of main and of PR #51 gave `task.logissue type=error` and
+  `task.setvariable variable=DOTTORE_GATE` with the data `pass`; this branch's gave none.
+- The GitHub runner's prefix match is culture-sensitive, and ICU ignores a zero-width character:
+  `"#\u200B#[".IndexOf("##[")` is 0 (ordinal: -1). The runner then reads the command name 3
+  characters after the match start, the first `#`, which lands on `[`: with one of 18 such
+  characters between the two `#` or between `#` and `[`, nothing parsed, in 3 cultures. Placed
+  before `##[` it parsed, because the prefix is raw (the rule writes that one out); right after
+  it, the name matched no command; `#\x23[` parsed in no case. Only a raw `##[` is a
+  command, which is what the rule writes out.
+- Not changed, and not covered:
+  - the JSON outputs keep every value as it is (`lint --json`, `coverage --json`,
+    `fingerprint`, the reports). Printed to a CI log, a line such as
+    `"path": "attacks/x ##[error ...]pwned.yaml",` is still a command (run through the runner
+    the same way: 2 lines each from `lint --json` and `coverage --json`). Whether to escape the
+    `[` there as `\u005b`, which leaves every parsed value identical, is OD-20;
+  - other log syntaxes of the same shape (TeamCity's `##teamcity[`) are written out by the same
+    rule, and were not checked against their readers;
+  - what PR #51 left open besides this (see its entry below) is unchanged.
+- Test: `tests/test_terminal_log_commands.py` (40 cases: the rule on its own, a property test
+  over `#`, `[`, letters, backslashes, controls and U+200B, any other text (lone surrogates
+  included) written out as before, `run`, `coverage`, `lint`, `registry ls`, `describe`, the
+  run's summary, the `-vv` plan, the resume note, `_masked` and the "did not complete" line, and
+  the JSON outputs left as they are). Against PR #51's code 26 of them fail;
+  the 14 that pass are the texts the rule must leave alone, a control between the two `#`, the
+  property on text without a prefix, and the JSON pins.
+
 ### Fixed (control characters on the terminal)
 
 - **Pre-existing on main (`d54097c`, and `d19b221`), found by the pre-merge audit of PR #49 and
@@ -97,7 +168,7 @@ versioning: [SemVer](https://semver.org/).
   - a GitHub Actions runner also reads the legacy `##[error]...` form **anywhere in a line**
     (`ActionCommand.TryParse` in the runner's source, read and not run on a runner), so a pack
     file named `x ##[error]...` still reaches a log line; neither the CLI nor this fix
-    neutralises it;
+    neutralises it (written out since, see the entry above);
   - the reports, the evidence store and the run store keep a credential split by a control or a
     format character in two readable halves, as on main: `redact_text` is unchanged here, the
     whole-credential match runs only for the terminal (a separate change moves it

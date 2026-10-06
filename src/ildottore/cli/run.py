@@ -755,15 +755,18 @@ def _print_dry_run_plan(
             )
             if detail >= 2:
                 for spec_id, reason in plan.skipped_capability:
-                    print(f"    - {spec_id}: {reason}")
+                    print(f"    - {spec_id}: {visible_controls(reason)}")
         if plan.blocked_by_policy:
             print(
                 f"  blocked: {len(plan.blocked_by_policy)} spec(s) on {plan.target.id}, "
                 "refused by the policy pack"
             )
             if detail >= 2:
+                # The reason quotes a pack's `requires_policy` values as their `repr`, which writes
+                # a control character out and not a log command: `##[error]` there raised an
+                # annotation on a GitHub runner under `-vv` (pre-commit audit of this block).
                 for spec_id, reason in plan.blocked_by_policy:
-                    print(f"    - {spec_id}: {reason}")
+                    print(f"    - {spec_id}: {visible_controls(reason)}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
     judge_requests = sum(p.estimate.judge_requests for p in plans)
     if judge_requests:
@@ -1718,12 +1721,17 @@ def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool
     with SqliteRunStore(Path(run_db)) as store:
         before, _after = store.add_run_scope(run_id, scope_sha256, resumed=resumed)
     if before and before[-1] != scope_sha256:
+        # Read back from the run store, which keeps any string there: a restored or edited
+        # store printed `##[error]...` or a newline and `::error` (delta audit of the log
+        # commands block). Written out like every stored text (`visible_controls`).
         first = (
             "before scope digests were recorded"
             if before[0] == "unrecorded"
-            else f"under scope sha256 {before[0][:12]}..."
+            else f"under scope sha256 {visible_controls(before[0][:12])}..."
         )
-        last = "" if len(before) == 1 else f", last ran under {before[-1][:12]}...,"
+        last = (
+            "" if len(before) == 1 else f", last ran under {visible_controls(before[-1][:12])}...,"
+        )
         print(
             f"note: {run_id} started {first}{last} and goes on under {scope_sha256[:12]}...; "
             "the run store records each scope in order",

@@ -96,9 +96,14 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   `rich` lines of a run are printed as plain, unwrapped text, the `--compare` table prints target
   ids as text, and `diff`/`calibrate` refuse a report spec id that is not a spec id: no line of
   those paths starts with such text, except a `replay` line, which starts with an attempt or probe
-  id read from the evidence tree. The JSON outputs escape every control character (`fingerprint`
-  escapes DEL and non-ASCII inside pydantic's own output). This does not stop the legacy `##[cmd]`
-  form a GitHub runner reads anywhere in a line, and it does not cover the operator's own values
+  id read from the evidence tree. The same paths write the second `#` of `##<letters>[` as `\x23`,
+  the shape of the commands a runner reads anywhere in a line (GitHub's legacy `##[cmd]`, Azure
+  Pipelines' `##vso[area.event]`), and so do the off-universe values `coverage` and the run's
+  summary print as their `repr`, the `-vv` plan's reasons for a refused spec (a pack's
+  `requires_policy`; a skipped one's too, defensively) and the scope digests the resume note reads
+  back from the run store. The JSON outputs escape every control character (`fingerprint` escapes
+  DEL and non-ASCII inside pydantic's own output) and keep every value as it is, so printed to a CI
+  log they can still carry such a command (OD-20). This does not cover the operator's own values
   in the plan lines.)
 
 ## §7 Acceptance criteria (machine-checkable)
@@ -242,3 +247,7 @@ no work. Checked by `tests/cli/test_resume_integrity.py`.
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-20** (open, 2026-10-07): a JSON output printed to a CI log can still carry a runner's
+  log command (`##[cmd]`, `##vso[`), because JSON keeps every value as it is (§6). A = leave
+  it, documented; B = write the `[` of `##<letters>[` as `\u005b` in every JSON output, which
+  leaves each parsed value identical (proposed). See `00-INDEX.md`.

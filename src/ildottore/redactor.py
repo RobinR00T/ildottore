@@ -150,6 +150,16 @@ def _visible_control(match: re.Match[str]) -> str:
     return f"\\u{code:04x}" if code < 0x10000 else f"\\U{code:08x}"
 
 
+#: The second ``#`` of a log command a CI runner reads anywhere in a line, not only at its start:
+#: GitHub Actions' legacy ``##[error]...`` (``ActionCommand.TryParse`` looks for ``##[`` with
+#: ``IndexOf``) and Azure Pipelines' ``##vso[task.setvariable ...]...`` (``Command.TryParse``,
+#: the same). Verified on 2026-10-07 by feeding what ``dottore`` printed to the runner's own
+#: ``OutputManager``: a pack's file or spec name raised annotations, masked ``FAIL`` in every
+#: later line of the log and set a step output. Any ``##<letters>[`` is matched, the shape of
+#: both; that ``#`` is written as ``\x23``, so no ``##`` is followed by ``<letters>[`` any more.
+_LOG_COMMAND: Final = re.compile(r"(?<=#)#(?=[A-Za-z]*\[)")
+
+
 def visible_controls(text: str) -> str:
     """``text`` with every character a terminal acts on written out, for printing.
 
@@ -159,14 +169,16 @@ def visible_controls(text: str) -> str:
     Cf: a zero-width space, a soft hyphen, a bidi control, a tag character), which have no
     picture, become the escape Python writes for them (``\\x85``, ``\\u2028``, ``\\udc9b``,
     ``\\u200b``, ``\\xad``, ``\\U000e0041``): a bidi control reorders what is read and a
-    format character hides text. The result holds no character of :data:`_TERMINAL_CONTROLS`, so
-    it is its own fixed point. A spec file named
+    format character hides text. A spec file named
     ``x\\n::error ...`` printed a line GitHub Actions reads as a workflow command (pre-merge
-    audit of PR #49). It runs after the redactor: escaping first would hide from it a credential
-    split by a control character, and it would read the escapes as text.
+    audit of PR #49). A CI log reader also acts on a command in the middle of a line
+    (:data:`_LOG_COMMAND`): ``##[error]`` is written ``#\\x23[error]``. The result holds no
+    character of :data:`_TERMINAL_CONTROLS` and no such command, so it is its own fixed point.
+    It runs after the redactor: escaping first would hide from it a credential split by a
+    control character, and it would read the escapes as text.
     """
 
-    return _TERMINAL_CONTROLS.sub(_visible_control, text)
+    return _LOG_COMMAND.sub(r"\\x23", _TERMINAL_CONTROLS.sub(_visible_control, text))
 
 
 #: The email shape; a ``skip`` match is a run of address characters with no address in it.
