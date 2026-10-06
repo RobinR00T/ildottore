@@ -159,15 +159,18 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   Actions runner reads as a workflow command. A C0 control and DEL are written as their control
   pictures (a newline as `␊`, ESC as `␛`, DEL as `␡`, as the redactor writes `␀` and `␁`), and a
   C1 control, U+2028, U+2029 and a lone surrogate (an undecodable byte of a Linux file name) as
-  the escape Python writes (`\x85`, `\u2028`, `\udc9b`). This happens after the redactor, and a
-  registered credential split by control characters is masked whole first; split by spaces or
+  the escape Python writes (`\x85`, `\u2028`, `\udc9b`), and so is a format character, which a
+  terminal does not show at all (a zero-width space `\u200b`, a soft hyphen `\xad`, a bidi
+  control that reorders what is read, a tag character `\U000e0041`). This happens after the
+  redactor, and a registered credential split by control or format characters is masked whole
+  first; split by spaces or
   other printable characters it is still kept. `dottore coverage` lists each file that failed to
   load as a bullet, so no line starts with a file name, `diff` and `calibrate` refuse a report
   whose spec ids are not spec ids (each `diff` row starts with one), and the run prints its error
   and coverage lines unwrapped, so a wrap at 80 columns in a CI log cannot start one with
   `::error`. A character the output's encoding lacks is written as its escape. Not covered: a
   GitHub runner also reads the legacy `##[error]` form anywhere in a line, which nothing here
-  neutralises; the reports and the evidence keep a credential split by a control character
+  neutralises; the reports and the evidence keep a credential split by a control or format character
   readable; a forged evidence tree can still start a `replay` line with an id. The JSON outputs
   escape every control character (`fingerprint` through `json.dumps` too).
 

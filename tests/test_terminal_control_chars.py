@@ -36,8 +36,15 @@ REPO = Path(__file__).resolve().parents[1]
 INJECTED = "x\n::error title=pwned::injected.yaml"
 
 #: Unicode categories of what must never reach the terminal raw: controls (C0, DEL, C1), the
-#: line and paragraph separators, and lone surrogates.
-_RAW: frozenset[str] = frozenset({"Cc", "Zl", "Zp", "Cs"})
+#: line and paragraph separators, lone surrogates, and the format characters (Cf, since
+#: 2026-10-07: a bidi control reorders what is read, a zero-width or tag character hides text).
+_RAW: frozenset[str] = frozenset({"Cc", "Zl", "Zp", "Cs", "Cf"})
+
+#: One format character of each kind: soft hyphen, zero-width space and joiner, word joiner,
+#: right-to-left override, left-to-right isolate, byte order mark, language tag, tag letter A.
+_FORMATS = [
+    chr(c) for c in (0xAD, 0x200B, 0x200D, 0x2060, 0x202E, 0x2066, 0xFEFF, 0xE0001, 0xE0041)
+]
 
 #: One of every character class the terminal must see written out.
 _CONTROLS = [
@@ -49,6 +56,7 @@ _CONTROLS = [
     "\ud800",
     "\udc9b",
     "\udfff",
+    *_FORMATS,
 ]
 
 
@@ -60,7 +68,7 @@ def _expected(ch: str) -> str:
         return "\u2421"
     if code < 0x100:
         return f"\\x{code:02x}"
-    return f"\\u{code:04x}"
+    return f"\\u{code:04x}" if code < 0x10000 else f"\\U{code:08x}"
 
 
 def _raw_controls(text: str) -> list[str]:
@@ -381,6 +389,40 @@ def test_visible_controls_writes_every_class_out_and_is_stable(ch: str) -> None:
 
     once = visible_controls(f"a{ch}b")
     assert once == f"a{_expected(ch)}b" and visible_controls(once) == once
+
+
+def test_visible_controls_writes_every_format_character_of_this_python_out() -> None:
+    from ildottore.redactor import visible_controls
+
+    formats = [chr(c) for c in range(0x110000) if unicodedata.category(chr(c)) == "Cf"]
+    once = visible_controls("".join(formats))
+    assert _raw_controls(once) == [] and visible_controls(once) == once
+    assert once == "".join(_expected(ch) for ch in formats)
+
+
+def test_the_format_characters_are_every_cf_character_of_this_python() -> None:
+    """Pinned to Unicode 16.0 so the output never depends on the Python's Unicode version."""
+
+    pinned = {c for low, high in redactor_mod._FORMAT_RANGES for c in range(low, high + 1)}
+    here = {c for c in range(0x110000) if unicodedata.category(chr(c)) == "Cf"}
+    assert here <= pinned and len(pinned) == 170
+    # An older Python (3.11 has Unicode 14.0) does not know the newest ones yet.
+    assert {unicodedata.category(chr(c)) for c in pinned - here} <= {"Cn"}
+
+
+@pytest.mark.parametrize("sep", _FORMATS, ids=lambda ch: f"U+{ord(ch):04X}")
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_registered_credential_split_by_a_format_character_is_masked_whole(sep: str) -> None:
+    """Written out, the format character would leave the two halves readable around it."""
+
+    register_known_secret("Zq9vT4mXa81LpR2w")
+    whole = _masked(ValueError("auth failed: Zq9vT4mXa81LpR2w end"))
+    out = _masked(ValueError(f"auth failed: {sep}Zq9vT4mX{sep}a81LpR2w{sep} end"))
+    assert "Zq9vT4mX" not in out and "a81LpR2w" not in out
+    assert out == whole.replace(" end", f"{_expected(sep)} end").replace(
+        "failed: ", f"failed: {_expected(sep)}"
+    )
+    assert _raw_controls(out) == []
 
 
 def test_visible_controls_matches_the_redactor_s_own_delimiter_pictures() -> None:

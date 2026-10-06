@@ -23,10 +23,16 @@ The carryover ledger. Every agent session updates this so context survives even 
   (`fingerprint`'s JSON invalid on a cp1252 stdout) and two unpinned fixes. All fixed here. Left
   open, pre-existing on main: the legacy `##[cmd]` form a GitHub runner reads anywhere in a line;
   the reports and stores keep a credential split by a control character readable (`redact_text`
-  unchanged); a credential split by an invisible format character (U+200B) is neither masked nor
-  shown.
+  unchanged); a credential split by an invisible format character (U+200B) was neither masked nor
+  shown (on the terminal it is since 2026-10-07, below).
 - `make gates` green: 2,397 tests (195 new), coverage 96.49%. PR #49 touches `_masked` too: the
   second to merge rebases.
+- 2026-10-07: the owner decided that format characters (Unicode Cf: zero-width characters, the
+  soft hyphen, bidi controls, the byte order mark, tag characters) are written out on the
+  terminal too; `visible_controls` writes them as Python escapes and `mask_split_credentials`
+  ignores them. The reports keep such a credential readable until `fix/redactor-split-credentials`
+  merges, which masks it in `redact_text` itself; the second of the two to merge drops
+  `mask_split_credentials`. `make gates`: 2,426 tests (29 new), coverage 96.49%.
 
 ## State, 2026-10-07 (night): PR #52 merged; an inverted tool allowlist
 

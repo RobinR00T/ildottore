@@ -30,6 +30,16 @@ versioning: [SemVer](https://semver.org/).
   a key pattern cannot take a split key's head and leave its tail, and the escaping runs after it,
   so a key right after a C1 control keeps the word boundary its pattern needs. Split by printable
   characters (a space, or the `[0m` of an escape sequence) a credential is still kept, as before.
+- **Format characters are written out too (decided by the owner on 2026-10-07).** A terminal
+  shows no character of Unicode category Cf: a bidi control (U+202A to U+202E, U+2066 to U+2069)
+  reorders what is read (Trojan Source, CVE-2021-42574), a zero-width space, a joiner or a soft
+  hyphen is invisible, and the tag characters (U+E0001, U+E0020 to U+E007F) carry invisible
+  ASCII. `visible_controls` writes every one of them (the 170 of Unicode 16.0, pinned so the
+  output does not depend on the Python's Unicode version) as the escape Python writes (`\u200b`,
+  `\xad`, `\U000e0041`), and `mask_split_credentials` ignores them as it ignores the controls:
+  written out, a credential split by one would print as two halves around the escape. The cost:
+  an emoji written with a zero-width joiner, a right-to-left mark in Arabic or Hebrew text or a
+  soft hyphen shows its escape in an error or a warning.
 - **A lone surrogate in a labelled value or a PEM body no longer crashes the masking** (on main
   too). The mask's digest encoded the value strictly, so `token=AAAAAAAA` followed by an
   undecodable byte raised `UnicodeEncodeError` inside `_masked`, and the CLI printed the error it
@@ -75,21 +85,20 @@ versioning: [SemVer](https://semver.org/).
     (`ActionCommand.TryParse` in the runner's source, read and not run on a runner), so a pack
     file named `x ##[error]...` still reaches a log line; neither the CLI nor this fix
     neutralises it;
-  - the reports, the evidence store and the run store keep a credential split by a control
-    character in two readable halves, as on main: `redact_text` is unchanged, the whole-credential
-    match runs only for the terminal;
-  - a credential split by an invisible format character (U+200B, U+00AD, U+2060, U+FEFF) is
-    neither masked nor written out, on the terminal or anywhere else, as on main; nor are the
-    bidirectional formatting characters (U+202A to U+202E, U+2066 to U+2069) written out;
+  - the reports, the evidence store and the run store keep a credential split by a control or a
+    format character in two readable halves, as on main: `redact_text` is unchanged here, the
+    whole-credential match runs only for the terminal (`fix/redactor-split-credentials` moves it
+    into `redact_text`; the second of the two to merge drops `mask_split_credentials`);
   - the operator's own values in the run's plan lines (target ids and model names under
     `--dry-run` and `-sn`) and the target ids of the `--compare` table (still read as markup);
   - a `replay` line starts with an attempt id or a probe id read from the evidence tree, so a
     forged tree can still start one.
-- Test: `tests/test_terminal_control_chars.py` (195 cases: every control character through
-  `_masked` and `visible_controls`, a credential split by each class, every occurrence, overlapping
+- Test: `tests/test_terminal_control_chars.py` (224 cases: every control character and a format
+  character of each kind through `_masked` and `visible_controls`, every format character of the
+  running Python, a credential split by each class, every occurrence, overlapping
   and periodic credentials, a lone surrogate after a label, `run`, `lint`, `coverage`,
   `registry ls`, `describe`, `diff`, `calibrate`, `replay` and `fingerprint` through the CLI, a
-  cp1252 stdout, and the `rich` lines). Against main's code 190 of them fail; the 5 that pass are
+  cp1252 stdout, and the `rich` lines). Against main's code 219 of them fail; the 5 that pass are
   the two stash delimiters, which the redactor already wrote out, a credential split by either,
   which it already masked, and the streams keeping their setting, which main never changes.
   `tests/cli/test_calibrate.py` gives its report a spec id (`A` was none).
