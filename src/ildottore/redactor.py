@@ -195,8 +195,14 @@ def register_known_secret(value: str | None) -> None:
 
     if not value:
         return
+    # Without the stash delimiters, as :meth:`Redactor.redact_text` reads the text: with one, a
+    # credential matched across the end of a stash token, broke it and left a raw NUL in the
+    # output, which then was no fixed point (pre-commit audit of this block). The forms of the
+    # value without them count too, so a delimiter at its ends does not keep it from stripping.
+    forms = _escaped_forms(value) | _escaped_forms(_without_stash_delimiters(value))
     with _KNOWN_LOCK:
-        for candidate in _escaped_forms(value):
+        for form in forms:
+            candidate = _without_stash_delimiters(form)
             if len(candidate) >= _KNOWN_MIN_LEN:
                 _KNOWN_SECRETS.add(candidate)
 
@@ -204,12 +210,24 @@ def register_known_secret(value: str | None) -> None:
 # A password embedded in a URL (``https://user:pass@host``). Only the password is masked:
 # the user and host are what makes an endpoint readable in a report. ``--dry-run``, ``-sn``
 # and ``-v`` printed the whole URL and the JSON report stored it (audit 2026-10-03, SEC-02).
-_URL_USERINFO: Final = re.compile(r"(://[^/\s:@\x00\x01]+:)([^/\s@\x00\x01]+)(@)")
+# A stash token (a mask set aside earlier in the pass) may stand in the user or the password:
+# a registered credential as the user is set aside before this rule runs, the rule refused a
+# user holding one, and the password stayed readable; a dotted host hid it only because the
+# email rule then took ``password@host`` (pre-commit audit of the control-characters block).
+# The user may be empty (``redis://:password@host``, Redis's own form, kept the password).
+# Possessive throughout: the delimiter after each part is outside it, so giving characters back
+# never finds a match, and with an alternation the engine kept a frame per character (a 4 MB
+# reply took 640 MB; pre-commit audit of this fix).
+_STASHED: Final = r"\x00\d++\x01"
+_URL_USERINFO: Final = re.compile(
+    rf"(://(?:[^/\s:@\x00\x01]++|{_STASHED})*+:)((?:[^/\s@\x00\x01]++|{_STASHED})++)(@)"
+)
 
 
 def overlaps_known_secret(value: str) -> bool:
     """True if ``value`` is, contains, or is part of a credential this process registered."""
 
+    value = _without_stash_delimiters(value)  # as the credentials are registered
     with _KNOWN_LOCK:
         return any(value in secret or secret in value for secret in _KNOWN_SECRETS)
 
@@ -223,8 +241,42 @@ def mask_url_passwords(text: str) -> str:
 
 
 def _known_secrets() -> list[str]:
+    # Longest first, then by value: a set's iteration order changes with PYTHONHASHSEED, and two
+    # credentials of one length came in either order (pre-commit audit of the control-characters
+    # block). Nothing the redactor writes may depend on it.
     with _KNOWN_LOCK:
-        return sorted(_KNOWN_SECRETS, key=len, reverse=True)
+        return sorted(_KNOWN_SECRETS, key=lambda secret: (-len(secret), secret))
+
+
+def _credential_runs(text: str) -> list[tuple[int, int, str]]:
+    """Where the registered credentials are in ``text``, as ``(start, end, credential)`` runs.
+
+    Every occurrence counts, and occurrences that overlap make one run, named after its longest
+    credential (of two of one length, the one that starts first). Replacing one credential after
+    the other masked whichever a set's order gave first and left the other's tail readable
+    (``12345678ab87654321`` with ``12345678ab`` and ``ab87654321`` registered), and a credential
+    overlapping itself (``abababab`` in ``ababababab``) left its last characters.
+    """
+
+    spans: list[tuple[int, int, str]] = []
+    for secret in _known_secrets():
+        found = text.find(secret)
+        while found != -1:
+            end = found + len(secret)
+            # Where it overlaps itself it is one span already: a run of it has one per character.
+            if spans and spans[-1][2] == secret and found < spans[-1][1]:
+                spans[-1] = (spans[-1][0], end, secret)
+            else:
+                spans.append((found, end, secret))
+            found = text.find(secret, found + 1)
+    runs: list[tuple[int, int, str]] = []
+    for start, end, secret in sorted(spans):
+        if runs and start < runs[-1][1]:
+            first, last, named = runs[-1]
+            runs[-1] = (first, max(last, end), secret if len(secret) > len(named) else named)
+        else:
+            runs.append((start, end, secret))
+    return runs
 
 
 # The corroboration digest is 32 bits of an HMAC. Unsalted, anyone holding a report could
@@ -534,10 +586,21 @@ class Redactor:
         # the output change on every pass, and the store's fixed-point guard aborted the
         # campaign (audit of the labelled-number block).
         preserved: list[str] = []
+        # What each stash token stands for in the text. A digest over a stretch holding one is
+        # the digest of what was written there, not of the token, whose number counts the masks
+        # set aside before it: a private key's digest changed with the text before the key, and
+        # with PYTHONHASHSEED (pre-commit audit of the control-characters block).
+        written: list[str] = []
 
-        def _keep(mask: str) -> str:
+        def _keep(mask: str, original: str | None = None) -> str:
             preserved.append(mask)
+            written.append(mask if original is None else original)
             return f"{_STASH_OPEN}{len(preserved) - 1}{_STASH_CLOSE}"
+
+        def _as_written(stretch: str) -> str:
+            if _STASH_OPEN not in stretch:
+                return stretch
+            return _STASH_TOKEN.sub(lambda m: written[int(m.group(1))], stretch)
 
         # A mask is kept aside only when its type is one the tool writes: a target writing
         # `«REDACTED:<the operator's key>»` had the key kept as a mask and printed in the reports
@@ -565,14 +628,33 @@ class Redactor:
 
         # Credentials the tool read, by value, before the URL rule: a password containing a
         # raw ``@`` is matched whole here, where the URL rule would stop at the first ``@``.
-        for secret in _known_secrets():
-            if secret in working:
-                mask = _MASK_TEMPLATE_HASHED.format(type="credential", digest=self._digest(secret))
-                working = working.replace(secret, _keep(mask))
-        working = _URL_USERINFO.sub(
-            lambda m: m.group(1) + _keep(_MASK_TEMPLATE.format(type="url_password")) + m.group(3),
-            working,
-        )
+        runs = _credential_runs(working)
+        if runs:
+            # One token for every run of the same text, as one `replace` per credential gave:
+            # a token each took 44% more time and 83% more memory than main on a reply
+            # repeating a credential 55,000 times.
+            tokens: dict[str, str] = {}
+            pieces: list[str] = []
+            cursor = 0
+            for start, end, secret in runs:
+                stretch = working[start:end]
+                token = tokens.get(stretch)
+                if token is None:
+                    digest = self._digest(secret)
+                    mask = _MASK_TEMPLATE_HASHED.format(type="credential", digest=digest)
+                    token = tokens[stretch] = _keep(mask, _as_written(stretch))
+                pieces += (working[cursor:start], token)
+                cursor = end
+            working = "".join(pieces) + working[cursor:]
+
+        def _url_password(m: re.Match[str]) -> str:
+            password = m.group(2)
+            if _STASH_TOKEN.fullmatch(password):  # a mask already (a registered password)
+                return m.group(0)
+            mask = _keep(_MASK_TEMPLATE.format(type="url_password"), _as_written(password))
+            return m.group(1) + mask + m.group(3)
+
+        working = _URL_USERINFO.sub(_url_password, working)
 
         for pattern in self._patterns:
             # A labelled number first, whole: the plain pattern would take its unglued tail and
@@ -581,12 +663,12 @@ class Redactor:
                 working = self._redact_labelled_number(pattern, LABELLED_CARD, working)
                 working = self._redact_cards(pattern, working)
             elif pattern.type == "pem_private_key":
-                working = self._redact_pem(pattern, working)
+                working = self._redact_pem(pattern, working, _as_written)
             elif pattern.type == "phone":
                 working = self._redact_labelled_number(pattern, LABELLED_PHONE, working)
                 working = self._redact_phones(pattern, working)
             else:
-                working = pattern.regex.sub(self._make_sub(pattern), working)
+                working = pattern.regex.sub(self._make_sub(pattern, _as_written), working)
 
         working = self._redact_labeled(working)
         working = self._redact_high_entropy(working)
@@ -594,17 +676,24 @@ class Redactor:
         # One pass: a `str.replace` per kept mask was quadratic with thousands of them.
         return _STASH_TOKEN.sub(lambda m: preserved[int(m.group(1))], working)
 
-    def _make_sub(self, pattern: Pattern) -> Callable[[re.Match[str]], str]:
-        """Build a substitution callback bound to ``pattern`` (closure-safe)."""
+    def _make_sub(
+        self, pattern: Pattern, as_written: Callable[[str], str]
+    ) -> Callable[[re.Match[str]], str]:
+        """Build a substitution callback bound to ``pattern`` (closure-safe).
+
+        A hashed mask digests the match as written (``as_written``): a pattern that can span a
+        stash token (a private key's body can) digested the token's number instead.
+        """
 
         def _sub(m: re.Match[str]) -> str:
             if skipped(m):
                 return m.group(0)
-            return self._mask_token(pattern, m.group(0))
+            value = m.group(0)
+            return self._mask_token(pattern, as_written(value) if pattern.hashed else value)
 
         return _sub
 
-    def _redact_pem(self, pattern: Pattern, text: str) -> str:
+    def _redact_pem(self, pattern: Pattern, text: str, as_written: Callable[[str], str]) -> str:
         """Mask PEM private keys, skipping the scan entirely when no END marker exists.
 
         Without an END marker the pattern cannot match, so running the DOTALL regex over a
@@ -614,7 +703,7 @@ class Redactor:
 
         if "-----END" not in text or "PRIVATE KEY-----" not in text:
             return text
-        return pattern.regex.sub(self._make_sub(pattern), text)
+        return pattern.regex.sub(self._make_sub(pattern, as_written), text)
 
     def _redact_labeled(self, text: str) -> str:
         """Mask a value explicitly labelled as a secret (the value only, not the label)."""

@@ -137,6 +137,24 @@ file's own `judge:` block, never from a `--judge` file, which could otherwise na
 any credential and have both written into the scope (SEC-04). Checks: the same file, plus
 `tests/cli/test_fleet.py`.
 
+**A-31 A mask depends only on what it masks (added 2026-10-07).** With the salt fixed, one value
+is masked the same way in every process and wherever it appears: a digest is computed over the
+value as it is written in the text, never over the redactor's own stash tokens (their numbers
+count the masks set aside before them) nor over anything a set orders (its order changes with
+`PYTHONHASHSEED`). A private key's digest depended on both: six hash seeds of twelve gave one
+digest and six another, and in one process the same key had another digest after a mask. The
+same set order decided which of two overlapping registered credentials was masked and left the
+other's tail readable; overlapping credentials are one run now, named after the longest. The
+URL rule holds when part of the URL is already masked: a URL's password stayed readable because
+its user was a registered credential, set aside before the rule ran. (Not yet every rule: the
+labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its tail
+readable, as on main. A private key over the pattern's 16 KB bound, which counts the text as one
+pass sees it, is masked on a later pass and digested over its text with the masks inside it:
+the same everywhere, not the HMAC of the key.)
+Checks: `tests/test_redactor_url_password_and_digests.py` (twelve hash seeds in subprocesses,
+digests against an HMAC computed in the test, the evidence store's leak guard, a property over
+URL shapes).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).

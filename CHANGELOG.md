@@ -5,6 +5,70 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a URL password behind a registered user; masks that depended on the process)
+
+- **A URL password is masked behind a registered, masked or empty user.** A registered
+  credential as the user of a URL (`https://<it>:<password>@localhost:8080/v1`) was set aside
+  as a stash token before the URL rule ran, and the URL rule refused a user holding one, so the
+  password stayed readable in the reports, the evidence and on the terminal. A dotted host hid
+  it only because the email rule then took `<password>@<host>` as an address, host included. A
+  user the target wrote as a mask (`«REDACTED:email»`) left it readable the same way, and so did
+  no user at all (`redis://:<password>@localhost:6379/0`, the form Redis documents; found on
+  main by the pre-commit audit of this fix). The rule now reads a mask in the user or the
+  password and takes an empty user: a password that is one registered credential keeps its
+  `credential` mask, and any other is masked whole as `url_password`, so the rest of a password
+  holding a registered credential (`pre<it>post`) is no longer readable either. The empty user
+  widens an over-mask main already made with a one-character user:
+  `http://:8080?email=bob@example.com` read `?email=«REDACTED:email»` and now reads
+  `http://:«REDACTED:url_password»@example.com`, the email's domain readable.
+- **A mask no longer depends on the process or on the text before it.** The digest of a
+  `pem_private_key` mask was computed over the key with the stash tokens of the masks inside it,
+  whose numbers count the masks set aside before them and follow the order the registered
+  credentials were tried in. For two of one length that order was a set's, which changes with
+  `PYTHONHASHSEED`: with the salt pinned, six hash seeds of twelve gave one digest and six
+  another, and in one process the same key had another digest after a mask. A hashed mask now
+  digests what was written there, so a key's digest is the HMAC of the key as it appears in the
+  text, whatever is registered inside it, and a pinned `ILDOTTORE_REDACTION_SALT` correlates it
+  across runs as the manual says. The same holds for a hashed pattern the operator registers.
+  The key pattern's 16 KB bound applies to the text as one pass sees it, masks set aside; a key
+  over it is masked on a later pass, once the masks inside it are in, and digested over that
+  text: still the same in every process and wherever it appears, but not the HMAC of the key as
+  written.
+- **Overlapping registered credentials are masked as one.** The same set order decided which of
+  two overlapping credentials was masked (`12345678ab87654321` with `12345678ab` and
+  `ab87654321` registered: seven seeds of twelve masked one, five the other), and the other's
+  tail stayed readable; a credential overlapping itself (`abababab` in `ababababab`) left its
+  last characters. Every occurrence is found now, overlapping ones make one run named after its
+  longest credential (the first of two of one length), and the credentials are tried longest
+  first, then by value.
+- **A registered credential holding a stash delimiter cannot break a stash token.** The
+  redactor drops `\x00` and `\x01` from the text before it reads it, but a credential kept
+  them, so one with `\x01` after a digit (or `\x00` before one) matched across a token's edge:
+  a mask was lost, a raw delimiter reached the output and the text was no fixed point, which
+  the evidence store refuses. A credential is registered as the text is read, without them
+  (also before its surrounding whitespace is stripped), and `overlaps_known_secret` reads its
+  argument the same way. Found on main by the pre-commit audit of this fix.
+- Cost, measured on a megabyte, best of three: clean text and URLs as on main (0.17 s, and
+  0.30 s where main took 0.29 s); a reply repeating a registered credential 55,000 times takes
+  0.27 s where main took 0.25 s (every occurrence is found, not only the ones `str.replace`
+  reached), and one credential overlapping itself all the way 0.05 s where main took 0.28 s.
+  The URL rule is possessive: its first version here, an alternation without it, kept a frame
+  per character and grew the process by about 640 MB on a 4 MB reply; it grows by nothing now.
+  Credentials that overlap themselves are still found one occurrence at a time: sixteen
+  registered (`a` repeated 8 to 23 times) over a megabyte of `a` take 2.1 s where main took
+  0.10 s (leaving the last six characters readable), a case that needs a target knowing them.
+- Found by the pre-commit audit of `fix/cli-control-chars` (PR #51), with differential fuzzing
+  against main `d19b221`. Tests: `tests/test_redactor_url_password_and_digests.py` (twelve hash
+  seeds in subprocesses, digests checked against an HMAC computed in the test, the evidence
+  store's leak guard, a Hypothesis property over URL shapes, the URL rule's memory measured in a
+  subprocess); 24 mutants of the fix, each caught. Docs: `docs/02` (S6), the u01 contract (A-31)
+  and the contract index, the manual. Left open, on main too: a raw `@` in the user or in an
+  unregistered password of a URL leaves the password, or its part after the `@`, readable
+  (`myadmin@srv:<password>@localhost`, an Azure-style login); a registered credential that
+  straddles a URL's `:` or `@` stops the URL rule; the labelled-secret rule stops at a mask, so
+  `api_key=<registered credential><tail>` keeps its tail readable; repeated `BEGIN PRIVATE KEY`
+  markers before one `END` cost 3.4 s a megabyte.
+
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 
 - **The second half of OD-18** (ADR-0009, C with A first, decided 2026-10-06). A deployed

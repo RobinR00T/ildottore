@@ -121,12 +121,16 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   value) is refused before any request, with an error that names the variable and never the
   value. Values shorter than 8 characters are not registered. The 8-hex digest after a mask is
   salted per process, so a report cannot be used to confirm a guessed password; set
-  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose. What the tool itself
-  generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
-  readable in every report, in both copies of a finding the JSON report carries, so a custom
-  spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
-  prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part of
-  an absolute path that exists on this machine is exempt from the entropy rule (a temp or CI
+  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose: a digest is computed over
+  the value as written (a private key's too, whatever is registered inside it, within the
+  pattern's 16 KB bound), so with the salt pinned one value reads the same in every run. A
+  password in a URL is masked behind a registered, masked or empty user too (not yet behind a
+  user holding a raw `@`), and registered credentials that overlap in the text are masked as one.
+  What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
+  id) is left readable in every report, in both copies of a finding the JSON report carries, so a
+  custom spec id reads the same in every run and `dottore diff` can match it. Error messages the
+  CLI prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part
+  of an absolute path that exists on this machine is exempt from the entropy rule (a temp or CI
   workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and labels
   in it are still masked, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a

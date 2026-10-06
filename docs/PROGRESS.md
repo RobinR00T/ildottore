@@ -3,6 +3,43 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (night): a URL password behind a registered user; masks that depended on the process
+
+- On `fix/redactor-url-userinfo-pem-digest` (`tests/test_redactor_url_password_and_digests.py`):
+  two defects already on main, found by the pre-commit audit of `fix/cli-control-chars` with
+  differential fuzzing against `d19b221`. A registered credential as a URL's user left the
+  password readable when the host had no dot (the URL rule refused a user already set aside as a
+  stash token), and the digest of a private-key mask was computed over stash tokens whose
+  numbers depend on the masks before the key and on a set's iteration order, so it changed with
+  `PYTHONHASHSEED`. Fixed with the case the same order decided: one of two overlapping
+  registered credentials masked, the other's tail readable. The pre-commit audit (100,000
+  differential cases: no new leak, 29,577 closed) found that the first URL rule took about
+  640 MB on a 4 MB reply (possessive now), three mutants that leaked and survived the tests
+  (tests added),
+  and two defects on main, fixed here: `redis://:<password>@host` kept its password, and a
+  registered credential holding `\x01` could break a stash token. New clause A-31 in the u01
+  contract (a mask depends only on what it masks).
+- The delta audit of those fixes (390,000 cases: no leak, no lost mask, no fixed-point break) found
+  docs claiming more than the code does (corrected), a memory test that a partial revert of the
+  possessive quantifiers passed, partial reverts of the delimiter fix that passed, and cost
+  figures measured with tracemalloc on (re-measured without it). Tests added; 24 mutants of the
+  fix, each caught. `make gates` green on `4aa6cef`: 2,298 tests (2,250 on main), coverage
+  96.38%.
+- Open, on main too: a raw `@` in a URL's user or unregistered password leaves the password, or
+  its part after the `@`, readable (`myadmin@srv:<password>@localhost`); a registered credential
+  straddling a URL's `:` or `@` stops the URL rule; the labelled-secret rule stops at a mask
+  (`api_key=<registered credential><tail>` keeps its tail); repeated `BEGIN PRIVATE KEY`
+  markers before one `END` cost 3.4 s a megabyte. Python 3.11, the version CI runs, was not
+  available here: the memory test runs on it there for the first time.
+- PR #51 also edits `redactor.py`, so the second to merge rebases. Its `mask_split_credentials`
+  names an overlapping run the way `_credential_runs` does, and the credentials it reads now come
+  in one order whatever the hash seed. **To do when the two meet:** it masks every registered
+  credential of any text holding a control character, and every PEM holds a newline, so on the
+  terminal a key's digest is computed over the credential's mask while the reports compute it
+  over the credential: the two digests differ (1,247 of 8,000 audit cases, all keys holding a
+  registered credential; nothing leaks). Masking only the runs that hold a control character
+  fixes it.
+
 ## State, 2026-10-07 (night): OD-18 option B built
 
 - On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec
