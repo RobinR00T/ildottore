@@ -233,10 +233,29 @@ class FsEvidenceStore:
         """
 
         if isinstance(obj, dict):
-            return {
-                self._redactor.redact_text(str(key)): self._mask_keys(value)
-                for key, value in obj.items()
-            }
+            # Two keys can mask to one (`a@x.io` and `b@y.io` both read `«REDACTED:email»`):
+            # the second used to replace the first, and one value was gone from the evidence
+            # (pre-merge audit of the hostile-text block). A later one is numbered instead, and
+            # the numbered name is redacted itself: a suffix changes what the rules see (` (2)`
+            # after a date made a phone, ` #10000` after a label word a labelled secret, and
+            # `, #2` after `password: Secret` let the label rule take a value it refuses at the
+            # end), so a name that was not a fixed point made the leak guard refuse the reply.
+            # Each base counts on from its last number, so many colliding keys stay linear.
+            masked: dict[str, object] = {}
+            last: dict[str, int] = {}
+            for key, value in obj.items():
+                name = base = self._redactor.redact_text(str(key))
+                # More tries than names taken means the redaction swallows the number (from
+                # 10^8 it reads as a phone): refuse rather than loop (no reply holds that many).
+                for _ in range(len(masked) + 1):
+                    if name not in masked:
+                        break
+                    last[base] = last.get(base, 1) + 1
+                    name = self._redactor.redact_text(f"{base}, #{last[base]}")
+                else:
+                    raise RedactionLeakError("evidence keys could not be told apart; write refused")
+                masked[name] = self._mask_keys(value)
+            return masked
         if isinstance(obj, list):
             return [self._mask_keys(item) for item in obj]
         return obj

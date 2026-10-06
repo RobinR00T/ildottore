@@ -5,6 +5,28 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (follow-ups of the #46 pre-merge audit)
+
+- **A registered credential written as a mask's digest is masked.** A mask of a type the tool
+  writes was kept as written, so a target writing `«REDACTED:card:<an 8-hex registered key>»`
+  kept the key; a mask whose digest is a registered credential is read as text now. A longer
+  credential split around a digest (`«REDACTED:card:<its first 8>»<the rest>`) still passes, as
+  one split by spaces does.
+- **Two evidence keys that mask to one name are both kept.** `a@x.io` and `b@y.io` both read
+  `«REDACTED:email»`, and the second replaced the first in the stored evidence; a later one is
+  numbered now (`«REDACTED:email», #2`), each name counting on from its last number so many
+  colliding keys stay linear, and the numbered name is redacted itself: a suffix changes what the
+  rules see (` (2)` after a date made a phone, ` #10000` after `token` a labelled secret, and
+  `, #2` after `password: Secret` let the label rule take the value), and a name that was not a
+  fixed point made the leak guard refuse the reply and stop the run.
+- **Clean text costs about what it did before #46.** The `skip` branches of the email and phone
+  rules matched every word of a clean text, a callback each: redacting 50,000 clean lines took
+  0.80 s against 0.61 s before #46 (`519aa99`). They take only runs of 64 characters or more now
+  (a shorter run has at most 63 starts, so the cost stays linear), and the mask types are kept per
+  redactor: 0.65 to 0.67 s. The output is the same, fuzzed against the previous version.
+- `mask_value` says which types are kept as written, and the test that keeps that list
+  complete also reads a `Pattern(` call written over several lines.
+
 ### Fixed (follow-ups of the #45 pre-merge audit)
 
 - **Two identities of one target with the same name, or the same canary, are refused** by the

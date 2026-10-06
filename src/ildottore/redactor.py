@@ -55,7 +55,7 @@ _STASH_OPEN: Final = "\x00"
 _STASH_CLOSE: Final = "\x01"
 _STASH_TOKEN: Final = re.compile(r"\x00(\d+)\x01")
 # Matches any token we already produced, so redaction is idempotent; group 1 is the type.
-_ALREADY_MASKED: Final = re.compile(r"«REDACTED:([A-Za-z0-9_]+)(?::[0-9a-f]{8})?»")
+_ALREADY_MASKED: Final = re.compile(r"«REDACTED:([A-Za-z0-9_]+)(?::([0-9a-f]{8}))?»")
 #: Mask types the tool writes besides the redactor's patterns': the redactor's own rules, then
 #: the type hints the evaluators give ``mask_value`` (a test keeps this list complete).
 _OWN_MASK_TYPES: Final = frozenset(
@@ -71,7 +71,11 @@ _OWN_MASK_TYPES: Final = frozenset(
 #: too, and each of those starts scanned the run to its end: quadratic in text a target writes
 #: (99 KB of ``1. 2. 3. `` took 17 s in the phone rule, 100 KB of ``eyJ-`` 1.6 s in the JWT
 #: rule). The ``skip`` branch consumes the rest of the run instead, so the scan resumes after it
-#: and finds exactly what it found before (pre-commit audit of the hostile-text block).
+#: and finds exactly what it found before (pre-commit audit of the hostile-text block). In the
+#: email and phone rules it takes only a run of 64 characters or more: a shorter run has at most
+#: 63 starts, each scanning that run (and, for an email, the domain after its `@`), so the cost
+#: stays linear, while every word of a clean text matched the unbounded branch, a callback each
+#: (clean text took a third longer to redact, pre-merge audit).
 SKIP: Final = "skip"
 
 
@@ -103,7 +107,7 @@ def _without_stash_delimiters(text: str) -> str:
 
 #: The email shape; a ``skip`` match is a run of address characters with no address in it.
 EMAIL: Final = re.compile(
-    r"\b(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b|(?P<skip>[A-Za-z0-9._%+-]+))"
+    r"\b(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b|(?P<skip>[A-Za-z0-9._%+-]{64,}))"
 )
 
 # A value explicitly labelled as a secret (``the api secret is X``, ``password: X``): mask the
@@ -411,7 +415,9 @@ def _default_patterns() -> list[Pattern]:
         ),
         Pattern(
             "phone",
-            re.compile(r"(?<![\w.])(?:\+?\d[\d\s().-]{7,}\d(?![\w.])|(?P<skip>\+?\d[\d\s().-]*))"),
+            re.compile(
+                r"(?<![\w.])(?:\+?\d[\d\s().-]{7,}\d(?![\w.])|(?P<skip>\+?\d[\d\s().-]{63,}))"
+            ),
         ),
     ]
 
@@ -450,6 +456,8 @@ class Redactor:
         self._patterns: list[Pattern] = (
             list(patterns) if patterns is not None else _default_patterns()
         )
+        # The mask types kept as written (`_redact_once`), kept in step with `register`.
+        self._mask_types = _OWN_MASK_TYPES | {pattern.type for pattern in self._patterns}
         self._entropy_threshold = entropy_threshold
         self._entropy_min_len = entropy_min_len
 
@@ -457,6 +465,7 @@ class Redactor:
         """Add a detector. Registered patterns run **before** the built-ins."""
 
         self._patterns.insert(0, pattern)
+        self._mask_types = self._mask_types | {pattern.type}
 
     def without_entropy(self) -> Redactor:
         """This redactor minus the entropy fallback: same salt, patterns and known credentials.
@@ -535,10 +544,22 @@ class Redactor:
         # (pre-commit audit of this block). Any other mask is read as text, so what it wraps is
         # masked by whichever rule applies, with the text around it (a label, a URL) included;
         # checking the type on its own missed `password: «REDACTED:<the password>»` (delta audit).
-        own = _OWN_MASK_TYPES | {pattern.type for pattern in self._patterns}
+        # Its digest is no hiding place either: a registered credential of 8 hex digits written
+        # as one (`«REDACTED:card:<it>»`) was kept (pre-merge audit). A registered value is at
+        # least 8 characters, so it fits in a digest only by being it. A longer one split over
+        # several digests still goes through, as one split by spaces does.
+        known: set[str] | None = None
 
         def _keep_mask(m: re.Match[str]) -> str:
-            return _keep(m.group(0)) if m.group(1) in own else m.group(0)
+            nonlocal known
+            kind, digest = m.group(1), m.group(2)
+            if kind not in self._mask_types:
+                return m.group(0)
+            if digest is not None:
+                known = set(_known_secrets()) if known is None else known
+                if digest in known:
+                    return m.group(0)
+            return _keep(m.group(0))
 
         working = _ALREADY_MASKED.sub(_keep_mask, text)
 
