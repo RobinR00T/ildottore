@@ -17,17 +17,25 @@ __all__ = ["DescribeError", "describe_spec", "render_describe"]
 
 
 class DescribeError(KeyError):
-    """Raised when the requested spec id is not registered."""
+    """Raised when the requested spec id is not registered.
+
+    ``unloaded`` counts the load errors: the spec may be in a file one of them hit.
+    """
+
+    def __init__(self, spec_id: str, unloaded: int = 0) -> None:
+        super().__init__(spec_id)
+        self.unloaded = unloaded
 
 
 def describe_spec(spec_paths: list[Path], spec_id: str) -> AttackSpec:
     """Return the spec with ``spec_id`` (raises :class:`DescribeError` if absent)."""
 
-    registry = wiring.build_registry(spec_paths)
+    registry, errors = wiring.load_registry(spec_paths)
     try:
         return registry.get(spec_id)
     except SpecNotFoundError as exc:
-        raise DescribeError(spec_id) from exc
+        unloaded = len(errors)
+        raise DescribeError(spec_id, unloaded) from exc
 
 
 def render_describe(spec: AttackSpec) -> str:

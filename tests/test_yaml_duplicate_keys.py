@@ -9,6 +9,7 @@ loaders alike.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -45,8 +46,23 @@ def _problem(text: str) -> str:
         ("m:\n  <<: [{a: 1, a: 2}]\n", "and again at line 2, column 15"),
         ("m:\n  <<: {a: 1}\n  <<: {b: 2}\n", "at line 2, column 3 and again at line 3, column 3"),
         ("m:\n  !!merge p: {a: 1}\n  !!merge q: {a: 2}\n", "and again at line 3, column 3"),
-        # An alias used as a key has no position of its own: the key it names is reported.
-        ("&k a: 1\n*k : 2\n", "the second time through an alias of the node at line 1, column 1"),
+        # A key written as an alias is reported where the alias is, not where its anchor is
+        # (that was a value, or another mapping, in the two audits of this message).
+        ("&k a: 1\n*k : 2\n", "first at line 1, column 1 and again at line 2, column 1"),
+        (
+            "x: &k a\nm:\n  a: 1\n  *k : 2\n",
+            "first at line 3, column 3 and again at line 4, column 3",
+        ),
+        (
+            "x: &k a\nm:\n  *k : 1\n  a: 2\n",
+            "first at line 3, column 3 and again at line 4, column 3",
+        ),
+        (
+            "m:\n  x: &k a\n  *k : 1\n  a: 2\n",
+            "first at line 3, column 3 and again at line 4, column 3",
+        ),
+        ("x: &k a\na: 1\n*k : 2\n", "first at line 2, column 1 and again at line 3, column 1"),
+        ("{x: &k a, *k : 1, a: 2}", "first at line 1, column 11 and again at line 1, column 19"),
     ],
 )
 def test_a_repeated_key_is_refused_at_the_second_one(text: str, where: str) -> None:
@@ -170,20 +186,77 @@ def test_a_spec_with_a_repeated_key_is_a_parse_error() -> None:
         safe_load_yaml("id: a\nattack:\n  prompt: x\n  prompt: y\n")
 
 
+def _repeats_a_key(text: str) -> bool:
+    """True if a mapping of any document repeats a key. Values are not built, so a value that
+    cannot be built (a fixture broken on purpose) does not hide a repeated key after it; a
+    mapping is checked only up to a key that cannot be built, which lint refuses anyway."""
+
+    loader = safe_yaml.SafeValueLoader(text)
+    try:
+        while loader.check_node():
+            stack = [loader.get_node()]
+            visited: set[yaml.Node] = set()
+            while stack:
+                node = stack.pop()
+                if node in visited:
+                    continue
+                visited.add(node)
+                if isinstance(node, yaml.MappingNode):
+                    pairs = list(node.value)
+                    try:
+                        loader.flatten_mapping(node)
+                    except yaml.constructor.ConstructorError as exc:
+                        if _DUPLICATE in yaml_problem(exc):
+                            return True  # a key that cannot be built is not a repetition
+                    stack.extend(child for pair in pairs for child in pair)
+                elif isinstance(node, yaml.SequenceNode):
+                    stack.extend(node.value)
+    finally:
+        loader.dispose()
+    return False
+
+
+def test_the_repository_check_sees_past_other_errors_and_documents() -> None:
+    assert _repeats_a_key("m: {x: !!int abc}\nn: {a: 1, a: 2}\n")
+    assert _repeats_a_key("a: 1\n---\nb: 1\nb: 2\n")
+    assert _repeats_a_key("x: !!python/object:os.system {}\ny: {k: 1, k: 2}\n")
+    assert not _repeats_a_key("a: 1\n---\nb: {<<: {c: 1}, c: 2}\n")
+
+
+def _yaml_files(root: Path) -> list[Path]:
+    """The YAML files git knows of, tracked or new and not ignored, or without git the five
+    folders that hold them. A tracked file deleted in the working tree is not read."""
+
+    try:
+        listed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [
+                *("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"),
+                *("*.yaml", "*.yml"),
+            ],
+            cwd=root,
+            capture_output=True,
+            check=True,
+        ).stdout.decode("utf-8")
+        names = [name for name in listed.split("\0") if name]
+    except (OSError, subprocess.CalledProcessError):
+        names = []
+    if names:
+        return [path for path in (root / name for name in names) if path.is_file()]
+    folders = (".github", "examples", "specs", "src", "tests")
+    return [
+        p for f in folders for pattern in ("*.yaml", "*.yml") for p in (root / f).rglob(pattern)
+    ]
+
+
 def test_no_yaml_file_in_the_repository_repeats_a_key() -> None:
     root = Path(__file__).resolve().parent.parent
-    listed = [
-        path
-        for folder in (".github", "examples", "specs", "src", "tests")
-        for pattern in ("*.yaml", "*.yml")
-        for path in (root / folder).rglob(pattern)
-    ]
+    listed = _yaml_files(root)
     assert len(listed) > 100
     repeated = []
     for path in listed:
         try:
-            safe_yaml.safe_load(path.read_text(encoding="utf-8"))
-        except yaml.YAMLError as exc:  # a fixture that is broken on purpose is fine
-            if _DUPLICATE in yaml_problem(exc):
+            if _repeats_a_key(path.read_text(encoding="utf-8")):
                 repeated.append(path.relative_to(root).as_posix())
+        except yaml.YAMLError:  # a file that does not parse is the linter's to report
+            continue
     assert repeated == []

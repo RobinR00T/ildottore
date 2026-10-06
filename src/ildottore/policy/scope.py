@@ -112,6 +112,34 @@ class Sha256Verifier:
         return self.compute(raw) == recorded
 
 
+def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
+    """Refuse two identities of one target with the same name or the same canary.
+
+    The identity sweep keys each response by identity name, so with two ``tenant`` entries the
+    second response replaced the first: two identities read as one and ``authz_leak`` had no
+    pair to compare, and with three, two merged (pre-merge audit of PR #45). A canary maps back
+    to the identity that owns it, so two owners of one canary made each one's own canary read
+    as the other's leak. The canary is not quoted: it is a marker the target must not learn.
+    """
+
+    names: set[str] = set()
+    canaries: set[str] = set()
+    for identity in entry.identities:
+        if identity.name in names:
+            raise ScopeError(
+                f"scope file {file_path} target {entry.id!r} declares identity "
+                f"{identity.name!r} more than once; each identity needs its own name"
+            )
+        names.add(identity.name)
+        if identity.canary:  # the runner ignores an empty one
+            if identity.canary in canaries:
+                raise ScopeError(
+                    f"scope file {file_path} target {entry.id!r}: identity {identity.name!r} "
+                    "declares the canary of another identity; each canary has one owner"
+                )
+            canaries.add(identity.canary)
+
+
 def _strip_checksum_line(raw_text: str) -> str:
     """Return the scope body with any top-level ``checksum:`` line removed.
 
@@ -201,6 +229,7 @@ def load_scope_with_digest(
                 "an authorization record must have exactly one entry per target"
             )
         seen.add(entry.id)
+        _refuse_shared_identities(file_path, entry)
 
     stripped = _strip_checksum_line(raw_text)
     if stripped != raw_text:

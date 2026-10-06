@@ -56,6 +56,7 @@ Named auth references (auth_ref, e.g. env://NAME); the scope never carries a sec
 a multi_identity (cross-tenant) scan, list >=2 identities and set each one's optional
 .B canary
 to the tenant-scoped marker it owns; authz_leak flags that canary reaching another identity.
+Two identities of one target with the same name, or the same canary, are refused.
 .TP
 .B commands
 Authorized stdio MCP command lines (exact match). Default-deny: a stdio MCP server is launched
