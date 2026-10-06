@@ -207,7 +207,8 @@ def _repeats_a_key(text: str) -> bool:
                         loader.flatten_mapping(node)
                     except yaml.constructor.ConstructorError as exc:
                         if _DUPLICATE in yaml_problem(exc):
-                            return True  # a key that cannot be built is not a repetition
+                            return True
+                        # A key that cannot be built is not a repetition: walk on.
                     stack.extend(child for pair in pairs for child in pair)
                 elif isinstance(node, yaml.SequenceNode):
                     stack.extend(node.value)

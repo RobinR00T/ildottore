@@ -33,32 +33,53 @@ def _canaries_found(texts: dict[str, str], canaries: list[str]) -> dict[str, set
 
     A substring search found tenant A's ``ZZ-1`` inside tenant B's own ``ZZ-1-b`` and scored a
     confirmed leak when each tenant echoed only its own canary (pre-commit audit of the #45
-    follow-ups). Every occurrence is found, overlapping ones included, and one is dropped only
-    when an occurrence of a longer canary covers it whole: ``ZZ-1-b`` in A's text is still B's
+    follow-ups). Every occurrence is considered, overlapping ones included, until one is not
+    covered whole by an occurrence of a longer canary: ``ZZ-1-b`` in A's text is still B's
     canary leaking, ``ZZ-1`` on its own in B's text is still A's, and a canary that only
     overlaps another (``ZZ-1`` and ``1-bZ`` in ``ZZ-1-bZ``) is still found (delta audit).
-    The cost follows the number of occurrences: as main for distinct canaries, and seconds for
-    the operator's own pathological choice (twenty canaries `a`, `aa`, ... over replies of `a`).
+
+    Nothing is stored and a canary's scan stops at its first occurrence that no longer canary
+    covers: listing every occurrence let a target fill memory by repeating its own canary (4 MiB
+    of ``ZZ-1-b`` held 308 MB, pre-merge audit). An occurrence at ``pos`` is covered when a
+    longer canary that holds this one at offset ``o`` starts at ``pos - o``.
     """
 
+    unique = list(dict.fromkeys(canaries))
+    holders = {
+        canary: [
+            (offset, longer)
+            for longer in unique
+            if len(longer) > len(canary)
+            for offset in _offsets(canary, longer)
+        ]
+        for canary in unique
+    }
     found: dict[str, set[str]] = {}
     for ident, text in texts.items():
-        hits: list[tuple[int, int, str]] = []
-        for canary in canaries:
-            start = text.find(canary)
-            while start != -1:
-                hits.append((start, start + len(canary), canary))
-                start = text.find(canary, start + 1)
-        # By start, the longer first: an earlier entry reaching this one's end covers it.
-        hits.sort(key=lambda hit: (hit[0], -hit[1]))
         seen: set[str] = set()
-        reach = -1
-        for _start, end, canary in hits:
-            if reach < end:
-                seen.add(canary)
-            reach = max(reach, end)
+        for canary in unique:
+            pos = text.find(canary)
+            while pos != -1:
+                if not any(
+                    pos >= offset and text.startswith(longer, pos - offset)
+                    for offset, longer in holders[canary]
+                ):
+                    seen.add(canary)
+                    break
+                pos = text.find(canary, pos + 1)
         found[ident] = seen
     return found
+
+
+def _offsets(canary: str, longer: str) -> list[int]:
+    """Every position where ``canary`` sits inside ``longer``, overlapping ones included."""
+
+    offsets = []
+    pos = longer.find(canary)
+    while pos != -1:
+        offsets.append(pos)
+        pos = longer.find(canary, pos + 1)
+    return offsets
 
 
 def _identity_text(resp: ModelResponse) -> str:

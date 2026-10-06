@@ -632,8 +632,8 @@ def registry_ls(
     )
     for row in registry_mod.render_spec_rows(specs):
         typer.echo(row)
-    if unloaded:
-        typer.echo(registry_mod.unloaded_warning(unloaded), err=True)
+    for note in registry_mod.unloaded_warnings(unloaded):
+        typer.echo(note, err=True)
 
 
 @app.command()
@@ -647,8 +647,8 @@ def describe(
         spec = describe_mod.describe_spec(_spec_paths(spec_path), spec_id)
     except describe_mod.DescribeError as exc:
         typer.echo(f"error: spec {spec_id!r} not found", err=True)
-        if exc.unloaded:
-            typer.echo(registry_mod.unloaded_warning(exc.unloaded), err=True)
+        for note in registry_mod.unloaded_warnings(exc.unloaded):
+            typer.echo(note, err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(describe_mod.render_describe(spec))
 

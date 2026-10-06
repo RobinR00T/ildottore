@@ -16,11 +16,13 @@ versioning: [SemVer](https://semver.org/).
 - **`authz_leak` tells apart a canary written inside another.** It searched each canary as a
   substring, so with `ZZ-1` for tenant A and `ZZ-1-b` for tenant B, B echoing its own canary was
   a confirmed leak of A's (a `fail` at confidence 1.0, found by the pre-commit audit of this
-  block). Every occurrence is found, overlapping ones included, and one is dropped only when an
-  occurrence of a longer canary covers it whole: `ZZ-1-b` in A's reply is still B's canary
+  block). Every occurrence is considered, overlapping ones included, until one is not covered
+  whole by an occurrence of a longer canary: `ZZ-1-b` in A's reply is still B's canary
   leaking, `ZZ-1` on its own in B's reply is still A's, and two canaries that only overlap
-  (`ZZ-1` and `1-bZ` in `ZZ-1-bZ`) are both found. Nested canaries are best avoided all the
-  same: A's `ZZ-1` leaking into B's reply right before `-b` reads as B's own.
+  (`ZZ-1` and `1-bZ` in `ZZ-1-bZ`) are both found. Nothing is stored and each canary's scan
+  stops at its first occurrence no longer canary covers (the first version listed every
+  occurrence: 4 MiB of a tenant's own canary held 308 MB). Nested canaries are best avoided all
+  the same: A's `ZZ-1` leaking into B's reply right before `-b` reads as B's own.
 - **The duplicate-key message gives where an alias key was written.** A key written as `*k :`
   was reported at its anchor's position, which could be a value or another mapping; the loader
   records where each alias key is written and reports that. The hook costs one call level per
@@ -29,7 +31,9 @@ versioning: [SemVer](https://semver.org/).
   a key (or fails to load for any other reason) is in no answer; `registry ls` printed `(no
   specs match)` and `describe` said `not found`, with nothing else. Both now add, on stderr,
   ``warning: the spec paths gave N load error(s); the specs, suites or packs they hit are left
-  out (`dottore lint` lists them)``; `registry ls` still exits 0 and its stdout is unchanged.
+  out (`dottore lint` lists them)``, and a spec path that does not exist is named apart
+  (`warning: spec path(s) not found: ...`); `registry ls` still exits 0 and its stdout is
+  unchanged.
 - The repository-wide YAML test looks at every document of a file and past a value that cannot
   be built, and lists the files git knows of (tracked or new), reading only those present; it
   had read one document per file and stopped at the first error. Docs: the scope contract (u01),

@@ -458,7 +458,8 @@ dottore describe SPEC_ID [--spec-path PATH]
 
 A file that fails to load is in no answer: when the id is not found and the spec paths gave
 load errors, it says how many on stderr (``warning: the spec paths gave 1 load error(s); the
-specs, suites or packs they hit are left out (`dottore lint` lists them)``).
+specs, suites or packs they hit are left out (`dottore lint` lists them)``), and names a spec
+path that does not exist (`warning: spec path(s) not found: ...`).
 
 ### `dottore registry ls`, list the catalogue
 
@@ -467,7 +468,8 @@ dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..] [--spec
 ```
 
 Read-only. The source of truth for what specs, suites and categories exist. When the spec
-paths give load errors, it prints the same warning as `describe` on stderr and still exits 0.
+paths give load errors, it prints the same warning as `describe` on stderr and still exits 0; a
+spec path that does not exist is named instead (`warning: spec path(s) not found: ...`).
 
 ### `dottore new-spec`, scaffold a new attack
 
