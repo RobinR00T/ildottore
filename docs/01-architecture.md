@@ -119,12 +119,17 @@ class Reporter(Protocol):
    capability.
 1. **Policy check**: target in scope? endpoint on allowlist? spec allowed by policy pack?
    Any dangerous payload marked `test_only`? Else → abort attempt, record `blocked_by_policy`.
-2. **Setup**: the design is to materialize spec `setup` (e.g. index test documents for RAG)
-   via the adapter's capabilities. **Not implemented:** today the request carries the prompt
-   (or, for a multi-turn spec, the pinned turns as messages), the system prompt, the sampling,
-   the media and, for the multi-identity sweep, the identity, so a spec's documents, mock tools
-   and memory seed never reach a live target (32 of 75 specs depend on them). How to close that
-   is OD-18 (ADR-0009).
+2. **Setup**: against a bare model (a target of `type: model`) the spec's setup is built in the
+   request (OD-18, ADR-0009 option A, 2026-10-06): the memory seed as saved memory from earlier
+   sessions after the system prompt, the documents
+   as retrieved context before the attack, the tools as definitions, and a tool loop that answers
+   each call with the spec's declared result for at most 4 rounds, each a send under the budget.
+   This measures the model's handling of untrusted context, not a deployed application's own
+   retrieval or tools, and the attempt records `setup_delivery: in_band`. Against any other
+   target type the request still carries only the prompt (or the pinned turns), the system
+   prompt, the sampling, the media and, on the multi-identity sweep, the identity, so 32 of the
+   75 specs run there without their documents, tools or memory until option B (the operator
+   declares what is seeded) is built.
 3. **Mutate**: Prompt Mutator expands the base attack into declared variants (language,
    encoding, roleplay, nesting, obfuscation, indirect-injection carriers). Each variant is a
    deterministic transform seeded by `(spec.id, variant.name)`.

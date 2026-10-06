@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import json
 import os
 import shutil
 import signal
@@ -47,6 +48,7 @@ from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
+from ildottore.core.setup_delivery import MAX_TOOL_ROUNDS, delivers_in_band, in_band_setup
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
@@ -332,12 +334,17 @@ def estimate_plan(
     *,
     mutators_by_spec: dict[str, list[str]] | None = None,
     judge: bool = False,
+    target: Target | None = None,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
-    ``requests`` = sum over specs of ``mutators x runs x turns``. ``mutators_by_spec`` (from
-    a resolved :class:`~ildottore.shared.models.TestPlan`) is authoritative when given;
-    absent it, :func:`_effective_mutators` reproduces what the planner would choose. Tokens
+    ``requests`` = sum over specs of ``mutators x runs x turns``. A spec whose setup goes out
+    in-band to ``target`` (OD-18) counts each turn with every tool round it may play, so the
+    ceilings derived from this cover the worst case: a turn of a tool spec is up to
+    ``1 + MAX_TOOL_ROUNDS`` sends, and its input carries the documents and tool definitions.
+    ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
+    authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
+    planner would choose. Tokens
     are a deliberately rough gloss (prompt length / 4 for input; the spec's
     ``sampling.max_tokens`` or 512 for output). No per-model pricing is known, so this
     reports volume, not a dollar figure.
@@ -353,8 +360,19 @@ def estimate_plan(
         mutators = (mutators_by_spec or {}).get(spec.id) or _effective_mutators(spec)
         turns = spec.attack.turns
         n_turns = len(turns) if turns is not None and len(turns) >= 2 else 1
-        requests = len(mutators) * runs * n_turns
         prompt = spec.attack.user_prompt or spec.attack.carrier or (turns[0] if turns else "")
+        sends_per_turn = 1
+        if target is not None and delivers_in_band(spec, target):
+            scene = in_band_setup(spec)
+            if scene.tools and not spec.attack.media:
+                sends_per_turn += MAX_TOOL_ROUNDS
+            prompt = (
+                scene.memory
+                + scene.context
+                + prompt
+                + (json.dumps(scene.tools) if scene.tools else "")
+            )
+        requests = len(mutators) * runs * n_turns * sends_per_turn
         in_tokens = max(1, len(prompt) // 4)
         out_tokens = (
             spec.sampling.max_tokens
@@ -512,7 +530,9 @@ def resolve_target_plans(
                 runnable.append(spec)
             else:
                 blocked.append((spec.id, verdict.reason or "blocked_by_policy"))
-        estimate = estimate_plan(runnable, runs, mutators_by_spec=mutators_by_spec, judge=judge)
+        estimate = estimate_plan(
+            runnable, runs, mutators_by_spec=mutators_by_spec, judge=judge, target=target
+        )
         plans.append(
             TargetPlan(
                 target=target,
@@ -1645,7 +1665,8 @@ def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> 
     """The requests a resume will not send again: one per turn of every answered attempt.
 
     `--estimate --resume` subtracted an attempt count from a request count, so a multi-turn spec
-    was priced at 15 still to send when 12 went out (pre-commit audit of F11).
+    was priced at 15 still to send when 12 went out (pre-commit audit of F11). An in-band
+    attempt (OD-18) adds the tool rounds it played, which its request records.
     """
 
     if resume_from is None:
@@ -1663,7 +1684,10 @@ def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> 
         for attempt in finding.attempts:
             if attempt.attempt_id in answered and attempt.attempt_id not in seen:
                 seen.add(attempt.attempt_id)
-                total += turns_by_spec.get(finding.spec_id, 1)
+                rounds = (attempt.request.metadata or {}).get("tool_rounds", 0)
+                total += turns_by_spec.get(finding.spec_id, 1) + (
+                    rounds if isinstance(rounds, int) and not isinstance(rounds, bool) else 0
+                )
     return total
 
 

@@ -10,6 +10,7 @@ map into the common :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005).
 from __future__ import annotations
 
 import base64
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -44,6 +45,15 @@ class OpenAIAdapter(BaseAdapter):
     def _endpoint_path(self) -> str:
         return "/v1/chat/completions"
 
+    @property
+    def carries_tool_definitions(self) -> bool:
+        """True when this endpoint takes tools: the in-band setup's are translated (OD-18)."""
+
+        return self.tools_enabled
+
+    #: The system prompt goes on the wire, so a memory seed reaches the model (OD-18).
+    carries_system_prompt = True
+
     def capabilities(self) -> Capabilities:
         return Capabilities(
             tools=self.tools_enabled,
@@ -70,7 +80,7 @@ class OpenAIAdapter(BaseAdapter):
         if request.system_prompt is not None:
             messages.append({"role": "system", "content": request.system_prompt})
         if request.messages is not None:
-            messages.extend(dict(m) for m in request.messages)
+            messages.extend(self._project_message(m) for m in request.messages)
         elif request.media:
             messages.append({"role": "user", "content": self._multimodal_content(request)})
         elif request.prompt is not None:
@@ -100,13 +110,65 @@ class OpenAIAdapter(BaseAdapter):
                 )
         return content
 
+    @staticmethod
+    def _project_tool(tool: Mapping[str, Any]) -> dict[str, Any]:
+        """A provider-neutral tool (``name``, ``description``, ``parameters``) as a function.
+
+        One already in the OpenAI shape (it has a ``type``) passes through unchanged.
+        """
+
+        if "type" in tool:
+            return dict(tool)
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.get("name", ""),
+                "description": tool.get("description", ""),
+                "parameters": tool.get("parameters", {"type": "object", "properties": {}}),
+            },
+        }
+
+    @staticmethod
+    def _project_message(message: Mapping[str, Any]) -> dict[str, Any]:
+        """One history turn in the OpenAI shape.
+
+        The in-band tool loop (OD-18) writes provider-neutral turns: an assistant turn whose
+        ``tool_calls`` carry ``id``, ``name`` and ``arguments``, and ``tool`` turns with the
+        result. Those become OpenAI ``function`` calls (arguments as a JSON string) and ``tool``
+        messages; any other turn passes through as before.
+        """
+
+        turn = dict(message)
+        calls = turn.get("tool_calls")
+        if turn.get("role") == "assistant" and isinstance(calls, list):
+            turn["tool_calls"] = [
+                call
+                if "function" in call
+                else {
+                    "id": call.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": call.get("name", ""),
+                        "arguments": json.dumps(call.get("arguments", {}), sort_keys=True),
+                    },
+                }
+                for call in (dict(c) for c in calls if isinstance(c, Mapping))
+            ]
+        if turn.get("role") == "tool":
+            return {
+                "role": "tool",
+                "tool_call_id": turn.get("tool_call_id", ""),
+                "content": turn.get("content", ""),
+            }
+        return turn
+
     def _build_request(self, request: ModelRequest) -> tuple[dict[str, Any], dict[str, str]]:
         body: dict[str, Any] = {
             "model": self.model,
             "messages": self._build_messages(request),
         }
         if request.tools is not None:
-            body["tools"] = [dict(t) for t in request.tools]
+            body["tools"] = [self._project_tool(t) for t in request.tools]
 
         sampling = request.sampling
         if sampling is not None:

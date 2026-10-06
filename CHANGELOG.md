@@ -5,6 +5,71 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (a spec's setup reaches a bare model: OD-18, option A)
+
+- **Decided on 2026-10-06 by the owner: OD-18 is C, with A first** (ADR-0009). The runner sent
+  the prompt, the system prompt and the media only, so 32 of the 75 specs went out referring to a
+  document, a tool or a memory the target never had: a PASS on them meant nothing and a FAIL
+  could be false. Against a target of `type: model` the scene is now built in the request:
+  - the **memory seed** becomes saved memory from earlier sessions after the system prompt,
+    one `- [<session>, <role>] <content>` line an entry, as a memory feature keeps it (as turns
+    of the same chat, DL-XSESSION-001 and MEM-POISON-001 measured a model repeating its own
+    history, not a leak across sessions or a poisoned memory);
+  - the **documents** precede the attack in the same user turn, as context retrieved from a
+    knowledge base (`[document <id>]` ... `[/document]`, not labelled untrusted);
+  - the **tools** go out as tool definitions, and a tool call is answered with the spec's
+    `returns` for that tool (`OK` when it declares none) and the model continues, for at most 4
+    rounds a turn, each a send under the budget and the pacer. The scored response is the text
+    of every round of the final turn (a canary leaked before a call, then a clean last round,
+    used to pass) with every tool call of every round, in order.
+- A spec whose untrusted content is only what a tool returns, and which judges no tool trace, is
+  `inconclusive: setup_not_reached` when the model called none of those tools and its evaluators
+  did not fail: a plain answer to PI-INDIRECT-TOOL-001 without the lookup said nothing about the
+  injection, while a reply that prints the canary anyway is still a fail. The coverage figures
+  do not count such a spec as exercised.
+- The OpenAI and Anthropic adapters translate the provider-neutral tools and tool turns
+  (`function` calls and `tool` messages; `tool_use` blocks and one user turn of `tool_result`
+  blocks); the mock answers a tool round with its text and no further calls. An adapter that
+  cannot carry tool definitions, or that sends no system prompt (a REST template without a
+  system field) for a spec with a memory seed, makes it `inconclusive: setup_not_delivered`,
+  with no send.
+- **The target writes the calls, so it cannot steer the loop:** a round is answered only when
+  every call names a declared tool, there are at most 16 and their arguments fit 64 KB of JSON (16
+  calls carrying 4 MB, answered, grew one attempt to 374 MB sent), repeated or missing call ids
+  are replaced, a spec without tools plays no round, and the token reservation counts the threaded
+  calls' arguments. One reply of 20,000 calls under one id grew each request by megabytes and
+  spent the campaign's token ceiling in four sends. Within the caps a hostile multi-turn tool
+  attempt can still reserve more tokens than a derived ceiling allows, which halts the run
+  `budget_exhausted` with nothing overspent; raise `--budget-tokens` to let it finish.
+- **A target file must say its `type`**, as the manual says. It defaulted to `model`, and since
+  this change a `model` target gets the in-band scene, so a deployed application's file without
+  the line would have been sent synthetic documents, tools and memory.
+- **The evaluators read OpenAI tool arguments.** A real OpenAI call carries `function.arguments`
+  as a JSON string, which `tool_call` and `tool_sequence` read as no arguments: `role: admin`
+  smuggled into an OpenAI call scored pass where the same call from Anthropic failed. This was
+  on main for any live OpenAI tool call; in-band tools made it reachable.
+- Each such attempt records `setup_delivery: in_band`, the tools and the `tool_rounds` played:
+  it measured the model's handling of untrusted context, not an application's own retrieval or
+  tools. Any other target type is unchanged until option B (the operator declares what is
+  seeded, with a tool-name map) is built.
+- `--estimate` and the budget derived from it count every tool round an in-band spec may play: a
+  hosted model declaring `tools`, `rag` and `memory` runs 59 specs, priced at most 1,260 requests
+  (~849k tokens) at `--runs 5`, where the same plan was priced 740 before the rounds existed and a
+  run would have stopped `budget_exhausted` with rounds still to send. A resume counts the rounds
+  an answered attempt played (its "still to send" is priced at five sends a tool turn, so it
+  overstates what is left). **Rebaseline after this change:** a `dottore diff` against a baseline
+  from before it reads the setup specs' new verdicts as regressions, and a `--resume` of a run
+  started before it mixes attempts sent with and without the scene. Not built: a turn with media
+  is one send with its tools attached and its calls not answered.
+- First live run of the scene, against `llama3.2:3b` on a local Ollama (6 setup specs,
+  `--runs 1`, 20 requests, no keys): tool rounds, argument smuggling, the memory seed and the
+  retrieved documents all reached the model and were scored, and no provider-shaped defect
+  showed; one variant wrote its tool call as text, which `setup_not_reached` caught.
+- Tests: `tests/core/test_in_band_setup.py`, `tests/adapters/test_in_band_wire.py`,
+  `tests/test_toolcalls.py`. Docs: the
+  ADR (accepted), the contract index, `docs/01`, `docs/03`, `docs/12`, `docs/16`, the manual,
+  the FAQ, the u02 and u08 contracts.
+
 ### Fixed (follow-ups of the #46 pre-merge audit)
 
 - **A registered credential written as a mask's digest is masked.** A mask of a type the tool

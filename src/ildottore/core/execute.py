@@ -25,6 +25,7 @@ backoff schedule is deterministic (contract §7).
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -255,6 +256,10 @@ def reserve_tokens(request: ModelRequest, sampling: Sampling | None) -> int:
     for message in request.messages or []:
         content = message.get("content")
         texts.append(content if isinstance(content, str) else "")
+        if message.get("tool_calls"):  # threaded calls are input too (their arguments)
+            texts.append(json.dumps(message["tool_calls"], sort_keys=True, default=str))
+    if request.tools:  # in-band tool definitions (OD-18) are input too
+        texts.append(json.dumps(request.tools, sort_keys=True))
     input_tokens = max(1, sum(len(text) for text in texts) // 4)
     output = sampling.max_tokens if sampling is not None and sampling.max_tokens else None
     return input_tokens + (output if output is not None else DEFAULT_COMPLETION_TOKENS)
