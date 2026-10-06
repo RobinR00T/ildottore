@@ -209,18 +209,22 @@ capabilities:
 sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
-`id` and `type` are required; the rest are optional but needed for a live scan. `type: model`
-means a bare model API, and changes what a spec with setup sends: its memory seed goes as saved
-memory from earlier sessions after the system prompt, its documents as retrieved context before
-the attack and its tools as tool definitions,
-with each tool call answered by the spec's declared result for at most 4 rounds (OD-18 option A).
-Declare `tools`, `rag` and `memory` under `capabilities` to send those specs; each attempt then
-records `setup_delivery: in_band`, and the result says how the model handles untrusted context,
-not how a deployed application does. A spec whose untrusted content is only a tool's result is
-`inconclusive` (`setup_not_reached`) when the model never called that tool and nothing else
-failed, and the coverage figures do not count it; an adapter that cannot carry the scene (no
-tool definitions, or no system prompt for a memory seed, as a REST template without a system
-field) leaves the spec `inconclusive: setup_not_delivered` with nothing sent.
+`id` and `type` are required; the rest are optional but needed for a live scan.
+`sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
+every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
+judge and the `-sV` probes. Whether to apply it or drop it is open.
+
+`type: model` means a bare model API, and changes what a spec with setup sends: its memory seed
+goes as saved memory from earlier sessions after the system prompt, its documents as retrieved
+context before the attack and its tools as tool definitions, with each tool call answered by the
+spec's declared result for at most 4 rounds (OD-18 option A). Declare `tools`, `rag` and
+`memory` under `capabilities` to send those specs; each attempt then records `setup_delivery:
+in_band`, and the result says how the model handles untrusted context, not how a deployed
+application does. A spec whose untrusted content is only a tool's result is `inconclusive`
+(`setup_not_reached`) when the model never called that tool and nothing else failed, and the
+coverage figures do not count it; an adapter that cannot carry the scene (no tool definitions,
+or no system prompt for a memory seed, as a REST template without a system field) leaves the
+spec `inconclusive: setup_not_delivered` with nothing sent.
 
 `auth_ref`
 supports only `env://NAME`. Any other scheme is refused before anything is sent, `--dry-run`
@@ -664,9 +668,10 @@ real adapter. It decides what an offline target answers:
 `comprehending` is a **simulated decoder, not a model**. It shows that a target which
 comprehends some carriers and not others changes the plan, through the real layer, the real
 mutators and the real planner. It says nothing about how any actual model behaves: that needs a
-live run, and the fingerprint line prints `[offline mock: <scenario>]` so an offline result is
-never read as one. Three specs decide against any fixed-string offline target (their oracles
-read only the response text); `comprehending` decides exactly what `bare` decides, no more.
+live run (the first, against a local `llama3.2:3b`, is in `docs/16` §1), and the fingerprint
+line prints `[offline mock: <scenario>]` so an offline result is never read as one. Three specs
+decide against any fixed-string offline target (their oracles read only the response text);
+`comprehending` decides exactly what `bare` decides, no more.
 
 Both offline fingerprint paths honour the key: `dottore run -sV` and `dottore fingerprint
 --offline` pass the target's `mock_scenario` to the mock. On a `comprehending` target the

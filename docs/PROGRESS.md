@@ -3,6 +3,19 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (night): the first live `-sV` pass
+
+- `dottore fingerprint` against the local `llama3.2:3b`, three times. It found two defects: 9
+  of the 17 probes went out with no temperature (sampled at Ollama's 1.0), and, once pinned, an
+  uncapped `rot13` probe looped to the timeout and stopped the pass. Fixed on
+  `fix/fingerprint-probe-sampling` (`PROBE_SAMPLING`: temperature 0, 512-token cap). Verdict:
+  family `meta-llama` at 0.4 from the envelope alone, no version (the pack's two Llama versions
+  tie on `model=llama`; Llama 3.2 is not in the pack either), carriers 4 of 7. Recorded in
+  `docs/16` §1. Open and not decided here: the guardrail layer reads any refusal as an output
+  filter while its probe asks for a refusal, so it cannot tell a filter from a model that did
+  as asked; and `sampling_defaults` in a target file is parsed and applied nowhere (specs pin
+  their own sampling, as do the judge and now the probes).
+
 ## State, 2026-10-07 (night): PR #52 merged; an inverted tool allowlist
 
 - PR #52 (the `MEM-POISON-001` oracle) squash-merged as `77aafd5`. Reading the `tool_call`

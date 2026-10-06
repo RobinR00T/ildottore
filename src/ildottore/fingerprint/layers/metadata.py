@@ -17,14 +17,13 @@ in :mod:`ildottore.fingerprint.combine` (contract §2: self-report is weak).
 from __future__ import annotations
 
 from ildottore.fingerprint.attribution import encode_signal
-from ildottore.fingerprint.base import ProbeContext, seed_for
+from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, seed_for
 from ildottore.fingerprint.probes import BEHAVIORAL_BATTERY, build_request
 from ildottore.fingerprint.signatures import SignaturePack
 from ildottore.shared.models import (
     FingerprintEvidence,
     ModelRequest,
     ModelResponse,
-    Sampling,
 )
 from ildottore.shared.protocols import TargetAdapter
 
@@ -87,7 +86,7 @@ def _seeded(request: ModelRequest, target_id: str, probe_name: str) -> ModelRequ
     seed = seed_for(target_id, probe_name)
     meta = dict(request.metadata or {})
     meta["seed"] = seed
-    sampling = request.sampling or Sampling()
+    sampling = request.sampling or PROBE_SAMPLING
     return request.model_copy(update={"metadata": meta, "sampling": sampling})
 
 

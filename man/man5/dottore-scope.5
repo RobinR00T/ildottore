@@ -83,6 +83,9 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 and
 .B type
 are required; the rest are needed only for a live scan.
+.B sampling_defaults
+is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
+their own sampling.
 .B auth_ref
 accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
 refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is
