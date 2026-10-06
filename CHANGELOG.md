@@ -5,6 +5,85 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a registered credential split by characters that do not show)
+
+- **A credential the tool registered is masked whole when a control or a format character splits
+  it, wherever text is kept or printed.** The redactor finds a registered credential by its value,
+  so one split by a newline, a tab, a carriage return or another control character (C0, DEL, C1,
+  U+2028, U+2029, a lone surrogate), or by a format character (Unicode category Cf: the zero-width
+  space U+200B, the soft hyphen U+00AD, the word joiner U+2060, the byte order mark U+FEFF, the
+  bidi controls, the tag characters U+E0020 to U+E007F), was kept in two readable halves by
+  `redact_text`, which every report, the evidence store, the run store and the CLI's error masking
+  use: a target replying `echo <first half>\n<second half>` put both halves in the JSON report and
+  in the evidence. Split by `\x00` or `\x01` (the redactor's own stash delimiters, dropped first)
+  it was already masked. Found by the audit of PR #51; on main.
+- **How it matches:** in a text holding one of those characters, the match by value runs on the
+  text with them dropped, and the stretch from a credential's first character to its last, the
+  characters inside included, becomes the mask an unsplit occurrence gets, same digest; what lies
+  outside the stretch stays where it is. Overlapping occurrences, of one credential or of two, are
+  masked as one, named by the longer, the first to start on a tie, as PR #51 and PR #56 name them
+  (taking an unsplit short one first left 8 of a split long
+  one's 12 characters readable). A credential registered with such a character inside it matches
+  written without it too, under the registered form's digest; whitespace or such a character at
+  its ends stays outside the mask and does not count toward the 8-character minimum, as at
+  registration; one shorter than that without them is matched only as written. A stretch written
+  exactly as a registered form gets that form's digest, as before; any other is named by the
+  credential it matched (the longest of its registered forms, the first by value among forms of
+  one length, whatever the hash seed). Two occurrences of a credential whose end repeats its start (`hunter2hunter2`)
+  written in a row are one mask: the second half of one and the first half of the next, split by
+  what lies between, are an occurrence too. One that repeats a piece more than twice over
+  (`ab12ab12ab12`, `aaaa...`) is matched without overlaps, as by value: following every overlap
+  cost a search of the whole credential per character (11 s on 4 MB for `a` written 1,000 times).
+  The format characters are pinned to Unicode 16.0, so a mask does not depend on the Python's
+  Unicode version.
+- **Visible changes in such text:** the stretch excludes those characters and whitespace at its
+  ends, so a stretch is named by the form it reads as once they are dropped when that form is
+  registered, and otherwise by the longest registered form that reduces to it. A key read with a
+  trailing CR (registered with and without it) is named by its stripped form, with the CR left
+  after the mask: written `KEY\r` it used to get a digest of its own, so one key carried two
+  digests. A key read from a file saved with a byte order mark is named by its form with the
+  mark, whether the text writes the mark or not, and the mark stays outside the mask.
+- **Text without such a character is redacted byte for byte as before**, unless a registered
+  credential itself holds one (then it is also found written without it: a key registered with a
+  leading byte order mark, which `strip()` keeps, was readable on main when echoed without it).
+  Differential fuzz against main, with ordinary credentials registered: 1,000,000 generated texts
+  without those characters and 1,000,000 with the stash delimiters, 0 differences; every text file
+  tracked at `d19b221`, whole and line by line (546 files, 79,091 texts, few holding a registered
+  credential, so this run shows mostly that other text is left alone), 0 differences. Over 150,000
+  generated texts with them (1,666 differences), every difference is a credential masked that main
+  kept readable, the trailing-CR key named by its stripped form, a repeating credential masked
+  once, or a crash of main (below); a registered credential readable once its invisible
+  characters are dropped in 46 of main's outputs and in none of this branch's. The cost is linear
+  in the text: on 1 MB of hostile text the extra memory is the copy without those characters (1
+  byte a character, more when the text holds wider characters), and with fifty thousand split
+  credentials masked, about what main spends masking as many unsplit ones (10 bytes a character);
+  the first, terminal-only version of this match (PR #51) took about 140 MB a megabyte before it
+  was fixed.
+- **A lone surrogate in a value the redactor hashes no longer crashes it** (`_digest` encodes
+  with `surrogatepass`, the change PR #51 makes, byte for byte): 1,118 of those 150,000 texts
+  raised `UnicodeEncodeError` on main, through a labelled value or a PEM body holding one. Text
+  without one is hashed exactly as before. The evidence store still cannot write a reply that
+  holds one (`store/paths.content_hash` encodes strictly, and the campaign aborts): on main,
+  filed apart.
+- **A registered value holding `\x00` or `\x01` no longer breaks a stash token** (on main): the
+  text loses those characters before any rule runs, so a form keeping one matched only across a
+  stash token, which left a raw delimiter in the output, made a second pass differ and had the
+  evidence store refuse the reply. Each form is registered without them.
+- **Known cases left open:** a credential split by a printable character (a space, a no-break
+  space, `␀`) or around a mask (as listed on 2026-10-06); a key the tool did not register
+  and only a shape rule recognises (`sk-...`, `AKIA...`, a JWT) split by such a character (each
+  half is masked only if the entropy rule takes it); invisible characters outside Cf (variation
+  selectors, the combining grapheme joiner U+034F, the Hangul fillers); a credential that repeats
+  a piece more than twice over, written overlapping itself, can leave its tail readable, as on
+  main; and, as on main, two registered credentials overlapping in text without such a
+  character: the longer is masked and the shorter's head or tail stays readable. On the terminal
+  the format characters themselves are still printed as they are: the owner decided on 2026-10-07
+  that they are written out like the control characters (`visible_controls`), and that lands on
+  PR #51, where the function lives.
+- **Found on the way, on main, filed apart:** the JSON report keeps a dict key a target wrote (a
+  tool-call argument name) raw, so a registered credential or an email written as one is
+  readable there; the HTML, SARIF and JUnit reports and the evidence store mask it.
+
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 
 - **The second half of OD-18** (ADR-0009, C with A first, decided 2026-10-06). A deployed

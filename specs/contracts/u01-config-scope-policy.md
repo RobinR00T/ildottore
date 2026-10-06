@@ -137,6 +137,23 @@ file's own `judge:` block, never from a `--judge` file, which could otherwise na
 any credential and have both written into the scope (SEC-04). Checks: the same file, plus
 `tests/cli/test_fleet.py`.
 
+**A-31 A registered credential is matched with the characters that do not show ignored (added
+2026-10-07).** In a text holding a control character (C0, DEL, C1, U+2028, U+2029, a lone
+surrogate) or a format character (Unicode Cf, pinned to Unicode 16.0), `redact_text` finds each
+registered credential in the text with those characters dropped, and the stretch it covers,
+the characters inside included, becomes the mask an unsplit occurrence gets, with the same
+digest; overlapping credentials are masked as one, named by the longer (the first to start on a
+tie). Split by a newline or a
+zero-width space a credential was kept in two readable halves in every report, in the evidence
+and on the terminal, while split by `\x00` it was masked (audit of PR #51). Text without such
+a character is redacted byte for byte as before, unless a registered credential itself holds
+one (a differential fuzz against main is the
+check, run before a change to this match is merged), redaction stays a fixed point, and the
+match is linear in time and memory: the terminal-only first version took about 140 MB a
+megabyte of control characters. Checks: `tests/test_redactor_split_credentials.py` (every Cf
+character of the running Python, the JSON report, evidence, run store and CLI paths, a
+property test for the fixed point, memory and scaling on multi-megabyte hostile text).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).

@@ -119,7 +119,12 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   trailing CR from a Windows-edited `.env` used to be quoted, in clear, by the transport error
   that rejected it). A key with a control character **inside** it (a newline from a pasted
   value) is refused before any request, with an error that names the variable and never the
-  value. Values shorter than 8 characters are not registered. The 8-hex digest after a mask is
+  value. Values shorter than 8 characters are not registered. A registered credential is also
+  found when the text splits it with a newline, a tab or another control character, or with an
+  invisible format character (a zero-width space, a soft hyphen, a word joiner, a byte order
+  mark, a bidi control, a tag character): the stretch it covers is masked with the same digest
+  as the credential written in one piece. One split by a space or another printable character
+  is not. The 8-hex digest after a mask is
   salted per process, so a report cannot be used to confirm a guessed password; set
   `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose. What the tool itself
   generated (a sha256, the store's own path for it, an attempt id, the spec id) is left

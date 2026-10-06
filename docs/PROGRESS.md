@@ -3,6 +3,26 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (night): a registered credential split by characters that do not show
+
+- On `fix/redactor-split-credentials` (`tests/test_redactor_split_credentials.py`): the redactor
+  masks a registered credential split by control characters or by format characters (Unicode
+  Cf) whole, with the unsplit digest, in `redact_text` itself, so the reports, the evidence
+  store, the run store and the terminal no longer keep it in two readable halves (found by the
+  audit of PR #51, on main). In a text holding such a character the whole match by value runs
+  on the text with them dropped, and overlapping credentials are masked as one; text without one
+  is redacted byte for byte as on main unless a registered credential holds one (differential
+  fuzz: 0 differences in 2,079,091 texts). A
+  lone surrogate no longer crashes `_digest` (the same line as PR #51). The owner decided on
+  2026-10-07 that the terminal writes the format characters out too: that goes to PR #51, where
+  `visible_controls` lives. The pre-commit audit found one regression of mine (a short credential
+  with invisible characters inside was no longer masked as written) and seven low items (a value
+  padded with spaces masking prose, a digest that followed the hash seed, a periodic credential
+  costing a search per character, a registered `\x00` breaking a stash token, on main, tests that
+  could not fail, doc claims), all fixed. Filed apart, on main: the JSON report keeps a dict key a
+  target wrote raw, and a lone surrogate in a reply aborts the campaign in the evidence store.
+  `make gates`: 2,366 tests (64 new), coverage 96.43%.
+
 ## State, 2026-10-07 (night): OD-18 option B built
 
 - On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec
