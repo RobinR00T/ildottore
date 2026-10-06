@@ -33,7 +33,11 @@ _STR_TAG = "tag:yaml.org,2002:str"
 
 
 class SafeValueLoader(yaml.SafeLoader):
-    """``yaml.SafeLoader`` whose constructor failures are ``ConstructorError``\\ s."""
+    """``yaml.SafeLoader`` whose constructor failures are ``ConstructorError``\\ s.
+
+    It also refuses a key written twice in one mapping (``flatten_mapping``), as a
+    ``ConstructorError`` with both positions and no value.
+    """
 
     def construct_object(self, node: yaml.Node, deep: bool = False) -> Any:
         try:
@@ -49,6 +53,19 @@ class SafeValueLoader(yaml.SafeLoader):
         # The nodes themselves, not their ids: with ``yaml.load_all`` a later document's node
         # can reuse the address of a freed one, and its check was skipped (delta audit).
         self._checked_mappings: set[yaml.Node] = set()
+        # Where each key written as an alias (``*k :``) was written, by mapping and pair index:
+        # the node an alias returns carries its anchor's position, not the alias's.
+        self._alias_keys: dict[tuple[yaml.Node, int], yaml.Mark] = {}
+
+    def compose_node(self, parent: yaml.Node | None, index: Any) -> yaml.Node | None:
+        if (
+            index is None
+            and isinstance(parent, yaml.MappingNode)
+            and self.check_event(yaml.AliasEvent)  # type: ignore[no-untyped-call,unused-ignore]
+        ):
+            event = self.peek_event()  # type: ignore[no-untyped-call,unused-ignore]
+            self._alias_keys[(parent, len(parent.value))] = event.start_mark
+        return super().compose_node(parent, index)  # type: ignore[no-any-return,unused-ignore]
 
     def flatten_mapping(self, node: yaml.MappingNode) -> None:
         # Checked here, before PyYAML folds the merged keys into ``node.value``: once it has,
@@ -64,11 +81,12 @@ class SafeValueLoader(yaml.SafeLoader):
     def _refuse_repeated_keys(self, node: yaml.MappingNode) -> None:
         first_seen: dict[Any, yaml.Mark] = {}
         first_merge: yaml.Mark | None = None
-        for key_node, _ in node.value:
+        for index, (key_node, _) in enumerate(node.value):
+            written = self._alias_keys.get((node, index), key_node.start_mark)
             if key_node.tag == _MERGE_TAG:
                 if first_merge is not None:
-                    raise _written_twice(first_merge, key_node.start_mark)
-                first_merge = key_node.start_mark
+                    raise _written_twice(first_merge, written)
+                first_merge = written
                 continue
             if key_node.tag == _VALUE_TAG:
                 key_node.tag = _STR_TAG  # what PyYAML's flattening does to a `=` key
@@ -76,19 +94,22 @@ class SafeValueLoader(yaml.SafeLoader):
             if not isinstance(key, Hashable):
                 continue  # PyYAML's own check refuses it, with its message
             if key in first_seen:
-                raise _written_twice(first_seen[key], key_node.start_mark)
-            first_seen[key] = key_node.start_mark
+                raise _written_twice(first_seen[key], written)
+            first_seen[key] = written
 
 
 def _written_twice(first: yaml.Mark, again: yaml.Mark) -> yaml.constructor.ConstructorError:
-    """The refusal of a repeated key: where it was first written and where again, no value."""
+    """The refusal of a repeated key: where it was first written and where again, no value.
 
-    if (first.line, first.column) == (again.line, again.column):
-        # An alias used as a key carries the position of the node it names, not its own.
-        problem = f"{_TWICE}, the second time through an alias of the node"
-    else:
-        problem = f"{_TWICE}, first at line {first.line + 1}, column {first.column + 1} and again"
-    return yaml.constructor.ConstructorError(None, None, problem, again)
+    Both are where the key was written, an alias (``*k :``) included: the node an alias
+    returns carries its anchor's position, which sent the reader to a value or to another
+    mapping (pre-merge audit of #45, then the pre-commit audit of its follow-ups).
+    """
+
+    where = f"line {first.line + 1}, column {first.column + 1}"
+    return yaml.constructor.ConstructorError(
+        None, None, f"{_TWICE}, first at {where} and again", again
+    )
 
 
 def safe_load(text: str) -> Any:

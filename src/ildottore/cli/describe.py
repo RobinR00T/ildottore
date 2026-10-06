@@ -10,24 +10,31 @@ from __future__ import annotations
 from pathlib import Path
 
 from ildottore.cli import wiring
-from ildottore.registry import SpecNotFoundError
+from ildottore.registry import LintError, SpecNotFoundError
 from ildottore.shared.models import AttackSpec
 
 __all__ = ["DescribeError", "describe_spec", "render_describe"]
 
 
 class DescribeError(KeyError):
-    """Raised when the requested spec id is not registered."""
+    """Raised when the requested spec id is not registered.
+
+    ``unloaded`` holds the load errors: the spec may be in a file one of them hit.
+    """
+
+    def __init__(self, spec_id: str, unloaded: list[LintError] | None = None) -> None:
+        super().__init__(spec_id)
+        self.unloaded = unloaded or []
 
 
 def describe_spec(spec_paths: list[Path], spec_id: str) -> AttackSpec:
     """Return the spec with ``spec_id`` (raises :class:`DescribeError` if absent)."""
 
-    registry = wiring.build_registry(spec_paths)
+    registry, errors = wiring.load_registry(spec_paths)
     try:
         return registry.get(spec_id)
     except SpecNotFoundError as exc:
-        raise DescribeError(spec_id) from exc
+        raise DescribeError(spec_id, errors) from exc
 
 
 def render_describe(spec: AttackSpec) -> str:

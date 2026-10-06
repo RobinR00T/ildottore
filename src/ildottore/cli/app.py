@@ -627,11 +627,13 @@ def registry_ls(
 ) -> None:
     """List registered specs (filterable by category/owasp/tag/suite)."""
 
-    specs = registry_mod.list_specs(
+    specs, unloaded = registry_mod.list_specs_and_unloaded(
         _spec_paths(spec_path), category=category, owasp=owasp, tag=tag, suite=suite
     )
     for row in registry_mod.render_spec_rows(specs):
         typer.echo(row)
+    for note in registry_mod.unloaded_warnings(unloaded):
+        typer.echo(note, err=True)
 
 
 @app.command()
@@ -645,6 +647,8 @@ def describe(
         spec = describe_mod.describe_spec(_spec_paths(spec_path), spec_id)
     except describe_mod.DescribeError as exc:
         typer.echo(f"error: spec {spec_id!r} not found", err=True)
+        for note in registry_mod.unloaded_warnings(exc.unloaded):
+            typer.echo(note, err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     typer.echo(describe_mod.render_describe(spec))
 

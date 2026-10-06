@@ -19,7 +19,9 @@ secrets), optional ≥2 identities (`multi_identity`). Verify file integrity by 
 expose its hash so a run records it (S4). (As built: the checksum is optional, verified only when
 present, and unkeyed, so it is not a signature (OD-2). Since 2026-10-05,
 `load_scope_with_digest()` returns the scope with the `scope_hash()` of the bytes it parsed, and
-`dottore run` records it in the run store and every report, audit D-17.) Provide
+`dottore run` records it in the run store and every report, audit D-17. Since 2026-10-06 a key
+written twice in one YAML mapping is refused with both positions, through `safe_yaml`, and two
+identities of one target with the same name or the same canary are refused.) Provide
 `PolicyEngine.check(target, endpoint, spec)`
 → `allow` | `blocked_by_policy(reason)` answering: target in scope? endpoint on allowlist
 (default-deny, S3)? spec's category/id enabled by the active **policy pack**? dangerous payload

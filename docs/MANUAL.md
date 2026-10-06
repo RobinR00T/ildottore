@@ -145,11 +145,11 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   same way, instead of keeping the last value as PyYAML does: `found a key written twice in one
   mapping, first at line 5, column 5 and again at line 11, column 5`. Keys pulled in by a `<<`
   merge can still be overridden; a map merged in is checked too, and two `<<` in one mapping are
-  refused (merge several maps with one list, `<<: [*a, *b]`). An error quotes an `auth_ref`
-  only when it is a reference (it
-  contains `://`, such as `env://NAME` or `vault://x`); a literal value pasted where a
-  reference belongs is printed as `a literal value (not shown)`, for example `target 'live'
-  auth_ref a literal value (not shown) is not authorized by the scope (declared:
+  refused (merge several maps with one list, `<<: [*a, *b]`). A key written as an alias
+  (`*k :`) is reported where the alias is written. An error quotes an `auth_ref` only when it
+  is a reference (it contains `://`, such as `env://NAME` or `vault://x`); a literal value
+  pasted where a reference belongs is printed as `a literal value (not shown)`, for example
+  `target 'live' auth_ref a literal value (not shown) is not authorized by the scope (declared:
   'env://LIVE_KEY'); refusing to read an unauthorized credential`. The same holds for the
   judge-file mismatch of `dottore fleet --judge`.
 
@@ -183,9 +183,13 @@ targets:                         # >=1; a target whose id is absent here is refu
 # checksum: "<sha256 of the body>"   # optional integrity check (not a signature)
 ```
 
-Each target declares its own `endpoints` allowlist and `identities`. Plain `http` is allowed
-only to loopback hosts; everything else must be `https`. Template:
-[`../specs/scope.example.yaml`](../specs/scope.example.yaml).
+Each target declares its own `endpoints` allowlist and `identities`. Two identities of one
+target with the same `name`, or with the same `canary`, are refused: the identity sweep keys
+each response by name, and a canary maps back to the one identity that owns it. A canary may
+contain another (`ZZ-1`, `ZZ-1-b`): `authz_leak` does not count an occurrence that a longer
+canary's occurrence covers. Avoid it all the same: A's `ZZ-1` leaking into B's reply right
+before `-b` reads as B's own canary. Plain `http` is allowed only to loopback hosts; everything
+else must be `https`. Template: [`../specs/scope.example.yaml`](../specs/scope.example.yaml).
 
 ### 4.2 `target.yaml`, what you are scanning
 
@@ -452,13 +456,20 @@ into the spec's images (see `CONTRIBUTING.md`).
 dottore describe SPEC_ID [--spec-path PATH]
 ```
 
+A file that fails to load is in no answer: when the id is not found and the spec paths gave
+load errors, it says how many on stderr (``warning: the spec paths gave 1 load error(s); the
+specs, suites or packs they hit are left out (`dottore lint` lists them)``), and names a spec
+path that does not exist (`warning: spec path(s) not found: ...`).
+
 ### `dottore registry ls`, list the catalogue
 
 ```
 dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..] [--spec-path ..]
 ```
 
-Read-only. The source of truth for what specs, suites and categories exist.
+Read-only. The source of truth for what specs, suites and categories exist. When the spec
+paths give load errors, it prints the same warning as `describe` on stderr and still exits 0; a
+spec path that does not exist is named instead (`warning: spec path(s) not found: ...`).
 
 ### `dottore new-spec`, scaffold a new attack
 

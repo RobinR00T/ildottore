@@ -3,6 +3,14 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-06 (night): PR #46 merged; the #45 pre-merge follow-ups
+
+- PR #46 (the redactor and the evaluators on hostile text) squash-merged as `94aca32`. On
+  `fix/scope-duplicate-identities`: two identities of one scope target with one name or one canary
+  are refused, `authz_leak` tells apart a canary written inside another, the duplicate-key message
+  gives where an alias key was written, `registry ls` and `describe` warn about load errors, the
+  repo-wide YAML test's blind spots, and the doc gaps of the #45 pre-merge audit.
+
 ## State, 2026-10-06 (night): PRs #43 to #45 merged; the redactor on hostile text
 
 - PR #43 (labelled numbers), PR #44 (D-17, the scope a run went out under) and PR #45 (a YAML key

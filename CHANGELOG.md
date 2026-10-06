@@ -5,6 +5,41 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (follow-ups of the #45 pre-merge audit)
+
+- **Two identities of one target with the same name, or the same canary, are refused** by the
+  scope loader. The identity sweep keys each response by name, so with two `tenant` entries the
+  second response replaced the first: `authz_leak` had no pair to compare (with three, two
+  merged). A canary maps back to the one identity that owns it, so two owners of one canary made
+  each one's own canary read as the other's leak. The canary is not quoted in the error; an empty
+  one is ignored, as the runner ignores it.
+- **`authz_leak` tells apart a canary written inside another.** It searched each canary as a
+  substring, so with `ZZ-1` for tenant A and `ZZ-1-b` for tenant B, B echoing its own canary was
+  a confirmed leak of A's (a `fail` at confidence 1.0, found by the pre-commit audit of this
+  block). Every occurrence is considered, overlapping ones included, until one is not covered
+  whole by an occurrence of a longer canary: `ZZ-1-b` in A's reply is still B's canary
+  leaking, `ZZ-1` on its own in B's reply is still A's, and two canaries that only overlap
+  (`ZZ-1` and `1-bZ` in `ZZ-1-bZ`) are both found. Nothing is stored and each canary's scan
+  stops at its first occurrence no longer canary covers (the first version listed every
+  occurrence: 4 MiB of a tenant's own canary held 308 MB). Nested canaries are best avoided all
+  the same: A's `ZZ-1` leaking into B's reply right before `-b` reads as B's own.
+- **The duplicate-key message gives where an alias key was written.** A key written as `*k :`
+  was reported at its anchor's position, which could be a value or another mapping; the loader
+  records where each alias key is written and reports that. The hook costs one call level per
+  nesting level: a document is refused as nested too deeply at about 330 levels instead of 490.
+- **`registry ls` and `describe` say when the spec paths gave load errors.** A spec that repeats
+  a key (or fails to load for any other reason) is in no answer; `registry ls` printed `(no
+  specs match)` and `describe` said `not found`, with nothing else. Both now add, on stderr,
+  ``warning: the spec paths gave N load error(s); the specs, suites or packs they hit are left
+  out (`dottore lint` lists them)``, and a spec path that does not exist is named apart
+  (`warning: spec path(s) not found: ...`); `registry ls` still exits 0 and its stdout is
+  unchanged.
+- The repository-wide YAML test looks at every document of a file and past a value that cannot
+  be built, and lists the files git knows of (tracked or new), reading only those present; it
+  had read one document per file and stopped at the first error. Docs: the scope contract (u01),
+  the threat model (S4), the linter contract's wording, `dottore-scope(5)`, the manual, the
+  loader's docstring.
+
 ### Fixed (the redactor and the evaluators on hostile text)
 
 - **Echoed masks could corrupt the redaction and abort a campaign.** The token that keeps a mask
