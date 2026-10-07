@@ -62,6 +62,38 @@ versioning: [SemVer](https://semver.org/).
   did not finish in 15 minutes). Found by the pre-commit audit of the size cap below, and the gaps
   in the first version of this fix by its own pre-commit and pre-merge audits.
 
+### Fixed (a spec key that is not a string)
+
+- **`dottore lint` exited 1 with a traceback on a key YAML builds as something other than text.** A
+  spec is a JSON document, whose keys are strings, but YAML reads `5:` as an int, a bare `on:`,
+  `off:`, `yes:` or `no:` as a bool, `~:` or an empty key as null, `2026-10-07:` as a date and
+  `1.5:` as a float. The JSON schema says nothing about the keys of a free-form object, so such a
+  key in a fixture's tool-call arguments reached the offline `tool_call` stub, whose `.lower()`
+  raised `AttributeError`: a traceback and exit 1, which this tool uses for "findings below the
+  threshold". Over the 41 fixture tool calls with arguments in the shipped specs, an int key added
+  after the others crashed lint in 5 and passed it unreported in the other 36 (added first, 6 and
+  35). Every mapping in a spec is now checked before the schema (including those inside an `!!omap`
+  or `!!pairs` entry; the keys of such an entry and the members of a `!!set` are not), and a key
+  that is not a string is a `SCHEMA` finding that names the path of its mapping, the value YAML
+  built from the key and its type: `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not
+  a string; write it in quotes, without a tag`. At most 20 are listed and the rest counted, a key
+  that is a number too long to write out is reported first by the check of the section below, and a
+  key on the path that is not printable (an escape sequence, a newline, a bidi control) is written
+  as its `repr`, so it cannot forge a finding line (the spec id and the paths of other schema errors
+  print as written, as before). Found on 2026-10-07 by the session on `fix/huge-int-repr`. Clause
+  A-44 (u02).
+- **Keys of two types in one mapping crashed the schema check itself.** `step_arg_patterns: {5: 1,
+  a: 2}` gave two schema errors whose paths were sorted, an int against a str: `TypeError` and
+  exit 1. The key check runs first, so the schema never sees such a mapping.
+- **A `!!binary` key passed lint.** `bytes` has a `lower`, so the stub read it and moved on. It is
+  now a finding like the others.
+- **`run` refuses such a spec.** `run`, `describe`, `coverage` and `registry` load specs the same
+  way, so a spec with such a key is left out as any spec that does not load is (`run` refuses the
+  campaign with exit 3, naming the file); `render-media` says the spec is not found, as it does
+  for any spec that does not load. Where the stub did not crash, the spec used to pass lint and
+  run; now it is refused until the key is quoted. The offline stub reads only string keys too, as
+  the `tool_call` evaluator does, for a spec built in code and passed to `lint_packs`.
+
 ### Fixed (a resumed run recorded its `-sV` probe pass only when the ceiling stopped it)
 
 - **A resume lost what its probe pass had sent whenever the pass stopped on anything but the
