@@ -106,6 +106,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-28 | u02 | a control framework (AISVS) is mapped by falsification, and a mapping cannot contradict its own classification |
 | A-17 | u02 | every framework field is validated, membership where it drives a denominator |
 | A-40 | u02 (and u12, u09) | a number too long to write out is reported with its file where it enters (a spec, at any depth and in any YAML collection; a labels key; a report; a target file's `type`, `mock_scenario` and `seeded_setup` keys), never printed |
+| A-44 | u02 | a spec's keys are strings: one that is not (an int, a bare `on`, a date) is a SCHEMA finding at its path, not a lint traceback |
 | A-18..A-20 | u01 | authorization is reachability, schemes are allowlisted, one answer per target |
 | A-52 | u01 | a list or a map written past the depth limit is refused where it starts, before the scanner pays for what follows |
 | A-29..A-30 | u01 | a gate keys on what a spec cannot opt out of; the allowlist authorizes the path the client sends, on its port, refuses separator encodings, and a fleet's judge comes only from the fleet file |

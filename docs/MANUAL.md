@@ -574,7 +574,12 @@ before. Under the limit the cost stays: the same chains 98 deep are accepted in 
 time of the flat list, and up to about 3 times when they hold their texts at the bottom (an open
 decision, OD-30).
 A key written twice in one
-mapping is a `PARSE_ERROR` too. A YAML error gives the line and
+mapping is a `PARSE_ERROR` too. A key YAML builds as something other than text (`5:`, a bare
+`on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its mapping, such as
+`fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write it in quotes,
+without a tag`: a spec is JSON, whose keys are strings, and such a key in a fixture's tool-call
+arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`). A YAML
+error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. A number too long for Python to write out (more than
