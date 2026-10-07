@@ -189,10 +189,11 @@ any credential and have both written into the scope (SEC-04). Checks: the same f
   checksum now, pluggable verifier interface so sigstore drops in without a shape change).
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
-- **OD-33** fleet ids that differ only by case. **Decided 2026-10-07 by the conductor, reversible,
-  built (A-56):** refused on every file system, not only where the file system folds case: it is
-  portable and the simplest rule (`run` already compares report paths case-folded everywhere),
-  and a fleet file then means the same wherever it is expanded. What it costs: a fleet with
-  `Prod` and `prod` that expanded on Linux is now refused there too, and so is a judge spelled as
-  a target only up to case, which worked. The alternative (refuse only where the `--out`
-  directory's file system folds case, found by probing it) is the owner's to choose.
+- **OD-33** fleet ids that differ only by case. **Decided 2026-10-07 by the conductor and
+  confirmed by the owner the same evening, built (A-56):** refused on every file system, not only
+  where the file system folds case: it is portable and the simplest rule (`run` already compares
+  report paths case-folded everywhere), and a fleet file then means the same wherever it is
+  expanded. What it costs: a fleet with `Prod` and `prod` that expanded on Linux is now refused
+  there too, and so is a judge spelled as a target only up to case, which worked. The alternative
+  not taken: refuse only where the `--out` directory's file system folds case, found by probing
+  it.

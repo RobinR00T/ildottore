@@ -33,8 +33,8 @@ versioning: [SemVer](https://semver.org/).
   the judge its own id`), say when the id is that default, and so does a `--judge` file that
   names another id (`id 'local-judge' (the fleet declares 'judge', the default of a judge: block
   that names no id)`; it said "the fleet declares 'judge'" alone). Refusing on a case-sensitive file
-  system too, where nothing collided, is a decision recorded as OD-33 (the owner may prefer
-  refusing only where the file system folds case). Not changed: `run` and the scope loader still
+  system too, where nothing collided, is decision OD-33, confirmed by the owner (the alternative
+  was refusing only where the file system folds case). Not changed: `run` and the scope loader still
   compare ids exactly; no file of a run is named by a target id, and the run store's finding key
   `<spec id>::<target id>` is compared case-sensitively, so two hand-written target files `Prod`
   and `prod` run together with two run ids, both in every report format. Contract u01 A-56;
