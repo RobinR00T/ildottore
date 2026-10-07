@@ -160,14 +160,46 @@ The fix's own audits found four more ways to the same cost: a size without satur
 square of an anchor chain, so the measure was itself the amplification; a measure run only on a
 composed document let a 3 MB list of plain texts cost 785 MB first; a count that skipped aliases let
 a list of aliases do the same; and a `%TAG` prefix, copied into the tag of every node that uses its
-handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Not covered, each its own
-task: construction costs under the cap (a base-60 integer, integer keys sharing one hash) and the
-byte size of the file read. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
+handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Construction costs under the
+cap (a base-60 integer, integer keys sharing one hash) are A-41's; the byte size of the file read
+is its own task. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
 position, a recursive alias's anchor, the precedence, where composition stops for texts, long texts,
 empty lists, aliases and aliases of a long text, the per-document count, the tag limit on texts,
 lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a subprocess bounded at
 20 s and 256 MiB: `calibrate` on the alias bomb and on the flat list, `run -t`, `run --scope`,
 `fleet`, and `lint` on a merge bomb).
+
+**A-41 A YAML value that costs far more to build than it weighs is refused before it is built (added
+2026-10-07).** Every loader (the spec loader and `safe_yaml.safe_load`, so the scope, target, fleet
+and labels files and the policy and signature packs) refuses, as it composes the document and before
+anything is built, a number written in more than 1,000 characters (`cannot build this value (a
+number written in over 1000 characters)`), wherever it is written (a value, a key, a list item, in
+flow, at the root), and the key that takes a document past 1,000 keys that are numbers, in block or
+flow mappings, a key merged in by `<<` counted in every mapping it is merged into, through as many
+merges as pass it on (`document has over 1000 keys that are numbers ...`): a YAML error at that
+number, that key or what the `<<` merges in, quoting no value, exit 3 at the CLI and a `PARSE_ERROR`
+in `lint`. The rest of the file is not parsed. The size cap (A-37) bounds what a document holds, not
+what PyYAML spends building it, and two shapes cost far more than they weigh: YAML 1.1 reads
+`1:59:59` as a base-60 integer, built by a loop whose time grows with the square of its length, and
+integers that differ by a multiple of `sys.hash_info.modulus` share one hash, so the dict of a
+mapping of them is built in time that grows with the square of their count. A spec just under the 1
+MiB cap took `lint` 55 s with one base-60 value and 24 s with 36,320 such keys, and `run --dry-run`
+accepted a 450 KB target with a base-60 value after 37 s and a 1.3 MB target with 45,000 such keys
+after 247 s, at a load average of 6 to 10 on 15 cores (found by the pre-commit audit of A-37,
+measured on its branch); each is now refused in 1 to 1.5 s. The keys are counted from their tags, so
+before any of them is hashed, and across the whole document, not per mapping: 1,000 keys per mapping
+still allowed about fifty such mappings under the node cap. Only numbers count: text, bytes, dates
+and timestamps without an offset hash with a key Python draws at random for each process, a
+timestamp with an offset hashes by its instant, with no thousand instants sharing one hash within
+reach, and booleans and null have three distinct values between them, a fourth being a repeated key.
+A number of 1,000 hexadecimal digits has about 1,204 decimal digits, under the 4,300 Python converts
+by default (a lower `PYTHONINTMAXSTRDIGITS` is A-40's). No YAML file the repository ships has a key
+that is a number or a number over 20 characters. Checks: `tests/cli/test_yaml_construction_cost.py`
+(each number notation at 1,001 characters in each position and at 1,000 as a value; a long text;
+1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge shapes,
+a map merged where it is written, a map that merges passing its keys on; where composition stops; a
+stream of documents; keys that are not numbers; both loaders; and in a subprocess bounded at 15 s:
+`lint` on each 1 MiB spec, and `run --dry-run` on the 450 KB and the 1.3 MB target).
 
 **A-52 A list or a map written past the depth limit is refused where it starts, as the document is
 composed (added 2026-10-07).** Every loader (the spec loader and `safe_yaml.safe_load`, so the
@@ -192,27 +224,27 @@ it that way). It names where the first list or map written past the limit starts
 first node at that depth down the first of the deepest branches, aliases expanded: the same place
 unless another branch is deeper, or as deep and written first (a branch deepened by an alias
 included), or that list or map is empty and a text or a key at its level is written before it (`k:
-[]`). Refusals made while composing (this one, the size cap's count, a tag past 256 characters) are
-reported in the order written, and before what A-37 measures on the whole document, wherever that is
-written: a recursive alias written before the nesting is no longer the one reported. A text or an
-alias opens no level and is not refused by this check: one written at level 101 is refused where it
-was (an alias at its anchor), by A-37 once the document is composed, unless another check refuses it
-while it is composed, at the cost of a document accepted at the limit. Nesting written thousands of
-levels deep, which overflowed PyYAML's recursive composer and was refused without a position, now
-has one. Not covered, OD-30: under the limit the cost per token stays, and the same 198 KB of chains
-98 deep is accepted in 5.5 to 5.6 s, about 2.3 times the flat list here (3 to 4 times at depth 95 in
-the audit, under another load), the scanner walking 29.8 million keys; chains 98 deep holding 300
-texts at the bottom walk 52 million and take about 3 times the flat list, the worst accepted shape
-the audit found. Checks: `tests/cli/test_yaml_written_nesting.py` (where composition stops, by a
-character no token can start written lines inside the collection at level 101, for flow and block
-lists and maps and in both loaders; the position against `check_expanded`'s on the whole document;
-several branches; a key before an empty list; a text, an alias and a map's keys at level 101; every
-shape at the limit, siblings included, loading as plain PyYAML loads it; the precedence; one count
-per document; a tag too long reported first, as before; 5,000 levels; a `RecursionError` while
-composing, raised without recursing, and in a subprocess a caller with little stack left, both still
-refused as too deep; and in a subprocess bounded at 20 s, the possible keys the scanner walks for
-`lint` and `calibrate` on the audit's 198 KB file, under 5 million: 1.1 million now, 97.4 million
-before).
+[]`). Refusals made while composing (this one, the size cap's count, a tag past 256 characters,
+A-41's numbers) are reported in the order written, and before what A-37 measures on the whole
+document, wherever that is written: a recursive alias written before the nesting is no longer the
+one reported. A text or an alias opens no level and is not refused by this check: one written at
+level 101 is refused where it was (an alias at its anchor), by A-37 once the document is composed,
+unless another check refuses it while it is composed, at the cost of a document accepted at the
+limit. Nesting written thousands of levels deep, which overflowed PyYAML's recursive composer and
+was refused without a position, now has one. Not covered, OD-30: under the limit the cost per token
+stays, and the same 198 KB of chains 98 deep is accepted in 5.5 to 5.6 s, about 2.3 times the flat
+list here (3 to 4 times at depth 95 in the audit, under another load), the scanner walking 29.8
+million keys; chains 98 deep holding 300 texts at the bottom walk 52 million and take about 3 times
+the flat list, the worst accepted shape the audit found. Checks:
+`tests/cli/test_yaml_written_nesting.py` (where composition stops, by a character no token can start
+written lines inside the collection at level 101, for flow and block lists and maps and in both
+loaders; the position against `check_expanded`'s on the whole document; several branches; a key
+before an empty list; a text, an alias and a map's keys at level 101; every shape at the limit,
+siblings included, loading as plain PyYAML loads it; the precedence; one count per document; a tag
+too long reported first, as before; 5,000 levels; a `RecursionError` while composing, raised without
+recursing, and in a subprocess a caller with little stack left, both still refused as too deep; and
+in a subprocess bounded at 20 s, the possible keys the scanner walks for `lint` and `calibrate` on
+the audit's 198 KB file, under 5 million: 1.1 million now, 97.4 million before).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
