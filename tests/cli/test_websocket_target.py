@@ -147,7 +147,7 @@ def test_the_block_loads_and_is_part_of_the_target(tmp_path: Path) -> None:
         ),
         (
             {"block": _BLOCK.replace('vars: {client: "ildottore"}', 'vars: {client: "{{token}}"}')},
-            "may not carry or name {{token}}",
+            "vars carries {{token}}",
         ),
         ({"block": _BLOCK.replace("max_attempts: 1", "max_attempts: 9")}, "failed validation"),
         (

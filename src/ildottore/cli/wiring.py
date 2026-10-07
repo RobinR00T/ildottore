@@ -41,7 +41,15 @@ from ildottore.adapters import (
 )
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
-from ildottore.adapters.websocket import MESSAGES, PROMPT, RESERVED, TOKEN, placeholders
+from ildottore.adapters.websocket import (
+    CONNECTION_PLACEHOLDERS,
+    MESSAGES,
+    PROMPT,
+    RESERVED,
+    RESERVED_HEADERS,
+    TOKEN,
+    placeholders,
+)
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.metering import MeteredAdapter, SendMeter
@@ -1220,8 +1228,12 @@ def _websocket_spec(
     Refused here, not at send time (rule 12, refuse before you send): the block missing or on
     another provider, an endpoint that is not ``ws://`` or ``wss://`` or that carries a query,
     a fragment or a user:password, a placeholder no template may use (not reserved and not in
-    ``vars``), ``{{token}}`` without an ``auth_ref`` or inside ``vars``, a query template that
-    carries neither ``{{prompt}}`` nor ``{{messages}}``, and ``one_query_in_flight: false``.
+    ``vars``), any placeholder inside ``vars`` (they are plain values, never rendered), a
+    request placeholder (``{{prompt}}``, ``{{messages}}``, ``{{system_prompt}}``) in a template
+    rendered with no request (``headers``, ``handshake.send``, ``session.start``),
+    ``{{token}}`` without an ``auth_ref``, a query template that carries neither ``{{prompt}}``
+    nor ``{{messages}}``, an upgrade header the library writes itself (``Host``,
+    ``Connection``, ``Upgrade``, ``Sec-WebSocket-*``), and ``one_query_in_flight: false``.
     """
 
     is_websocket = (provider or "").strip().lower() == "websocket"
@@ -1266,13 +1278,34 @@ def _websocket_spec(
             f"target file {path}: websocket.session.one_query_in_flight: false is not built "
             "(several queries multiplexed on one socket need a correlation id); leave it true"
         )
-    if TOKEN in placeholders(list(spec.vars.values())) or TOKEN in spec.vars:
+    if TOKEN in spec.vars:
         raise ValueError(
-            f"target file {path}: websocket.vars may not carry or name {{{{token}}}}; the "
-            "credential comes from auth_ref only"
+            f"target file {path}: websocket.vars may not name {{{{token}}}}; the credential "
+            "comes from auth_ref only"
+        )
+    in_vars = sorted(placeholders(list(spec.vars.values())))
+    if in_vars:
+        names = ", ".join("{{" + name + "}}" for name in in_vars)
+        raise ValueError(
+            f"target file {path}: websocket.vars carries {names}; vars are plain values and "
+            "are never rendered, so a placeholder there would go on the wire literally"
+        )
+    reserved_headers = sorted(name for name in spec.headers if name.lower() in RESERVED_HEADERS)
+    if reserved_headers:
+        raise ValueError(
+            f"target file {path}: websocket.headers sets {', '.join(reserved_headers)}, which "
+            "the WebSocket library writes itself; remove it"
         )
     handshake = spec.handshake.send if spec.handshake is not None else {}
-    used = placeholders([handshake, spec.message.send, spec.session.start, spec.headers])
+    connection_only = placeholders([handshake, spec.session.start, spec.headers])
+    misplaced = sorted((connection_only & RESERVED) - CONNECTION_PLACEHOLDERS)
+    if misplaced:
+        names = ", ".join("{{" + name + "}}" for name in misplaced)
+        raise ValueError(
+            f"target file {path}: websocket headers, handshake.send and session.start are sent "
+            f"before any query, so they may use only {{{{token}}}} and vars, not {names}"
+        )
+    used = connection_only | placeholders(spec.message.send)
     unknown = sorted(used - RESERVED - set(spec.vars))
     if unknown:
         names = ", ".join("{{" + name + "}}" for name in unknown)

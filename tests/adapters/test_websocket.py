@@ -21,9 +21,9 @@ from ildottore.adapters import (
 )
 from ildottore.adapters.websocket import (
     MAX_FRAMES_PER_TURN,
-    MAX_OPEN_CONVERSATIONS,
     WebSocketClosed,
     WebSocketServerError,
+    WebSocketTooManyConversations,
     WebSocketTurnOverflow,
     WebSocketTurnTimeout,
     placeholders,
@@ -550,26 +550,51 @@ async def test_a_turn_that_fails_drops_the_conversation() -> None:
     assert server.log.connections == 1
 
 
-async def test_open_conversations_are_capped_and_the_oldest_is_evicted() -> None:
+async def test_open_conversations_are_capped_and_a_live_one_is_never_evicted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Past the cap a NEW conversation is refused (not retried); the open ones keep working.
+
+    The oldest used to be evicted, which closed a live socket, mid-turn included (pre-commit
+    audit, F4).
+    """
+
+    import ildottore.adapters.websocket as module
+
+    monkeypatch.setattr(module, "MAX_OPEN_CONVERSATIONS", 2)
     with FakeChatServer("echo") as server:
         adapter = _adapter(server)
-        for index in range(MAX_OPEN_CONVERSATIONS + 1):
-            request = ModelRequest(
-                messages=[{"role": "user", "content": f"c{index}"}],
-                metadata={"conversation": f"c{index}", "turn_index": 0, "turns_total": 2},
-            )
-            await adapter.send(request)
-        assert len(adapter._conversations) == MAX_OPEN_CONVERSATIONS
-        assert "c0" not in adapter._conversations
-        with pytest.raises(WebSocketClosed, match="no open connection"):
+        for index in range(2):
             await adapter.send(
                 ModelRequest(
-                    messages=[{"role": "user", "content": "c0"}],
-                    metadata={"conversation": "c0", "turn_index": 1, "turns_total": 2},
+                    messages=[{"role": "user", "content": f"c{index}"}],
+                    metadata={"conversation": f"c{index}", "turn_index": 0, "turns_total": 2},
                 )
             )
+        with pytest.raises(WebSocketTooManyConversations) as info:
+            await adapter.send(
+                ModelRequest(
+                    messages=[{"role": "user", "content": "c2"}],
+                    metadata={"conversation": "c2", "turn_index": 0, "turns_total": 2},
+                )
+            )
+        assert info.value.retryable is False and default_is_env_error(info.value) is True
+        assert sorted(adapter._conversations) == ["c0", "c1"]
+        # The oldest conversation is still alive and finishes normally.
+        second = await adapter.send(
+            ModelRequest(
+                messages=[
+                    {"role": "user", "content": "c0"},
+                    {"role": "assistant", "content": "c0"},
+                    {"role": "user", "content": "c0 again"},
+                ],
+                metadata={"conversation": "c0", "turn_index": 1, "turns_total": 2},
+            )
+        )
+        assert second.text == "c0 again"
         await adapter.aclose()
         assert adapter._conversations == {}
+    assert server.log.connections == 2
 
 
 # --- the credential never reaches the evidence (S6) ----------------------------------

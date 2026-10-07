@@ -20,6 +20,18 @@ One connection per conversation: a single-turn attempt opens, queries and closes
 attempt keeps its connection across turns (the runner's ``conversation`` metadata names it) and
 closes it after the last turn. Concurrent specs therefore never interleave on one socket, and
 one query is in flight per connection (``session.one_query_in_flight``, the only policy built).
+A live conversation is never evicted: past :data:`MAX_OPEN_CONVERSATIONS` a new one is refused.
+
+The pre-commit audit (2026-10-07) found and this module now closes: a frame nested past what
+the evidence store can serialize aborted the campaign (bounded at :data:`MAX_FRAME_DEPTH`); the
+handshake phase had no byte cap (it has the turn's); the whole transcript was copied into
+every turn's record (an intermediate turn now records its own frames, the last turn the
+conversation's); eviction closed live conversations; the credential reached exception text (a
+single helper scrubs and redacts every message that quotes the wire, and a credential shorter
+than 8 characters, which the redactor cannot mask by value, is refused before any dial); the
+query send and the handshake sat outside the turn timeout; a lost conversation was retried and
+debited three times for nothing; and ``equals``/``final_value`` read ``1``, ``1.0`` and ``true``
+as one value.
 """
 
 from __future__ import annotations
@@ -29,7 +41,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Final
+from typing import Any, ClassVar, Final, Literal
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus, InvalidURI
@@ -56,17 +68,24 @@ from ildottore.shared.models import (
 )
 
 __all__ = [
+    "CONNECTION_PLACEHOLDERS",
     "MAX_FRAMES_PER_TURN",
+    "MAX_FRAME_DEPTH",
     "MAX_OPEN_CONVERSATIONS",
     "MESSAGES",
+    "MIN_CREDENTIAL_LEN",
     "PLACEHOLDER",
     "PROMPT",
     "RESERVED",
+    "RESERVED_HEADERS",
     "SYSTEM_PROMPT",
     "TOKEN",
     "WebSocketAdapter",
     "WebSocketClosed",
+    "WebSocketConversationLost",
+    "WebSocketFrameTooDeep",
     "WebSocketServerError",
+    "WebSocketTooManyConversations",
     "WebSocketTurnOverflow",
     "WebSocketTurnTimeout",
     "placeholders",
@@ -85,14 +104,39 @@ SYSTEM_PROMPT: Final = "system_prompt"
 MESSAGES: Final = "messages"
 #: The placeholders every template may use; anything else must be declared under ``vars``.
 RESERVED: Final = frozenset({TOKEN, PROMPT, SYSTEM_PROMPT, MESSAGES})
+#: The placeholders a template rendered with no request (headers, handshake, session start)
+#: may use: the credential, and ``vars``. A request placeholder there failed after the socket
+#: was open (pre-commit audit, F8); the loader refuses it.
+CONNECTION_PLACEHOLDERS: Final = frozenset({TOKEN})
+#: Upgrade headers the operator may not set: the library writes them, and a second ``Host``
+#: went on the wire next to the library's (pre-commit audit, F11).
+RESERVED_HEADERS: Final = frozenset(
+    {
+        "host",
+        "connection",
+        "upgrade",
+        "sec-websocket-key",
+        "sec-websocket-version",
+        "sec-websocket-extensions",
+        "sec-websocket-protocol",
+        "sec-websocket-accept",
+    }
+)
 #: Frames read in one turn before the turn is abandoned: a server that streams forever is
 #: bounded by this as well as by the timeout, and so is the transcript the evidence keeps.
 MAX_FRAMES_PER_TURN: Final = 4096
-#: Conversations whose connection is held at once. The runner's concurrency bounds it in
-#: practice; this is the ceiling in case something keeps a conversation open.
-MAX_OPEN_CONVERSATIONS: Final = 16
-#: Shortest credential scrubbed by value from recorded frames (the redactor registers 8+).
-_MIN_SCRUB_LEN: Final = 4
+#: Nesting a received frame may have. The evidence store serializes an attempt with pydantic,
+#: which refuses about 250 levels, and ``json.loads`` overflows the stack near 1000: a frame
+#: past either aborted the campaign instead of this attempt (pre-commit audit, F1).
+MAX_FRAME_DEPTH: Final = 64
+#: Conversations whose connection is held at once. A live conversation is never evicted (it
+#: used to be, closing a socket mid-turn: pre-commit audit, F4): past this, a new conversation
+#: is refused as an environment error. The runner's concurrency keeps it far below.
+MAX_OPEN_CONVERSATIONS: Final = 256
+#: Shortest credential accepted. The redactor masks a registered credential by value only from
+#: 8 characters, and a shorter one echoed in a close reason reached the evidence (pre-commit
+#: audit, F5); the adapter refuses it before any dial.
+MIN_CREDENTIAL_LEN: Final = 8
 #: Upgrade statuses that mean "try again later", as for the HTTP adapters.
 _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 #: How long a close handshake may take before the socket is abandoned.
@@ -121,6 +165,26 @@ class WebSocketServerError(AdapterEnvError):
 
 class WebSocketTurnOverflow(ResponseTooLarge):
     """A turn over the byte cap or the frame cap: inconclusive and not retried."""
+
+
+class WebSocketFrameTooDeep(ResponseTooLarge):
+    """A frame nested past :data:`MAX_FRAME_DEPTH`: inconclusive and not retried."""
+
+
+class WebSocketConversationLost(WebSocketClosed):
+    """A later turn whose connection is gone: inconclusive, and not retried.
+
+    Retried, it was sent again three times and debited each time for a query that could never
+    go out (pre-commit audit, F7).
+    """
+
+    retryable = False
+
+
+class WebSocketTooManyConversations(WebSocketClosed):
+    """More than :data:`MAX_OPEN_CONVERSATIONS` held at once: this one is refused, not retried."""
+
+    retryable = False
 
 
 def placeholders(value: object) -> set[str]:
@@ -173,12 +237,12 @@ def _as_text(value: object) -> str:
 def _scrub(value: Any, secret: str | None) -> Any:
     """``value`` with every occurrence of ``secret`` in its strings and keys replaced.
 
-    A server that echoes the credential (in an acknowledgement, in an error) would otherwise
-    put it into the recorded transcript; the redactor masks a registered credential of 8+
-    characters by value anyway, this closes the shorter ones too.
+    A server that echoes the credential (in an acknowledgement, in an error, in a close
+    reason) would otherwise put it into the recorded transcript or an error message; the
+    redactor masks a registered credential by value as well, this does not depend on it.
     """
 
-    if not secret or len(secret) < _MIN_SCRUB_LEN:
+    if not secret:
         return value
     marker = "{{" + TOKEN + "}}"
     if isinstance(value, str):
@@ -190,11 +254,33 @@ def _scrub(value: Any, secret: str | None) -> Any:
     return value
 
 
+def _same(value: object, expected: object) -> bool:
+    """Equality that keeps ``1``, ``1.0`` and ``true`` apart (pre-commit audit, F10)."""
+
+    return type(value) is type(expected) and bool(value == expected)
+
+
 def _satisfies(frame: Mapping[str, Any], expect: WebSocketExpect) -> bool:
     value = get_path(frame, expect.path)
     if expect.equals is None:
         return value is not None
-    return bool(value == expect.equals)
+    return _same(value, expect.equals)
+
+
+def _depth(value: object) -> int:
+    """Nesting depth of a parsed frame, measured without recursion."""
+
+    deepest = 0
+    stack: list[tuple[object, int]] = [(value, 1)]
+    while stack:
+        item, level = stack.pop()
+        if isinstance(item, dict):
+            deepest = max(deepest, level)
+            stack.extend((child, level + 1) for child in item.values())
+        elif isinstance(item, list):
+            deepest = max(deepest, level)
+            stack.extend((child, level + 1) for child in item)
+    return deepest
 
 
 class _NoRedirects(connect):
@@ -211,11 +297,18 @@ class _NoRedirects(connect):
 
 @dataclass
 class _Conversation:
-    """One open connection, the transcript it has produced and its one-query lock."""
+    """One open connection, the transcript it has produced and its one-query lock.
+
+    ``reported`` is how many frames an earlier turn's record already carries: an intermediate
+    turn records only its own frames, the last turn the whole conversation (the conversation
+    engine stores one attempt per conversation, from the final turn's response). Copying the
+    whole transcript into every turn was quadratic (pre-commit audit, F3).
+    """
 
     connection: ClientConnection
     frames: list[JsonDict]
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    reported: int = 0
 
 
 @dataclass
@@ -284,27 +377,33 @@ class WebSocketAdapter:
         """
 
         self._check_allowlist()  # BEFORE any socket is opened: unbypassable.
+        self._check_credential()
         key, turn_index, last_turn = _conversation_of(request)
         if key is None:
             conversation = await self._open()
             try:
-                return await self._turn(conversation, request)
+                return await self._turn(conversation, request, whole=True)
             finally:
                 await _close(conversation.connection)
 
         held = self._conversations.get(key)
         if held is None:
             if turn_index > 0:
-                raise WebSocketClosed(
+                raise WebSocketConversationLost(
                     f"{self.id}: turn {turn_index} of conversation {key!r} has no open "
                     "connection, so the earlier turns' context is gone; nothing was sent"
                 )
+            if len(self._conversations) >= MAX_OPEN_CONVERSATIONS:
+                raise WebSocketTooManyConversations(
+                    f"{self.id}: {MAX_OPEN_CONVERSATIONS} conversations are open already; "
+                    f"conversation {key!r} was not started"
+                )
             held = await self._open()
-            await self._adopt(key, held)
+            self._conversations[key] = held
         conversation = held
         try:
             async with conversation.lock:
-                response = await self._turn(conversation, request)
+                response = await self._turn(conversation, request, whole=last_turn)
         except BaseException:
             await self._drop(key)
             raise
@@ -318,11 +417,14 @@ class WebSocketAdapter:
         for key in list(self._conversations):
             await self._drop(key)
 
-    async def _adopt(self, key: str, conversation: _Conversation) -> None:
-        while len(self._conversations) >= MAX_OPEN_CONVERSATIONS:
-            oldest = next(iter(self._conversations))
-            await self._drop(oldest)
-        self._conversations[key] = conversation
+    def _check_credential(self) -> None:
+        """Refuse a credential the redactor could not mask by value, before any dial."""
+
+        if self.api_key is not None and len(self.api_key) < MIN_CREDENTIAL_LEN:
+            raise AdapterProductError(
+                f"{self.id}: the credential is shorter than {MIN_CREDENTIAL_LEN} characters, "
+                "which the redactor cannot mask by value; nothing was sent"
+            )
 
     async def _drop(self, key: str) -> None:
         conversation = self._conversations.pop(key, None)
@@ -339,10 +441,13 @@ class WebSocketAdapter:
         times with the base backoff. A refused upgrade (any other 4xx, a redirect), a handshake
         reply that does not satisfy ``expect`` and a malformed frame are product defects and
         are not retried. Once a query is on the wire nothing here resends it: a close mid-turn
-        is an environment error the runner retries, debited like every send.
+        is an environment error the runner retries, debited like every send. The handshake and
+        session phase (sends and replies) runs under ``response.timeout_seconds``, as a turn
+        does, and under the turn's byte and frame caps.
         """
 
         attempts = self.spec.reconnect.max_attempts + 1
+        timeout = self.spec.response.timeout_seconds
         last = ""
         for attempt in range(attempts):
             self._check_allowlist()  # defense in depth: the gate decides every dial.
@@ -350,13 +455,22 @@ class WebSocketAdapter:
             connection: ClientConnection | None = None
             try:
                 connection = await self._connect()
-                await self._handshake(connection, frames)
-                await self._start_session(connection, frames)
+                try:
+                    async with asyncio.timeout(timeout):
+                        await self._handshake(connection, frames)
+                        await self._start_session(connection, frames)
+                except TimeoutError as exc:
+                    raise WebSocketTurnTimeout(
+                        f"{self.id}: the handshake and session phase did not complete within "
+                        f"{timeout}s"
+                    ) from exc
                 return _Conversation(connection, frames)
             except AdapterEnvError as exc:
-                last = f"{type(exc).__name__}: {exc}"
                 if connection is not None:
                     await _close(connection)
+                if getattr(exc, "retryable", True) is False:
+                    raise  # an overflow in the handshake phase repeats; not re-dialled
+                last = f"{type(exc).__name__}: {exc}"
                 if attempt < attempts - 1:
                     await asyncio.sleep(self.retry.backoff_for(attempt))
             except BaseException:
@@ -369,6 +483,11 @@ class WebSocketAdapter:
 
     async def _connect(self) -> ClientConnection:
         headers = render(self.spec.headers, self._values(None))
+        # Cleartext ws is loopback-only and never goes through a proxy (the environment's
+        # proxy would see the handshake token in the clear, on a host the scope did not
+        # authorize); wss honours the proxy environment as the HTTP adapters do, TLS end to
+        # end (pre-commit audit, F11).
+        proxy: Literal[True] | None = None if self.url.lower().startswith("ws:") else True
         try:
             return await _NoRedirects(
                 self.url,
@@ -378,6 +497,7 @@ class WebSocketAdapter:
                 max_size=self.max_frame_bytes,
                 compression=None,  # a decompression bomb has no cap the byte cap can see
                 user_agent_header="ildottore",
+                proxy=proxy,
             )
         except InvalidStatus as exc:
             status = exc.response.status_code
@@ -397,11 +517,12 @@ class WebSocketAdapter:
             raise AdapterProductError(f"{self.id}: not a WebSocket URL: {exc}") from exc
         except InvalidHandshake as exc:
             raise AdapterProductError(
-                f"{self.id}: the endpoint did not complete a WebSocket upgrade: {exc}"
+                f"{self.id}: the endpoint did not complete a WebSocket upgrade: "
+                f"{self._safe(str(exc))}"
             ) from exc
         except (OSError, TimeoutError) as exc:
             raise WebSocketClosed(
-                f"{self.id}: could not connect: {type(exc).__name__}: {exc}"
+                f"{self.id}: could not connect: {type(exc).__name__}: {self._safe(str(exc))}"
             ) from exc
 
     async def _handshake(self, connection: ClientConnection, frames: list[JsonDict]) -> None:
@@ -427,34 +548,47 @@ class WebSocketAdapter:
         frames: list[JsonDict],
         what: str,
     ) -> None:
-        """Read the first frame that is not ignored and check ``expect`` against it."""
+        """Read the first frame that is not ignored and check ``expect`` against it.
 
-        try:
-            async with asyncio.timeout(self.spec.response.timeout_seconds):
-                for _ in range(MAX_FRAMES_PER_TURN):
-                    frame, _size = await self._recv_frame(connection, frames)
-                    if self._ignored(frame):
-                        continue
-                    if not _satisfies(frame, expect):
-                        raise AdapterProductError(
-                            f"{self.id}: the {what} reply did not satisfy expect "
-                            f"({expect.path!r} == {expect.equals!r})"
-                        )
-                    return
-        except TimeoutError as exc:
-            raise WebSocketTurnTimeout(
-                f"{self.id}: no {what} reply within {self.spec.response.timeout_seconds}s"
-            ) from exc
+        Bounded in frames and bytes like a turn (it had no byte cap: pre-commit audit, F2);
+        the caller bounds it in time.
+        """
+
+        total = 0
+        for _ in range(MAX_FRAMES_PER_TURN):
+            frame, size = await self._recv_frame(connection, frames)
+            total += size
+            if total > MAX_RESPONSE_BYTES:
+                raise WebSocketTurnOverflow(
+                    f"{self.id}: more than {MAX_RESPONSE_BYTES} bytes before the {what} reply; "
+                    "not read further"
+                )
+            if self._ignored(frame):
+                continue
+            if not _satisfies(frame, expect):
+                raise AdapterProductError(
+                    f"{self.id}: the {what} reply did not satisfy expect "
+                    f"({expect.path!r} == {expect.equals!r})"
+                )
+            return
         raise WebSocketTurnOverflow(
             f"{self.id}: more than {MAX_FRAMES_PER_TURN} frames before the {what} reply"
         )
 
     # --- one turn ------------------------------------------------------------------------
 
-    async def _turn(self, conversation: _Conversation, request: ModelRequest) -> ModelResponse:
+    async def _turn(
+        self, conversation: _Conversation, request: ModelRequest, *, whole: bool
+    ) -> ModelResponse:
+        """Send one query and read the turn; ``whole`` records the conversation's transcript.
+
+        The query send is inside the turn timeout (a server that never reads blocked a large
+        send with no bound of the adapter's own: pre-commit audit, F6).
+        """
+
         connection, frames = conversation.connection, conversation.frames
         reading = self.spec.response
-        await self._send_template(connection, self.spec.message.send, request, frames)
+        start = conversation.reported
 
         parts: list[str] = []
         calls: list[JsonDict] = []
@@ -464,6 +598,7 @@ class WebSocketAdapter:
         total = 0
         try:
             async with asyncio.timeout(reading.timeout_seconds):
+                await self._send_template(connection, self.spec.message.send, request, frames)
                 for _ in range(MAX_FRAMES_PER_TURN):
                     frame, size = await self._recv_frame(connection, frames)
                     total += size
@@ -518,7 +653,9 @@ class WebSocketAdapter:
                 f"{self.id}: no frame of the turn carried text at path {reading.text_path!r}"
             )
         finish = get_path(final, reading.final_path) if final is not None else None
-        ids["websocket"] = {"frames": [dict(f) for f in frames]}
+        recorded = frames if whole else frames[start:]
+        conversation.reported = len(frames)
+        ids["websocket"] = {"frames": [dict(f) for f in recorded]}
         return ModelResponse(
             text="".join(parts),
             tool_calls=calls,
@@ -546,7 +683,9 @@ class WebSocketAdapter:
         try:
             await connection.send(json.dumps(wire))
         except ConnectionClosed as exc:
-            raise WebSocketClosed(f"{self.id}: the connection closed while sending: {exc}") from exc
+            raise WebSocketClosed(
+                f"{self.id}: the connection closed while sending: {self._safe(str(exc))}"
+            ) from exc
         frames.append({"direction": "sent", "frame": recorded})
 
     async def _recv_frame(
@@ -562,17 +701,30 @@ class WebSocketAdapter:
                 raise WebSocketTurnOverflow(
                     f"{self.id}: a frame exceeded {self.max_frame_bytes} bytes; not read further"
                 ) from exc
-            raise WebSocketClosed(f"{self.id}: the connection closed mid-turn: {exc}") from exc
+            # The close reason is the server's text: scrubbed and redacted before it is
+            # quoted (a credential in it reached attempt.error: pre-commit audit, F5).
+            raise WebSocketClosed(
+                f"{self.id}: the connection closed mid-turn: {self._safe(str(exc))}"
+            ) from exc
         if isinstance(raw, bytes):
             raise AdapterProductError(
                 f"{self.id}: received a binary frame; this adapter reads JSON text frames"
             )
+        too_deep = WebSocketFrameTooDeep(
+            f"{self.id}: a frame is nested deeper than {MAX_FRAME_DEPTH} levels; not evaluated"
+        )
         try:
             frame = json.loads(raw)
+        except RecursionError as exc:
+            raise too_deep from exc
         except ValueError as exc:
-            raise AdapterProductError(f"{self.id}: a frame was not valid JSON: {exc}") from exc
+            raise AdapterProductError(
+                f"{self.id}: a frame was not valid JSON: {self._safe(str(exc))}"
+            ) from exc
         if not isinstance(frame, dict):
             raise AdapterProductError(f"{self.id}: a frame was not a JSON object")
+        if _depth(frame) > MAX_FRAME_DEPTH:
+            raise too_deep
         frames.append({"direction": "received", "frame": _scrub(frame, self.api_key)})
         return frame, len(raw.encode("utf-8"))
 
@@ -585,12 +737,17 @@ class WebSocketAdapter:
         value = get_path(frame, reading.final_path)
         if reading.final_value is None:
             return value is not None
-        return bool(value == reading.final_value)
+        return _same(value, reading.final_value)
+
+    def _safe(self, text: str) -> str:
+        """Text from the wire for an error message: the credential scrubbed, then redacted."""
+
+        return self.redactor.redact_text(str(_scrub(text, self.api_key)))
 
     def _shown(self, error: object) -> str:
-        """An error frame's content for an error message: redacted, scrubbed and short."""
+        """An error frame's content for an error message: scrubbed, redacted and short."""
 
-        text = self.redactor.redact_text(_as_text(_scrub(error, self.api_key)))
+        text = self._safe(_as_text(error))
         return text if len(text) <= 200 else text[:200] + "..."
 
     def _values(self, request: ModelRequest | None) -> dict[str, object]:
