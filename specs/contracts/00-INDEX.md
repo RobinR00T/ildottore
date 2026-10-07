@@ -79,7 +79,7 @@ not a unit-local choice:
 | OD-18 | u08/u04 | a spec's `setup` (documents, mock tools, memory seed) never reaches a live target | conductor | **decided 2026-10-06 by the owner: C, A first (ADR-0009); A built for `type: model` targets (2026-10-06), B for deployed applications (2026-10-07): `seeded_setup` declares the seeded specs, a tool-name map and granted tools; an undeclared spec is `inconclusive: setup_not_seeded` with no send.** Before: ADR-0009 proposed C: B first, then A (2026-10-03): `_build_request` sends prompt, system prompt, sampling and media only (as built, checked 2026-10-04: multi-turn specs also send their turns as messages, the multi-identity sweep sends the identity, and `setup.system_prompt` is the system prompt; the rest of `setup` (documents, mock tools, memory seed) still never goes out); 32 of 75 specs depend on setup, 26 of them go out on a fully capable target, and `tool_call` flags a real target's own tools as unauthorized. B = operator declares seeded setup plus a tool-name map, unseeded specs `inconclusive`; A = deliver setup in-band with a tool loop. Before the live validation |
 | OD-19 | u06/u08 | `evaluator_logic: weighted` is declared by 33 specs and implemented in no run path | conductor | **open, ADR-0010 proposes B (2026-10-03):** the runner never reads the field (a deterministic fail decides), the lint fixture engine treats it as `all_pass` (any failing evaluator decides, as for every `evaluator_logic` value there), and the vote in `evaluators/combine.py` is called by neither. B = document the runner's rule as the semantics and rename the value; A (implement the vote) would let a judge PASS outvote a leaked canary. **Amended the same day:** a judge-only fail is confirmed and gates CI today (precisely, checked 2026-10-04: when the judge says fail on every attempt of one mutation variant, with at least 2 attempts per variant, or on every attempt of the spec below that, and mean confidence at or above the threshold); the ADR now recommends it be needs-review |
 
-## Assurance clauses A-1..A-30 (added 2026-09-22, from the audit series)
+## Assurance clauses (added 2026-09-22, from the audit series)
 
 Eight adversarial audits over 2026-09-20..22 found defects that a green suite, a clean linter
 and four kept import contracts could not see, because every one of them is a claim the code
@@ -93,6 +93,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 |---|---|---|
 | A-1..A-3 | u09 | benign is a predicate over the carrier, the probe discriminates, declared cost equals real cost |
 | A-4..A-6 | u08 | the wall budget measures time, every send passes the rate gate, a halt says why |
+| A-34 | u08 | an evaluator a spec declares is fed where the target can feed it (never from the scanner's own in-band context), one that only corroborates cannot decide by its absence, and the estimate prices what feeds it |
 | A-24 | u12 | a resume is bound to its campaign: battery, target, route, sample size and money |
 | A-7..A-11 | u12 | no-send holds under combination, printed numbers are computed by the working code, operational failure exits 3, a resume is bound to its target, a ceiling binds every request |
 | A-26 | u11 | a gap says which kind it is (roadmap, out of reach, or by design), with the reason |

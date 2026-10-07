@@ -152,7 +152,10 @@ Amended 2026-10-03 (audit F6 / F-7): the multi-identity sweep and the `--judge` 
 two remaining exceptions (ten identities under a ceiling of two; `--budget-requests 5` sent 15
 with a judge). The sweep debits the ledger and is skipped on a resume of a finished spec; the
 judge is wrapped in `core.metering.MeteredAdapter`, bound to the campaign's ledger and pacer,
-and the estimate and the derived ceilings count it.
+and the estimate and the derived ceilings count it. Amended 2026-10-07 (A-34): the estimate
+and the derived ceilings count the identity sweep too, one send per scope identity for each
+spec that sweeps, which they had never done; `--estimate --resume` subtracts it for a spec whose
+every planned attempt is answered, as the runner then skips the sweep.
 
 **A-24 A resume is bound to its campaign: the battery, the target, the route, the sample size
 and the money (added 2026-09-22, widened the same night after audit).** Every one of these was

@@ -119,6 +119,16 @@ prints **+700 requests (~954k tokens)** to the judge, two per evaluated attempt.
 2026-10-03 those requests are paced and debited from the same ceilings, and the estimate counts
 them; before that, `--estimate --judge` printed the same 550 as without a judge.
 
+Every row was measured with one identity in the scope. With two or more, a live run also sends
+the attack once as each identity for every spec that sweeps them (`DL-XTENANT-001`, and
+`EMB-XTENANT-RETRIEVAL-001` on a deployment that declares `multi_identity` and holds its scene,
+never over an in-band scene; the second row declares no `multi_identity`, and with it declared
+only `DL-XTENANT-001`, which has no scene, would be swept there), and since 2026-10-07 the
+estimate prices that too: with two identities the
+third row is 587, the fourth 742 and the last 784 (re-measured that day with `--estimate`; the
+single-identity figures above did not move). Before, main priced the last row at 780 with two
+identities, for a run that would send 782 (the sweep of `DL-XTENANT-001`, never priced).
+
 Two things that table says out loud:
 
 * **A raw model endpoint exercises what it declares.** 39 of 75 specs are capability-gated and

@@ -183,6 +183,27 @@ nothing themselves, so the runner's retries are the only ones and each passes th
 its ceiling and how many specs never ran. A bare state word is not a reason: a spec that never
 ran leaves no trace in the finding list, so nothing downstream can reconstruct it.
 
+**A-34 An evaluator a spec declares is fed where the target can feed it, and one that only
+corroborates cannot decide by its absence (added 2026-10-07).** `EMB-XTENANT-RETRIEVAL-001`
+requires `rag` and declares `authz_leak` "for cross-identity corroboration when >=2 identities
+are scoped". The identity sweep ran only for a spec that required `multi_identity`, so that
+`authz_leak` never had two identities to compare, and its `capability_unavailable` held the spec
+`inconclusive` on every target unless a deterministic check failed, a secure reply included. The
+golden harness drives only `evaluators[0]`, so lint never saw it. Now `sweeps_identities` sends
+the attack as each scope identity for a spec that requires `multi_identity` and, when the target
+declares `multi_identity`, for one that declares `authz_leak`; never over an in-band scene
+(OD-18 A), which hands every identity the same scene, another tenant's document included. With
+no sweep behind it, an `authz_leak` on a spec that does not require two identities is set aside
+and named in the verdict; after a sweep that got fewer than two answers it is kept (the identity
+that answered may have shown a leak), and alone it still decides. The estimate prices the
+sweep, one send per scope identity (two or more) on a live route, from the same predicate,
+which it had never done for `DL-XTENANT-001` either, and `--estimate --resume` does not count it
+for a spec the runner will not sweep again. Two pre-commit audit findings shaped the last three
+rules: a half-failed sweep set the check aside and passed a leak it had seen, and an in-band
+sweep read the scanner's own context as a cross-tenant leak.
+`tests/core/test_authz_leak_corroboration.py` asserts each rule against the real specs, the
+sends counted at the identities' adapters, the resume figure and the dry run's printed figure.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.

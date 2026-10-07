@@ -128,6 +128,10 @@ Full method: `docs/00-ai-build-playbook.md`.
   dormant for months because the runner never populated `EvalContext.identities`. When an
   evaluator needs cross-attempt or cross-identity context, wire the execution that feeds it (or
   mark it explicitly latent in `docs/12`), do not ship the evaluator alone and call it done.
+  It happened again (2026-10-07): `EMB-XTENANT-RETRIEVAL-001` declared `authz_leak` without
+  requiring `multi_identity`, the sweep keyed on the requirement, and the golden harness, which
+  drives only `evaluators[0]`, could not see it. Key the execution on the evaluator a spec
+  declares, not on a field the author may leave out.
 - **New adapters/transports keep the charter.** MCP discovery is read-only (never `tools/call`);
   stdio spawns only a scope-authorized exact command; both are allowlist-gated. Do not add a
   capability (real tool invocation, arbitrary subprocess) that breaks safe-by-design/§2.

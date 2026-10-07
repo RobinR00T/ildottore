@@ -3,6 +3,31 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (morning): `authz_leak` fed where it is declared
+
+- `EMB-XTENANT-RETRIEVAL-001` (requires `rag`) declares `authz_leak` to corroborate across
+  identities, but the identity sweep ran only for a spec that required `multi_identity`, so the
+  evaluator never had two identities and its `capability_unavailable` held the spec
+  `inconclusive` unless a deterministic check failed, a secure reply included. In the
+  2026-10-06 local pass it was one of the 30 inconclusive (one attempt held by `authz_leak`
+  alone, the other by a compromised judge). Found by the pre-commit audit of OD-18 B; it
+  predates it. Option chosen: keep `requires: [rag]` (the spec still runs on single-identity RAG
+  targets) and sweep for a spec that declares `authz_leak` when the target declares
+  `multi_identity` (`sweeps_identities`), never over an in-band scene; with no sweep that check
+  is set aside and named in the verdict, after a sweep short of two answers it is kept.
+  `DL-XTENANT-001` (requires `multi_identity`) is unchanged. The estimate now prices the sweep,
+  one request per scope identity on a live route, which it never did for `DL-XTENANT-001`
+  either, and `--estimate --resume` leaves it out for a finished spec: with one identity every
+  `docs/16` §3 figure is unchanged (re-measured), with two the last row is 784. Clause A-34
+  (u08). The pre-commit audit found the half-failed sweep that passed a seen leak and the
+  in-band sweep that read the scanner's own context as a leak; both fixed before the commit.
+  `make gates` green: 2,320 tests, coverage 96.46%.
+  Open, not decided here: the sweep is one observation per spec, scored on every attempt, so a
+  cross-identity fail counts as reproduced on all of them, and its replies are not stored as
+  evidence (a confirmed critical can cite no reply that shows the leak); and a scope identity's
+  `canary` binds `{{run_id}}`, which a seeded deployment cannot hold (it would need the
+  `run_token`).
+
 ## State, 2026-10-07 (night): OD-18 option B built
 
 - On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec
