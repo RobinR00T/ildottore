@@ -120,8 +120,10 @@ class FingerprintEngine:
 
         fused = combine(evidence)
         alike = recorder.non_discriminating()
-        partial = bool(isolated.failures)
-        # With refused replies the constant check cannot be completed, either way. Too few
+        # Only the attributing probes the check reads: a refused carrier dropped the flag from a
+        # target whose ten attributing replies were all alike (delta audit of PR #68).
+        partial = recorder.refused > 0
+        # With refused attributing replies the constant check cannot be completed. Too few
         # replies to run it: a target answering "I am Llama" to everything, with 8 of its 10
         # attributing replies refused, was named meta-llama at 0.41 where a full pass names
         # nothing (pre-commit audit of OD-23). Or the replies that came back are alike while the
@@ -333,15 +335,23 @@ class _ProbeIsolation:
 
 
 class _RecordingAdapter:
-    """Passes every probe through and keeps the reply texts, to see whether they ever differ."""
+    """Passes every probe through and keeps the reply texts, to see whether they ever differ.
+
+    It also counts the probes whose reply came back refused, the ones the check could not read.
+    """
 
     def __init__(self, inner: TargetAdapter) -> None:
         self._inner = inner
         self.id = inner.id
         self.texts: list[str] = []
+        self.refused = 0
 
     async def send(self, request: ModelRequest) -> ModelResponse:
-        response = await self._inner.send(request)
+        try:
+            response = await self._inner.send(request)
+        except ProbeFailed:
+            self.refused += 1
+            raise
         self.texts.append((response.text or "").strip())
         return response
 

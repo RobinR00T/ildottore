@@ -164,7 +164,8 @@ partial):
   reply: a missing guardrail nudge leaves `guardrails` empty (unknown, not "no filter"), a
   missing carrier is left out of `carrier_comprehension` (unmeasured, not 0.0), and one missing
   statistical reply drops the statistical layer (its vector needs all three). With refused
-  replies the `non_discriminating_target` check cannot be completed: when fewer than three
+  attributing replies the `non_discriminating_target` check cannot be completed (a refused
+  carrier does not count: the check never reads the carriers): when fewer than three
   attributing replies are left, or the ones left are all alike (the refused ones may have
   varied), the text layers' evidence is not counted, as for a constant target but without that
   flag. Measured against the same probes answered with an empty reply (12,276 passes: every

@@ -180,11 +180,13 @@ while without `-sV` the same reply failed one attempt and every spec ran (pre-co
   not 0.0), the statistical layer gives nothing when one of its three is missing (explicitly: a
   pack's centroid only has to be non-empty), and every other layer's evidence is identical to
   that of a pass with no failure;
-- refusals cannot get past the constant-target check, and it is never claimed on a partial
-  pass: when refused replies leave fewer than three attributing replies, or the ones left are
-  all alike, the text layers' evidence is not counted and `non_discriminating_target` is not set
-  (a constant target with 8 of 10 replies refused was named meta-llama at 0.41 by the pre-commit
-  audit; refusing a target's varied replies got it flagged constant by the pre-merge audit);
+- refusals cannot get past the constant-target check, and it is never claimed once an
+  attributing reply is refused: when refused replies leave fewer than three attributing
+  replies, or the ones left are all alike, the text layers' evidence is not counted and
+  `non_discriminating_target` is not set (a constant target with 8 of 10 replies refused was
+  named meta-llama at 0.41 by the pre-commit audit; refusing a target's varied replies got it
+  flagged constant by the pre-merge audit). A refused carrier does not count, since the check
+  never reads the carriers (counting it dropped the flag from a constant target; delta audit);
 - a partial pass never names more than the same probes answered with an empty reply: measured
   over 12,276 passes (every subset of the 10 attributing sends of the 12 corpus targets), it is
   identical when no statistical probe is refused, and otherwise `unknown` or the same family

@@ -459,9 +459,10 @@ def test_the_warning_calls_the_fingerprint_empty_only_when_nothing_came_back(
 
 
 def test_alike_replies_with_refusals_are_not_called_constant() -> None:
-    """Refusing the replies that varied can leave the rest alike: the flag then said "every
-    attributing probe alike" of a target a full pass names (pre-merge audit). With refusals the
-    check cannot be completed, so the text evidence is not counted and the flag is not set."""
+    """The replies that came back are alike, and the refused ones could have varied: the flag
+    then said "every attributing probe alike" of a target a full pass names (pre-merge audit).
+    With attributing replies refused the check cannot be completed, so the text evidence is not
+    counted and the flag is not set."""
 
     attributing = [i for i, layer in enumerate(_LAYER_OF) if layer != "carrier"]
     fp = _run_constant(_Constant(set(attributing[:2])))
@@ -512,3 +513,16 @@ def test_a_partial_pass_never_names_more_than_the_same_probes_answered_blandly()
             partial_fp = asyncio.run(engine.run(_Target(failures, case)))
             bland_fp = asyncio.run(engine.run(_Bland(failures, case)))
             assert not _names_more(partial_fp, bland_fp), (case, sorted(refused))
+
+
+def test_a_refused_carrier_does_not_hide_a_constant_target() -> None:
+    """The constant check reads only the attributing probes: with all ten answered alike and
+    a carrier refused it is complete, and the flag stays (delta audit of PR #68)."""
+
+    carriers = [i for i, layer in enumerate(_LAYER_OF) if layer == "carrier"]
+    for refused in ({carriers[0]}, set(carriers)):
+        fp = _run_constant(_Constant(refused))
+        assert len(failed_probes(fp)) == len(refused)
+        assert "non_discriminating_target" in fp.spoofing_flags
+        assert PROBES_FAILED_FLAG in fp.spoofing_flags
+        assert fp.family.guess == "unknown"
