@@ -42,22 +42,23 @@ versioning: [SemVer](https://semver.org/).
   position, and now gives one, as it does for a recursive alias. Nesting written out deep enough to
   overflow PyYAML's composer, a few hundred levels, is still refused without a position. Tests:
   `tests/cli/test_yaml_expansion.py`: the cap exactly, with the 64-character rule and a `!!binary`
-  text; the position, and the first of two values whose aliases cross the cap; the precedence; where
-  composition stops for texts, long texts, empty lists and aliases, one count per document, and the
-  tag limit; linear memory; the pack loaders; `calibrate`, `run -t`, `run --scope` and `fleet` in
-  process; and in a subprocess bounded at 20 s and 256 MiB, those four, `calibrate` on the flat list
-  and `lint` on a merge bomb. 31 of the 34 tests fail on `0501752` (main): 17 because the file is
-  not refused, nine because main has no count that stops composition, two because a long tag is
-  neither refused nor kept out of the message, two for the spec loader's position and order, and one
-  because the measure is new. Twenty mutants of the fix are all killed. Clause A-37 (u01), u02 §4,
-  u12 A-9. Found by the pre-merge audit of #61. - **Left open, each its own task (found by the
-  audits, not introduced here).** Under the cap, a base-60 integer (`1:59:59:...`) builds in time
-  quadratic in its length (a 1 MiB spec took `lint` 43 s) and integer keys that share one hash make
-  a mapping quadratic (27 s); `run` loads the target file four times; a 4,000-digit integer in a
-  typed spec field crashes `lint` with a traceback; and the operator's files are read whole with no
-  byte limit, their validation errors listed with no limit. An undefined alias or an unknown tag is
-  still named in the refusal, as `shared/config_errors.py` documents (a tag is now at most 256
-  characters).
+  text; the position, the first of two values whose aliases cross the cap, and a recursive alias's
+  anchor; the precedence; where composition stops for texts, long texts, empty lists, aliases and
+  aliases of a long text, one count per document, and the tag limit on texts, lists and maps; linear
+  memory; the pack loaders; `calibrate`, `run -t`, `run --scope` and `fleet` in process; and in a
+  subprocess bounded at 20 s and 256 MiB, those four, `calibrate` on the flat list and `lint` on a
+  merge bomb. 34 of the 38 tests fail on `0501752` (main): 17 because the file is not refused,
+  eleven because main has no count that stops composition, two because a long tag is neither refused
+  nor kept out of the message, three for the spec loader's positions and order, and one because the
+  measure is new. Twenty-three mutants of the fix are all killed. Clause A-37 (u01), u02 §4, u12
+  A-9. Found by the pre-merge audit of #61.
+- **Left open, each its own task (found by the audits, not introduced here).** Under the cap, a
+  base-60 integer (`1:59:59:...`) builds in time quadratic in its length (a 1 MiB spec took `lint`
+  43 s) and integer keys that share one hash make a mapping quadratic (27 s); `run` loads the target
+  file four times; a 4,000-digit integer in a typed spec field crashes `lint` with a traceback; and
+  the operator's files are read whole with no byte limit, their validation errors listed with no
+  limit. An undefined alias or an unknown tag is still named in the refusal, as
+  `shared/config_errors.py` documents (a tag is now at most 256 characters).
 
 ### Fixed (a file nested past what the CLI can hold)
 

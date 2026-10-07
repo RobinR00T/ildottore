@@ -162,10 +162,11 @@ a list of aliases do the same; and a `%TAG` prefix, copied into the tag of every
 handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Not covered, each its own
 task: construction costs under the cap (a base-60 integer, integer keys sharing one hash) and the
 byte size of the file read. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
-position, the precedence, where composition stops for texts, long texts, empty lists and aliases,
-the per-document count, the tag limit, linear memory on a 20,000-anchor chain, each loader, and in a
-subprocess bounded at 20 s and 256 MiB: `calibrate` on the alias bomb and on the flat list, `run
--t`, `run --scope`, `fleet`, and `lint` on a merge bomb).
+position, a recursive alias's anchor, the precedence, where composition stops for texts, long texts,
+empty lists, aliases and aliases of a long text, the per-document count, the tag limit on texts,
+lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a subprocess bounded at
+20 s and 256 MiB: `calibrate` on the alias bomb and on the flat list, `run -t`, `run --scope`,
+`fleet`, and `lint` on a merge bomb).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

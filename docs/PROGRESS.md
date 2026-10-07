@@ -15,14 +15,14 @@ The carryover ledger. Every agent session updates this so context survives even 
   large, refused at the node where the value crosses the limit, in 0.4 s and 71 MB. Two audits found
   holes in the fix itself, all closed: unsaturated, the measure's own memory grew with the square of
   an anchor chain; measuring only a fully composed document let a 3 MB file of plain texts cost 785
-  MB, and then a list of aliases, uncounted, the same; and a `%TAG` prefix copied into every node's
-  tag held 187 MB for 1,000 nodes. Composition now stops at the cap (an alias counting what it
-  names; 1.4 s and 134 MB for that file) and a tag past 256 characters is refused. Clause A-37
-  (u01). 31 of the 34 new tests fail on `0501752`. Twenty mutants of the fix are all killed. Left
-  open as their own tasks: construction costs under the cap (base-60 integers, colliding integer
-  keys, the target loaded four times per `run`; taken by the session "Bound YAML construction cost
-  under the node cap", stacked on this branch), a huge integer that crashes `lint`, and no byte
-  limit on the operator's files.
+  MB, and a list of aliases, uncounted, was still composed whole; and a `%TAG` prefix copied into
+  every node's tag held 187 MB for 1,000 nodes. Composition now stops at the cap (an alias counting
+  what it names; 1.4 s and 134 MB for that file) and a tag past 256 characters is refused. Clause
+  A-37 (u01). 34 of the 38 new tests fail on `0501752`. Twenty-three mutants of the fix are all
+  killed. Left open as their own tasks: construction costs under the cap (base-60 integers,
+  colliding integer keys, the target loaded four times per `run`; taken by the session "Bound YAML
+  construction cost under the node cap", stacked on this branch), a huge integer that crashes
+  `lint`, and no byte limit on the operator's files.
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 

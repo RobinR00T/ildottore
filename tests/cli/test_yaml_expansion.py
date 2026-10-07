@@ -162,7 +162,19 @@ WRITTEN = {
     "long texts": (["y" * CHARS_PER_NODE * 9] * 120, 100),  # ten nodes each
     "empty lists": (["[]"] * 1_200, 1_000),
     "aliases": (["&a x", *["*a"] * 1_200], 1_000),  # each alias counts what it names
+    "aliases of a long text": (["&a " + "y" * CHARS_PER_NODE * 9, *["*a"] * 200], 100),
 }
+
+
+@pytest.mark.parametrize("load", [safe_yaml.safe_load, safe_load_yaml])
+def test_a_recursive_alias_is_refused_where_it_is_anchored(load: Callable[[str], Any]) -> None:
+    """The spec loader refused it without a position; both loaders now point at the anchor."""
+
+    with pytest.raises((yaml.YAMLError, SafeLoadError)) as caught:
+        load("a: [x, &r [*r]]\n")
+
+    assert "recursive alias" in str(caught.value), caught.value
+    assert "line 1, column 8" in str(caught.value), caught.value
 
 
 @pytest.mark.parametrize("load", [safe_yaml.safe_load, safe_load_yaml])
@@ -203,17 +215,18 @@ def test_a_tag_past_256_characters_is_refused_without_quoting_it(
     """A ``%TAG`` prefix is copied into the tag of every node that uses its handle: 1,000 nodes of
     a 100,000-character prefix held 187 MB, and PyYAML's refusal quoted the whole tag."""
 
-    def problem(prefix: str) -> str:
-        text = f"%TAG !e! tag:e.com,2000:{prefix}\n--- [!e!x x, !e!x x]\n"
+    def problem(prefix: str, node: str = "x") -> str:
+        text = f"%TAG !e! tag:e.com,2000:{prefix}\n--- [!e!x {node}, !e!x {node}]\n"
         with pytest.raises((yaml.YAMLError, SafeLoadError)) as caught:
             load(text)
         return str(caught.value)
 
-    # `tag:e.com,2000:` is 15 characters and the suffix `x` one more.
-    too_long = problem("a" * 241)
-    assert "found a tag longer than 256 characters" in too_long, too_long
-    assert "line 2, column 6" in too_long, too_long
-    assert "aaaa" not in too_long
+    # `tag:e.com,2000:` is 15 characters and the suffix `x` one more; on a text, a list or a map.
+    for node in ("x", "[]", "{}"):
+        too_long = problem("a" * 241, node)
+        assert "found a tag longer than 256 characters" in too_long, too_long
+        assert "line 2, column 6" in too_long, too_long
+        assert "aaaa" not in too_long
     # At 256 it is composed, and PyYAML refuses the tag it cannot build, as it always did.
     assert "could not determine a constructor" in problem("a" * 240)
 
@@ -328,8 +341,8 @@ print(json.dumps({"exit": code, "peak": peak}), file=sys.stderr)
 TIMEOUT_S = 20
 #: The CLI holds about 80 MB after its imports; without the cap the labels grew 70 MB a second.
 MAX_PEAK_BYTES = 256 * 1024 * 1024
-#: A flat list of plain texts, no alias in it: composed whole, it took 13 s and 762 MB before
-#: the measure refused it. Composition stops at the 100,000th text.
+#: A flat list of plain texts, no alias in it: the first version of the cap composed it whole
+#: (785 MB) before refusing it, and main builds it (762 MB). Composition stops at the 100,000th.
 FLAT_ITEMS = 1_000_000
 
 
