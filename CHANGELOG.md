@@ -20,7 +20,7 @@ versioning: [SemVer](https://semver.org/).
   path, or `<path>:`, is not one, so a report named after a commit SHA had its name masked as a
   high-entropy value. As in every message of the CLI, a directory whose name holds a space or one of
   `()[],;'"` still cuts the path short, and a control character in a name reaches the terminal as
-  written (#51 escapes them there). Found by the pre-merge audit of #51.
+  written until #51, which escapes them there, is in. Found by the pre-merge audit of #51.
 - **A value that parses and overflows later.** On 3.14 the parser holds about 116,000 levels and
   `repr` overflows from about 69,500, so a report whose run status carried a reason nested 70,000
   levels deep was read and then overflowed when the refusal of an incomplete run formatted it (exit

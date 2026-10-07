@@ -229,8 +229,9 @@ def test_an_integrity_record_nested_too_deeply_is_corrupt(tmp_path: Path, column
 
 @pytest.mark.parametrize("context", ['{"runs": []}', '{"runs": 1e400, "target_digest": null}'])
 def test_a_bad_count_without_a_digest_is_still_refused(tmp_path: Path, context: str) -> None:
-    """The inherited `--runs` is read on its own, before the target is checked, so a count that
-    is there is checked whether or not a digest is."""
+    """A count that is there is refused whatever else is in the row, so no reader of it ever
+    converts a bad one with `int()`. (Today the target refusal would fire first anyway; this
+    pins the store's own check.)"""
 
     spec_dir = _specs(tmp_path)
     run_id = _halted_run(tmp_path, spec_dir)

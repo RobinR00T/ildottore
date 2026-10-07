@@ -93,6 +93,24 @@ def test_a_relative_report_path_keeps_its_name(
     assert SHA_NAME in line and "nested too deeply" in line
 
 
+def test_a_report_name_is_written_as_it_is_on_disk(tmp_path: Path) -> None:
+    """Escaping the name (`repr`) made it a path that does not exist, so the CLI masked a SHA
+    named report inside a directory holding a backslash (delta audit of #61)."""
+
+    directory = tmp_path / "back\\dir"
+    directory.mkdir()
+    bad = directory / SHA_NAME
+    bad.write_text("{not json", encoding="utf-8")
+    other = tmp_path / "other.json"
+    other.write_text("[]", encoding="utf-8")
+
+    result = runner.invoke(app, ["diff", str(other), str(bad)])
+
+    assert result.exit_code == ExitCode.ERROR
+    line = error_line(result)
+    assert str(bad) in line and "not valid JSON" in line
+
+
 def test_load_findings_refuses_a_report_nested_too_deeply(tmp_path: Path) -> None:
     """The commands read the file through `incomplete_reason` first, so this is the reader
     `diff_reports` and `calibrate_reports` reach on their own."""
