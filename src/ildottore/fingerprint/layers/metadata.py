@@ -46,7 +46,13 @@ def envelope_signal(response: ModelResponse) -> str:
     if response.finish_reason:
         parts.append(f"finish_reason={response.finish_reason}")
     for key in sorted(response.raw_ids):
-        parts.append(f"{key}={response.raw_ids[key]}")
+        value = response.raw_ids[key]
+        # An envelope field is a scalar. A nested value is a transcript (the WebSocket
+        # adapter files its frames under ``raw_ids["websocket"]``), and the target's own
+        # reply text in it must not read as a metadata tell.
+        if isinstance(value, (dict, list)):
+            continue
+        parts.append(f"{key}={value}")
     if response.usage:
         parts.extend(f"usage.{k}" for k in sorted(response.usage))
     for call in response.tool_calls:

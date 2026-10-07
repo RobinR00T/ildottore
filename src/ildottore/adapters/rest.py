@@ -20,10 +20,10 @@ from typing import Any
 from ildottore.adapters.base import AdapterProductError, BaseAdapter
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 
-__all__ = ["RestAdapter", "RestTemplate"]
+__all__ = ["RestAdapter", "RestTemplate", "get_path"]
 
 
-def _get_path(payload: Any, path: str) -> Any:
+def get_path(payload: Any, path: str) -> Any:
     """Resolve a dotted path (``a.b.0.c``) into a nested JSON payload.
 
     Integer-looking segments index into sequences. Returns ``None`` if any
@@ -142,7 +142,7 @@ class RestAdapter(BaseAdapter):
         return body, headers
 
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
-        text = _get_path(payload, self.template.text_path)
+        text = get_path(payload, self.template.text_path)
         if text is None:
             raise AdapterProductError(
                 f"{self.id}: response missing text at path {self.template.text_path!r}"
@@ -152,19 +152,19 @@ class RestAdapter(BaseAdapter):
 
         finish_reason = None
         if self.template.finish_path is not None:
-            candidate = _get_path(payload, self.template.finish_path)
+            candidate = get_path(payload, self.template.finish_path)
             if isinstance(candidate, str):
                 finish_reason = candidate
 
         ids: dict[str, Any] = {}
         if self.template.id_path is not None:
-            id_value = _get_path(payload, self.template.id_path)
+            id_value = get_path(payload, self.template.id_path)
             if id_value is not None:
                 ids["id"] = id_value
 
         usage = None
         if self.template.usage_path is not None:
-            usage_value = _get_path(payload, self.template.usage_path)
+            usage_value = get_path(payload, self.template.usage_path)
             if isinstance(usage_value, Mapping):
                 usage = dict(usage_value)
 
