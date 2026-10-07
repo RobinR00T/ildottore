@@ -6,37 +6,39 @@ The carryover ledger. Every agent session updates this so context survives even 
 ## State, 2026-10-07 (evening): a refusal quoted the operator's value whole
 
 - On `fix/operator-file-quoted-values`, stacked on `fix/operator-file-read-cap` (#76, head
-  `a0bca70`), `tests/cli/test_operator_file_quoted_values.py`: the two LOW findings of #76's
-  pre-commit audit. (1) Refusals written by hand quoted a value of the scope, target, fleet or
-  labels file whole, bounded only by the 1 MiB read (a 1 MB `type:` printed 1,000,108 bytes, an
-  undefined alias of a million characters about 1,000,100 in `run`, `calibrate` and `lint`). They
-  now go through `shared.config_errors.quoted` (the `repr` up to 300 characters, then `... (N
-  characters)`, or `... (N items)` for a list or mapping, never building a container's `repr` whole:
-  90 KB of aliases made one of 200,080,000 characters), and `yaml_problem` cuts PyYAML's reason the
-  same way. The sweep found 24 such refusals, not the 4 reported, among them the authorization
-  refusal of `run` and `fingerprint` (2,000,108 bytes for one id) with the list of ids the scope
-  authorizes (now 20, each cut, `listed`) and two lists in `seeded_setup`. The pre-commit audit
-  found that the enum lookup of a target's `type` still built the whole `repr` (1.28 to 1.49 GB for
-  a 90 KB file of aliases; now refused before the lookup, 72 MB), the credential refusal's unbounded
-  list of declared references (885,131 bytes), the three `--resume` refusals, an integer `repr`
-  cannot write, two surviving mutants and doc figures; the delta audit, that `str()` of a verdict,
-  `provider` or `transport` of aliases still wrote about 675 MB, a labels key that is a huge integer
-  blamed on a valid verdict (in the first commit only), nested aliases untested, the credential
-  variable's name, and doc figures; the pre-merge audit, that urllib's errors quoted an endpoint or
-  `base_url` whole (900 KB, no file; the allowlist now denies what it cannot read, as documented),
-  four branches untested and a date key of `seeded_setup` written differently; the last delta audit,
-  a leading U+00A0 that let urllib's error and the endpoint's password through (the loader now reads
-  the endpoint as the gate does) and an unreadable allowlist entry that denied its neighbours; the
-  delta audit after that, an unreadable entry still matching an IPvFuture literal and `fleet`
-  printing a password the URL mask misses; the final audit, a tab or line break between the slashes
-  still hiding that password from `fleet`; all fixed. Left, written in A-51: the adapter reads the
-  endpoint unstripped (fails closed at the first send). 86 of the 105 tests (the file's 104 and
-  #76's changed reader test) fail on `a0bca70`, each for its reason, and the 19 that pass guard
-  behaviour that must not change; 73 of 75 mutants die (the 2 that live quote a fleet id, already
-  held to 64 characters). (2) A byte that is not UTF-8 in any operator file printed the codec's
-  error with no file name; `read_text_capped` now refuses it as an `OSError` (`EILSEQ`) with the
-  path and the offset, exit 3, as it refuses a file over the cap. Clause A-51 (u01; A-48 to A-50
-  were claimed the same evening by `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
+  `4a572f0`, which brings #81's A-40 from main: the huge-integer refusals of `calibrate` and
+  `seeded_setup` are A-40's, and `quoted` describes such a number in A-40's words),
+  `tests/cli/test_operator_file_quoted_values.py`: the two LOW findings of #76's pre-commit audit.
+  (1) Refusals written by hand quoted a value of the scope, target, fleet or labels file whole,
+  bounded only by the 1 MiB read (a 1 MB `type:` printed 1,000,108 bytes, an undefined alias of a
+  million characters about 1,000,100 in `run`, `calibrate` and `lint`). They now go through
+  `shared.config_errors.quoted` (the `repr` up to 300 characters, then `... (N characters)`, or `...
+  (N items)` for a list or mapping, never building a container's `repr` whole: 90 KB of aliases made
+  one of 200,080,000 characters), and `yaml_problem` cuts PyYAML's reason the same way. The sweep
+  found 24 such refusals, not the 4 reported, among them the authorization refusal of `run` and
+  `fingerprint` (2,000,108 bytes for one id) with the list of ids the scope authorizes (now 20, each
+  cut, `listed`) and two lists in `seeded_setup`. The pre-commit audit found that the enum lookup of
+  a target's `type` still built the whole `repr` (1.28 to 1.49 GB for a 90 KB file of aliases; now
+  refused before the lookup, 72 MB), the credential refusal's unbounded list of declared references
+  (885,131 bytes), the three `--resume` refusals, an integer `repr` cannot write, two surviving
+  mutants and doc figures; the delta audit, that `str()` of a verdict, `provider` or `transport` of
+  aliases still wrote about 675 MB, a labels key that is a huge integer blamed on a valid verdict
+  (in the first commit only), nested aliases untested, the credential variable's name, and doc
+  figures; the pre-merge audit, that urllib's errors quoted an endpoint or `base_url` whole (900 KB,
+  no file; the allowlist now denies what it cannot read, as documented), four branches untested and
+  a date key of `seeded_setup` written differently; the last delta audit, a leading U+00A0 that let
+  urllib's error and the endpoint's password through (the loader now reads the endpoint as the gate
+  does) and an unreadable allowlist entry that denied its neighbours; the delta audit after that, an
+  unreadable entry still matching an IPvFuture literal and `fleet` printing a password the URL mask
+  misses; the final audit, a tab or line break between the slashes still hiding that password from
+  `fleet`; all fixed. Left, written in A-51: the adapter reads the endpoint unstripped (fails closed
+  at the first send). 86 of the 105 tests (the file's 104 and #76's changed reader test) fail on
+  `a0bca70`, each for its reason, and the 19 that pass guard behaviour that must not change; 73 of
+  75 mutants die (the 2 that live quote a fleet id, already held to 64 characters). (2) A byte that
+  is not UTF-8 in any operator file printed the codec's error with no file name; `read_text_capped`
+  now refuses it as an `OSError` (`EILSEQ`) with the path and the offset, exit 3, as it refuses a
+  file over the cap. Clause A-51 (u01; A-48 to A-50 were claimed the same evening by
+  `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
   `fix/target-capabilities-strict`). Open, OD-27: ids have no length bound, so a started run still
   prints a target id whole (plan, progress, reports, run store), and `calibrate` lists uncovered
   labels whole; proposed, a bound at load like the fleet's 64 characters. Left to #71 (open): a
@@ -61,6 +63,24 @@ The carryover ledger. Every agent session updates this so context survives even 
   at once. Since #73 a target file's `capabilities` and `sampling_defaults` errors get the same
   20 and 300. Open (OD-26): the report JSON of `diff` and `calibrate` and the evidence artifacts
   of `replay` and `--resume` are still read whole. Clause A-43 (u01).
+
+## State, 2026-10-07 (afternoon): a number too long to write out
+
+- On `fix/huge-int-repr` (`tests/cli/test_huge_numbers.py`, clause A-40 in u02): an int past
+  Python's digit limit (4,300 by default, 640 at the lowest), which YAML builds from `0x` and 4,000
+  `f`, is reported where it enters, with its file, and never printed: a `SCHEMA` finding at its
+  path in a spec (it was a lint traceback with exit 1, and `run --spec-path` exited 3 naming no
+  file), a refusal naming the labels file for a `calibrate` key, the report for `diff` and
+  `calibrate` (`json.loads` raises a plain `ValueError` past the limit), the target file for its
+  `type`, `mock_scenario` and `seeded_setup` keys. Swept at every value and key of the 75 specs:
+  6,112 of 7,599 placements were a traceback on the base, none now; inside a `!!set` or `!!omap`,
+  which the first version did not walk (pre-commit audit), none either. Independent of a cap on
+  literal length in the YAML loader (`fix/yaml-construction-cost`, A-41). Found on the way and left
+  as separate tasks: a number as a key of a fixture tool call's `args` is a lint traceback where
+  the evaluator matches argument names (A-44, another session); a target file's bad
+  `capabilities` or `sampling_defaults` printed pydantic's raw error with the value and no file
+  (fixed by #73, A-45); a value JSON cannot hold (an unquoted date, a set) passes lint and the dry
+  run exits 1 on it, as does a `--runs` past what a float holds.
 
 ## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
 

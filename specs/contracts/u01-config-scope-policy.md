@@ -189,7 +189,8 @@ is 300 characters or fewer, exactly as before; past that, its first 300 characte
 holds (`... (N items)`), without building the `repr` whole, because YAML aliases make it larger than
 its file (90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000 characters of `repr`,
 about 200 MB to build); an integer Python will not write out (a YAML hex or base-60 integer past
-4,300 digits, whose `repr` raises) is shown as `<an integer of N bits>`. They are: an invalid target
+4,300 digits, whose `repr` raises) is shown as `shared.digits` describes it (A-40, #81), `a number
+too long to write out (over N digits)`, inside a list or mapping too. They are: an invalid target
 `type`, refused before the enum looks it up, because the enum's own error built the whole `repr`
 (that 90 KB file as a `type:` took 1.28 to 1.49 GB of resident memory and 29 to 50 s in five
 measures on `a0bca70`, and printed a line of about 200 MB; it takes 72 MB and 0.6 s now: audit of
@@ -214,13 +215,13 @@ spec loader and `dottore lint` included) is cut the same way. A label's verdict,
 `provider` and `transport`, and the keys of its `seeded_setup` are checked as text before anything
 turns them into text: `str()` of a list of aliases took about 675 MB of resident memory (400 to 600
 MB traced by the test on `a0bca70`), and of an integer past 4,300 digits it raised Python's own
-`Exceeds the limit (4300 digits)` error, naming no file (delta audit); a labels key that is such an
-integer is refused as `<an integer of N bits> cannot be a spec id`, and a `seeded_setup` key is
-written as `str()` writes it (a date stays `2024-01-01`), quoted only when `str()` cannot write it.
-An endpoint or a `base_url` that urllib cannot read (a bracket, a host NFKC turns into a path, a
-port that is not a number or has thousands of digits) raised urllib's or Python's error with no file
-named, and for a host NFKC turns into a path, a bracketed host that is not an IP address or a port
-that is not a number that error quoted the netloc, the host or the port whole (about 900 KB from a
+`Exceeds the limit (4300 digits)` error, naming no file (delta audit); a labels key or a
+`seeded_setup` key that is such an integer is refused as A-40 (#81) words it, and a `seeded_setup`
+key that is text or a date is written as `str()` writes it (a date stays `2024-01-01`). An endpoint
+or a `base_url` that urllib cannot read (a bracket, a host NFKC turns into a path, a port that is
+not a number or has thousands of digits) raised urllib's or Python's error with no file named, and
+for a host NFKC turns into a path, a bracketed host that is not an IP address or a port that is not
+a number that error quoted the netloc, the host or the port whole (about 900 KB from a
 900,000-character value: pre-merge audit). The target loader reads the endpoint stripped, as the
 gate reads it (read raw, a leading U+00A0 hid the host from it and urllib's error reached the
 terminal later with the endpoint's password: delta audit), and refuses an unreadable one naming the

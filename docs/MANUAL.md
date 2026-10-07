@@ -570,7 +570,14 @@ mapping is a `PARSE_ERROR` too. A YAML error gives the line and
 the reason without quoting the line (a reason that names an alias or a tag is cut at 300
 characters), a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
-schema errors are listed per file. An oracle marker that an echo of the
+schema errors are listed per file. A number too long for Python to write out (more than
+`sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
+`f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included), and
+nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
+as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
+`mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An
+oracle marker that an echo of the
 request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered
 into the spec's images (see `CONTRIBUTING.md`). An evaluator config that would silently not
 check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no usable

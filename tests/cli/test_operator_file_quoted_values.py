@@ -40,6 +40,7 @@ from ildottore.shared.config_errors import (
     quoted,
     yaml_problem,
 )
+from ildottore.shared.digits import described
 from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import Target
 from ildottore.store.run_sqlite import SqliteRunStore
@@ -236,9 +237,10 @@ def test_an_integer_python_will_not_write_is_described() -> None:
     with pytest.raises(ValueError):
         repr(huge)
 
-    assert quoted(huge) == "<an integer of 20000 bits>"
-    assert quoted([1, huge]) == "[1, <an integer of 20000 bits>]"
-    assert _repr_head({"k": huge}, 10) == "{'k': <an "
+    # Described as `shared.digits` describes it (A-40), inside a container too.
+    assert quoted(huge) == described()
+    assert quoted([1, huge]) == f"[1, {described()}]"
+    assert _repr_head({"k": huge}, 10) == "{'k': " + described()[:4]
 
 
 class _ReprRaises:
@@ -717,7 +719,7 @@ def test_an_integer_label_key_is_refused_as_a_key_not_as_its_verdict(tmp_path: P
     assert result.exit_code == ExitCode.ERROR, result.output
     [line] = result.stderr.splitlines()
     assert str(case.files[0]) in line and "verdict" not in line, line
-    assert "<an integer of 20000 bits> cannot be a spec id: an integer that long" in line, line
+    assert f"the spec id of entry 1 is {described()}" in line, line
 
 
 def test_an_integer_key_or_provider_of_a_target_is_not_turned_into_text(tmp_path: Path) -> None:
@@ -728,7 +730,7 @@ def test_an_integer_key_or_provider_of_a_target_is_not_turned_into_text(tmp_path
     case = _with(_run(tmp_path, TARGET + f"seeded_setup:\n  ? {HEX}\n  : x\n"), 0, "")
     result = runner.invoke(app, case.args)
     assert result.exit_code == ExitCode.ERROR, result.output
-    assert "has unknown key(s) <an integer of 20000 bits>;" in result.stderr, result.stderr
+    assert f"has unknown key(s) {described()};" in result.stderr, result.stderr
 
 
 def test_a_credential_variable_is_named_up_to_300_characters(

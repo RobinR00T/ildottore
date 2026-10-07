@@ -63,6 +63,7 @@ from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.config_errors import cut, listed, quoted, validation_problems, yaml_problem
+from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import (
@@ -1023,19 +1024,6 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
     return raw
 
 
-def _key_text(key: object) -> str:
-    """A mapping key as text, as ``str()`` writes it, or quoted when ``str()`` cannot write it.
-
-    ``str()`` of an integer past 4,300 digits raises (delta audit of A-51); a date stays
-    ``2024-01-01``, as before (pre-merge audit).
-    """
-
-    try:
-        return str(key)
-    except ValueError:
-        return quoted(key)
-
-
 #: What a target file's ``type`` can say.
 _TARGET_TYPES = frozenset(t.value for t in TargetType)
 
@@ -1174,7 +1162,8 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} 'seeded_setup' must be a mapping")
     known = ("specs", "tools", "granted_tools", "run_token")
-    unknown = sorted(_key_text(key) for key in raw if key not in known)
+    # A key that is a number too long to write out raised in `str` (A-40).
+    unknown = sorted(described() if too_long(key) else str(key) for key in raw if key not in known)
     if unknown:
         # The names the file gives, up to 300 characters in all (clause A-51).
         raise ValueError(
@@ -1261,21 +1250,20 @@ def target_uses_mock(path: Path) -> bool:
         return True
     # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real
     # over-the-wire (subprocess) target even though it declares no ``endpoint``.
-    # Read only as text: `str()` of a list of aliases wrote hundreds of megabytes, and of an
-    # integer past 4,300 digits it raised (audit of A-51); nothing but a text says `mcp`.
-    provider, transport = raw.get("provider"), raw.get("transport")
-    if (
-        isinstance(provider, str)
-        and provider.strip().lower() == "mcp"
-        and isinstance(transport, str)
-        and transport.strip().lower() == "stdio"
-        and raw.get("command")
-    ):
+    # Text only, as `load_target` reads them: `str` raised on a number too long to write out
+    # (A-40), and no other value could have read as `mcp` or `stdio`.
+    provider = _lowered(raw.get("provider"))
+    transport = _lowered(raw.get("transport"))
+    if provider == "mcp" and transport == "stdio" and raw.get("command"):
         return False
     endpoint = raw.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint:
         return True
     return endpoint.startswith("mock://")
+
+
+def _lowered(value: object) -> str:
+    return value.strip().lower() if isinstance(value, str) else ""
 
 
 # --- the runner --------------------------------------------------------------------

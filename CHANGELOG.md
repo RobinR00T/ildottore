@@ -20,33 +20,33 @@ versioning: [SemVer](https://semver.org/).
   characters, about 200 MB). As a target's `type:`, that file took 1.28 to 1.49 GB of memory and 29
   to 50 s and printed a line of about 200 MB, because the type's own lookup wrote the value out
   before the refusal could cut it; it is now refused before the lookup, in 72 MB and 0.6 s. An
-  integer Python will not write out (a YAML hex integer past 4,300 digits) is shown as `<an integer
-  of N bits>` instead of raising. It covers an invalid target `type` and `mock_scenario`, the
-  scope's duplicated target ids and identity names and its shared canaries, the spec id of a label
-  with an invalid verdict, two target files with one id, the target id and endpoint of an
-  authorization refusal in `run` and `fingerprint` and the ids the scope authorizes, which it lists
-  after (now the first 20, each cut, and how many more), the target id of the `--hardened`, stdio
-  and credential refusals and the references the scope declares for that credential (the first 20;
-  3,000 references of 290 characters printed 885,131 bytes) and the variable such a reference names,
-  an `auth_ref` reference, the target ids of the refusals that bind `run --resume` to its target
-  (900,276 bytes for an id of 900,000 characters), `fleet`'s invalid port and judge mismatches, the
-  unknown keys and doubly listed tools of a target's `seeded_setup`, and PyYAML's reason in every
-  YAML error, the spec loader's and `dottore lint`'s included. A label's verdict, a target's
-  `provider` and `transport` and the keys of its `seeded_setup` are checked as text before anything
-  turns them into text: `str()` of a list of aliases wrote about 675 MB, and of a YAML integer past
-  4,300 digits it raised (Python's `Exceeds the limit (4300 digits)` error, naming no file; a labels
-  key that is such an integer is now `<an integer of N bits> cannot be a spec id`). An endpoint or
-  `base_url` urllib cannot read (a bracket, a host NFKC turns into a path, a port that is not a
-  number) raised urllib's error with no file named, for some kinds with the netloc, host or port
-  whole (900 KB for a long one): the target loader now reads the endpoint stripped, as the gate does
-  (a leading U+00A0 had let urllib's error through later, the endpoint's password included), and
-  names the file and the field without the value; the allowlist denies what it cannot read, as it
-  always said it would, so the authorization refusal quotes it cut, and an entry pinned to a port
-  that cannot be read matches nothing instead of denying every URL after it; `fleet` quotes it as
-  urllib reads it, cut and without what precedes the last `@` of its authority, so a password the
-  CLI's URL mask misses (an empty user, a space, a tab between the slashes) is not printed. The 24
-  refusals of the new test printed lines of 400,080 to 2,000,247 characters on `c9f27cc`; now each
-  is under 2,500.
+  integer Python will not write out (a YAML hex integer past 4,300 digits) is described as #81
+  describes it (`a number too long to write out`) instead of raising, inside a list too. It covers
+  an invalid target `type` and `mock_scenario`, the scope's duplicated target ids and identity names
+  and its shared canaries, the spec id of a label with an invalid verdict, two target files with one
+  id, the target id and endpoint of an authorization refusal in `run` and `fingerprint` and the ids
+  the scope authorizes, which it lists after (now the first 20, each cut, and how many more), the
+  target id of the `--hardened`, stdio and credential refusals and the references the scope declares
+  for that credential (the first 20; 3,000 references of 290 characters printed 885,131 bytes) and
+  the variable such a reference names, an `auth_ref` reference, the target ids of the refusals that
+  bind `run --resume` to its target (900,276 bytes for an id of 900,000 characters), `fleet`'s
+  invalid port and judge mismatches, the unknown keys and doubly listed tools of a target's
+  `seeded_setup`, and PyYAML's reason in every YAML error, the spec loader's and `dottore lint`'s
+  included. A label's verdict, a target's `provider` and `transport` and the keys of its
+  `seeded_setup` are checked as text before anything turns them into text: `str()` of a list of
+  aliases wrote about 675 MB, and of a YAML integer past 4,300 digits it raised (Python's `Exceeds
+  the limit (4300 digits)` error, naming no file; #81 refuses a labels key that is such an integer).
+  An endpoint or `base_url` urllib cannot read (a bracket, a host NFKC turns into a path, a port
+  that is not a number) raised urllib's error with no file named, for some kinds with the netloc,
+  host or port whole (900 KB for a long one): the target loader now reads the endpoint stripped, as
+  the gate does (a leading U+00A0 had let urllib's error through later, the endpoint's password
+  included), and names the file and the field without the value; the allowlist denies what it cannot
+  read, as it always said it would, so the authorization refusal quotes it cut, and an entry pinned
+  to a port that cannot be read matches nothing instead of denying every URL after it; `fleet`
+  quotes it as urllib reads it, cut and without what precedes the last `@` of its authority, so a
+  password the CLI's URL mask misses (an empty user, a space, a tab between the slashes) is not
+  printed. The 24 refusals of the new test printed lines of 400,080 to 2,000,247 characters on
+  `c9f27cc`; now each is under 2,500.
 - **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
   or labels file (or a policy or signature pack) printed `error: 'utf-8' codec can't decode byte
   0xff in position 15: invalid start byte`, with no file name, where the spec loader says `not
@@ -108,6 +108,43 @@ versioning: [SemVer](https://semver.org/).
   error outside the validation listing can still quote a value of the file whole (an unknown target
   `type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Found by
   the pre-commit audit of the alias-expansion cap (#71). Clause A-43 (u01).
+
+### Fixed (a number too long to write out)
+
+- **`dottore lint` printed a traceback on a spec holding a huge number.** Python refuses to turn an
+  int of more than 4,300 decimal digits into text (`sys.get_int_max_str_digits()`; 640 at the
+  lowest `PYTHONINTMAXSTRDIGITS` allows), and YAML builds one from `0x` and 4,000 `f`. As a spec's
+  `name`, `owasp` or `spec_version`, jsonschema's message `<value> is not of type 'string'` raised
+  `ValueError: Exceeds the limit`: a traceback and exit 1, which this tool uses for "findings below
+  the threshold". Planted at every value and key of the 75 shipped specs under the lowest limit,
+  6,112 of 7,599 placements were that traceback. The spec validator now reports each such number
+  as a `SCHEMA` finding at its path, `name: a number too long to write out (over 4300 digits)` (or
+  `a key that is a number ...`), at most 20 per spec, and quotes none of it, wherever it sits: a
+  `!!set`, `!!omap` or `!!pairs` included. Found by the pre-commit audit of
+  `fix/yaml-alias-expansion-cap`.
+- **`dottore run --spec-path` refused such a spec without naming it.** It exited 3 with `error:
+  Exceeds the limit (4300 digits) ...`. It now refuses it as any spec that fails to load,
+  naming the file, before anything is sent. In 313 placements the schema took the number and lint
+  passed; of those, the 221 a mock model target runs all exited 3 the same way in the live run,
+  where the number was written. They are refused at load now, in the dry run too. `registry ls`,
+  `describe` and `coverage` leave such a spec out with their load warning; they printed a traceback
+  or exited 3 naming nothing.
+- **`dottore calibrate` with such a number as a labels key** exited 3 with the same unnamed
+  message (the error for an invalid verdict formatted the id). It now says `labels file <path>:
+  the spec id of entry <n> is a number too long to write out (...)`. As a verdict it was already
+  refused by name, and still is.
+- **`dottore diff` and `dottore calibrate` on a report with a number past the limit** exited 3
+  naming neither file: `json.loads` raises a plain `ValueError` there, not a `JSONDecodeError`.
+  It now says `the report <path> holds a number too long to read (over 4300 digits)`.
+- **A target file's `type`, `mock_scenario` or a key of its `seeded_setup`** as such a number
+  exited 3 with the same unnamed message; the refusal now names the target file and says what the
+  value is instead of quoting it. As `provider` or `transport` it exited 3 too, because the mock
+  routing called `str` on them before the target loader, which reads them only as text, ignored
+  it; they are read only as text there as well, so the number is no provider, as `5` always was.
+  The signature pack's `pack_version` is refused the same way (a library path; the CLI loads the
+  built-in pack).
+- Each check stands on its own: a cap on a literal's length in the YAML loader does not cover a
+  limit set below it, nor a value read from JSON. Clause A-40 (u02).
 
 ### Fixed (a target file's bad value printed pydantic's error, value included)
 

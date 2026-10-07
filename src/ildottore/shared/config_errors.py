@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, cast
 
 from pydantic import ValidationError
 
+from ildottore.shared.digits import described
+
 if TYPE_CHECKING:  # annotation only: `shared` imports pydantic and the stdlib at run time
     import yaml
 
@@ -121,15 +123,16 @@ _CONTAINERS = (list, tuple, dict, set, frozenset)
 def _repr(item: object) -> str:
     """``repr(item)``, or what an integer is when Python will not write it out.
 
-    A YAML integer in hex or in base 60 is built past the 4,300 digits Python converts to text,
-    and ``repr`` then raises (audit of A-51): the refusal that quoted it raised instead.
+    A YAML integer in hex or in base 60 is built past the digits Python converts to text, and
+    ``repr`` then raises (audit of A-51): the refusal that quoted it raised instead. It is
+    described as ``shared.digits`` describes it (A-40); any other failure is raised.
     """
 
     try:
         return repr(item)
     except ValueError:
         if isinstance(item, int):
-            return f"<an integer of {item.bit_length()} bits>"
+            return described()
         raise
 
 
