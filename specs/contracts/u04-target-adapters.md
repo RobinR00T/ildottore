@@ -117,9 +117,12 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   still send confident logprobs and be scored "likely memorized", as before, and absurd but finite
   ones (two of `-1.7e308`) make the mean NLL infinite, read as "no memorization signal"; a token
   is read with `str()`, unchecked (a lone surrogate there, or in the reply's text, still aborts
-  `run` with exit 3 on `UnicodeEncodeError`, open). `tests/cli/test_logprob_figures.py` (through
-  the CLI: `fingerprint`, `run`, `run -sV` and the membership spec, both directions, the text
-  still judged), `tests/adapters/test_base.py`, `tests/evaluators/test_data_leak.py`,
+  `run` with exit 3 on `UnicodeEncodeError`, open; and a token, or an alternative's token, nested
+  about 100,000 levels deep still overflows `str()` with `RecursionError`, so `fingerprint` and
+  `run -sV` exit 1 and `run` exits 3, as on main, which the depth cap of `fix/target-deep-json`
+  turns into `ResponseTooDeep`: pre-merge audit). `tests/cli/test_logprob_figures.py` (through the
+  CLI: `fingerprint`, `run`, `run -sV` and the membership spec, both directions, the text still
+  judged), `tests/adapters/test_base.py`, `tests/evaluators/test_data_leak.py`,
   `tests/shared/test_logprobs.py`.
 - **Capabilities:** each adapter reports every bool flag (nine as built); parametrized snapshot per provider.
 - **Error classification:** 429/503/timeout cassettes ⇒ retry-then-skip (env); a malformed-schema
@@ -149,7 +152,10 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   impossible (`log p` is never above 0, and a gateway that writes probabilities into the field
   is caught). Not measured: whether a provider sends rounding-level positive figures (`2e-07`);
   if one does in a token's own figure, its membership spec is inconclusive, with nothing in the
-  evidence saying why (in an alternative it costs only that token's alternatives). Open:
+  evidence saying why (in an alternative it costs only that token's alternatives). Also the
+  owner's: an entry that is not an object (a list such as `["a", 0.9]`, a string, a number) or
+  that carries no figure is skipped and the rest is scored, as on main, though the whole-block
+  reasoning applies to it too (pre-merge audit). Open:
   whether the evidence should say a block was unreadable rather than absent, which needs an
   additive field on `ModelResponse` (u00).
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default

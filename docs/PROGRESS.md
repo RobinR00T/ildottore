@@ -15,8 +15,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   only its token's alternatives (u04 §7 A-39, `tests/cli/test_logprob_figures.py`). Open for the
   owner (OD-24): the whole block versus only the bad entry, a positive figure counted as
   impossible, and whether the evidence should say the block was unreadable rather than absent.
-  Found by the pre-commit audit and left open: a lone surrogate in a token or the reply's text
-  still aborts `run` (exit 3, `UnicodeEncodeError`), on main too.
+  Found by the audits and left open, both on main too: a lone surrogate in a token or the reply's
+  text still aborts `run` (exit 3, `UnicodeEncodeError`), and a token nested about 100,000 levels
+  deep still overflows `str()` (closed by the depth cap of `fix/target-deep-json`, PR #65).
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 

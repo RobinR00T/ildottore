@@ -34,7 +34,8 @@ versioning: [SemVer](https://semver.org/).
   cannot have an impossible one scored. Known: the evidence does not say a block was unreadable
   rather than absent, such an adapter's own figures still reach the evidence as it built
   them, and a run halted before this change keeps, when resumed, the verdicts and figures its
-  stored attempts carry (u04 §7 A-39, OD-24). Found by the code audit of `fix/usage-figure-overflow` (F1, F2, F4,
+  stored attempts carry; a token nested about 100,000 levels deep still overflows `str()` as on
+  `main` (the depth cap of `fix/target-deep-json` closes it) (u04 §7 A-39, OD-24). Found by the code audit of `fix/usage-figure-overflow` (F1, F2, F4,
   F5).
 
 ### Fixed (a file nested past what the CLI can hold)
