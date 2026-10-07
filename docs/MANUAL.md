@@ -210,6 +210,16 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
+A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
+`max_tokens` outside 1 to its cap or a key `sampling_defaults` does not know is refused before
+anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
+problems found in that block (the `capabilities` block alone if both are wrong), never the value
+written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
+valid boolean, unable to interpret input`. The field is printed from the key you wrote, so a control
+character in a key reaches the terminal as written (a line break splits the line). What can be read
+is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
+`top_p` have no range check. A key `capabilities` does not know is ignored, and so is a
+`capabilities` that is empty or `false`.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.

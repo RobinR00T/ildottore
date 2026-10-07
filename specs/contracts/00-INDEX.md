@@ -94,6 +94,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-1..A-3 | u09 | benign is a predicate over the carrier, the probe discriminates, declared cost equals real cost |
 | A-4..A-6 | u08 | the wall budget measures time, every send passes the rate gate, a halt says why |
 | A-24 | u12 | a resume is bound to its campaign: battery, target, route, sample size and money |
+| A-45 | u12 | a target file's `capabilities` or `sampling_defaults` refusal names the file, the field and the reason on one line, never the value |
 | A-7..A-11 | u12 | no-send holds under combination, printed numbers are computed by the working code, operational failure exits 3, a resume is bound to its target, a ceiling binds every request |
 | A-26 | u11 | a gap says which kind it is (roadmap, out of reach, or by design), with the reason |
 | A-12..A-15 | u11 | no denominator over survivors, uncounted values are reported, figures carry their edition, machine formats carry the run state |
