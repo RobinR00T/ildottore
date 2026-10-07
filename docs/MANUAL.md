@@ -220,6 +220,20 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
+The file holds these keys and no others: `id`, `type`, `name`, `provider`, `endpoint`, `model`,
+`auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup` and
+`mock_scenario` (below). Any other key is refused before anything is sent (exit 3), and so is a
+`name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text, on one line
+that names the file and the key, never the value: `error: target file target.yaml failed
+validation: endpont: Extra inputs are not permitted`. Until 2026-10-07 both were read as absent,
+so `endpont:` left a live target with no endpoint and the run went to the offline mock with exit
+0, and keys of `capabilities` that lost their indent were ignored at the top level (open decision
+OD-31). Quote a model id YAML reads as a number (`model: "20240613"`). A key with nothing after
+it, `null` or `~` is still absent. A key that only holds an anchor for a `<<` merge (`x-defaults:
+&d`) is refused like any other: write the merged map inline. The key is printed as you wrote it,
+so a control character in it reaches the terminal as written, as below. A run halted before then
+with such a key resumes once you delete the key; correcting it to the key you meant changes the
+target, and the resume is refused.
 A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
 `max_tokens` outside 1 to its cap or a key `sampling_defaults` does not know is refused before
 anything is sent (exit 3), on one line that names the file and gives the field and the reason of the

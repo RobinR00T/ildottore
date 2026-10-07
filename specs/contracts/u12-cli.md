@@ -332,6 +332,75 @@ pinned:
   as no capabilities, and a key it does not know is dropped without a word (`sampling_defaults`
   refuses both).
 
+**A-53 A target file's top level holds only the keys its readers read, and text where they read
+text; anything else is refused before anything is sent (added 2026-10-07; OD-31, open).**
+`load_target`, `target_uses_mock` and `load_mock_scenario` each took the keys they knew from the
+file's top level with `raw.get(...)` and never looked at the rest, and `load_target` read a
+`name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text as absent.
+So a misspelled key was dropped without a word, and when it was the endpoint, or the endpoint
+was written as a list, a live target had no endpoint and `target_uses_mock` sent the run to the
+offline mock: on `2f6201a`, `run` of a live target with `endpont:` ran its spec against the
+`bare` mock, exit 0, inconclusive, and its dry run said `authorized at` the scope's base URL,
+with no word about the endpoint or the mock. A `capabilities:` whose children lost their indent
+read as no capabilities with `tools`, `rag` and `memory` ignored at the top level: a `type:
+model` target with all three planned 34 specs with 39 skipped for a capability, against 59 and
+8, and nothing named the keys. A model id YAML reads as a number (`model: 20240613`) was read as
+no model. Now `_read_target_yaml`, which every reader goes through, checks the top level against
+`_TargetFileTopLevel` and refuses, on one line in the A-45 form, `target file <path> failed
+validation: endpont: Extra inputs are not permitted` (`model: Input should be a valid string`; a
+key that is not text: `1: Keys should be strings`), never the value:
+* the keys are the fields of `Target` (`id`, `type`, `name`, `provider`, `endpoint`, `model`,
+  `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`) and
+  `mock_scenario`; a field added to `Target` and read by `load_target` has to be added to the
+  model, or every file that writes it is refused (a test pins the two sets equal);
+* `name`, `provider`, `endpoint`, `model`, `auth_ref` and `transport` are text (`StrictStr`, so
+  `!!binary` bytes are refused too) or absent: the key with nothing after it, `null` or `~`,
+  as before; an empty string is text, so `endpoint: ""` still routes to the mock;
+* every reader refuses a file this check refuses, with the same line, so `target_uses_mock` no
+  longer routes such a file to the mock (a file `load_target` refuses for another reason, a bad
+  `capabilities` say, is refused by `load_target` alone, which `run` and `fingerprint` call before
+  they route); `dottore fleet` writes only these keys (a test runs it on both shipped fleets and
+  loads what it writes).
+
+`tests/cli/test_target_top_level_keys.py`: 43 of its 78 tests fail on `2f6201a`, each on the old
+behavior (25 because the command exits 0, 17 because the reader does not raise) or, for the one
+that pins the key set, on the missing model; the other 35 guard what stays (every legal key
+loads, a null text field is absent, `id` and `type` keep their own refusals) and that the
+redactor leaves each test value readable, and one loads every target file
+under `examples/`, `specs/` and `tests/` and every target block of the docs and man pages through
+the three readers. Refusing is the owner's call (OD-31), built as the smallest reversible change:
+the `_TargetFileTopLevel` check in `_read_target_yaml`, and the six `isinstance(..., str) else
+None` reads of `load_target` it made dead, which come back with it. Outside the clause, and said
+so rather than pinned:
+* a misspelled value is still read as written, without a word: `provider: opnai` with an
+  endpoint routes to the REST adapter (as the manual says of any provider but `openai`,
+  `anthropic` and `mcp`), and a stdio MCP target, which has no endpoint, with `transport: stido`
+  or `provider: mpc` runs on the offline mock, where the `mcp` suite's spec scores PASS with exit
+  0 (measured here and on `2f6201a` alike): the outcome this clause closes for a key, left open
+  for a value;
+* the keys inside a block are its reader's: a key `capabilities` does not know is still dropped
+  on `2f6201a` (A-50 refuses it on `fix/target-capabilities-strict`); `sampling_defaults` and
+  `seeded_setup` already refuse theirs;
+* `id` and `type` keep their own refusals, which quote what was written (A-45), and a file with
+  an unknown key and no `id` is refused on the key;
+* a key that only holds an anchor for a `<<` merge (`x-defaults: &d`, `.base: &b`) is a key like
+  any other and is refused, though such a file loaded on `2f6201a`; a map merged inline (`<<:
+  {...}`) still loads;
+* a key is printed as the location, as A-45 says of any key: one that is not text as pydantic
+  renders it (`on:` as `1`, `~:` as `None`, a `!!binary` key as `b'...'`, a number too long to
+  write out as `<unprintable int object>`), an empty key, or one holding a lone surrogate, as
+  `<root>`, control characters as written until #51 writes them out (so a line break in a key
+  splits the one line, and the second may start with anything), and a credential pasted as a key
+  is masked only by the redactor's own rules;
+* every problem is listed on the one line (20,000 unknown keys in a 189 KB file gave a line of
+  788,937 bytes); the default of 20 listed problems, and the cut of a long key, that #76
+  (`fix/operator-file-read-cap`) gives `validation_problems` bound it once it lands;
+* a run halted before this change with such a key resumes once the key is deleted (it was never
+  read, so the target is the same: measured end to end, exit 0, still on the mock for a lost
+  endpoint) and is refused as another target once the key is corrected to the one meant; that
+  refusal's advice to restore the target as it was cannot be followed, since that file no longer
+  loads.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -349,3 +418,17 @@ pinned:
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-31** (open, built reversibly, 2026-10-07, A-53): whether a target file's top level refuses
+  a key no reader reads and a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport`
+  that is not text, or keeps dropping them. Built: both refused before anything is sent, by every
+  reader of the file. Alternatives: keep the silence (main until A-53: `endpont:` runs a live
+  target on the offline mock with exit 0); warn and go on (the warning goes where the run's
+  output goes, and a CI log nobody reads runs on the mock just the same); refuse only the text
+  fields that are not text and warn on an unknown key (an unknown key costs the same as a lost
+  endpoint when it is the endpoint); accept a key that only holds an anchor under a prefix
+  (`x-`, as Compose does). A file that loads on main and is refused now holds a key outside
+  `Target`'s fields and `mock_scenario` (an anchor holder included), or one of those six fields as
+  anything but text (a number, a boolean, a date, a list, a map, a set or bytes); no file of the
+  repository does. Reversal: the `_TargetFileTopLevel`
+  check in `_read_target_yaml`, and the six `isinstance(..., str) else None` reads in
+  `load_target`.
