@@ -86,11 +86,15 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   than 100 levels deep (objects and arrays, outside strings, read from the text before it is
   parsed, whether or not the rest is valid JSON; a provider's reply nests about 10), or a tool
   call whose JSON-string arguments do, is refused the same way: inconclusive, not retried, and
-  the rest of the scan goes on. During a `-sV` or `-A` probe pass a reply refused on any of
-  these grounds still stops the run before the attack. A success reply that is not JSON
-  (brackets that do not balance included), or holds an integer of more than 4,300 digits (which
-  Python refuses to read), still stops the run (exit 3). An MCP server over stdio may write a
-  reply line of up to the same 4 MiB, and up to 4 MiB of stray lines before a reply.
+  the rest of the scan goes on. Tool-call arguments whose brackets do not balance read as no
+  arguments, as before; arguments whose brackets balance and nest past 100 are refused even when
+  they are not JSON, so that reply is inconclusive instead of judged by the tool's name. During a
+  `-sV` or `-A` probe pass a reply refused on any of these grounds still stops the run before the
+  attack. A success reply that is not JSON (brackets that do not balance included), or holds an
+  integer of more than 4,300 digits (which Python refuses to read), still stops the run (exit 3);
+  over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
+  times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
+  stray lines and its reply together.
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.

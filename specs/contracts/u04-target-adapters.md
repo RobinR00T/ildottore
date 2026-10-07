@@ -57,7 +57,8 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   JSON, brackets that do not balance are not JSON (refused unparsed). The measure is linear: its
   string pattern cannot fail once it has seen a quote (one that could took 38 s for 160 KB). An
   MCP stdio reply line may be 4 MiB (`MAX_RESPONSE_BYTES`, asyncio's default was 64 KiB), and so
-  may all the lines one request reads; past either it is `ResponseTooLarge`. A tool call's
+  may all one request reads, its stray lines and its reply together (each line's ending newline
+  not counted); past either it is `ResponseTooLarge`. A tool call's
   arguments carried as a JSON string are measured too, unless they do not balance (they read as
   no arguments, as before)
   (`shared.toolcalls.check_argument_nesting`), since the reply's parse never opens them. The
@@ -104,9 +105,10 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   golden JSON in `tests/adapters/golden/logprobs/`; a no-logprob cassette ⇒ `logprobs is None`.
 - **Capabilities:** each adapter reports every bool flag (nine as built); parametrized snapshot per provider.
 - **Error classification:** 429/503/timeout cassettes ⇒ retry-then-skip (env); a malformed-schema
-  200 ⇒ raise (product defect). No defect masked as flake. A 200 nested deeper than `MAX_DEPTH`
-  or past the parser's stack, in the body or in a tool call's string arguments, ⇒
-  `ResponseTooDeep` (env, sent once), for every adapter and the MCP transports
+  200 ⇒ raise (product defect). No defect masked as flake. A 200 whose brackets balance and nest
+  deeper than `MAX_DEPTH` (past the parser's stack included), in the body or in a tool call's
+  string arguments, ⇒ `ResponseTooDeep` (env, sent once), for every adapter and the MCP transports
+  (brackets that do not balance follow the product-defect rule, OD-21)
   (`tests/adapters/test_deep_replies.py`); through the CLI, one such reply fails its attempt
   and every other spec runs (`tests/cli/test_hostile_nesting.py`).
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/adapters` clean; `lint-imports` green

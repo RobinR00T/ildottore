@@ -5,8 +5,9 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 ## State, 2026-10-07 (morning): a hostile reply nested too deeply fails one attempt
 
-- On `fix/target-deep-json`: a target reply nested past 100 levels (`shared.nesting.MAX_DEPTH`),
-  or past the parser's stack, is `ResponseTooDeep`, an environment failure that is not retried:
+- On `fix/target-deep-json` (PR #65): a target reply whose brackets balance and nest past 100
+  levels (`shared.nesting.MAX_DEPTH`), however deep, is `ResponseTooDeep`, an environment failure
+  that is not retried:
   that attempt is inconclusive and the scan goes on. Before, `json.loads` raised
   `RecursionError` past the parser's stack (400 KB of `[`) and pydantic overflowed past about
   255 levels when writing evidence (600 bytes), and either aborted the campaign at the first

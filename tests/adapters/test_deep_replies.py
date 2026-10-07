@@ -137,6 +137,8 @@ async def test_tool_call_arguments_nested_too_deeply_inside_their_string(levels:
 async def test_the_limit_is_the_documented_depth_and_a_real_reply_is_far_inside_it() -> None:
     from ildottore.shared.nesting import MAX_DEPTH
 
+    assert MAX_DEPTH == 100  # the figure every document states (pre-merge audit)
+
     def reply(levels: int) -> bytes:
         # The reply object is level 1, so a value of N - 1 levels makes a reply N deep.
         return (
@@ -254,10 +256,16 @@ for line in sys.stdin:
         continue
     if mode == "deep":
         result = '{"serverInfo":{"name":' + "[" * n + "]" * n + "}}"
-    elif mode == "junk":  # n bytes of stray lines before the reply, 1 MiB each
+    elif mode in ("junk", "junkcr"):  # n bytes of stray lines before the reply, 1 MiB each
         for _ in range(n // 1048576):
-            print("x" * 1048576, flush=True)
+            print(("x" if mode == "junk" else chr(13)) * 1048576, flush=True)
         result = json.dumps({"serverInfo": {"name": "late"}})
+    elif mode == "exact":  # 10 stray bytes, then a reply that brings the request to n bytes
+        print("x" * 10, flush=True)
+        head = '{"jsonrpc":"2.0","id":%d,"result":{"serverInfo":{"name":"' % msg["id"]
+        tail = '"}}}'
+        print(head + "y" * (n - 10 - len(head) - len(tail)) + tail, flush=True)
+        continue
     elif mode == "tools":
         tools = [{"name": "tool_%d" % i, "description": ("Reads record %d. " % i) * 20}
                  for i in range(n)]
@@ -315,9 +323,23 @@ async def test_what_one_mcp_stdio_request_reads_is_capped_as_a_whole(tmp_path: P
 
     from ildottore.adapters.base import MAX_RESPONSE_BYTES
 
-    with pytest.raises(AdapterEnvError, match="exceeded") as caught:
-        await _stdio(tmp_path, "junk", MAX_RESPONSE_BYTES + 1048576).send(ModelRequest(prompt="hi"))
-    assert caught.value.retryable is False  # type: ignore[attr-defined]
+    for mode in ("junk", "junkcr"):  # carriage returns are bytes too (pre-merge audit)
+        with pytest.raises(AdapterEnvError, match="exceeded") as caught:
+            await _stdio(tmp_path, mode, MAX_RESPONSE_BYTES + 1048576).send(
+                ModelRequest(prompt="hi")
+            )
+        assert caught.value.retryable is False  # type: ignore[attr-defined]
     # Stray lines within the cap are skipped, as before.
     response = await _stdio(tmp_path, "junk", 2 * 1048576).send(ModelRequest(prompt="hi"))
     assert "MCP server: late" in response.text
+
+
+async def test_the_stdio_cap_counts_the_stray_lines_and_the_reply_together(tmp_path: Path) -> None:
+    """4 MiB in all, the newline that ends each line not counted: exactly that is read."""
+
+    from ildottore.adapters.base import MAX_RESPONSE_BYTES
+
+    response = await _stdio(tmp_path, "exact", MAX_RESPONSE_BYTES).send(ModelRequest(prompt="hi"))
+    assert response.text.startswith("MCP server: yyy")
+    with pytest.raises(AdapterEnvError, match="exceeded"):
+        await _stdio(tmp_path, "exact", MAX_RESPONSE_BYTES + 1).send(ModelRequest(prompt="hi"))

@@ -46,10 +46,11 @@ versioning: [SemVer](https://semver.org/).
 - **An MCP server over stdio may write a reply line as long as an HTTP reply, 4 MiB** (it was
   asyncio's default of 64 KiB, and a server listing 300 ordinary tools, 148 KB on one line,
   stopped the campaign with "Separator is not found, and chunk exceed the limit", on `main` too).
-  A longer line, or more than 4 MiB of stray lines before one request's reply, is
-  `ResponseTooLarge`: without that total, 63 lines of 4 MiB took 80 s and 419 MB per attempt
-  (delta audit). A deep line is refused at once, ahead of the handler that skips a stray non-JSON
-  line.
+  A longer line, or more than 4 MiB in all for one request (its stray lines and its reply
+  together, every byte but each line's ending newline counted), is `ResponseTooLarge`: without
+  that total, 63 lines of 4 MiB took 80 s and 419 MB per attempt (delta audit), and counting a
+  line without all its trailing carriage returns let lines of them through (pre-merge audit). A
+  deep line is refused at once, ahead of the handler that skips a stray non-JSON line.
 - **The judge's reply** goes through the same parse: one nested past the parser's stack raised
   `RecursionError` out of the evaluator and aborted the campaign; it is now inconclusive, as
   judge output that is not usable JSON. `call_arguments` reads arguments nested too deeply as
@@ -57,8 +58,11 @@ versioning: [SemVer](https://semver.org/).
   adapter, so only a call from elsewhere (a fixture) can get there. Arguments whose brackets do
   not balance are not refused: they read as no arguments and the call is judged by its name, as
   on `main` (refused, 101 unclosed `[` turned a call to a forbidden tool from a fail into an
-  inconclusive; delta audit). The fingerprint engine's two `json.loads` read the layers' own flat
-  signals, not a target's text, and are unchanged.
+  inconclusive; delta audit). Arguments whose brackets balance and nest past 100 are refused even
+  when they are not JSON, so such a call is inconclusive where `main` judged it by its name: the
+  balance is a count, and telling those apart without parsing them is left open (pre-merge
+  audit). The fingerprint engine's two `json.loads` read the layers' own flat signals, not a
+  target's text, and are unchanged.
 - **The "Not exercised" line** of the summary and of the HTML report names a reply nested too
   deeply among the environment errors.
 - **Not changed:** with `-sV` or `-A`, such a reply during the fingerprint probe pass still stops
@@ -71,15 +75,15 @@ versioning: [SemVer](https://semver.org/).
   case to fail only its attempt already; it did not.
 - **Docs:** the MANUAL (bounded replies, `--resume`), `docs/02` (a row for a reply built to
   crash the scanner), `docs/09`, contract u04 (§4 KEEP, §7, §9 OD-21) and the 00-INDEX ledger.
-  54 tests: `tests/adapters/test_deep_replies.py` (26, every adapter and both MCP transports),
+  55 tests: `tests/adapters/test_deep_replies.py` (27, every adapter and both MCP transports),
   `tests/cli/test_hostile_nesting.py` (3, through the CLI against a local stub, one of them
   arguments exactly 100 deep through the in-band tool loop, the deepest place a reply reaches:
   111 levels in the report; with the limit at 200 or 250 its `replay` fails, at 300 the run
   aborts), `tests/shared/test_nesting.py` (24) and one judge test. The tests of the fix fail on
   `main` (by `RecursionError`, "DID NOT RAISE", exit 3, `readline`'s `ValueError` or
   `AdapterProductError`); the guards of what the audits found (the margin, the linear pattern,
-  the balance rule) have nothing to catch there. Two audits ran before the commit: the
-  pre-commit one and a delta round on its fixes.
+  the balance rule) have nothing to catch there. Three audits ran: one before the commit, a
+  delta round on its fixes, and one before the merge (its follow-ups are the second commit).
 
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 

@@ -443,7 +443,9 @@ class MCPAdapter:
                 ) from exc
             if not raw:
                 raise AdapterEnvError(f"{self.id}: stdio stream closed during {method}")
-            read += len(raw.rstrip(b"\r\n"))
+            # Only the newline that ends the line is not counted: stripping every trailing
+            # `\r` too let lines of carriage returns through as empty (pre-merge audit).
+            read += len(raw) - (1 if raw.endswith(b"\n") else 0)
             if read > MAX_RESPONSE_BYTES:
                 raise ResponseTooLarge(
                     f"{self.id}: stdio output for {method} exceeded {MAX_RESPONSE_BYTES} "
@@ -455,7 +457,7 @@ class MCPAdapter:
                 # Refused at once, before the `except ValueError` below would skip it as a stray
                 # line and leave the adapter waiting for a reply until the timeout.
                 raise ResponseTooDeep(
-                    f"{self.id}: stdio {method} reply is {exc}; not evaluated"
+                    f"{self.id}: stdio output for {method} is {exc}; not evaluated"
                 ) from exc
             except ValueError:
                 continue  # non-JSON line on stdout: skip (should not happen per spec)
