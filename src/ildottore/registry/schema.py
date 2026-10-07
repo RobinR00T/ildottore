@@ -295,7 +295,11 @@ def _key_message(path: tuple[object, ...], key: object) -> str:
 
 
 def _key_text(key: object) -> str:
-    """The value YAML built from the key (``0x1F:`` is ``31``), or what it is past writing out."""
+    """The value YAML built from the key (``0x1F:`` is ``31``).
+
+    ``repr`` cannot raise here: an int too long to write out is reported by the A-40 check
+    before this one runs, wherever it is in the document.
+    """
 
     if isinstance(key, bool):
         return "true" if key else "false"
@@ -305,10 +309,7 @@ def _key_text(key: object) -> str:
         return f"!!binary ({len(key)} byte{'' if len(key) == 1 else 's'})"
     if isinstance(key, datetime.date):
         return key.isoformat()
-    try:
-        return _cut(repr(key))
-    except ValueError:  # an int past the interpreter's digit limit for text
-        return "(a number too long to write out)"
+    return _cut(repr(key))
 
 
 def _key_kind(key: object) -> str:

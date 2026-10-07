@@ -15,12 +15,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   in 5 and passed unreported in 36 (6 and 35 added first); now all 41 are a finding. Keys of two
   types in one mapping also crashed the sort of the schema errors, and a `!!binary` key passed
   lint. `run` now refuses such a spec (exit 3, as any spec that does not load) where it used to
-  run it. Found by the session on `fix/huge-int-repr` (A-40), which adds its own check at the top
-  of the same function: whichever lands second rebases, theirs first, then this one. 76 of the 77
-  new tests fail on `0501752`. The pre-commit and delta audits found no high or medium defect; the
-  first listed pre-existing gaps between the lint stub and the real `tool_call` evaluator (a
-  confirm flag or forbidden key inside a list, an injection in a nested value, `arguments` as a
-  JSON string), left for a separate task.
+  run it. Found by the session on `fix/huge-int-repr` (A-40, #81), which merged first: its check
+  runs first, this one after it, and the branch of this one for an int too long to write out was
+  dropped as unreachable. 76 of the 77 new tests fail on `0501752`. The pre-commit and delta
+  audits found no high or medium defect; the first listed pre-existing gaps between the lint stub
+  and the real `tool_call` evaluator (a confirm flag or forbidden key inside a list, an injection
+  in a nested value, `arguments` as a JSON string), left for a separate task.
 
 ## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
 

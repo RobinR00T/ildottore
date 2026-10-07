@@ -262,8 +262,8 @@ is not printable (an escape sequence, a newline that would start a forged findin
 control) is written as its `repr` (this check prints keys of free-form objects that no message
 printed before; the spec id and the paths of other schema errors are printed as written, as on
 `0501752`), a container YAML shares through an alias is reported once (where the walk
-first meets it), the value under such a key is not walked, and a key that is an int too long to
-write out is described, never printed. The keys of an `!!omap` or `!!pairs` entry, and the members
+first meets it), and the value under such a key is not walked. A key that is an int too long to
+write out never reaches this check: A-40 runs first and reports it in its own words. The keys of an `!!omap` or `!!pairs` entry, and the members
 of a `!!set`, are not reported: none of them exists in JSON, and in a field the schema types they
 fail it. That gap is written here and not pinned by a test.
 

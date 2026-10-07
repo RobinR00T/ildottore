@@ -196,8 +196,8 @@ def low_digit_limit() -> Iterator[None]:
 def test_a_key_too_long_to_print_is_described_not_quoted(tmp_path: Path) -> None:
     """``repr`` of such an int raises ``ValueError``; the message must not.
 
-    Only the path is pinned: with A-40 (``fix/huge-int-repr``) in, its own check reports this key
-    first, in its words (pre-merge audit of #80).
+    A-40 runs first and reports this key in its own words, so only the path, the description and
+    the absence of the digits are pinned (pre-merge audit of #80).
     """
 
     big = "0x" + "f" * 600
