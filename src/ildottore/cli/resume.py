@@ -71,8 +71,9 @@ def load_resume_run(
     request spent (a typo in the id, or a run that was refused before it sent anything):
     resuming "nothing" would quietly re-run the whole battery under an id that promises
     otherwise. A run that spent requests and stored no attempt is resumed from nothing, with
-    its spend carried by the caller: a ceiling that stops it inside an identity sweep, or in
-    the middle of its first conversation, leaves no reply to store. That run used to be refused
+    its spend carried by the caller: an identity sweep, a ``-sV`` probe pass, a conversation cut
+    mid-way, a first request that failed or a Ctrl-C mid-batch leaves no reply to store, for
+    example. That run used to be refused
     as one that "sent nothing", and its spend was stranded under an id nothing could continue.
     It is still refused when the run store journals an artifact the evidence root does not
     hold (the wrong ``--evidence-root``), since resuming would send it all again.

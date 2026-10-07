@@ -180,8 +180,10 @@ Finish a halted run; answered attempts are not re-sent, and those that ended in 
 environment error are sent again under the same attempt id (not one a retry would repeat,
 marked [not retryable]), as is a reply the halt stored before the judge could evaluate it
 (one a deterministic check already failed keeps that fail and is not re-sent).
-A run halted before it stored any reply (inside an identity sweep, or in the middle of its
-first conversation) is resumed from the start, its spend carried; refused are one that spent
+A run halted before it stored any reply (for example an identity sweep, a -sV probe pass, a
+conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start,
+its spend
+carried; refused are one that spent
 no request, one whose run store journals evidence the tree does not hold, and one that
 predates that journal.
 .TP

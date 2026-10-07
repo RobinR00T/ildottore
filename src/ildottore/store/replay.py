@@ -47,7 +47,7 @@ class ReplayResult:
     attempt_hashes: tuple[str, ...] = ()
 
     def effective_attempts(self) -> tuple[Attempt, ...]:
-        """One attempt per id, the answered one when an id has several artifacts.
+        """One attempt per id: answered and judged, else any with a verdict, else a bare reply.
 
         A resume sends an attempt that ended in an environment error again under its id (F11),
         so the failed try and its re-send can both be on disk. Both are history and the listing

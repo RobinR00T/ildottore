@@ -246,7 +246,7 @@ def test_a_run_halted_inside_the_identity_sweep_is_resumed_with_its_spend(
     assert got["sent_by_halt"] == ceiling
     assert got["spent_by_halt"] == ceiling, "the spend of the halted run is recorded"
     assert got["stored"] == [], "a sweep is not an attempt: nothing to store"
-    assert "stored no answered attempt before it halted" in got["resume_output"]
+    assert "stored no answered attempt before it stopped" in got["resume_output"]
     # The sweep (two identities) and the one attempt, all sent again.
     assert got["resume_sent"] == (3, 0)
     assert got["spent_after"] == ceiling + 3, "the resumed run's spend includes the halted one"
@@ -257,7 +257,10 @@ def test_a_run_halted_inside_the_identity_sweep_is_resumed_with_its_spend(
 @pytest.mark.xfail(
     strict=True,
     reason="main does not price the identity sweep in --estimate; PR #60 "
-    "(fix/authz-leak-identity-sweep) does. Whoever lands second removes this marker.",
+    "(fix/authz-leak-identity-sweep) does. Whoever lands second runs "
+    "`pytest --runxfail -k prices_the_sweep` on this file, expects 3 passed, and removes "
+    "this marker (if #60 prints the sweep on a line `_still_to_send` does not read, the "
+    "three stay quietly xfailed: teach it that line).",
 )
 @pytest.mark.parametrize(("runs", "ceiling"), [(1, 1), (1, 2), (2, 3)])
 def test_the_estimate_of_a_resume_after_a_sweep_halt_prices_the_sweep(

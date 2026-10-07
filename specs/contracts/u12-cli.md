@@ -232,7 +232,11 @@ pre-commit audit, which had a pre-journal run and a pending-only journal resumed
 tree). An attempt is **kept** by a resume (not sent again, A-11's sweep skip, and what
 `--estimate --resume` subtracts) when it has a reply and a verdict, or failed in a way a retry
 would repeat; a reply stored without a verdict, its evaluation stopped by the ceiling refusing
-the judge's request, is sent again and judged. A prior spec is **finished** (published by a
+the judge's request, is sent again and judged (with `--judge` that reply is paid for twice: it
+is re-sent rather than re-judged, a design choice; judging the stored reply on resume is a
+possible follow-up, and would save that one target request). A run halted by this
+version is not for an older one to resume: it would keep the unjudged reply and score the spec
+without it (pre-merge audit). A prior spec is **finished** (published by a
 halted resume, scored by the seeding gate) only when every planned attempt has a verdict.
 `--estimate --resume` subtracts what is kept, the judge's two requests per kept attempt of a
 spec it reads included (it priced the whole battery's judge, 12 for a resume that sent 8), so it

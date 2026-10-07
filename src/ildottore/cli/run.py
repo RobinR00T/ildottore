@@ -1234,16 +1234,17 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             )
             opts.runs = inherited
         if not opts.quiet and not resume_from.findings:
-            # The run spent requests and stored no reply: the ceiling stopped it inside an
-            # identity sweep or in the middle of its first conversation. It used to be refused
-            # as a run that "sent nothing", with its spend stranded under an id nothing could
-            # continue.
+            # The run spent requests and stored no reply: an identity sweep, a -sV probe pass, a
+            # conversation cut mid-way, a first request that failed, a Ctrl-C mid-batch. It used
+            # to be refused as a run that "sent nothing", with its spend stranded under an id
+            # nothing could continue. The list is printed as examples: two audits in a row found
+            # one more cause than a closed list named.
             spent = prior_spend.requests if prior_spend is not None else 0
             print(
-                f"resume: {opts.resume} stored no answered attempt before it halted, after "
-                f"{spent} request(s) (an identity sweep, or a conversation the ceiling stopped "
-                "mid-way); its spend counts against the ceiling and every spec is sent from "
-                "the start"
+                f"resume: {opts.resume} stored no answered attempt before it stopped, after "
+                f"{spent} request(s) that left none (for example an identity sweep, a -sV probe "
+                "pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C); "
+                "they count against the campaign's ceiling, and every spec is sent from the start"
             )
         elif not opts.quiet:
             done, again = resume_progress(resume_from)

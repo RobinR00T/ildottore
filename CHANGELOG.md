@@ -31,16 +31,21 @@ versioning: [SemVer](https://semver.org/).
   that ends in an environment error is scored as the inconclusive it is. A conversation the halt
   stops mid-way is not stored (it has no final reply), and neither are an identity sweep's
   replies, as in a finished run: their sends are in the spend. A Ctrl-C still drops the batch in
-  flight.
+  flight. With `--judge`, a reply stored without a verdict is paid for twice: the resume sends it
+  again rather than judging the stored one (a design choice; re-judging is a possible
+  follow-up). A run halted by this version is not for an older
+  one to resume: it would keep that reply and score the spec without it.
 - **A product error stops new specs at once, and an evaluator's error is not hidden.** Evaluating
   a failed batch's replies (a slow judge) used to run before the campaign's abort was set, so a
   waiting spec started in the meantime; the abort is set first now. An evaluator that raises
   while a halt is being handled is quoted in the halt's reason (`also raised KeyError: ...`).
 - **A run that spent requests and stored no reply is resumable.** `--resume` accepts it when the
   run store records a request spent, sends every spec from the start, carries the spend, and
-  says so (`stored no answered attempt before it halted, after N request(s)`). Still refused: a
-  run that spent none (with the old message, which is then true); an `--evidence-root` holding
-  none of the artifacts the run store journals for the run (`not the tree the run wrote`, or, for
+  says so (`stored no answered attempt before it stopped, after N request(s) that left none`,
+  for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request
+  that failed, or a Ctrl-C). Still refused: a run that spent none (with the old message, which is
+  then true); an `--evidence-root` holding none of the artifacts the run store journals for the
+  run (`not the tree the run wrote`, or, for
   writes begun and never confirmed, which may also have failed on this tree, `never confirmed`),
   since from the tree alone that looks like a sweep halt and resuming would send everything
   again; and an empty tree for a run that does not record the scope it went out under, which may
@@ -50,7 +55,9 @@ versioning: [SemVer](https://semver.org/).
   resume that sent 8. It now takes off two per attempt the resume keeps, of a spec the judge
   reads. The identity sweep is still not priced by `--estimate` on main (PR #60 prices it), so for
   a spec that sweeps the estimate is short by one request per scope identity; a strict `xfail`
-  over the three sweeping shapes hands that match to whichever of the two lands second.
+  over the three sweeping shapes hands that match to whichever of the two lands second, who runs
+  `pytest --runxfail -k prices_the_sweep tests/cli/test_resume_halted_mid_batch.py`, expects 3
+  passed and removes the marker.
 - **Contracts and docs:** u12 A-24 (a halt keeps what it paid for; what a resume keeps and what
   a finished spec is, which A-11's sweep skip reads), u08's budget-gate and resume criteria; the
   MANUAL (`--resume`, `--estimate`, the resume paragraph, `replay`), USAGE, `dottore(1)`, the
@@ -62,10 +69,10 @@ versioning: [SemVer](https://semver.org/).
   batch, at the judge, on the token ceiling, the refusals that stay, and the judge's share
   attempt by attempt; every halt-then-resume test asserts the halted spend, the final spend and
   the resume's sends as the stub counted them, and the estimate wherever it is exact),
-  `tests/core/test_halt_keeps_answers.py` (18) and one in `tests/core/test_seeded_setup.py`.
+  `tests/core/test_halt_keeps_answers.py` (19) and one in `tests/core/test_seeded_setup.py`.
   Against main's code, ten of the CLI tests fail and five do not: three strict `xfail`s, and two
   that pin refusals main already made with the message it prints (three more pin refusals main
-  also made and fail there on a message that is new). Each of 29 mutants of the fix, one piece
+  also made and fail there on a message that is new). Each of 30 mutants of the fix, one piece
   removed at a time, is caught by a new test that fails for that piece. The pre-commit audit
   (two auditors) found a resume that published a PASS over a missing verdict, a deterministic
   fail lost at the judge, a conversation's last reply dropped on the token ceiling, the abort
@@ -73,7 +80,10 @@ versioning: [SemVer](https://semver.org/).
   spend accepted, and four doc overclaims; the delta audit after them found a run whose first
   evidence write failed refused as "not the tree the run wrote", a judge not consulted that no
   stored verdict mentioned, notes repeated once per reply, two untested guards and three doc
-  rows still overclaiming. All fixed here. Three existing tests changed: two fixtures that built
+  rows still overclaiming. All fixed here. The pre-merge audit (verdict: merge) found the resume
+  message naming two of its causes, the MANUAL describing the old `replay` ranking, the judge's
+  double cost and the downgrade risk unstated, and one abort untested; fixed in a second commit.
+  Three existing tests changed: two fixtures that built
   a stored reply without a verdict (a shape no run wrote before this change) and one F11 test
   whose second ceiling relied on the first run losing a reply.
 

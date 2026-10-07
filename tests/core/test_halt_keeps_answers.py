@@ -539,3 +539,36 @@ def test_a_product_error_stops_new_specs_before_its_replies_are_judged(tmp_path:
     assert [a.attempt_id for a in _stored(tmp_path) if a.spec_id == failing.id] == [
         "JB-REFUSAL-001::identity#0"
     ]
+
+
+def test_an_evaluator_error_stops_new_specs_before_the_batch_is_done(tmp_path: Path) -> None:
+    """The abort is set at the first evaluator error, not once the spec gives up: a slow
+    evaluation of the batch's next reply left room for a waiting spec to start (pre-merge
+    audit: a mutant without that abort survived)."""
+
+    calls = {"n": 0}
+
+    async def broken_then_slow(_ctx: EvalContext) -> Verdict:
+        calls["n"] += 1
+        if calls["n"] > 1:
+            await asyncio.sleep(0.2)
+        raise KeyError("rubric")
+
+    failing = make_spec(
+        "JB-REFUSAL-001", evaluators=(EvaluatorType.REFUSAL, EvaluatorType.SEMANTIC_JUDGE)
+    )
+    # Neither starts once the abort is set: each finds it set when it gets its turn.
+    second = make_spec("JB-REFUSAL-002")
+    waiting = make_spec("JB-REFUSAL-003")
+    endpoints = {failing.id: Endpoint(), second.id: Endpoint(), waiting.id: Endpoint()}
+    result = _campaign(
+        tmp_path,
+        endpoints,
+        [failing, second, waiting],
+        judge=_Judge(broken_then_slow),
+        concurrency=2,
+    )
+    assert result.status == "aborted"
+    assert endpoints[waiting.id].sends == 0, "no spec starts after the evaluator error"
+    assert endpoints[second.id].sends == 0
+    assert len([a for a in _stored(tmp_path) if a.spec_id == failing.id]) == 2

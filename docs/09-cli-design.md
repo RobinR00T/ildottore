@@ -155,10 +155,12 @@ drops the batch in flight): judged when the ceiling leaves room for the judge, k
 deterministic fail when the ceiling refuses the judge and a deterministic check already failed
 it (OD-19: that decides without the judge), and otherwise stored without a verdict, which the
 resume sends again and judges (the first reply stays cited; if the re-send ends in an
-environment error, that inconclusive is the attempt scored). A reply whose own usage crosses the
-token ceiling is stored too, and so is a conversation whose last reply did. A run that spent
-requests and stored no reply (inside an identity sweep, or in the middle of its first
-conversation) is resumed from the start with its spend carried, and the resume message says so.
+environment error, that inconclusive is the attempt scored; with `--judge` such a reply is paid
+for twice: it is re-sent rather than re-judged, and judging the stored reply on resume is a
+possible follow-up). A reply whose own usage crosses the token ceiling is stored too, and so is
+a conversation whose last reply did. A run that spent requests and stored no reply (for example
+an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request that failed,
+or a Ctrl-C) is resumed from the start with its spend carried, and the resume message says so.
 Still refused: a run that spent nothing, an `--evidence-root` holding none of the artifacts the
 run store journals for the run (pending ones included), and an empty tree for a run that
 predates the journal (it does not record the scope it went out under), whose silence proves
