@@ -25,7 +25,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   every occurrence of a short one included (its delta audit: one overlapping itself lost its second
   occurrence under a longer match).
   Filed apart, on main: the JSON report keeps a dict key a target wrote raw, and a lone surrogate
-  in a reply aborts the campaign in the evidence store. `make gates`: 2,377 tests (75 new),
+  in a reply aborts the campaign in the evidence store. `make gates`: 2,379 tests (77 new),
   coverage 96.44%.
 
 ## State, 2026-10-07 (night): OD-18 option B built

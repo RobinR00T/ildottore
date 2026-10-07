@@ -314,6 +314,24 @@ def test_a_short_credential_overlapping_itself_under_a_longer_match_is_masked_wh
     assert redactor.redact_text(out) == out
 
 
+@pytest.mark.parametrize("before", ["x ", "QRSTUVW"])
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_short_credential_repeating_a_piece_three_times_is_masked_through_its_overlaps(
+    before: str,
+) -> None:
+    """The shortcut the long forms take (no overlaps once a piece repeats three times) left the
+    last piece readable for a short one (final delta audit)."""
+
+    piece = "a\t" + chr(0x200B)
+    register_known_secret(piece * 3)
+    if before != "x ":
+        register_known_secret(before + "a")  # a longer match over the first piece
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text(before + piece * 4 + "!")
+    assert out.endswith("»!") and out.count("«") == 1
+    assert out.startswith("x «") if before == "x " else out.startswith("«")
+
+
 @pytest.mark.usefixtures("no_known_secrets")
 def test_every_occurrence_of_a_short_credential_is_masked_in_one_pass() -> None:
     """Redaction runs to a fixed point in at most four passes: a placement that took one

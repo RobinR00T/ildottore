@@ -22,24 +22,23 @@ versioning: [SemVer](https://semver.org/).
   characters inside included, becomes the mask an unsplit occurrence gets, same digest; what lies
   outside the stretch stays where it is. Overlapping occurrences, of one credential or of two, are
   masked as one, named by the longest as it shows (its invisible characters and the whitespace at
-  its ends not counted), the first to start on a tie (the first to end, then the first by value, if
-  they start together), as PR #51 and PR #56 name them
-  (taking an unsplit short one first left 8 of a split long
-  one's 12 characters readable). A credential registered with such a character inside it matches
-  written without it too, under the registered form's digest; whitespace or such a character at
-  its ends stays outside the mask and does not count toward the 8-character minimum, as at
-  registration; one shorter than that without them is matched only as written (every occurrence, overlapping
-  ones included), and masked together with any longer match it overlaps (masked apart, either one left part of the other readable). A
-  stretch written
-  exactly as a registered form gets that form's digest, as before; any other is named by the
-  credential it matched (the longest of its registered forms, the first by value among forms of
-  one length, whatever the hash seed). Two occurrences of a credential whose end repeats its start (`hunter2hunter2`)
-  written in a row are one mask: the second half of one and the first half of the next, split by
-  what lies between, are an occurrence too. One that repeats a piece more than twice over
-  (`ab12ab12ab12`, `aaaa...`) is matched without overlaps, as by value: following every overlap
-  cost a search of the whole credential per character (11 s on 4 MB for `a` written 1,000 times).
-  The format characters are pinned to Unicode 16.0, so a mask does not depend on the Python's
-  Unicode version.
+  its ends not counted), the first to start on a tie (the first to end if they start together), as
+  PR #51 and PR #56 name them (taking an unsplit short one first left 8 of a split long one's 12
+  characters readable). A credential registered with such a character inside it matches written
+  without it too, under the registered form's digest; whitespace or such a character at its ends
+  stays outside the mask and does not count toward the 8-character minimum, as at registration; one
+  shorter than that without them is matched only as written (every occurrence, overlapping ones
+  included, unless nothing of it shows), and masked together with any longer match it overlaps
+  (masked apart, either one left part of the other readable). A stretch written exactly as a
+  registered form gets that form's digest, as before; any other is named by the credential it
+  matched (the longest of its registered forms, the first by value among forms of one length,
+  whatever the hash seed). Two occurrences of a credential whose end repeats its start
+  (`hunter2hunter2`) written in a row are one mask: the second half of one and the first half of
+  the next, split by what lies between, are an occurrence too. One that repeats a piece more than
+  twice over (`ab12ab12ab12`, `aaaa...`) is matched without overlaps, as by value: following every
+  overlap cost a search of the whole credential per character (11 s on 4 MB for `a` written 1,000
+  times). The format characters are pinned to Unicode 16.0, so a mask does not depend on the
+  Python's Unicode version.
 - **Visible changes in such text:** the stretch excludes those characters and whitespace at its
   ends, so a stretch is named by the form it reads as once they are dropped when that form is
   registered, and otherwise by the longest registered form that reduces to it. A key read with a

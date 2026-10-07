@@ -833,8 +833,8 @@ class Redactor:
             # Every occurrence, overlapping ones as one span: taking them without overlaps, the
             # second of two overlapping ones was lost when a longer match covered the first, and
             # its tail stayed readable (delta audit of the pre-merge follow-ups). A value with
-            # nothing visible leaves nothing readable either way, and following its overlaps cost
-            # about 15 times as much on a text made of it.
+            # nothing visible leaves nothing readable either way, and following its overlaps costs
+            # a search per character of a text made of it.
             step = _smallest_period(secret) if _visible_length(secret) else len(secret)
             found = text.find(secret)
             start = end = found
