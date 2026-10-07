@@ -16,12 +16,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from ildottore.cli.exit_codes import ExitCode
+from ildottore.cli.main import app
 from ildottore.cli.run import RunOptions, execute_run
 from ildottore.store.run_sqlite import SqliteRunStore
 
-from .conftest import make_spec, write_scope, write_spec_tree, write_target
+from .conftest import deep_json, make_spec, write_scope, write_spec_tree, write_target
 
 _BUDGET = 6
 
@@ -199,6 +201,124 @@ def test_a_corrupt_integrity_record_is_not_an_absent_one(tmp_path: Path) -> None
             ),
             [spec_dir],
         )
+
+
+_SET_COLUMN = {
+    column: f"UPDATE runs SET {column} = ? WHERE run_id = ?"  # noqa: S608 (a fixed column list)
+    for column in ("spec_digests_json", "spend_json", "context_json")
+}
+
+
+@pytest.mark.parametrize("column", sorted(_SET_COLUMN))
+def test_an_integrity_record_nested_too_deeply_is_corrupt(tmp_path: Path, column: str) -> None:
+    """Past the parser's stack, `json.loads` raises RecursionError, not a JSONDecodeError: it
+    escaped as a traceback with exit 1, findings below `--fail-on` (2026-10-07)."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store._conn.execute(_SET_COLUMN[column], (deep_json(), run_id))
+        store._conn.commit()
+
+    with pytest.raises(ValueError, match=f"{column} is not readable JSON"):
+        execute_run(
+            _opts(tmp_path, spec_dir, resume=run_id, budget_requests=100, resume_unverified=True),
+            [spec_dir],
+        )
+
+
+def test_the_cli_exits_3_on_a_run_store_nested_too_deeply(tmp_path: Path) -> None:
+    """Clause A-9 through the command itself: one `error:` line and exit 3."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store._conn.execute(
+            "UPDATE runs SET context_json = ? WHERE run_id = ?", (deep_json("object"), run_id)
+        )
+        store._conn.commit()
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            *("-t", str(tmp_path / "target.yaml"), "--scope", str(tmp_path / "scope.yaml")),
+            *("--spec-path", str(spec_dir), "--resume", run_id, "--budget-requests", "100"),
+            *("--concurrency", "1", "-q", "--evidence-root", str(tmp_path / "ev")),
+            *("--run-db", str(tmp_path / "runs.sqlite")),
+        ],
+    )
+
+    assert result.exit_code == ExitCode.ERROR, (result.exception, result.stderr)
+    errors = [line for line in result.stderr.splitlines() if line.startswith("error:")]
+    assert len(errors) == 1 and "context_json is not readable JSON" in errors[0]
+
+
+@pytest.mark.parametrize(
+    "spend",
+    [
+        '{"tokens": 1e400}',
+        '{"tokens": []}',
+        '{"tokens": true}',
+        '{"tokens": 1' + "0" * 400 + "}",
+        '{"requests": -50}',
+        '{"wall_s": NaN}',
+    ],
+    ids=["infinity", "list", "bool", "past-a-float", "negative", "nan"],
+)
+def test_a_spend_record_that_is_not_an_amount_is_corrupt(tmp_path: Path, spend: str) -> None:
+    """`int()` of an infinity or of a list escaped as an OverflowError or a TypeError (a
+    traceback and exit 1), an integer past a float did the same when the resume wrote its spend
+    back, and a negative or NaN figure was taken as what the campaign had spent (2026-10-07)."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store._conn.execute(_SET_COLUMN["spend_json"], (spend, run_id))
+        store._conn.commit()
+
+    with pytest.raises(ValueError, match="spend_json holds a value that is not"):
+        execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
+
+
+@pytest.mark.parametrize(
+    "runs",
+    [
+        '"runs":[],',
+        '"runs":1e400,',
+        '"runs":"sk-quoted-runs-value",',
+        '"runs":true,',
+        '"runs":1.9,',
+        '"runs":0,',
+        '"runs":null,',
+        "",
+    ],
+    ids=["list", "infinity", "text", "bool", "fraction", "zero", "null", "missing"],
+)
+def test_a_stored_runs_value_that_is_not_a_count_is_corrupt(tmp_path: Path, runs: str) -> None:
+    """`int()` of a list or an infinity was a traceback and exit 1, a string was quoted in the
+    error, and `true` or `1.9` resumed at one run (pre-commit audit of the spend check). A null
+    or a missing count, beside the target digest it is written with, resumed at this
+    invocation's default and wrote it over the record (delta audit)."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        context = store.get_run_context(run_id)
+        assert context is not None and context["runs"] == 3, "precondition: runs is recorded"
+        raw = store._conn.execute(
+            "SELECT context_json FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        assert '"runs":3,' in raw, "precondition: the stored form the replacement edits"
+        store._conn.execute(_SET_COLUMN["context_json"], (raw.replace('"runs":3,', runs), run_id))
+        store._conn.commit()
+
+    for explicit in (False, True):  # inherited, and passed as --runs
+        opts = _opts(tmp_path, spec_dir, resume=run_id, budget_requests=100)
+        opts.runs_explicit = explicit
+        with pytest.raises(ValueError, match="context_json holds no runs value") as caught:
+            execute_run(opts, [spec_dir])
+        assert "sk-quoted" not in str(caught.value)
 
 
 def test_the_offline_scenario_cannot_be_flipped_under_a_resume(tmp_path: Path) -> None:

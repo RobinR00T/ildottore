@@ -5,6 +5,59 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a file nested past what the CLI can hold)
+
+- **`dottore diff` and `dottore calibrate` exited 1 on a report nested too deeply.** `json.loads`
+  raises `RecursionError`, not a `ValueError`, on a document nested past its stack, and neither
+  command's handler caught it: a traceback and exit 1, which this tool uses for "findings below
+  `--fail-on`", so a CI step read a malformed report as an almost clean result. 200,000 levels of
+  `[` is past every supported Python (measured on macOS, 3.12 stops near 10,000 levels and 3.14 near
+  116,000; 3.11 counts them against its recursion limit of 1,000, not measured here). Both commands
+  now refuse it with exit 3 and one `error:` line that names the file and quotes none of it. A
+  report that is not UTF-8 or not JSON names its file too: `Expecting value: line 1 column 1 (char
+  0)` did not say which of the two files it was. These messages name the report by its absolute
+  path, never followed by a colon: the CLI keeps an existing absolute path readable, and a relative
+  path, or `<path>:`, is not one, so a report named after a commit SHA had its name masked as a
+  high-entropy value (a directory whose name holds a space still cuts the path short, as in every
+  message of the CLI). Found by the pre-merge audit of #51.
+- **A value that parses and overflows later.** On 3.14 the parser holds about 116,000 levels and
+  `repr` overflows from about 69,500, so a report whose run status carried a reason nested 70,000
+  levels deep was read and then overflowed when the refusal of an incomplete run formatted it (exit
+  1). The state and the reason are used only when they are text, as this tool writes them.
+- **The run store had the same hole.** `dottore replay` and `dottore run --resume` read JSON columns
+  from `--run-db`, and a battery, context or spend record nested too deeply exited 1 the same way.
+  It now reads as unreadable JSON (exit 3, `<column> is not readable JSON`). A finding's evidence
+  references nested too deeply are handled as unreadable references always were (that finding's
+  references cannot be checked; artifacts the journal recorded still are), instead of aborting the
+  replay.
+- **A stored figure that is not an amount is corrupt.** `run --resume` converted the stored spend
+  and `--runs` with `int()` and `float()`: an infinity or a list raised `OverflowError` or
+  `TypeError` (a traceback and exit 1), an integer too large for a float did the same when the
+  resume wrote its spend back, a string as `--runs` was quoted in the error, a negative or NaN spend
+  was taken as what the campaign had spent, `true` or `1.9` as `--runs` resumed at one run, and a
+  null or missing `--runs` beside the target digest it is written with resumed at this invocation's
+  default and wrote that over the record. A spend figure must now be a finite, non-negative number
+  and `--runs` a positive whole number, present wherever the target digest is (a JSON `true` is
+  neither); anything else is refused like the other corrupt integrity records (exit 3), without
+  quoting the value.
+- **YAML anchors built depth the composer never saw.** PyYAML's composer, whose recursion the
+  loaders already turned into "nested too deeply", sees only the nesting as written; anchors chained
+  through aliases built a value 1,600 levels deep from 4 KB, and 80,000 from 175 KB. `lint`
+  overflowed on such a spec (its text walk), `run -t` on such a target and `calibrate` on such a
+  labels file (formatting the value): a traceback and exit 1. Every YAML loader (specs, scope,
+  target, fleet, labels, policy and signature packs) now refuses a document deeper than 100 levels
+  with its aliases expanded (the repository's own files nest at most 11), measured on the node graph
+  before anything is built, so shared aliases are not expanded to measure them, and reported where
+  the nesting crosses the limit; a recursive alias is refused there too, as the spec loader already
+  did.
+- **Checked, nothing to fix:** an evidence artifact is parsed by pydantic, which stops at its own
+  depth limit with a validation error (exit 3); a deep value inside a finding is refused by pydantic
+  (exit 3); and at the depths the 3.14 parser accepts, no other command overflowed afterwards
+  (probed from 500 to 116,000 levels, arrays and objects, as a whole report, inside a finding and in
+  each run store column, alone and next to valid content). Tests: `tests/cli/test_deep_json.py`, and
+  the nested, spend and `--runs` cases in `tests/cli/test_replay.py` and
+  `tests/cli/test_resume_integrity.py`.
+
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 
 - **The second half of OD-18** (ADR-0009, C with A first, decided 2026-10-06). A deployed

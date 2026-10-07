@@ -3,6 +3,22 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (morning): a file nested past what the CLI can hold
+
+- Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json`: `dottore diff` and
+  `dottore calibrate` exited 1 (findings below `--fail-on`) with a `RecursionError` traceback on a
+  report nested past the JSON parser's stack, and so did `replay` and `run --resume` on a run
+  store column nested the same way. Each is now refused where it is parsed (exit 3, one `error:`
+  line naming the file or the column). The probe and the pre-commit audit found the same exit 1
+  one step later: a run status formatted after it parsed, a stored spend or `--runs` that is not
+  an amount (an infinity, a list, an integer past a float; a negative spend, and `true` or a missing
+  `--runs`, were accepted), and YAML anchors chained into a value 1,600 to 80,000 levels deep that `lint`,
+  `run -t` and `calibrate` overflowed on. Every YAML loader now refuses more than 100 levels with
+  aliases expanded (the repository nests at most 11). Contract u12 A-9 and A-24 and u02 §4 say so;
+  no new clause. Left open as its own task: a hostile target's reply nested too deeply aborts the
+  whole campaign (exit 3) instead of failing one attempt.
+  `tests/cli/test_deep_json.py`; 40 of the 41 new tests fail on `0f936b6`.
+
 ## State, 2026-10-07 (night): OD-18 option B built
 
 - On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec
