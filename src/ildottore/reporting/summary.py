@@ -273,6 +273,10 @@ def _build_comparison(
     )
 
 
+#: Reasons a finding gives when nothing of its spec was scored on this target (OD-18).
+_UNSENT: tuple[str, ...] = ("setup_not_seeded", "setup_not_delivered")
+
+
 def _exercised(attempt: Attempt) -> bool:
     """True when the attempt reached the target and its scene reached the model."""
 
@@ -329,7 +333,11 @@ def _build_coverage(
         # `AG-CRED-SWEEP-001`, which the pack blocks and which sent nothing.
         # Nor does one whose in-band scene never reached the model (OD-18): its tool result,
         # where the untrusted content was, was never fetched (delta audit of OD-18 A).
-        if not any(_exercised(a) for a in finding.attempts):
+        # A spec the seeding gate stopped on a resume keeps the attempts a stored run had sent,
+        # unscored: they do not exercise it (delta audit of OD-18 B).
+        if not any(_exercised(a) for a in finding.attempts) or (finding.reasoning or "").startswith(
+            _UNSENT
+        ):
             not_exercised.append(spec.id)
             continue
 

@@ -180,6 +180,10 @@ class MockTarget:
 
     #: It takes a system prompt, as a live chat API does (OD-18).
     carries_system_prompt = True
+    #: An offline mock answers from the spec (its fixtures, or a canned string), not from a
+    #: deployment, so a spec that needs a seeded deployment runs against it without a
+    #: ``seeded_setup`` declaration (OD-18 B). The plan exempts every mock route the same way.
+    offline_mock = True
 
     def reset(self) -> None:
         """Reset the internal sequence cursor to 0 (deterministic re-run)."""

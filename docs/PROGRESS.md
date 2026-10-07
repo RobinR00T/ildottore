@@ -3,6 +3,24 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (night): OD-18 option B built
+
+- On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec
+  with documents, tools or memory only when its target file declares the scene seeded
+  (`seeded_setup.specs`); otherwise `inconclusive: setup_not_seeded`, nothing sent, printed by the
+  dry run and `--estimate`. A declared spec records `setup_delivery: seeded`; tool calls are
+  judged under the spec's names (`seeded_setup.tools`) and the deployment's own tools outside the
+  scene are not unauthorized (`seeded_setup.granted_tools`, never over a spec's own scene
+  tool). A spec whose canary has to be in the deployment needs `seeded_setup.run_token`, and its
+  canary is then `<run_token>-<spec id>` (`--dry-run -vv` prints it); a trace spec is not sent
+  through an adapter that reads no tool calls. The offline mocks are exempt. Measured: a fully
+  capable deployment declaring nothing sends 41 of 75 specs (585 requests); declaring every
+  scene, 62 (740); with a `run_token` as well, 67 (780, as main). Two audit rounds found a
+  resume that published its placeholder, canaries nobody could seed and grants over scene tools,
+  among others; all fixed. With A and B in, OD-18 is complete. Next in the owner's order:
+  hosted APIs (the owner's keys and models), then a deployed application, which needs its
+  operator's seeding (`examples/target.app.yaml`).
+
 ## State, 2026-10-07 (night): the first live `-sV` pass
 
 - `dottore fingerprint` against the local `llama3.2:3b`, three times. It found two defects: 9

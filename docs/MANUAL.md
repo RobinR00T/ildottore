@@ -226,6 +226,66 @@ coverage figures do not count it; an adapter that cannot carry the scene (no too
 or no system prompt for a memory seed, as a REST template without a system field) leaves the
 spec `inconclusive: setup_not_delivered` with nothing sent.
 
+Any other `type` is a **deployed application**, which has its own documents, tools and memory,
+so the scene is the operator's to seed (OD-18 option B). The target file says which specs it
+holds:
+
+```yaml
+seeded_setup:
+  specs: [PI-INDIRECT-TOOL-001, "AG-TOOL-*"]   # spec ids or fnmatch globs (case kept)
+  tools:                                       # a spec's tool name -> the deployment's name
+    lookup_ticket: get_ticket
+    search_kb: kb_search
+  granted_tools: [escalate_to_human]           # the deployment's own tools outside any scene
+  run_token: "eng-2026-q4"                     # replaces {{run_id}} in what you seed
+```
+
+A spec with `setup.documents`, `setup.tools` or `setup.memory_seed` is sent only when the
+deployment holds its scene as declared; otherwise it is `inconclusive` (`setup_not_seeded`)
+with nothing sent, the dry run and `--estimate` count it as "not seeded" (`-vv` says why), and
+the coverage figures do not count it. Four things leave a spec unsent: `specs` does not match
+it; its canary has to be in your deployment (in its scene, or planted in a record outside it, as
+`AC-BOLA-001` plants one in another customer's) and no `run_token` is declared, since you seed
+before the run and a canary bound per run could never be there, so `secret_leakage` would be
+blind; two tools of its own scene map to one deployment name; or it is judged on its tool trace
+and the target's adapter reads no tool calls (a REST template, the MCP adapter:
+`setup_not_delivered`). With a `run_token`, each such spec's canary is
+`<run_token>-<spec id>` in place of `{{run_id}}`, so no two specs share one, and
+`--dry-run -vv` prints every canary to seed (`seed:` lines); a spec whose canary travels in the
+request keeps the per-run one. Use a fresh token per engagement.
+
+A seeded spec goes out as its plain prompt (or pinned turns), and each attempt records
+`setup_delivery: seeded` and the tool-name map it applied (`seeded_tools`). The map is applied
+per spec, to that spec's scene tools only, so two specs may give one deployment tool their own
+names (`lookup_ticket: get_ticket` and `read_ticket: get_ticket`). Calls are judged under the
+spec's names, so `get_ticket` is judged as `lookup_ticket` and a call under the deployment's
+own name is not "unauthorized"; the evidence keeps the call as the deployment made it. A call to
+a `granted_tools` name is not unauthorized either, though its arguments and a destructive name
+are still judged; a grant applies to every seeded spec, except that a name that is one of a
+spec's own scene tools is never granted for that spec (a grant of `http_post` would otherwise
+re-authorize the egress an exfiltration spec forbids). Any other tool is judged as one outside
+the spec's scene.
+
+**Your deployment must show its tool calls.** A spec whose untrusted content is a tool's
+result, and which judges no tool trace, is `inconclusive: setup_not_reached` when the reply
+shows no call to that tool: a deployment that runs its tools server-side and returns only text
+cannot show that the poisoned result was ever fetched. A spec judged on its trace is not sent
+through an adapter that reads no calls (above); through one that does, no call is the secure
+answer, so do not declare trace specs for a deployment that hides its tool calls. Nothing can
+show that a seeded document or memory was ever retrieved, so a plain answer to a seeded RAG or
+memory spec passes: what a seeded spec tests is only as good as what you seeded and what your
+deployment retrieves, which the tool cannot check.
+
+The loader refuses the block on a `type: model` target (which gets the scene in-band), an
+unknown key, an empty or non-string entry, a name both mapped and granted, and a `run_token`
+that is not 8 to 64 letters, digits, `_` or `-`. The block is part of the target's digest, so a
+run stored without it resumes, and one stored with a different declaration does not. Resuming
+a run stored before this check existed, a spec it now stops is scored from the attempts the run
+had sent when it holds all of them, and otherwise kept as evidence, inconclusive, with nothing
+more sent. The offline mocks (`vulnerable`, `hardened`,
+`bare`, `comprehending`) answer from the spec, not from a deployment, and need no declaration.
+Worked file: [`../examples/target.app.yaml`](../examples/target.app.yaml).
+
 `auth_ref`
 supports only `env://NAME`. Any other scheme is refused before anything is sent, `--dry-run`
 included (`unsupported auth_ref scheme in 'vault://kv/live'; only 'env://NAME' is supported`,
@@ -277,7 +337,9 @@ targets:
 
 `provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
 `/messages` -> `anthropic`, otherwise `rest`. `dottore fleet` expands this into a scope plus
-one target file per model. Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
+one target file per model. Each entry is written as a `chatbot` target (an `mcp` one as `api`)
+with no `seeded_setup`, so a spec that needs documents, tools or memory is `setup_not_seeded`
+on a fleet entry that declares the capability; for those, scan with a target file (§4.2). Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
 
 ## 5. Command reference
 
@@ -643,8 +705,9 @@ C9.3.5, C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need so
 operator provides: a seeded corpus or tool, a target that exposes its tool trace, or two
 identities. The runner builds a spec's documents, tool definitions and memory seed into the
 request only for a `type: model` target (OD-18 option A, which tests the model rather than an
-application); for any other target it sends the prompt, the system prompt and the media, so
-eight of the 17 are exercisable by the tool alone against a deployed application. C10.4.2 is
+application); a deployed application holds the scene only where its operator has seeded it and
+declared it (`seeded_setup`, option B), and an undeclared spec sends nothing there, so eight of
+the 17 are exercisable by the tool alone against a deployed application. C10.4.2 is
 an MCP control: it applies only where the tools are served over MCP, while its two specs run
 against any tool-using agent. C9.5.4 also needs the
 `offensive_simulation` policy layer, which the CLI cannot enable today (§3), so that row cannot

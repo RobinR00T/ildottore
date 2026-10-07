@@ -27,7 +27,7 @@ import asyncio
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -82,6 +82,10 @@ def _stdio_environment() -> dict[str, str]:
 @dataclass
 class MCPAdapter:
     """A read-only MCP-server discovery target (implements ``TargetAdapter``)."""
+
+    #: It never calls a tool, so a reply carries no tool calls: a seeded spec judged on its
+    #: tool trace is not sent through it (OD-18 B).
+    returns_tool_calls: ClassVar[bool] = False
 
     id: str
     base_url: str  # the FULL MCP endpoint URL (origin + path, e.g. http://host:3000/mcp)

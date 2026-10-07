@@ -96,7 +96,20 @@ concretes:
    such a spec `inconclusive` (`setup_not_delivered`) with no send. A
    spec whose untrusted content is only a tool's result, judged by no trace evaluator, whose model
    called none of those tools and whose evaluators did not fail, is `inconclusive`
-   (`setup_not_reached`), and the summary does not count it as exercised.)
+   (`setup_not_reached`), and the summary does not count it as exercised. Against any other
+   target type, OD-18 option B: a spec with setup is `inconclusive` (`setup_not_seeded`) before
+   the scene, with no send, when `setup_delivery.seeding_gap` names a reason (not declared in
+   `seeded_setup.specs`; a per-run canary in the scene and no `run_token`; two of its scene tools
+   under one deployment name; asked of the spec before its canary is bound), or
+   `setup_delivery.trace_gap` (a trace spec through an adapter without `returns_tool_calls`)
+   does, unless the adapter is an offline mock (`offline_mock`). A sent one binds `{{run_id}}` to
+   `<run_token>-<spec id>` when its canary has to be seeded, records `setup_delivery: seeded`
+   and `seeded_tools`,
+   and its response is renamed through `seeded_setup.tools` (per spec) before the evaluators,
+   which receive `seeded_setup.granted_tools` in their context; a seeded tool-carrier spec whose
+   reply shows no call to that tool is `setup_not_reached`. On resume, a spec the gate stops
+   that the stored run already sent is scored from its attempts when it holds all of them, and
+   otherwise kept as evidence, inconclusive, with nothing more sent.)
 
 ## §6 Data/wire shapes
 `TestPlan = {plan_ref: str, target_id: str, adaptive: bool, fingerprint_ref: str|None,
