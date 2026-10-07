@@ -13,13 +13,13 @@ transaction; the connection enforces WAL + foreign keys (``migrations.connect``)
 from __future__ import annotations
 
 import json
-import math
 import re
 from pathlib import Path
 from types import TracebackType
 from typing import Any
 
 from ildottore.redactor import Redactor, redact_evidence_ref, redact_identity
+from ildottore.shared.amounts import is_amount
 from ildottore.shared.models import Finding, TestRun
 from ildottore.store import migrations
 
@@ -323,7 +323,7 @@ class SqliteRunStore:
         # list was a traceback and exit 1, an integer past a float was one when the resume wrote
         # its spend back, and a negative or NaN figure was taken as what the campaign had spent
         # (2026-10-07). No value is quoted, as for the other corrupt columns.
-        if spend is not None and not all(_is_amount(value) for value in spend.values()):
+        if spend is not None and not all(is_amount(value) for value in spend.values()):
             raise CorruptRunContext(
                 "spend_json holds a value that is not a finite, non-negative number. An integrity "
                 "record that cannot be read is not the same as one that was never written: "
@@ -575,17 +575,6 @@ def _loads(raw: str) -> Any:
         elif isinstance(item, list):
             level.extend((child, depth + 1) for child in item)
     return value
-
-
-def _is_amount(value: object) -> bool:
-    """A spend figure: a finite, non-negative number a float can hold (a JSON bool is not one)."""
-
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return False
-    try:
-        return math.isfinite(value) and value >= 0
-    except OverflowError:  # an integer past the largest float
-        return False
 
 
 def _loads_dict(raw: str | None, *, column: str) -> dict[str, Any] | None:

@@ -5,6 +5,50 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a figure in a reply's usage that no float holds)
+
+- **A 400-digit token count in a reply stopped `dottore run` with exit 1.** The ledger trued its
+  reservation up to whatever integer the reply reported, so a `usage.prompt_tokens` (or
+  `total_tokens`, `tokens`, `input_tokens`, `output_tokens`, `completion_tokens` or a prompt-cache
+  figure) of about 400 digits went into the spend, and persisting it through `float()` raised
+  `OverflowError`: a traceback and exit 1, the code CI reads as "findings below `--fail-on`", and no
+  report. A smaller figure past 2^53 was believed and halted the campaign on the token ceiling after
+  the first reply, so every other spec never ran. A figure is now read only when it is a JSON integer
+  from 0 to 2^53, past which a float no longer holds every integer (the spend is persisted as a
+  float), far
+  beyond any one bill (a number written with a fraction or an exponent, such as `12.0`, is not one,
+  as before). One that is not is skipped like an absent one and the next shape is read
+  (`total_tokens`, `tokens`, input plus output, prompt plus completion), as a negative figure always
+  was; a sum past 2^53 is no usage; and with no readable shape the send keeps its reservation. A
+  prompt-cache figure is summed only into a pair. One that is there and unreadable now makes that
+  pair a floor: the reservation is trued up to it, never down. Before, one that was not a
+  non-negative integer (a negative, a float such as `12.0`, a NaN or an infinity, a bool, a string)
+  was read as 0, which trued the reservation down past cache tokens the reply says it billed, and an
+  integer past 2^53 was believed or crashed. Up to 2^53 a figure is still believed, as a bill
+  is, so a target can report more than it used and halt the campaign on the token ceiling, or report
+  less and free its reservation. A campaign's total can pass 2^53 after many such replies; the store
+  then rounds it (by 2 tokens in 5.4e16, measured), it does not fail. Reproduced on Python 3.14
+  against a local OpenAI-compatible stub, on `main` (`0f936b6`) and on #61; found by the pre-commit
+  audit of `fix/target-deep-json`. An integer longer than 4,300 digits is refused earlier by the JSON
+  parser itself, a separate question left open on that branch.
+- **The same reply crashed `-sV`.** The guardrail probe reads `usage.moderation_latency_ms`, and
+  `float()` of a 400-digit integer made `dottore fingerprint` and `run -sV` exit 1 the same way; an
+  infinity (`1e400` parses as one), a NaN or a negative figure was recorded as a latency, and the
+  first two went into the evidence signal as the bare tokens `Infinity` and `NaN`, which are not
+  JSON. It is now read only when it is a finite, non-negative number a float can hold, and is `null`
+  otherwise.
+- **One predicate, not two.** The check #61 wrote for the stored spend (`_is_amount` in the run
+  store) moved to `ildottore.shared.amounts` as `is_amount`, next to `is_count`, so the store and the
+  `-sV` layer read figures with the same rule. The ledger has no check of its own: nothing a reply or
+  this tool hands it can grow past what `float()` converts (clause A-36 in
+  `specs/contracts/u08-execution-engine.md`). A run store edited by hand to an integer just under
+  2^1024 still can, on a resume under a token ceiling above 1.8e308 (exit 1, as on `main`); left
+  open. Not in this change, found by its audit and present on
+  `main`: a `logprob` in a reply that no float holds still makes `fingerprint` and `run -sV` exit 1
+  (it is read in the adapter, u04). Tests: `tests/cli/test_usage_figures.py` (through the CLI, both
+  directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
+  `tests/shared/test_amounts.py`.
+
 ### Fixed (a file nested past what the CLI can hold)
 
 - **`dottore diff` and `dottore calibrate` exited 1 on a report nested too deeply.** `json.loads`

@@ -3,6 +3,27 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (midday): a usage figure no float holds
+
+- Found by the pre-commit audit of `fix/target-deep-json`, fixed on `fix/usage-figure-overflow`,
+  built on #61 (merged as `0501752`) because it reuses #61's spend predicate: a reply whose
+  `usage.prompt_tokens` (or any token figure the ledger reads) is a 400-digit integer made
+  `dottore run` exit 1 on `OverflowError` when the spend was persisted, with no report, and one
+  past 2^53 halted the campaign on the token ceiling after one reply. A 400-digit
+  `moderation_latency_ms` made `fingerprint` and `run -sV` exit 1 the same way. Both readers now
+  check the figure where it is read (`ildottore.shared.amounts`: `is_count`, a JSON integer from 0
+  to 2^53, for tokens; `is_amount`, #61's predicate moved there, for the latency and the stored
+  spend). An unreadable token figure is skipped and the next shape read; a reply with no readable
+  shape keeps the reservation; a pair beside an unreadable cache figure is a floor. An unreadable
+  latency is `null`. The ledger takes no guard: nothing a reply or the tool hands it can pass
+  what `float()` converts (a run store edited by hand to an integer just under 2^1024 still can,
+  on a resume under a ceiling above 1.8e308; left open, as on `main`). Clause A-36 (u08, pointer
+  in u09). Left open, unchanged: a figure up to 2^53 is
+  believed, so a target can still end a campaign early on the token ceiling. Found by the audit
+  and left as its own task: a `logprob` no float holds still makes `-sV` exit 1 (adapter, u04).
+  `make gates` green: 2,452 tests, coverage 96.51%, lint 0 errors on 75 specs; 52 of the 101
+  new tests fail on `0501752`, and 24 of 24 mutants of the fix are killed.
+
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
 - Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and

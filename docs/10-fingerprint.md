@@ -105,7 +105,10 @@ printed on 2026-10-05 for an offline target with `mock_scenario: comprehending` 
   context-size field. When the carrier layer recovered at least one carrier, the key
   `effective_mutators` lists them best-first: it is the one key the planner reads.
 - `guardrails`: the profile the guardrail layer emits (`input_filter`, `output_filter`,
-  `refusal_style`, `moderation_latency_ms`).
+  `refusal_style`, `moderation_latency_ms`). The latency is the figure the probe reply's `usage`
+  reports, read only when it is a finite, non-negative number a float can hold, and `null`
+  otherwise (since 2026-10-07: a 400-digit integer there made `fingerprint` and `run -sV` exit
+  1, and an infinity, a NaN or a negative figure was recorded).
 - `evidence`: `{layer, signal, weight}` per layer hit. The carrier-comprehension scores travel as
   the `carrier` entry.
 - `spoofing_flags`: see below.

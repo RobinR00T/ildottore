@@ -79,7 +79,7 @@ not a unit-local choice:
 | OD-18 | u08/u04 | a spec's `setup` (documents, mock tools, memory seed) never reaches a live target | conductor | **decided 2026-10-06 by the owner: C, A first (ADR-0009); A built for `type: model` targets (2026-10-06), B for deployed applications (2026-10-07): `seeded_setup` declares the seeded specs, a tool-name map and granted tools; an undeclared spec is `inconclusive: setup_not_seeded` with no send.** Before: ADR-0009 proposed C: B first, then A (2026-10-03): `_build_request` sends prompt, system prompt, sampling and media only (as built, checked 2026-10-04: multi-turn specs also send their turns as messages, the multi-identity sweep sends the identity, and `setup.system_prompt` is the system prompt; the rest of `setup` (documents, mock tools, memory seed) still never goes out); 32 of 75 specs depend on setup, 26 of them go out on a fully capable target, and `tool_call` flags a real target's own tools as unauthorized. B = operator declares seeded setup plus a tool-name map, unseeded specs `inconclusive`; A = deliver setup in-band with a tool loop. Before the live validation |
 | OD-19 | u06/u08 | `evaluator_logic: weighted` is declared by 33 specs and implemented in no run path | conductor | **open, ADR-0010 proposes B (2026-10-03):** the runner never reads the field (a deterministic fail decides), the lint fixture engine treats it as `all_pass` (any failing evaluator decides, as for every `evaluator_logic` value there), and the vote in `evaluators/combine.py` is called by neither. B = document the runner's rule as the semantics and rename the value; A (implement the vote) would let a judge PASS outvote a leaked canary. **Amended the same day:** a judge-only fail is confirmed and gates CI today (precisely, checked 2026-10-04: when the judge says fail on every attempt of one mutation variant, with at least 2 attempts per variant, or on every attempt of the spec below that, and mean confidence at or above the threshold); the ADR now recommends it be needs-review |
 
-## Assurance clauses A-1..A-30 (added 2026-09-22, from the audit series)
+## Assurance clauses (added 2026-09-22, from the audit series)
 
 Eight adversarial audits over 2026-09-20..22 found defects that a green suite, a clean linter
 and four kept import contracts could not see, because every one of them is a claim the code
@@ -105,6 +105,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-18..A-20 | u01 | authorization is reachability, schemes are allowlisted, one answer per target |
 | A-29..A-30 | u01 | a gate keys on what a spec cannot opt out of; the allowlist authorizes the path the client sends, on its port, refuses separator encodings, and a fleet's judge comes only from the fleet file |
 | A-21..A-22 | u14 | a test asserts the claim against the real collaborator, and is deterministic |
+| A-36 | u08 (and u09) | a figure the target reports (token usage, moderation latency) is checked where it is read, and nothing the tool writes takes the ledger past what a float converts |
 
 The pattern under most of them, worth stating once: **something counted or omitted what did
 not belong to it**, and the count was computed correctly and then dropped exactly where a human
