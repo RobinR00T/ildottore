@@ -114,6 +114,17 @@ tool (`tools/call`), invoking a target's tools could have real side effects, so 
 read-only by design. Point the `mcp` suite at such a target for the tool-metadata-poisoning
 ("line jumping") check.
 
+### My assistant only talks over a WebSocket. Can I scan it?
+
+Yes. `provider: websocket` with a `ws://` or `wss://` endpoint and a `websocket:` block that
+declares the wire shape: the handshake frame (with `{{token}}` for the credential), the query
+frame (with `{{prompt}}`), where the streamed text is, which frame ends the turn, which frames
+to ignore and the per-turn timeout. The adapter knows nothing about any product; the block is
+the whole description. The scope gates `wss://` like `https://` (cleartext `ws://` only to
+loopback), a redirect at the upgrade is never followed, every frame is kept in the evidence
+with the credential as its placeholder, and `-sV` works (one connection per probe). Start from
+[`../examples/target.websocket.yaml`](../examples/target.websocket.yaml) and `--dry-run`.
+
 ### If my system passes Il Dottore, does it meet OWASP AISVS?
 
 No, and the tool never says so. AISVS lists *controls* ("verify that a classifier screens every

@@ -247,7 +247,8 @@ Authorization record: version and targets (each with base_url, endpoints, identi
 .BR dottore-scope (5).
 .TP
 .I target.yaml
-The target: id, type, provider, endpoint, model, auth_ref, capabilities.
+The target: id, type, provider (openai, anthropic, mcp, websocket, or rest for anything else),
+endpoint, model, auth_ref, capabilities; a websocket block for provider websocket.
 .TP
 .I fleet.yaml
 Many targets in one file; expanded by

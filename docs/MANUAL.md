@@ -66,7 +66,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
 - **Authorization-gated.** Every egress is checked against the scope's endpoint allowlist
   (default-deny) before any request leaves the process. An out-of-scope host or off-prefix
   path raises an error and sends nothing. Plain `http` is allowed only to loopback
-  (`localhost`, `127.0.0.1`, `::1`); everything else must be `https`. A path that carries an
+  (`localhost`, `127.0.0.1`, `::1`); everything else must be `https`. A WebSocket target
+  follows the same rule: `wss://` is authorized like `https://`, cleartext `ws://` only to
+  loopback, and an HTTP redirect at the upgrade is never followed (the scope authorized one
+  URL). A path that carries an
   encoded slash or backslash (`%2f`, `%5c`), a literal backslash or a double encoding (`%25`)
   is refused outright: an origin that decodes it would resolve a path outside the prefix the
   scope authorized (`/v1/chat/..%2f..%2fadmin` is `/admin` to such an origin). So are the forms
@@ -196,7 +199,7 @@ else must be `https`. Template: [`../specs/scope.example.yaml`](../specs/scope.e
 ```yaml
 id: my-chatbot                   # must match a target id in the scope's `targets`
 type: chatbot                    # model | chatbot | agent | rag | api
-provider: openai                 # openai (and openai-compatible) | anthropic | mcp | rest
+provider: openai                 # openai (and openai-compatible) | anthropic | mcp | websocket | rest
 endpoint: "https://api.example.com/v1/chat/completions"
 model: "gpt-4o"                  # provider model id
 auth_ref: "env://MY_API_KEY"     # reference only; the secret is read at send time, never stored
@@ -291,8 +294,8 @@ supports only `env://NAME`. Any other scheme is refused before anything is sent,
 included (`unsupported auth_ref scheme in 'vault://kv/live'; only 'env://NAME' is supported`,
 exit 3): a `vault://` resolver is not built. A literal key pasted as the `auth_ref` is refused
 too, and the error says `a literal value (not shown)` instead of quoting it. The secret itself
-is never written to a file. A `provider` other than `openai`, `anthropic` or `mcp` routes to
-the generic REST adapter. Template:
+is never written to a file. A `provider` other than `openai`, `anthropic`, `mcp` or
+`websocket` routes to the generic REST adapter. Template:
 [`../specs/targets/example-openai.yaml`](../specs/targets/example-openai.yaml).
 
 An **MCP server** target uses `provider: mcp`. Over the wire it declares the Streamable-HTTP
@@ -314,6 +317,100 @@ transports (it never calls a tool). The server process gets a minimal environmen
 used to inherit every other
 target's API key. A server that needs a variable gets it on the authorized command line
 (`env NAME=value node server.js`), where the scope has to name it.
+
+#### A chat endpoint over a WebSocket (`provider: websocket`)
+
+Many deployed assistants expose their chat only over a WebSocket that streams the answer in
+JSON frames, and no two share a wire shape. `provider: websocket` declares it in a `websocket:`
+block, so such a deployment is a target without a line of code. The adapter adds no product
+knowledge of its own. Worked file, commented line by line:
+[`../examples/target.websocket.yaml`](../examples/target.websocket.yaml) (Scenario H in
+[`../examples/README.md`](../examples/README.md)).
+
+```yaml
+provider: websocket
+endpoint: "wss://assistant.example.test/ws/chat"   # ws:// or wss://; no query, no user:password
+auth_ref: "env://ASSISTANT_WS_TOKEN"               # becomes {{token}} at send time
+websocket:
+  vars: {client: "ildottore"}                      # plain values usable as {{client}}; never secrets
+  handshake:
+    send: {type: "auth", token: "{{token}}", client: "{{client}}"}
+    expect: {path: "type", equals: "auth_ok"}      # the first reply must satisfy it
+  session:
+    start: {type: "new_conversation"}              # once per connection, after the handshake
+    expect: {path: "type", equals: "session"}      # optional acknowledgement
+    one_query_in_flight: true                      # the only policy built
+  message:
+    send: {type: "query", text: "{{prompt}}"}      # {{prompt}}, or {{messages}} for the history
+  response:
+    text_path: "delta.text"                        # each fragment of the answer
+    final_path: "type"                             # the turn ends on the frame where this path...
+    final_value: "done"                            # ...equals this (left out: is present)
+    type_path: "type"                              # where a frame's kind is read (default)
+    ignore_types: ["ping", "typing"]               # discarded
+    error_path: "error"                            # present: the attempt is inconclusive
+    usage_path: "usage"                            # optional, trues up the token ledger
+    tool_calls_path: null                          # declare it only if the server sends calls
+    model_path: null                               # optional: feeds the fingerprint's envelope layer
+    timeout_seconds: 30                            # per turn, query to final frame
+  reconnect: {max_attempts: 1}                     # 0 to 5 more dials when the socket fails to open
+  headers: {}                                      # on the HTTP upgrade; {{token}} allowed here too
+```
+
+**Templates.** `handshake.send`, `session.start`, `message.send` and `headers` are JSON
+templates: static fields plus `{{name}}` placeholders. Four are reserved: `{{token}}` (the
+credential `auth_ref` resolves to), `{{prompt}}` (the attack text of the turn: the request's
+prompt, else its last user message), `{{system_prompt}}` (the spec's system prompt, empty when
+none) and `{{messages}}` (the whole history as a JSON list, for a server that keeps no state).
+Any other name must be declared under `vars`. A string that is exactly one placeholder takes
+the value's own type (`"{{messages}}"` becomes the list); inside a longer string it is spliced
+as text. The loader refuses, before anything is sent: a block missing or on another provider;
+an endpoint that is not `ws://` or `wss://`, or that carries a query, a fragment or a
+user:password; a placeholder that is neither reserved nor in `vars`; `{{token}}` without an
+`auth_ref`, or inside `vars`; a `message.send` with neither `{{prompt}}` nor `{{messages}}`;
+`one_query_in_flight: false`; a `timeout_seconds` outside (0, 600]; a `reconnect.max_attempts`
+outside 0 to 5. The error names the field and never quotes the value.
+
+**One connection per conversation.** A single-turn attempt dials, sends the handshake and the
+session start, sends its query, reads the turn and closes. A multi-turn attempt keeps one
+connection across its turns and closes it after the last; a later turn whose connection is gone
+(the turn before it failed, or more than 16 conversations were open at once) is an environment
+error (`inconclusive`), never a silent restart of the session. Concurrent specs therefore never
+interleave on one socket, and one query is in flight per connection. The `-sV` probes are
+single-turn attempts: one connection each. One request in the budget is one query turn; the
+handshake and session frames ride on it.
+
+**Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a product
+defect, as a malformed HTTP reply is). A frame whose `type_path` value is in `ignore_types` is
+discarded; one with `error_path` present ends the attempt as `inconclusive` (an environment
+error, retried by the runner's policy and debited each time); every string at `text_path` is
+appended; the frame satisfying `final_path`/`final_value` ends the turn; its `usage_path`
+mapping, if any, trues up the token ledger (without one the pre-send estimate stands, as for a
+REST target). A turn with no text at all is a product defect. No final frame within
+`timeout_seconds`, or a connection closed mid-turn, is an environment error: inconclusive, and
+the runner's `--timeout` still bounds the whole send. A turn over 4 MiB, over 4096 frames, or
+a single frame over 4 MiB is refused unread and not retried. Compression is not negotiated.
+`sampling_defaults` do not apply: the templates carry no sampling fields.
+
+**Tool calls.** The adapter reads tool calls only when `tool_calls_path` is declared (each
+frame's list at that path, accumulated); without it, a seeded spec judged on its tool trace is
+`inconclusive: setup_not_delivered`, as through a REST template. It carries no tool
+definitions, so a `type: model` target with tools in its scene is `setup_not_delivered` too;
+a memory seed needs `{{system_prompt}}` in a template.
+
+**Evidence and the credential.** Every frame sent and received is kept on the attempt
+(`response.raw_ids.websocket.frames`, in order, with its direction) and filed by the evidence
+store redacted at rest, so `dottore replay` re-derives the verdict from what went over the
+socket. The credential is inserted in memory at send time and recorded as `{{token}}`; a
+server that echoes it back has it scrubbed from the recorded frame by value, and the error
+message of an error frame is redacted too. `-sV` probes a WebSocket target like any other live
+one: the text layers read the replies, and the envelope layer reads a model name only when
+`model_path` is declared (there is no HTTP envelope to read).
+
+**Not covered.** A connection shared by several concurrent queries (a correlation id); an
+HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (`dottore fleet`
+infers `rest` from a `wss://` endpoint and writes no `websocket:` block); a session that must
+survive a reconnect.
 
 ### 4.3 `fleet.yaml`, many targets in one file
 
@@ -1088,5 +1185,7 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
-| Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. |
+| Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. The same for `ws://`: use `wss://` off loopback. |
+| WebSocket run stops with `the handshake reply did not satisfy expect` | The first non-ignored frame after `handshake.send` did not match `handshake.expect`: usually a wrong or unset credential (`auth_ref`), or a reply frame your deployment sends before the acknowledgement that is not in `ignore_types`. A refused upgrade (`HTTP 401`, a redirect) stops the run the same way; a `503` is retried up to `reconnect.max_attempts`. |
+| WebSocket attempts all `inconclusive` with `WebSocketTurnTimeout` | No frame matched `final_path`/`final_value` within `timeout_seconds`: check the final frame's shape against what your deployment really sends (an acknowledgement frame your server sends after `session.start` is read as part of the first turn unless `session.expect` or `ignore_types` names it). |
 | `authz_leak` is `capability_unavailable` | A cross-tenant spec needs the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |

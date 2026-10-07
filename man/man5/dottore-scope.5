@@ -42,7 +42,9 @@ an endpoints allowlist and >=1 identities.
 .TP
 .B endpoints
 Host plus path_prefixes pairs (default-deny). Plain http is permitted only to loopback
-(localhost, 127.0.0.1, ::1); everything else must be https. A host with no port authorizes
+(localhost, 127.0.0.1, ::1); everything else must be https. A WebSocket target follows the
+same rule: wss is authorized like https, cleartext ws only to loopback, and a redirect at the
+upgrade is never followed. A host with no port authorizes
 every port on it; write host:port to pin one, and [::1]:8080 (brackets) for an IPv6 literal.
 A request path carrying an encoded slash or backslash (%2f, %5c), a literal backslash, a
 double encoding (%25), a ";" path parameter (literal or %3b), a %uXXXX escape, an overlong or
@@ -124,6 +126,17 @@ to the tool carrying the scene is inconclusive (setup_not_reached). The block is
 type: model target, which gets the scene in-band, and on an unknown key, a name both mapped
 and granted, or a run_token that is not 8 to 64 letters, digits, _ or -. Worked file:
 examples/target.app.yaml.
+.PP
+A chat endpoint over a WebSocket is provider websocket, with a ws:// or wss:// endpoint (no
+query, no user:password) and a websocket block declaring its wire shape: handshake.send (a JSON
+template; {{token}} is the credential auth_ref resolves to) with an optional expect (path,
+equals); message.send with {{prompt}} (or {{messages}} for the whole history); response with
+text_path, final_path and final_value, type_path and ignore_types, error_path, usage_path,
+tool_calls_path, model_path and timeout_seconds (per turn); session.start with an optional
+expect; reconnect.max_attempts (0 to 5); headers (on the upgrade) and vars (plain values the
+templates use as {{name}}, never secrets). One connection per conversation; every frame is kept
+in the evidence with the credential as its placeholder. Worked file:
+examples/target.websocket.yaml; reference in docs/MANUAL.md section 4.2.
 .SH "FLEET FILE"
 .nf
 version: "1"

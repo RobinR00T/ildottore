@@ -7,7 +7,12 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
 ## §1 Scope & ownership
 - **OWNS:** `src/ildottore/adapters/`: `base.py` (shared plumbing: allowlist enforcement,
   retry/timeout, logprob mapping helpers, capability probing), `openai.py`, `anthropic.py`,
-  `rest.py` (generic REST, long-tail per ADR-0002).
+  `rest.py` (generic REST, long-tail per ADR-0002), `mcp.py` (read-only MCP discovery) and
+  `websocket.py` (a template-driven JSON-over-WebSocket chat client, 2026-10-07: the wire
+  shape comes from the target file's `websocket:` block, the gate runs before the socket is
+  dialled, redirects at the upgrade are never followed, every frame is recorded with the
+  credential as `{{token}}`, one connection per conversation, a turn bounded in time, bytes and
+  frames; `tests/adapters/test_websocket.py` against a loopback server).
 - **MUST NOT touch:** `shared/`, `policy/`, `evaluators/`, `core/`, `fingerprint/`, `scoring/`,
   `store/`, any spec/suite YAML. `adapters/mock.py` is u03's: do not create it here.
 
@@ -101,3 +106,18 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default
   in MVP-1 to shrink the secret-leak surface: needs sign-off.
+- **OD-30** (WebSocket, 2026-10-07): the frame transcript lives in `ModelResponse.raw_ids["websocket"]`
+  rather than in a dedicated field. A `transcript` field on the frozen u00 `ModelResponse` would be
+  the honest shape, but it changes every stored attempt's dump and the report snapshots; the
+  nested value is skipped by the fingerprint's envelope layer. Decide whether to add the field.
+- **OD-31** (WebSocket): `session.one_query_in_flight: false` is refused. Several concurrent queries
+  on one socket need a correlation id in the templates and in the reply frames; whether that is
+  wanted, and how a target declares it, is the owner's call.
+- **OD-32** (WebSocket): a reconnect is attempted only before a query is on the wire. A connection
+  closed mid-turn is an environment error the runner retries and debits; the adapter never resends a
+  query on its own, so no send escapes the ledger. A later turn of a multi-turn attempt whose
+  connection is gone is inconclusive, never a silent new session. Whether a stateless server
+  (`{{messages}}` in the template) should be allowed to reconnect mid-conversation is open.
+- **OD-33** (WebSocket): `dottore fleet` infers `rest` from a `wss://` endpoint and writes no
+  `websocket:` block, so a WebSocket target is declared by hand today. Whether a fleet entry should
+  carry the block is open.

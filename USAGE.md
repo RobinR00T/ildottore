@@ -45,7 +45,7 @@ targets:
 ```yaml
 id: my-chatbot
 type: chatbot                       # model | chatbot | agent | rag | api
-provider: openai                    # openai (any OpenAI-compatible API) | anthropic | mcp | rest
+provider: openai                    # openai (any OpenAI-compatible API) | anthropic | mcp | websocket | rest
 endpoint: "https://api.example.com/v1/chat/completions"
 model: "gpt-4o"
 auth_ref: "env://MY_API_KEY"        # never inline secrets
@@ -176,6 +176,20 @@ metadata (it never calls a tool); point the `mcp` suite at it. See
 An MCP server reachable over the wire uses `provider: mcp` with an `endpoint`; a local one
 uses `transport: stdio` + `command` and is launched as a subprocess only if the scope target's
 `commands` list authorizes that exact command line (default-deny). See [`docs/MANUAL.md`](docs/MANUAL.md).
+
+## A chat endpoint over a WebSocket
+
+An assistant whose only chat surface is a WebSocket that streams JSON frames is declared with
+`provider: websocket`, a `ws://` or `wss://` `endpoint`, and a `websocket:` block that
+describes its wire shape: the handshake frame (`{{token}}` is the credential `auth_ref`
+resolves to), the query frame (`{{prompt}}`), how the streamed reply is read (`text_path`,
+`final_path`/`final_value`, `ignore_types`, `error_path`, `timeout_seconds`), an optional
+session-start frame and a reconnect cap. The scope authorizes `wss://` like `https://` and
+cleartext `ws://` only to loopback; a redirect at the upgrade is never followed. Every frame
+is kept in the evidence with the credential as its placeholder. Worked, commented files:
+[`examples/target.websocket.yaml`](examples/target.websocket.yaml) and
+[`examples/scope.websocket.yaml`](examples/scope.websocket.yaml); reference in
+[`docs/MANUAL.md`](docs/MANUAL.md) §4.2.
 
 ## Reading results
 
