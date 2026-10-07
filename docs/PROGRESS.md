@@ -12,9 +12,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   the link). Checked: in a worktree with the link, `git status --porcelain` no longer lists it
   and `git check-ignore -v .venv` names `.gitignore:10:.venv`; a real `.venv/` directory, a
   nested one and the files inside stay ignored; no tracked file becomes ignored (0 before and
-  after). Nothing else read the old pattern: CI checks out without a venv, the Makefile hands
-  ruff, mypy and bandit explicit paths (pytest takes `testpaths`), and mypy's `^\.venv/`
-  exclude is a regex of its own, not the ignore file.
+  after). Nothing depends on the directory-only form: CI checks out without a venv, the Makefile
+  hands ruff, mypy and bandit explicit paths (pytest takes `testpaths`), mypy's `^\.venv/`
+  exclude is a regex of its own, and what does read `.gitignore` (ruff walking `src tests`,
+  `tests/test_yaml_duplicate_keys.py` through `git ls-files --exclude-standard`, an sdist
+  build) sees no difference between `.venv/` and `.venv`.
 - The worktree setup was practice, not written anywhere in the repo; it is now in `AGENTS.md`
   §4: the link, `PYTHONPATH=<worktree>/src` (without it the steps that import the package run
   the main checkout's code and the coverage gate reads 0%, measured), and no `make venv` or
