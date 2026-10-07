@@ -19,12 +19,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import math
 import os
 import re
 import subprocess
 import sys
-import time
 import tracemalloc
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -120,135 +118,95 @@ def test_a_url_password_holding_a_registered_credential_is_masked_whole(password
     assert redactor.redact_text(out) == out
 
 
-@pytest.mark.parametrize(
-    ("credential", "url", "masked"),
-    [
-        ("password@db", "redis://u:Sup3rS3cretpassword@db:6379 end", "redis://u:{}:6379 end"),
-        ("pass" + chr(1) + "word@db", "redis://u:Sup3rS3cretpassword@db:6379 end", None),
-        ("bob:hunter2", "https://bob:hunter2XYZSECRET@intranet/v1", "https://{}@intranet/v1"),
-        ("https://bob", "https://bob:Sup3rS3cretPw@intranet/v1", "{}@intranet/v1"),
-    ],
-)
 @pytest.mark.usefixtures("no_known_secrets")
-def test_a_registered_credential_across_a_url_separator_takes_the_password_with_it(
-    credential: str, url: str, masked: str | None
-) -> None:
-    """Across `://`, the `:` or the `@` it stopped the URL rule: the rest of the password showed.
+def test_a_credential_holding_a_stash_delimiter_does_not_cross_a_url_separator() -> None:
+    """Registered as the text reads it (`password@db`) it crossed the URL's `@` (pre-merge audit).
 
-    With a stash delimiter in it, the credential is read as the text is (`password@db`), which
-    main never matched, so main masked that password and the first version of this fix did not
-    (pre-merge audit).
+    The rest of the password before it was readable, where main, which never matched such a
+    credential, masked the whole password. A form holding a delimiter is not registered now.
     """
 
-    register_known_secret(credential)
+    register_known_secret("pass" + chr(1) + "word@db")
     redactor = Redactor(salt=_SALT)
-    out = redactor.redact_text(url)
-    name = credential.replace(chr(1), "")
-    expected = (masked or "redis://u:{}:6379 end").format(f"«REDACTED:credential:{_hmac8(name)}»")
-    assert out == expected
+    out = redactor.redact_text("redis://u:Sup3rS3cretpassword@db:6379 end")
+    assert out == f"redis://u:{_URL_MASK}@db:6379 end"
     assert redactor.redact_text(out) == out
 
 
 @pytest.mark.parametrize(
     ("credentials", "url", "expected"),
     [
-        # A credential holding the URL's `:` as the user, one holding `@` in the password: read
-        # from the first `:` and the first `@`, the joined run left `TAIL5678` (delta audit).
+        # Set aside, a credential is one piece of the user or of the password, whatever it holds.
         (
             ("ops:svc-key", "P@ssw0rd!"),
             "ftp://ops:svc-key:xxP@ssw0rd!TAIL5678@db/v1",
-            "ftp://{ops:svc-key}@db/v1",
+            "ftp://<ops:svc-key>:«REDACTED:url_password»@db/v1",
         ),
         (
             ("ops:svc-key", "P@ssw0rd!"),
             "redis://ops:svc-key:P@ssw0rd!@db",
-            "redis://{ops:svc-key}@db",
+            "redis://<ops:svc-key>:<P@ssw0rd!>@db",
         ),
         (
             ("svc-account-7:", "P@ssw0rd!"),
             "https://svc-account-7::P@ssw0rd!Tail-9876@intranet/v1",
-            "https://{svc-account-7:}@intranet/v1",
+            "https://<svc-account-7:>:«REDACTED:url_password»@intranet/v1",
         ),
-        (("ops:svc-key",), "ftp://ops:svc-key:xxpa@ssTAIL5678@db/v1", "ftp://{ops:svc-key}@db/v1"),
-        # The authority ends at a `/` or whitespace: a later `@` is not the userinfo's.
-        (
-            ("bob:hunter2",),
-            "https://bob:hunter2XYZ@intranet/v1 then a@b.io",
-            "https://{bob:hunter2}@intranet/v1 then «REDACTED:email»",
-        ),
-        (
-            ("bob:hunter2",),
-            "https://bob:hunter2XYZ@intranet then a@b.io",
-            "https://{bob:hunter2}@intranet then «REDACTED:email»",
-        ),
-        # A registered host after the last `@` does not undo it.
-        (
-            ("ops:svc-key", "P@ssw0rd!", "db.example"),
-            "ftp://ops:svc-key:xxP@ssw0rd!TAIL5678@db.example/v1",
-            "ftp://{ops:svc-key}@{db.example}/v1",
-        ),
-        # A credential that ends inside `://` is stepped over, not walked back into.
-        (("xx-redis:/",), "xx-redis://u:Sup3r@ssTAIL5678@db/v1", "{xx-redis:/}@db/v1"),
-        # The separators' own boundaries.
-        (
-            ("://svc-account",),
-            "redis://svc-account:Sup3rS3cretPw@db:6379",
-            "redis{://svc-account}@db:6379",
-        ),
-        (
-            ("svc-account-7:",),
-            "https://svc-account-7:Sup3rS3cretPw@intranet/v1",
-            "https://{svc-account-7:}@intranet/v1",
-        ),
-        (("@db:6379/zero",), "redis://u:Sup3rS3cretPw@db:6379/zero", "redis://u:{@db:6379/zero}"),
+        # Around the URL, not across it.
         (
             ("intranet.example",),
             "https://u:Sup3rS3cretPw@intranet.example/v1",
-            "https://u:«REDACTED:url_password»@{intranet.example}/v1",
+            "https://u:«REDACTED:url_password»@<intranet.example>/v1",
         ),
         (
             ("xx-redis",),
             "xx-redis://u:Sup3rS3cretPw@db",
-            "{xx-redis}://u:«REDACTED:url_password»@db",
+            "<xx-redis>://u:«REDACTED:url_password»@db",
         ),
         (
             ("aaaaaaaa1111",),
             "aaaaaaaa1111 and aaaaaaaa1111 then https://u:Sup3rS3cretPw@h",
-            "{aaaaaaaa1111} and {aaaaaaaa1111} then https://u:«REDACTED:url_password»@h",
+            "<aaaaaaaa1111> and <aaaaaaaa1111> then https://u:«REDACTED:url_password»@h",
         ),
     ],
 )
 @pytest.mark.usefixtures("no_known_secrets")
-def test_a_crossing_run_reaches_the_last_at_of_the_authority(
+def test_a_credential_holding_a_url_separator_inside_the_user_or_the_password(
     credentials: tuple[str, ...], url: str, expected: str
 ) -> None:
-    """The userinfo ends at the authority's last `@`, as `urlsplit` reads it."""
-
     for value in credentials:
         register_known_secret(value)
     redactor = Redactor(salt=_SALT)
     out = redactor.redact_text(url)
-    want = re.sub(r"\{([^}]*)\}", lambda m: f"«REDACTED:credential:{_hmac8(m.group(1))}»", expected)
+    want = re.sub(r"<([^>]*)>", lambda m: f"«REDACTED:credential:{_hmac8(m.group(1))}»", expected)
     assert out == want
     assert redactor.redact_text(out) == out
 
 
-def test_the_url_separator_pass_is_linear_in_the_urls() -> None:
-    """A slice of the runs per URL made it quadratic: 20,000 registered-user URLs took 0.35 s."""
+@pytest.mark.parametrize(
+    ("credential", "text", "value"),
+    [
+        (
+            "P@ssw0rd!",
+            '{"dsn":"redis://ops:P@ssw0rd!@cache:6379","password":"Adm1n@Secret2026xyz"}',
+            "Adm1n@Secret2026xyz",
+        ),
+        (
+            "bob:hunter2",
+            "https://bob:hunter2XYZ@host,password=Secr3t@Value99xyz",
+            "Secr3t@Value99xyz",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_labelled_secret_after_a_url_stays_masked(credential: str, text: str, value: str) -> None:
+    """A reading of the URL up to the authority's last `@` took the label into a mask and left
+    the value's tail readable (delta audit of a version of this fix that was backed out)."""
 
-    url = "https://svc-account-7:Pw123456@localhost:8080/v1 "
-
-    def cost(count: int) -> float:
-        text = url * count
-        runs = [(n * len(url) + 8, n * len(url) + 21, "svc-account-7") for n in range(count)]
-        best = math.inf
-        for _ in range(3):  # CPU time: under a busy machine wall time reached a ratio of 14
-            started = time.process_time()
-            assert redactor_mod._straddled_passwords(text, runs) == []  # every run is a user
-            best = min(best, time.process_time() - started)
-        return best
-
-    assert cost(80_000) / cost(20_000) < 10  # four times the URLs: 4 when linear, 16 when not
+    register_known_secret(credential)
+    out = Redactor(salt=_SALT).redact_text(text)
+    assert f"«REDACTED:labeled_secret:{_hmac8(value)}»" in out
+    assert value.split("@")[1] not in out
 
 
 @pytest.mark.usefixtures("no_known_secrets")
@@ -386,31 +344,25 @@ def test_a_key_holding_a_run_named_after_a_credential_seen_before_digests_the_ru
 
 @pytest.mark.usefixtures("no_known_secrets")
 def test_a_credential_holding_a_stash_delimiter_cannot_break_a_stash_token() -> None:
-    """It matched across the end of a token: a raw NUL out, a mask lost, and no fixed point."""
+    """It matched across a token's edge: a raw delimiter out, a mask lost, and no fixed point."""
 
     register_known_secret("0" + chr(1) + "abcdefgh")  # `\x01` after a digit: a token's end
     register_known_secret("abcdefgh" + chr(0) + "0")  # `\x00` before a digit: a token's start
-    register_known_secret(chr(0) * 6 + "ab")  # under 8 characters without them: not registered
+    register_known_secret(chr(0) * 6 + "ab")
     register_known_secret(chr(1) * 8)
+    register_known_secret(" 1" + chr(1) + "abcdefgh\n")  # its stripped form holds one too
+    assert not any(chr(0) in form or chr(1) in form for form in redactor_mod._KNOWN_SECRETS)
     redactor = Redactor(salt=_SALT)
     for text in ("«REDACTED:ip»abcdefgh", "key abcdefgh«REDACTED:ip» tail", "a cab", "hello"):
         assert redactor.redact_text(text) == text
-    assert redactor.redact_text("key 0" + chr(1) + "abcdefgh end") == (
-        f"key «REDACTED:credential:{_hmac8('0abcdefgh')}» end"
-    )
+    out = redactor.redact_text("key 0" + chr(1) + "abcdefgh end «REDACTED:ip»")
+    assert chr(0) not in out and chr(1) not in out and redactor.redact_text(out) == out
 
 
 @pytest.mark.usefixtures("no_known_secrets")
-def test_a_credential_is_registered_as_the_redactor_reads_it() -> None:
-    """Stripped of the stash delimiters, before and after its surrounding whitespace."""
+def test_a_credential_holding_a_stash_delimiter_is_masked_as_a_library_quotes_it() -> None:
+    """Its raw forms are not registered; `repr` and JSON write the delimiter as an escape."""
 
-    register_known_secret(chr(1) + " abcdefgh " + chr(1))
-    out = Redactor(salt=_SALT).redact_text("key=abcdefgh;")
-    assert out == f"key=«REDACTED:credential:{_hmac8('abcdefgh')}»;"
-    register_known_secret("abc" + chr(0) + "defghij")
-    assert redactor_mod.overlaps_known_secret("abc" + chr(0) + "defghij")
-    assert redactor_mod.overlaps_known_secret("abc" + chr(1) + "defghij")
-    # The value as given is quoted by a library too: `repr` writes the delimiter as `\x01`.
     value = "Sup3r" + chr(1) + "Secret" + chr(10)
     register_known_secret(value)
     for quoted in (repr(value)[1:-1], json.dumps(value)[1:-1]):

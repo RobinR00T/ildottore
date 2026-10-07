@@ -105,6 +105,9 @@ def _without_stash_delimiters(text: str) -> str:
     return text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
 
 
+_STASH_DELIMITER: Final = re.compile(r"[\x00\x01]")
+
+
 #: The email shape; a ``skip`` match is a run of address characters with no address in it.
 EMAIL: Final = re.compile(
     r"\b(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b|(?P<skip>[A-Za-z0-9._%+-]{64,}))"
@@ -195,15 +198,15 @@ def register_known_secret(value: str | None) -> None:
 
     if not value:
         return
-    # Without the stash delimiters, as :meth:`Redactor.redact_text` reads the text: with one, a
-    # credential matched across the end of a stash token, broke it and left a raw NUL in the
-    # output, which then was no fixed point (pre-commit audit of this block). The forms of the
-    # value without them count too, so a delimiter at its ends does not keep it from stripping.
-    forms = _escaped_forms(value) | _escaped_forms(_without_stash_delimiters(value))
+    # A form holding a stash delimiter is not registered. The text is read without them, so it
+    # never matches the text as written, only across a stash token's edges: that broke the token
+    # (a raw NUL in the output and no fixed point; pre-commit audit of this block) or took a mask
+    # with the text after it. Read without them instead, it could cross a URL's separators and
+    # leave the password readable where main's URL rule masked it (pre-merge audit). Its `repr`
+    # and JSON forms, as a library quotes it, hold no delimiter and are registered.
     with _KNOWN_LOCK:
-        for form in forms:
-            candidate = _without_stash_delimiters(form)
-            if len(candidate) >= _KNOWN_MIN_LEN:
+        for candidate in _escaped_forms(value):
+            if len(candidate) >= _KNOWN_MIN_LEN and not _STASH_DELIMITER.search(candidate):
                 _KNOWN_SECRETS.add(candidate)
 
 
@@ -227,7 +230,6 @@ _URL_USERINFO: Final = re.compile(
 def overlaps_known_secret(value: str) -> bool:
     """True if ``value`` is, contains, or is part of a credential this process registered."""
 
-    value = _without_stash_delimiters(value)  # as the credentials are registered
     with _KNOWN_LOCK:
         return any(value in secret or secret in value for secret in _KNOWN_SECRETS)
 
@@ -269,17 +271,6 @@ def _credential_runs(text: str) -> list[tuple[int, int, str]]:
             else:
                 spans.append((found, end, secret))
             found = text.find(secret, found + 1)
-    runs = _merged(spans)
-    if runs:
-        straddled = _straddled_passwords(text, runs)
-        if straddled:
-            runs = _merged(runs + straddled)
-    return runs
-
-
-def _merged(spans: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
-    """``spans`` joined where they overlap, each run named after its longest credential."""
-
     runs: list[tuple[int, int, str]] = []
     for start, end, secret in sorted(spans):
         if runs and start < runs[-1][1]:
@@ -288,75 +279,6 @@ def _merged(spans: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
         else:
             runs.append((start, end, secret))
     return runs
-
-
-def _straddled_passwords(text: str, runs: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
-    """The URL passwords a credential run crosses a separator of, as unnamed spans to join it.
-
-    A run is read by the URL rule as a mask, so it holds anywhere inside the user or inside the
-    password; across ``://``, the ``:`` or the ``@`` it stops the rule, which then left the
-    password or its first part readable (``password@db`` registered, in
-    ``redis://u:Sup3rS3cretpassword@db``; pre-merge audit). The password joins that run instead,
-    up to the authority's last ``@`` outside the runs, where ``urlsplit`` ends the userinfo: the
-    first ``:`` and the first ``@`` the URL rule finds may sit inside a credential (``ops:svc-key``
-    as the user, ``P@ssw0rd!`` in the password), and a span ending there left the rest of the
-    password readable (delta audit). ``runs`` are disjoint and in order, as the URL matches and
-    their authorities are, so this is one pass over both.
-    """
-
-    found: list[tuple[int, int, str]] = []
-    index = 0
-    for match in _URL_USERINFO.finditer(text):
-        first, last = match.start(1), match.end(3)  # from `://` to `@`
-        user = (first + 3, match.end(1) - 1)
-        password = match.span(2)
-        while index < len(runs) and runs[index][1] <= first:
-            index += 1
-        start = end = -1
-        # By index: a slice per URL copied the rest of the runs, quadratic in a reply of URLs.
-        for position in range(index, len(runs)):
-            run_start, run_end, _ = runs[position]
-            if run_start >= last:
-                break
-            inside_user = user[0] <= run_start and run_end <= user[1]
-            if not (inside_user or (password[0] <= run_start and run_end <= password[1])):
-                # From the run, so the two make one run even when it ends at the `:` before the
-                # password (`https://bob` registered).
-                start = min(run_start, password[0]) if start == -1 else start
-                end = max(end, run_end, password[1])
-        if start != -1:
-            found.append((start, max(end, _last_at(text, runs, index, user[0])), ""))
-    return found
-
-
-#: Where a URL's authority ends, as the URL rule reads it: at a ``/`` or whitespace.
-_AUTHORITY_END: Final = re.compile(r"[/\s]")
-
-
-def _last_at(text: str, runs: list[tuple[int, int, str]], index: int, begin: int) -> int:
-    """The last ``@`` outside ``runs`` in the authority that starts at ``begin``, or -1.
-
-    The authority ends at a ``/`` or whitespace outside the runs (a credential holding one does
-    not end it); ``runs[index:]`` are the runs that end after ``begin``'s URL starts.
-    """
-
-    found = -1
-    cursor, position = begin, index
-    while True:
-        while position < len(runs) and runs[position][1] <= cursor:
-            position += 1
-        if position < len(runs) and runs[position][0] <= cursor:
-            cursor = runs[position][1]  # inside a run: step over it
-            position += 1
-            continue
-        limit = runs[position][0] if position < len(runs) else len(text)
-        stop = _AUTHORITY_END.search(text, cursor, limit)
-        at = text.rfind("@", cursor, stop.start() if stop else limit)
-        found = at if at != -1 else found
-        if stop or position >= len(runs):
-            return found
-        cursor = runs[position][1]
-        position += 1
 
 
 # The corroboration digest is 32 bits of an HMAC. Unsalted, anyone holding a report could

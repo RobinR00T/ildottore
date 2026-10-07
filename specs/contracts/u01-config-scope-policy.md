@@ -137,26 +137,29 @@ file's own `judge:` block, never from a `--judge` file, which could otherwise na
 any credential and have both written into the scope (SEC-04). Checks: the same file, plus
 `tests/cli/test_fleet.py`.
 
-**A-31 A mask depends only on what it masks (added 2026-10-07).** With the salt fixed, one value
-is masked the same way in every process and wherever it appears: a digest is computed over the
-value as it is written in the text, never over the redactor's own stash tokens (their numbers
-count the masks set aside before them) nor over anything a set orders (its order changes with
+**A-31 A mask depends only on what it masks (added 2026-10-07).** With the salt fixed, one value is
+masked the same way in every process and wherever it appears: a digest is computed over the value
+as it is written in the text, never over the redactor's own stash tokens (their numbers count the
+masks set aside before them) nor over anything a set orders (its order changes with
 `PYTHONHASHSEED`). A private key's digest depended on both: six hash seeds of twelve gave one
-digest and six another, and in one process the same key had another digest after a mask. The
-same set order decided which of two overlapping registered credentials was masked and left the
-other's tail readable; overlapping credentials are one run now, named after the longest. The
-URL rule holds when part of the URL is already masked: a URL's password stayed readable because
-its user was a registered credential, set aside before the rule ran; and a registered credential
-across the URL's `://`, `:` or `@` takes the password into its own mask, up to the authority's
-last `@`, where `urlsplit` ends the userinfo. (Not yet every rule:
-the labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its
-tail readable, as on main. Nor every key: the key pattern's 16 KB bound counts each mask inside
-the key as a stash token whose length grows with the masks before it, so a key near the bound
-is masked as a key or not depending on the text before it, and one a single pass cannot take
-whole is masked as a key later, over its text with the masks inside it, or never; on main too.)
+digest and six another, and in one process the same key had another digest after a mask. The same
+set order decided which of two overlapping registered credentials was masked and left the other's
+tail readable; overlapping credentials are one run now, named after the longest. The URL rule holds
+when part of the URL is already masked: a URL's password stayed readable because its user was a
+registered credential, set aside before the rule ran. (Not across a separator: a registered
+credential holding the URL's `://`, `:` or `@` across it still breaks the rule. It stops it, as on
+main, or across the `@` lets it read on to a later `@`, so a labelled value after the URL loses its
+tail where main masked it; and two overlapping credentials masked as one run can cover a separator
+that main's one-at-a-time replacement left. A pass that joined the password to such a credential
+was backed out after the audits of its two versions each found a new hole in it. Not yet every rule
+either: the labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps
+its tail readable, as on main. Nor every key: the key pattern's 16 KB bound counts each mask inside
+the key as a stash token whose length grows with the masks before it, so a key near the bound is
+masked as a key or not depending on the text before it, and one a single pass cannot take whole is
+masked as a key later, over its text with the masks inside it, or never; on main too.)
 Checks: `tests/test_redactor_url_password_and_digests.py` (twelve hash seeds in subprocesses,
 digests against an HMAC computed in the test, the evidence store's leak guard, a property over
-URL shapes, credentials across a URL's separators).
+URL shapes, credentials holding a URL's separators inside the user or the password).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
