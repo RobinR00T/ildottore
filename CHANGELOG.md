@@ -82,7 +82,12 @@ versioning: [SemVer](https://semver.org/).
   a piece more than twice over, written overlapping itself, can leave its tail readable, as on
   main; and, as on main, two registered credentials overlapping in text without such a
   character (the longer is masked and the shorter's head or tail stays readable), or one
-  overlapping itself there. On the terminal
+  overlapping itself there. A value registered with such a character inside that matches only once
+  it is dropped can take a URL's `@` and leave the start of the URL password readable, as a value
+  registered plainly as `abc@host` does on main (handling that is the URL rule's, not this match's:
+  PR #56 tried and withdrew it). A value holding `\x00` or `\x01` is matched only through its
+  escaped forms, so written as it is, or without that character, it is read as any other text, as
+  on main. On the terminal
   the format characters themselves are still printed as they are: the owner decided on 2026-10-07
   that they are written out like the control characters (`visible_controls`), and that lands on
   PR #51, where the function lives.
