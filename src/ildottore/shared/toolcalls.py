@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 
+from ildottore.shared.wellformed import well_formed_json
+
 __all__ = ["call_arguments", "call_id", "call_name"]
 
 
@@ -38,7 +40,8 @@ def call_id(call: Mapping[str, object], fallback: str) -> str:
 def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
     """The arguments of a call as a mapping: ``arguments`` / ``input`` / ``args`` /
     ``parameters``, or ``function.arguments``, each either a mapping or OpenAI's JSON string.
-    A string that is not a JSON object reads as ``{}``.
+    A string that is not a JSON object reads as ``{}``. A lone surrogate escaped in that
+    string reads as U+FFFD, as it does in the reply around it (A-47).
     """
 
     candidates = [call.get(key) for key in ("arguments", "input", "args", "parameters")]
@@ -50,7 +53,7 @@ def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
             return dict(value)
         if isinstance(value, str):
             try:
-                parsed = json.loads(value)
+                parsed = well_formed_json(json.loads(value))
             except ValueError:
                 return {}
             return dict(parsed) if isinstance(parsed, dict) else {}

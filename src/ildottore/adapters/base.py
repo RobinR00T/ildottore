@@ -11,7 +11,8 @@ Everything provider-agnostic lives here so each concrete adapter (``openai``,
   transport/timeout errors are retried with capped exponential backoff, then the
   attempt is *skipped* by re-raising as :class:`AdapterEnvError` (env, per
   ``AGENTS.md §2``). A malformed 200 body is a **product defect** →
-  :class:`AdapterProductError` (never masked as a flake).
+  :class:`AdapterProductError` (never masked as a flake). A lone surrogate in a body
+  is read as U+FFFD where it is parsed (:mod:`ildottore.shared.wellformed`, A-47).
 * **Logprob mapping** - :func:`map_logprobs` folds a provider-neutral token list
   into :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005 / OD-1).
 * **Redaction** - raw request/response ids are redacted through u01's redactor
@@ -41,6 +42,7 @@ from ildottore.shared.models import (
     ModelResponse,
     TokenLogprob,
 )
+from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
     "ACCEPT_ENCODING",
@@ -484,7 +486,9 @@ class BaseAdapter(ABC):
 
         if response.is_success:
             try:
-                payload = json.loads(raw)
+                # Half a character (a lone surrogate) parses, and then no UTF-8 writer
+                # takes it: the evidence store aborted the campaign on one (A-47).
+                payload = well_formed_json(json.loads(raw))
             except ValueError as exc:  # non-JSON success body = malformed
                 raise AdapterProductError(
                     f"{self.id}: success response was not valid JSON: {exc}"

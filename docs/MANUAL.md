@@ -83,6 +83,13 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
   classified by the status (a `401` stays a `401`).
+- **Half a character in a reply.** JSON can escape a lone surrogate (half of a UTF-16 pair),
+  which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
+  call's arguments are, each one is read as U+FFFD, the replacement character (a well formed
+  pair stays the character it encodes), and the attempt is evaluated on that text as usual.
+  The evidence shows U+FFFD and does not keep which code unit it was. Over an MCP SSE stream,
+  which is decoded as text first, each raw byte of one reads as U+FFFD. A body that is not
+  valid UTF-8 in any other way (one `FF` byte) is still not JSON and stops the campaign.
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.

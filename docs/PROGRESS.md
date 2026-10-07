@@ -3,6 +3,31 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): a reply that holds half a character
+
+- Found by the pre-commit audit of `fix/hostile-logprob`, on `0501752` too, and fixed on
+  `fix/lone-surrogate-reply`: a reply carrying a lone surrogate (escaped, or its raw bytes
+  `ED A0 80`) in its text, `id`, `model` echo, a logprob token or a tool call made `run` exit 3
+  with every spec unrun and no evidence (the evidence store's content hash encodes it) and
+  `run -sV` exit 3 with no report; a multi-turn spec and the `--judge` request failed in httpx
+  encoding the reply into the next request. Every reply is now made well formed where it is
+  parsed (`shared.wellformed`, the base and MCP adapters, the MCP stdio line decoded with
+  `surrogatepass`) and so are a tool call's arguments (`call_arguments`): a lone surrogate reads as
+  U+FFFD and the attempt is judged as usual, so a leak beside it still fails. Contract u04 A-47;
+  open decision OD-28 (U+FFFD, deleting the half, a visible marker of the code unit, or an
+  inconclusive attempt, which would let six characters hide a leak). Four audits before the
+  commit: the fix copied every reply (now only one that holds a surrogate), MCP stdio still timed
+  out on the raw bytes, and the docs promised more than the code on some transports. Merge
+  notes: with open PR #57 a credential split by a half is masked only if U+FFFD is one of its
+  splitters; PR #65 rewrites the same three parse lines (keep `well_formed_json` around
+  `bounded_loads`, and `import json` where it is still used); PR #74's A-39 and its PROGRESS entry
+  call this open. Left as their own tasks: a spec file whose YAML holds the escape, and six
+  older ways one reply stops a campaign that the audit found on main (an MCP session id that is not
+  ASCII, an SSE charset or line separator, one invalid UTF-8 byte, a non-finite number sent back,
+  JSON nested inside a tool call's or the judge's text). `tests/cli/test_lone_surrogate.py` (29 of
+  36 fail on `0501752`), `tests/adapters/test_lone_surrogate_replies.py` (9 of 9),
+  `tests/shared/test_wellformed.py`.
+
 ## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
 
 - Found on `fix/huge-int-repr` and fixed on `fix/target-file-validation`: a wrong value under a
