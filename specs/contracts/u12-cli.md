@@ -369,7 +369,7 @@ that is not text: `1: Keys should be strings`), never the value:
   they route); `dottore fleet` writes only these keys (a test runs it on both shipped fleets and
   loads what it writes).
 
-`tests/cli/test_target_top_level_keys.py`: 43 of its 90 tests fail on `de392e1`, this branch's base,
+`tests/cli/test_target_top_level_keys.py`: 43 of its 90 tests fail on `15e5550`, this branch's base,
 and so do A-40's two tests of a number as `provider` or `transport` in `test_huge_numbers.py`, which
 expected exit 0 and now expect this refusal. Each fails on the old behavior (25 of the 43, and both
 of A-40's, because the command exits 0; 17 because the reader does not raise; 1 because
