@@ -14,17 +14,40 @@ The carryover ledger. Every agent session updates this so context survives even 
   message and position), which can only refuse earlier what the measure refused later. Clause A-52
   (u01). 16 of the 30 new tests fail on `df75d3d`, and thirteen mutants are all killed; the
   pre-commit audit found no defect in the code (a differential fuzz of 14,800 documents through both
-  loaders: none accepted by one tree and refused by the other) ten claims in the docs and tests that
-  promised more than the code, and one order no test pinned (a tag too long before the depth); all
-  corrected, and the delta audit five more wording slips, also corrected. Open, OD-30 (the owner's):
-  under the limit the per-token cost stays (chains 98 deep accepted at about 2.3 times the flat
-  list); a lower limit for flow nesting only (the repository's 130 YAML files nest at most 2 flow
-  levels) or libyaml's scanner (whose C composer would take the per-node checks with it).
+  loaders: none accepted by one tree and refused by the other), and ten claims in the docs and tests
+  that promised more than the code, and one order no test pinned (a tag too long before the depth);
+  all corrected, and the delta audit five more wording slips, also corrected. Open, OD-30 (the
+  owner's): under the limit the per-token cost stays (chains 98 deep accepted at about 2.3 times the
+  flat list); a lower limit for flow nesting only (the repository's 130 YAML files nest at most 2
+  flow levels) or libyaml's scanner (whose C composer would take the per-node checks with it).
   `fix/yaml-construction-cost` edits the same `compose_node`: a three-way merge of `safe_yaml.py`
   merges that method cleanly and conflicts in four places, each an addition on both sides (the
   module docstring, the constants, the class docstring, `__init__`); with both sides kept, the two
   branches' tests pass together (pre-commit audit). CHANGELOG, PROGRESS and u01 conflict at their
   top entries.
+
+## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
+
+- Found by the delta audit of PR #68 and fixed on `fix/sv-probe-spend-on-stop`: on `run --resume
+  <id> -sV`, only the request ceiling wrote what the probe pass had sent to the run store. A probe
+  answered 503 three times left the store at 20 while the stub had served 23 (reproduced on main
+  `0501752`); a 401, a 200 that is not JSON, Ctrl-C, SIGTERM and a stop after a pass that
+  succeeded lost the pass too. The CLI now owns the pass's ledger and records prior spend plus the
+  pass as soon as it ends, success included (the store's per-axis maximum keeps each probe counted
+  once), and says the count on stderr when an error or a signal stops the pass. Three audit rounds
+  found signal windows: the write after a successful pass sat outside the handlers (a real SIGINT
+  a few milliseconds after the last probe lost all 17 in 2 of 16 tries; moved inside), and a
+  handler's own write has nothing after it (2 of 41 tries just after a 503 stop). Writing again on
+  that signal was built and withdrawn (on a locked store, one Ctrl-C after a pass that succeeded
+  waited 15.1 s instead of 9.8 for a record lost anyway); the window is written in the contract.
+  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not changed: a fresh
+  run's pass and a `--resume-unverified` run with no recorded spend record nothing; a signal during
+  a handler's write, a SIGKILL, or a write that fails (a warning) still leave the record low. Left open as a follow-up: the adapters
+  are built with no retries of their own, so the error that stops a probe pass, and an attack
+  attempt's evidence, say `exhausted 1 attempt(s)` after three sends. Merged in a scratch
+  repository with PR #66 and with PR #68, code, u12 and the index merge cleanly (only
+  `CHANGELOG.md` and `docs/PROGRESS.md` conflict) and the merged trees pass both PRs' tests and
+  these.
 
 ## State, 2026-10-07 (afternoon): every YAML loader capped by expanded size
 

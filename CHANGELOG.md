@@ -53,6 +53,49 @@ versioning: [SemVer](https://semver.org/).
   construction-cost fix (A-41 and A-42); the same on `main` (`2f6201a`), whose depth limit is #61's:
   refused after the same 97.4 million keys.
 
+### Fixed (a resumed run recorded its `-sV` probe pass only when the ceiling stopped it)
+
+- **A resume lost what its probe pass had sent whenever the pass stopped on anything but the
+  request ceiling.** The pass runs outside the runner's ledger and only the ceiling path wrote its
+  requests to the run store: a probe answered 503 three times (the meter retries it twice, then
+  the adapter's environment error stops the pass) left the store at 20 requests while the target
+  had served 23. A 401, a 200 that is not JSON, Ctrl-C and SIGTERM did the same, and so did
+  anything stopping the run after a pass that succeeded and before the runner's ledger opened. The
+  next resume then probed again against a ceiling that had never seen those requests. The CLI now
+  owns the pass's ledger and writes the prior spend plus every request the pass sent, retries
+  included, as soon as the pass ends, success included; each probe is counted once, because the
+  store keeps the highest figure per axis. Requests are counted as the ledger counts them, every
+  send attempted: a refused connection counts, as for the attack traffic, and so does a send in
+  flight when a signal arrives. When an error or a signal ends the pass before its record is
+  complete, stderr says how many requests it sent and what the run now records (or that they could
+  not be added; a signal during that write cuts the line), under `-q` too: `resume: the -sV probe pass on 'api' stopped after 3 request(s),
+  retries included; run-<id> now records 23 request(s) spent` (the ceiling's refusal gives its own
+  count). A fresh run stopped by its pass (no run row, nothing to resume) and a
+  `--resume-unverified` run whose spend was never recorded record nothing, as before. Found by the
+  delta audit of PR #68, reproduced on main `0501752`. Contract u12 A-46.
+- **Signals, found by three audit rounds on this fix.** The first version wrote after a successful
+  pass outside the handlers, and a real SIGINT a few milliseconds after the last probe lost all 17
+  in 2 of 16 tries; the write is inside them now. A handler's own write has nothing after it: one
+  SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries. Writing again on that
+  signal closed it and, on a locked store, made Ctrl-C wait one more busy timeout per interrupted
+  write (15.1 s instead of 9.8 with one Ctrl-C after a pass that succeeded) for a record lost
+  anyway, so it was withdrawn. The record falls below what
+  was sent only when a signal lands during the few milliseconds of a handler's write (one is
+  enough after an error or the ceiling, two after a signal or a pass that succeeded), on a
+  SIGKILL, or when the write fails, which is a warning that never replaces the error that stopped
+  the pass; the stderr line is then cut or says the requests could not be added.
+- `tests/cli/test_probe_pass_spend.py`: 14 tests through the real CLI against a counting stub,
+  SIGINT and SIGTERM in a subprocess (whose Ctrl-C handler the test restores: a shell that starts
+  pytest with `&` passes SIGINT on ignored). 11 fail on `2f6201a`: nine on their store assertion,
+  the interruption at the write after a successful pass because that write does not exist there
+  (with it moved back after the handlers, it fails on its store assertion), and the failed write
+  because main never attempts it.
+- **Still open: the error after those three sends says `exhausted 1 attempt(s)`.** The adapters
+  are built with no retries of their own (the meter or the runner owns them), so the adapter's
+  message counts its single send: in the error that stops a probe pass, and in an attack
+  attempt's evidence. The new stderr line gives the real count for a resumed probe pass; the
+  message itself is a follow-up (MANUAL, Troubleshooting).
+
 ### Fixed (a YAML file that expands past what the CLI can hold)
 
 - **Only the spec loader capped a YAML document's size with its aliases expanded.** The scope,
