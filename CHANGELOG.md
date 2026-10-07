@@ -26,10 +26,13 @@ versioning: [SemVer](https://semver.org/).
 - **`dottore fleet` wrote a scope it could not read back.** The scope it writes repeats each
   endpoint, so a fleet file under the new limit could write a scope over it: an 845,022-byte fleet
   wrote a 1,355,024-byte scope with exit 0, and the `dottore run` it printed was refused. `fleet`
-  now measures every file it would write and refuses, before writing any, one over 1 MiB (exit 3,
-  `the scope.yaml this fleet would write is 1,355,024 bytes, over the 1,048,576-byte cap a file is
-  read up to; split the fleet`). Generated files are written with LF line ends on every platform, as
-  measured. Found by the pre-commit audit of this change.
+  now measures every file it would write, one at a time, and refuses, before writing any, one over 1
+  MiB (exit 3, `the scope.yaml this fleet would write is 1,355,024 bytes, over the 1,048,576-byte
+  cap a file is read up to; split the fleet`). A target or the judge file can be the one over, as
+  non-ASCII text is written escaped; the message then says to shorten that entry. The judge file is
+  measured only when the printed command reads it, not when `--judge` names another. Generated files
+  are written with LF line ends on every platform, as measured. Found by the pre-commit and delta
+  audits of this change.
 - **A validation error listed every problem, whole.** A scope, fleet or policy-pack file that failed
   validation (and, since #73, a target file's `capabilities` or `sampling_defaults`) listed every
   error, and a key the operator typed is part of an error's field path: a 5.5 MB scope with 5,500

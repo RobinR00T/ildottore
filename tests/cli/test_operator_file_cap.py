@@ -2,7 +2,7 @@
 
 The scope, target, fleet and labels files and the policy and signature packs were read whole
 with ``Path.read_text``: 100 MB of comments in a scope or labels file cost 39.5 s and 244 MB
-before the refusal, and the node cap of ``safe_yaml`` bounds what is composed, not what is read.
+before the refusal, and a check on the parsed document bounds what is built, not what is read.
 Only the spec loader capped its read (``MAX_YAML_BYTES``, 1 MiB). Their validation errors were
 listed whole: a 5.5 MB scope with 5,500 extra keys of 1,000 characters made ``dottore run
 --dry-run`` print one ``error:`` line of 5,687,058 characters (pre-commit audit of the
@@ -216,7 +216,7 @@ def within(path: Path, call: Callable[[], Any], seconds: float = 60) -> Any:
     def run() -> None:
         try:
             outcome["value"] = call()
-        except Exception as exc:  # raised again in the test's own thread below
+        except BaseException as exc:  # a SystemExit too: raised again in the test's thread
             outcome["error"] = exc
 
     worker = threading.Thread(target=run, daemon=True)
@@ -256,16 +256,36 @@ def test_a_pipe_past_the_cap_is_refused_after_one_byte_more(tmp_path: Path) -> N
     assert peak < 3 * CAP, peak
 
 
+#: A child's own peak resident memory, in bytes. Linux keeps ``ru_maxrss`` across ``execve``, so
+#: a child of a large pytest started at the parent's peak: CI read 315 MiB before the child had
+#: done anything (delta audit, then CI on ubuntu). ``VmHWM`` belongs to the new image. macOS has
+#: no ``/proc`` and does not carry the figure over.
+_PEAK = """
+import resource, sys
+
+def peak_bytes():
+    try:
+        with open("/proc/self/status") as status:
+            for line in status:
+                if line.startswith("VmHWM:"):
+                    return int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    scale = 1 if sys.platform == "darwin" else 1024
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+"""
+
 #: Reads ``/dev/zero`` in a child that stops itself at 256 MiB: a read without its cap grows
 #: about 2.5 GiB a second, and on a timeout alone it would ask for tens of GiB, killed for memory
 #: on a CI runner or swapping on a laptop (pre-commit audit).
-_ZERO = """
-import os, resource, sys, threading, time, tracemalloc
+_ZERO = (
+    _PEAK
+    + """
+import os, threading, time, tracemalloc
 from ildottore.shared.files import read_text_capped
 
 def watchdog():
-    scale = 1 if sys.platform == "darwin" else 1024
-    while resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale < 256 * 2**20:
+    while peak_bytes() < 256 * 2**20:
         time.sleep(0.005)
     print("over 256 MiB", flush=True)
     os._exit(9)
@@ -278,6 +298,7 @@ except OSError as exc:
     print(exc.strerror)
 print(tracemalloc.get_traced_memory()[1])
 """
+)
 
 
 @pytest.mark.skipif(not Path("/dev/zero").exists(), reason="no /dev/zero")
@@ -386,6 +407,66 @@ def test_fleet_writes_no_file_it_could_not_read_back(tmp_path: Path) -> None:
         "1,048,576-byte cap a file is read up to; split the fleet"
     )
     assert not over.exists()
+
+
+#: A model name of 300,000 accented letters: 600,000 bytes in the fleet, written escaped (about
+#: 1.26 MB) into a target or judge file, while the scope, which does not name the model, stays
+#: small (delta audit: one target or the judge can be the file over the cap).
+LONG_MODEL = chr(0xE9) * 300_000
+ENDPOINT = "https://api.example.com/v1/chat/completions"
+
+
+def _fleet_with_long_model(where: str) -> FleetConfig:
+    target = {"id": "t1", "endpoint": ENDPOINT, "model": "m"}
+    judge = {"id": "j1", "endpoint": ENDPOINT, "model": "m"}
+    (target if where == "target" else judge)["model"] = LONG_MODEL
+    return FleetConfig.model_validate({"version": "1", "targets": [target], "judge": judge})
+
+
+@pytest.mark.parametrize(("where", "name"), [("target", "target-t1.yaml"), ("judge", "judge.yaml")])
+def test_fleet_measures_each_target_and_the_judge(tmp_path: Path, where: str, name: str) -> None:
+    out = tmp_path / "out"
+    with pytest.raises(ValueError) as caught:
+        materialize_fleet(_fleet_with_long_model(where), out)
+    shown = str(caught.value)
+    assert shown.startswith(f"the {name} this fleet would write is "), shown
+    assert shown.endswith(f"{OVER} a file is read up to; shorten that entry"), shown
+    assert not out.exists()
+
+
+def test_fleet_holds_one_rendered_file_at_a_time(tmp_path: Path) -> None:
+    """Twenty targets sharing one 500 KB model: about 1 MiB measured one at a time, 10 held.
+
+    Rendering every file before measuring any held them all at once (delta audit: 29 MiB for 60
+    targets sharing a 500 KB anchor, about 3 GiB computed for a fleet file just under the cap).
+    """
+
+    model = "m" * 500_000
+    config = FleetConfig.model_validate(
+        {
+            "version": "1",
+            "targets": [{"id": f"t{i}", "endpoint": ENDPOINT, "model": model} for i in range(20)],
+        }
+    )
+    tracemalloc.start()
+    try:
+        materialize_fleet(config, tmp_path / "out")
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 4 * 2**20, f"{peak / 2**20:.1f} MiB"
+
+
+def test_fleet_does_not_measure_a_judge_file_it_does_not_hand_on(tmp_path: Path) -> None:
+    """With ``--judge`` the printed command reads that file, not the ``judge.yaml`` written."""
+
+    judge_file = write(
+        tmp_path, "judge.yaml", f"id: j1\ntype: model\nendpoint: {ENDPOINT}\nmodel: m\n".encode()
+    )
+    out = materialize_fleet(
+        _fleet_with_long_model("judge"), tmp_path / "out", judge=load_target(judge_file)
+    )
+    assert out.judge_path is not None and out.judge_path.stat().st_size > CAP
 
 
 # --- the listing of validation errors ---------------------------------------------------------
@@ -534,17 +615,19 @@ def test_a_file_of_many_errors_prints_a_short_line(tmp_path: Path, name: str) ->
 
 
 #: Runs the CLI with this interpreter and reports its exit code and peak resident memory.
-_CHILD = """
-import json, resource, sys
+_CHILD = (
+    _PEAK
+    + """
+import json
 from ildottore.cli.main import app
 code = None
 try:
     app(sys.argv[1:], prog_name="dottore")
 except SystemExit as exc:
     code = exc.code
-peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print(json.dumps({"exit": code, "peak": peak}), file=sys.stderr)
+print(json.dumps({"exit": code, "peak": peak_bytes()}), file=sys.stderr)
 """
+)
 
 #: The refusal takes about a second, most of it importing the CLI. Read whole, the sparse
 #: gigabyte below was held twice (bytes, then text) before the YAML reader refused its first byte.
@@ -572,7 +655,7 @@ def test_a_gigabyte_file_is_refused_in_bounded_time_and_memory(tmp_path: Path, n
     outcome = json.loads(measured)
     # Memory first: read whole, the gigabyte was refused too (its first byte is not YAML), at
     # a peak of about 2 GiB on 0501752 (2,009 and 2,116 MiB for the labels in two measures).
-    peak = outcome["peak"] if sys.platform == "darwin" else outcome["peak"] * 1024
+    peak = outcome["peak"]
     assert peak < MAX_PEAK_BYTES, f"{peak / 2**20:.0f} MiB"
     assert outcome["exit"] == ExitCode.ERROR, done.stderr[-2000:]
     assert any(str(path) in m and f"{2**30:,} bytes, {OVER}" in m for m in messages), messages

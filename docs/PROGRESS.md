@@ -16,8 +16,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   and any file type with a bounded read, so `--scope <(...)` keeps working (OD-26). The CLI test
   found that the redactor masks a bare size of nine digits or more as a phone number (sizes now
   carry thousands separators); this change's own pre-commit audit found the `fleet` scope over
-  the cap (it repeats each endpoint). Open (OD-26): the report JSON of `diff` and `calibrate`
-  and the evidence artifacts of `replay` and `--resume` are still read whole. Clause A-43 (u01).
+  the cap (it repeats each endpoint), and its delta audit a child memory measure that Linux
+  carries across `execve` (CI read 315 MiB; now `VmHWM`) and `fleet` holding every rendered file
+  at once. Since #73 a target file's `capabilities` and `sampling_defaults` errors get the same
+  20 and 300. Open (OD-26): the report JSON of `diff` and `calibrate` and the evidence artifacts
+  of `replay` and `--resume` are still read whole. Clause A-43 (u01).
 
 ## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
 

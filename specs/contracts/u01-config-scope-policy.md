@@ -148,31 +148,38 @@ loader already reported as a file it cannot read, exit 3 at the CLI: written bar
 nine digits or more was masked as a phone number by the CLI's redactor (found by this clause's
 own CLI test). The text is what `Path.read_text(encoding="utf-8")` gave, line endings included,
 so a scope checksum covers the same text. `dottore fleet` measures every file it would write
-before it writes any, and refuses one over the cap: the scope repeats each endpoint, so an
-845,022-byte fleet file wrote a 1,355,024-byte scope with exit 0 that the `run` it printed then
-refused (pre-commit audit of this clause); with entries of about 170 bytes the crossing is at
-3,870. `shared.config_errors.validation_problems` lists the first 20 errors by default, counts
-the rest, and cuts a field path or a reason past 300 characters, as the spec loader cuts its
-schema messages; the scope, fleet and policy-pack loaders use that default, and so does the
-target loader for `capabilities` and `sampling_defaults` since #73 (A-45). Both holes were
-found by the pre-commit audit of the alias-expansion cap (PR #71): the files were read whole
-with `Path.read_text`, so 100 MB of comments in a scope or labels file cost 39.5 s and 244 MB
-before the refusal and a sparse gigabyte of labels peaked at about 2 GiB (2,009 and 2,116 MiB in
-two measures), while a check on the parsed document bounds what is built from the text, not the
-text; and every validation error was listed whole, so a 5.5 MB scope with 5,500 extra keys of
-1,000 characters printed one `error:` line of 5,687,058 characters from `dottore run --dry-run`.
-The figure and reading any file type, not only a regular one, are the owner's decisions of
-2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and a labels file
-through a pipe worked and still do, and a named pipe with no writer still blocks, as before. A
-target file cannot be a pipe, as before: `run` reads it four times and `fingerprint` three, and
-the second read is empty. Not covered (OD-26): the report JSON that `dottore diff` and
-`calibrate` read, and the evidence artifacts `replay` and `run --resume` read; and an error
-outside the validation listing can still quote a value of the file whole (an unknown target
-`type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Checks:
+before it writes any, one at a time, and refuses one over the cap: the scope repeats each
+endpoint, so an 845,022-byte fleet file wrote a 1,355,024-byte scope with exit 0 that the `run`
+it printed then refused (pre-commit audit of this clause); with entries of about 170 bytes the
+crossing is at 3,870. A target or the judge file can be the one over the cap, as non-ASCII text
+is written escaped (a 600,000-byte model name makes a 1,260,144-byte target), so the refusal
+names the file and says to split the fleet only for the scope. The judge file is measured only
+when the printed command reads it, not when `--judge` names another. Measuring every rendered
+file before writing held them all at once (29 MiB for 60 targets sharing one 500 KB anchor,
+delta audit); one is held at a time. `shared.config_errors.validation_problems` lists the first
+20 errors by default, counts the rest, and cuts a field path or a reason past 300 characters, as
+the spec loader cuts its schema messages; the scope, fleet and policy-pack loaders use that
+default, and so does the target loader for `capabilities` and `sampling_defaults` since #73
+(A-45). Both holes were found by the pre-commit audit of the alias-expansion cap (PR #71): the
+files were read whole with `Path.read_text`, so 100 MB of comments in a scope or labels file
+cost 39.5 s and 244 MB before the refusal and a sparse gigabyte of labels peaked at about 2 GiB
+(2,009 and 2,116 MiB in two measures), while a check on the parsed document bounds what is built
+from the text, not the text; and every validation error was listed whole, so a 5.5 MB scope with
+5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058 characters from
+`dottore run --dry-run`. The figure and reading any file type, not only a regular one, are the
+owner's decisions of 2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and
+a labels file through a pipe worked and still do, and a named pipe with no writer still blocks,
+as before. A target file cannot be a pipe, as before: `run` reads it four times and
+`fingerprint` three, so the second read of `<(...)` is empty and a named pipe blocks it. Not
+covered (OD-26): the report JSON that `dottore diff` and `calibrate` read, and the evidence
+artifacts `replay` and `run --resume` read; and an error outside the validation listing can
+still quote a value of the file whole (an unknown target `type`, a duplicate target id, an
+undefined YAML alias), now bounded by the 1 MiB read. Checks:
 `tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after a growth, a
 pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each loader, the
-`fleet` boundary, the listing and its cut, the CLI's exit 3 and its one short line, and a sparse
-gigabyte in a subprocess bounded at 20 s and 256 MiB).
+`fleet` boundary, each target and the judge measured one at a time, the listing and its cut, the
+CLI's exit 3 and its one short line, and a sparse gigabyte in a subprocess bounded at 20 s and
+256 MiB).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

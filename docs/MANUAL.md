@@ -91,7 +91,8 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `fingerprint` read it more than once. The error names the file and the sizes, written with
   thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and the
   command exits 3. `dottore fleet` measures every file it would write and refuses, before
-  writing any, one over the limit: the scope it writes repeats each endpoint and is the largest.
+  writing any, one over the limit: the scope repeats each endpoint and is usually the largest,
+  but a target or the judge file can be larger, as non-ASCII text is written escaped.
   1 MiB holds about 22,000 labels, 2,000 scope targets with two identities each, or the scope
   written for about 3,800 fleet entries; the largest file shipped here that is read this way,
   the signature corpus, is 8.7 KB.
