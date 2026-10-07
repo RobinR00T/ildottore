@@ -352,10 +352,12 @@ validation: endpont: Extra inputs are not permitted` (`model: Input should be a 
 that is not text: `1: Keys should be strings`), never the value:
 * the keys are the fields of `Target` (`id`, `type`, `name`, `provider`, `endpoint`, `model`,
   `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`) and
-  `mock_scenario`; the model is built from `Target`, so a field added there is a key the file may
-  hold at once, and a test passes each key through the check (the pre-merge audit found that a list
+  `mock_scenario`; the model is built from `Target`, and `_TEXT_FIELDS` is its `str | None` fields,
+  so a field added there is a key the file may hold, as text when it is text, and a test checks that
+  `load_target` hands every field of `Target` to it (a field it did not read would be accepted and
+  dropped); another test passes each key through the check. The pre-merge audit found that a list
   kept by hand refused the `websocket` field #87 adds: 35 tests failed on the two merged, none once
-  the model was built from `Target`); `_TEXT_FIELDS` names the six read as text;
+  the model was built from `Target`;
 * `name`, `provider`, `endpoint`, `model`, `auth_ref` and `transport` are text (`StrictStr`, so
   `!!binary` bytes are refused too) or absent: the key with nothing after it, `null` or `~`,
   as before; an empty string is text, so `endpoint: ""` still routes to the mock; a number as
@@ -367,17 +369,18 @@ that is not text: `1: Keys should be strings`), never the value:
   they route); `dottore fleet` writes only these keys (a test runs it on both shipped fleets and
   loads what it writes).
 
-`tests/cli/test_target_top_level_keys.py`: 42 of its 88 tests fail on `de392e1`, this branch's base,
+`tests/cli/test_target_top_level_keys.py`: 43 of its 90 tests fail on `de392e1`, this branch's base,
 and so do A-40's two tests of a number as `provider` or `transport` in `test_huge_numbers.py`, which
-expected exit 0 and now expect this refusal. Each fails on the old behavior (25 of the 42, and both
-of A-40's, because the command exits 0; 17 because the reader does not raise); the other 46 guard
-what stays (every legal key passes the check, a file with each key the manual lists loads, a null
-text field is absent, `id` and `type` keep their own refusals) and that the redactor leaves each
-test value readable, and one loads every target file under `examples/`, `specs/` and `tests/` and
-every target block of the docs and man pages through the three readers. Refusing is the owner's call
-(OD-31), built as the smallest reversible change: the `_TargetFileTopLevel` check in
-`_read_target_yaml`, and the six `isinstance(..., str) else None` reads of `load_target` and the
-`_lowered` reads of `target_uses_mock` (A-40) it made dead, which come back with it. Outside the
+expected exit 0 and now expect this refusal. Each fails on the old behavior (25 of the 43, and both
+of A-40's, because the command exits 0; 17 because the reader does not raise; 1 because
+`_TEXT_FIELDS` does not exist); the other 47 guard what stays (every legal key passes the check, a
+file with each key the manual lists loads, a null text field is absent, `id` and `type` keep their
+own refusals) and that the redactor leaves each test value readable, and one loads every target file
+under `examples/`, `specs/` and `tests/` and every target block of the docs and man pages through
+the three readers. Refusing is the owner's call (OD-31), built as the smallest reversible change:
+the `_TargetFileTopLevel` check in `_read_target_yaml`, and the six `isinstance(..., str) else None`
+reads of `load_target` and the `_lowered` reads of `target_uses_mock` (A-40) it made dead, which
+come back with it. Outside the
 clause, and said so rather than pinned:
 * a misspelled value is still read as written, without a word: `provider: opnai` with an
   endpoint routes to the REST adapter (as the manual says of any provider but `openai`,

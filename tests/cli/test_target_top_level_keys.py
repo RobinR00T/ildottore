@@ -328,6 +328,41 @@ def test_a_text_field_with_nothing_or_null_is_still_absent(
     assert wiring.target_uses_mock(path)
 
 
+def test_load_target_reads_every_field_of_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The check takes every field of ``Target`` as a key the file may hold; one that
+    ``load_target`` never read would be accepted and dropped, the silence A-53 closes (audit)."""
+
+    seen: set[str] = set()
+
+    def recording(**fields: object) -> Target:
+        seen.update(fields)
+        return Target(**fields)
+
+    monkeypatch.setattr(wiring, "Target", recording)
+    path = tmp_path / "t.yaml"
+    path.write_text("id: t\ntype: chatbot\n", encoding="utf-8")
+
+    wiring.load_target(path)
+
+    assert seen == set(Target.model_fields)
+
+
+def test_every_text_field_of_target_is_refused_as_bytes(tmp_path: Path) -> None:
+    """``_TEXT_FIELDS`` is every ``str | None`` field of ``Target``: these six at least, and a
+    text field added there is refused as bytes too, as a lax ``str`` would not (audit)."""
+
+    assert set(TEXT_FIELDS) <= set(wiring._TEXT_FIELDS)
+    for field in wiring._TEXT_FIELDS:
+        path = tmp_path / f"{field}.yaml"
+        path.write_text(f"id: t\ntype: chatbot\n{field}: !!binary aGk=\n", encoding="utf-8")
+        with pytest.raises(
+            ValueError, match=f"failed validation: {field}: Input should be a valid"
+        ):
+            wiring.target_uses_mock(path)
+
+
 @pytest.mark.parametrize("key", sorted(LEGAL - {"id", "type"}))
 def test_every_legal_key_passes_the_top_level_check(tmp_path: Path, key: str) -> None:
     """Every field of :class:`Target`, and ``mock_scenario``, with nothing after it: what is

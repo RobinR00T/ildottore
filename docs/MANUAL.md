@@ -228,7 +228,7 @@ that names the file and the key, never the value: `error: target file target.yam
 endpont: Extra inputs are not permitted`. Until 2026-10-07 both were read as absent, so `endpont:`
 left a live target with no endpoint and the run went to the offline mock, which sent it nothing and
 scored the mock's replies, and keys of `capabilities` that lost their indent were ignored at the top
-level (open decision OD-31). Quote a model id YAML reads as a number or a date (`model:
+level (open decision OD-31). Quote a model id YAML reads as a number, a date or a boolean (`model:
 "20240613"`). One of the six text fields with nothing after it, `null` or `~` is still absent. A key
 that only holds an anchor for a `<<` merge (`x-defaults: &d`) is refused like any other: write the
 merged map inline. The key is printed as the location, as pydantic renders it (`on:` as `1`, a

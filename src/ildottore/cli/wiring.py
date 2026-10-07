@@ -1003,15 +1003,12 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
 # --- target.yaml -------------------------------------------------------------------
 
 
-#: The fields of :class:`Target` that ``load_target`` reads as text; anything else written there
-#: was read as absent (A-53).
-_TEXT_FIELDS = ("name", "provider", "endpoint", "model", "auth_ref", "transport")
+#: The fields of :class:`Target` that are text (``str | None``). ``load_target`` hands them to
+#: ``Target`` as written, so anything else there was read as absent (A-53).
+_TEXT_FIELDS = tuple(
+    name for name, field in Target.model_fields.items() if field.annotation == str | None
+)
 
-#: The top level of a target file: the fields of :class:`Target`, which ``load_target`` reads, and
-#: ``mock_scenario``, which :func:`load_mock_scenario` reads; text where text is read, ``null`` as
-#: absent, and each block left to its reader. Built from ``Target``, so a field added there is a
-#: key the file may hold without a second list to keep in step (pre-merge audit: a new
-#: ``websocket`` field on another branch would have been refused).
 _TOP_LEVEL_FIELDS: dict[str, Any] = {
     **{
         name: ((StrictStr | None) if name in _TEXT_FIELDS else Any, None)
@@ -1020,7 +1017,16 @@ _TOP_LEVEL_FIELDS: dict[str, Any] = {
     "mock_scenario": (Any, None),
 }
 _TargetFileTopLevel = create_model(
-    "_TargetFileTopLevel", __config__=ConfigDict(extra="forbid"), **_TOP_LEVEL_FIELDS
+    "_TargetFileTopLevel",
+    __config__=ConfigDict(extra="forbid"),
+    __doc__=(
+        "The top level of a target file: the fields of :class:`Target`, which ``load_target`` "
+        "reads, and ``mock_scenario``, which :func:`load_mock_scenario` reads; text where "
+        "``Target`` holds text, ``null`` as absent, each block left to its reader. Built from "
+        "``Target``, so a field added there is a key the file may hold without a second list to "
+        "keep in step (pre-merge audit: another branch's ``websocket`` field was refused by one)."
+    ),
+    **_TOP_LEVEL_FIELDS,
 )
 
 
