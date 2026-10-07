@@ -232,17 +232,20 @@ the invocation's default).
 **A-38 A CLI error names the operator's existing file, and nothing else leaves the entropy rule
 (added 2026-10-07).** `_masked` keeps a path out of the entropy rule only where the message
 writes it and it exists on this machine: absolute, or relative to the working directory as one
-word and only whole; read directory by directory, so a directory holding a space or a bracket is
-read whole; its last name followed by none of the characters the entropy rule joins into a
-token, `/` included; never through `//`. Every other rule runs first on the whole text, and a
-kept path holding a run of 8 or more token characters of a registered credential is masked. A
-report named after a commit SHA read `«REDACTED:high_entropy»` before a colon, relative, or
-under a directory with a space, and `dottore diff` printed the key in an incomplete report's
-reason that `calibrate` masked (audits of PR #61). Keeping the name a failed `OSError` carried,
-when it looked like a file's, printed keys given where a file belongs (`<key>.json`, an Azure
-connection string) and was withdrawn before commit (OD-25). `diff`'s incomplete-report refusal
-goes through `_masked`, and one error costs at most 1,024 filesystem lookups (a 1 MiB message
-cost 524,032). Checked by `tests/cli/test_masked_paths.py`.
+word with nothing the entropy rule joins after it; read directory by directory, so a directory
+holding a space or a bracket is read whole; never starting right after a character the entropy
+rule joins into a token, nor ending right before one but `/`; never followed by `//`. Every
+other rule runs first on the whole text, and a kept path holding 8 consecutive characters of a
+registered credential is masked. A report named after a commit SHA read
+`«REDACTED:high_entropy»` before a colon, relative, or under a directory with a space, and
+`dottore diff` printed the key in an incomplete report's reason that `calibrate` masked (audits
+of PR #61). Keeping the name a failed `OSError` carried printed keys given where a file belongs
+(`<key>.json`, an Azure connection string) and was withdrawn (OD-25); a part of a key glued to
+other characters in a kept name, a key holding `//` after an existing directory and a key
+before `+/.` printed too, and are masked (pre-commit and delta audits). `diff`'s
+incomplete-report refusal goes through `_masked`. One error costs at most 1,024 filesystem
+lookups (a 1 MiB message cost 524,032), and no walk starts inside what another already read
+(`/./././...//` cost the square of its length). Checked by `tests/cli/test_masked_paths.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

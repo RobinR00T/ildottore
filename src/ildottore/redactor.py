@@ -214,6 +214,23 @@ def overlaps_known_secret(value: str) -> bool:
         return any(value in secret or secret in value for secret in _KNOWN_SECRETS)
 
 
+def holds_known_secret_part(value: str) -> bool:
+    """True if ``value`` holds ``_KNOWN_MIN_LEN`` consecutive characters of a registered credential.
+
+    :func:`overlaps_known_secret` misses a part glued to other text (``report-<part>.json`` is
+    neither inside the key nor holds it), so the CLI, which keeps an existing path out of the
+    entropy rule, printed one (delta audit of A-38).
+    """
+
+    with _KNOWN_LOCK:
+        secrets = list(_KNOWN_SECRETS)
+    return any(
+        secret[i : i + _KNOWN_MIN_LEN] in value
+        for secret in secrets
+        for i in range(len(secret) - _KNOWN_MIN_LEN + 1)
+    )
+
+
 def mask_url_passwords(text: str) -> str:
     """Mask only the password of every ``scheme://user:password@host`` in ``text``."""
 

@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+import ildottore.redactor as redactor_mod
 from ildottore.cli.app import _masked
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
@@ -153,6 +154,22 @@ def test_a_file_name_holding_a_space_is_kept_whole(tmp_path: Path) -> None:
     assert f"{report}: expected a JSON run report" in res.stderr
 
 
+def test_an_existing_file_written_before_a_slash_keeps_its_name(tmp_path: Path) -> None:
+    """``[Errno 20] Not a directory: '<dir>/report-<sha>.json/x'`` names the file."""
+
+    report = _complete_report(tmp_path / f"report-{SHA}.json")
+    shown = _masked(NotADirectoryError(20, "Not a directory", f"{report}/x"))
+    assert f"'{report}/x'" in shown
+
+
+def test_prose_after_a_slash_does_not_use_up_the_lookups_of_a_later_path(tmp_path: Path) -> None:
+    """A name is at most 255 characters, so one start tries no more candidates than that."""
+
+    report = _not_a_report(tmp_path / f"report-{SHA}.json")
+    text = "/" + "a " * 3000 + f"then {report}: expected a JSON run report"
+    assert f"{report}: expected" in _masked(ValueError(text))
+
+
 # --- what is not a path the operator has stays masked ------------------------------------------
 
 
@@ -196,11 +213,13 @@ def test_an_existing_relative_name_inside_a_word_is_not_kept(
 def test_the_tail_of_an_absolute_path_is_not_a_relative_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``(x)/<name>`` names ``/<name>``; a file of that name here is another file."""
+    """``(x)/<name>`` names ``/<name>``, and a URL's path is not a file: a file of that name
+    here is another file."""
 
     _complete_report(tmp_path / f"ok-{SHA}.json")
     monkeypatch.chdir(tmp_path)
     assert f"ok-{SHA}" not in _masked(ValueError(f"cannot write (x)/ok-{SHA}.json"))
+    assert f"ok-{SHA}" not in _masked(ValueError(f"bad endpoint http://[::1]/ok-{SHA}.json"))
 
 
 #: Keys given where a file belongs, as the pre-commit audit found them printed once the name an
@@ -236,9 +255,9 @@ def test_a_key_given_where_a_file_belongs_is_still_masked(
     res = runner.invoke(app, ["diff", given, "ok.json"])
     assert res.exit_code == int(ExitCode.ERROR)
     assert "No such file or directory" in res.stderr and key not in res.stderr
-    shown = _masked(FileNotFoundError(2, "No such file or directory", f"{tmp_path}/{given}"))
-    assert key not in shown
-    assert f"{tmp_path}/" in shown, "the directory it is in exists"
+    assert key not in _masked(
+        FileNotFoundError(2, "No such file or directory", f"{tmp_path}/{given}")
+    )
 
 
 @pytest.mark.parametrize(
@@ -246,49 +265,62 @@ def test_a_key_given_where_a_file_belongs_is_still_masked(
     [
         # `//` after a directory: kept up to it, the key was judged with both slashes.
         ("invalid YAML in */var//+rc1+umkBsS/W+Ey", "+rc1+umkBsS/W+Ey", []),
-        # A file has no child: kept, it cut the key after its first character.
+        # A relative file or directory kept as the head of a key left the rest to be judged alone.
         ("value +/aB5uqsbjYBVrCX, rejected", "+/aB5uqsbjYBVrCX", ["+"]),
-        # A relative directory kept as the head of a key left 15 characters to be judged alone.
         ("bad value x/Ab3dEf9hIj2kLm", "Ab3dEf9hIj2kLm", ["x/"]),
+        # `//` after directories that exist: main's `Path` folded it and kept nothing (delta audit).
+        ("cannot read /usr/bin/hTrqrHJYZ//D+awO: not a report", "hTrqrHJYZ//D+awO", []),
+        # `/.` kept as the root after a `+` left a 15-character head of the key (delta audit).
+        ("auth failed for key DtXbiufMdI8X2Y+/.", "DtXbiufMdI8X2Y+", []),
+        # So did an existing path glued after `+`, `=` or `-` (on main too).
+        ("auth failed for key DtXbiufMdI8X2Y+{root}", "DtXbiufMdI8X2Y", []),
+        ("auth failed for key DtXbiufMdI8X2Y={root}", "DtXbiufMdI8X2Y", []),
+        ("auth failed for key DtXbiufMdI8X2Y-{root}", "DtXbiufMdI8X2Y", []),
     ],
 )
 def test_a_short_key_cut_by_a_kept_name_is_still_masked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, key: str, entries: list[str]
 ) -> None:
     for entry in entries:
+        assert not os.path.exists(f"/{entry}"), "the case needs a relative name"
         if entry.endswith("/"):
             (tmp_path / entry).mkdir()
         else:
             (tmp_path / entry).write_text("", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    assert key not in _masked(ValueError(text))
+    assert key not in _masked(ValueError(text.format(root=tmp_path)))
 
 
 PART_KEY = "Wq4Hn7Ks2Pd9Lx3Vb8Mz5Tc"
 
 
 @pytest.mark.parametrize(
-    "written",
+    ("name", "written"),
     [
-        "{part}.json: not a report",
-        "./{part}.json: not a report",
-        "runs/{part}.json: not a report",
-        "{root}/{part}.json: not a report",
-        "{root}/{part}.json not a report",  # kept on main too, followed by a space
+        ("{part}.json", "{name}: not a report"),
+        ("{part}.json", "./{name}: not a report"),
+        ("{part}.json", "{root}/{name}: not a report"),
+        ("{part}.json", "{root}/{name} not a report"),  # kept on main too, followed by a space
+        ("runs/{part}.json", "{name}: not a report"),
+        # Glued to other characters, the part is neither inside the key nor holds it (delta audit).
+        ("report-{part}.json", "{root}/{name}: not a report"),
+        ("{part}-v2.json", "{name}: not a report"),
+        ("x{part}_old.json", "{root}/{name}. Not a report"),
+        ("runs-{part}/r.json", "{name}: not a report"),
+        ("runs-{part}/r.json", "{root}/{name}: not a report"),
     ],
 )
-def test_an_existing_name_that_is_part_of_a_registered_credential_is_masked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, written: str
+def test_an_existing_name_holding_part_of_a_registered_credential_is_masked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, written: str
 ) -> None:
-    """Neither the whole key nor holding it, a kept span longer than the part printed it."""
-
+    monkeypatch.setattr(redactor_mod, "_KNOWN_SECRETS", set())
     register_known_secret(PART_KEY)
-    part = PART_KEY[:16]
-    (tmp_path / "runs").mkdir()
-    for folder in (tmp_path, tmp_path / "runs"):
-        _complete_report(folder / f"{part}.json")
+    part = PART_KEY[:16]  # masked outside a path too: 16 is the entropy rule's minimum
+    path = tmp_path / name.format(part=part)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _complete_report(path)
     monkeypatch.chdir(tmp_path)
-    text = "cannot read " + written.format(part=part, root=tmp_path)
+    text = "cannot read " + written.format(name=name.format(part=part), root=tmp_path)
     assert part not in _masked(ValueError(text))
 
 
@@ -362,3 +394,25 @@ def test_an_error_that_names_no_path_costs_no_lookup(monkeypatch: pytest.MonkeyP
     text += "budget: 3 / 4 of the battery ran, and / or a lone slash is no path. " * 20
     assert _masked(ValueError(text)) == text
     assert calls == 0
+
+
+def test_a_walk_that_keeps_nothing_is_not_read_again_from_inside(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`/./././...//x` keeps nothing; walked again from each `/`, it cost the square of its
+    length (a 6,000-character path took minutes in a 1 MiB message)."""
+
+    from ildottore.cli import app as app_mod
+
+    calls = 0
+    real_call = app_mod._Lookups.__call__
+
+    def counting(self: object, path: str, *, directory: bool) -> bool:
+        nonlocal calls
+        calls += 1
+        return real_call(self, path, directory=directory)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(app_mod._Lookups, "__call__", counting)
+    text = "cannot read " + "/." * 3000 + "//x"
+    _masked(ValueError(text))
+    assert calls <= 2 * 3000, "one walk, a check per name"

@@ -89,9 +89,9 @@ def _read_report(path: Path) -> Any:
     two files it was about either.
     """
 
-    # Absolute, so the line says which file whatever the working directory (the CLI keeps an
-    # existing path readable, relative or not, since A-38). Not escaped here: an escaped name is
-    # no longer a path on disk, so the CLI masked it as a high-entropy value.
+    # Absolute, so the line says which file whatever the working directory (since A-38 the CLI
+    # keeps an existing path readable, a relative one only as a whole word). Not escaped here: an
+    # escaped name is no longer a path on disk, so the CLI masked it as a high-entropy value.
     # Control characters are escaped for every message on the terminal once #51 is in.
     shown = path.absolute()
     try:

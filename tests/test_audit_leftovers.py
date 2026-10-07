@@ -1017,7 +1017,7 @@ def test_an_interrupted_campaign_whose_spend_cannot_be_written_still_raises_the_
     assert "could not be recorded" in capsys.readouterr().err
 
 
-def test_a_path_longer_than_path_max_is_not_walked(
+def test_a_long_path_costs_a_lookup_per_directory_it_walks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Each parent of a long token cost a lookup; the walk from the root now stops at the first

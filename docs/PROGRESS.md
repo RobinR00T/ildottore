@@ -7,15 +7,17 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 - On `fix/cli-masked-paths` (`tests/cli/test_masked_paths.py`, clause A-38): `_masked` keeps an
   existing path written before a colon or a period, a relative one (one word, from the working
-  directory, only whole) and one whose directories hold a space or `()[],;'"`; one error costs at
-  most 1,024 lookups. `dottore diff`'s incomplete-report refusal goes through `_masked`, as
-  `calibrate`'s does. Found by the audits of PR #61. The pre-commit audit printed keys given
-  where a file belongs once the name an `OSError` carries was kept (an `sk-ant-` key as
-  `<key>.json`, an Azure connection string), and a registered credential's part inside a kept
-  path; the first was withdrawn and the name of a missing file stays masked (OD-25, open for the
-  owner), the second is masked by run. PR #51 touches the same S6 row and `diff` refusal lines,
-  so the second to merge resolves them (`_masked` applies `visible_controls` after #51, so the
-  wrapper on the refusal goes).
+  directory) and one whose directories hold a space or `()[],;'"`; one error costs at most 1,024
+  lookups. `dottore diff`'s incomplete-report refusal goes through `_masked`, as `calibrate`'s
+  does. Found by the audits of PR #61. The pre-commit audit printed keys given where a file
+  belongs once the name an `OSError` carries was kept (withdrawn: the name of a missing file stays
+  masked, OD-25, open for the owner). The delta audit printed a registered credential's part
+  glued to other characters in a kept name, a key holding `//` after an existing directory and a
+  key before `+/.`; all three are masked now (an 8-character window check, `//` keeps nothing as
+  on main, no path starts after `+`, `=` or `-`), and a walk that kept nothing was read again
+  from each of its `/` (quadratic), which no longer happens. PR #51 touches the same S6 row and
+  `diff` refusal lines, so the second to merge resolves them (`_masked` applies
+  `visible_controls` after #51, so the wrapper on the refusal goes).
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
