@@ -119,8 +119,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   three bytes, and a generator per level of the fix made a clean reply nested 115,000 levels cost
   four times main's peak (pre-commit, delta and pre-merge audits).
   The helper lives in `shared/` (u00's package), beside `shared/toolcalls.py`, which already
-  serves the adapters and the evaluators; §1 keeps this unit out of `shared/`, so the owner signs
-  that off with the PR (OD-28). The attempt is evaluated on that text, so a leak with half a
+  serves the adapters and the evaluators; §1 keeps this unit out of `shared/`, and the owner
+  signed that off on 2026-10-07. The attempt is evaluated on that text, so a leak with half a
   character beside it still fails (`tests/cli/test_lone_surrogate.py`: 29 of its 36 cases fail on
   `0501752`, all on the surrogate, and the other 7, `fingerprint` and a well formed pair, pin what
   already held; `tests/adapters/test_lone_surrogate_replies.py`, 9 of 9 fail there, the raw stdio
@@ -132,8 +132,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
   it as a zero-width space does today: `secret_leakage` misses it and passes, and the spec falls to
   its other evaluators (`SP-LEAK-001` is inconclusive without `--judge` and passes when the judge
   says secure), and a registered credential split that way is not masked as the credential (each
-  half stays readable unless the entropy rule takes it) until a fix for split credentials reads
-  U+FFFD as a splitter (OD-28); invalid UTF-8 that is not an encoded surrogate (one `FF` byte, a
+  half stays readable unless the entropy rule takes it) until the fix for split credentials (open
+  PR #57) reads U+FFFD as a splitter, which the owner approved on 2026-10-07 as the merge note
+  of PR #79 says (OD-28); invalid UTF-8 that is not an encoded surrogate (one `FF` byte, a
   multibyte character cut short) is still a body that is not JSON and stops the campaign on the
   base adapter and the MCP JSON body, while over an MCP SSE stream it reads as U+FFFD and on an
   MCP stdio line the line is skipped and the call times out; the walks visit the whole parsed
@@ -168,20 +169,23 @@ reads as U+FFFD, since httpx decodes the stream as text.
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default
   in MVP-1 to shrink the secret-leak surface: needs sign-off.
-- **OD-28** (open, built reversibly, 2026-10-07, A-47): what a reply that holds a lone surrogate
-  becomes. Built: it is read as U+FFFD where it is parsed and the attempt is evaluated as usual.
-  The other ways: delete the half instead, which would find a canary and mask a registered
-  credential that half a character splits (with U+FFFD, as with a zero-width space today,
-  `secret_leakage` misses a split canary and passes, so `SP-LEAK-001` is inconclusive without
-  `--judge` and passes when the judge says secure; a split credential is masked as the credential
-  only once a fix for split credentials, open PR #57, reads U+FFFD as a splitter), at the cost of
-  evidence that no longer shows anything stood there; keep which code unit it was as a visible
-  marker in the text (such as `[U+D800]`), which the evaluators would then read as reply text;
-  refuse the reply as an environment error, inconclusive and not retried (as open PR #65 proposes
-  for a reply nested too deeply), which costs a detection, since a target that adds six
-  characters to a leaking reply makes it "not evaluated"
-  (`test_a_lone_surrogate_does_not_hide_a_leak`); or replace it only where the evidence is
-  written, which does not hold: a multi-turn spec and the `--judge` request send the reply on,
-  and httpx raised encoding it (measured). Also the owner's: whether the evidence should say a
-  reply was altered (a count needs an additive `ModelResponse` field, u00), and whether the
-  helper may live in `shared/` (§1 keeps this unit out of it).
+- **OD-28** (decided 2026-10-07, A-47): what a reply that holds a lone surrogate becomes. The
+  owner left the choice to the build ("haz lo mejor"), and it is U+FFFD where the reply is parsed,
+  the attempt evaluated as usual, as built. Why: it is what the target's consumers see (WebIDL's
+  `USVString`, JavaScript's `toWellFormed`, Go's `encoding/json` all read a lone surrogate as
+  U+FFFD), so a verdict is about the reply they get; Unicode's security report advises against
+  deleting ill-formed input (UTR #36 rev. 15, 2014-09-19, 3.5 "Deletion of Code Points" and
+  3.6.2: substitute U+FFFD or stop), and here deleting would show the evaluators text no consumer
+  sees (`<scr`, a half and `ipt>` read as `<script>`, a fail no browser would render); and the
+  evidence keeps a mark where something stood. Rejected: deleting the half (it would find a
+  canary and mask a credential that half a character splits, at the cost above); a visible marker
+  of the code unit (the evaluators would read it as reply text); refusing the reply as an
+  environment error, inconclusive and not retried (a target adding six characters to a leaking
+  reply would make it "not evaluated", `test_a_lone_surrogate_does_not_hide_a_leak`); replacing it
+  only where the evidence is written (a multi-turn spec and the `--judge` request still failed in
+  httpx). What it costs, and where it goes: a canary split by half a character is missed by
+  `secret_leakage`, as one split by a zero-width space is today (`SP-LEAK-001` passes when a judge
+  says secure), left as its own task for the evaluators; a registered credential split that way is
+  masked once open PR #57 reads U+FFFD as a splitter, which the owner approved for whichever of the
+  two lands second. Not built: an evidence field saying a reply was altered (an additive
+  `ModelResponse` field, u00); U+FFFD is the mark.

@@ -14,8 +14,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   where it is parsed (`shared.wellformed`, the base and MCP adapters, the MCP stdio line decoded
   with `surrogatepass`), in place, and so are a tool call's arguments (`call_arguments`): a lone
   surrogate reads as U+FFFD and the attempt is judged as usual, so a leak beside it still fails.
-  Contract u04 A-47; open decision OD-28 (U+FFFD, deleting the half, a visible marker of the code
-  unit, or an inconclusive attempt, which would let six characters hide a leak). Nine audits in four
+  Contract u04 A-47. OD-28 decided on 2026-10-07, the owner leaving the choice to the build: U+FFFD,
+  not deleting the half (UTR #36 rev. 15, 3.5 and 3.6.2; deleting would show the evaluators text no
+  consumer sees), nor a marker, nor an inconclusive attempt (six characters would hide a leak); the
+  owner also approved the #57 merge note and the helper's home in `shared/`. Nine audits in four
   rounds (pre-commit, delta, pre-merge, a last delta): the fix copied every reply; copying only a
   reply with a surrogate gave a target 2.8 times the peak for three bytes; a generator per level of
   the in-place fix made a clean reply nested 115,000 levels cost four times main's peak (now a cheap

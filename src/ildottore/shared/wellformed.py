@@ -14,7 +14,9 @@ conversion and JavaScript's ``String.prototype.toWellFormed`` do. A high half fo
 half is the character the pair encodes (so a CESU-8 pair parsed from bytes joins), and every
 other character is kept. The reply is still evaluated: refusing it instead would let a target
 turn any failure into "not evaluated" by adding six characters. Which code unit stood there is
-not kept (OD-28).
+not kept. Deleting the half instead is what Unicode's security report advises against (UTR #36
+rev. 15, 3.5 and 3.6.2): it would show the evaluators text no consumer of the reply sees, a
+``<scr`` and ``ipt>`` around a half read as ``<script>`` (OD-28, decided 2026-10-07).
 """
 
 from __future__ import annotations

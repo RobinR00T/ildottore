@@ -34,8 +34,10 @@ versioning: [SemVer](https://semver.org/).
   environment error (inconclusive)
   would let a target turn any failure into "not evaluated" with six characters, and replacing it
   only where the evidence is written leaves httpx failing on the next request. Which code unit
-  stood there is not kept: the evidence shows U+FFFD, as for a U+FFFD the target sent (open
-  decision OD-28, which also weighs deleting the half). Contract u04 §7 A-47, with a line in §2,
+  stood there is not kept: the evidence shows U+FFFD, as for a U+FFFD the target sent. OD-28,
+  decided on 2026-10-07: U+FFFD rather than deleting the half, which Unicode's security report
+  advises against (UTR #36 rev. 15, 3.5 and 3.6.2) and which would show the evaluators text no
+  consumer of the reply sees. Contract u04 §7 A-47, with a line in §2,
   whose "no normalization" rule now names this exception and the one MCP SSE already had (httpx
   reads any invalid UTF-8 there as U+FFFD). `tests/cli/test_lone_surrogate.py`: 29 of its 36
   cases fail on `0501752`, all on the surrogate; the other 7 (`fingerprint`, and a well formed
