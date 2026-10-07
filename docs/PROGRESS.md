@@ -20,8 +20,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   query send is under the turn timeout, a lost conversation is debited once, the loader
   refuses request placeholders in connection templates, placeholders in `vars` and the
   library's own upgrade headers, `equals`/`final_value` compare by type, cleartext `ws://`
-  never goes through a proxy (`tests/adapters/test_websocket_audit.py`). `make gates` green:
-  2404 tests, 96.56% coverage, bandit
+  never goes through a proxy (`tests/adapters/test_websocket_audit.py`). `make gates` green after merging
+  `main` at `c3e70d8`: 2535 tests, 96.68% coverage, bandit
   and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no dependencies). Open for the
   owner: OD-30 (a transcript field on `ModelResponse` instead of `raw_ids["websocket"]`),
   OD-31 (several queries on one socket), OD-32 (a reconnect mid-conversation for a stateless

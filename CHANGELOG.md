@@ -54,7 +54,7 @@ versioning: [SemVer](https://semver.org/).
   `tests/cli/test_websocket_target.py` hold 102 tests with `tests/adapters/test_websocket_audit.py` (the gate with zero connections, the
   redirect, streaming, the final frame, timeouts, errors, reconnects, one connection per
   conversation, the evidence on disk, a real campaign, its replay, a real `-sV` pass).
-  `make gates`: 2404 tests, 96.56% coverage. Not built, open for the owner: a dedicated
+  `make gates` after merging `main` at `c3e70d8`: 2535 tests, 96.68% coverage. Not built, open for the owner: a dedicated
   transcript field on `ModelResponse` (OD-30), several queries multiplexed on one socket
   (OD-31), a reconnect mid-conversation for a stateless server (OD-32), a `websocket:` block in
   a fleet entry (OD-33: `dottore fleet` infers `rest` from a `wss://` endpoint).
