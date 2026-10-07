@@ -56,13 +56,14 @@ macOS and Windows default) `target-Prod.yaml` and `target-prod.yaml` are one fil
 2026-10-07 the second entry overwrote the first, `fleet` exited 0, and the `dottore run` it
 printed then refused "two target files declare the id 'prod'". The pair is now refused before
 anything is written, on Linux too, so a fleet file means the same on every machine; rename one
-of them. The message numbers the two entries under `targets:`, because an id that looks random
-enough (a model name such as `Meta-Llama-3-70B-Instruct`) is masked in the CLI's errors. A
-`judge:` id spelled as a target's only up to case is refused as well, for another reason: no
-file collides (the judge is written to `judge.yaml`), but the generated scope would hold two ids
-a reader cannot tell apart; a `judge:` block with no `id:` is `judge`, so a target `Judge` beside
-it counts. Two target files you write yourself with ids `Prod` and `prod` still run together:
-`run` names no file after a target id.
+of them. The message locates the two entries as validation errors do (`targets.0.id` and
+`targets.1.id`, counted from 0), because an id that looks random enough (a model name such as
+`Meta-Llama-3-70B-Instruct`) is masked in the CLI's errors. A `judge:` id spelled as a target's
+only up to case is refused as well, for another reason: no file collides (the judge is written
+to `judge.yaml`), but the generated scope would hold two ids that differ only by case; a
+`judge:` block with no `id:` is `judge`, so a target `Judge` beside it counts, and the message
+says the id is that default. Two target files you write yourself with ids `Prod` and `prod`
+still run together: `run` names no file after a target id.
 
 ### Do `--budget-requests` and `--rate` count the judge's requests?
 

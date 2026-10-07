@@ -5,27 +5,31 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 ## State, 2026-10-07 (evening): fleet target ids that differ only by case
 
-- Found by the delta audit of PR #76 and fixed on `fix/fleet-casefold-ids`: `materialize_fleet`
-  refused a duplicate id only by exact equality, and each target is written to
-  `target-<id>.yaml`, so on APFS a fleet with `Prod` and `prod` wrote `prod` over `Prod`, listed
-  two target files and exited 0. The brief said the printed `dottore run` then scanned `prod`
-  twice; measured on `2f6201a`, it refuses instead (exit 3, "two target files declare the id
-  'prod'"), and so does `fleet --run`, a message about an id the fleet declared once. Ids equal
-  under `casefold()` are now refused on every file system before anything is written, naming both
-  ids and both files, and so is a judge id spelled as a target's only up to case (it worked, with
-  two scope entries a reader cannot tell apart). Contract u01 A-56; the "everywhere" choice is
-  OD-33, decided by the conductor and reversible. Checked and left exact: `run`'s duplicate check
-  and `load_scope`'s (A-20); no file of a run is named by a target id, the run store compares
-  `<spec id>::<target id>` case-sensitively, and two hand-written targets `Prod` and `prod` ran
-  together with two run ids, both in every report format. The pre-commit audit found no high or
-  medium defect; its five lows are in: the CLI masks a high-entropy id such as
-  `Meta-Llama-3-70B-Instruct` (ids and file names), so the message also numbers both entries; a
-  `judge:` block with no `id:` (`judge`) beside a target `Judge` is refused and the message says
-  the id is the default; three mutants survived (check order, `kind: mcp`, `api_key_env`) and now
-  die; the judge's reason was the file collision in the FAQ and man page (the judge is written to
-  `judge.yaml`); and "no store key" was literally false. Numbering: A-56 and
-  OD-33 came from the session keeping the count; the local branch `feat/websocket-adapter` uses
-  OD-30 to OD-33 in u04 without having claimed them, so it has to renumber.
+- Found by the delta audit of PR #76 and fixed on `fix/fleet-casefold-ids` (PR #85):
+  `materialize_fleet` refused a duplicate id only by exact equality, and each target is written
+  to `target-<id>.yaml`, so on APFS a fleet with `Prod` and `prod` wrote `prod` over `Prod`,
+  listed two target files and exited 0. The brief said the printed `dottore run` then scanned
+  `prod` twice; measured on `2f6201a`, it refuses instead (exit 3, "two target files declare the
+  id 'prod'"), and so does `fleet --run`, a message about an id the fleet declared once. Ids
+  equal under `casefold()` are now refused on every file system before anything is written, and
+  so is a judge id spelled as a target's only up to case (it worked, with two scope entries that
+  differ only by case). Every refusal of the fleet's ids locates its entries as the validator
+  does (`targets.1.id`, from 0), because the CLI masks a high-entropy id such as
+  `Meta-Llama-3-70B-Instruct`, and the two judge refusals say when the id is the default
+  `judge`. Contract u01 A-56; the "everywhere" choice is OD-33, decided by the conductor and
+  reversible. Checked and left exact: `run`'s duplicate check and `load_scope`'s (A-20); no file
+  of a run is named by a target id, the run store compares `<spec id>::<target id>`
+  case-sensitively, and two hand-written targets `Prod` and `prod` ran together with two run
+  ids, both in every report format. Two audit rounds so far, none high or medium: the
+  pre-commit one found masked ids, the default judge id, three surviving mutants, the judge's
+  reason misstated in FAQ and man page, and "no store key" being literally false; the delta one
+  found my first entry numbers counted from 1 where the validator of the same command counts
+  from 0, "never two ids a reader cannot tell apart" in MANUAL and man5 (`Ilama`, `llama`,
+  `lIama` pass), three more survivors (the default note for an explicit `id: judge`, ids swapped
+  against their numbers, a later twin reported as a duplicate) and the sibling judge message
+  without the default note. All fixed. Numbering: A-56 and OD-33 came from the session keeping
+  the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without having
+  claimed them, so it has to renumber.
 
 ## State, 2026-10-07 (afternoon): a number too long to write out
 

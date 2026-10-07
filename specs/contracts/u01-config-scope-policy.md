@@ -111,29 +111,32 @@ credential allowlist.
 over `Prod`, listed two target files and exited 0, and the `dottore run` it printed (and
 `fleet --run`) refused "two target files declare the id 'prod'", an id the fleet declared once
 (delta audit of PR #76). Two target ids equal under `casefold()` are refused before anything is
-written, on one line naming both entries by number (1-based, under `targets:`), both ids and
-both file names; an exact duplicate keeps its own message. The numbers are there because the
-CLI masks what its redactor reads as high entropy, and a model name such as
-`Meta-Llama-3-70B-Instruct` comes out masked, ids and file names alike, as it already did in the
-exact-duplicate message (pre-commit audit). A judge id spelled as a target's only up to case is
-refused the same way, naming the target's number, and says so when the id is the default
-`judge` of a `judge:` block that names none: it got a scope entry of its own beside the
-target's (no file collides, the judge is written to `judge.yaml`), two ids a reader cannot tell
-apart in the record that authorizes both. The same spelling still shares the target's entry
-when the endpoint and credential match (A-30). Target pairs are reported before the judge. The
+written, on one line with both locations, both ids and both file names. Every refusal of the
+fleet's ids locates its entries as the validation errors of the same command do
+(`targets.1.id`, counted from 0; `judge.id`), an exact duplicate included, because the CLI
+masks what its redactor reads as high entropy and a model name such as
+`Meta-Llama-3-70B-Instruct` comes out masked, ids and file names alike (pre-commit audit; the
+first version counted from 1, delta audit). A judge id spelled as a target's only up to case is
+refused the same way: no file collides (the judge is written to `judge.yaml`), but it got a
+scope entry of its own beside the target's, two ids that differ only by case in the record
+that authorizes both. The same spelling still shares the target's entry when the endpoint and
+credential match (A-30). Both judge refusals say when the id is the default `judge` of a
+`judge:` block that names none, and only then. Target pairs are reported before the judge. The
 rule holds on a case-sensitive file system too, where nothing collided, so a fleet file means
 the same wherever it is expanded (OD-33). Fleet ids are ASCII (`[A-Za-z0-9._-]`), so
 `casefold()` is lowercasing here and no Unicode normalization arises (writing all 4,092 ids of
 one or two characters on APFS gave 1,440 files, the number of distinct ids under `casefold()`).
-Not changed, measured: `run`'s own duplicate check and `load_scope`'s (A-20) stay exact. No file
-of a run is named by a target id (evidence and probes sit under the run id), and the run store
-keys a finding by its run id and `<spec id>::<target id>` under SQLite's default, case-sensitive
-collation; two hand-written target files `Prod` and `prod` in one run get two run ids and two
-evidence trees, every report format lists both with their own results, and `--resume` of one
-against the other is refused. Checks: `tests/cli/test_fleet_case_ids.py`, including all 1,332
-fleets of one to three targets named from `a`, `A`, `b` and `c`, with no judge or a judge `a`,
-`A`, `c` or `d` on its own endpoint or any target's, checked against the rules written apart
-from the code (which rule refuses, and that each rule decides at every size it can).
+Out of reach, stated rather than hidden: ids that only look alike (`Ilama`, `llama`, `lIama`)
+are distinct and accepted. Not changed, measured: `run`'s own duplicate check and
+`load_scope`'s (A-20) stay exact. No file of a run is named by a target id (evidence and probes
+sit under the run id), and the run store keys a finding by its run id and
+`<spec id>::<target id>` under SQLite's default, case-sensitive collation; two hand-written
+target files `Prod` and `prod` in one run get two run ids and two evidence trees, every report
+format lists both with their own results, and `--resume` of one against the other is refused.
+Checks: `tests/cli/test_fleet_case_ids.py`, including all 1,332 fleets of one to three targets
+named from `a`, `A`, `b` and `c`, with no judge or a judge `a`, `A`, `c` or `d` on its own
+endpoint or any target's, each checked against the start of the refusal (locations included)
+that the rules, written apart from the code, require.
 
 **A-29 A gate keys on what a spec cannot opt out of (added 2026-10-03).** The `test_only`
 criterion above is enforced at run time from the spec's **category**: an unmarked spec in a

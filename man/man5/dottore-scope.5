@@ -149,8 +149,8 @@ mcp one an api target) with no seeded_setup, so a spec that needs documents, too
 setup_not_seeded there; scan those with a target file. Each target is written to
 target-<id>.yaml, so two ids that differ only by case (Prod and prod) are refused on every file
 system. A judge id spelled as a target's only up to case is refused too (judge, the id of a
-judge block that names none, included), so that the generated scope never holds two ids a
-reader cannot tell apart.
+judge block that names none, included), so that the generated scope never holds two ids that
+differ only by case.
 .SH "SEE ALSO"
 .BR dottore (1)
 .PP

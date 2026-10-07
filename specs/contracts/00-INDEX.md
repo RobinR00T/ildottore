@@ -107,7 +107,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-40 | u02 (and u12, u09) | a number too long to write out is reported with its file where it enters (a spec, at any depth and in any YAML collection; a labels key; a report; a target file's `type`, `mock_scenario` and `seeded_setup` keys), never printed |
 | A-18..A-20 | u01 | authorization is reachability, schemes are allowlisted, one answer per target |
 | A-29..A-30 | u01 | a gate keys on what a spec cannot opt out of; the allowlist authorizes the path the client sends, on its port, refuses separator encodings, and a fleet's judge comes only from the fleet file |
-| A-56 | u01 | a fleet's ids are unique ignoring case on every file system, so no generated target file overwrites another |
+| A-56 | u01 | no two of a fleet's ids differ only by case, on every file system, so no generated target file overwrites another; each refusal locates its entries |
 | A-21..A-22 | u14 | a test asserts the claim against the real collaborator, and is deterministic |
 
 The pattern under most of them, worth stating once: **something counted or omitted what did

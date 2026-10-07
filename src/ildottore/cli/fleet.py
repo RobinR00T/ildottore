@@ -266,24 +266,27 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
 
     declared = config.judge
     if declared is not None:
-        for number, target in enumerate(config.targets, start=1):
+        # Both refusals locate the judge and the target as validation errors do (`targets.1.id`,
+        # counted from 0), since the CLI may mask an id, and say when the judge's id is the
+        # default: the fleet file never wrote it.
+        named = "id" in declared.model_fields_set
+        default = "" if named else " (the default of a judge: block that names no id)"
+        for index, target in enumerate(config.targets):
             # The generated scope holds the judge beside the targets, and an id spelled as a
-            # target's only up to case got an entry of its own: two ids a reader cannot tell
-            # apart, in the record that authorizes both (A-56, OD-33).
+            # target's only up to case got an entry of its own: two ids that differ only by
+            # case, in the record that authorizes both (A-56, OD-33).
             if target.id != declared.id and target.id.casefold() == declared.id.casefold():
-                named = "id" in declared.model_fields_set
-                default = "" if named else " (the id of a judge: block that names none)"
                 raise ValueError(
-                    f"the fleet's judge {declared.id!r}{default} and its target {number} "
-                    f"({target.id!r}) differ only by case; spell the judge's id as the target's "
+                    f"the fleet's judge.id {declared.id!r}{default} and targets.{index}.id "
+                    f"{target.id!r} differ only by case; spell the judge's id as the target's "
                     "if the judge is that target, or give it an id that differs in more than case"
                 )
             if target.id == declared.id and (
                 target.endpoint != declared.endpoint or target.api_key_env != declared.api_key_env
             ):
                 raise ValueError(
-                    f"the fleet's judge {declared.id!r} has the id of a target with a different "
-                    "endpoint or credential; give the judge its own id"
+                    f"the fleet's judge.id {declared.id!r}{default} is targets.{index}.id, a "
+                    "target with a different endpoint or credential; give the judge its own id"
                 )
     if judge is None:
         return
@@ -348,20 +351,24 @@ def materialize_fleet(
     # listed both and exited 0, and the `dottore run` it printed refused "two target files
     # declare the id 'prod'" (delta audit of PR #76). Refusing everywhere keeps a fleet file's
     # meaning the same wherever it is expanded (A-56, OD-33).
-    # The message numbers both entries too: the CLI masks an id its redactor reads as high
-    # entropy (`Meta-Llama-3-70B-Instruct`), file names included, and the numbers survive.
+    # Both refusals locate the two entries as validation errors do (`targets.2.id`, counted
+    # from 0): the CLI masks an id its redactor reads as high entropy
+    # (`Meta-Llama-3-70B-Instruct`), file names included, and the locations survive.
     seen: dict[str, tuple[int, str]] = {}
-    for number, target in enumerate(config.targets, start=1):
+    for index, target in enumerate(config.targets):
         first = seen.get(target.id.casefold())
         if first is None:
-            seen[target.id.casefold()] = (number, target.id)
+            seen[target.id.casefold()] = (index, target.id)
             continue
-        first_number, first_id = first
+        first_index, first_id = first
         if first_id == target.id:
-            raise ValueError(f"duplicate target id {target.id!r} in fleet")
+            raise ValueError(
+                f"duplicate target id {target.id!r} in fleet "
+                f"(targets.{first_index}.id and targets.{index}.id)"
+            )
         raise ValueError(
-            f"the fleet's targets {first_number} and {number} (ids {first_id!r} and "
-            f"{target.id!r}) differ only by case, so target-{first_id}.yaml and "
+            f"the fleet's targets.{first_index}.id {first_id!r} and targets.{index}.id "
+            f"{target.id!r} differ only by case, so target-{first_id}.yaml and "
             f"target-{target.id}.yaml are one file on a case-insensitive file system (the "
             "macOS and Windows default); give each target an id that differs in more than case"
         )
