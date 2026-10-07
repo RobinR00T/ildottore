@@ -221,15 +221,15 @@ not text is printed as pydantic renders it (`on:` as `1`). What can be read
 is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
 `top_p` have no range check. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
 `logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set, so a `tool:` written
-for `tools:` is refused (`tool: Extra inputs are not permitted`); until 2026-10-07 it was ignored,
-and the target ran with tools off and without the specs that need them. A `capabilities` that is
+for `tools:` is refused (`tool: Extra inputs are not permitted`); older versions ignored it, and
+the target ran with tools off and without the specs that need them. A `capabilities` that is
 not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
 included, unless it is null: to declare none, leave the key out or write `capabilities: {}` (open
 decision OD-29). A `capabilities:` with nothing under it is null too, so if the keys below it lost
-their indent they are top-level keys, which are still ignored without a word. A run halted before
-this change with such a key or value resumes once you delete it (or write `{}` for `false`), since
-it was never read; correcting a key to the one you meant changes the target, and the resume is
-refused.
+their indent they are top-level keys, which are still ignored without a word. A run an older
+version halted with such a key or value resumes once you delete it (or write `{}` for `false`),
+since it was never read; correcting a key to the one you meant changes the target, and the resume
+is refused.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.

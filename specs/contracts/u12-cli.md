@@ -338,8 +338,8 @@ the redactor leaves each test value readable, and one loads every target and fle
 Refusing both is the owner's call (OD-29), built as the smallest reversible change: the filter and
 the `or {}` in `load_target`, and `dict[str, bool]` in `FleetTarget` with `**entry.capabilities`
 in `_target_doc` (the `Capabilities` import in `cli/fleet.py` then goes, or ruff fails), undo it,
-with this test file removed. Outside the clause, and said so rather than pinned (pre-commit and
-delta audits):
+with this test file removed. Outside the clause, and said so rather than pinned (pre-commit, delta
+and pre-merge audits):
 * a top-level key a target file does not know (`endpont:`, or `tools: true` under a
   `capabilities:` left empty by a lost indent) is still dropped without a word, and so is a `name`,
   `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text;
@@ -348,11 +348,12 @@ delta audits):
   Capabilities`), where a target file reads `null` as none;
 * what pydantic can read as a boolean is taken as read (`tools: 'off'` is false), as in A-45;
 * an unknown key is printed as the location, as A-45 says of any key: one that is not text as
-  pydantic renders it (`on:` as `1`, `off:` as `0`, `~:` as `None`), an empty key as `<root>`, and
-  control characters as written until #51 writes them out; a credential pasted as a key is printed
-  as any key is, masked only by the redactor's entropy rule, which masks an `sk-` key and most
-  random 64-hex strings but leaves a low-entropy one readable (about 1 in 20 random 64-hex keys,
-  and the tests' repeated value);
+  pydantic renders it (`on:` as `1`, `off:` as `0`, `~:` as `None`), an empty key or one holding
+  half a character (a lone surrogate) as `<root>` (the latter with `Input should be a valid
+  string`), and control characters as written until #51 writes them out; a credential pasted as a
+  key is masked as any error text is (a registered credential and the known key shapes first, then
+  the entropy rule), and the entropy rule leaves a low-entropy one readable (about 1 in 20 random
+  64-hex keys, and the tests' repeated value);
 * every unknown key is listed on the one line, as `sampling_defaults` lists them on `2f6201a`
   (20,000 keys gave a 789 KB line); the default of 20 listed problems that #76
   (`fix/operator-file-read-cap`) gives `validation_problems` bounds both once it lands;
