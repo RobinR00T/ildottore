@@ -289,6 +289,62 @@ def test_two_overlapping_short_credentials_are_masked_as_one() -> None:
     assert out.count("«") == 1
 
 
+@pytest.mark.parametrize(
+    ("registered", "text"),
+    [
+        (["QRSTUVWabc", "abc\t\t\tabc"], "QRSTUVWabc\t\t\tabc\t\t\tabc."),
+        (
+            ["KLMNOPQxyz", "xyz" + chr(0x200B) * 3 + "xyz"],
+            "KLMNOPQxyz" + (chr(0x200B) * 3 + "xyz") * 2 + ".",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_short_credential_overlapping_itself_under_a_longer_match_is_masked_whole(
+    registered: list[str], text: str
+) -> None:
+    """Taken without overlaps, its second occurrence was lost when a longer match covered the
+    first, and its tail stayed readable where main masked it (delta audit of the follow-ups)."""
+
+    for value in registered:
+        register_known_secret(value)
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text(text)
+    assert out.startswith("«REDACTED:credential:") and out.endswith("».") and out.count("«") == 1
+    assert redactor.redact_text(out) == out
+
+
+@pytest.mark.usefixtures("no_known_secrets")
+def test_every_occurrence_of_a_short_credential_is_masked_in_one_pass() -> None:
+    """Redaction runs to a fixed point in at most four passes: a placement that took one
+    occurrence a pass still looked whole with two or three of them (delta audit)."""
+
+    register_known_secret("ab\tcd\tefg")
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text("ab\tcd\tefg " * 6)
+    assert out.count("«REDACTED:credential:") == 6 and "efg" not in out
+
+
+@pytest.mark.usefixtures("key")
+def test_what_follows_a_group_that_is_not_the_last_stays_outside_it() -> None:
+    redactor = Redactor(salt="s")
+    mask = _whole_mask(redactor)
+    text = f"{HEAD}\n{TAIL}\x85 and {HEAD}\t{TAIL}{chr(0x2028)}"
+    assert redactor.redact_text(text) == f"{mask}\x85 and {mask}{chr(0x2028)}"
+
+
+@pytest.mark.usefixtures("no_known_secrets")
+def test_whitespace_at_the_ends_does_not_count_toward_the_name() -> None:
+    """`strip()` keeps a leading zero-width space, so the spaces after it were registered too."""
+
+    padded = chr(0x200B) + "  abcdefgh"  # 8 characters show, 10 without the strip
+    register_known_secret(padded)
+    register_known_secret("efghIJKLM")
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text("x abcdefghIJKLM\n")
+    assert out == f"x «REDACTED:credential:{redactor._digest('efghIJKLM')}»\n"
+
+
 @pytest.mark.usefixtures("no_known_secrets")
 def test_an_overlapping_group_is_named_by_the_longest_as_it_shows() -> None:
     """Counted with its invisible characters, a shorter credential named the group."""

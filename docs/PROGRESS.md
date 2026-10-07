@@ -21,10 +21,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   costing a search per character, a registered `\x00` breaking a stash token, on main, tests that
   could not fail, doc claims), all fixed. The delta audit found that my first fix let a short
   credential break a longer one (up to 7 characters readable), and the pre-merge audit that the
-  second left up to 6 of a short one readable; short and long matches are masked as one union now.
+  second left up to 6 of a short one readable; short and long matches are masked as one union now,
+  every occurrence of a short one included (its delta audit: one overlapping itself lost its second
+  occurrence under a longer match).
   Filed apart, on main: the JSON report keeps a dict key a target wrote raw, and a lone surrogate
-  in a reply aborts the campaign in the evidence store. `make gates`: 2,372 tests (70 new),
-  coverage 96.43%.
+  in a reply aborts the campaign in the evidence store. `make gates`: 2,377 tests (75 new),
+  coverage 96.44%.
 
 ## State, 2026-10-07 (night): OD-18 option B built
 

@@ -169,25 +169,33 @@ class _PositionsInText:
 
 
 @functools.lru_cache(maxsize=256)
+def _smallest_period(form: str) -> int:
+    """The smallest shift that maps ``form`` onto itself (read off the KMP failure function).
+
+    An occurrence of ``form`` that overlaps another starts at least this far past it.
+    """
+
+    border = [0] * len(form)
+    length = 0
+    for i in range(1, len(form)):
+        while length and form[i] != form[length]:
+            length = border[length - 1]
+        if form[i] == form[length]:
+            length += 1
+        border[i] = length
+    return len(form) - border[-1]
+
+
 def _overlap_step(joined: str) -> int:
     """How far past an occurrence of ``joined`` the next one may start, overlapping it or not.
 
-    An occurrence that overlaps another starts a period of the credential further on, never
-    nearer, so the search resumes a smallest period on (read off the KMP failure function). One
-    that repeats a piece more than twice over (`ab12ab12ab12`, `aaaa...`) is matched without
-    overlaps, as the match by value does: following every overlap cost a ``find`` of the whole
-    credential per character, 11 s on 4 MB for `a` written 1,000 times (pre-commit audit).
+    A smallest period on. One that repeats a piece more than twice over (`ab12ab12ab12`,
+    `aaaa...`) is matched without overlaps, as the match by value does: following every overlap
+    cost a ``find`` of the whole credential per character, 11 s on 4 MB for `a` written 1,000
+    times (pre-commit audit).
     """
 
-    border = [0] * len(joined)
-    length = 0
-    for i in range(1, len(joined)):
-        while length and joined[i] != joined[length]:
-            length = border[length - 1]
-        if joined[i] == joined[length]:
-            length += 1
-        border[i] = length
-    period = len(joined) - border[-1]
+    period = _smallest_period(joined)
     return period if 2 * period >= len(joined) else len(joined)
 
 
@@ -804,15 +812,15 @@ class Redactor:
         taken (pre-merge audit).
         """
 
-        clean = text.translate(_DROP_SPLITTERS) if split else text
-        positions = _PositionsInText(text)
-
         def _joined() -> Iterator[tuple[int, int, str]]:
             # Merged where they were found, so each group is placed with indices that only grow.
+            # Nothing is built for a text that holds none of them.
+            clean = text.translate(_DROP_SPLITTERS) if split and wanted else text
             stretches = heapq.merge(*(_stretches(clean, form, wanted[form]) for form in wanted))
             group = next(stretches, None)
             if group is None:
                 return
+            positions = _PositionsInText(text)
             for start, end, secret in stretches:
                 if start < group[1]:
                     group = (group[0], max(group[1], end), _longest(group[2], secret))
@@ -822,10 +830,22 @@ class Redactor:
             yield positions.at(group[0]), positions.at(group[1] - 1) + 1, group[2]
 
         def _as_written(secret: str) -> Iterator[tuple[int, int, str]]:
+            # Every occurrence, overlapping ones as one span: taking them without overlaps, the
+            # second of two overlapping ones was lost when a longer match covered the first, and
+            # its tail stayed readable (delta audit of the pre-merge follow-ups). A value with
+            # nothing visible leaves nothing readable either way, and following its overlaps cost
+            # about 15 times as much on a text made of it.
+            step = _smallest_period(secret) if _visible_length(secret) else len(secret)
             found = text.find(secret)
+            start = end = found
             while found != -1:
-                yield found, found + len(secret), secret
-                found = text.find(secret, found + len(secret))
+                if end > start and found >= end:
+                    yield start, end, secret
+                    start = found
+                end = found + len(secret)
+                found = text.find(secret, found + step)
+            if end > start:
+                yield start, end, secret
 
         spans = heapq.merge(_joined(), *(_as_written(secret) for secret in short))
         current = next(spans, None)

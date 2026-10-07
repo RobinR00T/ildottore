@@ -21,14 +21,15 @@ versioning: [SemVer](https://semver.org/).
   text with them dropped, and the stretch from a credential's first character to its last, the
   characters inside included, becomes the mask an unsplit occurrence gets, same digest; what lies
   outside the stretch stays where it is. Overlapping occurrences, of one credential or of two, are
-  masked as one, named by the longest as it shows (its invisible characters not counted), the first
-  to start on a tie, as PR #51 and PR #56 name them
+  masked as one, named by the longest as it shows (its invisible characters and the whitespace at
+  its ends not counted), the first to start on a tie (the first to end, then the first by value, if
+  they start together), as PR #51 and PR #56 name them
   (taking an unsplit short one first left 8 of a split long
   one's 12 characters readable). A credential registered with such a character inside it matches
   written without it too, under the registered form's digest; whitespace or such a character at
   its ends stays outside the mask and does not count toward the 8-character minimum, as at
-  registration; one shorter than that without them is matched only as written, and masked together
-  with any longer match it overlaps (masked apart, either one left part of the other readable). A
+  registration; one shorter than that without them is matched only as written (every occurrence, overlapping
+  ones included), and masked together with any longer match it overlaps (masked apart, either one left part of the other readable). A
   stretch written
   exactly as a registered form gets that form's digest, as before; any other is named by the
   credential it matched (the longest of its registered forms, the first by value among forms of
@@ -79,7 +80,8 @@ versioning: [SemVer](https://semver.org/).
   selectors, the combining grapheme joiner U+034F, the Hangul fillers); a credential that repeats
   a piece more than twice over, written overlapping itself, can leave its tail readable, as on
   main; and, as on main, two registered credentials overlapping in text without such a
-  character: the longer is masked and the shorter's head or tail stays readable. On the terminal
+  character (the longer is masked and the shorter's head or tail stays readable), or one
+  overlapping itself there. On the terminal
   the format characters themselves are still printed as they are: the owner decided on 2026-10-07
   that they are written out like the control characters (`visible_controls`), and that lands on
   PR #51, where the function lives.
