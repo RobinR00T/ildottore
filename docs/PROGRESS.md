@@ -32,13 +32,13 @@ The carryover ledger. Every agent session updates this so context survives even 
   unreadable entry still matching an IPvFuture literal and `fleet` printing a password the URL mask
   misses; the final audit, a tab or line break between the slashes still hiding that password from
   `fleet`; all fixed. Left, written in A-51: the adapter reads the endpoint unstripped (fails closed
-  at the first send). 86 of the 105 tests (the file's 104 and #76's changed reader test) fail on
-  `a0bca70`, each for its reason, and the 19 that pass guard behaviour that must not change; 73 of
-  75 mutants die (the 2 that live quote a fleet id, already held to 64 characters). (2) A byte that
-  is not UTF-8 in any operator file printed the codec's error with no file name; `read_text_capped`
-  now refuses it as an `OSError` (`EILSEQ`) with the path and the offset, exit 3, as it refuses a
-  file over the cap. Clause A-51 (u01; A-48 to A-50 were claimed the same evening by
-  `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
+  at the first send). 83 of the 106 tests (the file's 105 and #76's changed reader test) fail on
+  `4a572f0`, each for its reason; of the 23 that pass, 4 were fixed first by #81 and 19 guard
+  behaviour that must not change; 73 of 75 mutants die (the 2 that live quote a fleet id, already
+  held to 64 characters). (2) A byte that is not UTF-8 in any operator file printed the codec's
+  error with no file name; `read_text_capped` now refuses it as an `OSError` (`EILSEQ`) with the
+  path and the offset, exit 3, as it refuses a file over the cap. Clause A-51 (u01; A-48 to A-50
+  were claimed the same evening by `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
   `fix/target-capabilities-strict`). Open, OD-27: ids have no length bound, so a started run still
   prints a target id whole (plan, progress, reports, run store), and `calibrate` lists uncovered
   labels whole; proposed, a bound at load like the fleet's 64 characters. Left to #71 (open): a

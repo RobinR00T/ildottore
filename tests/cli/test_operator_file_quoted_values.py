@@ -492,6 +492,13 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         "does not match the fleet's judge",
         cut_of(f"http://localhost:1/{BIG}"),
     ),
+    # A judge file whose id differs from the fleet's judge: the id is the mismatch quoted.
+    "fleet-judge-mismatch-id": lambda t: _with(
+        _fleet(t, FLEET + JUDGE_BLOCK, judge=f"id: {BIG}\ntype: model\n"),
+        None,
+        "does not match the fleet's judge",
+        cut_of(BIG),
+    ),
     "lint-undefined-alias": lambda t: _lint(t, f"id: *{BIG}\n"),
     "target-seeded-setup-unknown-key": lambda t: _with(
         _run(t, TARGET + f"seeded_setup:\n  ? {BIG}\n  : x\n"),

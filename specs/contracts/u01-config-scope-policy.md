@@ -282,17 +282,19 @@ any case and with spaces; a stdio target real only with a command; a `transport`
 URLs urllib cannot read, through `run`, `fingerprint` and `fleet`, the endpoint never quoted by the
 target loader and its password never printed, by `fleet` either, a tab between the slashes and a
 second `@` included; an unreadable allowlist entry matching nothing whatever its place, an IPvFuture
-literal included; the variable name; the UTF-8 refusal through each command, and its offset past one
-decoder chunk), and the reader test of `tests/cli/test_operator_file_cap.py`, changed on purpose
-from "the same `UnicodeDecodeError` as `read_text`" to "an `OSError` at the same byte, naming the
-file". On `a0bca70`, with the new helpers stubbed to what the base does (`quoted` and fleet's
-`_shown_endpoint` as `repr`, `listed` as a plain join), 86 of these 105 tests (the 104 of the file
-and the changed reader test) fail, each for its reason, and the 19 that pass guard what must not
-change (two of them, an endpoint with no user information quoted as `repr` quotes it): a short value
-quoted as before, any other failure of `repr` raised, verdicts in any case and with spaces, a stdio
-target real only with a command, a date key written as before. Of 75 mutants, one per site and one
-per fix of the six audits, 73 are killed; the two that live are equivalent (they quote a fleet id,
-which the fleet's model holds to 64 characters).
+literal included; the variable name; a `--judge` file whose id differs from the fleet's judge; the
+UTF-8 refusal through each command, and its offset past one decoder chunk), and the reader test of
+`tests/cli/test_operator_file_cap.py`, changed on purpose from "the same `UnicodeDecodeError` as
+`read_text`" to "an `OSError` at the same byte, naming the file". On `4a572f0` (#76 with #81 merged
+in), with the new helpers stubbed to what the base does (`quoted` and fleet's `_shown_endpoint` as
+`repr`, `listed` as a plain join), 83 of these 106 tests (the 105 of the file and the changed reader
+test) fail, each for its reason; of the 23 that pass, 4 were fixed first by #81 (A-40: a labels key
+and a `provider` that are huge integers, a `provider` and a `transport` of aliases), and 19 guard
+what must not change (two of them, an endpoint with no user information quoted as `repr` quotes it):
+a short value quoted as before, any other failure of `repr` raised, verdicts in any case and with
+spaces, a stdio target real only with a command, a date key written as before. Of 75 mutants, one
+per site and one per fix of the six audits, 73 are killed; the two that live are equivalent (they
+quote a fleet id, which the fleet's model holds to 64 characters).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
