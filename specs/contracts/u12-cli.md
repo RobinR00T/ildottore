@@ -84,7 +84,8 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   `digests` attribute: on a scope checksum mismatch the digest computed from the body; the
   `checksum:` value the operator typed is not quoted at all; on a tamper refusal the hash the
   artifact's content has now). A scope validation error names fields and reasons, never the
-  input value. A kept token that overlaps a credential the process
+  input value, and so does a target file's `capabilities` or `sampling_defaults` refusal (A-45).
+  A kept token that overlaps a credential the process
   registered is masked anyway, and every other 64-hex value goes through the redactor. An error
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
@@ -245,7 +246,39 @@ withdrawn (OD-25; pre-commit, delta and pre-merge audits). `diff`'s incomplete-r
 goes through `_masked`. One error costs at most 1,024 filesystem lookups (a 1 MiB message cost
 524,032), and no walk starts inside what another already read. Checked by
 `tests/cli/test_masked_paths.py`, and by a differential fuzz against main: no key main masked
-printed, in 60,000 messages.
+printed, in 120,000 messages.
+
+**A-45 A target file's `capabilities` or `sampling_defaults` refusal names the file, the field and
+the reason, on one line, never the value (added 2026-10-07).** `load_target` handed a target file's
+`capabilities` and `sampling_defaults` blocks to pydantic without catching its `ValidationError`.
+That error is a `ValueError`, so every command's handler caught it and printed pydantic's own text:
+four lines (`error: 1 validation error for Capabilities`, the field, `input_value='maybe-later'` and
+a docs URL) that quoted the operator's value and named no file, while the scope and fleet loaders
+already gave `scope file <path> failed validation: <field>: <reason>` (`fleet file ...`, and `policy
+pack <path> ...` for a pack), through `shared/config_errors.validation_problems`, which keeps the
+input value and the URL out. Both blocks now raise a plain `ValueError` of that kind, `target file
+<path> 'capabilities' failed validation: tools: Input should be a valid boolean, ...`, with the
+block's problems on the one line as `validation_problems` lists them, and exit 3 through `run -t`,
+`run --judge`, `fingerprint` and `fleet --judge` (`tests/cli/test_target_file_validation.py`: 19 of
+its 24 tests fail on `0501752`; the other 5 check that the redactor leaves each test value readable,
+and the CLI tests fail on any mask in the output, since a first value was masked as a phone number
+and proved nothing; and they look for every 8-character piece of a value, since pydantic printed the
+first 24 and the last 23 characters of a long one). Outside the clause, and said so rather than
+pinned:
+* other refusals of a target file still quote what it says: the `type` and `mock_scenario`
+  values (whatever was written there, a map included), the tool name a `seeded_setup` both maps
+  and grants, and the target's `id`, which several refusals name (two files with one id,
+  `--hardened` on a live target, a target the scope does not authorize);
+* a key the operator typed is part of the location and is printed as pydantic renders it (a
+  `true:` key as `1`), control characters included, so a key holding a line break still splits
+  the message until the terminal writes them out (#51);
+* a file with both blocks wrong is refused on its `capabilities` block alone;
+* only what pydantic cannot read as the field's type is refused: `tools: 'off'` reads as false,
+  `temperature: '0.5'` as 0.5, `temperature: true` as 1.0, and `temperature` and `top_p` have no
+  range (`.nan`, `-3`, `top_p: 7.5` are kept);
+* `capabilities` that is not a mapping but is empty or false (`false`, `0`, `[]`, `""`) is read
+  as no capabilities, and a key it does not know is dropped without a word (`sampling_defaults`
+  refuses both).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

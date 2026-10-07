@@ -24,7 +24,7 @@ versioning: [SemVer](https://semver.org/).
   existing directories of a missing path through a space or a `//`, the name an `OSError`
   quotes when it looked like a file's) and each printed keys that main masked: an `sk-ant-` key
   given as `<key>.json`, an Azure connection string, a key after `<dir with space>/` or `/./`
-  (pre-commit, delta and pre-merge audits). A differential fuzz of 60,000 messages against main
+  (pre-commit, delta and pre-merge audits). A differential fuzz of 120,000 messages against main
   finds no key printed that main masked; the earlier versions printed about 120 in every 20,000.
 - **A kept text holding 8 consecutive characters of a registered credential goes back to the
   entropy rule** (`redactor.known_secret_parts`, `holds_known_secret_part`): judged on its own
@@ -62,6 +62,32 @@ versioning: [SemVer](https://semver.org/).
   existing and missing, in directories named with a space, parentheses, brackets, a comma, a
   semicolon and quotes, and every key and credential part the three audits printed). Each guard
   was removed in turn and a test failed every time (20 mutants).
+
+### Fixed (a target file's bad value printed pydantic's error, value included)
+
+- **A value under a target file's `capabilities` or `sampling_defaults` that pydantic could not read
+  printed pydantic's own error.** `capabilities: {tools: maybe-later}` or `sampling_defaults:
+  {temperature: warm}` made `dottore run --dry-run` print four lines (`error: 1 validation error for
+  Capabilities`, the field, `input_value='maybe-later'` and a pydantic docs URL): the operator's
+  value quoted, which the loaders of the operator's own files avoid because a key gets pasted there
+  by mistake, and no file name, so with a target and a judge the operator could not tell which file
+  it was. Exit 3 was already right. `load_target` now gives the kind of line the scope and fleet
+  loaders give: `error: target file target.yaml 'capabilities' failed validation: tools: Input
+  should be a valid boolean, unable to interpret input`, the block's problems on that one line as
+  `validation_problems` lists them (the `capabilities` block's alone when both blocks are wrong),
+  the value never. The same through `run -t`, `run --judge`, `fingerprint` and `fleet --judge`. Not
+  changed, and written in the clause: other refusals of a target file still quote what it says
+  (`type`, `mock_scenario`, a `seeded_setup` tool name, the `id`); a key is printed as pydantic
+  renders it, control characters included, so one with a line break still splits the line until #51
+  is in; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true` is
+  1.0, no range on `temperature` or `top_p`); and a key `capabilities` does not know, or a
+  `capabilities` that is empty or `false`, is still ignored without a word. Contract u12 A-45;
+  `tests/cli/test_target_file_validation.py` (19 of its 24 tests fail on `0501752`; the other 5
+  check that the CLI's redactor leaves each test value readable, and the CLI tests fail on any mask
+  in the output, because a first `987654321` was masked as a phone number and the check proved
+  nothing). Found on `fix/huge-int-repr`. The same shape remains in `dottore diff` and `dottore
+  calibrate` on a report whose finding does not validate (pre-commit audit); left for its own
+  change.
 
 ### Fixed (a file nested past what the CLI can hold)
 

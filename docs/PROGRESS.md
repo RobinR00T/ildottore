@@ -13,11 +13,27 @@ The carryover ledger. Every agent session updates this so context survives even 
   incomplete-report refusal goes through `_masked`, as `calibrate`'s does. Found by the audits of
   PR #61. Three audits found the fix printing keys main masked while it kept more than whole
   paths (the name an `OSError` quotes, the existing directories of a missing path through a
-  space, a `//` or a `/./`), so it was rebuilt on main's rule; a differential fuzz of 60,000
+  space, a `//` or a `/./`), so it was rebuilt on main's rule; a differential fuzz of 120,000
   messages finds no such key now. Open for the owner: OD-25, printing the name of a file that
   does not exist. PR #51 touches the same S6 row and `diff` refusal lines, so the second to merge
   resolves them (`_masked` applies `visible_controls` after #51, so the wrapper on the refusal
   goes).
+
+## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
+
+- Found on `fix/huge-int-repr` and fixed on `fix/target-file-validation`: a wrong value under a
+  target file's `capabilities` or `sampling_defaults` (`tools: maybe-later`, `temperature: warm`)
+  reached the CLI as pydantic's raw error, four lines quoting the value and naming no file (exit 3
+  was already right). `load_target` now wraps it like the scope, fleet and pack loaders: one
+  `error:` line, `target file <path> '<block>' failed validation: <field>: <reason>`, no value.
+  Contract u12 A-45 (A-43 and A-44 were claimed the same afternoon by `fix/operator-file-read-cap`
+  and `fix/lint-nonstring-arg-key`). Left open, written in the clause: a key `capabilities` does
+  not know, or a `capabilities` that is empty or `false`, is dropped without a word; other
+  refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
+  the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
+  `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
+  the value quoted, no file name); not fixed here. `tests/cli/test_target_file_validation.py`: 19
+  of its 24 tests fail on `0501752`, the other 5 guard that each test value survives the redactor.
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
