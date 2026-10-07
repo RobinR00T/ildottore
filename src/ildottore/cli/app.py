@@ -17,6 +17,7 @@ import math
 import os
 import re
 from collections.abc import Callable
+from itertools import chain
 from pathlib import Path
 from typing import Annotated
 
@@ -133,34 +134,35 @@ _NAME_STOP = re.compile(r"[/\n\r\x00]")
 #: No name is longer (NAME_MAX), so one start tries at most that many candidates, and prose
 #: after a `/` cannot use up the lookups the other paths of the message need.
 _MAX_NAME_LEN = 255
-#: What one message may cost: filesystem lookups, and checks (a lookup or a cached answer). Past
-#: either nothing more is kept, so the rest is judged as text: a 1 MiB message of `/a/a/...`
-#: tokens cost 524,032 lookups and seven seconds when a target's transport error quoted it
-#: (`dottore calibrate` on a halted report), and, cached, still 524,288 checks (delta audit).
+#: What the whole-path walk may cost one message: filesystem lookups, and checks (a lookup or a
+#: cached answer). Past either it keeps nothing more, which costs readability only. Main's rule
+#: has no cap: stopping it early kept nothing where main kept a directory, and the rest of the
+#: token, judged whole, printed a value main masked (audit of the cap); its cost is main's, less
+#: what the cache and one walk per token save (main: 524,032 lookups and 8.9 s of CPU for 256
+#: tokens of `/a` written 2,047 times, a target's transport error in a halted report's reason).
 _MAX_LOOKUPS = 1024
 _MAX_CHECKS = 65_536
 
 
 class _Lookups:
-    """Filesystem checks for one message: each path once, at most ``_MAX_LOOKUPS`` lookups and
-    ``_MAX_CHECKS`` checks in all, after which every check answers False (``spent``)."""
+    """Filesystem checks for one message, each path once. ``capped``: a new lookup past
+    ``_MAX_LOOKUPS``, and any check past ``_MAX_CHECKS``, answers False and sets ``spent``."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, capped: bool = True) -> None:
         self._seen: dict[tuple[str, str], bool | None] = {}
         self._checks = 0
+        self._capped = capped
         self.spent = False
 
     def _ask(self, path: str, kind: str, probe: Callable[[], bool | None]) -> bool | None:
         self._checks += 1
         key = (path, kind)
-        if key not in self._seen:
-            if len(self._seen) >= _MAX_LOOKUPS or self._checks > _MAX_CHECKS:
-                self.spent = True
-                return False
-            self._seen[key] = probe()
-        elif self._checks > _MAX_CHECKS:
+        over = self._capped and (len(self._seen) >= _MAX_LOOKUPS or self._checks > _MAX_CHECKS)
+        if over and (key not in self._seen or self._checks > _MAX_CHECKS):
             self.spent = True
             return False
+        if key not in self._seen:
+            self._seen[key] = probe()
         return self._seen[key]
 
     def __call__(self, path: str, *, directory: bool) -> bool:
@@ -191,8 +193,9 @@ def _existing_prefixes(text: str, lookup: _Lookups | None = None) -> list[str]:
 
     # Main's calls, so main's answer on every Python version: with `os.path.exists`, a name
     # too long went on to its parent where 3.11 raised and main kept nothing, and printed the
-    # key that main masked (delta audit of A-38). One walk per distinct token.
-    check = lookup or _Lookups()
+    # key that main masked (delta audit of A-38). No cap (`_MAX_LOOKUPS`); one walk per
+    # distinct token, its parents built as they are reached.
+    check = lookup or _Lookups(capped=False)
     prefixes: list[str] = []
     walked: set[str] = set()
     for match in _ABS_PATH.finditer(text):
@@ -201,18 +204,16 @@ def _existing_prefixes(text: str, lookup: _Lookups | None = None) -> list[str]:
             continue
         walked.add(token)
         candidate = Path(token)
-        for path in (candidate, *candidate.parents):
+        for path in chain((candidate,), candidate.parents):
             shown = str(path)
             if shown == "/" or not token.startswith(shown):
                 break
             exists = check.as_main(path)
-            if exists is None or check.spent:
+            if exists is None:
                 break
             if exists:
                 prefixes.append(shown)
                 break
-        if check.spent:
-            break
     return prefixes
 
 
@@ -309,8 +310,7 @@ def _masked(exc: BaseException) -> str:
     ]
     # URL passwords first, on the whole text, so a 64-hex password is never kept as a digest.
     text = plain.redact_text(mask_url_passwords(str(exc)))
-    lookup = _Lookups()
-    paths = sorted({re.escape(p) for p in _existing_prefixes(text, lookup)}, key=len, reverse=True)
+    paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
     keep = re.compile(
         r"(\b(?:"
         + "|".join([_ARTIFACT_NAME, *carried])
@@ -333,7 +333,8 @@ def _masked(exc: BaseException) -> str:
         return held[kept]
 
     spans = [m.span() for m in keep.finditer(text)]
-    spans += [s for s in _whole_path_spans(text, lookup) if not holds_secret(text[s[0] : s[1]])]
+    whole = _whole_path_spans(text, _Lookups())
+    spans += [s for s in whole if not holds_secret(text[s[0] : s[1]])]
     merged: list[list[int]] = []
     for start, end in sorted(spans):
         # Overlapping spans only: two that touch are two parts, each judged on its own as main

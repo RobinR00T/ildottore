@@ -172,13 +172,45 @@ def test_a_relative_path_after_an_absolute_one_is_kept(
     assert _masked(ValueError(text)) == text
 
 
-def test_a_token_longer_than_path_max_does_not_use_up_the_lookups(tmp_path: Path) -> None:
-    """Main's rule skips it (no path is longer than PATH_MAX), so its 2,100 parents cost nothing
-    and the report after it is still read."""
+def _count_main_rule_calls(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """How many times main's rule asks `Path.exists` (cached or not)."""
 
-    report = _not_a_report(tmp_path / f"report-{SHA}.json")
-    text = f"cannot write {tmp_path}" + "/x" * 2100 + f" then {report}: expected a JSON run report"
-    assert f"{report}: expected" in _masked(ValueError(text))
+    from ildottore.cli import app as app_mod
+
+    calls = [0]
+    real = app_mod._Lookups.as_main
+
+    def counting(self: object, path: Path) -> bool | None:
+        calls[0] += 1
+        return real(self, path)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(app_mod._Lookups, "as_main", counting)
+    return calls
+
+
+def test_a_token_longer_than_path_max_is_not_walked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main's rule skips it: no path is longer than PATH_MAX, and its 2,100 parents would each
+    cost a check."""
+
+    calls = _count_main_rule_calls(monkeypatch)
+    _masked(ValueError("cannot write /tmp" + "/x" * 2100 + " then stop"))
+    assert calls[0] == 0
+
+
+def test_a_path_written_again_is_walked_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main walked the 501 parents of each of 600 copies again; the answer is the same."""
+
+    calls = _count_main_rule_calls(monkeypatch)
+    _masked(ValueError(" ".join(["/a" * 500] * 600)))
+    assert calls[0] <= 501
+
+
+def test_main_rule_does_not_stop_at_the_cost_cap() -> None:
+    """Stopped past 1,024 lookups, it kept nothing where main kept `/usr`, and the rest of the
+    token, judged with it, was path-shaped and printed (audit of commit 4)."""
+
+    text = "upstream said: " + " ".join(f"/x{i}" for i in range(1025)) + " /usr/q8xv3lm9pw2rt7y"
+    assert "q8xv3lm9pw2rt7y" not in _masked(ValueError(text))
 
 
 # --- what is not a path the operator has stays masked ------------------------------------------
@@ -463,8 +495,12 @@ def test_one_error_makes_a_bounded_number_of_filesystem_lookups(
         return real_stat(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(os, "stat", counting)
+    from ildottore.cli.app import _existing_prefixes
+
+    _existing_prefixes(text)
+    main_rule, calls = calls, 0
     _masked(ValueError(text))
-    assert calls <= 1024, "the budget is `_MAX_LOOKUPS` in cli/app.py"
+    assert calls <= main_rule + 1024, "the whole-path walk's cap is `_MAX_LOOKUPS` in cli/app.py"
 
 
 def test_an_error_that_names_no_path_costs_no_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -507,12 +543,16 @@ def test_a_walk_that_keeps_nothing_is_not_read_again_from_inside(
     assert calls <= 2 * 3000, "one walk, a check per name"
 
 
-def test_one_error_makes_a_bounded_number_of_checks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Cached answers cost too: main's walk through 2,047 parents of each of 256 tokens made
-    524,288 checks after its 1,024 lookups (delta audit of the rebuild)."""
+def test_the_whole_path_walk_makes_a_bounded_number_of_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cached answers cost too: 600 paths through the same 200 directories make one new lookup
+    and 200 cached answers each, 120,000 checks under the lookup cap."""
 
     from ildottore.cli import app as app_mod
 
+    chain = tmp_path.joinpath(*(["d"] * 200))
+    chain.mkdir(parents=True)
     calls = 0
     real_ask = app_mod._Lookups._ask
 
@@ -522,21 +562,7 @@ def test_one_error_makes_a_bounded_number_of_checks(monkeypatch: pytest.MonkeyPa
         return real_ask(self, *args)  # type: ignore[arg-type]
 
     monkeypatch.setattr(app_mod._Lookups, "_ask", counting)
-    deep = "/a" * 500
-    for text in (
-        " ".join(["/a" * 2047] * 256),
-        # One new lookup per token, 500 cached answers each: 261,000 checks under the lookup cap.
-        " ".join(f"{deep}/x{i}" for i in range(600)),
-    ):
-        calls = 0
-        _masked(ValueError(text))
-        assert calls <= 65_536 + 2, "the cap is `_MAX_CHECKS` in cli/app.py"
-
-
-def test_a_path_written_again_is_walked_once(tmp_path: Path) -> None:
-    """Each copy walked its 500 cached parents again and used up the checks a later report
-    needed."""
-
-    report = _not_a_report(tmp_path / f"report-{SHA}.json")
-    text = " ".join(["/a" * 500] * 600) + f" then {report}: expected a JSON run report"
-    assert f"{report}: expected" in _masked(ValueError(text))
+    text = " ".join(f"{chain}/x{i}" for i in range(600))
+    app_mod._whole_path_spans(text, app_mod._Lookups())
+    # A walk in progress when the cap is reached refuses at most one name's candidates more.
+    assert calls <= 65_536 + 255, "the cap is `_MAX_CHECKS` in cli/app.py"

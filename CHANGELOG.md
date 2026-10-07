@@ -8,67 +8,73 @@ versioning: [SemVer](https://semver.org/).
 ### Fixed (a CLI error names the operator's file, and `diff` masks a report's reason)
 
 - **An existing file in a CLI error keeps its name wherever the message writes it.** `_masked`
-  (cli/app.py) kept out of the entropy rule only the part of an absolute path that exists, read
-  up to the first space, quote or bracket. A report named after a commit SHA
-  (`report-9f86d081...e2.json`) read `«REDACTED:high_entropy:...».json` when the message wrote
-  it before a colon (`invalid YAML in scope file <path>: ...`, the signature pack loader,
-  `labels file <path>: ...`, `<path>: expected a JSON run report ...`), when it was relative,
-  and when a directory on the way held a space or one of `()[],;'"`. A path that exists, written
-  whole, is now kept as well: read directory by directory, so a directory with a space or a
-  bracket is read whole; its last name the longest that exists and followed by no character the
-  entropy rule joins into a token, so a `:` or `.` after it is the message's; absolute, or
-  relative to the working directory as one word.
-- **The rest of the message is read as before, by construction.** A whole path starts and ends
+  (cli/app.py) kept out of the entropy rule only the part of an absolute path that exists, read up
+  to the first whitespace, a quote, a bracket, a comma or a semicolon. A report named after a commit
+  SHA (`report-9f86d081...e2.json`) read `«REDACTED:high_entropy:...».json` when the message wrote
+  it before a colon (`invalid YAML in scope file <path>: ...`, the signature pack loader, `labels
+  file <path>: ...`, `<path>: expected a JSON run report ...`), when it was relative, and when a
+  directory on the way held a space or one of `()[],;'"`. A path that exists, written whole, is now
+  kept as well: read directory by directory, so a directory with a space or a bracket is read whole;
+  its last name the longest that exists and followed by no character the entropy rule joins into a
+  token, so a `:` or `.` after it is the message's; absolute, or relative to the working directory
+  as one word.
+- **The rest of the message is read as on main, by construction.** A whole path starts and ends
   between characters the entropy rule does not join into a token, so every other token is judged
-  exactly as on main, and main's rule makes main's calls (`Path.exists`, which on Python 3.11 and
-  3.12 raises on a name too long or a directory that cannot be read, and main kept nothing for
-  that token; `os.path.exists` went on to its parent and printed a key), until the cost cap
-  below. Three versions of this fix kept more (the
-  existing directories of a missing path through a space or a `//`, the name an `OSError`
-  quotes when it looked like a file's) and each printed keys that main masked: an `sk-ant-` key
-  given as `<key>.json`, an Azure connection string, a key after `<dir with space>/` or `/./`
-  (pre-commit, delta and pre-merge audits). A differential fuzz of 120,000 messages against main
-  finds no key printed that main masked (on 3.14, and 23,000 more messages with other shapes in
-  the delta audit of the rebuild); the earlier versions printed about 120 in every 20,000.
-- **A kept text holding 8 consecutive characters of a registered credential goes back to the
-  entropy rule** (`redactor.known_secret_parts`, `holds_known_secret_part`): judged on its own
-  when main's rule kept it (main asked only whether it was inside the key or held it whole, and
-  printed `<dir>/<16 characters of the key>.json` followed by a space), and not kept at all when
-  only the whole-path rule would have. Two kept parts that only touch stay two parts, as on
-  main: merged, a digest glued to a long kept path was diluted below the threshold. The `/`
-  before a masked name is printed
-  (`<dir>/«REDACTED...».json`): the mask used to take it, which read as a sibling of the
+  exactly as on main. Main's rule makes main's calls (`Path.exists`, which on Python 3.11 and 3.12
+  raises on a name too long or a directory that cannot be read, and main then kept nothing;
+  `os.path.exists` went on to the parent and printed a key) and has no cost cap (stopped past 1,024
+  lookups, it kept nothing where main kept `/usr`, and the rest of the token, judged with it,
+  printed a value main masked). Four versions of this fix kept more or stopped earlier (the existing
+  directories of a missing path through a space, a `//` or a `/./`, the name an `OSError` quotes
+  when it looked like a file's, main's rule past a cap) and each printed keys that main masked: an
+  `sk-ant-` key given as `<key>.json`, an Azure connection string, a key after `<dir with space>/`
+  or `/./` (pre-commit, delta, pre-merge and two later audits). A differential fuzz of 120,000
+  messages against main finds no key printed that main masked (on 3.14; the audit of the previous
+  commit ran it on 3.12 too, and the later audits found none in 47,000 more messages with other
+  shapes); the earlier versions printed about 120 in every 20,000.
+- **A kept text holding 8 consecutive characters of a registered credential goes back to the entropy
+  rule** (`redactor.known_secret_parts`, `holds_known_secret_part`): judged on its own when main's
+  rule kept it (main asked only whether it was inside the key or held it whole, and printed
+  `<dir>/<16 characters of the key>.json` followed by a space), and not kept at all when only the
+  whole-path rule would have. Two kept parts that only touch stay two parts, as on main: merged, a
+  digest glued to a long kept path was diluted below the threshold. The `/` before a masked name is
+  printed (`<dir>/«REDACTED...».json`): the mask used to take it, which read as a sibling of the
   directory.
-- **A file that does not exist keeps no name** (OD-25, open): main's rule still prints the
-  existing directories of an absolute path, up to the first space, quote or bracket. Keeping the name an `OSError` carries when it looked
-  like a file's (an extension, a directory that exists) printed an `sk-ant-` key given as
-  `<key>.json`, an `sk-proj-` key as `<key>.yaml` and an Azure connection string, which ends in
-  `.windows.net`, all of which main masked, and was withdrawn before commit.
-- **One error costs at most 1,024 filesystem lookups and 65,536 checks** (a cached answer is a
-  check), main's rule included: each distinct token is walked once; one start tries at most 255
-  candidates for a name (NAME_MAX); no walk starts inside what another already read
-  (`/./././...//` cost the square of its length); and the registered credentials are checked
-  through one set built per error (a check per kept path and per part cost 55 s on a 1 MiB error
-  with a 2,000-character credential). A 1 MiB message of 256 tokens of `/a` written 2,047 times
-  (a target's transport error quoted in a halted report's reason, which `calibrate` prints) made
-  524,032 lookups and 8.9 s of CPU on main; it makes 1,024 and 0.5 s. Past either cap nothing
-  more is kept, so the rest is judged as text, a path main would have kept included. A relative
-  word with no run of 16 characters the entropy rule could mask is not looked up.
+- **A file that does not exist keeps no name** (OD-25, open): main's rule still prints the existing
+  directories of an absolute path, up to the first whitespace, a quote, a bracket, a comma or a
+  semicolon. Keeping the name an `OSError` carries when it looked like a file's (an extension, a
+  directory that exists) printed an `sk-ant-` key given as `<key>.json`, an `sk-proj-` key as
+  `<key>.yaml` and an Azure connection string, which ends in `.windows.net`, all of which main
+  masked, and was withdrawn before commit.
+- **The cost is main's or less, and what this adds is capped.** Main's rule walks each distinct
+  token once and builds its parents as it reaches them: 256 copies of a token of `/a` written 2,047
+  times (a target's transport error quoted in a halted report's reason, which `calibrate` prints)
+  cost 2,048 lookups and 0.4 s of CPU where main made 524,032 and 4.8 s (3.14, on a quiet machine),
+  and the other hostile shapes measured cost main's lookups or fewer. The whole-path walk adds at
+  most 1,024 lookups and 65,536 checks (a cached answer is a check, and a walk in progress refuses
+  at most one name's 255 candidates more); past either it keeps nothing more, which costs
+  readability only. One start tries at most 255 candidates for a name (NAME_MAX), no walk starts
+  inside what another already read (`/./././...//` cost the square of its length), and the
+  registered credentials are checked through one set built per error (a check per kept path and per
+  part cost 55 s on a 1 MiB error with a 2,000-character credential). A relative word with no run of
+  16 characters the entropy rule could mask is not looked up.
 - **`dottore diff` masks an incomplete report's reason, as `calibrate` does.** The refusal printed
-  `summary.status.reason`, which quotes a target's transport error, without the redactor: a key or
-  a high-entropy token in it printed in clear while `calibrate` masked the same text. It is now a
+  `summary.status.reason`, which quotes a target's transport error, without the redactor: a key or a
+  high-entropy token in it printed in clear while `calibrate` masked the same text. It is now a
   `ValueError` printed through `_masked`, with the same text and exit 3. A newline in the reason
   still prints two lines until PR #51, which writes control characters out inside `_masked`.
 - Not covered, as on main: a missing file under a directory whose name holds a space or one of
-  `()[],;'"` keeps its directories only up to that character, what follows the existing part of
-  a missing path is judged from its `/` on, and a key glued before an existing absolute path by
-  `+`, `=` or `-` is judged alone. Also not covered: a relative path with a space, a name
-  holding a newline, the name of a file that does not exist. The `diff` table prints a report's
-  spec ids as they are (on main too; PR #51 refuses one that is not a spec id).
+  `()[],;'"` keeps its directories only up to that character, what follows the existing part of a
+  missing path is judged from its `/` on, a key glued before an existing absolute path by `+`, `=`
+  or `-` is judged alone, and main's rule costs what it cost on main for many distinct deep tokens.
+  Also not covered: a whole path right after `]`, `:`, `@`, `=`, `+` or `-`, a relative path with a
+  space, a name holding a newline, the name of a file that does not exist. The `diff` table prints a
+  report's spec ids as they are (on main too; PR #51 refuses one that is not a spec id).
 - Tests: `tests/cli/test_masked_paths.py` (CliRunner; SHA-named files, absolute and relative,
   existing and missing, in directories named with a space, parentheses, brackets, a comma, a
-  semicolon and quotes, and every key and credential part the three audits printed). Each guard
-  was removed in turn and a test failed every time (25 mutants).
+  semicolon and quotes, and every key and credential part the audits printed). Each guard was
+  removed in turn and a test failed every time (26 mutants); the lazy parents of main's rule save
+  CPU that no count shows, and are measured, not tested.
 
 ### Fixed (a target file's bad value printed pydantic's error, value included)
 

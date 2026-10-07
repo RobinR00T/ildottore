@@ -127,13 +127,14 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
   prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part of
   an absolute path that exists on this machine is exempt from the entropy rule, and so is a path
-  that exists written whole after a space, a quote or a bracket: relative to the working
-  directory too (as one word), with a space or a bracket in a directory name of an absolute path,
-  before a `:` or a `.` (a temp
+  that exists written whole after a space, a quote, a comma, a semicolon or an opening bracket:
+  relative to the working directory too (as one word), with a space or a bracket in a directory
+  name of an absolute path, before a `:` or a `.` (a temp
   or CI workspace directory, or a report named after a commit SHA, used to read
   `«REDACTED:high_entropy»`). The name of a file that does not exist is not, because it may be a
   key typed where a file belongs: `No such file or directory` shows an absolute path's existing
-  directories, up to the first space, quote or bracket, and masks the name. Emails, key shapes and labels in a kept path are still masked,
+  directories, up to the first whitespace, quote, bracket, comma or semicolon, and masks the
+  name. Emails, key shapes and labels in a kept path are still masked,
   a kept path holding 8 consecutive characters of a registered credential goes back to the
   entropy rule, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
