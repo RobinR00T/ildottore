@@ -163,16 +163,20 @@ partial):
   inconclusive. That probe's layer gives no evidence from it, never evidence from an empty
   reply: a missing guardrail nudge leaves `guardrails` empty (unknown, not "no filter"), a
   missing carrier is left out of `carrier_comprehension` (unmeasured, not 0.0), and one missing
-  statistical reply drops the statistical layer (its vector needs all three). When fewer than
-  three attributing replies are left, too few for the `non_discriminating_target` check, the
-  text layers' evidence is not counted either, as for a constant target but without that flag.
-  Beyond that, a partial pass is attributed exactly as if each refused probe had been answered
-  with a reply carrying no tell (the same family, version and confidence in 1,800 combinations
-  of corpus targets and refused probes), so losing a tell can break a tie a full pass leaves
-  `unknown`, or drop a self-report and with it `self_report_conflicts_with_statistical`; a
-  refusal gives a target no lever a bland reply does not. The confidence is computed from the
-  evidence that came back and is not discounted for what is missing: the flag is the mark. Every other probe is still sent and counted, so a pass still
-  costs its 17 requests. The engine adds an evidence entry
+  statistical reply drops the statistical layer (its vector needs all three). With refused
+  replies the `non_discriminating_target` check cannot be completed: when fewer than three
+  attributing replies are left, or the ones left are all alike (the refused ones may have
+  varied), the text layers' evidence is not counted, as for a constant target but without that
+  flag. Measured against the same probes answered with an empty reply (12,276 passes: every
+  subset of the 10 attributing sends of the 12 corpus targets), a partial pass never names
+  more: identical when no statistical probe is refused, otherwise `unknown` or the same family
+  with lower confidence (2,344 of 10,752 differ, none the other way). Against a full pass,
+  losing a tell can still break a tie the full pass leaves `unknown`, or drop a self-report and
+  with it `self_report_conflicts_with_statistical`, as a bland reply would; a refusal gives a
+  target no lever a bland reply does not. The confidence is computed from the evidence that
+  came back and is not discounted for what is missing: the flag is the mark. Every other probe
+  is still sent and counted, so a pass still costs its 17 requests. The engine adds an evidence
+  entry
   `{"layer": "engine", "signal": "probe_errors=[\"metadata/self_id: ResponseTooLarge\"]",
   "weight": 0.0}` (layer, probe and error class, never the error's text, which can quote the
   reply), `run -sV` warns on stderr and ends the fingerprint line with "[N of 17 probes got no

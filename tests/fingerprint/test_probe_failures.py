@@ -59,6 +59,7 @@ from ildottore.shared.protocols import TargetAdapter
 from tests.fingerprint.conftest import CorpusAdapter
 
 _CASE = "gpt-4o-clean"
+_CORPUS = {case.case_id: case for case in load_corpus()}
 _SECRET = "sk-live-0123456789abcdefTARGETTEXT"
 
 
@@ -66,9 +67,8 @@ class _Target:
     """Corpus replies for the attributing probes, the decoding mock for the carriers, and a
     chosen exception raised on chosen sends (by position in the pass, from 0)."""
 
-    def __init__(self, failures: dict[int, BaseException] | None = None) -> None:
-        case = next(c for c in load_corpus() if c.case_id == _CASE)
-        self._corpus = CorpusAdapter(case)
+    def __init__(self, failures: dict[int, BaseException] | None = None, case: str = _CASE) -> None:
+        self._corpus = CorpusAdapter(_CORPUS[case])
         self._mock = ComprehendingMock()
         self.id = self._corpus.id
         self._failures = failures or {}
@@ -371,7 +371,7 @@ def test_the_statistical_layer_does_not_featurize_two_replies_against_any_centro
     """A pack's centroid is only required to be non-empty: one as long as two replies' vector
     would match it exactly, so a missing reply drops the layer explicitly."""
 
-    case = next(c for c in load_corpus() if c.case_id == _CASE)
+    case = _CORPUS[_CASE]
     answered = [case.responses[p.name] for p in STATISTICAL_BATTERY[1:]]
     entry = SignatureEntry(
         family="short-centroid",
@@ -412,7 +412,7 @@ def test_without_a_failure_a_short_pass_is_attributed_from_its_text() -> None:
     engine = FingerprintEngine(
         layers=[MetadataLayer(), TokenizerLayer()], is_env_error=default_is_env_error
     )
-    case = next(c for c in load_corpus() if c.case_id == _CASE)
+    case = _CORPUS[_CASE]
     fp = asyncio.run(engine.run(CorpusAdapter(case)))
     assert failed_probes(fp) == []
     expected = combine(fp.evidence).family
@@ -456,3 +456,59 @@ def test_the_warning_calls_the_fingerprint_empty_only_when_nothing_came_back(
     assert line.startswith(f"warning: t: {failed} of 17 probe(s) got no usable reply")
     assert ("none did, so the fingerprint is empty" in line) is empty
     assert ("built from the replies that came back" in line) is not empty
+
+
+def test_alike_replies_with_refusals_are_not_called_constant() -> None:
+    """Refusing the replies that varied can leave the rest alike: the flag then said "every
+    attributing probe alike" of a target a full pass names (pre-merge audit). With refusals the
+    check cannot be completed, so the text evidence is not counted and the flag is not set."""
+
+    attributing = [i for i, layer in enumerate(_LAYER_OF) if layer != "carrier"]
+    fp = _run_constant(_Constant(set(attributing[:2])))
+    assert len(failed_probes(fp)) == 2
+    assert fp.family.guess == "unknown"
+    assert "non_discriminating_target" not in fp.spoofing_flags
+    assert PROBES_FAILED_FLAG in fp.spoofing_flags
+
+
+class _Bland(_Target):
+    """The same target with the chosen sends answered by an empty reply instead of refused."""
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        index = len(self.sent)
+        if index in self._failures:
+            self.sent.append(str((request.metadata or {}).get("probe", "")))
+            return ModelResponse(text="", finish_reason=self._corpus._case.finish_reason)
+        return await super().send(request)
+
+
+def _names_more(partial: ModelFingerprint, bland: ModelFingerprint) -> bool:
+    if partial.family.guess == "unknown":
+        return False
+    return (
+        partial.family.guess != bland.family.guess
+        or partial.family.confidence > bland.family.confidence
+    )
+
+
+def test_a_partial_pass_never_names_more_than_the_same_probes_answered_blandly() -> None:
+    """The domain of A-35, measured. Exhaustively once (2026-10-07: 12 corpus cases, every subset
+    of the 10 attributing sends, 12,276 passes): identical when no statistical probe is refused,
+    otherwise less or the same family with lower confidence, never more. Pinned here on every
+    single and paired refusal and on every pass with two replies or fewer left."""
+
+    from itertools import combinations
+
+    engine = build_fingerprint_engine()
+    attributing = [i for i, layer in enumerate(_LAYER_OF) if layer != "carrier"]
+    subsets = [
+        set(sub)
+        for size in (1, 2, len(attributing) - 2, len(attributing) - 1, len(attributing))
+        for sub in combinations(attributing, size)
+    ]
+    for case in _CORPUS:
+        for refused in subsets:
+            failures = dict.fromkeys(refused, ResponseTooLarge("x"))
+            partial_fp = asyncio.run(engine.run(_Target(failures, case)))
+            bland_fp = asyncio.run(engine.run(_Bland(failures, case)))
+            assert not _names_more(partial_fp, bland_fp), (case, sorted(refused))

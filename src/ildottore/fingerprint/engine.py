@@ -119,13 +119,17 @@ class FingerprintEngine:
                 continue
 
         fused = combine(evidence)
-        constant = recorder.non_discriminating()
-        # Refused replies can leave fewer attributing replies than the constant check needs, and
-        # then it never runs: a target answering "I am Llama" to everything, with 8 of its 10
+        alike = recorder.non_discriminating()
+        partial = bool(isolated.failures)
+        # With refused replies the constant check cannot be completed, either way. Too few
+        # replies to run it: a target answering "I am Llama" to everything, with 8 of its 10
         # attributing replies refused, was named meta-llama at 0.41 where a full pass names
-        # nothing (pre-commit audit of OD-23). Too few replies to tell a model from a constant
-        # get the constant's treatment, without its flag (``probes_failed`` says why).
-        unchecked = bool(isolated.failures) and len(recorder.texts) < _MIN_PROBES_FOR_CONSTANT
+        # nothing (pre-commit audit of OD-23). Or the replies that came back are alike while the
+        # refused ones varied: the flag then said "every attributing probe alike" of a target
+        # that a full pass names (pre-merge audit). Both get the constant's treatment, without
+        # its flag (``probes_failed`` says why).
+        constant = alike and not partial
+        unchecked = partial and (alike or len(recorder.texts) < _MIN_PROBES_FOR_CONSTANT)
         if constant or unchecked:
             # Every attributing probe got the same text, so nothing the text layers matched
             # came from the model: a constant mock was named meta-llama at 0.67 and a

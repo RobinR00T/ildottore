@@ -84,8 +84,8 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   as undecodable, also inconclusive and not retried, except on an error status, which is
   classified by the status (a `401` stays a `401`), and so is an error status whose body is over
   the limit (until 2026-10-07 a `401` with a 5 MB body was an inconclusive attempt where a short
-  one stops the run). During a `-sV` or `-A` probe pass such a refused reply fails that one
-  probe and the run goes on (see `-sV` under `dottore run`).
+  one stops the run). During a `-sV` or `-A` probe pass, a 2xx reply refused for its size or
+  encoding fails that one probe and the run goes on (see `-sV` under `dottore run`).
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.

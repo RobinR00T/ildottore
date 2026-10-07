@@ -20,11 +20,14 @@ The carryover ledger. Every agent session updates this so context survives even 
   a body over 4 MiB read as a refused reply (now classified by its status in `read_capped`,
   which also stops the attack phase treating it as inconclusive), `dottore fingerprint` exiting
   0 when every probe is refused (now 3), and A-35 promising more than it holds: a partial pass
-  can still break a tie a full one leaves unknown, exactly as answering those probes blandly
-  would (1,800 combinations compared). A 200 that is not JSON still stops the pass (OD-21).
-  A mutation pass over the fix (17 mutants, then 6 for the audit's findings, every one caught
-  but an equivalent one) found the one-probe layers' own handling redundant with the engine's,
-  so it is not there. Open for the owner as OD-23.
+  can still break a tie a full one leaves unknown. Its real domain, measured over 12,276
+  passes: it never names more than the same probes answered with an empty reply. The pre-merge
+  audit (PR #68; no high or medium) found refusals of varied replies getting a target flagged
+  constant (now never claimed on a partial pass), an unreproducible figure (replaced by the
+  measurement above), and three untested behaviours (tested). A 200 that is not JSON still
+  stops the pass (OD-21). Mutation passes (17 mutants, then 6 and 6 for the first two audits'
+  findings, every one caught but an equivalent one) found the one-probe layers' own handling
+  redundant with the engine's, so it is not there. Open for the owner as OD-23.
   `fix/target-deep-json` documents this gap as open in four places (CHANGELOG, MANUAL "Bounded
   replies", `docs/02`, `u04` §4) that flip when the second of the two merges.
 

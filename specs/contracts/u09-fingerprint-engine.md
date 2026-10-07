@@ -180,18 +180,22 @@ while without `-sV` the same reply failed one attempt and every spec ran (pre-co
   not 0.0), the statistical layer gives nothing when one of its three is missing (explicitly: a
   pack's centroid only has to be non-empty), and every other layer's evidence is identical to
   that of a pass with no failure;
-- refusals cannot skip the constant-target check: when refused replies leave fewer than three
-  attributing replies, too few for the `non_discriminating_target` check, the text layers'
-  evidence is not counted (a constant target with 8 of 10 replies refused was named meta-llama
-  at 0.41 by that audit). Beyond that, a partial fingerprint is attributed from what came back,
-  exactly as if each refused probe had been answered with a reply carrying no tell (the same
-  family, version, confidence and flags but `probes_failed`, in 1,800 combinations of corpus
-  targets and refused probes): losing a tell can break a tie a full pass leaves unknown or
-  drop a self-report and with it its spoofing flag, and the confidence is renormalized over
-  what remains, not discounted. A refusal therefore gives a target no lever over attribution
-  that a bland reply does not; `probes_failed` and the fingerprint line mark the pass partial;
-- every other probe is still sent, once (A-3 holds with failures: sends equal the declared
-  count);
+- refusals cannot get past the constant-target check, and it is never claimed on a partial
+  pass: when refused replies leave fewer than three attributing replies, or the ones left are
+  all alike, the text layers' evidence is not counted and `non_discriminating_target` is not set
+  (a constant target with 8 of 10 replies refused was named meta-llama at 0.41 by the pre-commit
+  audit; refusing a target's varied replies got it flagged constant by the pre-merge audit);
+- a partial pass never names more than the same probes answered with an empty reply: measured
+  over 12,276 passes (every subset of the 10 attributing sends of the 12 corpus targets), it is
+  identical when no statistical probe is refused, and otherwise `unknown` or the same family
+  with lower confidence (2,344 of 10,752 differ, none the other way); pinned on every single and
+  paired refusal and every pass with two replies or fewer left. Against a full pass, losing a
+  tell can still break a tie the full pass leaves unknown or drop a self-report and with it its
+  spoofing flag, as a bland reply would, and the confidence is renormalized over what remains,
+  not discounted; `probes_failed` and the fingerprint line mark the pass partial;
+- every other probe of the built-in layers is still sent, once (A-3 holds with failures: sends
+  equal the declared count); a layer that lets the failure through stops its own remaining
+  probes;
 - the failures are recorded as `layer/probe: ErrorClass`, never the error's text (it can quote
   the reply), in an `engine` evidence entry `probe_errors=[...]` with the flag `probes_failed`;
   `run -sV` says so on stderr (never silenced by `-q`) and on the fingerprint line, `dottore
@@ -222,14 +226,14 @@ still stops the pass, as it stops the campaign; that is OD-21.
   `AGENTS.md §3`). Owner: human / ADR.
 - Whether the signature pack ships in-repo for MVP-1 or as a separately-versioned artifact
   (propose in-repo `signatures/` for MVP-1, extract later). Owner: human.
-- **OD-23** (shared w/ u12, 2026-10-07): an environment failure on one `-sV` probe. **A**: a
-  reply that comes back refused (`retryable = False`) fails that probe and the run goes on, with
-  the fingerprint built from the rest, while a probe that gets no answer at all still stops the
-  pass with its cause, as before (built, reversibly, §7 A-35). **A-all**: every environment
-  failure fails only its probe, as the attack phase treats an attempt; built first and
-  withdrawn, because a target that never replies then cost 25.5 minutes of probing (38 for a
-  2-spec run, the same exit 3 at the end) against 92 s and `dottore fingerprint` exited 0 on a closed port; it
-  would need a breaker (stop once the first few probes all get no answer) and the probe pass
-  bound by `--timeout` and `--budget-wall`. **B**: stop the pass on any of them, as before (a
-  refused reply handled worse than a 503 the meter retries). **C**: drop the whole fingerprint
-  and run the attack in declared order. Owner: human.
+- **OD-23** (shared w/ u12, 2026-10-07): an environment failure on one `-sV` probe. **A**: a reply
+  that comes back refused (`retryable = False`) fails that probe and the run goes on, with the
+  fingerprint built from the rest, while a probe that gets no answer at all still stops the pass
+  with its cause, as before (built, reversibly, §7 A-35). **A-all**: every environment failure
+  fails only its probe, as the attack phase treats an attempt; built first and withdrawn, because
+  a target that never replies then cost 25.5 minutes of probing (38 for a 2-spec run, the same
+  exit 3 at the end) against 92 s, and `dottore fingerprint` exited 0 on a closed port; it would
+  need a breaker (stop once the first few probes all get no answer) and the probe pass bound by
+  `--timeout` and `--budget-wall`. **B**: stop the pass on any of them, as before (a refused reply
+  handled worse than a 503 the meter retries). **C**: drop the whole fingerprint and run the
+  attack in declared order. Owner: human.

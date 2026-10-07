@@ -239,10 +239,17 @@ async def test_an_error_status_over_the_cap_is_classified_by_its_status() -> Non
     from ildottore.adapters.base import AdapterProductError
 
     sent: list[int] = []
+    pulled: list[int] = []
+    chunk = 65536
+
+    async def huge() -> AsyncIterator[bytes]:
+        for _ in range(16 * MAX_RESPONSE_BYTES // chunk):  # 64 MiB, finite: a regression fails
+            pulled.append(chunk)
+            yield b"x" * chunk
 
     def handler(request: httpx.Request) -> httpx.Response:
         sent.append(1)
-        return httpx.Response(401, content=_streamed(b"x" * (MAX_RESPONSE_BYTES + 65536)))
+        return httpx.Response(401, content=huge())
 
     adapter = OpenAIAdapter(
         id="t1",
@@ -255,6 +262,29 @@ async def test_an_error_status_over_the_cap_is_classified_by_its_status() -> Non
     with pytest.raises(AdapterProductError, match="HTTP 401"):
         await adapter.send(ModelRequest(prompt="hi"))
     assert sent == [1]
+    # The cap still stops the read: the body is sixteen times the cap.
+    assert sum(pulled) <= MAX_RESPONSE_BYTES + 2 * chunk
+
+
+async def test_mcp_classifies_an_error_status_over_the_cap_by_its_status() -> None:
+    """The MCP adapter reads through the same `read_capped`: a 403 with a body over the cap is
+    the 403, not an inconclusive "too large" (pre-merge audit of PR #68)."""
+
+    from ildottore.adapters.base import AdapterProductError
+    from tests.adapters.test_mcp import _URL, _allow
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, content=_streamed(b"x" * (MAX_RESPONSE_BYTES + 65536)))
+
+    adapter = MCPAdapter(
+        id="mcp-test",
+        base_url=_URL,
+        allowlist=_allow(),
+        retry=RetryConfig(backoff_base_s=0.0, backoff_cap_s=0.0, timeout_s=5.0),
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    with pytest.raises(AdapterProductError, match="HTTP 403"):
+        await adapter.send(ModelRequest(prompt="list"))
 
 
 async def test_mcp_asks_for_decodable_encodings_and_skips_notification_replies(

@@ -37,10 +37,14 @@ versioning: [SemVer](https://semver.org/).
   the fingerprint is empty, and `dottore fingerprint` prints it as an `error:` and exits 3: an
   empty fingerprint printed with exit 0 read as a result to a script (delta audit). The line
   promises nothing about what follows, since with several targets the next one's probe pass can
-  still stop the run. Refusals cannot skip the constant-target check; beyond that, a partial
-  pass is attributed exactly as if the refused probes had been answered with replies carrying
-  no tell (same family, version and confidence in 1,800 combinations compared), so it can break
-  a tie a full pass leaves unknown, and the confidence is renormalized, not discounted.
+  still stop the run. Refusals cannot get past the constant-target check, and a partial pass is
+  never called constant: with fewer than three attributing replies left, or the ones left all
+  alike, the text evidence is not counted and the flag is not set. Measured against the same
+  probes answered with an empty reply (12,276 passes over every subset of the attributing sends
+  of the 12 corpus targets), a partial pass never names more: identical when no statistical
+  probe is refused, otherwise `unknown` or lower confidence (2,344 of 10,752 differ, none the
+  other way). Against a full pass it can still break a tie the full pass leaves unknown, as a
+  bland reply would; the confidence is renormalized, not discounted.
 - **An error status whose body is over 4 MiB is classified by its status.** `read_capped`
   returned an empty body for an error status it could not decode ("a `401` stays a `401`") but
   raised `ResponseTooLarge` for one over the cap, so a `401` with a 5 MB body was an

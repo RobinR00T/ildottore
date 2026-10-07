@@ -230,8 +230,9 @@ def test_the_fingerprint_command_reports_a_refused_probe_and_finishes(
     fp = ModelFingerprint.model_validate_json(result.stdout)
     assert failed_probes(fp) == ["metadata/self_id: ResponseTooLarge"]
     assert PROBES_FAILED_FLAG in fp.spoofing_flags
-    assert (
-        "1 of 17 probe(s) got no usable reply (metadata/self_id: ResponseTooLarge)" in result.stderr
+    assert result.stderr.startswith(
+        "warning: hostile: 1 of 17 probe(s) got no usable reply (metadata/self_id: "
+        "ResponseTooLarge)"
     )
     assert state["served"] == fingerprint_probe_count()
 
