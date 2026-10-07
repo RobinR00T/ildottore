@@ -95,7 +95,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-1..A-3 | u09 | benign is a predicate over the carrier, the probe discriminates, declared cost equals real cost |
 | A-4..A-6 | u08 | the wall budget measures time, every send passes the rate gate, a halt says why |
 | A-24 | u12 | a resume is bound to its campaign: battery, target, route, sample size and money |
-| A-38 | u12 | a CLI error keeps a path out of the entropy rule only where it is written and exists; diff's incomplete-report refusal is redacted |
+| A-38 | u12 | besides the existing part of an absolute path, a CLI error keeps an existing path written whole, between token boundaries, so the rest is read as before; diff's incomplete-report refusal is redacted |
 | A-7..A-11 | u12 | no-send holds under combination, printed numbers are computed by the working code, operational failure exits 3, a resume is bound to its target, a ceiling binds every request |
 | A-26 | u11 | a gap says which kind it is (roadmap, out of reach, or by design), with the reason |
 | A-12..A-15 | u11 | no denominator over survivors, uncounted values are reported, figures carry their edition, machine formats carry the run state |

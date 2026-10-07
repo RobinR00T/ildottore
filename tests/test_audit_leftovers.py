@@ -1017,31 +1017,13 @@ def test_an_interrupted_campaign_whose_spend_cannot_be_written_still_raises_the_
     assert "could not be recorded" in capsys.readouterr().err
 
 
-def test_a_long_path_costs_a_lookup_per_directory_it_walks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Each parent of a long token cost a lookup; the walk from the root now stops at the first
-    name that is not a directory, so a 4,200-character token keeps what exists, cheaply."""
-
-    import os
-
-    from ildottore.cli.app import _existing_path_spans
+def test_a_path_longer_than_path_max_is_not_walked(tmp_path: Path) -> None:
+    from ildottore.cli.app import _existing_prefixes
 
     token = str(tmp_path) + "/x" * 2100
     assert len(token) > 4096
-    text = f"cannot write {token}"
-    calls = 0
-    real_stat = os.stat
-
-    def counting(*args: object, **kwargs: object) -> os.stat_result:
-        nonlocal calls
-        calls += 1
-        return real_stat(*args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(os, "stat", counting)
-    spans = _existing_path_spans(text)
-    assert [text[start:end] for start, end in spans] == [str(tmp_path)]
-    assert calls <= len(tmp_path.parts) + 2
+    assert _existing_prefixes(f"cannot write {token}") == []
+    assert _existing_prefixes(f"cannot write {tmp_path}/x") == [str(tmp_path)]
 
 
 def test_an_interrupted_report_write_leaves_no_truncated_report(

@@ -126,14 +126,15 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   readable in every report, in both copies of a finding the JSON report carries, so a custom
   spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
   prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part of
-  a path that exists on this machine is exempt from the entropy rule wherever the message writes
-  it: absolute, or relative to the working directory (as one word, kept only whole), with a
-  space or a bracket in a directory name, before a `:` or a `.` (a temp or CI workspace
-  directory, or a report named after a commit SHA, used to read `«REDACTED:high_entropy»`). The
-  name of a file that does not exist is not, because it may be a key typed where a file
-  belongs: `No such file or directory` shows an absolute path's existing directories and masks
-  the name. Emails, key shapes and labels in a kept path, and 8 consecutive characters of a
-  registered credential, are still masked, and the rest of the path is redacted. Otherwise only
+  an absolute path that exists on this machine is exempt from the entropy rule, and so is a path
+  that exists written whole, wherever the message writes it: relative to the working directory
+  too (as one word), with a space or a bracket in a directory name, before a `:` or a `.` (a temp
+  or CI workspace directory, or a report named after a commit SHA, used to read
+  `«REDACTED:high_entropy»`). The name of a file that does not exist is not, because it may be a
+  key typed where a file belongs: `No such file or directory` shows an absolute path's existing
+  directories and masks the name. Emails, key shapes and labels in a kept path are still masked,
+  a kept path holding 8 consecutive characters of a registered credential goes back to the
+  entropy rule, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
   tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
   digest of the scope body (`scope checksum mismatch: the scope body hashes to '<sha256>', not

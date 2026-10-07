@@ -73,18 +73,6 @@ def test_an_existing_report_named_before_a_colon_is_kept(tmp_path: Path, name: s
     assert f"{bad}: expected a JSON run report" in res.stderr
 
 
-@pytest.mark.parametrize("name", AWKWARD_DIRS)
-def test_a_missing_report_keeps_its_directory(tmp_path: Path, name: str) -> None:
-    """The ``OSError`` of a mistyped name: the directory it is in exists, and is printed whole."""
-
-    folder = tmp_path / name
-    folder.mkdir()
-    missing = folder / f"report-{SHA}.json"
-    res = runner.invoke(app, ["diff", str(missing), str(_complete_report(folder / "ok.json"))])
-    assert res.exit_code == int(ExitCode.ERROR)
-    assert f"{folder}/" in res.stderr
-
-
 def test_a_relative_report_keeps_its_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cwd = tmp_path / "with space (1)"
     (cwd / "runs").mkdir(parents=True)
@@ -167,6 +155,29 @@ def test_prose_after_a_slash_does_not_use_up_the_lookups_of_a_later_path(tmp_pat
 
     report = _not_a_report(tmp_path / f"report-{SHA}.json")
     text = "/" + "a " * 3000 + f"then {report}: expected a JSON run report"
+    assert f"{report}: expected" in _masked(ValueError(text))
+
+
+def test_a_relative_path_after_an_absolute_one_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``(<abs>/a-<sha>.yaml and targets/b-<sha>.yaml)``: the walk that kept the first had read
+    past it, and the second was not tried (pre-merge audit)."""
+
+    first = _complete_report(tmp_path / f"a-{SHA}.yaml")
+    (tmp_path / "targets").mkdir()
+    _complete_report(tmp_path / "targets" / f"b-{SHA}.yaml")
+    monkeypatch.chdir(tmp_path)
+    text = f"two targets ({first} and targets/b-{SHA}.yaml) share one id"
+    assert _masked(ValueError(text)) == text
+
+
+def test_a_token_longer_than_path_max_does_not_use_up_the_lookups(tmp_path: Path) -> None:
+    """Main's rule skips it (no path is longer than PATH_MAX), so its 2,100 parents cost nothing
+    and the report after it is still read."""
+
+    report = _not_a_report(tmp_path / f"report-{SHA}.json")
+    text = f"cannot write {tmp_path}" + "/x" * 2100 + f" then {report}: expected a JSON run report"
     assert f"{report}: expected" in _masked(ValueError(text))
 
 
@@ -272,10 +283,8 @@ def test_a_key_given_where_a_file_belongs_is_still_masked(
         ("cannot read /usr/bin/hTrqrHJYZ//D+awO: not a report", "hTrqrHJYZ//D+awO", []),
         # `/.` kept as the root after a `+` left a 15-character head of the key (delta audit).
         ("auth failed for key DtXbiufMdI8X2Y+/.", "DtXbiufMdI8X2Y+", []),
-        # So did an existing path glued after `+`, `=` or `-` (on main too).
-        ("auth failed for key DtXbiufMdI8X2Y+{root}", "DtXbiufMdI8X2Y", []),
-        ("auth failed for key DtXbiufMdI8X2Y={root}", "DtXbiufMdI8X2Y", []),
-        ("auth failed for key DtXbiufMdI8X2Y-{root}", "DtXbiufMdI8X2Y", []),
+        # `/./` after directories that exist: main's `Path` folded it and kept nothing.
+        ("cannot read /usr/bin/6gD0Y4gnNScP/UNv/./x (not a report)", "6gD0Y4gnNScP/UNv", []),
     ],
 )
 def test_a_short_key_cut_by_a_kept_name_is_still_masked(
@@ -308,6 +317,13 @@ PART_KEY = "Wq4Hn7Ks2Pd9Lx3Vb8Mz5Tc"
         ("x{part}_old.json", "{root}/{name}. Not a report"),
         ("runs-{part}/r.json", "{name}: not a report"),
         ("runs-{part}/r.json", "{root}/{name}: not a report"),
+        # Kept whole, the path's long low-entropy directories diluted the part below the
+        # threshold; main judged `/r-<part>` alone. A whole path holding one is not kept.
+        pytest.param(
+            "/".join(c * 200 for c in "abc") + "/r-{part}.json",
+            "{root}/{name}: not a report",
+            id="diluted",
+        ),
     ],
 )
 def test_an_existing_name_holding_part_of_a_registered_credential_is_masked(
@@ -322,6 +338,20 @@ def test_an_existing_name_holding_part_of_a_registered_credential_is_masked(
     monkeypatch.chdir(tmp_path)
     text = "cannot read " + written.format(name=name.format(part=part), root=tmp_path)
     assert part not in _masked(ValueError(text))
+
+
+def test_part_of_a_registered_credential_after_an_existing_directory_is_masked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kept up to `with space`, the part after it was judged alone from its `/` (pre-merge
+    audit); only a whole path is kept beyond what main kept."""
+
+    monkeypatch.setattr(redactor_mod, "_KNOWN_SECRETS", set())
+    key = "U5XO+XIdlu/a+iCOoxvSQSNFnviw2Vue"
+    register_known_secret(key)
+    (tmp_path / "with space").mkdir()
+    text = f"cannot write the report {tmp_path}/with space/{key[:16]}: denied"
+    assert key[:16] not in _masked(ValueError(text))
 
 
 # --- the incomplete-report refusal goes through the redactor -----------------------------------

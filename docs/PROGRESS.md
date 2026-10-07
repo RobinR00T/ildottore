@@ -5,19 +5,19 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 ## State, 2026-10-07 (afternoon): CLI errors keep the operator's file names
 
-- On `fix/cli-masked-paths` (`tests/cli/test_masked_paths.py`, clause A-38): `_masked` keeps an
-  existing path written before a colon or a period, a relative one (one word, from the working
-  directory) and one whose directories hold a space or `()[],;'"`; one error costs at most 1,024
-  lookups. `dottore diff`'s incomplete-report refusal goes through `_masked`, as `calibrate`'s
-  does. Found by the audits of PR #61. The pre-commit audit printed keys given where a file
-  belongs once the name an `OSError` carries was kept (withdrawn: the name of a missing file stays
-  masked, OD-25, open for the owner). The delta audit printed a registered credential's part
-  glued to other characters in a kept name, a key holding `//` after an existing directory and a
-  key before `+/.`; all three are masked now (an 8-character window check, `//` keeps nothing as
-  on main, no path starts after `+`, `=` or `-`), and a walk that kept nothing was read again
-  from each of its `/` (quadratic), which no longer happens. PR #51 touches the same S6 row and
-  `diff` refusal lines, so the second to merge resolves them (`_masked` applies
-  `visible_controls` after #51, so the wrapper on the refusal goes).
+- PR #70 (`fix/cli-masked-paths`, `tests/cli/test_masked_paths.py`, clause A-38): besides main's
+  rule, `_masked` keeps an existing path written whole, absolute or relative (one word, from the
+  working directory), before a colon or a period and through directories with a space or
+  `()[],;'"`, between characters the entropy rule does not join into a token, so the rest of
+  the message is read as on main; one error costs at most 1,024 lookups. `dottore diff`'s
+  incomplete-report refusal goes through `_masked`, as `calibrate`'s does. Found by the audits of
+  PR #61. Three audits found the fix printing keys main masked while it kept more than whole
+  paths (the name an `OSError` quotes, the existing directories of a missing path through a
+  space, a `//` or a `/./`), so it was rebuilt on main's rule; a differential fuzz of 60,000
+  messages finds no such key now. Open for the owner: OD-25, printing the name of a file that
+  does not exist. PR #51 touches the same S6 row and `diff` refusal lines, so the second to merge
+  resolves them (`_masked` applies `visible_controls` after #51, so the wrapper on the refusal
+  goes).
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 

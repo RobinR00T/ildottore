@@ -77,8 +77,8 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   in `exit_codes.py`: no side effects, table-tested.
 - All terminal output honors the central redactor; secrets/PII never printed (`AGENTS.md §2`).
   (As built, for errors, `cli/app._masked`: URL passwords are masked first, on the whole text.
-  A path is then kept out of the entropy rule where the message writes it and it exists
-  (A-38); the name of a file that does not exist is not (OD-25).
+  Besides the existing part of an absolute path, a path that exists, written whole, is kept
+  out of the entropy rule (A-38); the name of a file that does not exist is not (OD-25).
   Outside one, a 64-hex value is kept readable in exactly two cases: an evidence file name
   (`<sha256>.json`), and a digest the error itself carries as one the tool computed (the
   `digests` attribute: on a scope checksum mismatch the digest computed from the body; the
@@ -229,23 +229,23 @@ beside the target digest or not a positive whole number (an infinity or a list w
 and exit 1, a negative spend was taken as spent, `true` resumed at one run, a missing count at
 the invocation's default).
 
-**A-38 A CLI error names the operator's existing file, and nothing else leaves the entropy rule
-(added 2026-10-07).** `_masked` keeps a path out of the entropy rule only where the message
-writes it and it exists on this machine: absolute, or relative to the working directory as one
-word with nothing the entropy rule joins after it; read directory by directory, so a directory
-holding a space or a bracket is read whole; never starting right after a character the entropy
-rule joins into a token, nor ending right before one but `/`; never followed by `//`. Every
-other rule runs first on the whole text, and a kept path holding 8 consecutive characters of a
-registered credential is masked. A report named after a commit SHA read
-`«REDACTED:high_entropy»` before a colon, relative, or under a directory with a space, and
+**A-38 A CLI error names the operator's existing file, and reads the rest of the message as
+before (added 2026-10-07).** Besides the existing part of an absolute path up to the first space,
+quote or bracket (unchanged), `_masked` keeps out of the entropy rule a path that exists written
+whole: absolute, or relative to the working directory as one word; read directory by directory,
+so a directory holding a space or a bracket is read whole; starting and ending between
+characters the entropy rule does not join into a token, so every other token is judged exactly
+as before. A kept text holding 8 consecutive characters of a registered credential goes back to
+the entropy rule, and a whole path holding one is not kept. A report named after a commit SHA
+read `«REDACTED:high_entropy»` before a colon, relative, or under a directory with a space, and
 `dottore diff` printed the key in an incomplete report's reason that `calibrate` masked (audits
-of PR #61). Keeping the name a failed `OSError` carried printed keys given where a file belongs
-(`<key>.json`, an Azure connection string) and was withdrawn (OD-25); a part of a key glued to
-other characters in a kept name, a key holding `//` after an existing directory and a key
-before `+/.` printed too, and are masked (pre-commit and delta audits). `diff`'s
-incomplete-report refusal goes through `_masked`. One error costs at most 1,024 filesystem
-lookups (a 1 MiB message cost 524,032), and no walk starts inside what another already read
-(`/./././...//` cost the square of its length). Checked by `tests/cli/test_masked_paths.py`.
+of PR #61). Three versions that kept more (the name an `OSError` quotes, the existing directories
+of a missing path through a space, a `//` or a `/./`) printed keys that main masked and were
+withdrawn (OD-25; pre-commit, delta and pre-merge audits). `diff`'s incomplete-report refusal
+goes through `_masked`. One error costs at most 1,024 filesystem lookups (a 1 MiB message cost
+524,032), and no walk starts inside what another already read. Checked by
+`tests/cli/test_masked_paths.py`, and by a differential fuzz against main: no key main masked
+printed, in 60,000 messages.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

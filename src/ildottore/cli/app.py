@@ -43,6 +43,7 @@ from ildottore.policy.errors import PolicyError
 from ildottore.redactor import (
     Redactor,
     holds_known_secret_part,
+    known_secret_parts,
     mask_url_passwords,
 )
 from ildottore.shared.schema_export import export_schemas
@@ -109,30 +110,27 @@ def _spec_paths(spec: list[Path] | None) -> list[Path]:
 # refusal needs to show; the entropy rule would otherwise mask it.
 _ARTIFACT_NAME = r"[0-9a-f]{64}\.json"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-# Where an absolute filesystem path can start in an error message: `/` not preceded by a word
-# character, `:`, `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after
-# an IPv6 host, credentials or a masked host included; nor by `+`, `=` or `-`, which the entropy
-# rule joins into a token, so a kept path never leaves a key's head to be judged alone (`<key>+/.`
-# printed the key, delta audit of A-38); and followed by a name, so neither a lone `/` nor a `//`
-# host is one.
-_ABS_PATH_START = re.compile(r"(?<![\w:/\]@»+=-])/(?=[^\s'\"()\[\],;/])")
-# A word that may be a relative path: a run between spaces, quotes, brackets, commas and
-# semicolons, not starting with `/` (absolute) or `«` (a mask).
+# An absolute filesystem path in an error message (`/` not preceded by a word character, `:`,
+# `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after an IPv6 host,
+# credentials or a masked host included).
+_ABS_PATH = re.compile(r"(?<![\w:/\]@»])/[^\s'\"()\[\],;]+")
+#: Longer tokens are not checked (PATH_MAX): each parent costs a filesystem lookup.
+_MAX_PATH_LEN = 4096
+# Where a WHOLE path can start (A-38): an absolute one as above, and not right after `+`, `=` or
+# `-`, which the entropy rule joins into a token, with a name after the `/`; a relative one as
+# a word, after a space, a quote, a bracket, a comma or a semicolon, not starting with `/` or `«`.
+_WHOLE_ABS_START = re.compile(r"(?<![\w:/\]@»+=-])/(?=[^\s'\"()\[\],;/])")
 _RELATIVE_WORD = re.compile(r"(?<![^\s'\"(\[,;`])[^\s'\"()\[\],;`/«][^\s'\"()\[\],;`]*")
 # What the entropy rule could mask: a word without such a run is not worth a lookup.
 _ENTROPY_RUN = re.compile(r"[A-Za-z0-9+/_=-]{16,}")
-# A character the entropy rule reads as part of a token, but `/`. A kept path never ends right
-# before one, so keeping it never leaves the tail of a token to be judged on its own; it can end
-# before a `/` (a directory, or a file with more written after it), and what follows is judged
-# from that `/` on, as on main for an existing path.
-_TOKEN_CHAR = re.compile(r"[A-Za-z0-9+_=-]")
-# What the entropy rule reads as one token, `/` included: what a relative word holds after its
-# kept path, and what follows an absolute one.
-_TOKEN_RUN = re.compile(r"[A-Za-z0-9+/_=-]*")
+# A character the entropy rule joins into a token, `/` included. A whole path is never followed
+# by one, and never starts right after one, so the rest of the message is read token by token
+# exactly as without it.
+_TOKEN_CHAR = re.compile(r"[A-Za-z0-9+/_=-]")
 # Where one name ends for certain: a name holds no `/`, and an error line breaks at a newline.
 _NAME_STOP = re.compile(r"[/\n\r\x00]")
-#: No name is longer (NAME_MAX), so one start costs at most that many candidates, and a long
-#: run of prose after a `/` cannot use up the lookups the other paths of the message need.
+#: No name is longer (NAME_MAX), so one start tries at most that many candidates, and prose
+#: after a `/` cannot use up the lookups the other paths of the message need.
 _MAX_NAME_LEN = 255
 #: Filesystem lookups one message may cost. Past it nothing more is kept, so it is masked: a
 #: 1 MiB message of `/a/a/...` tokens cost 524,032 lookups and seven seconds when a target's
@@ -155,75 +153,84 @@ class _Lookups:
         return self._seen[key]
 
 
-def _path_end(
-    text: str, start: int, limit: int, lookup: _Lookups, *, partial: bool
-) -> tuple[int, int]:
-    """Where the longest existing path written from ``text[start]`` ends (``start`` for none),
-    and how far the walk read.
-
-    Directory by directory from its first name, so a directory holding a space or a bracket is
-    read whole; the last name is the longest that exists and is not followed by a token
-    character, so `{path}: ...` and `{path}.` keep the path and the `:` or `.` is the message's.
-    With ``partial``, a path whose last name does not exist keeps its existing directories.
-    """
-
-    kept = start
-    head = start + 1 if text.startswith("/", start) else start
-    while True:
-        bound = min(limit, head + _MAX_NAME_LEN)
-        stop = _NAME_STOP.search(text, head, bound)
-        name_end = stop.start() if stop else bound
-        if stop and text[name_end] == "/":
-            if name_end == head:
-                # `//`: kept up to it, a key after it was judged with its slashes (`/var//<key>`).
-                return start, name_end
-            if lookup(text[start:name_end], directory=True):
-                kept, head = name_end, name_end + 1
-                continue
-        for end in range(name_end, head, -1):
-            if end < len(text) and _TOKEN_CHAR.match(text, end):
-                continue
-            if lookup(text[start:end], directory=False):
-                return end, name_end
-        return (kept if partial else start), name_end
-
-
-def _existing_path_spans(text: str) -> list[tuple[int, int]]:
-    """Where ``text`` names a path that exists on this machine, as ``(start, end)`` spans.
+def _existing_prefixes(text: str, lookup: _Lookups | None = None) -> list[str]:
+    """The part of each absolute path in ``text`` that exists on this machine.
 
     Kept readable: the redactor masked any high-entropy segment, so a macOS temp directory or a
     CI runner's workspace read `«REDACTED:high_entropy»` in "two formats would write the same
     file" and "is not a directory" errors. What exists on disk is the operator's own tree, not
     a value they typed; the rest of the path still goes through the redactor.
-
-    Absolute paths, and relative ones as the operator's shell resolves them (from the working
-    directory): a report named after a commit SHA lost its name when it was relative, when the
-    message wrote it before a colon, and when a directory on the way held a space or one of
-    ``()[],;'"`` (audits of PR #61). A relative path is read as one word, and kept only as the
-    whole word: a short existing name (`X`, a file `+`) could be the head of a base64 key, whose
-    rest was then judged alone, under the entropy rule's threshold (pre-commit audit). A path
-    followed by `//` keeps nothing, as on main, where ``Path`` folded the `//` and no prefix
-    matched: kept up to it, a key holding `//` was judged with its slashes (delta audit).
     """
 
-    lookup = _Lookups()
-    starts = [(m.start(), len(text), True) for m in _ABS_PATH_START.finditer(text)]
+    check = lookup or _Lookups()
+    prefixes: list[str] = []
+    for match in _ABS_PATH.finditer(text):
+        token = match.group(0)
+        if len(token) > _MAX_PATH_LEN:
+            continue
+        candidate = Path(token)
+        for path in (candidate, *candidate.parents):
+            shown = str(path)
+            if shown == "/" or not token.startswith(shown):
+                break
+            if check(shown, directory=False):
+                prefixes.append(shown)
+                break
+    return prefixes
+
+
+def _whole_path_end(text: str, start: int, limit: int, lookup: _Lookups) -> tuple[int, int]:
+    """Where an existing path written whole from ``text[start]`` ends, and how far the walk read.
+
+    The end is ``start`` when there is none. Directory by directory from its first name, so a
+    directory holding a space or a bracket is read whole; the last name is the longest that
+    exists and is followed by no character the entropy rule joins into a token, so
+    `{path}: ...` and `{path}.` keep the path and the `:` or `.` is the message's.
+    """
+
+    head = start + 1 if text.startswith("/", start) else start
+    while True:
+        bound = min(limit, head + _MAX_NAME_LEN)
+        stop = _NAME_STOP.search(text, head, bound)
+        name_end = stop.start() if stop else bound
+        if stop and text[name_end] == "/" and lookup(text[start:name_end], directory=True):
+            head = name_end + 1
+            continue
+        for end in range(name_end, head, -1):
+            if end < len(text) and _TOKEN_CHAR.match(text, end):
+                continue
+            if lookup(text[start:end], directory=False):
+                return end, end
+        return start, name_end
+
+
+def _whole_path_spans(text: str, lookup: _Lookups) -> list[tuple[int, int]]:
+    """Where ``text`` writes, whole, a path that exists on this machine (A-38).
+
+    `_existing_prefixes` reads an absolute path up to the first space, quote or bracket and
+    keeps the part of it that exists, so a report named after a commit SHA lost its name when
+    the message wrote it before a colon, when it was relative, or when a directory on the way
+    held a space or one of ``()[],;'"`` (audits of PR #61). A whole path starts and ends between
+    characters the entropy rule does not join into a token, so keeping it changes how nothing
+    else in the message is read: each attempt to keep more than that (the existing directories
+    of a path that does not exist, the name an `OSError` quotes) printed a key that main masked
+    (pre-commit, delta and pre-merge audits). A relative path is one word, from the working
+    directory.
+    """
+
+    starts = [(m.start(), len(text)) for m in _WHOLE_ABS_START.finditer(text)]
     starts += [
-        (m.start(), m.end(), False)
-        for m in _RELATIVE_WORD.finditer(text)
-        if _ENTROPY_RUN.search(m.group(0))
+        (m.start(), m.end()) for m in _RELATIVE_WORD.finditer(text) if _ENTROPY_RUN.search(m[0])
     ]
     spans: list[tuple[int, int]] = []
     read = 0
-    for start, limit, partial in sorted(starts):
+    for start, limit in sorted(starts):
         # Not from inside what a walk already read: `/./././...//` kept nothing and was walked
         # again from each of its `/`, at a cost that grew with the square of its length.
         if start < read:
             continue
-        end, read = _path_end(text, start, limit, lookup, partial=partial)
-        after = _TOKEN_RUN.match(text, end, limit)
-        rest = after.group(0) if after else ""
-        if end > start and (partial or not rest) and "//" not in rest:
+        end, read = _whole_path_end(text, start, limit, lookup)
+        if end > start:
             spans.append((start, end))
     return spans
 
@@ -262,12 +269,32 @@ def _masked(exc: BaseException) -> str:
         d for d in getattr(exc, "digests", ()) if isinstance(d, str) and _SHA256.fullmatch(d)
     ]
     # URL passwords first, on the whole text, so a 64-hex password is never kept as a digest.
-    # A kept token holding 8 consecutive characters of a registered credential is masked: a
-    # digest inside `sk-<64 hex>` or `<64 hex>-v2` (re-audit of the digest change), and a path
-    # `<dir>/report-<part of the key>.json` (delta audit of A-38).
     text = plain.redact_text(mask_url_passwords(str(exc)))
-    keep = re.compile(r"\b(?:" + "|".join([_ARTIFACT_NAME, *carried]) + r")\b")
-    spans = [m.span() for m in keep.finditer(text)] + _existing_path_spans(text)
+    lookup = _Lookups()
+    paths = sorted({re.escape(p) for p in _existing_prefixes(text, lookup)}, key=len, reverse=True)
+    keep = re.compile(
+        r"(\b(?:"
+        + "|".join([_ARTIFACT_NAME, *carried])
+        + r")\b"
+        + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
+        + ")"
+    )
+    # A kept token holding 8 consecutive characters of a registered credential goes back to the
+    # entropy rule: `sk-<64 hex>` and `<64 hex>-v2` contain one (re-audit of the digest change),
+    # and so does `<dir>/report-<part of the key>.json`, which the old test, "inside the key or
+    # holding it whole", missed (delta audit of A-38). Judged on its own when main's rule kept
+    # it; a whole path holding one is not kept at all, so that stretch of the message is read
+    # exactly as without A-38 (kept and judged whole, a long path diluted the part).
+    parts = known_secret_parts()
+    held: dict[str, bool] = {}
+
+    def holds_secret(kept: str) -> bool:
+        if kept not in held:
+            held[kept] = holds_known_secret_part(kept, parts)
+        return held[kept]
+
+    spans = [m.span() for m in keep.finditer(text)]
+    spans += [s for s in _whole_path_spans(text, lookup) if not holds_secret(text[s[0] : s[1]])]
     merged: list[list[int]] = []
     for start, end in sorted(spans):
         if merged and start <= merged[-1][1]:
@@ -279,8 +306,7 @@ def _masked(exc: BaseException) -> str:
     for start, end in merged:
         kept = text[start:end]
         shown.append(_entropy_masked(entropy, text[done:start]))
-        masked = holds_known_secret_part(kept)
-        shown.append(entropy.redact_text(kept) if masked else kept)
+        shown.append(entropy.redact_text(kept) if holds_secret(kept) else kept)
         done = end
     shown.append(_entropy_masked(entropy, text[done:]))
     return "".join(shown)

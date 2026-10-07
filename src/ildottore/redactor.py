@@ -214,20 +214,35 @@ def overlaps_known_secret(value: str) -> bool:
         return any(value in secret or secret in value for secret in _KNOWN_SECRETS)
 
 
-def holds_known_secret_part(value: str) -> bool:
-    """True if ``value`` holds ``_KNOWN_MIN_LEN`` consecutive characters of a registered credential.
+def known_secret_parts() -> frozenset[str]:
+    """Every run of ``_KNOWN_MIN_LEN`` characters of a registered credential, as one set.
+
+    For a caller that checks many texts against them (:func:`holds_known_secret_part`): built
+    once, then one set lookup per position of each text. Checking every part of every value
+    against every kept path cost 55 s on a 1 MiB error with a 2,000-character credential
+    (pre-merge audit of A-38).
+    """
+
+    with _KNOWN_LOCK:
+        secrets = list(_KNOWN_SECRETS)
+    return frozenset(
+        secret[i : i + _KNOWN_MIN_LEN]
+        for secret in secrets
+        for i in range(len(secret) - _KNOWN_MIN_LEN + 1)
+    )
+
+
+def holds_known_secret_part(value: str, parts: frozenset[str]) -> bool:
+    """True if ``value`` holds ``_KNOWN_MIN_LEN`` consecutive characters of a registered
+    credential, ``parts`` being :func:`known_secret_parts`.
 
     :func:`overlaps_known_secret` misses a part glued to other text (``report-<part>.json`` is
     neither inside the key nor holds it), so the CLI, which keeps an existing path out of the
     entropy rule, printed one (delta audit of A-38).
     """
 
-    with _KNOWN_LOCK:
-        secrets = list(_KNOWN_SECRETS)
     return any(
-        secret[i : i + _KNOWN_MIN_LEN] in value
-        for secret in secrets
-        for i in range(len(secret) - _KNOWN_MIN_LEN + 1)
+        value[i : i + _KNOWN_MIN_LEN] in parts for i in range(len(value) - _KNOWN_MIN_LEN + 1)
     )
 
 
