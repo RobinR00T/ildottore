@@ -1323,20 +1323,16 @@ def _uses_mock(raw: dict[str, Any]) -> bool:
         return True
     # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real
     # over-the-wire (subprocess) target even though it declares no ``endpoint``.
-    # Text only, as `load_target` reads them: `str` raised on a number too long to write out
-    # (A-40), and no other value could have read as `mcp` or `stdio`.
-    provider = _lowered(raw.get("provider"))
-    transport = _lowered(raw.get("transport"))
+    # Text or absent: `_read_target_yaml` refuses anything else (A-53), where `str` raised on a
+    # number too long to write out (A-40).
+    provider = (raw.get("provider") or "").strip().lower()
+    transport = (raw.get("transport") or "").strip().lower()
     if provider == "mcp" and transport == "stdio" and raw.get("command"):
         return False
     endpoint = raw.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint:
         return True
     return endpoint.startswith("mock://")
-
-
-def _lowered(value: object) -> str:
-    return value.strip().lower() if isinstance(value, str) else ""
 
 
 # --- the runner --------------------------------------------------------------------

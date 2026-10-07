@@ -145,9 +145,9 @@ labels key in `calibrate` (`str(spec_id)` raised, and the message formatting the
 exit 3 naming no file), a report read by `diff` or `calibrate` (`json.loads` raises a plain
 `ValueError` past the limit, not a `JSONDecodeError`: same exit, same silence), a target file's
 `type`, `mock_scenario` and `seeded_setup` keys (u12), and the signature pack's `pack_version`
-(u09). A target file's `provider` and `transport` are read only as text, as the target loader always
-read them (the mock routing called `str` on them first), so such a number there is no provider, as
-`5` is.
+(u09). A target file's `provider` and `transport` were read only as text by the target loader, but
+the mock routing called `str` on them first; A-40 read such a number there as no provider, as `5`
+was read, and since u12 A-53 the top-level check refuses both as not text, naming the file.
 
 The first version walked mappings and lists only, and its pre-commit audit planted the number inside
 a `!!set` or an `!!omap` at every value of the 75 specs: 3,539 of 3,751 placements of each were

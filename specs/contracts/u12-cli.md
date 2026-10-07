@@ -355,23 +355,27 @@ key that is not text: `1: Keys should be strings`), never the value:
   model, or every file that writes it is refused (a test pins the two sets equal);
 * `name`, `provider`, `endpoint`, `model`, `auth_ref` and `transport` are text (`StrictStr`, so
   `!!binary` bytes are refused too) or absent: the key with nothing after it, `null` or `~`,
-  as before; an empty string is text, so `endpoint: ""` still routes to the mock;
+  as before; an empty string is text, so `endpoint: ""` still routes to the mock; a number as
+  `provider` or `transport`, which A-40 read as no provider (`5`, or one too long to write out),
+  is refused as not text;
 * every reader refuses a file this check refuses, with the same line, so `target_uses_mock` no
   longer routes such a file to the mock (a file `load_target` refuses for another reason, a bad
   `capabilities` say, is refused by `load_target` alone, which `run` and `fingerprint` call before
   they route); `dottore fleet` writes only these keys (a test runs it on both shipped fleets and
   loads what it writes).
 
-`tests/cli/test_target_top_level_keys.py`: 43 of its 78 tests fail on `2f6201a`, each on the old
-behavior (25 because the command exits 0, 17 because the reader does not raise) or, for the one
-that pins the key set, on the missing model; the other 35 guard what stays (every legal key
-loads, a null text field is absent, `id` and `type` keep their own refusals) and that the
-redactor leaves each test value readable, and one loads every target file
-under `examples/`, `specs/` and `tests/` and every target block of the docs and man pages through
-the three readers. Refusing is the owner's call (OD-31), built as the smallest reversible change:
-the `_TargetFileTopLevel` check in `_read_target_yaml`, and the six `isinstance(..., str) else
-None` reads of `load_target` it made dead, which come back with it. Outside the clause, and said
-so rather than pinned:
+`tests/cli/test_target_top_level_keys.py`: 43 of its 78 tests fail on `c3e70d8` (as on `2f6201a`),
+and so do A-40's two tests of a number as `provider` or `transport` in `test_huge_numbers.py`, which
+expected exit 0 and now expect this refusal. Each fails on the old behavior (25 of the 43, and both
+of A-40's, because the command exits 0; 17 because the reader does not raise) or, for the one that
+pins the key set, on the missing model; the other 35 guard what stays (every legal key loads, a null
+text field is absent, `id` and `type` keep their own refusals) and that the redactor leaves each
+test value readable, and one loads every target file under `examples/`, `specs/` and `tests/` and
+every target block of the docs and man pages through the three readers. Refusing is the owner's call
+(OD-31), built as the smallest reversible change: the `_TargetFileTopLevel` check in
+`_read_target_yaml`, and the six `isinstance(..., str) else None` reads of `load_target` and the
+`_lowered` reads of `target_uses_mock` (A-40) it made dead, which come back with it. Outside the
+clause, and said so rather than pinned:
 * a misspelled value is still read as written, without a word: `provider: opnai` with an
   endpoint routes to the REST adapter (as the manual says of any provider but `openai`,
   `anthropic` and `mcp`), and a stdio MCP target, which has no endpoint, with `transport: stido`
@@ -430,5 +434,5 @@ so rather than pinned:
   `Target`'s fields and `mock_scenario` (an anchor holder included), or one of those six fields as
   anything but text (a number, a boolean, a date, a list, a map, a set or bytes); no file of the
   repository does. Reversal: the `_TargetFileTopLevel`
-  check in `_read_target_yaml`, and the six `isinstance(..., str) else None` reads in
-  `load_target`.
+  check in `_read_target_yaml`, the six `isinstance(..., str) else None` reads in `load_target`
+  and the `_lowered` reads in `target_uses_mock`.

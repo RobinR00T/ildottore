@@ -17,7 +17,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   writes, still load (new test). Left open, written in the clause: a misspelled value
   (`provider: opnai` goes to the REST adapter, and `transport: stido` on a stdio MCP target runs
   it on the offline mock with a PASS and exit 0). `tests/cli/test_target_top_level_keys.py`: 43 of
-  its 78 tests fail on `2f6201a`.
+  its 78 tests fail on `c3e70d8`. A number as `provider` or `transport`, which A-40 (#81) read as
+  no provider, is refused as not text; A-40's two tests of it now expect that.
 
 ## State, 2026-10-07 (evening): YAML nesting refused where it is written
 

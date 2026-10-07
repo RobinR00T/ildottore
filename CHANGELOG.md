@@ -31,8 +31,10 @@ versioning: [SemVer](https://semver.org/).
   `provider: opnai` with an endpoint routes to the REST adapter, and a stdio MCP target with
   `transport: stido` or `provider: mpc` runs on the offline mock (PASS, exit 0); a key inside
   `capabilities` is A-50's (#78); every problem is listed on the one line until #76 bounds
-  `validation_problems` (20,000 unknown keys gave a 788,937-byte line). Contract u12 A-53;
-  `tests/cli/test_target_top_level_keys.py` (43 of its 78 tests fail on `2f6201a`).
+  `validation_problems` (20,000 unknown keys gave a 788,937-byte line). A number as `provider` or
+  `transport`, which A-40 (above) read as no provider, is refused as not text, and A-40's two tests
+  of it now expect the refusal. Contract u12 A-53; `tests/cli/test_target_top_level_keys.py` (43 of
+  its 78 tests fail on `c3e70d8`, this branch's base, as on `2f6201a`).
 
 ### Fixed (a YAML file nested past the depth limit, refused where it is written)
 
@@ -374,7 +376,8 @@ versioning: [SemVer](https://semver.org/).
   exited 3 with the same unnamed message; the refusal now names the target file and says what the
   value is instead of quoting it. As `provider` or `transport` it exited 3 too, because the mock
   routing called `str` on them before the target loader, which reads them only as text, ignored
-  it; they are read only as text there as well, so the number is no provider, as `5` always was.
+  it; they are read only as text there as well, and since A-53 (above) a value there that is not
+  text, the number and `5` alike, is refused naming the file.
   The signature pack's `pack_version` is refused the same way (a library path; the CLI loads the
   built-in pack).
 - Each check stands on its own: a cap on a literal's length in the YAML loader does not cover a
