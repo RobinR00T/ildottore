@@ -21,6 +21,14 @@ versioning: [SemVer](https://semver.org/).
   widens an over-mask main already made with a one-character user:
   `http://:8080?email=bob@example.com` read `?email=«REDACTED:email»` and now reads
   `http://:«REDACTED:url_password»@example.com`, the email's domain readable.
+- **A registered credential across a URL's separators takes the password with it.** A run of a
+  registered credential across `://`, the `:` before the password or the `@` stopped the URL
+  rule, which left the password or its first part readable: `password@db` registered left
+  `Sup3rS3cret` in `redis://u:Sup3rS3cretpassword@db:6379`, and `bob:hunter2` left `XYZSECRET`
+  in `https://bob:hunter2XYZSECRET@intranet/v1`. That was so on main for any such credential,
+  and the first version of this fix also reached it with a credential holding a stash
+  delimiter (`pass\x01word@db`, read as `password@db` now), which main never matched (pre-merge
+  audit). The password now joins that run, and the two are one `credential` mask.
 - **A mask no longer depends on the process or on the text before it.** The digest of a
   `pem_private_key` mask was computed over the key with the stash tokens of the masks inside it,
   whose numbers count the masks set aside before them and follow the order the registered
@@ -30,10 +38,12 @@ versioning: [SemVer](https://semver.org/).
   digests what was written there, so a key's digest is the HMAC of the key as it appears in the
   text, whatever is registered inside it, and a pinned `ILDOTTORE_REDACTION_SALT` correlates it
   across runs as the manual says. The same holds for a hashed pattern the operator registers.
-  The key pattern's 16 KB bound applies to the text as one pass sees it, masks set aside; a key
-  over it is masked on a later pass, once the masks inside it are in, and digested over that
-  text: still the same in every process and wherever it appears, but not the HMAC of the key as
-  written.
+  The key pattern bounds a key at 16 KB of the text as one pass reads it, where each mask inside
+  the key is a stash token whose length grows with the masks before it. So a key near the bound
+  may be masked as a key or not depending on the text before it, and one that a single pass
+  cannot take whole is masked on a later pass and digested over its text with the masks inside
+  it, not as written; on main too. A real key is far under the bound (a 26 KB one of random
+  base64 lines is still masked whole).
 - **Overlapping registered credentials are masked as one.** The same set order decided which of
   two overlapping credentials was masked (`12345678ab87654321` with `12345678ab` and
   `ab87654321` registered: seven seeds of twelve masked one, five the other), and the other's
@@ -49,9 +59,13 @@ versioning: [SemVer](https://semver.org/).
   (also before its surrounding whitespace is stripped), and `overlaps_known_secret` reads its
   argument the same way. Found on main by the pre-commit audit of this fix.
 - Cost, measured on a megabyte, best of three: clean text and URLs as on main (0.17 s, and
-  0.30 s where main took 0.29 s); a reply repeating a registered credential 55,000 times takes
-  0.27 s where main took 0.25 s (every occurrence is found, not only the ones `str.replace`
-  reached), and one credential overlapping itself all the way 0.05 s where main took 0.28 s.
+  0.30 s where main took 0.29 s; URLs whose user is registered 0.30 s where main took 0.26 s
+  and left every password readable); a reply repeating a registered credential 55,000 times
+  takes 0.27 s where main took 0.25 s (every occurrence is found, not only the ones
+  `str.replace` reached), and one credential overlapping itself all the way 0.05 s where main
+  took 0.28 s. Memory, on a 4 MiB reply repeating an 8-character registered credential: bare,
+  the process grows by 163 MB where main grew by 138 MB; inside key blocks, by 134 MB where main
+  grew by 2.5 MB, since every occurrence is a run where `str.replace` made one token.
   The URL rule is possessive: its first version here, an alternation without it, kept a frame
   per character and grew the process by about 640 MB on a 4 MB reply; it grows by nothing now.
   Credentials that overlap themselves are still found one occurrence at a time: sixteen
@@ -61,13 +75,14 @@ versioning: [SemVer](https://semver.org/).
   against main `d19b221`. Tests: `tests/test_redactor_url_password_and_digests.py` (twelve hash
   seeds in subprocesses, digests checked against an HMAC computed in the test, the evidence
   store's leak guard, a Hypothesis property over URL shapes, the URL rule's memory measured in a
-  subprocess); 24 mutants of the fix, each caught. Docs: `docs/02` (S6), the u01 contract (A-31)
-  and the contract index, the manual. Left open, on main too: a raw `@` in the user or in an
-  unregistered password of a URL leaves the password, or its part after the `@`, readable
-  (`myadmin@srv:<password>@localhost`, an Azure-style login); a registered credential that
-  straddles a URL's `:` or `@` stops the URL rule; the labelled-secret rule stops at a mask, so
-  `api_key=<registered credential><tail>` keeps its tail readable; repeated `BEGIN PRIVATE KEY`
-  markers before one `END` cost 3.4 s a megabyte.
+  subprocess, the URL separator pass's growth); 32 mutants of the fix, each caught. Docs:
+  `docs/02` (S6), the u01 contract (A-31) and the contract index, the manual, the playbook.
+  Left open, on main too: a raw `@` in the user or in an unregistered password of a URL leaves
+  the password, or its part after the `@`, readable (`myadmin@srv:<password>@localhost`, an
+  Azure-style login); the labelled-secret rule stops at a mask, so `api_key=<registered
+  credential><tail>` keeps its tail readable, and a registered credential that is a label word
+  (`password`) hides the label from it; repeated `BEGIN PRIVATE KEY` markers before one `END`
+  cost 3.4 s a megabyte.
 
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 

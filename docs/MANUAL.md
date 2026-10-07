@@ -125,7 +125,8 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   the value as written (a private key's too, whatever is registered inside it, within the
   pattern's 16 KB bound), so with the salt pinned one value reads the same in every run. A
   password in a URL is masked behind a registered, masked or empty user too (not yet behind a
-  user holding a raw `@`), and registered credentials that overlap in the text are masked as one.
+  user holding a raw `@`), a registered credential across a URL's separators takes the password
+  into its own mask, and registered credentials that overlap in the text are masked as one.
   What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
   id) is left readable in every report, in both copies of a finding the JSON report carries, so a
   custom spec id reads the same in every run and `dottore diff` can match it. Error messages the

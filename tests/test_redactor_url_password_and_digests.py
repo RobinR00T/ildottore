@@ -18,10 +18,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+import math
 import os
 import re
 import subprocess
 import sys
+import time
 import tracemalloc
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -117,6 +120,53 @@ def test_a_url_password_holding_a_registered_credential_is_masked_whole(password
     assert redactor.redact_text(out) == out
 
 
+@pytest.mark.parametrize(
+    ("credential", "url", "masked"),
+    [
+        ("password@db", "redis://u:Sup3rS3cretpassword@db:6379 end", "redis://u:{}:6379 end"),
+        ("pass" + chr(1) + "word@db", "redis://u:Sup3rS3cretpassword@db:6379 end", None),
+        ("bob:hunter2", "https://bob:hunter2XYZSECRET@intranet/v1", "https://{}@intranet/v1"),
+        ("https://bob", "https://bob:Sup3rS3cretPw@intranet/v1", "{}@intranet/v1"),
+    ],
+)
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_registered_credential_across_a_url_separator_takes_the_password_with_it(
+    credential: str, url: str, masked: str | None
+) -> None:
+    """Across `://`, the `:` or the `@` it stopped the URL rule: the rest of the password showed.
+
+    With a stash delimiter in it, the credential is read as the text is (`password@db`), which
+    main never matched, so main masked that password and the first version of this fix did not
+    (pre-merge audit).
+    """
+
+    register_known_secret(credential)
+    redactor = Redactor(salt=_SALT)
+    out = redactor.redact_text(url)
+    name = credential.replace(chr(1), "")
+    expected = (masked or "redis://u:{}:6379 end").format(f"«REDACTED:credential:{_hmac8(name)}»")
+    assert out == expected
+    assert redactor.redact_text(out) == out
+
+
+def test_the_url_separator_pass_is_linear_in_the_urls() -> None:
+    """A slice of the runs per URL made it quadratic: 20,000 registered-user URLs took 0.35 s."""
+
+    url = "https://svc-account-7:Pw123456@localhost:8080/v1 "
+
+    def cost(count: int) -> float:
+        text = url * count
+        runs = [(n * len(url) + 8, n * len(url) + 21, "svc-account-7") for n in range(count)]
+        best = math.inf
+        for _ in range(3):
+            started = time.perf_counter()
+            assert redactor_mod._straddled_passwords(text, runs) == []  # every run is a user
+            best = min(best, time.perf_counter() - started)
+        return best
+
+    assert cost(80_000) / cost(20_000) < 10  # four times the URLs: 4 when linear, 16 when not
+
+
 @pytest.mark.usefixtures("no_known_secrets")
 def test_a_registered_url_password_keeps_its_own_mask() -> None:
     register_known_secret(_PASSWORD)
@@ -181,7 +231,10 @@ def test_the_evidence_store_writes_the_masked_url_and_its_leak_guard_passes(
 
 # --- digests that depended on the process --------------------------------------------------
 
-_PEM = f"{_BEGIN}\nxx aaaaaaaa1111 bbbbbbbb2222 «REDACTED:ip» https://bob:pw123456@h yy\n{_END}"
+_PEM = (
+    f"{_BEGIN}\nxx aaaaaaaa1111 bbbbbbbb2222 «REDACTED:ip» https://bob:pw123456@h"
+    f" https://u:pre-aaaaaaaa1111-post@h yy\n{_END}"
+)
 
 
 @pytest.mark.parametrize("before", ["", "«REDACTED:email» ", "aaaaaaaa1111 ", "a@b.io "])
@@ -272,6 +325,13 @@ def test_a_credential_is_registered_as_the_redactor_reads_it() -> None:
     assert out == f"key=«REDACTED:credential:{_hmac8('abcdefgh')}»;"
     register_known_secret("abc" + chr(0) + "defghij")
     assert redactor_mod.overlaps_known_secret("abc" + chr(0) + "defghij")
+    assert redactor_mod.overlaps_known_secret("abc" + chr(1) + "defghij")
+    # The value as given is quoted by a library too: `repr` writes the delimiter as `\x01`.
+    value = "Sup3r" + chr(1) + "Secret" + chr(10)
+    register_known_secret(value)
+    for quoted in (repr(value)[1:-1], json.dumps(value)[1:-1]):
+        out = Redactor(salt=_SALT).redact_text(f"b'Bearer {quoted}'")
+        assert "Secret" not in out and "«REDACTED:credential:" in out
 
 
 _CHILD_URL_MEMORY = """

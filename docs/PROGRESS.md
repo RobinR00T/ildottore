@@ -23,13 +23,21 @@ The carryover ledger. Every agent session updates this so context survives even 
   docs claiming more than the code does (corrected), a memory test that a partial revert of the
   possessive quantifiers passed, partial reverts of the delimiter fix that passed, and cost
   figures measured with tracemalloc on (re-measured without it). Tests added; 24 mutants of the
-  fix, each caught. `make gates` green on `4aa6cef`: 2,298 tests (2,250 on main), coverage
-  96.38%.
+  fix, each caught.
+- PR #56 opened (rebased on `0f936b6`, after #52, #53, #55 and #58). Its pre-merge audit (2.1 million
+  differential cases, the real CLI offline: no password in any report, the evidence or stderr,
+  where main printed them) found one case the PR made worse: a registered credential holding a
+  stash delimiter, read as `password@db`, crossed a URL's `@` and left the first part of the
+  password readable, which main masked. Fixed for every registered credential across `://`, the
+  `:` or the `@` (the password joins its run), which closes that class on main too; plus two test
+  gaps, the 16 KB wording and a memory figure. The fix's own first cut was quadratic in a reply
+  of URLs (a slice per URL); a growth test pins it. 32 mutants, each caught. `make gates` green
+  on `0f936b6`: 2,355 tests (2,302 on main), coverage 96.42%.
 - Open, on main too: a raw `@` in a URL's user or unregistered password leaves the password, or
-  its part after the `@`, readable (`myadmin@srv:<password>@localhost`); a registered credential
-  straddling a URL's `:` or `@` stops the URL rule; the labelled-secret rule stops at a mask
-  (`api_key=<registered credential><tail>` keeps its tail); repeated `BEGIN PRIVATE KEY`
-  markers before one `END` cost 3.4 s a megabyte. Python 3.11, the version CI runs, was not
+  its part after the `@`, readable (`myadmin@srv:<password>@localhost`); the labelled-secret rule
+  stops at a mask (`api_key=<registered credential><tail>` keeps its tail), and a registered
+  credential that is a label word (`password`) hides the label from it; repeated `BEGIN PRIVATE
+  KEY` markers before one `END` cost 3.4 s a megabyte. Python 3.11, the version CI runs, was not
   available here: the memory test runs on it there for the first time.
 - PR #51 also edits `redactor.py`, so the second to merge rebases. Its `mask_split_credentials`
   names an overlapping run the way `_credential_runs` does, and the credentials it reads now come

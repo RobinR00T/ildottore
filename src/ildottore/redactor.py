@@ -269,6 +269,17 @@ def _credential_runs(text: str) -> list[tuple[int, int, str]]:
             else:
                 spans.append((found, end, secret))
             found = text.find(secret, found + 1)
+    runs = _merged(spans)
+    if runs:
+        straddled = _straddled_passwords(text, runs)
+        if straddled:
+            runs = _merged(runs + straddled)
+    return runs
+
+
+def _merged(spans: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """``spans`` joined where they overlap, each run named after its longest credential."""
+
     runs: list[tuple[int, int, str]] = []
     for start, end, secret in sorted(spans):
         if runs and start < runs[-1][1]:
@@ -277,6 +288,38 @@ def _credential_runs(text: str) -> list[tuple[int, int, str]]:
         else:
             runs.append((start, end, secret))
     return runs
+
+
+def _straddled_passwords(text: str, runs: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """The URL passwords a credential run crosses a separator of, as unnamed spans to join it.
+
+    A run is read by the URL rule as a mask, so it holds anywhere inside the user or inside the
+    password; across ``://``, the ``:`` or the ``@`` it stops the rule, which then left the
+    password or its first part readable (``password@db`` registered, in
+    ``redis://u:Sup3rS3cretpassword@db``; pre-merge audit). The password joins that run instead.
+    ``runs`` are disjoint and in order, as the URL matches are, so this is one pass over both.
+    """
+
+    found: list[tuple[int, int, str]] = []
+    index = 0
+    for match in _URL_USERINFO.finditer(text):
+        first, last = match.start(1), match.end(3)  # from `://` to `@`
+        user = (first + 3, match.end(1) - 1)
+        password = match.span(2)
+        while index < len(runs) and runs[index][1] <= first:
+            index += 1
+        # By index: a slice per URL copied the rest of the runs, quadratic in a reply of URLs.
+        for position in range(index, len(runs)):
+            start, end, _ = runs[position]
+            if start >= last:
+                break
+            inside_user = user[0] <= start and end <= user[1]
+            if not (inside_user or (password[0] <= start and end <= password[1])):
+                # From the run to the end of the password, so the two make one run even when
+                # the run ends at the `:` before it (`https://bob` registered).
+                found.append((min(start, password[0]), max(end, password[1]), ""))
+                break
+    return found
 
 
 # The corroboration digest is 32 bits of an HMAC. Unsalted, anyone holding a report could

@@ -146,14 +146,16 @@ digest and six another, and in one process the same key had another digest after
 same set order decided which of two overlapping registered credentials was masked and left the
 other's tail readable; overlapping credentials are one run now, named after the longest. The
 URL rule holds when part of the URL is already masked: a URL's password stayed readable because
-its user was a registered credential, set aside before the rule ran. (Not yet every rule: the
-labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its tail
-readable, as on main. A private key over the pattern's 16 KB bound, which counts the text as one
-pass sees it, is masked on a later pass and digested over its text with the masks inside it:
-the same everywhere, not the HMAC of the key.)
+its user was a registered credential, set aside before the rule ran; and a registered credential
+across the URL's `://`, `:` or `@` takes the password into its own mask. (Not yet every rule:
+the labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its
+tail readable, as on main. Nor every key: the key pattern's 16 KB bound counts each mask inside
+the key as a stash token whose length grows with the masks before it, so a key near the bound
+is masked as a key or not depending on the text before it, and one a single pass cannot take
+whole is digested over its text with the masks inside it; on main too.)
 Checks: `tests/test_redactor_url_password_and_digests.py` (twelve hash seeds in subprocesses,
 digests against an HMAC computed in the test, the evidence store's leak guard, a property over
-URL shapes).
+URL shapes, credentials across a URL's separators).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
