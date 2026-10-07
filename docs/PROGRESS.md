@@ -3,6 +3,22 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
+
+- Found on `fix/huge-int-repr` and fixed on `fix/target-file-validation`: a wrong value under a
+  target file's `capabilities` or `sampling_defaults` (`tools: maybe-later`, `temperature: warm`)
+  reached the CLI as pydantic's raw error, four lines quoting the value and naming no file (exit 3
+  was already right). `load_target` now wraps it like the scope, fleet and pack loaders: one
+  `error:` line, `target file <path> '<block>' failed validation: <field>: <reason>`, no value.
+  Contract u12 A-45 (A-43 and A-44 were claimed the same afternoon by `fix/operator-file-read-cap`
+  and `fix/lint-nonstring-arg-key`). Left open, written in the clause: a key `capabilities` does
+  not know, or a `capabilities` that is empty or `false`, is dropped without a word; other
+  refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
+  the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
+  `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
+  the value quoted, no file name); not fixed here. `tests/cli/test_target_file_validation.py`: 19
+  of its 24 tests fail on `0501752`, the other 5 guard that each test value survives the redactor.
+
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
 - Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and

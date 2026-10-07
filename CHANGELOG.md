@@ -5,6 +5,30 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a target file's bad value printed pydantic's error, value included)
+
+- **A value under a target file's `capabilities` or `sampling_defaults` that pydantic could not
+  read printed pydantic's own error.** `capabilities: {tools: maybe-later}` or `sampling_defaults: {temperature: warm}`
+  made `dottore run --dry-run` print four lines (`error: 1 validation error for Capabilities`, the
+  field, `input_value='maybe-later'` and a pydantic docs URL): the operator's value quoted, which
+  the loaders of the operator's own files avoid because a key gets pasted there by mistake, and
+  no file name, so with a target and a judge the operator could not tell which file it was. Exit
+  3 was already right. `load_target` now gives the line the scope, fleet and policy-pack loaders
+  give: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be
+  a valid boolean, unable to interpret input`, every problem in the block on that one line, the
+  value never. The same through `run -t`, `run --judge`, `fingerprint` and `fleet --judge`. Not
+  changed, and written in the clause: other refusals of a target file still quote what it says
+  (`type`, `mock_scenario`, a `seeded_setup` tool name, the `id`); a key is printed as pydantic
+  renders it, control characters included, so one with a line break still splits the line until
+  #51 is in; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true`
+  is 1.0, no range on `temperature` or `top_p`); and a key `capabilities` does not know, or a
+  `capabilities` that is empty or `false`, is still ignored without a word. Contract u12 A-45;
+  `tests/cli/test_target_file_validation.py` (19 of its 24 tests fail on `0501752`; the other 5
+  check that the CLI's redactor leaves each test value readable, because a first `987654321` was
+  masked as a phone number and the check proved nothing). Found on `fix/huge-int-repr`. The same
+  shape remains in `dottore diff` and `dottore calibrate` on a report whose finding does not
+  validate (pre-commit audit); left for its own change.
+
 ### Fixed (a file nested past what the CLI can hold)
 
 - **`dottore diff` and `dottore calibrate` exited 1 on a report nested too deeply.** `json.loads`
