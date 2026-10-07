@@ -252,20 +252,20 @@ without a word, because `bytes` has a `lower`. Found on 2026-10-07 by the sessio
 
 So the loader walks every mapping of a spec before the JSON schema, including those inside a
 `!!omap` or `!!pairs` entry (which YAML builds as a tuple), and each mapping key that is not a
-string is a `SCHEMA` finding naming the path of its mapping, the value YAML built from the
-key (`0x1F:` is shown as `31`, `1.0e+3:` as `1000.0`) and its type:
+string is a `SCHEMA` finding naming the path of its mapping, the value YAML built from the key
+(`0x1F:` is shown as `31`, `1.0e+3:` as `1000.0`) and its type:
 `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write it in quotes,
-without a tag` (a tag such as `!!int "5"` makes even a quoted key a number). The schema is not
-run on that file, and its other findings come once the keys are fixed. At most 20 are listed and
-the rest counted, the path is cut at 300 characters, a key on the path that holds a character that
-is not printable (an escape sequence, a newline that would start a forged finding line, a bidi
-control) is written as its `repr` (this check prints keys of free-form objects that no message
-printed before; the spec id and the paths of other schema errors are printed as written, as on
-`0501752`), a container YAML shares through an alias is reported once (where the walk
-first meets it), and the value under such a key is not walked. A key that is an int too long to
-write out never reaches this check: A-40 runs first and reports it in its own words. The keys of an `!!omap` or `!!pairs` entry, and the members
-of a `!!set`, are not reported: none of them exists in JSON, and in a field the schema types they
-fail it. That gap is written here and not pinned by a test.
+without a tag` (a tag such as `!!int "5"` makes even a quoted key a number). The schema is not run
+on that file, and its other findings come once the keys are fixed. At most 20 are listed and the
+rest counted, the path is cut at 300 characters, a key on the path that holds a character that is
+not printable (an escape sequence, a newline that would start a forged finding line, a bidi control)
+is written as its `repr` (this check prints keys of free-form objects that no message printed
+before; the spec id and the paths of other schema errors are printed as written, as on `0501752`), a
+container YAML shares through an alias is reported once (where the walk first meets it), and the
+value under such a key is not walked. A key that is an int too long to write out never reaches this
+check: A-40 runs first and reports it in its own words. The keys of an `!!omap` or `!!pairs` entry,
+and the members of a `!!set`, are not reported: none of them exists in JSON, and in a field the
+schema types they fail it. That gap is written here and not pinned by a test.
 
 `run`, `describe`, `coverage` and `registry` load through the same path, so they leave such a spec
 out as they do any spec that does not load (`run` refuses the campaign, exit 3, through the CLI's

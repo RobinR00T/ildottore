@@ -297,8 +297,9 @@ def _key_message(path: tuple[object, ...], key: object) -> str:
 def _key_text(key: object) -> str:
     """The value YAML built from the key (``0x1F:`` is ``31``).
 
-    ``repr`` cannot raise here: an int too long to write out is reported by the A-40 check
-    before this one runs, wherever it is in the document.
+    For a document YAML or JSON builds, ``repr`` cannot raise here: an int too long to write out
+    is reported by the A-40 check before this one runs, wherever it is in the document. A key
+    built in code with a ``__repr__`` that raises still propagates (rebase audit of #80).
     """
 
     if isinstance(key, bool):
