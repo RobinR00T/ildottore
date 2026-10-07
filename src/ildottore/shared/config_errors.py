@@ -85,7 +85,7 @@ def quoted(value: object) -> str:
     or fewer is quoted exactly as before. A longer one is cut as :func:`cut` cuts it, and a list,
     mapping or set says how many items it holds instead: its ``repr`` is never built whole,
     because YAML aliases make it larger than its file (90 KB of a list of 20,000 aliases of one
-    10 KB text is 200,080,000 characters of ``repr``, 2.6 s and 202 MiB to build).
+    10 KB text is 200,080,000 characters of ``repr``, about 200 MB to build).
     """
 
     if type(value) not in _CONTAINERS:

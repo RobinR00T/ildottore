@@ -588,7 +588,7 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
         # names the variable and never the value (review of PR #32).
         if any(not ch.isprintable() for ch in value):
             raise ValueError(
-                f"the credential in {name!r} contains a control character (a newline or "
+                f"the credential in {quoted(name)} contains a control character (a newline or "
                 "similar); fix the variable, it cannot be sent as a header"
             )
         return value
@@ -1057,7 +1057,7 @@ def load_target(path: Path) -> Target:
             f"{', '.join(t.value for t in TargetType)}"
         )
     # Refused before the enum looks it up: its own error builds the whole repr of the value, and
-    # a 90 KB list of aliases is 200,080,026 characters and 474 MB of it (audit of A-51).
+    # a 90 KB list of aliases is 200,080,026 characters of it (audit of A-51).
     if not isinstance(type_raw, str) or type_raw not in _TARGET_TYPES:
         raise ValueError(
             f"target file {path} has invalid type {quoted(type_raw)}; "
@@ -1149,7 +1149,11 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} 'seeded_setup' must be a mapping")
     known = ("specs", "tools", "granted_tools", "run_token")
-    unknown = sorted(str(key) for key in raw if key not in known)
+    # A key that is not text is quoted rather than turned into text: `str()` of an integer
+    # past 4,300 digits raised (audit of A-51).
+    unknown = sorted(
+        key if isinstance(key, str) else quoted(key) for key in raw if key not in known
+    )
     if unknown:
         # The names the file gives, up to 300 characters in all (clause A-51).
         raise ValueError(
@@ -1236,9 +1240,16 @@ def target_uses_mock(path: Path) -> bool:
         return True
     # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real
     # over-the-wire (subprocess) target even though it declares no ``endpoint``.
-    provider = str(raw.get("provider") or "").strip().lower()
-    transport = str(raw.get("transport") or "").strip().lower()
-    if provider == "mcp" and transport == "stdio" and raw.get("command"):
+    # Read only as text: `str()` of a list of aliases wrote hundreds of megabytes, and of an
+    # integer past 4,300 digits it raised (audit of A-51); nothing but a text says `mcp`.
+    provider, transport = raw.get("provider"), raw.get("transport")
+    if (
+        isinstance(provider, str)
+        and provider.strip().lower() == "mcp"
+        and isinstance(transport, str)
+        and transport.strip().lower() == "stdio"
+        and raw.get("command")
+    ):
         return False
     endpoint = raw.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint:

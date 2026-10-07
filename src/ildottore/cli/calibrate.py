@@ -48,16 +48,35 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
         raise ValueError(f"labels file {path} must be a mapping of spec_id -> verdict")
     labels: dict[str, VerdictStatus] = {}
     for spec_id, verdict in raw.items():
-        try:
-            labels[str(spec_id)] = VerdictStatus(str(verdict).strip().lower())
-        except ValueError as exc:
+        # Only a text can be a verdict, and it is checked before anything is turned into text:
+        # `str()` of a list of aliases wrote hundreds of megabytes, and of an integer past 4,300
+        # digits it raised, which the handler then blamed on a valid verdict (audits of A-51).
+        status = _verdict(verdict)
+        if status is None:
             # The spec id is the location, quoted up to 300 characters (A-51); the value is not
             # quoted (the other loaders' rule).
             raise ValueError(
                 f"labels file {path}: spec {quoted(spec_id)} has an invalid verdict; "
                 f"expected one of {', '.join(v.value for v in VerdictStatus)}"
+            )
+        try:
+            labels[str(spec_id)] = status
+        except ValueError as exc:  # an integer Python will not write as text
+            raise ValueError(
+                f"labels file {path}: {quoted(spec_id)} is not a spec id; a spec id is text"
             ) from exc
     return labels
+
+
+def _verdict(value: object) -> VerdictStatus | None:
+    """The verdict a label's value names, or ``None`` when it names none."""
+
+    if not isinstance(value, str):
+        return None
+    try:
+        return VerdictStatus(value.strip().lower())
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)

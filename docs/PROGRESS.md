@@ -16,20 +16,23 @@ The carryover ledger. Every agent session updates this so context survives even 
   same way. The sweep found 24 such refusals, not the 4 reported, among them the authorization
   refusal of `run` and `fingerprint` (2,000,108 bytes for one id) with the list of ids the scope
   authorizes (now 20, each cut, `listed`) and two lists in `seeded_setup`. The pre-commit audit
-  found that the enum lookup of a target's `type` still built the whole `repr` (1.28 GB and 50 s for
+  found that the enum lookup of a target's `type` still built the whole `repr` (1.28 to 1.49 GB for
   a 90 KB file of aliases; now refused before the lookup, 72 MB), the credential refusal's unbounded
   list of declared references (885,131 bytes), the three `--resume` refusals, an integer `repr`
-  cannot write, two surviving mutants and doc figures; all fixed. 49 of the 59 tests fail on
-  `a0bca70`, each for its reason; 46 of 48 mutants die (the 2 that live quote a fleet id, already
+  cannot write, two surviving mutants and doc figures; the delta audit, that `str()` of a verdict,
+  `provider` or `transport` of aliases still wrote about 675 MB, a labels key that is a huge integer
+  blamed on a valid verdict, nested aliases untested, the credential variable's name, and doc
+  figures; all fixed. 58 of the 69 tests (the file's 68 and #76's changed reader test) fail on
+  `a0bca70`, each for its reason; 53 of 55 mutants die (the 2 that live quote a fleet id, already
   held to 64 characters). (2) A byte that is not UTF-8 in any operator file printed the codec's
   error with no file name; `read_text_capped` now refuses it as an `OSError` (`EILSEQ`) with the
   path and the offset, exit 3, as it refuses a file over the cap. Clause A-51 (u01; A-48 to A-50
   were claimed the same evening by `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
   `fix/target-capabilities-strict`). Open, OD-27: ids have no length bound, so a started run still
   prints a target id whole (plan, progress, reports, run store), and `calibrate` lists uncovered
-  labels whole; proposed, a bound at load like the fleet's 64 characters. Left to #71 and #77
-  (open): a labels key that is an integer past 4,300 digits, and a list of aliases `str()` turns
-  into about 675 MB of text.
+  labels whole; proposed, a bound at load like the fleet's 64 characters. Left to #71 (open): a
+  stdio `command` of aliases, joined into one text where the target is authorized (200 MB and 1.09
+  GB from a 90 KB file, as on `a0bca70`).
 
 ## State, 2026-10-07 (afternoon): operator files read up to 1 MiB
 

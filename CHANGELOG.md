@@ -17,21 +17,26 @@ versioning: [SemVer](https://semver.org/).
   with its size: the first 300 characters of the `repr`, then `... (1000002 characters)`, or for a
   list or a mapping `... (9000 items)`, without building the `repr` of a list whole (YAML aliases
   make it larger than its file: 90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000
-  characters, 2.6 s and 202 MiB). As a target's `type:`, that file took 1.28 GB of memory and 50 s
-  and printed a line of 200,080,338 bytes, because the type's own lookup wrote the value out before
-  the refusal could cut it; it is now refused before the lookup, in 72 MB and 0.6 s. An integer
-  Python will not write out (a YAML hex integer past 4,300 digits) is shown as `<an integer of N
-  bits>` instead of raising. It covers an invalid target `type` and `mock_scenario`, the scope's
-  duplicated target ids and identity names and its shared canaries, the spec id of a label with an
-  invalid verdict, two target files with one id, the target id and endpoint of an authorization
-  refusal in `run` and `fingerprint` and the ids the scope authorizes, which it lists after (now the
-  first 20, each cut, and how many more), the target id of the `--hardened`, stdio and credential
-  refusals and the references the scope declares for that credential (the first 20; 3,000 printed
-  885,131 bytes), an `auth_ref` reference, the target ids of the refusals that bind `run --resume`
-  to its target (900,276 bytes for one id), `fleet`'s invalid port and judge mismatches, the unknown
-  keys and doubly listed tools of a target's `seeded_setup`, and PyYAML's reason in every YAML
-  error, the spec loader's and `dottore lint`'s included. The 24 refusals of the new test printed
-  lines of 400,080 to 2,000,247 characters on `c9f27cc`; now each is under 2,500.
+  characters, about 200 MB). As a target's `type:`, that file took 1.28 to 1.49 GB of memory and 42
+  to 50 s and printed a line of about 200 MB, because the type's own lookup wrote the value out
+  before the refusal could cut it; it is now refused before the lookup, in 72 MB and 0.6 s. An
+  integer Python will not write out (a YAML hex integer past 4,300 digits) is shown as `<an integer
+  of N bits>` instead of raising. It covers an invalid target `type` and `mock_scenario`, the
+  scope's duplicated target ids and identity names and its shared canaries, the spec id of a label
+  with an invalid verdict, two target files with one id, the target id and endpoint of an
+  authorization refusal in `run` and `fingerprint` and the ids the scope authorizes, which it lists
+  after (now the first 20, each cut, and how many more), the target id of the `--hardened`, stdio
+  and credential refusals and the references the scope declares for that credential (the first 20;
+  3,000 references of 290 characters printed 885,131 bytes) and the variable such a reference names,
+  an `auth_ref` reference, the target ids of the refusals that bind `run --resume` to its target
+  (900,276 bytes for an id of 900,000 characters), `fleet`'s invalid port and judge mismatches, the
+  unknown keys and doubly listed tools of a target's `seeded_setup`, and PyYAML's reason in every
+  YAML error, the spec loader's and `dottore lint`'s included. A label's verdict, a target's
+  `provider` and `transport` and the keys of its `seeded_setup` are checked as text before anything
+  turns them into text: `str()` of a list of aliases wrote about 675 MB, and of a YAML integer past
+  4,300 digits it raised (a labels key that is one was blamed on a valid verdict; it is now `<an
+  integer of N bits> is not a spec id`). The 24 refusals of the new test printed lines of 400,080 to
+  2,000,247 characters on `c9f27cc`; now each is under 2,500.
 - **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
   or labels file (or a policy or signature pack) printed `error: 'utf-8' codec can't decode byte
   0xff in position 15: invalid start byte`, with no file name, where the spec loader says `not
@@ -44,10 +49,10 @@ versioning: [SemVer](https://semver.org/).
   and a target id is still written whole wherever a run that has started prints it (the `--dry-run`
   plan, progress and `-sV` lines, reports, the run store), and `calibrate` lists every label the
   report does not cover with its id whole; the stdio advice's command line is written whole on
-  purpose, to be copied. A YAML integer past 4,300 digits as a labels key, and a list of aliases
-  that `str()` turns into one text (about 675 MB for a label's verdict or a target's `provider`),
-  are refused when they are built by #71 and #77, both open. Found by the pre-commit audit of A-43.
-  Clause A-51 (u01).
+  purpose, to be copied. A stdio `command` made of aliases is still joined into one text where the
+  target is authorized: 20,000 aliases of a 10 KB text, a 90 KB file, print a line of 200,020,417
+  bytes in about 1.09 GB, as before this change; #71 (open) caps what a YAML file can expand to and
+  refuses that one. Found by the pre-commit audit of A-43. Clause A-51 (u01).
 
 ### Fixed (an operator's file read whole, and its validation errors listed whole)
 

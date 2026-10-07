@@ -25,10 +25,11 @@ from hypothesis import strategies as st
 from typer.testing import CliRunner
 
 from ildottore import safe_yaml
+from ildottore.cli.calibrate import load_labels
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.cli.resume import _assert_same_target
-from ildottore.cli.wiring import load_target, shown_auth_ref
+from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, target_uses_mock
 from ildottore.shared.config_errors import (
     MAX_PROBLEM_CHARS,
     _repr_head,
@@ -168,15 +169,22 @@ def test_the_head_is_the_start_of_repr(value: object, budget: int) -> None:
 
 #: 90 KB of YAML whose ``type`` is 20,000 aliases of one 10 KB text: a repr of 200,080,000
 #: characters, 2.6 s and 202 MiB to build whole. As a list, and as a mapping of 20,000 keys.
+ANCHOR = "x: &a " + "a" * 10_000 + "\n"
+ALIASES = "[" + ", ".join(["*a"] * 20_000) + "]"
 ALIASED = {
-    "list": "x: &a " + "a" * 10_000 + "\ntype: [" + ", ".join(["*a"] * 20_000) + "]\n",
-    "mapping": "x: &a "
-    + "a" * 10_000
-    + "\ntype: {"
-    + ", ".join(f"k{i}: *a" for i in range(20_000))
-    + "}\n",
+    "list": f"{ANCHOR}type: {ALIASES}\n",
+    "mapping": ANCHOR + "type: {" + ", ".join(f"k{i}: *a" for i in range(20_000)) + "}\n",
+    # One level down, where a walk that wrote each item whole would build it all again.
+    "nested-list": f"{ANCHOR}type: [{ALIASES}]\n",
+    "nested-mapping": ANCHOR + "type: {k: " + ALIASES + "}\n",
 }
-ALIASED_HEAD = {"list": "['", "mapping": "{'k0': '"}
+#: How each one's quote starts, and how many items its outer container holds.
+ALIASED_HEAD = {
+    "list": ("['", 20_000),
+    "mapping": ("{'k0': '", 20_000),
+    "nested-list": ("[['", 1),
+    "nested-mapping": ("{'k': ['", 1),
+}
 
 
 def peak_of(call: Callable[[], object]) -> tuple[object, int]:
@@ -199,8 +207,8 @@ def test_aliases_are_quoted_without_building_the_repr(shape: str) -> None:
 
     shown, peak = peak_of(lambda: quoted(value))
 
-    head = ALIASED_HEAD[shape]
-    assert shown == f"{head}{'a' * (300 - len(head))}... (20000 items)"
+    head, items = ALIASED_HEAD[shape]
+    assert shown == f"{head}{'a' * (300 - len(head))}... ({items} items)"
     assert peak < 1_000_000, peak
 
 
@@ -228,6 +236,17 @@ def test_an_integer_python_will_not_write_is_described() -> None:
     assert quoted(huge) == "<an integer of 20000 bits>"
     assert quoted([1, huge]) == "[1, <an integer of 20000 bits>]"
     assert _repr_head({"k": huge}, 10) == "{'k': <an "
+
+
+class _ReprRaises:
+    def __repr__(self) -> str:
+        raise ValueError("not an integer")
+
+
+def test_only_an_integer_python_will_not_write_is_described() -> None:
+    # Any other failure of repr is not hidden behind a description that would be false.
+    with pytest.raises(ValueError, match="not an integer"):
+        quoted(_ReprRaises())
 
 
 def test_a_list_names_twenty_texts_each_cut_and_counts_the_rest() -> None:
@@ -653,3 +672,69 @@ def test_a_credential_refusal_lists_twenty_declared_references(tmp_path: Path) -
     assert result.exit_code == ExitCode.ERROR, result.output
     declared = ", ".join(f"'env://K{i:02d}'" for i in range(20)) + ", and 5 more"
     assert f"(declared: {declared});" in result.stderr, result.stderr
+
+
+# --- values turned into text before they are checked -----------------------------------------
+
+#: A YAML integer of 20,000 bits, written in hex: past the 4,300 digits Python writes as text.
+HEX = "0x" + "f" * 5_000
+
+
+@pytest.mark.parametrize(
+    ("load", "body"),
+    [
+        # The anchor inside the list: a label before it would be refused first.
+        (load_labels, "y: [&a " + "a" * 10_000 + ", " + ALIASES[1:] + "\n"),
+        (
+            target_uses_mock,
+            f"{ANCHOR}id: t\ntype: chatbot\nprovider: {ALIASES}\ntransport: stdio\n",
+        ),
+    ],
+    ids=["labels-verdict", "target-provider"],
+)
+def test_a_list_of_aliases_is_not_turned_into_text(
+    tmp_path: Path, load: Callable[[Path], object], body: str
+) -> None:
+    # `str()` of it wrote about 675 MB of text before the value was checked (audit of A-51).
+    path = tmp_path / "file.yaml"
+    path.write_text(body, encoding="utf-8")
+    loaded, reference = peak_of(lambda: safe_yaml.safe_load(path.read_text(encoding="utf-8")))
+    assert isinstance(loaded, dict)
+
+    _, peak = peak_of(lambda: load(path))
+
+    assert peak < reference + 8_000_000, (peak, reference)
+
+
+def test_an_integer_label_key_is_refused_as_a_key_not_as_its_verdict(tmp_path: Path) -> None:
+    case = _calibrate(tmp_path, f"? {HEX}\n: pass\n")
+
+    result = runner.invoke(app, case.args)
+
+    assert result.exit_code == ExitCode.ERROR, result.output
+    [line] = result.stderr.splitlines()
+    assert str(case.files[0]) in line and "verdict" not in line, line
+    assert "<an integer of 20000 bits> is not a spec id; a spec id is text" in line, line
+
+
+def test_an_integer_key_or_provider_of_a_target_is_not_turned_into_text(tmp_path: Path) -> None:
+    path = tmp_path / "target.yaml"
+    path.write_text(f"id: t\ntype: chatbot\nprovider: {HEX}\ntransport: {HEX}\n", "utf-8")
+    assert target_uses_mock(path) is True
+
+    case = _with(_run(tmp_path, TARGET + f"seeded_setup:\n  ? {HEX}\n  : x\n"), 0, "")
+    result = runner.invoke(app, case.args)
+    assert result.exit_code == ExitCode.ERROR, result.output
+    assert "has unknown key(s) <an integer of 20000 bits>;" in result.stderr, result.stderr
+
+
+def test_a_credential_variable_is_named_up_to_300_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name = "K" * 100_000
+    monkeypatch.setenv(name, "line\nbreak")
+
+    with pytest.raises(ValueError, match="contains a control character") as caught:
+        resolve_auth_ref(f"env://{name}")
+
+    assert len(str(caught.value)) < 2_500 and cut_of(name) in str(caught.value)

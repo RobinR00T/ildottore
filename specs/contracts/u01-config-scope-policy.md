@@ -188,30 +188,37 @@ is 300 characters or fewer, exactly as before; past that, its first 300 characte
 (`... (N characters)`), or for a list, mapping or set its first 300 characters and how many items it
 holds (`... (N items)`), without building the `repr` whole, because YAML aliases make it larger than
 its file (90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000 characters of `repr`,
-2.6 s and 202 MiB to build); an integer Python will not write out (a YAML hex or base-60 integer
-past 4,300 digits, whose `repr` raises) is shown as `<an integer of N bits>`. They are: an invalid
-target `type`, refused before the enum looks it up, because the enum's own error built the whole
-`repr` (that 90 KB file as a `type:` took 1.28 GB of resident memory and 50 s and printed a
-200,080,338-byte line on `a0bca70`, and takes 72 MB and 0.6 s now: audit of this clause), and an
-invalid `mock_scenario`; a duplicated scope target id, a duplicated identity name and an identity
-that shares a canary, with the id of the target they belong to; a labels entry with an invalid
-verdict (its spec id); two target files with one id in `run`; the target id and the endpoint in the
-authorization refusal (`policy.authorize_target`, so `run`, `fingerprint` and the engine's gate on
-each attempt), the target id that `run` and `fingerprint` write in front of it, and the ids the
-scope authorizes, which they list after it (the first 20, each cut, then `and N more`:
+about 200 MB to build); an integer Python will not write out (a YAML hex or base-60 integer past
+4,300 digits, whose `repr` raises) is shown as `<an integer of N bits>`. They are: an invalid target
+`type`, refused before the enum looks it up, because the enum's own error built the whole `repr`
+(that 90 KB file as a `type:` took 1.28 to 1.49 GB of resident memory and 42 to 50 s in two measures
+on `a0bca70`, and printed a line of about 200 MB; it takes 72 MB and 0.6 s now: audit of this
+clause), and an invalid `mock_scenario`; a duplicated scope target id, a duplicated identity name
+and an identity that shares a canary, with the id of the target they belong to; a labels entry with
+an invalid verdict (its spec id); two target files with one id in `run`; the target id and the
+endpoint in the authorization refusal (`policy.authorize_target`, so `run`, `fingerprint` and the
+engine's gate on each attempt), the target id that `run` and `fingerprint` write in front of it, and
+the ids the scope authorizes, which they list after it (the first 20, each cut, then `and N more`:
 `shared.config_errors.listed`), since a target the scope names and refuses by endpoint or command
 came back whole there; the target id in the `--hardened`, stdio and credential refusals of `run`,
 and the references the scope declares, listed by the credential refusal (20, each as
-`shown_auth_ref` quotes it, and how many more: 3,000 printed 885,131 bytes); an `auth_ref` reference
-wherever `shown_auth_ref` quotes one (a literal is still never shown); the target id, and the one
-the run store recorded, in the three refusals that bind `run --resume` to its target; in `dottore
-fleet`, an endpoint with an invalid port, the judge id and the judge fields a `--judge` file gets
-wrong; and, cut as one text with `shared.config_errors.cut`, the unknown keys of a target's
-`seeded_setup` and the tools it both maps and grants. PyYAML's problem text
-(`shared.config_errors.yaml_problem`, so every YAML loader, the spec loader and `dottore lint`
-included) is cut the same way. Before, each quoted the value whole, bounded only by A-43's 1 MiB
-read: a 1 MB `type:` printed an `error:` line of 1,000,108 bytes, a duplicated target id of 500 KB
-one of 500,136, and an undefined alias of a million characters about 1,000,100 from `run --scope`,
+`shown_auth_ref` quotes it, and how many more: 3,000 references of 290 characters printed 885,131
+bytes), and the variable a reference names when its value holds a control character; an `auth_ref`
+reference wherever `shown_auth_ref` quotes one (a literal is still never shown); the target id, and
+the one the run store recorded, in the three refusals that bind `run --resume` to its target (an id
+of 900,000 characters printed 900,276 bytes); in `dottore fleet`, an endpoint with an invalid port,
+the judge id and the judge fields a `--judge` file gets wrong; and, cut as one text with
+`shared.config_errors.cut`, the unknown keys of a target's `seeded_setup` and the tools it both maps
+and grants. PyYAML's problem text (`shared.config_errors.yaml_problem`, so every YAML loader, the
+spec loader and `dottore lint` included) is cut the same way. A label's verdict, a target's
+`provider` and `transport`, and the keys of its `seeded_setup` are checked as text before anything
+turns them into text: `str()` of a list of aliases took about 675 MB of resident memory (400 to 600
+MB traced by the test on `a0bca70`), and of an integer past 4,300 digits it raised, which the labels
+loader then blamed on a valid verdict (delta audit); a labels key that is such an integer is refused
+as `<an integer of N bits> is not a spec id`, and a `seeded_setup` key that is not text is quoted,
+not turned into text. Before, each quoted the value whole, bounded only by A-43's 1 MiB read: a 1 MB
+`type:` printed an `error:` line of 1,000,108 bytes, a duplicated target id of 500 KB one of
+500,136, and an undefined alias of a million characters about 1,000,100 from `run --scope`,
 `calibrate` and `lint` (pre-commit audit of A-43, in its measure, file paths included); this
 clause's sweep found the rest, up to 2,000,108 bytes from `fingerprint` for a target id of a million
 characters (the id in the message and again in the reason), and the 24 refusals of the test's table,
@@ -233,24 +240,28 @@ A valid file's text, and so a scope checksum, is unchanged. Not covered: the std
 line, which is meant to be copied exactly, is written whole; so is a target id wherever a run that
 has started prints it (the plan, the progress and `-sV` lines, the reports and the run store), and a
 labels spec id where `calibrate` lists the labels the report does not cover. Whether ids get a
-length bound when they are loaded, as a fleet's already have (64 characters), is OD-27. A YAML
-integer past 4,300 digits as a labels key (`str()` of it raises before any quote) and a list of
-aliases that `str()` turns into one text (a label's verdict, a target's `provider`: about 675 MB
-each) are refused when they are built by #71 and #77, both open. Checks:
-`tests/cli/test_operator_file_quoted_values.py` (each refusal of the table through the CLI with a
-value past the cut: the line under 2,500 characters, the file named where the refusal names it, the
-exact cut and no mask; twenty ids or references listed and the rest counted, through `run`,
-`fingerprint` and the credential refusal; the three refusals of `--resume`; a `repr` of exactly 300
-characters quoted whole and one of 301 cut; the head equal to the start of `repr` over generated
-values; a list and a mapping of aliases quoted, and refused as a `type` through `load_target`, under
-a memory bound; an integer Python will not write; the UTF-8 refusal through each command, and its
-offset past one decoder chunk), and the reader test of `tests/cli/test_operator_file_cap.py`,
-changed on purpose from "the same `UnicodeDecodeError` as `read_text`" to "an `OSError` at the same
-byte, naming the file". On `a0bca70`, with the new helpers stubbed to what the base does (`quoted`
-as `repr`, `listed` as a plain join), 49 of these 59 tests fail, each for its reason, and the 10
-that pass guard that a short value is quoted as before. Of 48 mutants, one per site and one per fix
-of the audit, 46 are killed; the two that live are equivalent (they quote a fleet id, which the
-fleet's model holds to 64 characters).
+length bound when they are loaded, as a fleet's already have (64 characters), is OD-27. A stdio
+`command` made of YAML aliases is joined into one text wherever the target is authorized
+(`wiring.request_url_for`, the engine's gate included) and in that advice: 20,000 aliases of one 10
+KB text, a 90 KB file, make a line of 200,020,417 bytes, about 1.09 GB and 32 s, on this branch as
+on `a0bca70`. #71 (open) caps every YAML file at 100,000 nodes with its aliases expanded, which that
+file passes about 30 times over. Checks: `tests/cli/test_operator_file_quoted_values.py` (each
+refusal of the table through the CLI with a value past the cut: the line under 2,500 characters, the
+file named where the refusal names it, the exact cut and no mask; twenty ids or references listed
+and the rest counted, through `run`, `fingerprint` and the credential refusal; the three refusals of
+`--resume`; a `repr` of exactly 300 characters quoted whole and one of 301 cut; the head equal to
+the start of `repr` over generated values; a list and a mapping of aliases quoted, and refused as a
+`type` through `load_target`, under a memory bound; an integer Python will not write, and no other
+failure of `repr` hidden; nested aliases one level down; a verdict and a `provider` of aliases not
+turned into text; an integer labels key and `seeded_setup` key; the variable name; the UTF-8 refusal
+through each command, and its offset past one decoder chunk), and the reader test of
+`tests/cli/test_operator_file_cap.py`, changed on purpose from "the same `UnicodeDecodeError` as
+`read_text`" to "an `OSError` at the same byte, naming the file". On `a0bca70`, with the new helpers
+stubbed to what the base does (`quoted` as `repr`, `listed` as a plain join), 58 of these 69 tests
+(the 68 of the file and the changed reader test) fail, each for its reason, and the 11 that pass
+guard that a short value is quoted as before and that any other failure of `repr` is raised, not
+described. Of 55 mutants, one per site and one per fix of the two audits, 53 are killed; the two
+that live are equivalent (they quote a fleet id, which the fleet's model holds to 64 characters).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

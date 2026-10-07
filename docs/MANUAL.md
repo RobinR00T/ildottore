@@ -104,8 +104,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   characters)` or, for a list or a mapping, `... (9000 items)`; a list of what the file declares
   (the ids a scope authorizes, the credentials it declares for a target) shows the first 20 and
   counts the rest. Only the advice for a stdio target prints its command line whole, to be
-  copied. A target id itself has no length limit, and a run that starts prints it whole in its
-  plan and reports, as `calibrate` does with the labels a report does not cover (OD-27).
+  copied (one made of YAML aliases can be far longer than its file until #71 caps what a file
+  expands to). A target id itself has no length limit, and a run that starts prints it whole in
+  its plan and reports, as `calibrate` does with the labels a report does not cover (OD-27).
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
