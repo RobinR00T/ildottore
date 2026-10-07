@@ -367,11 +367,11 @@ that is not text: `1: Keys should be strings`), never the value:
   they route); `dottore fleet` writes only these keys (a test runs it on both shipped fleets and
   loads what it writes).
 
-`tests/cli/test_target_top_level_keys.py`: 43 of its 78 tests fail on `c3e70d8` (as on `2f6201a`),
+`tests/cli/test_target_top_level_keys.py`: 42 of its 88 tests fail on `de392e1`, this branch's base,
 and so do A-40's two tests of a number as `provider` or `transport` in `test_huge_numbers.py`, which
-expected exit 0 and now expect this refusal. Each fails on the old behavior (25 of the 43, and both
-of A-40's, because the command exits 0; 17 because the reader does not raise) or, for the one that
-pins the key set, on the missing model; the other 35 guard what stays (every legal key loads, a null
+expected exit 0 and now expect this refusal. Each fails on the old behavior (25 of the 42, and both
+of A-40's, because the command exits 0; 17 because the reader does not raise); the other 46 guard
+what stays (every legal key passes the check, a file with each key the manual lists loads, a null
 text field is absent, `id` and `type` keep their own refusals) and that the redactor leaves each
 test value readable, and one loads every target file under `examples/`, `specs/` and `tests/` and
 every target block of the docs and man pages through the three readers. Refusing is the owner's call
