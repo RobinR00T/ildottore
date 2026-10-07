@@ -181,7 +181,20 @@ nothing themselves, so the runner's retries are the only ones and each passes th
 
 **A-6 A campaign that did not finish says why.** `CampaignResult` carries the breached axis,
 its ceiling and how many specs never ran. A bare state word is not a reason: a spec that never
-ran leaves no trace in the finding list, so nothing downstream can reconstruct it.
+ran leaves no trace in the finding list, so nothing downstream can reconstruct it. Amended
+2026-10-07: **the reason's figures survive the redactor that masks it.** The terminal and every
+report mask the reason, and a bare figure of nine characters or more is a phone number to the
+redactor (a Luhn-valid one of 13 to 19 digits, a card), so every stop on the default 1,800 s
+wall ceiling printed `attempted «REDACTED:phone»`, as did a target reporting 2**53 tokens. The
+figures come from `BudgetExhausted.figures` (digit groups, seconds to three decimals, a count
+from 10**18 up as a magnitude), never formatted at the call site, and a shortened figure is
+rounded away from the ceiling (the attempted figure up, the limit down), so a crossed ceiling
+never reads as an equal one. The redactor is not relaxed for the reason and the terminal line
+is tested to mask it (removing that mask left the suite green until the pre-commit audit). The
+one value the grouping lets through on purpose is the figure itself: a target can report a
+card-shaped usage figure, and it prints grouped, because showing it is the point.
+`tests/core/test_halt_figures.py` (property tests over every count below 10**18, over elapsed
+times and over the rounding direction) and `tests/cli/test_halt_figures_cli.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is

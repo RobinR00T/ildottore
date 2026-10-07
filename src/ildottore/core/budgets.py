@@ -21,10 +21,12 @@ axis can be exercised without real sleeps (contract §7).
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 
 from ildottore.shared.models import PlanBudgets
 
@@ -49,8 +51,61 @@ class BudgetExhausted(RuntimeError):
         self.limit = limit
         self.attempted = attempted
         super().__init__(
-            f"budget exhausted on {axis!r}: attempted {attempted} would exceed limit {limit}"
+            f"budget exhausted on {axis!r}: attempted {_figure(attempted, up=True)} "
+            f"would exceed limit {_figure(limit, up=False)}"
         )
+
+    @property
+    def figures(self) -> str:
+        """``limit X, attempted Y`` for a halt reason, both written by :func:`_figure`."""
+
+        limit = _figure(self.limit, up=False)
+        return f"limit {limit}, attempted {_figure(self.attempted, up=True)}"
+
+
+#: From here on a count prints as a magnitude: no real spend gets near it, and its digits alone
+#: would fill the line.
+_MAGNITUDE_FROM = 10**18
+
+
+def _figure(value: int | float, *, up: bool) -> str:
+    """A budget figure as a halt message writes it, in a shape the redactor leaves alone.
+
+    Every surface masks the halt reason (SEC-01), and written bare a figure of nine characters
+    or more is a phone number to the redactor (a Luhn-valid one of 13 to 19 digits, a card), so
+    the reason read ``attempted «REDACTED:phone»`` for the very figure that stopped the run: a
+    stop on the default 1,800 s wall ceiling (``1800.123456``), a count past 99,999,999, an
+    operator ceiling that high. Digit groups break the run both rules need; seconds keep three
+    decimals, because ``800.123456`` after a group separator is a phone number again; and a
+    count from ``_MAGNITUDE_FROM`` up is written as a magnitude.
+
+    A figure that has to be shortened is rounded AWAY from the ceiling: ``up`` for the figure
+    that crossed it, down for the ceiling itself. Rounded to the nearest, 1,800.0004 s against a
+    1,800 s ceiling read ``attempted 1,800.000 would exceed limit 1,800``. The arithmetic is on
+    exact integers, so neither a float's range nor the ``decimal`` context can move a digit.
+    """
+
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return str(value)
+        numerator, denominator = value.as_integer_ratio()
+        whole, millis = divmod(_divide(numerator * 1000, denominator, up=up), 1000)
+        return f"{whole:,}.{millis:03d}"
+    if value < _MAGNITUDE_FROM:
+        return f"{value:,}"
+    # `Decimal` of an int is exact whatever the context, and unlike `str` it takes more than
+    # 4,300 digits.
+    exponent = Decimal(value).adjusted()
+    lead = _divide(value, 10 ** (exponent - 3), up=up)  # the four leading digits
+    if lead == 10_000:  # 9.9995e+N rounded up is 1.000e+(N+1)
+        lead, exponent = 1_000, exponent + 1
+    return f"{lead // 1000}.{lead % 1000:03d}e+{exponent}"
+
+
+def _divide(numerator: int, denominator: int, *, up: bool) -> int:
+    """``numerator / denominator`` rounded up or down to an integer, exactly."""
+
+    return -(-numerator // denominator) if up else numerator // denominator
 
 
 @dataclass(frozen=True)
