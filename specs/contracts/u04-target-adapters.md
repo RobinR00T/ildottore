@@ -108,7 +108,9 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   200 ⇒ raise (product defect). No defect masked as flake. A 200 whose brackets balance and nest
   deeper than `MAX_DEPTH` (past the parser's stack included), in the body or in a tool call's
   string arguments, ⇒ `ResponseTooDeep` (env, sent once), for every adapter and the MCP transports
-  (brackets that do not balance follow the product-defect rule, OD-21)
+  (a body whose brackets do not balance follows the product-defect rule, OD-21, except over MCP
+  stdio, where the line is skipped as stray output; tool-call arguments that do not balance read
+  as no arguments)
   (`tests/adapters/test_deep_replies.py`); through the CLI, one such reply fails its attempt
   and every other spec runs (`tests/cli/test_hostile_nesting.py`).
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/adapters` clean; `lint-imports` green

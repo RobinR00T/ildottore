@@ -260,11 +260,18 @@ for line in sys.stdin:
         for _ in range(n // 1048576):
             print(("x" if mode == "junk" else chr(13)) * 1048576, flush=True)
         result = json.dumps({"serverInfo": {"name": "late"}})
-    elif mode == "exact":  # 10 stray bytes, then a reply that brings the request to n bytes
-        print("x" * 10, flush=True)
+    elif mode.startswith("exact"):  # 10 stray bytes, then a reply bringing the request to n
+        end = chr(13) + chr(10) if mode == "exactcrlf" else chr(10)
+        counted = len(end) - 1  # a carriage return counts, the newline does not
+        sys.stdout.write("x" * 10 + end)
         head = '{"jsonrpc":"2.0","id":%d,"result":{"serverInfo":{"name":"' % msg["id"]
         tail = '"}}}'
-        print(head + "y" * (n - 10 - len(head) - len(tail)) + tail, flush=True)
+        last = mode == "exactnoeol"  # the reply ends the stream, with no newline
+        pad = n - 10 - counted - len(head) - len(tail) - (0 if last else counted)
+        sys.stdout.write(head + "y" * pad + tail + ("" if last else end))
+        sys.stdout.flush()
+        if last:
+            sys.exit(0)
         continue
     elif mode == "tools":
         tools = [{"name": "tool_%d" % i, "description": ("Reads record %d. " % i) * 20}
@@ -339,7 +346,11 @@ async def test_the_stdio_cap_counts_the_stray_lines_and_the_reply_together(tmp_p
 
     from ildottore.adapters.base import MAX_RESPONSE_BYTES
 
-    response = await _stdio(tmp_path, "exact", MAX_RESPONSE_BYTES).send(ModelRequest(prompt="hi"))
-    assert response.text.startswith("MCP server: yyy")
+    for mode in ("exact", "exactcrlf"):  # a CRLF line's carriage return counts
+        response = await _stdio(tmp_path, mode, MAX_RESPONSE_BYTES).send(ModelRequest(prompt="hi"))
+        assert response.text.startswith("MCP server: yyy")
+        with pytest.raises(AdapterEnvError, match="exceeded"):
+            await _stdio(tmp_path, mode, MAX_RESPONSE_BYTES + 1).send(ModelRequest(prompt="hi"))
+    # A last line with no newline is counted whole (delta audit of the follow-ups).
     with pytest.raises(AdapterEnvError, match="exceeded"):
-        await _stdio(tmp_path, "exact", MAX_RESPONSE_BYTES + 1).send(ModelRequest(prompt="hi"))
+        await _stdio(tmp_path, "exactnoeol", MAX_RESPONSE_BYTES + 1).send(ModelRequest(prompt="hi"))

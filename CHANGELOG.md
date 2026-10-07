@@ -82,8 +82,10 @@ versioning: [SemVer](https://semver.org/).
   aborts), `tests/shared/test_nesting.py` (24) and one judge test. The tests of the fix fail on
   `main` (by `RecursionError`, "DID NOT RAISE", exit 3, `readline`'s `ValueError` or
   `AdapterProductError`); the guards of what the audits found (the margin, the linear pattern,
-  the balance rule) have nothing to catch there. Three audits ran: one before the commit, a
-  delta round on its fixes, and one before the merge (its follow-ups are the second commit).
+  the balance rule) have nothing to catch there. Four audits ran: one before the commit, a
+  delta round on its fixes, one before the merge, and a delta round on its follow-ups (the
+  later commits), which found only wording and two untested ways to miscount a line ending, now
+  tested.
 
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 

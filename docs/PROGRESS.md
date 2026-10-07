@@ -15,9 +15,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   and stdio line, a tool call's JSON-string arguments and the judge's reply. The depth is read
   from the text before parsing, so it does not depend on the Python version; brackets that do
   not balance are "not JSON". Also: an MCP stdio line may be 4 MiB (64 KiB stopped the campaign
-  on a server with 300 tools), with 4 MiB in all per request. Two audits before the commit (a
-  pre-commit one and a delta round on its fixes) found, among others, a quadratic string
-  pattern and a lost detection on unbalanced tool arguments; both fixed. Found while fixing
+  on a server with 300 tools), with 4 MiB in all per request. Four audits (before the commit,
+  a delta round on its fixes, before the merge, and a delta round on those follow-ups) found,
+  among others, a quadratic string pattern, a lost detection on unbalanced tool arguments and
+  carriage-return lines past the stdio total; all fixed, and the last round found only wording.
+  Found while fixing
   the operator-file case on `fix/cli-deep-json` (PR #61, a parallel branch, not touched here).
 - **Left for separate fixes** (pre-commit audit, both also on `main`): with `-sV` or `-A`, one
   refused reply in the probe pass stops the run before the attack; and a 400-digit token count in

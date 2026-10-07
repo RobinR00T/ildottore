@@ -82,8 +82,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   capped too. The adapters ask only for those two (`Accept-Encoding: gzip, deflate`); any other
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
-  classified by the status (a `401` stays a `401`). A reply whose brackets balance and nest more
-  than 100 levels deep (objects and arrays, outside strings, read from the text before it is
+  classified by the status (a `401` stays a `401`). A reply whose brackets balance (as many
+  close as open) and nest more than 100 levels deep (objects and arrays, outside strings, read
+  from the text before it is
   parsed, whether or not the rest is valid JSON; a provider's reply nests about 10), or a tool
   call whose JSON-string arguments do, is refused the same way: inconclusive, not retried, and
   the rest of the scan goes on. Tool-call arguments whose brackets do not balance read as no

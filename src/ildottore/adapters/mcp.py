@@ -438,8 +438,8 @@ class MCPAdapter:
                 raise AdapterEnvError(f"{self.id}: stdio {method} timed out") from exc
             except ValueError as exc:  # `readline` past the limit above
                 raise ResponseTooLarge(
-                    f"{self.id}: stdio {method} reply exceeded {MAX_RESPONSE_BYTES} bytes; "
-                    "not read further"
+                    f"{self.id}: stdio output for {method} has a line that exceeded "
+                    f"{MAX_RESPONSE_BYTES} bytes; not read further"
                 ) from exc
             if not raw:
                 raise AdapterEnvError(f"{self.id}: stdio stream closed during {method}")
