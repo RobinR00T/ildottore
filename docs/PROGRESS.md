@@ -3,6 +3,27 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (morning): a regex that does not compile is a lint finding
+
+- On `fix/lint-invalid-regex` (`tests/test_invalid_spec_patterns.py`, clause A-33 in `u02`): a
+  `regex_absence` or `regex_presence` pattern, or a `tool_sequence` `step_arg_patterns` entry,
+  that does not compile is one `EVALUATOR_MISCONFIGURED` error per pattern (at most 10 per
+  spec), with the spec id, instead of a `PatternError` traceback from the fixture stub (found by
+  the pre-commit audit of `fix/cli-legacy-workflow-commands`). `re.compile` also refuses with
+  `OverflowError`, `RecursionError`, `ValueError` and, under `-W error`, `FutureWarning`, which
+  aborted a whole `dottore run`; a run now refuses a selected spec whose regex does not compile
+  before sending, as it refuses a spec file that fails to load (F-10). Three audits, then three
+  delta audits: the stub crashed lint a level short of the nesting limit once `re`'s cache
+  dropped the pattern (now a finding); a compile thread that fixed the limit to one number was
+  taken out again (Ctrl-C, `fork`, queueing), so lint and a run still draw that line a few
+  levels apart, and in a selection of more than 512 patterns a spec nested 482 to 487 deep ends
+  `inconclusive` with no reason in the report (documented in `compile_spec_pattern` and A-33; a
+  per-process cache would close it). The message quotes with `ascii`; until PR #51 and PR #54
+  merge, the lint text line does not go through `visible_controls`, so a `##[` in a pattern is
+  printed as written, as in every other lint message on `main`. Open for the owner as OD-22:
+  refuse the run (as built, like F-10) or skip only that spec (like `setup_not_seeded`); reuse
+  `EVALUATOR_MISCONFIGURED` (as built) or a code of its own.
+
 ## State, 2026-10-07 (night): OD-18 option B built
 
 - On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec

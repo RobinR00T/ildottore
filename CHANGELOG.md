@@ -5,6 +5,53 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a regex a spec writes that does not compile)
+
+- **`dottore lint` crashed on it.** A `regex_absence` pattern `(x` made lint exit 1 with a
+  `PatternError` traceback (about 180 lines at 80 columns) raised by the offline fixture stub,
+  in text and `--json` alike (pre-commit audit of `fix/cli-legacy-workflow-commands`, reproduced
+  on `main`), and so did a `regex_presence` pattern and a `tool_sequence` `step_arg_patterns`
+  entry. A comment in the linter left "a malformed pattern" to `EVALUATOR_MISCONFIGURED`, a
+  check nobody had written. It is now that check: each pattern that does not compile is one
+  `EVALUATOR_MISCONFIGURED` error with the spec id, the field (and the step, for a
+  `step_arg_patterns` entry), the pattern and the engine's reason, each written with `ascii`
+  (every control, format and other non-ASCII character written out) and cut at 120 of its own
+  characters, at most 10 per spec and then one that says there are more (97,000 bad patterns in
+  one spec made 25 MB of lint text before the cap). That spec's fixture proof is not attempted,
+  and the message says so. A `step_arg_patterns` entry for a step no fixture calls linted clean
+  before; it is reported too, since the evaluator compiles every entry.
+- **`dottore run` aborted a campaign over one spec, or scored it blind.** `re.compile` refuses a
+  pattern with more than `re.error`: `a{4294967296}` raises `OverflowError`, a few hundred
+  nested groups `RecursionError`, `(?a)(?u)x` `ValueError`, and under `-W error` a nested set
+  such as `[[a]` its `FutureWarning`. The evaluators caught only `re.error`, so any of the
+  others stopped the run with exit 3 after it had started; a `re.error` let the run go on, spend
+  on the spec, score it with that evaluator abstaining (`inconclusive`, or `fail` through
+  another evaluator) with the reason in no report, and count it as covered. Now a selected spec
+  whose regex does not compile is refused before anything is sent (exit 3, naming the spec and
+  its first such pattern and pointing at `dottore lint`), a resumed run included, as a spec file
+  that fails to load already was; `--exclude` leaves it out. Called as a library, the evaluators
+  still abstain on one. `dottore coverage` compiles no pattern and was not affected.
+- **One function compiles every spec pattern.** Lint, its fixture stubs, the run's pre-flight
+  and the evaluators compile through `shared/patterns.compile_spec_pattern`, with the same flags
+  and the same five refusals. How deep groups may nest depends on the caller's stack, since the
+  engine parses them recursively: on Python 3.14 lint accepts 486 nested groups and the run's
+  pre-flight 487 (through `python -m`; one or two more through `dottore`). The stubs compile a
+  few frames deeper than lint's check, so once `re`'s cache (512 patterns) has dropped a pattern
+  nested a level short of the check's limit, the fixture proof cannot compile it: that is a
+  finding naming the field and the pattern, not a traceback. Left open: in a run whose selection
+  holds more than 512 patterns, an evaluator compiles a pattern itself, a few frames deeper
+  still, so one nested 482 to 487 deep lints clean, passes the pre-flight and makes its
+  evaluator abstain, with the reason in no report (`main` aborted the run there). The
+  `ORACLE_MARKER_IS_ECHOABLE` message for a pattern the spec echoes, and the evaluators'
+  "invalid regex" reasoning, quote the pattern the same way (the first printed a 900 KB pattern
+  on one line, the second wrote the engine's reason raw). OD-22 asks the owner whether to refuse
+  the run (as built) or skip only that spec, and whether to keep `EVALUATOR_MISCONFIGURED`.
+  Clause A-33 in `u02`; `tests/test_invalid_spec_patterns.py` holds 66 cases: each field with
+  each of the four exceptions, in lint text and `--json`, in a run (`--dry-run`, `-sn`,
+  `--estimate` and `--resume` included) and in each evaluator, the `-W error` warning and
+  `coverage` for one field, lint at every depth around its own limit with `re`'s cache overrun,
+  and the fixture proof's refusal for each field.
+
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 
 - **The second half of OD-18** (ADR-0009, C with A first, decided 2026-10-06). A deployed
