@@ -142,10 +142,10 @@ any credential and have both written into the scope (SEC-04). Checks: the same f
 surrogate) or a format character (Unicode Cf, pinned to Unicode 16.0), `redact_text` finds each
 registered credential in the text with those characters dropped, and the stretch it covers,
 the characters inside included, becomes the mask an unsplit occurrence gets, with the same
-digest; overlapping credentials are masked as one, named by the longer (the first to start on a
-tie). Split by a newline or a
-zero-width space a credential was kept in two readable halves in every report, in the evidence
-and on the terminal, while split by `\x00` it was masked (audit of PR #51). Text without such
+digest; overlapping credentials are masked as one, named by the longest as it shows (the first
+to start on a tie), and a credential too short to be matched without those characters is matched
+as written and masked with what it overlaps. Split by a newline or a zero-width space a credential
+was kept in two readable halves in every report, in the evidence and on the terminal, while split by `\x00` it was masked (audit of PR #51). Text without such
 a character is redacted byte for byte as before, unless a registered credential itself holds
 one (a differential fuzz against main is the
 check, run before a change to this match is merged), redaction stays a fixed point, and the

@@ -191,6 +191,23 @@ def _overlap_step(joined: str) -> int:
     return period if 2 * period >= len(joined) else len(joined)
 
 
+@functools.lru_cache(maxsize=256)
+def _visible_length(secret: str) -> int:
+    """How many characters of ``secret`` show: no splitter, no whitespace at either end."""
+
+    return len(secret.translate(_DROP_INVISIBLE).strip())
+
+
+def _longest(first: str, then: str) -> str:
+    """The credential that names an overlapping group: the longest as it shows, the first on a tie.
+
+    As PR #51 and PR #56 name it. Counted with its invisible characters, `abcdefgh` and five
+    zero-width spaces named a group over `abcdefghijkl` (pre-merge audit).
+    """
+
+    return then if _visible_length(then) > _visible_length(first) else first
+
+
 def _stretches(clean: str, joined: str, secret: str) -> Iterator[tuple[int, int, str]]:
     """Each stretch of ``clean`` that ``joined`` covers, in order, overlapping ones as one.
 
@@ -732,10 +749,10 @@ class Redactor:
         stretch of the text from its first character to its last, the characters inside
         included, becomes the mask it gets in one piece: same type, same digest, kept aside as a
         mask. What lies outside the stretch stays where it is. Overlapping occurrences, of one
-        credential or of two, are masked as one, named by the longer (the first to start on a
-        tie): masking one first would leave the other's head or tail readable (an unsplit short
-        one taken first left 8 of a split long one's 12 characters, pre-commit review of this
-        block). A credential
+        credential or of two, are masked as one, named by the longest as it shows (the first to
+        start on a tie): masking one first would leave the other's head or tail readable (an
+        unsplit short one taken first left 8 of a split long one's 12 characters, pre-commit
+        review of this block). A credential
         registered with such a character inside it matches as written without it, under the
         registered form's digest, and a key read with a trailing CR, registered stripped too, is
         named by its stripped form.
@@ -761,48 +778,68 @@ class Redactor:
                 short.append(secret)
         if not split:  # every credential as registered is masked already
             wanted = {joined: secret for joined, secret in wanted.items() if joined != secret}
-        if wanted:
-            text = self._mask_joined(text, keep, registered, wanted, split=split)
-        # Too short without those characters to be matched without them (it would mask a word),
-        # so only as written, longest first, as the caller does in a text without them: left out,
-        # one registered as `ab\tcd\tefg` was kept raw (pre-commit audit), and replaced before the
-        # longer matches, one took a longer credential's head and left its tail (delta audit).
-        for secret in short:
-            if secret in text:
-                mask = _MASK_TEMPLATE_HASHED.format(type="credential", digest=self._digest(secret))
-                text = text.replace(secret, keep(mask))
+        if wanted or short:
+            text = self._mask_matches(text, keep, registered, wanted, short, split=split)
         return text
 
-    def _mask_joined(
+    def _mask_matches(
         self,
         text: str,
         keep: Callable[[str], str],
         registered: Sequence[str],
         wanted: Mapping[str, str],
+        short: Sequence[str],
         *,
         split: bool,
     ) -> str:
-        """Mask every stretch of ``text`` a ``wanted`` form covers once the splitters are dropped.
+        """Mask, once per overlapping group, what the ``wanted`` and the ``short`` forms cover.
 
-        ``wanted`` maps a form without them to the registered credential it names.
+        ``wanted`` maps a form without the splitters to the registered credential it names, and
+        is matched in the text with them dropped. A ``short`` form is too short without them to
+        be matched so (it would mask a word), so only as written, as the caller does in a text
+        without them: left out, one registered as `ab\tcd\tefg` was kept raw (pre-commit
+        audit). Both kinds of match are placed in the text and their union is masked: replaced
+        before the longer matches, a short form took a longer credential's head and left its
+        tail (delta audit), and replaced after them, it kept up to 6 characters they had not
+        taken (pre-merge audit).
         """
 
         clean = text.translate(_DROP_SPLITTERS) if split else text
-        stretches = heapq.merge(*(_stretches(clean, joined, wanted[joined]) for joined in wanted))
-        current = next(stretches, None)
+        positions = _PositionsInText(text)
+
+        def _joined() -> Iterator[tuple[int, int, str]]:
+            # Merged where they were found, so each group is placed with indices that only grow.
+            stretches = heapq.merge(*(_stretches(clean, form, wanted[form]) for form in wanted))
+            group = next(stretches, None)
+            if group is None:
+                return
+            for start, end, secret in stretches:
+                if start < group[1]:
+                    group = (group[0], max(group[1], end), _longest(group[2], secret))
+                    continue
+                yield positions.at(group[0]), positions.at(group[1] - 1) + 1, group[2]
+                group = (start, end, secret)
+            yield positions.at(group[0]), positions.at(group[1] - 1) + 1, group[2]
+
+        def _as_written(secret: str) -> Iterator[tuple[int, int, str]]:
+            found = text.find(secret)
+            while found != -1:
+                yield found, found + len(secret), secret
+                found = text.find(secret, found + len(secret))
+
+        spans = heapq.merge(_joined(), *(_as_written(secret) for secret in short))
+        current = next(spans, None)
         if current is None:
             return text
         # One stash token a credential, as the match by value uses: a text repeating a split
         # credential costs a list entry per occurrence, not a mask and a token each.
         tokens: dict[str, str] = {}
         exact = frozenset(registered)
-        positions = _PositionsInText(text)
         out: list[str] = []
         cursor = 0
 
-        def _mask(start: int, end: int, secret: str) -> None:
+        def _mask(first: int, after: int, secret: str) -> None:
             nonlocal cursor
-            first, after = positions.at(start), positions.at(end - 1) + 1
             # A stretch written exactly as a registered form gets that form's digest, as the
             # match by value gave it; any other is named by the credential it was matched as.
             written = text[first:after]
@@ -814,14 +851,12 @@ class Redactor:
             out.append(tokens[name])
             cursor = after
 
-        for start, end, secret in stretches:
-            if start < current[1]:
-                # Named by the longest, the first to start on a tie (as PR #51 and PR #56 name it).
-                longer = secret if len(secret) > len(current[2]) else current[2]
-                current = (current[0], max(current[1], end), longer)
+        for first, after, secret in spans:
+            if first < current[1]:
+                current = (current[0], max(current[1], after), _longest(current[2], secret))
                 continue
             _mask(*current)
-            current = (start, end, secret)
+            current = (first, after, secret)
         _mask(*current)
         out.append(text[cursor:])
         return "".join(out)

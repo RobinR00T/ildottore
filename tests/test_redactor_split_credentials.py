@@ -121,11 +121,17 @@ def test_two_overlapping_split_credentials_are_masked_as_one() -> None:
     assert "Zz1" not in out and "Op8" not in out
 
 
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [("Ab1Cd2Ef3Gh4", "Gh4Ij5Kl6Mn7"), ("Zb1Cd2Ef3Gh4", "Gh4Ij5Kl6Mn7")],
+    ids=["first sorts first", "first sorts last"],
+)
 @pytest.mark.usefixtures("no_known_secrets")
-def test_two_overlapping_credentials_of_one_length_are_named_by_the_first() -> None:
+def test_two_overlapping_credentials_of_one_length_are_named_by_the_first(
+    first: str, second: str
+) -> None:
     """The first to start names the mask, as PR #51 and PR #56 name it, whatever the values."""
 
-    first, second = "Ab1Cd2Ef3Gh4", "Gh4Ij5Kl6Mn7"  # the second sorts last by value
     register_known_secret(first)
     register_known_secret(second)
     redactor = Redactor(salt="s")
@@ -230,7 +236,7 @@ def test_a_short_credential_matched_as_written_does_not_break_a_longer_one(
     registered: list[str], text: str, longer: str
 ) -> None:
     """Replaced before the longer matches, a short one took a longer credential's head and left
-    up to 7 of its characters readable (delta audit); now longest first, as by value on main."""
+    up to 7 of its characters readable (delta audit); now both are masked as one stretch."""
 
     for value in registered:
         register_known_secret(value)
@@ -238,6 +244,61 @@ def test_a_short_credential_matched_as_written_does_not_break_a_longer_one(
     out = redactor.redact_text(text)
     assert longer not in out and f"«REDACTED:credential:{redactor._digest(longer)}»" in out
     assert redactor.redact_text(out) == out
+
+
+@pytest.mark.parametrize(
+    ("registered", "text", "outside"),
+    [
+        (
+            ["\t\t\t\t\t\tAKdke\xad\xad\xad", "HdgYGmDj", "gYGmDjAK"],
+            "cmceenHdgYGmDj\t\t\t\t\t\tAKdke\xad\xad\xadEHeH",
+            ("cmceen", "EHeH"),
+        ),
+        (
+            [" c\newUw\x7fYv   ", "v   SSG\rQV", "SSGQVYtecKB"],
+            "DBHDt c\newUw\x7fYv   SSGQVYtecKBhsM",
+            ("DBHDt", "hsM"),
+        ),
+        (["ab\t\t\t\t\tcd\tefg", "WXYZQRab"], "WXYZQRab\t\t\t\t\tcd\tefg\n", ("", "\n")),
+    ],
+)
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_short_credential_and_a_longer_match_over_it_are_masked_as_one(
+    registered: list[str], text: str, outside: tuple[str, str]
+) -> None:
+    """Replaced after the longer matches, a short form kept up to 6 characters they had not
+    taken, where main masked everything (pre-merge audit); their union is masked now."""
+
+    for value in registered:
+        register_known_secret(value)
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text(text)
+    head, tail = outside
+    assert out.startswith(head + "«REDACTED:credential:") and out.endswith("»" + tail)
+    assert out.count("«") == 1 and redactor.redact_text(out) == out
+
+
+@pytest.mark.usefixtures("no_known_secrets")
+def test_two_overlapping_short_credentials_are_masked_as_one() -> None:
+    zwsp = chr(0x200B)
+    register_known_secret(f"ab{zwsp}cd{zwsp}efg")
+    register_known_secret(f"efg{zwsp}hi{zwsp}jk")
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text(f"x ab{zwsp}cd{zwsp}efg{zwsp}hi{zwsp}jk y")
+    assert out.startswith("x «REDACTED:credential:") and out.endswith("» y")
+    assert out.count("«") == 1
+
+
+@pytest.mark.usefixtures("no_known_secrets")
+def test_an_overlapping_group_is_named_by_the_longest_as_it_shows() -> None:
+    """Counted with its invisible characters, a shorter credential named the group."""
+
+    padded = "abcdefgh" + chr(0x200B) * 5  # 8 characters show, 13 counted
+    register_known_secret(padded)
+    register_known_secret("efghIJKLMN")
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text("x abcdefghIJKLMN\n")
+    assert out == f"x «REDACTED:credential:{redactor._digest('efghIJKLMN')}»\n"
 
 
 @pytest.mark.usefixtures("no_known_secrets")
