@@ -17,11 +17,15 @@ The carryover ledger. Every agent session updates this so context survives even 
   wrote stays masked, and the terminal line is now tested to mask the reason. A card-shaped
   usage figure prints grouped, on purpose (A-6). The pre-commit audit (181,584 figure cases
   fuzzed through the redactor, none masked) found a crossed ceiling printed as an equal one and
-  the untested terminal mask, both fixed. Not in this change: a usage figure past the float
-  range (309 digits and up) crashes the run on main while its spend is stored
+  the untested terminal mask; the delta audit found the first still alive in the ledger, which
+  rounded the elapsed time to six decimals before the figure was written (1,800.0000004 s
+  printed as 1,800.000), and a negative float written wrong (unreachable). All fixed. Not in
+  this change: a usage figure past the float range (above about 1.8e308) crashes the run on
+  main while its spend is stored
   (`store/run_sqlite.py`), fixed by PR #67; the spec the halt cut stores nothing on main, fixed
   by PR #66, which also edits the breach line in `runner.py`; and the resume refusal names a
-  `--budget-wall-s` flag that does not exist (it is `--budget-wall`).
+  `--budget-wall-s` flag that does not exist (it is `--budget-wall`), fixed on
+  `fix/resume-wall-flag-name`.
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 

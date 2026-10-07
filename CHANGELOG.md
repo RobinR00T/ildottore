@@ -20,7 +20,11 @@ versioning: [SemVer](https://semver.org/).
   again), and a count from 10**18 up as a magnitude (`1.000e+300`), so a hostile figure cannot
   fill the line. A shortened figure is rounded away from the ceiling (the figure that crossed it
   up, the ceiling down), so a crossed ceiling never reads as an equal one: rounded to the
-  nearest, 1,800.0004 s printed `attempted 1,800.000 would exceed limit 1,800`. The `-sV` probe
+  nearest, 1,800.0004 s printed `attempted 1,800.000 would exceed limit 1,800`, and the ledger no
+  longer rounds the elapsed time to six decimals before the halt figure is written. A figure
+  past Python's 4,300-digit `str` limit (a run whose second spec is told 4,300 nines) no longer
+  raises `ValueError` from inside the exception meant to halt the run; that run still exits 1
+  later, while storing its spend, which PR #67 fixes. The `-sV` probe
   pass's ceiling error (exit 3) carries the same figures. The reason is not exempted from the
   redactor: a key in an aborted run's reason is still masked on the terminal and in every report
   (a test now covers the terminal line, which nothing did). The one thing the grouping lets

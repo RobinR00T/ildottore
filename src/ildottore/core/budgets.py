@@ -85,6 +85,8 @@ def _figure(value: int | float, *, up: bool) -> str:
     exact integers, so neither a float's range nor the ``decimal`` context can move a digit.
     """
 
+    if value < 0:  # no ceiling or spend is negative; written right all the same
+        return "-" + _figure(-value, up=not up)
     if isinstance(value, float):
         if not math.isfinite(value):
             return str(value)
@@ -232,7 +234,9 @@ class BudgetLedger:
             return
         elapsed = self.elapsed_s()
         if elapsed > self._max_wall_s:
-            raise BudgetExhausted("max_wall_s", self._max_wall_s, round(elapsed, 6))
+            # Unrounded: `round(elapsed, 6)` put 1,800.0000004 s back ON a 1,800 s ceiling, and
+            # the halt read "attempted 1,800.000 would exceed limit 1,800" (`_figure` rounds).
+            raise BudgetExhausted("max_wall_s", self._max_wall_s, elapsed)
 
     # --- discrete axes -------------------------------------------------------
 
@@ -343,7 +347,9 @@ class BudgetLedger:
             return
         elapsed = self.elapsed_s()
         if elapsed > self._max_wall_s:
-            raise BudgetExhausted("max_wall_s", self._max_wall_s, round(elapsed, 6))
+            # Unrounded: `round(elapsed, 6)` put 1,800.0000004 s back ON a 1,800 s ceiling, and
+            # the halt read "attempted 1,800.000 would exceed limit 1,800" (`_figure` rounds).
+            raise BudgetExhausted("max_wall_s", self._max_wall_s, elapsed)
 
 
 def _validate_ceiling(axis: str, value: int | None) -> int | None:

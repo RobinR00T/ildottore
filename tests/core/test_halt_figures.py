@@ -17,7 +17,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from ildottore.core.budgets import BudgetExhausted
+from ildottore.core.budgets import BudgetExhausted, BudgetLedger
 from ildottore.core.runner import CampaignRunner
 from ildottore.reporting import default_redactor
 from ildottore.shared.models import PlanBudgets
@@ -96,9 +96,10 @@ def test_no_elapsed_time_reads_as_personal_data(limit: int, attempted: float) ->
     assert _REDACTOR.redact_text(exc.figures) == exc.figures
 
 
+# Negative values reach no ceiling today; they are here so the sign is written right anyway.
 _NUMBER = st.one_of(
-    st.integers(min_value=0, max_value=10**40),
-    st.floats(min_value=0, max_value=1e30, allow_nan=False, allow_infinity=False),
+    st.integers(min_value=-(10**40), max_value=10**40),
+    st.floats(min_value=-1e30, max_value=1e30, allow_nan=False, allow_infinity=False),
 )
 
 
@@ -123,11 +124,49 @@ def test_a_shortened_figure_is_rounded_away_from_the_ceiling(
         assert shown_attempted > shown_limit
 
 
+@pytest.mark.parametrize(
+    ("value", "figures"),
+    [
+        (-0.5, "limit -0.500, attempted -0.500"),
+        (-1800.0004, "limit -1,800.001, attempted -1,800.000"),
+        (-5e-324, "limit -0.001, attempted -0.000"),
+        (-(10**40) - 1, "limit -1.001e+40, attempted -1.000e+40"),
+    ],
+)
+def test_a_negative_figure_keeps_its_sign_and_its_rounding_direction(
+    value: float, figures: str
+) -> None:
+    """No ceiling or spend is negative today. Written through ``divmod`` without the sign
+    branch, -0.5 read ``-1.500`` (delta audit, G2), and a negative int skipped the magnitude
+    form (a third audit, H2); the property test above drew 100 examples and none of them a
+    negative fraction, so these are pinned."""
+
+    assert BudgetExhausted("max_wall_s", value, value).figures == figures
+
+
+@pytest.mark.parametrize("check", ["check_wall", "debit_request", "debit_attempt"])
+def test_a_wall_ceiling_crossed_by_a_fraction_of_a_microsecond_reads_as_crossed(
+    check: str,
+) -> None:
+    """The ledger passed ``round(elapsed, 6)``, which put 1,800.0000004 s back ON the 1,800 s
+    ceiling before ``_figure`` could round it up: "attempted 1,800.000 would exceed limit
+    1,800" (delta audit of this fix, G1). Both wall checks, through the ledger itself."""
+
+    reads = itertools.chain([0.0], itertools.repeat(1800.0000004))
+    ledger = BudgetLedger(max_wall_s=1_800, time_source=lambda: next(reads))
+
+    with pytest.raises(BudgetExhausted) as exc:
+        getattr(ledger, check)()
+
+    assert exc.value.figures == "limit 1,800, attempted 1,800.001"
+
+
 def test_a_count_past_the_int_to_str_limit_still_builds_the_message() -> None:
     """``str`` refuses an int of more than 4,300 digits (Python 3.11+), and the f-string that
     built this message did the same: the exception meant to halt the run raised ``ValueError``
-    from its own constructor. ``dottore run`` does not get this far today (it fails first while
-    storing the spend), but the exception has to build for any int it is given."""
+    from its own constructor. ``json.loads`` reads 4,300 digits and the ledger adds them to what
+    it holds: while usage figures are not bounded where they are read, a run whose second spec
+    is told 4,300 nines reaches this constructor with 4,301 digits (delta audit, G4)."""
 
     exc = BudgetExhausted("max_tokens", 500_000, int("9" * 4300) + 513)
     assert "attempted 1.001e+4300 would exceed limit 500,000" in str(exc)

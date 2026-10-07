@@ -189,10 +189,12 @@ wall ceiling printed `attempted «REDACTED:phone»`, as did a target reporting 2
 figures come from `BudgetExhausted.figures` (digit groups, seconds to three decimals, a count
 from 10**18 up as a magnitude), never formatted at the call site, and a shortened figure is
 rounded away from the ceiling (the attempted figure up, the limit down), so a crossed ceiling
-never reads as an equal one. The redactor is not relaxed for the reason and the terminal line
-is tested to mask it (removing that mask left the suite green until the pre-commit audit). The
-one value the grouping lets through on purpose is the figure itself: a target can report a
-card-shaped usage figure, and it prints grouped, because showing it is the point.
+never reads as an equal one; the ledger hands over the elapsed time unrounded, or
+`round(elapsed, 6)` puts it back on the ceiling first. The redactor is not relaxed for the
+reason and the terminal line is tested to mask it (removing that mask left the suite green
+until the pre-commit audit). The one value the grouping lets through on purpose is the figure
+itself: a target can report a card-shaped usage figure, and it prints grouped, because showing
+it is the point.
 `tests/core/test_halt_figures.py` (property tests over every count below 10**18, over elapsed
 times and over the rounding direction) and `tests/cli/test_halt_figures_cli.py`.
 
