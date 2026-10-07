@@ -72,7 +72,7 @@ EXECUTION
   --timeout <s>                     per-attempt timeout
   --budget-tokens / --budget-requests / --budget-wall
                                     hard ceilings; each overrides the one derived from the plan
-  --resume <run-id>                 finish a halted run; answered attempts are not re-sent
+  --resume <run-id>                 finish a halted run; answered, judged attempts are kept
   --resume-unverified               resume a run whose integrity record is missing
 
 SAFETY / SCOPE
@@ -146,6 +146,24 @@ mid-spec leaves no artifact the manifest does not know, and the next resume is n
 tampered (it was, which is why the first attempt was withdrawn). A resume adopts into the
 journal the artifacts already on disk once they pass the check, so a run started by an older
 version keeps resuming.
+
+**A halted run keeps what it paid for (2026-10-07).** A request ceiling that stopped a run inside
+an identity sweep, or between two attempts of one batch, used to store nothing for that spec, and
+`--resume` refused it as a run that "sent nothing" while the run store recorded the requests that
+went out. Now every reply the target gave is stored as the batch hands it back (a Ctrl-C still
+drops the batch in flight): judged when the ceiling leaves room for the judge, kept with its
+deterministic fail when the ceiling refuses the judge and a deterministic check already failed
+it (OD-19: that decides without the judge), and otherwise stored without a verdict, which the
+resume sends again and judges (the first reply stays cited; if the re-send ends in an
+environment error, that inconclusive is the attempt scored). A reply whose own usage crosses the
+token ceiling is stored too, and so is a conversation whose last reply did. A run that spent
+requests and stored no reply (inside an identity sweep, or in the middle of its first
+conversation) is resumed from the start with its spend carried, and the resume message says so.
+Still refused: a run that spent nothing, an `--evidence-root` holding none of the artifacts the
+run store journals for the run (pending ones included), and an empty tree for a run that
+predates the journal (it does not record the scope it went out under), whose silence proves
+nothing. `--estimate --resume` takes off the judge's requests for the attempts the resume keeps,
+as it took off the target's; it does not price an identity sweep (PR #60 does).
 
 ## 3. Example invocations (the red-teamer's cheat sheet)
 

@@ -291,8 +291,9 @@ def run(
         str | None,
         typer.Option(
             "--resume",
-            help="Finish a halted run: its id. Answered attempts are not re-sent; those that "
-            "ended in an environment error are sent again (not one a retry would repeat).",
+            help="Finish a halted run: its id. Answered and judged attempts are not re-sent; "
+            "those that ended in an environment error (not one a retry would repeat), and "
+            "replies the halt stored before they were judged, are sent again.",
         ),
     ] = None,
     resume_unverified: Annotated[

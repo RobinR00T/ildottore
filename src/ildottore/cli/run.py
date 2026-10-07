@@ -47,7 +47,12 @@ from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
-from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
+from ildottore.core.runner import (
+    CampaignResult,
+    answered_attempt_ids,
+    resume_progress,
+    unjudged_attempt_ids,
+)
 from ildottore.core.setup_delivery import (
     MAX_TOOL_ROUNDS,
     delivers_in_band,
@@ -676,12 +681,14 @@ def _print_estimate(
     quiet: bool = False,
     fingerprint_probes: int = 0,
     already_done: int = 0,
+    judge_already_done: int = 0,
 ) -> None:
     """Print the pre-run estimate, per target and totalled (skipped under --quiet).
 
     Per target on purpose: the previous version estimated the selection once and printed it
     once, so a two-target run understated the spend by half - an error in the direction that
-    costs the operator money.
+    costs the operator money. ``judge_already_done`` is the judge's share of a resume: the
+    requests it will not make for the attempts the resumed run keeps.
     """
 
     if quiet:
@@ -701,6 +708,13 @@ def _print_estimate(
             f"  + {judge_requests} request(s) to the --judge model (~{judge_tokens} tokens), "
             "paced and debited from the same ceilings"
         )
+        if judge_already_done:
+            # A resume judges only what it sends: the whole battery's judge was priced, so a
+            # resume after a judged half promised 12 judge requests and sent 8.
+            print(
+                f"  minus {judge_already_done} judge request(s) for the attempts the resumed "
+                f"run keeps (~{max(0, judge_requests - judge_already_done)} still to send)"
+            )
     print(
         f"  ~tokens: {tokens_in} in + {tokens_out} out "
         f"(~{tokens_in + tokens_out} total, rough gloss)"
@@ -1219,15 +1233,34 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 file=sys.stderr,
             )
             opts.runs = inherited
-        if not opts.quiet:
+        if not opts.quiet and not resume_from.findings:
+            # The run spent requests and stored no reply: the ceiling stopped it inside an
+            # identity sweep or in the middle of its first conversation. It used to be refused
+            # as a run that "sent nothing", with its spend stranded under an id nothing could
+            # continue.
+            spent = prior_spend.requests if prior_spend is not None else 0
+            print(
+                f"resume: {opts.resume} stored no answered attempt before it halted, after "
+                f"{spent} request(s) (an identity sweep, or a conversation the ceiling stopped "
+                "mid-way); its spend counts against the ceiling and every spec is sent from "
+                "the start"
+            )
+        elif not opts.quiet:
             done, again = resume_progress(resume_from)
+            unjudged = len(unjudged_attempt_ids(resume_from))
+            errored = again - unjudged
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
                 f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
                 "would repeat); they will not be re-sent"
                 + (
-                    f"; {again} that ended in an environment error will be sent again"
-                    if again
+                    f"; {errored} that ended in an environment error will be sent again"
+                    if errored
+                    else ""
+                )
+                + (
+                    f"; {unjudged} answered but not evaluated before the halt will be sent again"
+                    if unjudged
                     else ""
                 )
             )
@@ -1419,6 +1452,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             quiet=opts.quiet,
             fingerprint_probes=(fingerprint_probe_count() if opts.fingerprint_first else 0),
             already_done=_answered_requests(resume_from, selected),
+            judge_already_done=_judge_requests_kept(resume_from, selected),
         )
         return RunOutcome(
             exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True, estimated=True
@@ -1768,6 +1802,32 @@ def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> 
                     rounds if isinstance(rounds, int) and not isinstance(rounds, bool) else 0
                 )
     return total
+
+
+def _judge_requests_kept(resume_from: TestRun | None, specs: list[AttackSpec]) -> int:
+    """The judge requests a resume will not make: the estimate's passes for each kept attempt.
+
+    The resume judges only the attempts it sends. A kept one is never judged again: an answered
+    one was judged by the halted run, and one that failed in a way a retry would repeat is never
+    judged at all. Both are in the battery the estimate priced, so both come off.
+    """
+
+    if resume_from is None:
+        return 0
+    judged = {
+        spec.id
+        for spec in specs
+        if any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators)
+    }
+    answered = answered_attempt_ids(resume_from)
+    kept = {
+        attempt.attempt_id
+        for finding in resume_from.findings
+        if finding.spec_id in judged
+        for attempt in finding.attempts
+        if attempt.attempt_id in answered
+    }
+    return JUDGE_PASSES * len(kept)
 
 
 def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool) -> None:

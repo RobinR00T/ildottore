@@ -3,6 +3,31 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (midday): a halted run keeps what it paid for, and resumes
+
+- On `fix/resume-halt-mid-batch` (off main `0f936b6`): a request ceiling that stopped a run
+  inside an identity sweep or between two attempts of a batch stored nothing for that spec, and
+  `--resume` refused the run as one that "sent nothing" (found by the delta audit of
+  `fix/authz-leak-identity-sweep`; on main, `DL-XTENANT-001 --runs 2 --budget-requests 3` sent 3
+  and stored 0, and `PI-DIRECT-001 --runs 3 --budget-requests 2` sent 2 and stored 0). Decided
+  and built: every reply the target gave is stored when its batch returns or a halt stops it,
+  judged when the ceiling leaves room; when the ceiling refuses the judge, a deterministic fail is
+  kept (OD-19) and any other reply is stored without a verdict, which the resume sends again and
+  judges. A run that spent requests and stored no reply resumes from the start with its spend
+  carried; one that spent none, an `--evidence-root` lacking what the journal holds (pending
+  rows included), and an empty tree for a run older than the journal are refused.
+  `--estimate --resume` now takes off the judge's share of the kept attempts (it priced 12 judge
+  requests for a resume that sent 8). Measured through the CLI against a loopback stub, halted
+  spend plus the resume's sends equals the final spend in every shape (1+3, 2+3, 3+3, 2+7, 7+12
+  with a judge, 1+5 on the token ceiling). The pre-commit audit (two auditors) found, among
+  others, a resume that published a PASS over a missing verdict and a deterministic fail lost at
+  the judge; all fixed (the CHANGELOG lists them), then a delta audit whose findings are fixed
+  too; 29 mutants of the fix all caught. Open:
+  `--estimate` does not price the identity sweep on main (PR #60 does; three strict `xfail`s
+  hand the match to whoever lands second), the attempts axis counts an attempt whose first
+  request was refused, and a Ctrl-C still drops the batch in flight. `make gates` green: 2336
+  tests (main 2302), coverage 96.42%, `dottore lint` 0/0 over 75 specs.
+
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
 - Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and

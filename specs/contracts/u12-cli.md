@@ -212,6 +212,38 @@ or SIGHUP, which `execute_run` turns into Ctrl-C). A SIGKILL still loses the dea
 and so does a Ctrl-C during a resumed run's `-sV` probe pass; the resume then opens at whatever
 was last recorded: the trade against a database write per request.
 
+**A halt keeps what it paid for, and a run that spent is resumable (amended 2026-10-07).** A
+request ceiling that stopped a run inside `DL-XTENANT-001`'s identity sweep, or between two
+attempts of one batch, stored nothing for that spec: the attempts the batch had answered went
+down with the exception, the run store recorded requests the evidence did not show, and
+`--resume` refused the run as one that "sent nothing", so its spend was stranded under an id
+nothing could continue (delta audit of `fix/authz-leak-identity-sweep`, reproduced on main
+`0f936b6`: three requests sent, then the refusal). The runner now stores every reply its batch
+received before the halt (u08, budget gates), and a run whose run store records a request spent
+is resumed even with no attempt stored, every spec from the start, its spend carried. Refused
+still, each for the reason that is then true: a run that recorded no request spent; an empty
+`--evidence-root` when the artifact journal holds any digest for the run, `pending` included
+(from the tree alone that looks the same, and resuming would send everything again; a `pending`
+digest is a write begun and never confirmed, on another tree or failed on this one, and the
+message says both, where the first version called it "not the tree the run wrote"); and an
+empty tree for a run that does not record the scope it went out under (D-17, built after the
+journal), which may predate the journal, so its silence proves nothing (the last two from the
+pre-commit audit, which had a pre-journal run and a pending-only journal resumed from the wrong
+tree). An attempt is **kept** by a resume (not sent again, A-11's sweep skip, and what
+`--estimate --resume` subtracts) when it has a reply and a verdict, or failed in a way a retry
+would repeat; a reply stored without a verdict, its evaluation stopped by the ceiling refusing
+the judge's request, is sent again and judged. A prior spec is **finished** (published by a
+halted resume, scored by the seeding gate) only when every planned attempt has a verdict.
+`--estimate --resume` subtracts what is kept, the judge's two requests per kept attempt of a
+spec it reads included (it priced the whole battery's judge, 12 for a resume that sent 8), so it
+prices what the resume sends except an identity sweep, which `--estimate` does not price on this
+branch (PR #60 prices it; a strict `xfail` over the three sweeping shapes hands that match to
+whichever lands second). A finished run does not store the sweep's replies either, so a halted
+sweep leaves only its spend. Checked through the real CLI by
+`tests/cli/test_resume_halted_mid_batch.py`: every halt-then-resume test asserts the halted run's
+spend, the final spend and the resume's sends as the loopback stub counted them, and the estimate
+wherever it is exact.
+
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
 spend column, so the same resume that could not verify the battery was handed a brand-new budget

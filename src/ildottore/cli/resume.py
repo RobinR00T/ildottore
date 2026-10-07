@@ -67,9 +67,15 @@ def load_resume_run(
 ) -> TestRun:
     """Rebuild the partial :class:`TestRun` for ``run_id`` from stored evidence.
 
-    Raises ``ValueError`` when the run has no stored attempts (a typo in the id, the wrong
-    ``--evidence-root``, or a run that was refused before it sent anything): resuming
-    "nothing" would quietly re-run the whole battery under an id that promises otherwise.
+    Raises ``ValueError`` when the run has no stored attempts and its run store records no
+    request spent (a typo in the id, or a run that was refused before it sent anything):
+    resuming "nothing" would quietly re-run the whole battery under an id that promises
+    otherwise. A run that spent requests and stored no attempt is resumed from nothing, with
+    its spend carried by the caller: a ceiling that stops it inside an identity sweep, or in
+    the middle of its first conversation, leaves no reply to store. That run used to be refused
+    as one that "sent nothing", and its spend was stranded under an id nothing could continue.
+    It is still refused when the run store journals an artifact the evidence root does not
+    hold (the wrong ``--evidence-root``), since resuming would send it all again.
 
     ``specs`` binds it to the battery the run was made with (see :func:`_assert_same_specs`).
 
@@ -104,7 +110,7 @@ def load_resume_run(
             f"{Path(evidence_root) / run_id}): {exc.error_count()} field error(s). Remove the "
             "stray file or point --evidence-root at the right tree."
         ) from exc
-    if not result.attempts:
+    if not result.attempts and _requests_spent(run_db, run_id) <= 0:
         raise ValueError(
             f"no stored attempts for run {run_id!r} under {evidence_root}: nothing to resume. "
             "Check the run id and --evidence-root; a run that sent nothing has nothing to "
@@ -118,6 +124,14 @@ def load_resume_run(
 
         manifest_store = SqliteRunStore(Path(run_db))
         try:
+            if not result.attempts:
+                _assert_nothing_written(
+                    run_id,
+                    evidence_root,
+                    manifest_store.recorded_evidence(run_id),
+                    manifest_store.pending_artifacts(run_id),
+                    manifest_store.get_run_context(run_id),
+                )
             check_manifest(
                 result,
                 manifest_store.recorded_evidence(run_id),
@@ -227,6 +241,69 @@ def _assert_same_target(
             f"run {run_id!r} was made against target {stored!r}, not {target.id!r}. Resuming "
             "it here would report one target's evidence as another's, with zero requests "
             "sent. Resume it against its own target, or start a fresh run."
+        )
+
+
+def _requests_spent(run_db: Path | None, run_id: str) -> int:
+    """The requests the run store records ``run_id`` as having spent (0 when unknown)."""
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if run_db is None or not Path(run_db).is_file():
+        return 0
+    with SqliteRunStore(Path(run_db)) as store:
+        spend = store.get_run_spend(run_id)
+    try:
+        return int((spend or {}).get("requests", 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _assert_nothing_written(
+    run_id: str,
+    evidence_root: Path,
+    recorded: dict[str, set[str]],
+    pending: set[str],
+    context: dict[str, object] | None,
+) -> None:
+    """Refuse an empty evidence tree unless the run store shows the run wrote nothing.
+
+    A run that spent requests and stored nothing is resumable; the same run looked up under
+    the wrong ``--evidence-root`` looks identical from the tree alone, and resuming it would
+    send the whole battery again under its id. The artifact journal tells the two apart, so
+    any digest it holds refuses, a ``pending`` one too (a write begun and never confirmed, on
+    another tree or failed on this one), each with a message that says which it is.
+    The journal only knows runs made since it existed (2026-10-04): a run that does not record
+    the scope it went out under (D-17, built after the journal) may predate it, and its silence
+    proves nothing, so it is refused as well (pre-commit audit: a pre-journal run under the
+    wrong root was accepted and would have been sent again whole).
+    """
+
+    journaled = {digest for digests in recorded.values() for digest in digests}
+    written = journaled - set(pending)
+    if written:
+        raise ValueError(
+            f"run {run_id!r} wrote {len(written)} attempt artifact(s), by its run store, and "
+            f"none is under {evidence_root} (not the tree the run wrote). Point "
+            "--evidence-root at that tree: resuming from an empty one would send every attempt "
+            "again."
+        )
+    if journaled:
+        # A pending row is a write that was begun and never confirmed: on another tree, or one
+        # that failed here (a full disk). Nothing tells the two apart, so it is refused, saying
+        # both: the first version called it "not the tree the run wrote" (delta audit).
+        raise ValueError(
+            f"run {run_id!r} began writing {len(journaled)} attempt artifact(s) that it never "
+            f"confirmed, and none is under {evidence_root} (either another tree, or those "
+            "writes failed here). Nothing tells the two apart: point --evidence-root at the "
+            "tree the run wrote, or start a fresh run."
+        )
+    scopes = (context or {}).get("scope_sha256s")
+    if not isinstance(scopes, list) or not scopes:
+        raise ValueError(
+            f"no stored attempts for run {run_id!r} under {evidence_root} (it spent requests), "
+            "and the run predates the artifact journal, so an empty tree cannot be told from "
+            "the wrong --evidence-root. Check --evidence-root, or start a fresh run."
         )
 
 
