@@ -104,6 +104,37 @@ passed, with the invariant resting on adapter implementation rather than on the 
 returns the first match, so a permissive entry silently shadowed a narrowing one, including its
 credential allowlist.
 
+**A-56 A fleet's ids are unique ignoring case, on every file system (added 2026-10-07).**
+`dottore fleet` writes one `target-<id>.yaml` per target, and on a case-insensitive file system
+(the macOS and Windows default) `target-Prod.yaml` and `target-prod.yaml` are one file.
+`materialize_fleet` compared ids exactly, so a fleet declaring `Prod` and `prod` wrote `prod`
+over `Prod`, listed two target files and exited 0, and the `dottore run` it printed (and
+`fleet --run`) refused "two target files declare the id 'prod'", an id the fleet declared once
+(delta audit of PR #76). Two target ids equal under `casefold()` are refused before anything is
+written, on one line naming both entries by number (1-based, under `targets:`), both ids and
+both file names; an exact duplicate keeps its own message. The numbers are there because the
+CLI masks what its redactor reads as high entropy, and a model name such as
+`Meta-Llama-3-70B-Instruct` comes out masked, ids and file names alike, as it already did in the
+exact-duplicate message (pre-commit audit). A judge id spelled as a target's only up to case is
+refused the same way, naming the target's number, and says so when the id is the default
+`judge` of a `judge:` block that names none: it got a scope entry of its own beside the
+target's (no file collides, the judge is written to `judge.yaml`), two ids a reader cannot tell
+apart in the record that authorizes both. The same spelling still shares the target's entry
+when the endpoint and credential match (A-30). Target pairs are reported before the judge. The
+rule holds on a case-sensitive file system too, where nothing collided, so a fleet file means
+the same wherever it is expanded (OD-33). Fleet ids are ASCII (`[A-Za-z0-9._-]`), so
+`casefold()` is lowercasing here and no Unicode normalization arises (writing all 4,092 ids of
+one or two characters on APFS gave 1,440 files, the number of distinct ids under `casefold()`).
+Not changed, measured: `run`'s own duplicate check and `load_scope`'s (A-20) stay exact. No file
+of a run is named by a target id (evidence and probes sit under the run id), and the run store
+keys a finding by its run id and `<spec id>::<target id>` under SQLite's default, case-sensitive
+collation; two hand-written target files `Prod` and `prod` in one run get two run ids and two
+evidence trees, every report format lists both with their own results, and `--resume` of one
+against the other is refused. Checks: `tests/cli/test_fleet_case_ids.py`, including all 1,332
+fleets of one to three targets named from `a`, `A`, `b` and `c`, with no judge or a judge `a`,
+`A`, `c` or `d` on its own endpoint or any target's, checked against the rules written apart
+from the code (which rule refuses, and that each rule decides at every size it can).
+
 **A-29 A gate keys on what a spec cannot opt out of (added 2026-10-03).** The `test_only`
 criterion above is enforced at run time from the spec's **category**: an unmarked spec in a
 flagged family is `blocked_by_policy`. The engine used to read the mark as rendering-only and
@@ -150,3 +181,10 @@ any credential and have both written into the scope (SEC-04). Checks: the same f
   checksum now, pluggable verifier interface so sigstore drops in without a shape change).
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
+- **OD-33** fleet ids that differ only by case. **Decided 2026-10-07 by the conductor, reversible,
+  built (A-56):** refused on every file system, not only where the file system folds case: it is
+  portable and the simplest rule (`run` already compares report paths case-folded everywhere),
+  and a fleet file then means the same wherever it is expanded. What it costs: a fleet with
+  `Prod` and `prod` that expanded on Linux is now refused there too, and so is a judge spelled as
+  a target only up to case, which worked. The alternative (refuse only where the `--out`
+  directory's file system folds case, found by probing it) is the owner's to choose.

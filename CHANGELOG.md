@@ -5,6 +5,36 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (two fleet target ids that differ only by case)
+
+- **`dottore fleet` wrote one target over another when their ids differed only by case.** Each
+  target is written to `target-<id>.yaml`, and on a case-insensitive file system (the macOS and
+  Windows default) `target-Prod.yaml` and `target-prod.yaml` are one file. The duplicate check
+  compared ids exactly, so a fleet declaring `Prod` and `prod` wrote `prod` over `Prod`, printed
+  two `target:` lines and exited 0, and the `dottore run` it printed (and `fleet --run`) then
+  refused with exit 3, "two target files declare the id 'prod'", an id the fleet declared once
+  (measured on `2f6201a`, APFS). Two ids equal under `casefold()` are now refused before
+  anything is written, on every file system, on one line: `error: the fleet's targets 1 and 2
+  (ids 'Prod' and 'prod') differ only by case, so target-Prod.yaml and target-prod.yaml are one
+  file on a case-insensitive file system (the macOS and Windows default); give each target an id
+  that differs in more than case`. The entry numbers are there because the CLI masks what its
+  redactor reads as high entropy: with `Meta-Llama-3-70B-Instruct` and its upper-case twin, both
+  ids and both file names come out as `REDACTED` (as they already did in the exact-duplicate
+  message, which keeps its own wording), and the numbers still say which two entries to change. A
+  `judge:` id spelled as a target's only up to case is refused too, naming the target's number:
+  no file collides (the judge goes to `judge.yaml`), but it got a scope entry of its own beside
+  the target's, which worked and put two ids a reader cannot tell apart in the authorization
+  record (spelled exactly the same, the judge still shares the target's entry). A `judge:` block
+  with no `id:` is `judge`, so a target `Judge` beside it is now refused, and the message says
+  the id is that default. Refusing on a case-sensitive file system too, where nothing collided,
+  is a decision recorded as OD-33 (the owner may prefer refusing only where the file system folds
+  case). Not changed: `run` and the scope loader still compare ids exactly; no file of a run is
+  named by a target id, and the run store's finding key `<spec id>::<target id>` is compared
+  case-sensitively, so two hand-written target files `Prod` and `prod` run together with two run
+  ids, both in every report format. Contract u01 A-56; `tests/cli/test_fleet_case_ids.py` (13 of
+  its 15 tests fail on `2f6201a`; the other 2 check that an exact duplicate keeps its message and
+  that a judge spelled as a target still shares its entry). Found by the delta audit of PR #76.
+
 ### Fixed (a number too long to write out)
 
 - **`dottore lint` printed a traceback on a spec holding a huge number.** Python refuses to turn an
