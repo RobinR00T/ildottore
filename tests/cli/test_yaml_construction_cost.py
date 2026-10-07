@@ -105,8 +105,9 @@ def test_a_number_written_past_the_cap_is_refused_before_it_is_built(
     assert "1111" not in message and "5959" not in message, "the value is not quoted"
 
 
-def test_a_number_key_past_the_cap_is_refused(load: Callable[[str], Any]) -> None:
-    message = refusal(load, f"id: X\n{sexagesimal(1001)}: x\n")
+@pytest.mark.parametrize("written", list(LONG_NUMBERS.values()), ids=list(LONG_NUMBERS))
+def test_a_number_key_past_the_cap_is_refused(load: Callable[[str], Any], written: str) -> None:
+    message = refusal(load, f"id: X\n{written}: x\n")
 
     assert NUMBER_TOO_LONG in message and "line 2, column 1" in message, message
 
@@ -148,20 +149,20 @@ def test_a_number_at_the_cap_builds_in_every_notation(
     assert type(load(f"id: X\nn: {written}\n")["n"]) is kind
 
 
-@pytest.mark.parametrize(
-    ("text", "where"),
-    [
-        (f"- {sexagesimal(1001)}\n", "line 1, column 3"),
-        (f"l: [x, {sexagesimal(1001)}]\n", "line 1, column 8"),
-        (f"m: {{a: {sexagesimal(1001)}}}\n", "line 1, column 8"),
-        (f"{sexagesimal(1001)}\n", "line 1, column 1"),
-    ],
-    ids=["list item", "flow list", "flow mapping", "root"],
-)
+POSITIONS = {
+    "list item": ("- {}\n", "line 1, column 3"),
+    "flow list": ("l: [x, {}]\n", "line 1, column 8"),
+    "flow mapping": ("m: {{a: {}}}\n", "line 1, column 8"),
+    "root": ("{}\n", "line 1, column 1"),
+}
+
+
+@pytest.mark.parametrize("written", list(LONG_NUMBERS.values()), ids=list(LONG_NUMBERS))
+@pytest.mark.parametrize(("template", "where"), list(POSITIONS.values()), ids=list(POSITIONS))
 def test_a_number_past_the_cap_is_refused_wherever_it_is_written(
-    load: Callable[[str], Any], text: str, where: str
+    load: Callable[[str], Any], written: str, template: str, where: str
 ) -> None:
-    message = refusal(load, text)
+    message = refusal(load, template.format(written))
 
     assert NUMBER_TOO_LONG in message and where in message, message
 
@@ -182,6 +183,7 @@ def test_keys_in_a_flow_mapping_count_as_in_a_block(load: Callable[[str], Any]) 
     keys = [f"{k * HASH_MODULUS}: 0" for k in range(1, 1002)]
     text = "{" + ", ".join(keys) + "}\n"
 
+    assert len(load("{" + ", ".join(keys[:1000]) + "}\n")) == 1000
     message = refusal(load, text)
     column = text.index(", " + keys[1000]) + 3
     assert TOO_MANY_NUMBER_KEYS in message and f"line 1, column {column}" in message, message

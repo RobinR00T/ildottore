@@ -194,11 +194,11 @@ reach, and booleans and null have three distinct values between them, a fourth b
 A number of 1,000 hexadecimal digits has about 1,204 decimal digits, under the 4,300 Python converts
 by default (a lower `PYTHONINTMAXSTRDIGITS` is A-40's). No YAML file the repository ships has a key
 that is a number or a number over 20 characters. Checks: `tests/cli/test_yaml_construction_cost.py`
-(each number notation at 1,001 characters and at 1,000, in each position; a long text; 1,000 and
-1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge shapes, a map
-merged where it is written, a map that merges passing its keys on; where composition stops; a stream
-of documents; keys that are not numbers; both loaders; and in a subprocess bounded at 15 s: `lint`
-on each 1 MiB spec, and `run --dry-run` on the 450 KB and the 1.3 MB target).
+(each number notation at 1,001 characters in each position and at 1,000 as a value; a long text;
+1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge shapes,
+a map merged where it is written, a map that merges passing its keys on; where composition stops; a
+stream of documents; keys that are not numbers; both loaders; and in a subprocess bounded at 15 s:
+`lint` on each 1 MiB spec, and `run --dry-run` on the 450 KB and the 1.3 MB target).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

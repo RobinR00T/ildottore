@@ -43,24 +43,24 @@ versioning: [SemVer](https://semver.org/).
   `fingerprint` now parse each target file once (`wiring.read_target_file`), and a piped target
   works. A file named twice is still parsed once per name (`-t X -t X`, refused as a repeated id,
   and `-t X --judge X`), and a scope with a `checksum:` line is still parsed twice, by design: the
-  second parse is the check that the line is part of no other value.
-- Tests: `tests/cli/test_yaml_construction_cost.py`: each number notation at 1,001 characters and at
-  1,000, as a value, a key, a list item, in a flow list or mapping and at the root; a long text;
+  second parse is the check that the line is part of no other value. - Tests:
+  `tests/cli/test_yaml_construction_cost.py`: each number notation at 1,001 characters as a value, a
+  key, a list item, in a flow list or mapping and at the root, and at 1,000 as a value; a long text;
   1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge
   shapes, a map merged where it is written and a map that merges passing its keys on; where
   composition stops; a stream of documents; keys that are not numbers; both loaders; in a subprocess
   bounded at 15 s, `lint` on each 1 MiB spec and `run --dry-run` on each target; and the parses of a
   target file counted where the YAML is parsed, for a mock run under seven flag sets, a live dry run
   and estimate, `--hardened` on a live target, two targets, a resumed run, a judge file, a target
-  piped in, and `fingerprint` offline and on a mock. 62 of the 76 tests fail on `982bfe4`, each
+  piped in, and `fingerprint` offline and on a mock. 112 of the 126 tests fail on `982bfe4`, each
   because nothing is refused, the timeout runs out, composition reads on to a later syntax error, or
   the file is parsed more than once or refused when piped in; the other 14 pass on both sides by
   design (a number at the cap in each notation, a long text and keys that are not numbers still
-  load). Twenty-six distinct mutants of the fix are all killed, among them the six the audit found
-  surviving and its resume mutant. Clauses A-41 (u01) and A-42 (u12). Timings on a 15-core machine
-  at a load average of 6 to 10; under heavier load the base took up to 1.6 times as long. Found by
-  the pre-commit audit of the size cap below, and the gaps in the first version of this fix by its
-  own pre-commit audit.
+  load). Twenty-seven distinct mutants of the fix are all killed, among them the eight the audits
+  found surviving. Clauses A-41 (u01) and A-42 (u12). Timings on a 15-core machine at a load average
+  of 6 to 10; under heavier load the base took longer still (up to 2.2 times, and the 1.3 MB target
+  did not finish in 15 minutes). Found by the pre-commit audit of the size cap below, and the gaps
+  in the first version of this fix by its own pre-commit and pre-merge audits.
 
 ### Fixed (a YAML file that expands past what the CLI can hold)
 
