@@ -3,6 +3,19 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): a report finding's validation error (A-49)
+
+- On `fix/diff-report-validation` (`tests/cli/test_diff_report_validation.py`): `dottore diff` and
+  `dottore calibrate` on a report whose finding does not validate (a `status` of `maybe-later`)
+  printed pydantic's raw error over four lines, with the value and a docs URL and without the file;
+  found by the pre-commit audit of A-45. `diff.load_findings` raises `the report <absolute path>
+  failed validation: findings.1.status: ...` for the first finding that fails, at most 20 problems;
+  a first version that validated all the findings together peaked at 1,116 MiB instead of 135 MiB on
+  a 12 MB report. Exit 3 as before. Left as they are and written in clause A-49: the report's other
+  refusals (`error: 'findings'` for an object without `findings`, a `summary` that is not an object,
+  unless empty or zero), keys printed as pydantic renders them (through the redactor), and lax
+  reading (`"yes"` is true).
+
 ## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
 
 - Found by the delta audit of PR #68 and fixed on `fix/sv-probe-spend-on-stop`: on `run --resume
@@ -78,8 +91,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
   the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
   `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
-  the value quoted, no file name); not fixed here. `tests/cli/test_target_file_validation.py`: 19
-  of its 24 tests fail on `0501752`, the other 5 guard that each test value survives the redactor.
+  the value quoted, no file name); not fixed here (A-49).
+  `tests/cli/test_target_file_validation.py`: 19 of its 24 tests fail on `0501752`, the other 5
+  guard that each test value survives the redactor.
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
