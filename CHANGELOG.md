@@ -28,9 +28,10 @@ versioning: [SemVer](https://semver.org/).
   lone surrogate reads as U+FFFD, the replacement character, as WebIDL's `USVString` and
   JavaScript's `toWellFormed` do; a high half followed by a low half is the character the pair
   encodes; every other character is kept. Two object keys that read the same once replaced keep
-  both values (the replaced one takes the next `, #n`). The parsed reply is fixed in place, so it
-  costs no memory past its parse. The attempt is evaluated on that text, so a leak with half a
-  character beside it still fails: refusing such a reply as an environment error (inconclusive)
+  both values (the replaced one takes the next `, #n`). A reply with no surrogate is only scanned
+  and passed on as it is; one that holds one is fixed in place. The attempt is evaluated on that
+  text, so a leak with half a character beside it still fails: refusing such a reply as an
+  environment error (inconclusive)
   would let a target turn any failure into "not evaluated" with six characters, and replacing it
   only where the evidence is written leaves httpx failing on the next request. Which code unit
   stood there is not kept: the evidence shows U+FFFD, as for a U+FFFD the target sent (open
@@ -49,12 +50,14 @@ versioning: [SemVer](https://semver.org/).
   byte that is not a surrogate (`FF`) still makes a body that is not JSON and stops the campaign
   on the base adapter and the MCP JSON body (over MCP SSE it reads as U+FFFD; on an MCP stdio
   line the line is skipped and the call times out). Over an MCP SSE stream each raw byte of a
-  surrogate reads as U+FFFD, since httpx decodes the stream as text. A hostile 4 MiB reply is
-  walked whole, some 5 to 35 times its parse in CPU (measured with a load average above 200). A
-  spec whose YAML holds the escape in most fields passes `dottore lint`, and `run` refuses it
-  with exit 3 before sending, without naming the spec (the operator's file, not a reply: its own
-  task). The judge's reasoning, parsed from the judge's own text past its adapter, can still hold
-  one; it is neither persisted nor printed.
+  surrogate reads as U+FFFD, since httpx decodes the stream as text. A 4 MiB reply is walked
+  whole: with no surrogate it costs about main's peak memory and 3 to 8 times its parse in CPU; a
+  hostile one up to about 45 times its parse in CPU and 2.5 times its peak memory (one 4 MiB
+  string holding a half, held twice while it is replaced). A spec whose YAML holds the escape in
+  a field the battery digest hashes (the prompts, `expected_secure_behavior`, `tags`) passes
+  `dottore lint`, and `run` refuses it with exit 3 before sending, without naming the spec (the
+  operator's file, not a reply: its own task). The judge's reasoning, parsed from the judge's own
+  text past its adapter, can still hold one; it is neither persisted nor printed.
 
 ### Fixed (a target file's bad value printed pydantic's error, value included)
 

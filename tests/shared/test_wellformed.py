@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import copy
 import json
+import os
+import subprocess
+import sys
 import time
 
 import pytest
@@ -149,6 +151,42 @@ def test_many_colliding_keys_stay_linear() -> None:
     assert elapsed < 15.0
 
 
+_PEAK = """
+import json, resource, sys
+from ildottore.shared.wellformed import well_formed_json
+raw = sys.argv[1] * int(sys.argv[3]) + sys.argv[2] + sys.argv[4] * int(sys.argv[3])
+base = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+value = json.loads(raw)
+parsed = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+well_formed_json(value)
+walked = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+print(parsed - base, walked - parsed)
+"""
+
+
+@pytest.mark.parametrize(
+    ("opening", "closing"), [("[", "]"), ('{"a":', "}")], ids=["lists", "dicts"]
+)
+def test_a_deep_reply_with_no_surrogate_costs_little_past_its_parse(
+    opening: str, closing: str
+) -> None:
+    """A generator per level made a clean reply nested 115,000 levels cost four times main's
+    peak memory, a chain over each dict's items two thirds more (pre-merge audit): the scan
+    keeps one plain iterator per level. Peak memory is measured in a fresh process, so the
+    machine's load does not change it."""
+
+    depth = "100000"
+    out = subprocess.run(  # noqa: S603 - our own interpreter, a fixed snippet
+        [sys.executable, "-c", _PEAK, opening, "0", depth, closing],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    parse, walk = map(int, out.stdout.split())
+    assert walk < parse / 2, (parse, walk)
+
+
 def test_a_value_nested_past_the_recursion_limit_is_walked() -> None:
     """``json.loads`` builds tens of thousands of levels; the walk keeps no Python stack."""
 
@@ -168,10 +206,13 @@ def test_a_reply_with_no_surrogate_is_returned_as_it_is() -> None:
     """The same object, unchanged: copying every reply tripled the peak memory of a 4 MiB body
     of small containers, surrogate or not (pre-commit audit)."""
 
-    value = {"items": [{"t": "abcdefgh", "n": i, "f": [1.5, None, True]} for i in range(10_000)]}
-    before = copy.deepcopy(value)
+    value: dict[str, object] = {
+        "items": [{"t": "abcdefgh", "n": i, "f": [1.5, None, True]} for i in range(10_000)]
+    }
+    value["z"], value["a"] = 1, 2
+    before = json.dumps(value)  # order sensitive, unlike ==
     assert well_formed_json(value) is value
-    assert value == before
+    assert json.dumps(value) == before
     assert well_formed_json([[], {}, [[{"k": "v"}]]]) == [[], {}, [[{"k": "v"}]]]
 
 
@@ -181,12 +222,26 @@ def test_one_surrogate_copies_nothing() -> None:
 
     big = [[i, {"v": str(i)}] for i in range(1_000)]
     keyed = {"k" + _HIGH: 1, "j": 2}
-    value = {"big": big, "keyed": keyed, "s": "x" + _HIGH}
+    plain = {"z": 1, "a": 2}
+    value = {"big": big, "keyed": keyed, "plain": plain, "s": "x" + _HIGH}
     out = well_formed_json(value)
     assert out is value
     assert out["big"] is big and out["big"][7] is big[7] and out["big"][7][1] is big[7][1]
     assert out["keyed"] is keyed and list(keyed) == ["k" + _R, "j"]
+    assert out["plain"] is plain and list(plain) == ["z", "a"]
     assert out["s"] == "x" + _R
+
+
+def test_a_renamed_key_repeated_in_many_dicts_stays_one_string() -> None:
+    """``json.loads`` keeps one copy of a key every dict repeats; renaming it once per dict
+    multiplied a long key's memory by the number of dicts (pre-merge audit)."""
+
+    key = "a" * 1_000 + _HIGH
+    value = json.loads(json.dumps([{key: i} for i in range(3)]))
+    well_formed_json(value)
+    names = [next(iter(d)) for d in value]
+    assert names[0] == "a" * 1_000 + _R
+    assert names[0] is names[1] is names[2]
 
 
 @pytest.mark.parametrize(

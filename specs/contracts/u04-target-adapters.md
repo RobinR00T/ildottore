@@ -112,10 +112,12 @@ reads as U+FFFD, since httpx decodes the stream as text.
   surrogate reads as U+FFFD, a high half followed by a low half is the character the pair
   encodes, every other character is kept, and keys are treated like values; two keys that read
   the same once replaced keep both values (the replaced one takes the next `, #n`; a key the
-  target wrote well formed keeps its name). The parsed value is fixed in place, since each caller
-  holds the only reference to a fresh parse, so a reply costs no memory past its parse: copying
-  every reply tripled the peak of a 4 MiB body of small containers, and copying only one that
-  held a surrogate gave a target 2.8 times the peak for three bytes (pre-commit and delta audits).
+  target wrote well formed keeps its name). A first walk only looks, and a reply with no
+  surrogate is passed on as it is; one that holds a surrogate is fixed in place, since each caller
+  holds the only reference to a fresh parse: copying every reply tripled the peak of a 4 MiB body
+  of small containers, copying only one that held a surrogate gave a target 2.8 times the peak for
+  three bytes, and a generator per level of the fix made a clean reply nested 115,000 levels cost
+  four times main's peak (pre-commit, delta and pre-merge audits).
   The helper lives in `shared/` (u00's package), beside `shared/toolcalls.py`, which already
   serves the adapters and the evaluators; §1 keeps this unit out of `shared/`, so the owner signs
   that off with the PR (OD-28). The attempt is evaluated on that text, so a leak with half a
@@ -134,15 +136,20 @@ reads as U+FFFD, since httpx decodes the stream as text.
   U+FFFD as a splitter (OD-28); invalid UTF-8 that is not an encoded surrogate (one `FF` byte, a
   multibyte character cut short) is still a body that is not JSON and stops the campaign on the
   base adapter and the MCP JSON body, while over an MCP SSE stream it reads as U+FFFD and on an
-  MCP stdio line the line is skipped and the call times out; the walk visits the whole parsed
-  reply, so a hostile 4 MiB body costs some 5 to 35 times its parse in CPU, about 1.5 s at most,
-  measured with a load average above 200 (its peak memory stays within 1.25 times the parse's);
+  MCP stdio line the line is skipped and the call times out; the walks visit the whole parsed
+  reply: a 4 MiB body with no surrogate costs about main's peak memory (1.00 times; 1.23 times
+  nested 116,000 levels) and some 3 to 8 times its parse in CPU, and a hostile one up to about 45
+  times its parse in CPU (about 1.5 s at most) and up to about 2.5 times the parse's peak memory
+  (one 4 MiB string holding a half, held twice while it is replaced; one object of a million keys
+  that collide once replaced, about 2.1 times while it is refilled), measured on 4 MiB bodies;
   the judge's reasoning, parsed from the judge's text past its adapter, can still hold one,
   measured as harmless because it is neither persisted nor printed (the aggregate verdict writes
   its own reasoning); a spec file whose YAML holds the escape is the operator's input, not a
-  reply: in most fields it passes `dottore lint` and `run` refuses it with exit 3 before sending,
-  on the same codec error from the battery digest (`shared/digest.py`), without naming the spec
-  (in `name`, lint refuses it and `run` names the file).
+  reply: in a field the battery digest hashes (the prompts, `expected_secure_behavior`, `tags`)
+  it passes `dottore lint` and `run` refuses it with exit 3 before sending, on the same codec
+  error from `shared/digest.py`, without naming the spec; in `description` or `preconditions`,
+  which the digest leaves out, the run goes on as usual; in `name`, lint refuses it and `run`
+  names the file.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).

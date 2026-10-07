@@ -48,36 +48,77 @@ def well_formed_json(value: Any) -> Any:
     """``value`` with every string in it, a key or a value, made well formed, in place.
 
     ``value`` is a fresh parse, a tree as ``json.loads`` builds it (dicts, lists, strings and
-    scalars, no shared or cyclic containers) that nothing else holds yet, as at every caller:
-    its strings are replaced inside their lists and dicts, and a dict whose keys hold a
-    surrogate is refilled with the keys renamed. So a reply costs no memory beyond the walk:
-    copying every reply tripled the peak of a 4 MiB body of small containers, and copying only
-    one that holds a surrogate gave a target 2.8 times the peak for three bytes (audits of
-    A-47). The walk keeps one iterator per level instead of recursing, so its memory grows with
-    the nesting, not the size, and a value nested past the interpreter's recursion limit
-    (``json.loads`` builds some 116,000 levels on 3.14) costs a loop, not a
-    ``RecursionError``. Returns ``value``, or the well formed text when it is a string.
+    scalars, no shared or cyclic containers) that nothing else holds yet, as at every caller. A
+    first walk only looks: a reply with no surrogate, the usual case, is returned as it is and
+    costs that scan. Otherwise its strings are replaced inside their lists and dicts, and a dict
+    whose keys hold a surrogate is refilled in its order with the keys renamed, one renamed key
+    shared by every dict that has it, as ``json.loads`` shares a repeated key. Copying every
+    reply tripled the peak memory of a 4 MiB body of small containers, and copying only one
+    that held a surrogate gave a target 2.8 times the peak for three bytes; a generator per
+    level of the fix made a reply nested 115,000 levels cost four times main's peak with no
+    surrogate at all (audits of A-47). A reply of lists and small objects now costs no memory
+    past its parse; one long string, or one large object whose keys hold a surrogate, costs up
+    to about two and a half times the parse's peak, since the string is held twice while it is
+    replaced and the object's table is rebuilt while it is refilled. Both walks keep a plain
+    iterator per level instead of recursing, so their own state grows with the nesting, and a
+    value nested past the interpreter's recursion limit (``json.loads`` builds some 116,000
+    levels on 3.14) costs a loop, not a ``RecursionError``. Returns ``value``, or the well
+    formed text when it is a string.
     """
 
     if isinstance(value, str):
         return well_formed_text(value)
-    stack: list[Iterator[tuple[Any, Any, Any]]] = []
-    _enter(value, stack)
+    if not _holds_surrogate(value):
+        return value
+    renamed: dict[str, str] = {}
+    stack: list[tuple[Any, Iterator[tuple[Any, Any]]]] = []
+    _enter(value, stack, renamed)
     while stack:
-        entry = next(stack[-1], None)
+        holder, entries = stack[-1]
+        entry = next(entries, None)
         if entry is None:
             stack.pop()
             continue
-        holder, slot, item = entry
+        slot, item = entry
         if isinstance(item, str):
             if _SURROGATE.search(item) is not None:
                 holder[slot] = well_formed_text(item)
         else:
-            _enter(item, stack)
+            _enter(item, stack, renamed)
     return value
 
 
-def _enter(item: Any, stack: list[Iterator[tuple[Any, Any, Any]]]) -> None:
+def _holds_surrogate(value: Any) -> bool:
+    """Whether any string in ``value``, a key or a value, holds a surrogate.
+
+    A dict's keys are read when it is reached and its values queued, so a level costs one
+    plain iterator (a chain over its items cost a deep reply two thirds more than main's peak).
+    """
+
+    stack: list[Iterator[Any]] = [iter((value,))]
+    while stack:
+        item = next(stack[-1], _END)
+        if item is _END:
+            stack.pop()
+        elif isinstance(item, str):
+            if _SURROGATE.search(item) is not None:
+                return True
+        elif isinstance(item, dict):
+            if any(isinstance(key, str) and _SURROGATE.search(key) for key in item):
+                return True
+            stack.append(iter(item.values()))
+        elif isinstance(item, list):
+            stack.append(iter(item))
+    return False
+
+
+#: The end of an iterator in :func:`_holds_surrogate`, where ``None`` is a value.
+_END: Final = object()
+
+
+def _enter(
+    item: Any, stack: list[tuple[Any, Iterator[tuple[Any, Any]]]], renamed: dict[str, str]
+) -> None:
     """Queue the entries of a container (after renaming its keys); ignore a scalar.
 
     Assigning to a slot that already exists does not disturb the iterator over it: a dict's
@@ -85,33 +126,37 @@ def _enter(item: Any, stack: list[Iterator[tuple[Any, Any, Any]]]) -> None:
     """
 
     if isinstance(item, dict):
-        _rename_keys(item)
-        stack.append((item, key, child) for key, child in item.items())
+        _rename_keys(item, renamed)
+        stack.append((item, iter(item.items())))
     elif isinstance(item, list):
-        stack.append((item, index, child) for index, child in enumerate(item))
+        stack.append((item, enumerate(item)))
 
 
-def _rename_keys(mapping: dict[Any, Any]) -> None:
+def _rename_keys(mapping: dict[Any, Any], renamed: dict[str, str]) -> None:
     """Refill ``mapping`` in its order, a key that holds a surrogate made well formed.
 
     Two keys can read the same once replaced (one half or another at the same place), and a
     plain rename would keep only the last value: a tool call's second argument, or a logprob
     alternative, gone from what the evaluators read. A key that is already well formed keeps
     its name; a replaced one that lands on a name in use takes the next ``, #n`` suffix, the
-    form the evidence store gives two keys that mask to one.
+    form the evidence store gives two keys that mask to one. ``renamed`` holds each key's well
+    formed text for the whole walk, so a key repeated in many dicts stays one string.
     """
 
     if not any(isinstance(key, str) and _SURROGATE.search(key) for key in mapping):
         return
-    items = list(mapping.items())
-    mapping.clear()
-    kept = {key for key, _ in items if not (isinstance(key, str) and _SURROGATE.search(key))}
     last: dict[str, int] = {}
-    for key, item in items:
+    # Every key is taken out and put back in its turn, so the order holds; a well formed key
+    # not yet reached is still in ``mapping``, so a renamed key cannot take its name.
+    for key in list(mapping):
+        item = mapping.pop(key)
         name = key
-        if key not in kept:
-            name = base = well_formed_text(key)
-            while name in kept or name in mapping:
+        if isinstance(key, str) and _SURROGATE.search(key) is not None:
+            base = renamed.get(key)
+            if base is None:
+                base = renamed[key] = well_formed_text(key)
+            name = base
+            while name in mapping:
                 last[base] = last.get(base, 1) + 1
                 name = f"{base}, #{last[base]}"
         mapping[name] = item
