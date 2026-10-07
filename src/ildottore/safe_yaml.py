@@ -20,22 +20,42 @@ composer's own guard sees only the nesting as written, and anchors chained throu
 a value 1,600 levels deep from 4 KB of text, which the linter, the target loader and the labels
 of ``calibrate`` overflowed on: a traceback and exit 1 (pre-commit audit of the nesting fix,
 2026-10-07).
+
+So is a value larger than :data:`MAX_NODES` once its aliases are expanded, the spec loader's cap
+since audit SEC-09, measured here so that every loader shares it. The others had none: an
+835-byte labels file of 45 anchors, each a list of two aliases of the one before, ran
+``calibrate`` past 25 s at 1.7 GB while it formatted the verdict, and a ``<<`` merging the
+previous map twice doubles the work inside PyYAML itself, before any caller sees the value
+(pre-merge audit of the nesting fix, 2026-10-07).
 """
 
 from __future__ import annotations
 
 from collections.abc import Hashable
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
-__all__ = ["MAX_DEPTH", "SafeValueLoader", "check_depth", "safe_load"]
+__all__ = ["MAX_DEPTH", "MAX_NODES", "SafeValueLoader", "check_expanded", "safe_load"]
 
 #: The deepest nesting a document may hold with its aliases expanded. The files this tool reads
 #: (specs, scopes, targets, fleets, labels, packs) nest about 10 levels.
 MAX_DEPTH = 100
+#: The nodes a document may hold with every alias counted where it is used. The largest file this
+#: tool ships, the signature corpus, holds about 400.
+MAX_NODES = 100_000
+#: A text counts one more node per this many characters, so a long text repeated through aliases
+#: costs what its copies weigh: the cap bounds the expanded text at about 6 MB.
+_CHARS_PER_NODE = 64
 
+_TOO_LARGE = (
+    f"document is too large (over {MAX_NODES} nodes, counting every alias where it is used and "
+    f"a text as one node per {_CHARS_PER_NODE} characters)"
+)
 _CANNOT_BUILD = "cannot build this value (an invalid date, number or tag)"
+#: Longer than any tag this tool's files use (``!!binary`` is ``tag:yaml.org,2002:binary``).
+_MAX_TAG_CHARS = 256
+_TAG_TOO_LONG = f"found a tag longer than {_MAX_TAG_CHARS} characters"
 _TWICE = "found a key written twice in one mapping"
 _MERGE_TAG = "tag:yaml.org,2002:merge"
 _VALUE_TAG = "tag:yaml.org,2002:value"
@@ -46,7 +66,9 @@ class SafeValueLoader(yaml.SafeLoader):
     """``yaml.SafeLoader`` whose constructor failures are ``ConstructorError``\\ s.
 
     It also refuses a key written twice in one mapping (``flatten_mapping``), as a
-    ``ConstructorError`` with both positions and no value.
+    ``ConstructorError`` with both positions and no value, and stops composing a document once
+    the nodes written in it pass :data:`MAX_NODES` or a tag passes ``_MAX_TAG_CHARS``
+    (``compose_node``).
     """
 
     def construct_object(self, node: yaml.Node, deep: bool = False) -> Any:
@@ -66,16 +88,34 @@ class SafeValueLoader(yaml.SafeLoader):
         # Where each key written as an alias (``*k :``) was written, by mapping and pair index:
         # the node an alias returns carries its anchor's position, not the alias's.
         self._alias_keys: dict[tuple[yaml.Node, int], yaml.Mark] = {}
+        # The weight of the nodes composed so far, each counted once where it is written.
+        self._composed = 0
+
+    def compose_document(self) -> yaml.Node | None:
+        self._composed = 0  # per document: ``yaml.load_all`` composes several with one loader
+        return super().compose_document()  # type: ignore[no-any-return,unused-ignore]
 
     def compose_node(self, parent: yaml.Node | None, index: Any) -> yaml.Node | None:
-        if (
-            index is None
-            and isinstance(parent, yaml.MappingNode)
-            and self.check_event(yaml.AliasEvent)  # type: ignore[no-untyped-call,unused-ignore]
-        ):
-            event = self.peek_event()  # type: ignore[no-untyped-call,unused-ignore]
+        event = self.peek_event()  # type: ignore[no-untyped-call,unused-ignore]
+        alias = isinstance(event, yaml.AliasEvent)
+        if alias and index is None and isinstance(parent, yaml.MappingNode):
             self._alias_keys[(parent, len(parent.value))] = event.start_mark
-        return super().compose_node(parent, index)  # type: ignore[no-any-return,unused-ignore]
+        if len(getattr(event, "tag", None) or "") > _MAX_TAG_CHARS:
+            # A ``%TAG`` prefix is copied into the tag of every node that uses its handle: 1,000
+            # nodes of a 100,000-character prefix held 187 MB, and PyYAML's refusal quoted the
+            # whole tag (delta audit). Refused at the first one, without quoting it.
+            raise _refusal(event.start_mark, _TAG_TOO_LONG)
+        # PyYAML returns a node here every time; its type stub says ``Node | None``.
+        node = cast("yaml.Node", super().compose_node(parent, index))
+        # The value expanded weighs at least what is written, and an alias at least what it
+        # names, so the rest of a document is not composed once that passes the cap: a 3 MB list
+        # of plain texts took 785 MB to compose before its measure refused it (pre-commit audit),
+        # and a list of aliases, uncounted, was still composed whole (delta audit). The refusal
+        # is where the count crosses, at the alias if it is one.
+        self._composed += _weight(node)
+        if self._composed > MAX_NODES:
+            raise _refusal(event.start_mark if alias else node.start_mark, _TOO_LARGE)
+        return node
 
     def flatten_mapping(self, node: yaml.MappingNode) -> None:
         # Checked here, before PyYAML folds the merged keys into ``node.value``: once it has,
@@ -122,25 +162,30 @@ def _written_twice(first: yaml.Mark, again: yaml.Mark) -> yaml.constructor.Const
     )
 
 
-def check_depth(root: yaml.Node) -> None:
-    """Refuse a node graph nested past :data:`MAX_DEPTH` with its aliases expanded.
+def check_expanded(root: yaml.Node) -> None:
+    """Refuse a node graph past :data:`MAX_DEPTH` or :data:`MAX_NODES` with its aliases expanded.
 
-    Each node's expanded depth is computed once, bottom up and without recursion, so a document
-    of shared aliases is measured without being expanded. A recursive alias (``&a [*a]``) has no
-    depth and is refused as such, as the spec loader refuses it.
+    Each node's expanded depth and size are computed once, bottom up and without recursion, so a
+    document of shared aliases is measured without being expanded. The size counts a node every
+    time an alias uses it (:func:`_weight`), and stops counting just past the cap. A recursive
+    alias (``&a [*a]``) has neither and is refused as such. Too deep is reported before too
+    large, as the nesting fix reported it.
     """
 
     depth: dict[yaml.Node, int] = {}
+    size: dict[yaml.Node, int] = {}
     on_path: set[yaml.Node] = set()
     stack: list[tuple[yaml.Node, bool]] = [(root, False)]
     while stack:
         node, children_done = stack.pop()
         if children_done:
             on_path.discard(node)
-            depth[node] = 1 + max((depth[child] for child in _children(node)), default=0)
+            children = _children(node)
+            depth[node] = 1 + max((depth[child] for child in children), default=0)
+            size[node] = min(_weight(node) + sum(size[child] for child in children), MAX_NODES + 1)
         elif node not in depth:
             if node in on_path:
-                raise _refusal(node, "document contains a recursive alias")
+                raise _refusal(node.start_mark, "document contains a recursive alias")
             on_path.add(node)
             stack.append((node, True))
             stack.extend((child, False) for child in _children(node) if child not in depth)
@@ -150,7 +195,22 @@ def check_depth(root: yaml.Node) -> None:
         node = root
         for _ in range(MAX_DEPTH):
             node = max(_children(node), key=depth.__getitem__)
-        raise _refusal(node, "document is nested too deeply")
+        raise _refusal(node.start_mark, "document is nested too deeply")
+    if size[root] > MAX_NODES:
+        # Where the size crosses the cap: down the first branch over it, to the node none of whose
+        # children is, such as the anchor whose aliases double it past the cap.
+        node = root
+        while (over := next((c for c in _children(node) if size[c] > MAX_NODES), None)) is not None:
+            node = over
+        raise _refusal(node.start_mark, _TOO_LARGE)
+
+
+def _weight(node: yaml.Node) -> int:
+    """A node counts one, and a text one more per :data:`_CHARS_PER_NODE` characters."""
+
+    if isinstance(node, yaml.ScalarNode):
+        return 1 + len(node.value) // _CHARS_PER_NODE
+    return 1
 
 
 def _children(node: yaml.Node) -> list[yaml.Node]:
@@ -161,21 +221,22 @@ def _children(node: yaml.Node) -> list[yaml.Node]:
     return []
 
 
-def _refusal(node: yaml.Node, problem: str) -> yaml.composer.ComposerError:
-    """The refusal, at the node whose expanded nesting crossed the limit or that recurses."""
+def _refusal(where: yaml.Mark, problem: str) -> yaml.composer.ComposerError:
+    """The refusal, where the value crossed a limit or recurses, quoting nothing of the file."""
 
-    return yaml.composer.ComposerError(None, None, problem, node.start_mark)
+    return yaml.composer.ComposerError(None, None, problem, where)
 
 
 def safe_load(text: str) -> Any:
-    """``yaml.safe_load`` through :class:`SafeValueLoader`, refusing a value nested too deeply."""
+    """``yaml.safe_load`` through :class:`SafeValueLoader`, refusing a value that recurses or
+    that is too deep or too large with its aliases expanded (:func:`check_expanded`)."""
 
     loader = SafeValueLoader(text)
     try:
         node = loader.get_single_node()  # type: ignore[no-untyped-call,unused-ignore]
         if node is None:
             return None
-        check_depth(node)
+        check_expanded(node)
         return loader.construct_document(node)  # type: ignore[no-untyped-call,unused-ignore]
     except RecursionError as exc:  # hundreds of nested levels: an error, not a traceback
         raise yaml.composer.ComposerError(

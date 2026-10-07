@@ -463,6 +463,21 @@ know nothing about. The findings are still written to every report. If your pipe
 `3` as "infrastructure, retry", read `summary.status.reason` before retrying: it names the
 breached axis and how many specs never ran.
 
+A resume with `-sV` records what its probe pass sent as soon as the pass ends, whether it
+finished, reached the request ceiling, stopped on an error (a probe with no answer after its
+retries, a 401, a reply that is not JSON) or was stopped by Ctrl-C or SIGTERM, so the next
+resume's ceiling counts those requests too. They are counted as the request ceiling counts them,
+every send attempted, retries included, a send to a target that refused the connection too. When
+an error or a signal stops the pass, stderr gives that count even under `-q`: `resume: the -sV
+probe pass on 'api' stopped after 3 request(s), retries included; run-<id> now records 23
+request(s) spent`, or `they could not be added to the spend of run-<id>` after a warning when the
+run store could not be written. The error line after it can say `exhausted 1 attempt(s)` for
+those three sends (see Troubleshooting); a refusal at the request ceiling gives its own count. A
+Ctrl-C landing during the few milliseconds of that write can lose the record, as a SIGKILL does,
+and cuts the line; after a Ctrl-C, or a pass that finished, it takes a second one in that window.
+Nothing is recorded for a fresh run stopped by its probe pass (it has no run row and nothing to
+resume) or for a `--resume-unverified` run whose spend was never recorded.
+
 ### `dottore fingerprint`, identify the model + guardrails
 
 ```
@@ -551,11 +566,27 @@ expands, counting every alias where it is used, past 100,000 nodes (a long text 
 per 64 characters), that nests deeper than 100 levels once its aliases are expanded, or that
 holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases used to turn a
 4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
-linter overflowed on. The scope, target, fleet and labels files have the same depth limit, and
-are read up to the same 1 MiB (see **Bounded operator files** in §3), from any file; a scope,
-fleet or labels file can be a pipe.
+linter overflowed on. The scope, target, fleet and labels files have the same three limits, and
+so do the policy and signature packs (since 2026-10-07; they had only the depth limit, and an
+835-byte labels file of anchors that each list the previous one twice ran `calibrate` past 25 s
+and 1.7 GB). Too deep is reported before too large, and each where the value crosses its limit:
+`labels file labels.yaml is not valid YAML: document is too large (over 100000 nodes, counting
+every alias where it is used and a text as one node per 64 characters) at line 1, column 266`
+points at the anchor whose two aliases take it past the cap. Composition stops as soon as the
+nodes written in a file pass the cap, an alias counting the node it names, so a large file is
+refused without being composed whole (the first version of this cap composed a 3 MB list of a
+million texts, 785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as
+too large before its depth is checked. Each file is read up to 1 MiB (see **Bounded operator
+files** in §3), from any file; a scope, fleet or labels file can be a pipe. A tag longer than
+256 characters is refused at the first one, without quoting it. Nesting written out a few
+hundred levels deep, past what PyYAML's composer holds, is refused without a position.
 A key written twice in one
-mapping is a `PARSE_ERROR` too. A YAML error gives the line and
+mapping is a `PARSE_ERROR` too. A key YAML builds as something other than text (`5:`, a bare
+`on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its mapping, such as
+`fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write it in quotes,
+without a tag`: a spec is JSON, whose keys are strings, and such a key in a fixture's tool-call
+arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`). A YAML
+error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. A number too long for Python to write out (more than
@@ -1132,3 +1163,4 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. |
 | `authz_leak` is `capability_unavailable` | A cross-tenant spec needs the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
+| `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |

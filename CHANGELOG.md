@@ -48,6 +48,137 @@ versioning: [SemVer](https://semver.org/).
   `type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Found by
   the pre-commit audit of the alias-expansion cap (#71). Clause A-43 (u01).
 
+### Fixed (a spec key that is not a string)
+
+- **`dottore lint` exited 1 with a traceback on a key YAML builds as something other than text.** A
+  spec is a JSON document, whose keys are strings, but YAML reads `5:` as an int, a bare `on:`,
+  `off:`, `yes:` or `no:` as a bool, `~:` or an empty key as null, `2026-10-07:` as a date and
+  `1.5:` as a float. The JSON schema says nothing about the keys of a free-form object, so such a
+  key in a fixture's tool-call arguments reached the offline `tool_call` stub, whose `.lower()`
+  raised `AttributeError`: a traceback and exit 1, which this tool uses for "findings below the
+  threshold". Over the 41 fixture tool calls with arguments in the shipped specs, an int key added
+  after the others crashed lint in 5 and passed it unreported in the other 36 (added first, 6 and
+  35). Every mapping in a spec is now checked before the schema (including those inside an `!!omap`
+  or `!!pairs` entry; the keys of such an entry and the members of a `!!set` are not), and a key
+  that is not a string is a `SCHEMA` finding that names the path of its mapping, the value YAML
+  built from the key and its type: `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not
+  a string; write it in quotes, without a tag`. At most 20 are listed and the rest counted, a key
+  that is a number too long to write out is reported first by the check of the section below, and a
+  key on the path that is not printable (an escape sequence, a newline, a bidi control) is written
+  as its `repr`, so it cannot forge a finding line (the spec id and the paths of other schema errors
+  print as written, as before). Found on 2026-10-07 by the session on `fix/huge-int-repr`. Clause
+  A-44 (u02).
+- **Keys of two types in one mapping crashed the schema check itself.** `step_arg_patterns: {5: 1,
+  a: 2}` gave two schema errors whose paths were sorted, an int against a str: `TypeError` and
+  exit 1. The key check runs first, so the schema never sees such a mapping.
+- **A `!!binary` key passed lint.** `bytes` has a `lower`, so the stub read it and moved on. It is
+  now a finding like the others.
+- **`run` refuses such a spec.** `run`, `describe`, `coverage` and `registry` load specs the same
+  way, so a spec with such a key is left out as any spec that does not load is (`run` refuses the
+  campaign with exit 3, naming the file); `render-media` says the spec is not found, as it does
+  for any spec that does not load. Where the stub did not crash, the spec used to pass lint and
+  run; now it is refused until the key is quoted. The offline stub reads only string keys too, as
+  the `tool_call` evaluator does, for a spec built in code and passed to `lint_packs`.
+
+### Fixed (a resumed run recorded its `-sV` probe pass only when the ceiling stopped it)
+
+- **A resume lost what its probe pass had sent whenever the pass stopped on anything but the
+  request ceiling.** The pass runs outside the runner's ledger and only the ceiling path wrote its
+  requests to the run store: a probe answered 503 three times (the meter retries it twice, then
+  the adapter's environment error stops the pass) left the store at 20 requests while the target
+  had served 23. A 401, a 200 that is not JSON, Ctrl-C and SIGTERM did the same, and so did
+  anything stopping the run after a pass that succeeded and before the runner's ledger opened. The
+  next resume then probed again against a ceiling that had never seen those requests. The CLI now
+  owns the pass's ledger and writes the prior spend plus every request the pass sent, retries
+  included, as soon as the pass ends, success included; each probe is counted once, because the
+  store keeps the highest figure per axis. Requests are counted as the ledger counts them, every
+  send attempted: a refused connection counts, as for the attack traffic, and so does a send in
+  flight when a signal arrives. When an error or a signal ends the pass before its record is
+  complete, stderr says how many requests it sent and what the run now records (or that they could
+  not be added; a signal during that write cuts the line), under `-q` too: `resume: the -sV probe pass on 'api' stopped after 3 request(s),
+  retries included; run-<id> now records 23 request(s) spent` (the ceiling's refusal gives its own
+  count). A fresh run stopped by its pass (no run row, nothing to resume) and a
+  `--resume-unverified` run whose spend was never recorded record nothing, as before. Found by the
+  delta audit of PR #68, reproduced on main `0501752`. Contract u12 A-46.
+- **Signals, found by three audit rounds on this fix.** The first version wrote after a successful
+  pass outside the handlers, and a real SIGINT a few milliseconds after the last probe lost all 17
+  in 2 of 16 tries; the write is inside them now. A handler's own write has nothing after it: one
+  SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries. Writing again on that
+  signal closed it and, on a locked store, made Ctrl-C wait one more busy timeout per interrupted
+  write (15.1 s instead of 9.8 with one Ctrl-C after a pass that succeeded) for a record lost
+  anyway, so it was withdrawn. The record falls below what
+  was sent only when a signal lands during the few milliseconds of a handler's write (one is
+  enough after an error or the ceiling, two after a signal or a pass that succeeded), on a
+  SIGKILL, or when the write fails, which is a warning that never replaces the error that stopped
+  the pass; the stderr line is then cut or says the requests could not be added.
+- `tests/cli/test_probe_pass_spend.py`: 14 tests through the real CLI against a counting stub,
+  SIGINT and SIGTERM in a subprocess (whose Ctrl-C handler the test restores: a shell that starts
+  pytest with `&` passes SIGINT on ignored). 11 fail on `2f6201a`: nine on their store assertion,
+  the interruption at the write after a successful pass because that write does not exist there
+  (with it moved back after the handlers, it fails on its store assertion), and the failed write
+  because main never attempts it.
+- **Still open: the error after those three sends says `exhausted 1 attempt(s)`.** The adapters
+  are built with no retries of their own (the meter or the runner owns them), so the adapter's
+  message counts its single send: in the error that stops a probe pass, and in an attack
+  attempt's evidence. The new stderr line gives the real count for a resumed probe pass; the
+  message itself is a follow-up (MANUAL, Troubleshooting).
+
+### Fixed (a YAML file that expands past what the CLI can hold)
+
+- **Only the spec loader capped a YAML document's size with its aliases expanded.** The scope,
+  target, fleet and labels files and the policy and signature packs, read through
+  `safe_yaml.safe_load`, had the depth limit and no size cap. An 835-byte labels file of 45 anchors,
+  each a list of two aliases of the one before (46 levels deep, under the depth limit), made
+  `dottore calibrate report.json labels.yaml` run past 25 s at 1.7 GB before it was killed (here:
+  killed at 12 s with 839 MB and growing), because formatting the verdict expands the value. A `<<`
+  that merges the previous map twice is worse: PyYAML doubles the pairs itself while it builds the
+  mapping, so 586 bytes took 2.6 s to load and each further line doubles that, whatever the caller
+  does next. Every loader now refuses, before anything is built from it, a document over 100,000
+  nodes with every alias counted where it is used (a text one more node per 64 characters), the spec
+  loader's cap since SEC-09: `labels file labels.yaml is not valid YAML: document is too large (over
+  100000 nodes, counting every alias where it is used and a text as one node per 64 characters) at
+  line 1, column 266`, exit 3, in 0.4 s and 71 MB. The position is where the value crosses the cap,
+  here the anchor whose two aliases take it past; 15 such anchors, 265 bytes, already take the list
+  past it. The largest file the repository ships, the signature corpus, holds 407 nodes.
+- **The count also stops composition.** The measure needs the whole document composed, and the
+  operator's files have no size limit: the first version of this fix composed a 3 MB labels file of
+  a million plain texts whole, 785 MB, before refusing it (on `main` that file is not refused at
+  all: `calibrate` builds it, 762 MB, and reports an invalid verdict). Composition now stops as soon
+  as the nodes written pass the cap, an alias counting the node it names: the same file is refused
+  at its 100,000th text in 1.4 s and 134 MB, and a list of 200,000 aliases, which the first count
+  skipped, at its 99,999th alias in 3 s and 73 MB. Such a document is reported as too large before
+  its depth or a recursion is checked. A tag longer than 256 characters is refused there too,
+  without quoting it: a `%TAG` prefix is copied into the tag of every node that uses its handle, so
+  1,000 nodes of a 100,000-character prefix held 187 MB, and PyYAML's refusal quoted the whole tag.
+  Each count is per document. Found by the pre-commit and delta audits of this fix.
+- **One measure, computed once per node.** `safe_yaml.check_expanded` measures depth and size in one
+  bottom-up pass over the node graph, without recursion and without expanding an alias; the spec
+  loader's own recursive measure is gone. Each size stops counting just past the cap: without that,
+  anchor `b<i>` of a long chain held an `i`-bit integer, and the measure's memory grew with the
+  square of the chain (33 MB against 7 MB for 20,000 anchors). Too deep is reported before too large
+  in both loaders, bar the case above; the spec loader used to report the size first, without a
+  position, and now gives one, as it does for a recursive alias. Nesting written out deep enough to
+  overflow PyYAML's composer, a few hundred levels, is still refused without a position. Tests:
+  `tests/cli/test_yaml_expansion.py`: the cap exactly, with the 64-character rule and a `!!binary`
+  text; the position, the first of two values whose aliases cross the cap, and a recursive alias's
+  anchor; the precedence; where composition stops for texts, long texts, empty lists, aliases and
+  aliases of a long text, one count per document, and the tag limit on texts, lists and maps; linear
+  memory; the pack loaders; `calibrate`, `run -t`, `run --scope` and `fleet` in process; and in a
+  subprocess bounded at 20 s and 256 MiB, those four, `calibrate` on the flat list and `lint` on a
+  merge bomb, the 256 MiB being the child's own peak (`VmHWM` on Linux, where `ru_maxrss` survives
+  `execve` and CI read the pytest process's 314 MiB for every case). 34 of the 38 tests fail on
+  `0501752` (main): 17 because the file is not refused, eleven because main has no count that stops
+  composition, two because a long tag is neither refused nor kept out of the message, three for the
+  spec loader's positions and order, and one because the measure is new. Twenty-three mutants of the
+  fix are all killed. Clause A-37 (u01), u02 §4, u12 A-9. Found by the pre-merge audit of #61.
+- **Left open, each its own task (found by the audits, not introduced here).** Under the cap, a
+  base-60 integer (`1:59:59:...`) builds in time quadratic in its length (a 1 MiB spec took `lint`
+  43 s) and integer keys that share one hash make a mapping quadratic (27 s); `run` loads the target
+  file four times; a 4,000-digit integer in a typed spec field crashed `lint` with a traceback
+  (fixed since by #81); and the operator's files are read whole with no byte limit, their validation
+  errors listed with no limit (both fixed since by #76). An undefined alias or an unknown tag is still named in the refusal,
+  as `shared/config_errors.py` documents (a tag is now at most 256 characters).
+
 ### Fixed (a number too long to write out)
 
 - **`dottore lint` printed a traceback on a spec holding a huge number.** Python refuses to turn an

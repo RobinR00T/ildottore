@@ -21,7 +21,9 @@ present, and unkeyed, so it is not a signature (OD-2). Since 2026-10-05,
 `load_scope_with_digest()` returns the scope with the `scope_hash()` of the bytes it parsed, and
 `dottore run` records it in the run store and every report, audit D-17. Since 2026-10-06 a key
 written twice in one YAML mapping is refused with both positions, through `safe_yaml`, and two
-identities of one target with the same name or the same canary are refused.) Provide
+identities of one target with the same name or the same canary are refused. Since 2026-10-07 a
+scope or policy pack that is too large or too deep with its aliases expanded is refused before
+it is built, by the spec loader's own measure, A-37.) Provide
 `PolicyEngine.check(target, endpoint, spec)`
 → `allow` | `blocked_by_policy(reason)` answering: target in scope? endpoint on allowlist
 (default-deny, S3)? spec's category/id enabled by the active **policy pack**? dangerous payload
@@ -137,6 +139,36 @@ file's own `judge:` block, never from a `--judge` file, which could otherwise na
 any credential and have both written into the scope (SEC-04). Checks: the same file, plus
 `tests/cli/test_fleet.py`.
 
+**A-37 Every YAML file is measured with its aliases expanded, by one measure (added
+2026-10-07).** A scope, target, fleet, labels, policy pack or signature pack file holding more
+than 100,000 nodes with every alias counted where it is used (a text one more node per 64
+characters), nested deeper than 100 levels, or holding a recursive alias is refused before
+anything is built from it, as a YAML error with no quoted line (exit 3 at the CLI) and with the
+position where the value crosses the limit (nesting written out deep enough to overflow PyYAML's
+composer, a few hundred levels, has none). The measure is `safe_yaml.check_expanded`, the one
+the spec loader uses (u02 §4): one bottom-up pass over the node graph, each node measured once
+and each size saturating just past the cap, too deep reported before too large. Composition
+itself stops once the nodes written pass the cap, an alias counting the node it names (each
+document counted on its own), as the expanded value can only weigh more, so such a document is
+reported as too large before its depth or a recursion is checked; and a tag longer than 256
+characters is refused there, unquoted. Only the spec loader had the size cap (SEC-09), so the
+loaders of the operator's own files expanded whatever they were given: an 835-byte labels file
+of 45 anchors, each a list of two aliases of the one before, ran `calibrate` past 25 s at 1.7 GB
+while it formatted the verdict, and a `<<` merging the previous map twice doubles the pairs
+inside PyYAML itself, so no caller had to walk the value (pre-merge audit of #61). The fix's own
+audits found four more ways to the same cost: a size without saturation grew with the square of
+an anchor chain, so the measure was itself the amplification; a measure run only on a composed
+document let a 3 MB list of plain texts cost 785 MB first; a count that skipped aliases let a
+list of aliases do the same; and a `%TAG` prefix, copied into the tag of every node that uses
+its handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Not covered, its own
+task: construction costs under the cap (a base-60 integer, integer keys sharing one hash). The
+byte size of the file read is A-43's. Checks: `tests/cli/test_yaml_expansion.py` (the cap
+exactly, the position, a recursive alias's anchor, the precedence, where composition stops for
+texts, long texts, empty lists, aliases and aliases of a long text, the per-document count, the
+tag limit on texts, lists and maps, linear memory on a 20,000-anchor chain, each loader, and in
+a subprocess bounded at 20 s and 256 MiB: `calibrate` on the alias bomb and on the flat list,
+`run -t`, `run --scope`, `fleet`, and `lint` on a merge bomb).
+
 **A-43 An operator's file is read up to 1 MiB, and its validation errors are listed up to 20
 (added 2026-10-07).** The scope, target, fleet and labels files and the policy and signature
 packs are read through `shared.files.read_text_capped`: a regular file over 1 MiB
@@ -170,19 +202,18 @@ with 5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058
 owner's decisions of 2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and
 a labels file through a pipe worked and still do, and a named pipe with no writer still blocks,
 as before. A target file cannot be a pipe, as before: `run` reads it four times and
-`fingerprint` three, so the second read of `<(...)` is empty and a named pipe blocks it. Not
-covered: an anchor used many times in an operator file, which this read cap and the listing do
-not bound (PR #71 extends the spec loader's 100,000-node cap to these files): a 30,852-byte
-scope of aliases peaked at 1,066 MiB in validation, 1,215 MiB on main (pre-merge audit). Not
-covered either (OD-26): the report JSON that `dottore diff` and `calibrate` read, and the
-evidence artifacts `replay` and `run --resume` read; and an error outside the validation listing
-can still quote a value of the file whole (an unknown target `type`, a duplicate target id, an
-undefined YAML alias), now bounded by the 1 MiB read. Checks:
-`tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after a growth, a
-pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each loader, the
-`fleet` boundary, each target and the judge measured one at a time, the listing and its cut, the
-CLI's exit 3 and its one short line, and a sparse gigabyte in a subprocess bounded at 20 s and
-256 MiB).
+`fingerprint` three, so the second read of `<(...)` is empty and a named pipe blocks it. An
+anchor used many times is A-37's, not this clause's: this read cap and the listing do not bound
+it (a 30,852-byte scope of aliases peaked at 1,066 MiB in validation before A-37 was in,
+pre-merge audit), and A-37's node cap refuses that file. Not covered (OD-26): the report JSON
+that `dottore diff` and `calibrate` read, and the evidence artifacts `replay` and `run --resume`
+read; and an error outside the validation listing can still quote a value of the file whole (an
+unknown target `type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB
+read. Checks: `tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after
+a growth, a pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each
+loader, the `fleet` boundary, each target and the judge measured one at a time, the listing and
+its cut, the CLI's exit 3 and its one short line, and a sparse gigabyte in a subprocess bounded
+at 20 s and 256 MiB).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
