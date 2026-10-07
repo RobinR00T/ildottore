@@ -5,6 +5,60 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (a chat endpoint that only speaks WebSocket: `provider: websocket`)
+
+- **A template-driven WebSocket adapter** (`adapters/websocket.py`, on `websockets>=14.0`,
+  BSD-3-Clause). Many deployed assistants expose their chat only over a WebSocket that streams
+  the answer in JSON frames, and no two share a wire shape, so the target file declares it in a
+  `websocket:` block: the handshake frame (`{{token}}` is the credential `auth_ref` resolves to)
+  with an optional `expect` on its reply, the query frame (`{{prompt}}`, or `{{messages}}` for a
+  server that keeps no state, `{{system_prompt}}` where a memory seed goes), how the streamed
+  reply is read (`text_path`, `final_path` and `final_value`, `type_path` and `ignore_types`,
+  `error_path`, `usage_path`, an optional `tool_calls_path`, `model_path`, `id_path`,
+  `timeout_seconds` per turn), a session-start frame with an optional `expect`, a bounded
+  `reconnect.max_attempts` (0 to 5), `headers` on the upgrade and plain `vars`. The adapter adds
+  no product knowledge of its own.
+- **The charter holds as for the HTTP adapters.** The scope gate runs before the socket is
+  dialled (`wss://` is authorized like `https://`, cleartext `ws://` only to loopback: A-19
+  amended); an HTTP redirect at the upgrade is never followed (the library follows ten, to
+  another origin included); the credential is inserted in memory at send time and recorded as
+  `{{token}}`, and a server that echoes it has it scrubbed by value from the recorded frame and
+  from an error message; every frame sent and received is kept on the attempt
+  (`response.raw_ids.websocket.frames`) so the evidence store files it redacted at rest and
+  `dottore replay` re-derives the verdict from it; a turn is bounded in time (no final frame
+  within `timeout_seconds` is an environment error, inconclusive, retried and debited by the
+  runner), in bytes (4 MiB) and in frames (4096), the last two not retried; compression is not
+  negotiated. One connection per conversation: a single-turn attempt opens, queries and closes,
+  a multi-turn attempt keeps its connection across turns and closes it after the last
+  (`turns_total` in the per-turn metadata), and a later turn whose connection is gone is
+  inconclusive, never a silent new session. A reconnect is attempted only before a query is on
+  the wire, so the adapter never resends a query the ledger did not see.
+- **The loader refuses before anything is sent**: a block missing or on another provider, an
+  endpoint that is not `ws://` or `wss://` or that carries a query, a fragment or a
+  user:password, a placeholder neither reserved nor declared under `vars`, `{{token}}` without
+  an `auth_ref` or inside `vars`, a query template with neither `{{prompt}}` nor `{{messages}}`,
+  and `one_query_in_flight: false`; a validation error names the field and never quotes the
+  value. The block is part of the target digest when present (a changed block refuses a resume)
+  and left out when absent, as `seeded_setup` is. `provider_returns_tool_calls` is true for a
+  WebSocket target only with `tool_calls_path` (OD-18 B); it carries no tool definitions, and a
+  memory seed needs `{{system_prompt}}` in a template. `-sV` probes it like any live target,
+  one connection per probe; the envelope layer skips a nested `raw_ids` value, so a reply's
+  text in the transcript is not a metadata tell, and reads a model name only from `model_path`.
+- **Docs and examples:** `examples/target.websocket.yaml` and `examples/scope.websocket.yaml`
+  with Scenario H in `examples/README.md` (its output is the command's real output, and a test
+  pins it); the MANUAL (§3, §4.2 "A chat endpoint over a WebSocket", §13), `USAGE.md`, the
+  FAQ, `dottore(1)` and `dottore-scope(5)`, `SUPPLY-CHAIN.md` (the closure re-checked:
+  `websockets` 17.2 has no dependencies), contracts u01 (A-19) and u04 (§1 and OD-30 to
+  OD-33), `docs/12`, the scope and target templates. `tests/ws_chat_server.py` is a loopback
+  JSON-over-WebSocket server with thirteen behaviours; `tests/adapters/test_websocket.py` and
+  `tests/cli/test_websocket_target.py` hold 71 tests (the gate with zero connections, the
+  redirect, streaming, the final frame, timeouts, errors, reconnects, one connection per
+  conversation, the evidence on disk, a real campaign, its replay, a real `-sV` pass).
+  `make gates`: 2373 tests, 96.53% coverage. Not built, open for the owner: a dedicated
+  transcript field on `ModelResponse` (OD-30), several queries multiplexed on one socket
+  (OD-31), a reconnect mid-conversation for a stateless server (OD-32), a `websocket:` block in
+  a fleet entry (OD-33: `dottore fleet` infers `rest` from a `wss://` endpoint).
+
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 
 - **The second half of OD-18** (ADR-0009, C with A first, decided 2026-10-06). A deployed

@@ -3,6 +3,23 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): a chat endpoint over a WebSocket (provider websocket)
+
+- On `feat/websocket-adapter`: a template-driven JSON-over-WebSocket adapter, so an assistant
+  whose only chat surface is a socket is declared in a target file (`websocket:` block:
+  handshake with `{{token}}`, query with `{{prompt}}`, how the streamed reply is read, session
+  start, bounded reconnect) with no code. Same charter as the HTTP adapters: the gate before the
+  dial (`wss` as `https`, `ws` loopback-only), no redirect followed, the credential recorded as
+  its placeholder and scrubbed by value, every frame in the evidence, a turn bounded in time
+  (inconclusive), bytes and frames (not retried), one connection per conversation, no query
+  resent by the adapter. Worked example `examples/target.websocket.yaml` (Scenario H, dry run
+  pinned: 10 specs, 125 requests). `make gates` green: 2373 tests, 96.53% coverage, bandit
+  and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no dependencies). Open for the
+  owner: OD-30 (a transcript field on `ModelResponse` instead of `raw_ids["websocket"]`),
+  OD-31 (several queries on one socket), OD-32 (a reconnect mid-conversation for a stateless
+  server), OD-33 (a `websocket:` block in a fleet entry). Not built: binary frames, SSE or
+  polled streams (declare them as `rest`), a session that survives a reconnect.
+
 ## State, 2026-10-07 (night): OD-18 option B built
 
 - On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec
