@@ -82,7 +82,15 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   capped too. The adapters ask only for those two (`Accept-Encoding: gzip, deflate`); any other
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
-  classified by the status (a `401` stays a `401`).
+  classified by the status (a `401` stays a `401`). A reply whose brackets balance and nest more
+  than 100 levels deep (objects and arrays, outside strings, read from the text before it is
+  parsed, whether or not the rest is valid JSON; a provider's reply nests about 10), or a tool
+  call whose JSON-string arguments do, is refused the same way: inconclusive, not retried, and
+  the rest of the scan goes on. During a `-sV` or `-A` probe pass a reply refused on any of
+  these grounds still stops the run before the attack. A success reply that is not JSON
+  (brackets that do not balance included), or holds an integer of more than 4,300 digits (which
+  Python refuses to read), still stops the run (exit 3). An MCP server over stdio may write a
+  reply line of up to the same 4 MiB, and up to 4 MiB of stray lines before a reply.
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -423,9 +431,9 @@ decomposed (NFD), as one name; `-oJ out/R.json -oH out/r.json` is refused.
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an
 environment error (a timeout, a 5xx after retries) are sent again under the same attempt id
-(except an error a retry would repeat, such as a reply over the size cap, recorded with
-`[not retryable]` and kept), and a resumed spec is scored over its full `--runs`, one attempt per
-id.
+(except an error a retry would repeat, such as a reply over the size cap or nested too deeply,
+recorded with `[not retryable]` and kept), and a resumed spec is scored over its full `--runs`,
+one attempt per id.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
 authorized but answered nothing at all (every attempt failed on transport). That code is

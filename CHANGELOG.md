@@ -5,6 +5,82 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (one target reply nested too deeply stopped the whole scan)
+
+- **`json.loads` raises `RecursionError`, not a `ValueError`, on a document nested past the
+  parser's stack.** A target whose 200 reply carried `[` 200,000 levels deep (about 400 KB,
+  under the 4 MiB cap) escaped the handler that classifies a malformed body, and the runner
+  aborted the campaign: `dottore run` exited 3 with "aborted on RecursionError", one request
+  sent, every other spec never run. A reply the parser accepts was as fatal and far smaller when
+  the deep value is one the adapter keeps (an id, the usage, a tool call's input): 300 levels
+  (about 600 bytes) parsed, then overflowed pydantic's serializer when the evidence was written
+  ("aborted on ValueError: Circular reference detected"). Measured on Python 3.14 against a local
+  stub: `replay`'s validation gives up past 200 levels, the serializer past about 255, the
+  redactor past about 995, `repr` past about 70,000 and the parser past about 116,000 (about
+  10,000 on 3.12). The MCP adapter keeps the server's values as text, so there a reply was fatal
+  past `repr`'s limit (80,000 levels in `serverInfo.name`, delta audit) or the parser's.
+- **Every reply is now parsed with its nesting bounded** (`shared.nesting.bounded_loads`, 100
+  levels of objects and arrays; a provider's reply nests about 10, an OpenAI reply with logprobs
+  9): the base adapter's body (OpenAI, Anthropic, REST), the MCP adapter's JSON body, SSE
+  `data:` event and stdio line, and a tool call's arguments carried as a JSON string, which the
+  reply's own parse never opens. The depth is read from the text's brackets outside its strings,
+  before it is parsed, so the parser never decides and the verdict is the same on every Python
+  (the pre-commit audit found 20,000 unclosed `[` were "not JSON" on 3.14 and a stack overflow
+  on 3.12). Brackets that balance and nest past the limit are too deep, whether or not the rest
+  is valid JSON; brackets that do not balance are not JSON, and are refused as that without being
+  parsed. A reply too deep is `ResponseTooDeep`, an environment failure that is not retried, as
+  a reply over the size cap is: that attempt is inconclusive with the error recorded
+  (`[not retryable]`, so `--resume` keeps it) and every other spec runs. With a stub whose first
+  reply is too deep, the run exits 0 and only that attempt is inconclusive; with every reply too
+  deep, all 6 attempts are sent and the run ends "unreachable" (exit 3), as it does when every
+  reply is over the size cap. An MCP reply nested past the limit is now inconclusive too, where a
+  shallower one than `repr`'s limit was rendered as text and scored before.
+- **The cost of the guard:** a reply with no more than 100 brackets is not measured, which is most
+  replies. A hostile 4 MiB body costs about 0.27 s (empty lists) to 0.42 s (chains 100 deep),
+  against 0.07 s and 0.28 s for `json.loads` alone, measured with the machine under load; a
+  string of 4 MiB of escaped quotes, 0.03 s. Two earlier versions in this branch were slower:
+  walking the parsed value took 0.76 s and 1.49 s (pre-commit audit), and a string pattern that
+  could fail on a lone backslash at the very end was retried from every escaped quote, 38 s for
+  160 KB (delta audit). A test now measures 4 MiB of hostile strings in a subprocess, under 5 s
+  and 120 MB.
+- **An MCP server over stdio may write a reply line as long as an HTTP reply, 4 MiB** (it was
+  asyncio's default of 64 KiB, and a server listing 300 ordinary tools, 148 KB on one line,
+  stopped the campaign with "Separator is not found, and chunk exceed the limit", on `main` too).
+  A longer line, or more than 4 MiB of stray lines before one request's reply, is
+  `ResponseTooLarge`: without that total, 63 lines of 4 MiB took 80 s and 419 MB per attempt
+  (delta audit). A deep line is refused at once, ahead of the handler that skips a stray non-JSON
+  line.
+- **The judge's reply** goes through the same parse: one nested past the parser's stack raised
+  `RecursionError` out of the evaluator and aborted the campaign; it is now inconclusive, as
+  judge output that is not usable JSON. `call_arguments` reads arguments nested too deeply as
+  `{}`, as it reads arguments that are not JSON; a live reply carrying them is refused by its
+  adapter, so only a call from elsewhere (a fixture) can get there. Arguments whose brackets do
+  not balance are not refused: they read as no arguments and the call is judged by its name, as
+  on `main` (refused, 101 unclosed `[` turned a call to a forbidden tool from a fail into an
+  inconclusive; delta audit). The fingerprint engine's two `json.loads` read the layers' own flat
+  signals, not a target's text, and are unchanged.
+- **The "Not exercised" line** of the summary and of the HTML report names a reply nested too
+  deeply among the environment errors.
+- **Not changed:** with `-sV` or `-A`, such a reply during the fingerprint probe pass still stops
+  the run before any attack (exit 3 after one request), as a reply over the size cap already did,
+  while a 503 there is retried (pre-commit audit; a separate fix). A 200 whose body is not JSON
+  (brackets that do not balance included), or is JSON with an integer of more than 4,300 digits
+  (which Python refuses to read), is still a product defect and still stops the campaign (exit 3,
+  "aborted on AdapterProductError", one request sent, measured against the same stub); whether
+  it should fail only its attempt is open decision OD-21. The finding behind this fix took that
+  case to fail only its attempt already; it did not.
+- **Docs:** the MANUAL (bounded replies, `--resume`), `docs/02` (a row for a reply built to
+  crash the scanner), `docs/09`, contract u04 (§4 KEEP, §7, §9 OD-21) and the 00-INDEX ledger.
+  54 tests: `tests/adapters/test_deep_replies.py` (26, every adapter and both MCP transports),
+  `tests/cli/test_hostile_nesting.py` (3, through the CLI against a local stub, one of them
+  arguments exactly 100 deep through the in-band tool loop, the deepest place a reply reaches:
+  111 levels in the report; with the limit at 200 or 250 its `replay` fails, at 300 the run
+  aborts), `tests/shared/test_nesting.py` (24) and one judge test. The tests of the fix fail on
+  `main` (by `RecursionError`, "DID NOT RAISE", exit 3, `readline`'s `ValueError` or
+  `AdapterProductError`); the guards of what the audits found (the margin, the linear pattern,
+  the balance rule) have nothing to catch there. Two audits ran before the commit: the
+  pre-commit one and a delta round on its fixes.
+
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 
 - **The second half of OD-18** (ADR-0009, C with A first, decided 2026-10-06). A deployed
