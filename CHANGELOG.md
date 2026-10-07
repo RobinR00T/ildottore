@@ -31,12 +31,13 @@ versioning: [SemVer](https://semver.org/).
   read up to; split the fleet`). Generated files are written with LF line ends on every platform, as
   measured. Found by the pre-commit audit of this change.
 - **A validation error listed every problem, whole.** A scope, fleet or policy-pack file that failed
-  validation listed every error, and a key the operator typed is part of an error's field path: a
-  5.5 MB scope with 5,500 extra keys of 1,000 characters made `dottore run --dry-run` print one
-  `error:` line of 5,687,058 characters (exit 3). The first 20 problems are listed and the rest
-  counted (`; and 980 more`), and a field path or a reason longer than 300 characters is cut (`...
-  (1000 characters)`), as the spec loader does: a 1 MB scope of 1,000 such keys, under the read cap,
-  printed 1,034,057 bytes and now prints 7,171.
+  validation (and, since #73, a target file's `capabilities` or `sampling_defaults`) listed every
+  error, and a key the operator typed is part of an error's field path: a 5.5 MB scope with 5,500
+  extra keys of 1,000 characters made `dottore run --dry-run` print one `error:` line of 5,687,058
+  characters (exit 3). The first 20 problems are listed and the rest counted (`; and 980 more`), and
+  a field path or a reason longer than 300 characters is cut (`... (1000 characters)`), as the spec
+  loader does: a 1 MB scope of 1,000 such keys, under the read cap, printed 1,034,057 bytes and now
+  prints 7,171.
 - Not covered (OD-26): the report JSON that `dottore diff` and `calibrate` read and the evidence
   artifacts that `replay` and `run --resume` read are still read whole; both are the tool's own
   output and can pass 1 MiB legitimately, so each cap needs a figure measured on a real run. An

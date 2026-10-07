@@ -147,7 +147,8 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   to the recorded checksum`). The value typed in `checksum:` is not quoted at all: the redactor
   masked a real sha256 there only by its entropy, about 19 times in 20, so what appeared in
   clear was mostly a value that was not a digest, such as a key typed by mistake. A scope or
-  fleet file that fails validation names each field and the reason, never the value
+  fleet file, or a target file's `capabilities` or `sampling_defaults`, that fails validation
+  names each field and the reason, never the value
   (pydantic's own message echoes it), for at most 20 problems, the rest counted (`; and 980
   more`), and cuts a field path or a reason longer than 300 characters (`... (1000
   characters)`); a YAML error in a scope, target, fleet or labels file

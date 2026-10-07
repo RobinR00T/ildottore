@@ -462,6 +462,21 @@ def test_a_loader_lists_twenty_errors(
     assert shown.endswith("; and 980 more") and len(shown) < 10_000, len(shown)
 
 
+def test_a_target_files_block_lists_twenty_errors(tmp_path: Path) -> None:
+    """A target's ``sampling_defaults`` goes through the same listing since #73 (A-45)."""
+
+    keys = "".join(f"  k{i:04d}{'a' * 995}: x\n" for i in range(1000))
+    path = write(tmp_path, "target.yaml", (TARGET + "sampling_defaults:\n" + keys).encode("utf-8"))
+    assert path.stat().st_size < CAP
+
+    with pytest.raises(ValueError) as caught:
+        load_target(path)
+    shown = str(caught.value)
+    assert "'sampling_defaults' failed validation" in shown, shown[:500]
+    assert shown.count("Extra inputs are not permitted") == 20, shown[:500]
+    assert shown.endswith("; and 980 more") and len(shown) < 10_000, len(shown)
+
+
 # --- the CLI ----------------------------------------------------------------------------------
 
 

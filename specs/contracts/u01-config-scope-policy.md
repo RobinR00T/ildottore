@@ -153,7 +153,8 @@ before it writes any, and refuses one over the cap: the scope repeats each endpo
 refused (pre-commit audit of this clause); with entries of about 170 bytes the crossing is at
 3,870. `shared.config_errors.validation_problems` lists the first 20 errors by default, counts
 the rest, and cuts a field path or a reason past 300 characters, as the spec loader cuts its
-schema messages; the scope, fleet and policy-pack loaders use that default. Both holes were
+schema messages; the scope, fleet and policy-pack loaders use that default, and so does the
+target loader for `capabilities` and `sampling_defaults` since #73 (A-45). Both holes were
 found by the pre-commit audit of the alias-expansion cap (PR #71): the files were read whole
 with `Path.read_text`, so 100 MB of comments in a scope or labels file cost 39.5 s and 244 MB
 before the refusal and a sparse gigabyte of labels peaked at about 2 GiB (2,009 and 2,116 MiB in
