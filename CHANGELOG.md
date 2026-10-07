@@ -12,24 +12,26 @@ versioning: [SemVer](https://semver.org/).
   `load_mock_scenario` each took the keys they knew and never looked at the rest, and a `name`,
   `provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text was read as absent.
   On `2f6201a`, `run` of a live target with `endpont:` (or an endpoint written as a list) had no
-  endpoint, so it went to the offline `bare` mock: exit 0, every spec inconclusive, and the dry run
-  said `authorized at` the scope's base URL with no word about the endpoint. A `capabilities:`
-  whose `tools`, `rag` and `memory` lost their indent left them at the top level, ignored: a `type:
-  model` target planned 34 specs with 39 skipped for a capability, against 59 and 8. And `model:
-  20240613`, which YAML reads as a number, was no model. All three readers now check the top level
-  and refuse, before anything is sent (exit 3), on the A-45 line: `error: target file target.yaml
-  failed validation: endpont: Extra inputs are not permitted` (`model: Input should be a valid
-  string`), never the value. The keys are `Target`'s fields and `mock_scenario`; a key with
-  nothing after it, `null` or `~` is still absent. **A behavior change:** a target file that loads
-  today with such a key or value is refused, a key that only holds an anchor for a `<<` merge
-  (`x-defaults: &d`) included (a map merged inline still loads); no file of the repository has one
-  (a new test loads every target file and every target block of the docs and man pages through the
-  three readers, and every target file `dottore fleet` writes). A run halted before this change with such a key
-  resumes once the key is deleted (still on the mock, for a lost endpoint) and is refused as
-  another target once the key is corrected. Refusing is the owner's call, open as OD-31 and built
-  as the smallest reversible change. Still read as written, and said so in the clause:
-  `provider: opnai` with an endpoint routes to the REST adapter, and a stdio MCP target with
-  `transport: stido` or `provider: mpc` runs on the offline mock (PASS, exit 0); a key inside
+  endpoint, so it went to the offline `bare` mock, which sent it nothing: one spec came back
+  inconclusive with exit 0, and the full battery scored a FAIL (`DOS-TOKEN-AMP-001`) and a PASS
+  (`MCP-TOOLPOISON-001`) with exit 1 (on `c3e70d8` too); the dry run said `authorized at` the
+  scope's base URL with no word about the endpoint. A `capabilities:` whose `tools`, `rag` and
+  `memory` lost their indent left them at the top level, ignored: a `type: model` target planned 34
+  specs with 39 skipped for a capability, against 59 and 8. And `model: 20240613`, which YAML reads
+  as a number, was no model. All three readers now check the top level and refuse, before anything
+  is sent (exit 3), on the A-45 line: `error: target file target.yaml failed validation: endpont:
+  Extra inputs are not permitted` (`model: Input should be a valid string`), never the value. The
+  keys are `Target`'s fields and `mock_scenario`; one of the six text fields with nothing after it,
+  `null` or `~` is still absent. **A behavior change:** a target file that loads today with such a
+  key or value is refused, a key that only holds an anchor for a `<<` merge (`x-defaults: &d`)
+  included (a map merged inline still loads); no file of the repository has one (a new test loads
+  every target file and every target block of the docs and man pages through the three readers, and
+  every target file `dottore fleet` writes). A run halted before this change with such a key resumes
+  once the key is deleted (still on the mock, for a lost endpoint) and is refused as another target
+  once the key is corrected. Refusing is the owner's call, open as OD-31 and built as the smallest
+  reversible change. Still read as written, and said so in the clause: `provider: opnai` with an
+  endpoint routes to the REST adapter, and a stdio MCP target with `transport: stido` or `provider:
+  mpc` runs on the offline mock, where its `mcp` suite scores a PASS with exit 0; a key inside
   `capabilities` is A-50's (#78); every problem is listed on the one line until #76 bounds
   `validation_problems` (20,000 unknown keys gave a 788,937-byte line). A number as `provider` or
   `transport`, which A-40 (above) read as no provider, is refused as not text, and A-40's two tests

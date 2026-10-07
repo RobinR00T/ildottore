@@ -5,7 +5,8 @@ the rest, and read ``name``, ``provider``, ``endpoint``, ``model``, ``auth_ref``
 ``transport`` as absent when they were not text. So a misspelled key (``endpont:``) or an
 endpoint written as a list was dropped without a word, the target had no endpoint, and
 ``target_uses_mock`` sent the run to the offline mock: ``dottore run`` against a live model
-exited 0 with every spec inconclusive and nothing sent to it. A ``capabilities:`` whose children
+sent it nothing and scored the mock's replies (one spec inconclusive with exit 0; the full
+battery a FAIL and a PASS with exit 1). A ``capabilities:`` whose children
 lost their indent left ``tools``, ``rag`` and ``memory`` at the top level, ignored, and the specs
 that need them out of the plan (a ``type: model`` target planned 34 specs instead of 59, on
 ``2f6201a``). Found while writing u12 A-50; clause u12 A-53, open decision OD-31.

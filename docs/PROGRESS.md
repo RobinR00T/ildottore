@@ -6,19 +6,20 @@ The carryover ledger. Every agent session updates this so context survives even 
 ## State, 2026-10-07 (evening): a target file's top-level keys
 
 - On `fix/target-unknown-top-level-keys` (u12 A-53; OD-31, open for the owner), from the "outside
-  the clause" list of A-50: the three readers of a target file took the top-level keys they knew
-  and dropped the rest, and read a `name`, `provider`, `endpoint`, `model`, `auth_ref` or
-  `transport` that was not text as absent. So `endpont:` ran a live target on the offline mock with
-  exit 0 (every spec inconclusive, measured on `2f6201a`), and `capabilities:` children that lost
-  their indent were ignored (34 specs planned instead of 59 on a `type: model` target). Built
-  reversibly: `_read_target_yaml` checks the top level against `Target`'s fields and
-  `mock_scenario`, text where text is read, and every reader refuses on the A-45 line naming the
-  file and the key. Every target file and target block of the repository, and what `dottore fleet`
-  writes, still load (new test). Left open, written in the clause: a misspelled value
-  (`provider: opnai` goes to the REST adapter, and `transport: stido` on a stdio MCP target runs
-  it on the offline mock with a PASS and exit 0). `tests/cli/test_target_top_level_keys.py`: 43 of
-  its 78 tests fail on `c3e70d8`. A number as `provider` or `transport`, which A-40 (#81) read as
-  no provider, is refused as not text; A-40's two tests of it now expect that.
+  the clause" list of A-50: the three readers of a target file took the top-level keys they knew and
+  dropped the rest, and read a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport`
+  that was not text as absent. So `endpont:` ran a live target on the offline mock, sending it
+  nothing (one spec: inconclusive, exit 0; the full battery: a FAIL and a PASS, exit 1; measured on
+  `2f6201a` and `c3e70d8`), and `capabilities:` children that lost their indent were ignored (34
+  specs planned instead of 59 on a `type: model` target). Built reversibly: `_read_target_yaml`
+  checks the top level against `Target`'s fields and `mock_scenario`, text where text is read, and
+  every reader refuses on the A-45 line naming the file and the key. Every target file and target
+  block of the repository, and what `dottore fleet` writes, still load (new test). Left open,
+  written in the clause: a misspelled value (`provider: opnai` goes to the REST adapter, and
+  `transport: stido` on a stdio MCP target runs it on the offline mock, where its `mcp` suite scores
+  a PASS with exit 0). `tests/cli/test_target_top_level_keys.py`: 43 of its 78 tests fail on
+  `c3e70d8`. A number as `provider` or `transport`, which A-40 (#81) read as no provider, is refused
+  as not text; A-40's two tests of it now expect that.
 
 ## State, 2026-10-07 (evening): YAML nesting refused where it is written
 

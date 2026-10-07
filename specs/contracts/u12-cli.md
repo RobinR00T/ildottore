@@ -335,20 +335,21 @@ pinned:
 **A-53 A target file's top level holds only the keys its readers read, and text where they read
 text; anything else is refused before anything is sent (added 2026-10-07; OD-31, open).**
 `load_target`, `target_uses_mock` and `load_mock_scenario` each took the keys they knew from the
-file's top level with `raw.get(...)` and never looked at the rest, and `load_target` read a
-`name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text as absent.
-So a misspelled key was dropped without a word, and when it was the endpoint, or the endpoint
-was written as a list, a live target had no endpoint and `target_uses_mock` sent the run to the
-offline mock: on `2f6201a`, `run` of a live target with `endpont:` ran its spec against the
-`bare` mock, exit 0, inconclusive, and its dry run said `authorized at` the scope's base URL,
-with no word about the endpoint or the mock. A `capabilities:` whose children lost their indent
-read as no capabilities with `tools`, `rag` and `memory` ignored at the top level: a `type:
-model` target with all three planned 34 specs with 39 skipped for a capability, against 59 and
-8, and nothing named the keys. A model id YAML reads as a number (`model: 20240613`) was read as
-no model. Now `_read_target_yaml`, which every reader goes through, checks the top level against
+file's top level with `raw.get(...)` and never looked at the rest, and `load_target` read a `name`,
+`provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text as absent. So a
+misspelled key was dropped without a word, and when it was the endpoint, or the endpoint was written
+as a list, a live target had no endpoint and `target_uses_mock` sent the run to the offline mock: on
+`2f6201a`, `run` of a live target with `endpont:` sent it nothing and scored the `bare` mock's
+replies (one spec: inconclusive, exit 0; the full battery: a FAIL on `DOS-TOKEN-AMP-001` and a PASS
+on `MCP-TOOLPOISON-001`, exit 1, as on `c3e70d8`), and its dry run said `authorized at` the scope's
+base URL, with no word about the endpoint or the mock. A `capabilities:` whose children lost their
+indent read as no capabilities with `tools`, `rag` and `memory` ignored at the top level: a `type:
+model` target with all three planned 34 specs with 39 skipped for a capability, against 59 and 8,
+and nothing named the keys. A model id YAML reads as a number (`model: 20240613`) was read as no
+model. Now `_read_target_yaml`, which every reader goes through, checks the top level against
 `_TargetFileTopLevel` and refuses, on one line in the A-45 form, `target file <path> failed
-validation: endpont: Extra inputs are not permitted` (`model: Input should be a valid string`; a
-key that is not text: `1: Keys should be strings`), never the value:
+validation: endpont: Extra inputs are not permitted` (`model: Input should be a valid string`; a key
+that is not text: `1: Keys should be strings`), never the value:
 * the keys are the fields of `Target` (`id`, `type`, `name`, `provider`, `endpoint`, `model`,
   `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`) and
   `mock_scenario`; a field added to `Target` and read by `load_target` has to be added to the
@@ -422,17 +423,16 @@ clause, and said so rather than pinned:
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
-- **OD-31** (open, built reversibly, 2026-10-07, A-53): whether a target file's top level refuses
-  a key no reader reads and a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport`
-  that is not text, or keeps dropping them. Built: both refused before anything is sent, by every
-  reader of the file. Alternatives: keep the silence (main until A-53: `endpont:` runs a live
-  target on the offline mock with exit 0); warn and go on (the warning goes where the run's
-  output goes, and a CI log nobody reads runs on the mock just the same); refuse only the text
-  fields that are not text and warn on an unknown key (an unknown key costs the same as a lost
-  endpoint when it is the endpoint); accept a key that only holds an anchor under a prefix
-  (`x-`, as Compose does). A file that loads on main and is refused now holds a key outside
-  `Target`'s fields and `mock_scenario` (an anchor holder included), or one of those six fields as
-  anything but text (a number, a boolean, a date, a list, a map, a set or bytes); no file of the
-  repository does. Reversal: the `_TargetFileTopLevel`
-  check in `_read_target_yaml`, the six `isinstance(..., str) else None` reads in `load_target`
-  and the `_lowered` reads in `target_uses_mock`.
+- **OD-31** (open, built reversibly, 2026-10-07, A-53): whether a target file's top level refuses a
+  key no reader reads and a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that
+  is not text, or keeps dropping them. Built: both refused before anything is sent, by every reader
+  of the file. Alternatives: keep the silence (main until A-53: `endpont:` runs a live target on the
+  offline mock and scores its replies); warn and go on (the warning goes where the run's output
+  goes, and a CI log nobody reads runs on the mock just the same); refuse only the text fields that
+  are not text and warn on an unknown key (an unknown key costs the same as a lost endpoint when it
+  is the endpoint); accept a key that only holds an anchor under a prefix (`x-`, as Compose does). A
+  file that loads on main and is refused now holds a key outside `Target`'s fields and
+  `mock_scenario` (an anchor holder included), or one of those six fields as anything but text (a
+  number, a boolean, a date, a list, a map, a set or bytes); no file of the repository does.
+  Reversal: the `_TargetFileTopLevel` check in `_read_target_yaml`, the six `isinstance(..., str)
+  else None` reads in `load_target` and the `_lowered` reads in `target_uses_mock`.

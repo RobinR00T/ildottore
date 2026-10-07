@@ -1054,8 +1054,8 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
         raise ValueError(f"target file {path} must be a mapping at top level")
     # Every reader below took what it knew and dropped the rest, so `endpont:` for `endpoint`
     # left a live target with no endpoint and `target_uses_mock` ran it on the offline mock
-    # (exit 0, every spec inconclusive), and `tools: true` under a `capabilities:` that lost
-    # its indent was ignored (A-53, OD-31). Key and reason only, as in the A-45 lines.
+    # (nothing sent to it, the mock's replies scored), and `tools: true` under a `capabilities:`
+    # that lost its indent was ignored (A-53, OD-31). Key and reason only, as in the A-45 lines.
     try:
         _TargetFileTopLevel.model_validate(raw)
     except ValidationError as exc:
