@@ -5,8 +5,9 @@ pydantic without catching its ``ValidationError``. Because that error is a ``Val
 CLI caught it and printed pydantic's own text: four lines (``error: 1 validation error for
 Capabilities``, the field, ``input_value='maybe-later'`` and a docs URL) that quoted the
 operator's value and did not say which file it was (found 2026-10-07 on ``fix/huge-int-repr``).
-The scope, fleet and policy-pack loaders already wrapped it as ``<kind> file <path> failed
-validation: <field: reason>`` (``shared/config_errors.py``). Clause A-45 (u12).
+The scope and fleet loaders already wrapped it as ``scope file <path> failed validation: <field>:
+<reason>`` (``fleet file ...`` likewise) through ``shared/config_errors.validation_problems``.
+Clause A-45 (u12).
 """
 
 from __future__ import annotations
@@ -14,8 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from click.testing import Result
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from ildottore.cli.app import _masked
 from ildottore.cli.exit_codes import ExitCode
@@ -30,7 +30,7 @@ REPO = Path(__file__).resolve().parents[2]
 SPEC = REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml"
 
 #: Shaped like a key pasted in the wrong place: pydantic quoted it in full when it was short
-#: and kept its tail when it truncated it.
+#: and kept its start and its tail when it truncated it in the middle.
 PASTED = "797c48a81f494d0f3e8d13bd49459b6f" * 2
 
 #: (YAML block, the value written in it, the field path and reason the error must give). Each
@@ -91,8 +91,19 @@ def dry_run(target: Path, scope: Path, *extra: str) -> Result:
     return runner.invoke(app, ["run", *args, "--dry-run"])
 
 
+def pieces(value: str) -> list[str]:
+    """Every 8-character run of ``value`` (the whole of a shorter one).
+
+    pydantic printed 24 characters of a long value's start and 23 of its tail; a check on one
+    fixed window let a shorter or shifted piece through (delta audit).
+    """
+
+    return [value[start : start + 8] for start in range(max(1, len(value) - 7))]
+
+
 def refusal(result: Result, path: Path, value: str) -> str:
-    """The run's one ``error:`` line, which names ``path`` and quotes nothing of ``value``."""
+    """The run's one ``error:`` line, which names ``path`` and quotes no piece of ``value``, nor
+    a mask the redactor put in its place."""
 
     assert result.exit_code == ExitCode.ERROR, (result.exception, result.output)
     lines = result.stderr.splitlines()
@@ -101,9 +112,11 @@ def refusal(result: Result, path: Path, value: str) -> str:
     assert line.startswith(f"error: target file {path} "), line
     for leaked in ("input_value", "input_type", "errors.pydantic.dev", "validation error for"):
         assert leaked not in result.output
-    # Neither the value nor, for the long one, a tail of it (pydantic truncated in the middle).
-    assert value not in result.output
-    assert value[-12:] not in result.output
+    for piece in pieces(value):
+        assert piece not in result.output, piece
+    # The redactor's phone rule reads a number next to the cap in the reason (`200000 250000`)
+    # as one, so a value printed there would be masked, not missing (pre-merge audit).
+    assert "REDACTED" not in result.output
     return line
 
 
@@ -220,4 +233,5 @@ def test_load_target_raises_a_plain_value_error_not_pydantics(tmp_path: Path, ca
     assert message.startswith(f"target file {target} ")
     assert where in message
     assert "\n" not in message
-    assert value not in message
+    for piece in pieces(value):
+        assert piece not in message, piece

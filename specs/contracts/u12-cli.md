@@ -233,21 +233,26 @@ the reason, on one line, never the value (added 2026-10-07).** `load_target` han
 `capabilities` and `sampling_defaults` blocks to pydantic without catching its `ValidationError`.
 That error is a `ValueError`, so every command's handler caught it and printed pydantic's own text:
 four lines (`error: 1 validation error for Capabilities`, the field, `input_value='maybe-later'` and
-a docs URL) that quoted the operator's value and named no file, while the scope, fleet and
-policy-pack loaders already gave `<kind> file <path> failed validation: <field>: <reason>`
-(`shared/config_errors.validation_problems`, which keeps the input value and the URL out). Both
-blocks now raise a plain `ValueError` in that form, `target file <path> 'capabilities' failed
-validation: tools: Input should be a valid boolean, ...`, with every problem of the block on the one
-line, and exit 3 through `run -t`, `run --judge`, `fingerprint` and `fleet --judge`
-(`tests/cli/test_target_file_validation.py`: 19 of its 24 tests fail on `0501752`; the other 5 check
-that the redactor leaves each test value readable, since a first value was masked as a phone number
-and proved nothing). Outside the clause, and said so rather than pinned:
+a docs URL) that quoted the operator's value and named no file, while the scope and fleet loaders
+already gave `scope file <path> failed validation: <field>: <reason>` (`fleet file ...`, and `policy
+pack <path> ...` for a pack), through `shared/config_errors.validation_problems`, which keeps the
+input value and the URL out. Both blocks now raise a plain `ValueError` of that kind, `target file
+<path> 'capabilities' failed validation: tools: Input should be a valid boolean, ...`, with the
+block's problems on the one line as `validation_problems` lists them, and exit 3 through `run -t`,
+`run --judge`, `fingerprint` and `fleet --judge` (`tests/cli/test_target_file_validation.py`: 19 of
+its 24 tests fail on `0501752`; the other 5 check that the redactor leaves each test value readable,
+and the CLI tests fail on any mask in the output, since a first value was masked as a phone number
+and proved nothing; and they look for every 8-character piece of a value, since pydantic printed the
+first 24 and the last 23 characters of a long one). Outside the clause, and said so rather than
+pinned:
 * other refusals of a target file still quote what it says: the `type` and `mock_scenario`
   values (whatever was written there, a map included), the tool name a `seeded_setup` both maps
-  and grants, and the target's `id` in the duplicate-id and `--hardened` refusals;
+  and grants, and the target's `id`, which several refusals name (two files with one id,
+  `--hardened` on a live target, a target the scope does not authorize);
 * a key the operator typed is part of the location and is printed as pydantic renders it (a
   `true:` key as `1`), control characters included, so a key holding a line break still splits
   the message until the terminal writes them out (#51);
+* a file with both blocks wrong is refused on its `capabilities` block alone;
 * only what pydantic cannot read as the field's type is refused: `tools: 'off'` reads as false,
   `temperature: '0.5'` as 0.5, `temperature: true` as 1.0, and `temperature` and `top_p` have no
   range (`.nan`, `-3`, `top_p: 7.5` are kept);
