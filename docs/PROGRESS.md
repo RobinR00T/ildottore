@@ -21,18 +21,21 @@ The carryover ledger. Every agent session updates this so context survives even 
   list of declared references (885,131 bytes), the three `--resume` refusals, an integer `repr`
   cannot write, two surviving mutants and doc figures; the delta audit, that `str()` of a verdict,
   `provider` or `transport` of aliases still wrote about 675 MB, a labels key that is a huge integer
-  blamed on a valid verdict, nested aliases untested, the credential variable's name, and doc
-  figures; all fixed. 58 of the 69 tests (the file's 68 and #76's changed reader test) fail on
-  `a0bca70`, each for its reason; 53 of 55 mutants die (the 2 that live quote a fleet id, already
-  held to 64 characters). (2) A byte that is not UTF-8 in any operator file printed the codec's
-  error with no file name; `read_text_capped` now refuses it as an `OSError` (`EILSEQ`) with the
-  path and the offset, exit 3, as it refuses a file over the cap. Clause A-51 (u01; A-48 to A-50
-  were claimed the same evening by `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
-  `fix/target-capabilities-strict`). Open, OD-27: ids have no length bound, so a started run still
-  prints a target id whole (plan, progress, reports, run store), and `calibrate` lists uncovered
-  labels whole; proposed, a bound at load like the fleet's 64 characters. Left to #71 (open): a
-  stdio `command` of aliases, joined into one text where the target is authorized (200 MB and 1.09
-  GB from a 90 KB file, as on `a0bca70`).
+  blamed on a valid verdict (in the first commit only), nested aliases untested, the credential
+  variable's name, and doc figures; the pre-merge audit, that urllib's errors quoted an endpoint or
+  `base_url` whole (900 KB, no file; the allowlist now denies what it cannot read, as documented),
+  four branches untested and a date key of `seeded_setup` written differently; all fixed. 68 of the
+  85 tests (the file's 84 and #76's changed reader test) fail on `a0bca70`, each for its reason, and
+  the 17 that pass guard behaviour that must not change; 62 of 64 mutants die (the 2 that live quote
+  a fleet id, already held to 64 characters). (2) A byte that is not UTF-8 in any operator file
+  printed the codec's error with no file name; `read_text_capped` now refuses it as an `OSError`
+  (`EILSEQ`) with the path and the offset, exit 3, as it refuses a file over the cap. Clause A-51
+  (u01; A-48 to A-50 were claimed the same evening by `fix/resume-sv-ceiling-advice`,
+  `fix/diff-report-validation` and `fix/target-capabilities-strict`). Open, OD-27: ids have no
+  length bound, so a started run still prints a target id whole (plan, progress, reports, run
+  store), and `calibrate` lists uncovered labels whole; proposed, a bound at load like the fleet's
+  64 characters. Left to #71 (open): a stdio `command` of aliases, joined into one text where the
+  target is authorized (200 MB and 1.09 GB from a 90 KB file, as on `a0bca70`).
 
 ## State, 2026-10-07 (afternoon): operator files read up to 1 MiB
 

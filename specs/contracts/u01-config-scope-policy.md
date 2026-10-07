@@ -191,11 +191,11 @@ its file (90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000 cha
 about 200 MB to build); an integer Python will not write out (a YAML hex or base-60 integer past
 4,300 digits, whose `repr` raises) is shown as `<an integer of N bits>`. They are: an invalid target
 `type`, refused before the enum looks it up, because the enum's own error built the whole `repr`
-(that 90 KB file as a `type:` took 1.28 to 1.49 GB of resident memory and 42 to 50 s in two measures
-on `a0bca70`, and printed a line of about 200 MB; it takes 72 MB and 0.6 s now: audit of this
-clause), and an invalid `mock_scenario`; a duplicated scope target id, a duplicated identity name
-and an identity that shares a canary, with the id of the target they belong to; a labels entry with
-an invalid verdict (its spec id); two target files with one id in `run`; the target id and the
+(that 90 KB file as a `type:` took 1.28 to 1.49 GB of resident memory and 32 to 50 s in three
+measures on `a0bca70`, and printed a line of about 200 MB; it takes 72 MB and 0.6 s now: audit of
+this clause), and an invalid `mock_scenario`; a duplicated scope target id, a duplicated identity
+name and an identity that shares a canary, with the id of the target they belong to; a labels entry
+with an invalid verdict (its spec id); two target files with one id in `run`; the target id and the
 endpoint in the authorization refusal (`policy.authorize_target`, so `run`, `fingerprint` and the
 engine's gate on each attempt), the target id that `run` and `fingerprint` write in front of it, and
 the ids the scope authorizes, which they list after it (the first 20, each cut, then `and N more`:
@@ -213,55 +213,67 @@ and grants. PyYAML's problem text (`shared.config_errors.yaml_problem`, so every
 spec loader and `dottore lint` included) is cut the same way. A label's verdict, a target's
 `provider` and `transport`, and the keys of its `seeded_setup` are checked as text before anything
 turns them into text: `str()` of a list of aliases took about 675 MB of resident memory (400 to 600
-MB traced by the test on `a0bca70`), and of an integer past 4,300 digits it raised, which the labels
-loader then blamed on a valid verdict (delta audit); a labels key that is such an integer is refused
-as `<an integer of N bits> is not a spec id`, and a `seeded_setup` key that is not text is quoted,
-not turned into text. Before, each quoted the value whole, bounded only by A-43's 1 MiB read: a 1 MB
-`type:` printed an `error:` line of 1,000,108 bytes, a duplicated target id of 500 KB one of
-500,136, and an undefined alias of a million characters about 1,000,100 from `run --scope`,
-`calibrate` and `lint` (pre-commit audit of A-43, in its measure, file paths included); this
-clause's sweep found the rest, up to 2,000,108 bytes from `fingerprint` for a target id of a million
-characters (the id in the message and again in the reason), and the 24 refusals of the test's table,
-with values of 300,000 to 1,000,000 characters, printed lines of 400,080 to 2,000,247 characters on
-`c9f27cc` and `a0bca70`. The lengths are written bare, as the spec loader writes them; for the
-`repr` of a text value the length stays under 10,485,762, short of the nine digits the CLI's
-redactor masks as a phone number (`repr` writes at most ten characters for a character the file
-spends a byte or more on), and an item count is smaller. The redactor can still read a head that
-ends in a digit after a character that is not a letter, together with the `... (N` behind it, as one
-phone number, and masks both (a head ending in `:7` shows `:«REDACTED:phone» characters)`): the head
-is kept, its length is lost. Bytes that are not UTF-8 in any of these files, or in a policy or
-signature pack, are refused by `shared.files.read_text_capped` as an `OSError` (`EILSEQ`) with the
-path and the offset of the first bad byte in the file, in the spec loader's words (`not UTF-8 text
-(byte N)`), exit 3 in `run`, `fleet`, `calibrate` and `fingerprint`: they raised `read_text`'s own
-`UnicodeDecodeError`, which named no file (`error: 'utf-8' codec can't decode byte 0xff in position
-15: invalid start byte`). The path is shown as the CLI shows every path (A-38): an existing absolute
-one as written, a relative one through the redactor, which masks a directory name that looks random.
-A valid file's text, and so a scope checksum, is unchanged. Not covered: the stdio advice's command
-line, which is meant to be copied exactly, is written whole; so is a target id wherever a run that
-has started prints it (the plan, the progress and `-sV` lines, the reports and the run store), and a
-labels spec id where `calibrate` lists the labels the report does not cover. Whether ids get a
-length bound when they are loaded, as a fleet's already have (64 characters), is OD-27. A stdio
-`command` made of YAML aliases is joined into one text wherever the target is authorized
+MB traced by the test on `a0bca70`), and of an integer past 4,300 digits it raised Python's own
+`Exceeds the limit (4300 digits)` error, naming no file (delta audit); a labels key that is such an
+integer is refused as `<an integer of N bits> cannot be a spec id`, and a `seeded_setup` key is
+written as `str()` writes it (a date stays `2024-01-01`), quoted only when `str()` cannot write it.
+An endpoint or a `base_url` that urllib cannot read (a bracket left open, a host NFKC turns into a
+path, a port that is not a number or has thousands of digits) raised urllib's or Python's error,
+which quoted it whole with no file named (900,053 to 900,077 bytes: pre-merge audit): the target
+loader refuses an unreadable endpoint naming the file and the field and not the value, which can
+hold a password; `EndpointAllowlist.is_allowed` denies what it cannot read, as its docstring always
+said, a scope host pinned to a port of thousands of digits included, so the authorization refusal
+quotes the URL cut; and `dottore fleet` refuses an unreadable endpoint quoted cut. Before, each
+quoted the value whole, bounded only by A-43's 1 MiB read: a 1 MB `type:` printed an `error:` line
+of 1,000,108 bytes, a duplicated target id of 500 KB one of 500,136, and an undefined alias of a
+million characters about 1,000,100 from `run --scope`, `calibrate` and `lint` (pre-commit audit of
+A-43, in its measure, file paths included); this clause's sweep found the rest, up to 2,000,108
+bytes from `fingerprint` for a target id of a million characters (the id in the message and again in
+the reason), and the 24 refusals of the test's table, with values of 300,000 to 1,000,000
+characters, printed lines of 400,080 to 2,000,247 characters on `c9f27cc` and `a0bca70`. The lengths
+are written bare, as the spec loader writes them; for the `repr` of a text value the length stays
+under 10,485,762, short of the nine digits the CLI's redactor masks as a phone number (`repr` writes
+at most ten characters for a character the file spends a byte or more on), and an item count is
+smaller. The redactor can still read a head that ends in a digit after a character that is not a
+letter, together with the `... (N` behind it, as one phone number, and masks both (a head ending in
+`:7` shows `:«REDACTED:phone» characters)`): the head is kept, its length is lost. Bytes that are
+not UTF-8 in any of these files, or in a policy or signature pack, are refused by
+`shared.files.read_text_capped` as an `OSError` (`EILSEQ`) with the path and the offset of the first
+bad byte in the file, in the spec loader's words (`not UTF-8 text (byte N)`), exit 3 in `run`,
+`fleet`, `calibrate` and `fingerprint`: they raised `read_text`'s own `UnicodeDecodeError`, which
+named no file (`error: 'utf-8' codec can't decode byte 0xff in position 15: invalid start byte`).
+The path is shown as the CLI shows every path (A-38): an existing absolute one as written, a
+relative one through the redactor, which masks a directory name that looks random. A valid file's
+text, and so a scope checksum, is unchanged. Not covered: the stdio advice's command line, which is
+meant to be copied exactly, is written whole; so are a target id and its endpoint wherever a run
+that has started prints them (the plan, the progress and `-sV` lines, the reports and the run
+store), and a labels spec id where `calibrate` lists the labels the report does not cover. Whether
+ids get a length bound when they are loaded, as a fleet's already have (64 characters), is OD-27. A
+stdio `command` made of YAML aliases is joined into one text wherever the target is authorized
 (`wiring.request_url_for`, the engine's gate included) and in that advice: 20,000 aliases of one 10
-KB text, a 90 KB file, make a line of 200,020,417 bytes, about 1.09 GB and 32 s, on this branch as
-on `a0bca70`. #71 (open) caps every YAML file at 100,000 nodes with its aliases expanded, which that
-file passes about 30 times over. Checks: `tests/cli/test_operator_file_quoted_values.py` (each
-refusal of the table through the CLI with a value past the cut: the line under 2,500 characters, the
-file named where the refusal names it, the exact cut and no mask; twenty ids or references listed
-and the rest counted, through `run`, `fingerprint` and the credential refusal; the three refusals of
-`--resume`; a `repr` of exactly 300 characters quoted whole and one of 301 cut; the head equal to
-the start of `repr` over generated values; a list and a mapping of aliases quoted, and refused as a
-`type` through `load_target`, under a memory bound; an integer Python will not write, and no other
-failure of `repr` hidden; nested aliases one level down; a verdict and a `provider` of aliases not
-turned into text; an integer labels key and `seeded_setup` key; the variable name; the UTF-8 refusal
-through each command, and its offset past one decoder chunk), and the reader test of
+KB text, a 90 KB file, make a line of 200,020,417 bytes, 1.09 to 1.49 GB of resident memory and
+about 32 s (two measures), on this branch as on `a0bca70`. #71 (open) caps every YAML file at
+100,000 nodes with its aliases expanded, which that file passes about 30 times over. Checks:
+`tests/cli/test_operator_file_quoted_values.py` (each refusal of the table through the CLI with a
+value past the cut: the line under 2,500 characters, the file named where the refusal names it, the
+exact cut and no mask; twenty ids or references listed and the rest counted, through `run`,
+`fingerprint` and the credential refusal; the three refusals of `--resume`; a `repr` of exactly 300
+characters quoted whole and one of 301 cut; the head equal to the start of `repr` over generated
+values; a list and a mapping of aliases quoted, and refused as a `type` through `load_target`, under
+a memory bound; an integer Python will not write, and no other failure of `repr` hidden; nested
+aliases one level down; a verdict and a `provider` of aliases not turned into text; an integer
+labels key and `seeded_setup` key, and a date key written as before; verdicts in any case and with
+spaces; a stdio target real only with a command; a `transport` of aliases; nine URLs urllib cannot
+read, through `run`, `fingerprint` and `fleet`; the variable name; the UTF-8 refusal through each
+command, and its offset past one decoder chunk), and the reader test of
 `tests/cli/test_operator_file_cap.py`, changed on purpose from "the same `UnicodeDecodeError` as
 `read_text`" to "an `OSError` at the same byte, naming the file". On `a0bca70`, with the new helpers
-stubbed to what the base does (`quoted` as `repr`, `listed` as a plain join), 58 of these 69 tests
-(the 68 of the file and the changed reader test) fail, each for its reason, and the 11 that pass
-guard that a short value is quoted as before and that any other failure of `repr` is raised, not
-described. Of 55 mutants, one per site and one per fix of the two audits, 53 are killed; the two
-that live are equivalent (they quote a fleet id, which the fleet's model holds to 64 characters).
+stubbed to what the base does (`quoted` as `repr`, `listed` as a plain join), 68 of these 85 tests
+(the 84 of the file and the changed reader test) fail, each for its reason, and the 17 that pass
+guard what must not change: a short value quoted as before, any other failure of `repr` raised,
+verdicts in any case and with spaces, a stdio target real only with a command, a date key written as
+before. Of 64 mutants, one per site and one per fix of the three audits, 62 are killed; the two that
+live are equivalent (they quote a fleet id, which the fleet's model holds to 64 characters).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
@@ -287,7 +299,8 @@ that live are equivalent (they quote a fleet id, which the fleet's model holds t
   scope or target id, an identity name, an `auth_ref` reference and an endpoint have no length limit
   (a fleet's ids do: 64 characters and a pattern, because they name files). A-51 cuts them where a
   refusal quotes them, but a target id is still written whole wherever a run that has started prints
-  it: the `--dry-run` plan, the progress and `-sV` lines, the reports and the run store; and
+  it, with its endpoint: the `--dry-run` plan (a 900,000-character endpoint printed a line of
+  900,064 bytes, exit 0), the progress and `-sV` lines, the reports and the run store; and
   `calibrate` lists every label the report does not cover, ids whole (one of a million characters
   printed 1,000,178 bytes, and 22,000 labels 902,176, both with exit 0). Options: (a) bound the ids
   when they are loaded, for instance the fleet's 64 characters and pattern, which refuses files that

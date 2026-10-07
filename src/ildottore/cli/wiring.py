@@ -1023,6 +1023,19 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
     return raw
 
 
+def _key_text(key: object) -> str:
+    """A mapping key as text, as ``str()`` writes it, or quoted when ``str()`` cannot write it.
+
+    ``str()`` of an integer past 4,300 digits raises (delta audit of A-51); a date stays
+    ``2024-01-01``, as before (pre-merge audit).
+    """
+
+    try:
+        return str(key)
+    except ValueError:
+        return quoted(key)
+
+
 #: What a target file's ``type`` can say.
 _TARGET_TYPES = frozenset(t.value for t in TargetType)
 
@@ -1044,9 +1057,18 @@ def load_target(path: Path) -> Target:
         raise ValueError(f"target file {path} is missing a string 'id'")
     endpoint_raw = raw.get("endpoint")
     if isinstance(endpoint_raw, str):
+        try:
+            parts = urlsplit(endpoint_raw)
+        except ValueError as exc:
+            # urllib refuses a bracket left open or a host NFKC changes, and quoted the whole
+            # value doing so: 900 KB with no file named (pre-merge audit of A-51). Not quoted
+            # here, as the URL can hold a password.
+            raise ValueError(
+                f"target file {path} 'endpoint' is not a URL that can be read (its host)"
+            ) from exc
         # A password in the endpoint URL is a credential the process now holds: mask it by
         # value everywhere, not only where it still sits inside a URL (SEC-02).
-        register_known_secret(urlsplit(endpoint_raw).password)
+        register_known_secret(parts.password)
     # Required, as the manual says: it defaulted to `model`, and since OD-18 a `model` target
     # gets a spec's documents, tools and memory in-band, so a deployed application's file
     # without the line was sent a synthetic scene and labelled so (pre-merge audit of #50).
@@ -1149,11 +1171,7 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} 'seeded_setup' must be a mapping")
     known = ("specs", "tools", "granted_tools", "run_token")
-    # A key that is not text is quoted rather than turned into text: `str()` of an integer
-    # past 4,300 digits raised (audit of A-51).
-    unknown = sorted(
-        key if isinstance(key, str) else quoted(key) for key in raw if key not in known
-    )
+    unknown = sorted(_key_text(key) for key in raw if key not in known)
     if unknown:
         # The names the file gives, up to 300 characters in all (clause A-51).
         raise ValueError(

@@ -99,14 +99,15 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   A file that is not UTF-8 is refused the same way, naming the file and the offset of its first
   bad byte (`[Errno 92] not UTF-8 text (byte 15): '/path/scope.yaml'` on macOS), exit 3. A
   refusal that quotes a value of the file (an invalid `type`, a duplicated id, a target the
-  scope does not authorize, an undefined YAML alias) quotes it as it is when its `repr` is 300
-  characters or fewer, and otherwise its first 300 characters and its size, `... (1000002
-  characters)` or, for a list or a mapping, `... (9000 items)`; a list of what the file declares
-  (the ids a scope authorizes, the credentials it declares for a target) shows the first 20 and
-  counts the rest. Only the advice for a stdio target prints its command line whole, to be
-  copied (one made of YAML aliases can be far longer than its file until #71 caps what a file
-  expands to). A target id itself has no length limit, and a run that starts prints it whole in
-  its plan and reports, as `calibrate` does with the labels a report does not cover (OD-27).
+  scope does not authorize, an endpoint that cannot be read, an undefined YAML alias) quotes it
+  as it is when its `repr` is 300 characters or fewer, and otherwise its first 300 characters
+  and its size, `... (1000002 characters)` or, for a list or a mapping, `... (9000 items)`; a
+  list of what the file declares (the ids a scope authorizes, the credentials it declares for a
+  target) shows the first 20 and counts the rest. Only the advice for a stdio target prints its
+  command line whole, to be copied (one made of YAML aliases can be far longer than its file
+  until #71 caps what a file expands to). A target id and its endpoint have no length limit, and
+  a run that starts prints them whole in its plan and reports, as `calibrate` does with the
+  labels a report does not cover (OD-27).
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.

@@ -17,7 +17,7 @@ versioning: [SemVer](https://semver.org/).
   with its size: the first 300 characters of the `repr`, then `... (1000002 characters)`, or for a
   list or a mapping `... (9000 items)`, without building the `repr` of a list whole (YAML aliases
   make it larger than its file: 90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000
-  characters, about 200 MB). As a target's `type:`, that file took 1.28 to 1.49 GB of memory and 42
+  characters, about 200 MB). As a target's `type:`, that file took 1.28 to 1.49 GB of memory and 32
   to 50 s and printed a line of about 200 MB, because the type's own lookup wrote the value out
   before the refusal could cut it; it is now refused before the lookup, in 72 MB and 0.6 s. An
   integer Python will not write out (a YAML hex integer past 4,300 digits) is shown as `<an integer
@@ -34,9 +34,14 @@ versioning: [SemVer](https://semver.org/).
   YAML error, the spec loader's and `dottore lint`'s included. A label's verdict, a target's
   `provider` and `transport` and the keys of its `seeded_setup` are checked as text before anything
   turns them into text: `str()` of a list of aliases wrote about 675 MB, and of a YAML integer past
-  4,300 digits it raised (a labels key that is one was blamed on a valid verdict; it is now `<an
-  integer of N bits> is not a spec id`). The 24 refusals of the new test printed lines of 400,080 to
-  2,000,247 characters on `c9f27cc`; now each is under 2,500.
+  4,300 digits it raised (Python's `Exceeds the limit (4300 digits)` error, naming no file; a labels
+  key that is such an integer is now `<an integer of N bits> cannot be a spec id`). An endpoint or
+  `base_url` urllib cannot read (a bracket left open, a host NFKC turns into a path, a port that is
+  not a number) raised urllib's error with the URL whole and no file, 900 KB for a long one: the
+  target loader now names the file and the field, the allowlist denies it as it always said it
+  would, so the authorization refusal quotes it cut, and `fleet` quotes it cut. The 24 refusals of
+  the new test printed lines of 400,080 to 2,000,247 characters on `c9f27cc`; now each is under
+  2,500.
 - **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
   or labels file (or a policy or signature pack) printed `error: 'utf-8' codec can't decode byte
   0xff in position 15: invalid start byte`, with no file name, where the spec loader says `not
@@ -46,13 +51,13 @@ versioning: [SemVer](https://semver.org/).
   as before, in `run`, `fleet`, `calibrate` and `fingerprint`. A valid file's text, and so a
   scope checksum, is unchanged.
 - Not covered (OD-27): a scope or target id has no length limit (a fleet's ids have 64 characters),
-  and a target id is still written whole wherever a run that has started prints it (the `--dry-run`
-  plan, progress and `-sV` lines, reports, the run store), and `calibrate` lists every label the
-  report does not cover with its id whole; the stdio advice's command line is written whole on
-  purpose, to be copied. A stdio `command` made of aliases is still joined into one text where the
-  target is authorized: 20,000 aliases of a 10 KB text, a 90 KB file, print a line of 200,020,417
-  bytes in about 1.09 GB, as before this change; #71 (open) caps what a YAML file can expand to and
-  refuses that one. Found by the pre-commit audit of A-43. Clause A-51 (u01).
+  and a target id and its endpoint are still written whole wherever a run that has started prints
+  them (the `--dry-run` plan, progress and `-sV` lines, reports, the run store), and `calibrate`
+  lists every label the report does not cover with its id whole; the stdio advice's command line is
+  written whole on purpose, to be copied. A stdio `command` made of aliases is still joined into one
+  text where the target is authorized: 20,000 aliases of a 10 KB text, a 90 KB file, print a line of
+  200,020,417 bytes in 1.09 to 1.49 GB, as before this change; #71 (open) caps what a YAML file can
+  expand to and refuses that one. Found by the pre-commit audit of A-43. Clause A-51 (u01).
 
 ### Fixed (an operator's file read whole, and its validation errors listed whole)
 

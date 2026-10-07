@@ -714,7 +714,7 @@ def test_an_integer_label_key_is_refused_as_a_key_not_as_its_verdict(tmp_path: P
     assert result.exit_code == ExitCode.ERROR, result.output
     [line] = result.stderr.splitlines()
     assert str(case.files[0]) in line and "verdict" not in line, line
-    assert "<an integer of 20000 bits> is not a spec id; a spec id is text" in line, line
+    assert "<an integer of 20000 bits> cannot be a spec id: an integer that long" in line, line
 
 
 def test_an_integer_key_or_provider_of_a_target_is_not_turned_into_text(tmp_path: Path) -> None:
@@ -738,3 +738,142 @@ def test_a_credential_variable_is_named_up_to_300_characters(
         resolve_auth_ref(f"env://{name}")
 
     assert len(str(caught.value)) < 2_500 and cut_of(name) in str(caught.value)
+
+
+# --- URLs urllib cannot read --------------------------------------------------------------
+
+#: A long host or port urllib refuses, and quoted whole: 900 KB with no file named (pre-merge
+#: audit of A-51). The fullwidth solidus is a host NFKC turns into a path.
+LONG = "x" * 300_000
+SOLIDUS = chr(0xFF0F)
+BAD_PORT = f"https://api.openai.com:{LONG}/v1/chat/completions"
+
+
+def _live(tmp_path: Path, endpoint: str, scope_host: str = "api.openai.com") -> Case:
+    target = live_target().replace(LIVE_URL, endpoint)
+    scope = SCOPE_HEAD + scope_entry("live", live=True).replace(
+        '"api.openai.com"', f'"{scope_host}"'
+    )
+    return _run(tmp_path, target, scope)
+
+
+URLS: dict[str, Callable[[Path], Case]] = {
+    "target-endpoint-open-bracket": lambda t: _with(
+        _live(t, f"https://[{LONG}/v1"), 0, "'endpoint' is not a URL that can be read"
+    ),
+    "target-endpoint-nfkc-host": lambda t: _with(
+        _live(t, f"https://h{SOLIDUS}{LONG}/v1"), 0, "'endpoint' is not a URL that can be read"
+    ),
+    "run-target-port": lambda t: _with(
+        _live(t, BAD_PORT), None, "not on allowlist", cut_of(BAD_PORT)
+    ),
+    "fingerprint-target-port": lambda t: _fingerprint_port(t),
+    "scope-base-url-port": lambda t: _with(
+        _run(t, scope=SCOPE_HEAD + scope_entry().replace("mock://mock-target", f"mock://h:{LONG}")),
+        None,
+        "not on allowlist",
+        cut_of(f"mock://h:{LONG}"),
+    ),
+    "scope-base-url-open-bracket": lambda t: _with(
+        _run(t, scope=SCOPE_HEAD + scope_entry().replace("mock://mock-target", f"mock://[{LONG}")),
+        None,
+        "not on allowlist",
+        cut_of(f"mock://[{LONG}"),
+    ),
+    "fleet-endpoint-open-bracket": lambda t: _with(
+        _fleet(
+            t,
+            'version: "1"\ntargets:\n  - id: x\n    endpoint: "http://['
+            + LONG
+            + '"\n    model: m\n',
+        ),
+        None,
+        "is not a URL that can be read",
+        cut_of(f"http://[{LONG}"),
+    ),
+    "run-target-port-of-5000-digits": lambda t: _with(
+        _live(t, "https://api.openai.com:" + "9" * 5_000 + "/v1/chat/completions"),
+        None,
+        "not on allowlist",
+    ),
+    "scope-host-port-of-5000-digits": lambda t: _with(
+        _live(t, LIVE_URL, scope_host="api.openai.com:" + "9" * 5_000), None, "not on allowlist"
+    ),
+}
+
+
+def _fingerprint_port(tmp_path: Path) -> Case:
+    case = _fingerprint(tmp_path, live_target().replace(LIVE_URL, BAD_PORT))
+    _write(tmp_path, "scope.yaml", SCOPE_HEAD + scope_entry("live", live=True))
+    return _with(case, None, "not on allowlist", cut_of(BAD_PORT))
+
+
+@pytest.mark.parametrize("name", list(URLS))
+def test_a_url_urllib_cannot_read_is_refused_without_its_error(tmp_path: Path, name: str) -> None:
+    case = URLS[name](tmp_path)
+
+    result = runner.invoke(app, case.args)
+
+    assert result.exit_code == ExitCode.ERROR, (result.exception, result.output[:2000])
+    [line] = result.stderr.splitlines()
+    assert len(line) < 2_500, len(line)
+    assert case.reason in line and all(str(p) in line for p in case.files), line
+    assert all(cut in line for cut in case.cuts), line
+    assert "Exceeds the limit" not in line and "could not be cast" not in line, line
+
+
+# --- what the text checks kept as it was -----------------------------------------------------
+
+
+def test_a_verdict_is_read_in_any_case_and_with_spaces(tmp_path: Path) -> None:
+    path = tmp_path / "labels.yaml"
+    path.write_text('A: PASS\nB: " fail "\nC: Inconclusive\n', encoding="utf-8")
+
+    assert {k: v.value for k, v in load_labels(path).items()} == {
+        "A": "pass",
+        "B": "fail",
+        "C": "inconclusive",
+    }
+
+
+@pytest.mark.parametrize(
+    ("lines", "uses_mock"),
+    [
+        ('provider: " MCP "\ntransport: STDIO\ncommand: [server]\n', False),
+        ("provider: mcp\ntransport: stdio\n", True),
+        ("provider: mcp\ntransport: stdio\ncommand: []\n", True),
+        ("provider: mcp\ntransport: http\ncommand: [server]\n", True),
+    ],
+    ids=["stdio-with-command", "no-command", "empty-command", "not-stdio"],
+)
+def test_a_stdio_target_is_real_only_with_a_command(
+    tmp_path: Path, lines: str, uses_mock: bool
+) -> None:
+    path = tmp_path / "target.yaml"
+    path.write_text("id: t\ntype: agent\n" + lines, encoding="utf-8")
+    assert target_uses_mock(path) is uses_mock
+
+
+def test_a_transport_of_aliases_is_not_turned_into_text(tmp_path: Path) -> None:
+    # `provider` is checked first, so it says `mcp` here and `transport` is the one read.
+    path = tmp_path / "target.yaml"
+    path.write_text(
+        f"{ANCHOR}id: t\ntype: agent\nprovider: mcp\ntransport: {ALIASES}\ncommand: [s]\n",
+        encoding="utf-8",
+    )
+    loaded, reference = peak_of(lambda: safe_yaml.safe_load(path.read_text(encoding="utf-8")))
+    assert isinstance(loaded, dict)
+
+    uses_mock, peak = peak_of(lambda: target_uses_mock(path))
+
+    assert uses_mock is True
+    assert peak < reference + 8_000_000, (peak, reference)
+
+
+def test_a_date_key_of_seeded_setup_is_written_as_before(tmp_path: Path) -> None:
+    case = _run(tmp_path, TARGET + "seeded_setup:\n  2024-01-01: x\n")
+
+    result = runner.invoke(app, case.args)
+
+    assert result.exit_code == ExitCode.ERROR, result.output
+    assert "has unknown key(s) 2024-01-01;" in result.stderr, result.stderr

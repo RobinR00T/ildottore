@@ -195,7 +195,20 @@ class EndpointAllowlist:
         """True only if ``url``'s host is allowlisted **and** its path is under an
         allowed prefix. Everything else - unknown host, off-prefix path, empty
         allowlist, unparseable URL - is denied (S3 default-deny).
+
+        Unparseable is denied, not raised: urllib refuses a bracket left open, a host NFKC
+        changes or a port that is not a number, and its error quoted the whole URL, 900 KB from
+        a scope or target file (pre-merge audit of A-51); an allowed host pinned to a port of
+        thousands of digits raised too. The refusal quotes the URL cut instead.
         """
+
+        try:
+            return self._allows(url)
+        except ValueError:
+            return False
+
+    def _allows(self, url: str) -> bool:
+        """:meth:`is_allowed`, raising ``ValueError`` on a URL or an entry it cannot read."""
 
         parts = urlsplit(url)
         host = parts.hostname

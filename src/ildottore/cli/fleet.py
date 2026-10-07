@@ -48,7 +48,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -126,6 +126,19 @@ class MaterializedFleet(BaseModel):
     skipped: list[tuple[str, str]] = Field(default_factory=list)  # (target id, reason)
 
 
+def _split(endpoint: str) -> SplitResult:
+    """``urlsplit(endpoint)``, refused with the endpoint quoted up to 300 characters.
+
+    urllib refuses a bracket left open or a host NFKC changes, and its error quoted the whole
+    endpoint (pre-merge audit of A-51).
+    """
+
+    try:
+        return urlsplit(endpoint)
+    except ValueError as exc:
+        raise ValueError(f"endpoint {quoted(endpoint)} is not a URL that can be read") from exc
+
+
 def infer_provider(endpoint: str) -> str:
     """Infer the provider (openai | anthropic | rest) from the endpoint.
 
@@ -134,7 +147,7 @@ def infer_provider(endpoint: str) -> str:
     Anthropic Messages API. Host names are the fallback. Anything else is the generic REST
     adapter (whose template the operator tunes for a bespoke endpoint)."""
 
-    parts = urlsplit(endpoint)
+    parts = _split(endpoint)
     host = (parts.hostname or "").lower()
     path = (parts.path or "").lower()
     if path.endswith("/chat/completions"):
@@ -179,7 +192,7 @@ def _scope_endpoint(endpoint: str) -> tuple[str, str]:
     port (the offline ``mock://``) keep the bare host.
     """
 
-    parts = urlsplit(endpoint)
+    parts = _split(endpoint)
     path = parts.path or "/"
     host = parts.hostname
     if not host:

@@ -50,7 +50,7 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
     for spec_id, verdict in raw.items():
         # Only a text can be a verdict, and it is checked before anything is turned into text:
         # `str()` of a list of aliases wrote hundreds of megabytes, and of an integer past 4,300
-        # digits it raised, which the handler then blamed on a valid verdict (audits of A-51).
+        # digits it raised Python's own error, naming no file (audits of A-51).
         status = _verdict(verdict)
         if status is None:
             # The spec id is the location, quoted up to 300 characters (A-51); the value is not
@@ -63,7 +63,8 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
             labels[str(spec_id)] = status
         except ValueError as exc:  # an integer Python will not write as text
             raise ValueError(
-                f"labels file {path}: {quoted(spec_id)} is not a spec id; a spec id is text"
+                f"labels file {path}: {quoted(spec_id)} cannot be a spec id: an integer that "
+                "long cannot be written as text"
             ) from exc
     return labels
 
