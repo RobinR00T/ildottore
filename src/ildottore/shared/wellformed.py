@@ -56,10 +56,10 @@ def well_formed_json(value: Any) -> Any:
     reply tripled the peak memory of a 4 MiB body of small containers, and copying only one
     that held a surrogate gave a target 2.8 times the peak for three bytes; a generator per
     level of the fix made a reply nested 115,000 levels cost four times main's peak with no
-    surrogate at all (audits of A-47). A reply of lists and small objects now costs no memory
-    past its parse; one long string, or one large object whose keys hold a surrogate, costs up
-    to about two and a half times the parse's peak, since the string is held twice while it is
-    replaced and the object's table is rebuilt while it is refilled. Both walks keep a plain
+    surrogate at all (audits of A-47). A clean reply now costs about main's peak memory, and
+    most hostile shapes no more; the worst is one long string holding a surrogate, about three
+    times the parse's peak, since it is held three times while it is replaced (the string, its
+    UTF-16 bytes and the new one), as in any version. Both walks keep a plain
     iterator per level instead of recursing, so their own state grows with the nesting, and a
     value nested past the interpreter's recursion limit (``json.loads`` builds some 116,000
     levels on 3.14) costs a loop, not a ``RecursionError``. Returns ``value``, or the well
@@ -80,6 +80,9 @@ def well_formed_json(value: Any) -> Any:
             stack.pop()
             continue
         slot, item = entry
+        # Let go of the pair: an iterator reuses it only when nothing else holds it, and a pair
+        # kept at every level held each replaced string while the levels below were fixed.
+        entry = None
         if isinstance(item, str):
             if _SURROGATE.search(item) is not None:
                 holder[slot] = well_formed_text(item)
@@ -140,7 +143,8 @@ def _rename_keys(mapping: dict[Any, Any], renamed: dict[str, str]) -> None:
     alternative, gone from what the evaluators read. A key that is already well formed keeps
     its name; a replaced one that lands on a name in use takes the next ``, #n`` suffix, the
     form the evidence store gives two keys that mask to one. ``renamed`` holds each key's well
-    formed text for the whole walk, so a key repeated in many dicts stays one string.
+    formed text for the whole walk, and each suffixed name, so a key repeated in many dicts
+    stays one string (rebuilding a suffixed name per dict cost four times the parse's peak).
     """
 
     if not any(isinstance(key, str) and _SURROGATE.search(key) for key in mapping):
@@ -159,4 +163,6 @@ def _rename_keys(mapping: dict[Any, Any], renamed: dict[str, str]) -> None:
             while name in mapping:
                 last[base] = last.get(base, 1) + 1
                 name = f"{base}, #{last[base]}"
+            if name is not base:  # a suffixed name, shared like the base (it holds no surrogate)
+                name = renamed.setdefault(name, name)
         mapping[name] = item

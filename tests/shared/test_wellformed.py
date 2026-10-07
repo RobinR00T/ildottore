@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
 import time
+import tracemalloc
+from collections.abc import Callable
 
 import pytest
 
@@ -134,68 +133,110 @@ def test_a_replaced_key_skips_a_suffixed_name_already_written() -> None:
     assert len(out) == 4
 
 
-def test_many_colliding_keys_stay_linear() -> None:
-    """Each base counts on from its last number, so n keys landing on one name cost n steps,
-    not n squared: 20,000 keys take milliseconds, and some 2 x 10^8 steps if each one searched
-    from ``, #2`` again. The bound is loose because sessions in parallel load the machine."""
+def _colliding(n: int) -> dict[str, int]:
+    """``n`` keys that all read ``k`` plus two U+FFFD once replaced."""
 
     halves = [chr(0xD800 + i) for i in range(200)]
-    value = {
-        "k" + a + b: n for n, (a, b) in enumerate((a, b) for a in halves[:100] for b in halves)
-    }
-    assert len(value) == 20_000
-    start = time.perf_counter()
+    pairs = ((a, b) for a in halves for b in halves)
+    return {"k" + a + b: index for index, (a, b) in zip(range(n), pairs, strict=False)}
+
+
+def _cpu_seconds(n: int) -> float:
+    best = float("inf")
+    for _ in range(3):
+        value = _colliding(n)
+        start = time.process_time()
+        well_formed_json(value)
+        best = min(best, time.process_time() - start)
+    return best
+
+
+def test_many_colliding_keys_stay_linear() -> None:
+    """Each base counts on from its last number, so n keys landing on one name cost n steps,
+    not n squared. Four times the keys cost about four times the CPU, and sixteen times if each
+    key searched from ``, #2`` again; a bound on the clock let that pass on a quiet machine
+    (pre-merge mutants). CPU time, best of three, is what other sessions' load moves least."""
+
+    value = _colliding(20_000)
     out = well_formed_json(value)
-    elapsed = time.perf_counter() - start
     assert sorted(out.values()) == list(range(20_000))
-    assert elapsed < 15.0
+    ratio = _cpu_seconds(20_000) / _cpu_seconds(5_000)
+    assert ratio < 8, ratio
 
 
-_PEAK = """
-import json, resource, sys
-from ildottore.shared.wellformed import well_formed_json
-raw = sys.argv[1] * int(sys.argv[3]) + sys.argv[2] + sys.argv[4] * int(sys.argv[3])
-base = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-value = json.loads(raw)
-parsed = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-well_formed_json(value)
-walked = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print(parsed - base, walked - parsed)
-"""
+def _walk_memory(build: Callable[[], object]) -> tuple[int, int]:
+    """Bytes the value ``build`` makes takes, and the most the walk over it allocates.
+
+    ``tracemalloc`` counts this process's allocations only. Peak RSS in a child process did not
+    work: ``ru_maxrss`` is a high-water mark kept across fork and exec, so a child of a large
+    pytest process started at its parent's peak and measured nothing.
+    """
+
+    tracing = tracemalloc.is_tracing()
+    if not tracing:
+        tracemalloc.start()
+    try:
+        before = tracemalloc.get_traced_memory()[0]
+        value = build()
+        after = tracemalloc.get_traced_memory()[0]
+        tracemalloc.reset_peak()
+        well_formed_json(value)
+        walk = tracemalloc.get_traced_memory()[1] - after
+    finally:
+        if not tracing:
+            tracemalloc.stop()
+    return after - before, walk
 
 
-@pytest.mark.parametrize(
-    ("opening", "closing"), [("[", "]"), ('{"a":', "}")], ids=["lists", "dicts"]
-)
-def test_a_deep_reply_with_no_surrogate_costs_little_past_its_parse(
-    opening: str, closing: str
-) -> None:
+def _nested(kind: str, depth: int, leaf: Callable[[int], object] | None = None) -> object:
+    """``depth`` levels of one-item lists or ``{"a": ...}`` dicts, or of pairs when ``leaf``
+    gives a string to put beside each level."""
+
+    value: object = 0
+    for level in range(depth):
+        if leaf is None:
+            value = [value] if kind == "lists" else {"a": value}
+        else:
+            text = leaf(level)
+            value = [text, value] if kind == "lists" else {"s": text, "d": value}
+    return value
+
+
+@pytest.mark.parametrize("kind", ["lists", "dicts"])
+def test_a_deep_reply_with_no_surrogate_keeps_one_small_iterator_per_level(kind: str) -> None:
     """A generator per level made a clean reply nested 115,000 levels cost four times main's
     peak memory, a chain over each dict's items two thirds more (pre-merge audit): the scan
-    keeps one plain iterator per level. Peak memory is measured in a fresh process, so the
-    machine's load does not change it."""
+    keeps one plain iterator per level, some 56 bytes for a list and 80 for a dict, where those
+    two cost about 690 and 240, and a fix walk with no scan first about 210 to 260. The nesting
+    is built in Python, since ``json.loads`` stops near 1,000 levels on 3.11, the CI's version."""
 
-    depth = "100000"
-    out = subprocess.run(  # noqa: S603 - our own interpreter, a fixed snippet
-        [sys.executable, "-c", _PEAK, opening, "0", depth, closing],
-        capture_output=True,
-        text=True,
-        check=True,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    depth = 100_000
+    _built, walk = _walk_memory(lambda: _nested(kind, depth))
+    assert walk < 160 * depth, walk
+
+
+@pytest.mark.parametrize("kind", ["lists", "dicts"])
+def test_a_replaced_string_is_let_go_before_the_levels_below(kind: str) -> None:
+    """Each level's iterator held the pair it last gave, and with it the string just replaced,
+    until the levels below were fixed: 64 nested pairs of 64 KiB strings with a half kept all 64
+    old strings alive (the walk took as much again as the strings, against a twentieth when each
+    is let go; final delta audit). The strings are two bytes a character, so a replaced one is
+    no larger."""
+
+    built, walk = _walk_memory(
+        lambda: _nested(kind, 64, lambda level: chr(0x101 + level) * 32_768 + _HIGH)
     )
-    parse, walk = map(int, out.stdout.split())
-    assert walk < parse / 2, (parse, walk)
+    assert walk < built / 2, (built, walk)
 
 
 def test_a_value_nested_past_the_recursion_limit_is_walked() -> None:
-    """``json.loads`` builds tens of thousands of levels; the walk keeps no Python stack."""
+    """Nested far past any interpreter's recursion limit, built in Python so every supported
+    version runs it (``json.loads`` builds 116,000 levels on 3.14, about 1,000 on 3.11)."""
 
-    depth = 50_000
-    value = json.loads("[" * depth + json.dumps("x") + "]" * depth)
-    inner = value
-    for _ in range(depth - 1):
-        inner = inner[0]
-    inner[0] = "x" + _HIGH
+    depth = 200_000
+    value: object = "x" + _HIGH
+    for _ in range(depth):
+        value = [value]
     out = well_formed_json(value)
     for _ in range(depth):
         out = out[0]
@@ -242,6 +283,28 @@ def test_a_renamed_key_repeated_in_many_dicts_stays_one_string() -> None:
     names = [next(iter(d)) for d in value]
     assert names[0] == "a" * 1_000 + _R
     assert names[0] is names[1] is names[2]
+
+
+def test_a_suffix_stays_in_the_dict_where_the_names_collided() -> None:
+    """Sharing a suffixed name across dicts must not carry the suffix into a dict where the
+    name is free."""
+
+    value = [{"k" + _HIGH: 0, "k" + _LOW: 1}, {"k" + _LOW: 2}]
+    well_formed_json(value)
+    assert list(value[0]) == ["k" + _R, "k" + _R + ", #2"]
+    assert list(value[1]) == ["k" + _R]
+
+
+def test_a_suffixed_name_repeated_in_many_dicts_stays_one_string() -> None:
+    """A suffixed name rebuilt for every dict cost four times the parse's peak on a body of
+    dicts with colliding long keys (final delta audit)."""
+
+    key = "a" * 1_000
+    value = [{key + _HIGH: 0, key + _LOW: 1} for _ in range(3)]
+    well_formed_json(value)
+    suffixed = [list(d)[1] for d in value]
+    assert suffixed[0] == "a" * 1_000 + _R + ", #2"
+    assert suffixed[0] is suffixed[1] is suffixed[2]
 
 
 @pytest.mark.parametrize(

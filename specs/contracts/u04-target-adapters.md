@@ -137,19 +137,22 @@ reads as U+FFFD, since httpx decodes the stream as text.
   multibyte character cut short) is still a body that is not JSON and stops the campaign on the
   base adapter and the MCP JSON body, while over an MCP SSE stream it reads as U+FFFD and on an
   MCP stdio line the line is skipped and the call times out; the walks visit the whole parsed
-  reply: a 4 MiB body with no surrogate costs about main's peak memory (1.00 times; 1.23 times
-  nested 116,000 levels) and some 3 to 8 times its parse in CPU, and a hostile one up to about 45
-  times its parse in CPU (about 1.5 s at most) and up to about 2.5 times the parse's peak memory
-  (one 4 MiB string holding a half, held twice while it is replaced; one object of a million keys
-  that collide once replaced, about 2.1 times while it is refilled), measured on 4 MiB bodies;
+  reply: on 4 MiB bodies, one with no surrogate costs about main's peak memory (1.00 to 1.02
+  times; 1.25 times nested 116,000 levels) and 1 to 14 times its parse in CPU, under 0.3 s, and a
+  hostile one up to about 42 times its parse in CPU, under 0.7 s, and most shapes no more peak
+  memory than main; the worst is one 4 MiB string holding a half, about 3 times the parse's peak
+  (held three times while it is replaced, as in any version), then about 2.1 times for a reply
+  nested 116,000 levels with a half at the bottom or one object of some 250,000 keys that collide
+  once replaced, and up to 1.8 times for many distinct long keys holding a half (each original
+  kept for the walk, so a repeated one is renamed once);
   the judge's reasoning, parsed from the judge's text past its adapter, can still hold one,
   measured as harmless because it is neither persisted nor printed (the aggregate verdict writes
   its own reasoning); a spec file whose YAML holds the escape is the operator's input, not a
-  reply: in a field the battery digest hashes (the prompts, `expected_secure_behavior`, `tags`)
-  it passes `dottore lint` and `run` refuses it with exit 3 before sending, on the same codec
-  error from `shared/digest.py`, without naming the spec; in `description` or `preconditions`,
-  which the digest leaves out, the run goes on as usual; in `name`, lint refuses it and `run`
-  names the file.
+  reply: in a field the battery digest hashes (all but `name`, `description`, `preconditions`
+  and `aisvs`) it passes `dottore lint` and `run` refuses it with exit 3 before sending, on the
+  same codec error from `shared/digest.py`, without naming the spec; in `description` or
+  `preconditions` the run goes on as usual; in `name` or `aisvs` lint refuses it (and for `name`,
+  `run` names the file).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).

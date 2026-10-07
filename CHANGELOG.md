@@ -51,10 +51,11 @@ versioning: [SemVer](https://semver.org/).
   on the base adapter and the MCP JSON body (over MCP SSE it reads as U+FFFD; on an MCP stdio
   line the line is skipped and the call times out). Over an MCP SSE stream each raw byte of a
   surrogate reads as U+FFFD, since httpx decodes the stream as text. A 4 MiB reply is walked
-  whole: with no surrogate it costs about main's peak memory and 3 to 8 times its parse in CPU; a
-  hostile one up to about 45 times its parse in CPU and 2.5 times its peak memory (one 4 MiB
-  string holding a half, held twice while it is replaced). A spec whose YAML holds the escape in
-  a field the battery digest hashes (the prompts, `expected_secure_behavior`, `tags`) passes
+  whole: with no surrogate it costs about main's peak memory and 1 to 14 times its parse in CPU
+  (under 0.3 s); a hostile one up to about 42 times its parse in CPU (under 0.7 s) and, at worst,
+  3 times its peak memory (one 4 MiB string holding a half, held three times while it is
+  replaced, as in any version). A spec whose YAML holds the escape in a field the battery digest
+  hashes (all but `name`, `description`, `preconditions` and `aisvs`) passes
   `dottore lint`, and `run` refuses it with exit 3 before sending, without naming the spec (the
   operator's file, not a reply: its own task). The judge's reasoning, parsed from the judge's own
   text past its adapter, can still hold one; it is neither persisted nor printed.

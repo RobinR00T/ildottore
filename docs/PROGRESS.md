@@ -15,25 +15,26 @@ The carryover ledger. Every agent session updates this so context survives even 
   with `surrogatepass`), in place, and so are a tool call's arguments (`call_arguments`): a lone
   surrogate reads as U+FFFD and the attempt is judged as usual, so a leak beside it still fails.
   Contract u04 A-47; open decision OD-28 (U+FFFD, deleting the half, a visible marker of the code
-  unit, or an inconclusive attempt, which would let six characters hide a leak). Eight audits in
-  three rounds (pre-commit, delta, pre-merge): the fix copied every reply; copying only a reply with
-  a surrogate gave a target 2.8 times the peak for three bytes; a generator per level of the
-  in-place fix made a clean reply nested 115,000 levels cost four times main's peak (now a cheap
-  scan first, and a fix in place only when a surrogate is there); MCP stdio still timed out on the
-  raw bytes; and the docs promised more than the code (a split canary passes with a judge that says
-  secure; one `FF` byte does not stop an MCP SSE or stdio target; a large object or a long string
-  with a half still costs up to 2.5 times the parse's peak). Merge notes, in PR #79: with open PR
-  #57 a credential split by a half is masked only once U+FFFD is in #57's `_INVISIBLE_RANGES`
-  (adding it to its splitter lists alone fails #57's own consistency test); PR #65 rewrites all five
-  parse sites (keep `well_formed_json` around `bounded_loads`, `import json` where it is still used,
-  and the stdio line's `decode("utf-8", "surrogatepass")`, which #65 decodes strictly); PR #74's
-  A-39 and its PROGRESS entry call this open; MANUAL conflicts with #65, #68 and #76 (keeping both
-  hunks repeats a line). Left as their own tasks: a spec file whose YAML holds the escape, and six
-  older ways one reply stops a campaign that the audit found on main (an MCP session id that is not
-  ASCII, an SSE charset or line separator, one invalid UTF-8 byte, a non-finite number sent back,
-  JSON nested inside a tool call's or the judge's text). `tests/cli/test_lone_surrogate.py` (29 of
-  36 fail on `0501752`), `tests/adapters/test_lone_surrogate_replies.py` (9 of 9),
-  `tests/shared/test_wellformed.py`.
+  unit, or an inconclusive attempt, which would let six characters hide a leak). Nine audits in four
+  rounds (pre-commit, delta, pre-merge, a last delta): the fix copied every reply; copying only a
+  reply with a surrogate gave a target 2.8 times the peak for three bytes; a generator per level of
+  the in-place fix made a clean reply nested 115,000 levels cost four times main's peak (now a cheap
+  scan first, and a fix in place only when a surrogate is there); the deep tests parsed 50,000 and
+  100,000 levels with `json.loads`, which 3.11 (the CI's version) cannot, and failed CI (now built
+  in Python); MCP stdio still timed out on the raw bytes; and the docs promised more than the code
+  (a split canary passes with a judge that says secure; one `FF` byte does not stop an MCP SSE or
+  stdio target; one long string with a half costs 3 times the parse's peak). Merge notes, in PR #79:
+  with open PR #57 a credential split by a half is masked only once U+FFFD is in #57's
+  `_INVISIBLE_RANGES` (adding it to its splitter lists alone fails #57's own consistency test); PR
+  #65 rewrites all five parse sites (keep `well_formed_json` around `bounded_loads`, `import json`
+  where it is still used, and the stdio line's `decode("utf-8", "surrogatepass")`, which #65 decodes
+  strictly); PR #74's A-39 and its PROGRESS entry call this open; MANUAL conflicts with #65 and #68
+  (keeping both hunks repeats a line) and #76 (two new bullets). Left as their own tasks: a spec
+  file whose YAML holds the escape, and six older ways one reply stops a campaign that the audit
+  found on main (an MCP session id that is not ASCII, an SSE charset or line separator, one invalid
+  UTF-8 byte, a non-finite number sent back, JSON nested inside a tool call's or the judge's text).
+  `tests/cli/test_lone_surrogate.py` (29 of 36 fail on `0501752`),
+  `tests/adapters/test_lone_surrogate_replies.py` (9 of 9), `tests/shared/test_wellformed.py`.
 
 ## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
 
