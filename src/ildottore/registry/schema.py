@@ -243,7 +243,9 @@ def _format_error(err: ValidationError) -> str:
     reason are what an author needs, and a large value repeated per error was the amplifier.
     """
 
-    location = "/".join(str(p) for p in err.absolute_path) or "<root>"
+    # A key that is not printable is written as `repr`: a lone surrogate under
+    # `step_arg_patterns` made lint exit 1 with a `UnicodeEncodeError` traceback (A-40).
+    location = path_text(tuple(err.absolute_path))
     return f"{location}: {_cut(err.message)}"
 
 

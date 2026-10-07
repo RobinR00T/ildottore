@@ -126,19 +126,24 @@ included; mappings, lists, tuples and sets, since YAML builds a list of tuples f
 link to its parent until a path is yielded; a container shared through an alias entered once) and,
 when it holds such a number, reports each one as a `SCHEMA` finding at its path and checks nothing
 else: `name: a number too long to write out (over 4300 digits)`, or `a key that is a number ...` at
-the mapping that holds the key, a path cut at 300 characters, at most 20 and the rest counted. The
-interpreter's own conversion decides, so no number the check passes, in a document YAML or JSON can
-build, fails to print later, and the number is never quoted. `run` refuses the file before anything
-is sent, in the dry run too, as any spec that fails to load (F-10), naming it; `registry ls`,
-`describe` and `coverage` leave it out with their load warning (they printed a traceback, or exited
-3 naming nothing). The other inputs of the CLI that formatted such a number follow the same rule: a
-labels key in `calibrate` (`str(spec_id)` raised, and the message formatting the id raised again:
-exit 3 naming no file), a report read by `diff` or `calibrate` (`json.loads` raises a plain
-`ValueError` past the limit, not a `JSONDecodeError`: same exit, same silence), a target file's
-`type`, `mock_scenario` and `seeded_setup` keys (u12), and the signature pack's `pack_version`
-(u09). A target file's `provider` and `transport` are read only as text, as the target loader always
-read them (the mock routing called `str` on them first), so such a number there is no provider, as
-`5` is.
+the mapping that holds the key, a path cut at 300 characters, at most 20 and the rest counted. A
+part of the path whose text is not printable is written as `repr`, as #80 writes one, and so is
+every other schema error's location: the first merge printed the key as written, so a newline in it
+forged a finding line (pre-merge audit of #81) and a lone surrogate made `dottore lint` and
+`coverage` exit 1 with a `UnicodeEncodeError` traceback, which main before it did not do on these
+paths (pre-merge audit of #80, delta audit of `fix/spec-non-json-values`); under `step_arg_patterns`
+it already did. A printable key, in any script, reads as written. The interpreter's own conversion
+decides, so no number the check passes, in a document YAML or JSON can build, fails to print later,
+and the number is never quoted. `run` refuses the file before anything is sent, in the dry run too,
+as any spec that fails to load (F-10), naming it; `registry ls`, `describe` and `coverage` leave it
+out with their load warning (they printed a traceback, or exited 3 naming nothing). The other inputs
+of the CLI that formatted such a number follow the same rule: a labels key in `calibrate`
+(`str(spec_id)` raised, and the message formatting the id raised again: exit 3 naming no file), a
+report read by `diff` or `calibrate` (`json.loads` raises a plain `ValueError` past the limit, not a
+`JSONDecodeError`: same exit, same silence), a target file's `type`, `mock_scenario` and
+`seeded_setup` keys (u12), and the signature pack's `pack_version` (u09). A target file's `provider`
+and `transport` are read only as text, as the target loader always read them (the mock routing
+called `str` on them first), so such a number there is no provider, as `5` is.
 
 The first version walked mappings and lists only, and its pre-commit audit planted the number inside
 a `!!set` or an `!!omap` at every value of the 75 specs: 3,539 of 3,751 placements of each were

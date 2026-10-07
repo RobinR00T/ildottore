@@ -5,6 +5,23 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a key on a finding's path, printed as written)
+
+- **`dottore lint` and `dottore coverage` exited 1 with a `UnicodeEncodeError` traceback** when the
+  path to a number too long to write out (A-40, #81) went through a key holding a lone surrogate
+  (`"a\ud800b"` in YAML): the finding printed the key as written, and stdout's strict UTF-8 encoder
+  refuses it (on a terminal or a pipe alike). On these paths main before #81 did not crash. A
+  newline in such a key forged a second finding line and an escape sequence reached the terminal raw
+  (reported by the pre-merge audit of #81, left for this follow-up). A part of the path that is not
+  printable is now written as `repr` (`setup/'a\ud800b': a number too long ...`), as #80 writes a
+  key that is not printable. A key Python counts as printable reads as written (Spanish, Chinese);
+  one holding a zero-width or bidi mark, an ideographic space or a no-break space is written as
+  `repr` too. The location of every other JSON-schema error follows the same rule: a lone surrogate
+  in a key under `step_arg_patterns` was the same traceback before #81 too. Found by the pre-merge
+  audit of #80 and the delta audit of `fix/spec-non-json-values`. Still open: a newline or another
+  control character in a key that pydantic names, or in the spec `id`, still forges a finding line
+  or reaches the terminal raw (#89 handles only an `id` UTF-8 cannot encode).
+
 ### Fixed (a number too long to write out)
 
 - **`dottore lint` printed a traceback on a spec holding a huge number.** Python refuses to turn an

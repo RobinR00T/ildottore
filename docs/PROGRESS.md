@@ -3,6 +3,19 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): A-40's path printed a key as written
+
+- PR #81 (A-40) squash-merged as `c3e70d8` after three audits. Its finding printed the keys on
+  the path as written: a newline forged a finding line (its pre-merge audit, left for later) and,
+  found by two audits of sibling branches, a lone surrogate made `dottore lint` and `coverage`
+  exit 1 with a `UnicodeEncodeError` traceback (on these paths main before #81 did not). On
+  `fix/huge-int-followups`: a path part that is not printable is written as `repr`, as #80 does,
+  and so is every schema error's location (a surrogate key under `step_arg_patterns` crashed lint
+  before #81 too). Left for the owner: a too-long number under a target file's
+  `sampling_defaults` (pre-existing: the live run exits 3 unnamed in `target_digest`); a newline
+  or another control character in a key that pydantic names, or in the spec `id`, still forges a
+  finding line (#89 handles only an `id` UTF-8 cannot encode).
+
 ## State, 2026-10-07 (afternoon): a number too long to write out
 
 - On `fix/huge-int-repr` (`tests/cli/test_huge_numbers.py`, clause A-40 in u02): an int past
