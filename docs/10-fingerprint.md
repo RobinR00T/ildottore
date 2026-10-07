@@ -139,7 +139,8 @@ target answered every attributing probe alike (the `non_discriminating_target` f
 envelope has no `model` field. The statistical layer sent its three probes and emitted nothing,
 because they got the same reply.
 
-**Spoofing flags.** Two are emitted:
+**Spoofing flags.** Three are emitted (the third is not about spoofing, it says the pass was
+partial):
 
 - `self_report_conflicts_with_statistical`: a self-report names a family the statistical layer
   disagrees with; the self-report is then left out of the family tally.
@@ -155,6 +156,34 @@ because they got the same reply.
   offline scenario trips it (`bare`, `vulnerable`, `hardened`, and `comprehending`, which gives
   every non-carrier probe the same "I do not understand" reply); before the flag, a constant mock
   was named `meta-llama` at 0.67 and a refuse-all target `llama-3-8b` with a 2023-03 cutoff.
+- `probes_failed`: one or more probes got **no usable reply**: the reply came back and the
+  adapters refused it, an environment failure a retry would repeat (`retryable = False`: over
+  4 MiB, an encoding they do not decode; and `ResponseTooDeep`, a reply nested too deeply,
+  once `fix/target-deep-json` lands with the same marker), as an attack attempt would be
+  inconclusive. That probe's layer gives no evidence from it, never evidence from an empty
+  reply: a missing guardrail nudge leaves `guardrails` empty (unknown, not "no filter"), a
+  missing carrier is left out of `carrier_comprehension` (unmeasured, not 0.0), and one missing
+  statistical reply drops the statistical layer (its vector needs all three). When fewer than
+  three attributing replies are left, too few for the `non_discriminating_target` check, the
+  text layers' evidence is not counted either, as for a constant target but without that flag.
+  Beyond that, a partial pass is attributed exactly as if each refused probe had been answered
+  with a reply carrying no tell (the same family, version and confidence in 1,800 combinations
+  of corpus targets and refused probes), so losing a tell can break a tie a full pass leaves
+  `unknown`, or drop a self-report and with it `self_report_conflicts_with_statistical`; a
+  refusal gives a target no lever a bland reply does not. The confidence is computed from the
+  evidence that came back and is not discounted for what is missing: the flag is the mark. Every other probe is still sent and counted, so a pass still
+  costs its 17 requests. The engine adds an evidence entry
+  `{"layer": "engine", "signal": "probe_errors=[\"metadata/self_id: ResponseTooLarge\"]",
+  "weight": 0.0}` (layer, probe and error class, never the error's text, which can quote the
+  reply), `run -sV` warns on stderr and ends the fingerprint line with "[N of 17 probes got no
+  usable reply]", and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a
+  timeout, a refused connection, after the retries) still stops the pass with its cause, as
+  every other error does (a refusal by the scope, a 200 that is not JSON, the request ceiling):
+  the target is not answering, and isolating that too made a target that never replies cost
+  25.5 minutes of probing (three 30 s timeouts per probe) before an attack that failed the
+  same way. Before (2026-10-07), one
+  refused reply stopped `run -sV` with exit 3 before any attack, after one request, while
+  without `-sV` it failed one attempt (OD-23).
 
 **Attribution rules** (each one closes a case where a target was named without a signal, found
 by the audit of the fingerprint that followed the full audit of 2026-10-03, and by the

@@ -56,6 +56,7 @@ from ildottore.core.setup_delivery import (
     seeding_gap,
     trace_gap,
 )
+from ildottore.fingerprint import failed_probes
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
@@ -1335,6 +1336,18 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 ) from exc
             fingerprints[target.id] = probe_pass.fingerprint
             probes_sent[target.id] = probe_pass.requests
+            # A probe that got no usable reply is a failed probe, not the end of the run
+            # (OD-23): said on stderr, never silenced by -q, because the plan's order now comes
+            # from part of the pass. Plain print, as the resume notice: rich wrapped it at 80
+            # columns, cutting the evidence path in two, and would read a `[` in it as markup.
+            warning = probe_failure_warning(
+                f"-sV on {target.id}",
+                probe_pass.fingerprint,
+                probes=fingerprint_probe_count(),
+                tail=f". The exchanges are in {evidence_root / run_ids[target.id] / 'probes'}",
+            )
+            if warning is not None:
+                print(warning, file=sys.stderr)
     if fingerprints and not opts.quiet:
         # Which targets were fingerprinted against a canned offline mock rather than over the
         # wire. The line printed `family=meta-llama (confidence 0.67) version=llama-3-8b` for a
@@ -1345,6 +1358,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             family = fingerprint.family
             version = fingerprint.version
             scenario = offline.get(target_id)
+            failed = len(failed_probes(fingerprint))
             print(
                 f"fingerprint: {target_id} "
                 + (f"[offline mock: {scenario}] " if scenario is not None else "")
@@ -1357,6 +1371,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 + (
                     " [the target answered every attributing probe alike: no text signal]"
                     if "non_discriminating_target" in fingerprint.spoofing_flags
+                    else ""
+                )
+                + (
+                    f" [{failed} of {fingerprint_probe_count()} probes got no usable reply]"
+                    if failed
                     else ""
                 )
             )
@@ -1586,6 +1605,43 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
         f"every one of the {len(attempts)} attempt(s) failed on transport, so nothing was "
         f"evaluated: {first}"
     )
+
+
+def probe_failure_warning(
+    subject: str,
+    fingerprint: ModelFingerprint,
+    *,
+    probes: int,
+    tail: str = "",
+    severity: str = "warning",
+) -> str | None:
+    """The stderr line for a fingerprint pass where some probes got no usable reply, or ``None``.
+
+    Names the probes and the error classes only (never an error's message, which can quote the
+    target's reply), the first three of them, and how many of the pass's ``probes`` failed
+    (u09 §7 A-35, OD-23). It promises nothing about what follows: with several targets, the
+    next one's probe pass can still stop the run (delta audit).
+    """
+
+    failed = failed_probes(fingerprint)
+    if not failed:
+        return None
+    shown = ", ".join(failed[:3]) + (f", and {len(failed) - 3} more" if len(failed) > 3 else "")
+    built = (
+        "none did, so the fingerprint is empty"
+        if every_probe_failed(fingerprint, probes)
+        else "the fingerprint is built from the replies that came back"
+    )
+    return (
+        f"{severity}: {subject}: {len(failed)} of {probes} probe(s) got no usable reply "
+        f"({shown}); {built}{tail}"
+    )
+
+
+def every_probe_failed(fingerprint: ModelFingerprint, probes: int) -> bool:
+    """True when no probe of a ``probes``-probe pass got a usable reply."""
+
+    return len(failed_probes(fingerprint)) >= probes
 
 
 def _refusal_for(scope: Scope, target: Target) -> str | None:

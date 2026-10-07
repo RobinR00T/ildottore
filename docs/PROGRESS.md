@@ -3,6 +3,31 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (midday): one refused `-sV` probe reply no longer stops the run
+
+- On `fix/sv-probe-env-error` (`tests/fingerprint/test_probe_failures.py`,
+  `tests/cli/test_probe_env_error.py`, clause A-35 in `u09`): with `-sV` or `-A`, a probe reply
+  the adapters refuse as an environment failure (over 4 MiB, undecodable) stopped the run with
+  exit 3 before any attack, while without `-sV` it failed one attempt (pre-commit audit of
+  `fix/target-deep-json`). Now a reply that comes back refused (`retryable = False`, by the
+  attack phase's own predicate) is a failed probe: its layer gives no evidence from it, the
+  fingerprint is built from the rest (`probes_failed`, `probe_errors=[...]`), stderr says so,
+  and the run goes on. A probe that gets no answer at all (503, timeout, refused connection)
+  still stops the pass with its cause, as before: the first version isolated those too and its
+  pre-commit audit measured 25.5 minutes of probing on a target that never replies (92 s
+  before) and `dottore fingerprint` exiting 0 on a closed port; it also found refused replies
+  letting a constant target skip the constant check (closed). The delta audit found a 401 with
+  a body over 4 MiB read as a refused reply (now classified by its status in `read_capped`,
+  which also stops the attack phase treating it as inconclusive), `dottore fingerprint` exiting
+  0 when every probe is refused (now 3), and A-35 promising more than it holds: a partial pass
+  can still break a tie a full one leaves unknown, exactly as answering those probes blandly
+  would (1,800 combinations compared). A 200 that is not JSON still stops the pass (OD-21).
+  A mutation pass over the fix (17 mutants, then 6 for the audit's findings, every one caught
+  but an equivalent one) found the one-probe layers' own handling redundant with the engine's,
+  so it is not there. Open for the owner as OD-23.
+  `fix/target-deep-json` documents this gap as open in four places (CHANGELOG, MANUAL "Bounded
+  replies", `docs/02`, `u04` §4) that flip when the second of the two merges.
+
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
 - Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and

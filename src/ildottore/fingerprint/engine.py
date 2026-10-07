@@ -17,9 +17,10 @@ deterministic: a fixed layer order + a seeded probe battery ⇒ a byte-identical
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 from ildottore.fingerprint.attribution import parse_signal
-from ildottore.fingerprint.base import FingerprintLayer, ProbeContext
+from ildottore.fingerprint.base import FingerprintLayer, ProbeContext, ProbeFailed
 from ildottore.fingerprint.combine import SPOOF_FLAG, CombinedFingerprint, combine
 from ildottore.fingerprint.layers import default_layers
 from ildottore.fingerprint.layers.behavioral import SELF_REPORT_DETAIL
@@ -38,7 +39,13 @@ from ildottore.shared.models import (
 )
 from ildottore.shared.protocols import TargetAdapter
 
-__all__ = ["FingerprintEngine", "fingerprint"]
+__all__ = [
+    "PROBES_FAILED_FLAG",
+    "PROBE_ERRORS_DETAIL",
+    "FingerprintEngine",
+    "failed_probes",
+    "fingerprint",
+]
 
 
 class FingerprintEngine:
@@ -52,6 +59,12 @@ class FingerprintEngine:
     a ``FingerprintEngine()`` built here therefore has six layers and the one the CLI
     builds has seven. The engine holds no per-run state (a fresh :class:`ProbeContext`
     is built per call) so one engine instance can fingerprint many targets.
+
+    ``is_env_error`` decides, with the ``retryable = False`` marker, which send errors are a
+    failed probe rather than the end of the pass (§7 A-35): the composition root injects the
+    predicate the attack phase classifies an attempt's error with
+    (``core.execute.default_is_env_error``), which u09 may not import. ``None`` isolates
+    nothing and every error goes through, as before.
     """
 
     def __init__(
@@ -59,9 +72,11 @@ class FingerprintEngine:
         *,
         layers: list[FingerprintLayer] | None = None,
         pack: SignaturePack | None = None,
+        is_env_error: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self._layers = layers if layers is not None else default_layers()
         self._pack = pack if pack is not None else load_pack()
+        self._is_env_error = is_env_error
 
     @property
     def layers(self) -> list[FingerprintLayer]:
@@ -74,21 +89,44 @@ class FingerprintEngine:
 
         Layer order is fixed (determinism). Any layer's evidence is appended in
         order, so the assembled ``evidence`` list is byte-stable across replays.
+
+        A probe whose reply comes back refused (an environment failure, see ``is_env_error``,
+        that a retry would repeat) costs that probe: its layer gets :class:`ProbeFailed` and
+        gives no evidence from it (a layer with sibling probes skips it and keeps the others;
+        any other layer gives no evidence at all), every other probe is still sent, and the
+        failures are recorded in the evidence and flagged. A probe that gets no answer at all
+        stops the pass, as any other error does.
         """
 
         target_id = adapter.id
         ctx = ProbeContext(target_id=target_id, signature_pack=self._pack)
 
+        isolated = _ProbeIsolation(adapter, self._is_env_error)
         # The carrier layer's probes are left out of the check: a target can answer carriers
         # differently (that is what comprehension measures) and every attributing probe alike.
-        recorder = _RecordingAdapter(adapter)
+        recorder = _RecordingAdapter(isolated)
         evidence: list[FingerprintEvidence] = []
         for layer in self._layers:
-            target_for_layer = adapter if layer.layer == _CARRIER_LAYER else recorder
-            evidence.extend(await layer.probe(target_for_layer, ctx))
+            target_for_layer = isolated if layer.layer == _CARRIER_LAYER else recorder
+            isolated.layer = layer.layer
+            try:
+                evidence.extend(await layer.probe(target_for_layer, ctx))
+            except ProbeFailed:
+                # A layer that lets a failed probe through loses its own evidence, not the pass:
+                # the one-probe layers (metadata, tokenizer, guardrail) and any third-party one.
+                # So an unanswered guardrail nudge leaves the guardrails unknown, never "no
+                # filter". The failure is already on record.
+                continue
 
         fused = combine(evidence)
-        if recorder.non_discriminating():
+        constant = recorder.non_discriminating()
+        # Refused replies can leave fewer attributing replies than the constant check needs, and
+        # then it never runs: a target answering "I am Llama" to everything, with 8 of its 10
+        # attributing replies refused, was named meta-llama at 0.41 where a full pass names
+        # nothing (pre-commit audit of OD-23). Too few replies to tell a model from a constant
+        # get the constant's treatment, without its flag (``probes_failed`` says why).
+        unchecked = bool(isolated.failures) and len(recorder.texts) < _MIN_PROBES_FOR_CONSTANT
+        if constant or unchecked:
             # Every attributing probe got the same text, so nothing the text layers matched
             # came from the model: a constant mock was named meta-llama at 0.67 and a
             # refuse-all target llama-3-8b with a 2023-03 cutoff (audit 2026-10-03, R16). The
@@ -101,7 +139,10 @@ class FingerprintEngine:
                 version=(
                     None if from_envelope.version is None else _capped(from_envelope.version, cap)
                 ),
-                spoofing_flags=[*fused.spoofing_flags, NON_DISCRIMINATING_FLAG],
+                spoofing_flags=[
+                    *fused.spoofing_flags,
+                    *([NON_DISCRIMINATING_FLAG] if constant else []),
+                ],
             )
         elif _from_envelope_only(evidence, fused.family.guess, fused.spoofing_flags):
             # The same cap when the replies differed but only the envelope named the family (a
@@ -121,6 +162,17 @@ class FingerprintEngine:
         if carriers:
             caps["effective_mutators"] = carriers
         version = _with_cutoff(fused, self._pack)
+        flags = list(fused.spoofing_flags)
+        if isolated.failures:
+            # Unattributed (weight 0.0): which probes went unanswered, never what came back.
+            evidence.append(
+                FingerprintEvidence(
+                    layer=_ENGINE_LAYER,
+                    signal=f"{PROBE_ERRORS_DETAIL}={json.dumps(isolated.failures)}",
+                    weight=0.0,
+                )
+            )
+            flags.append(PROBES_FAILED_FLAG)
 
         return ModelFingerprint(
             target_id=target_id,
@@ -129,7 +181,7 @@ class FingerprintEngine:
             capability_guess=caps,
             guardrails=guardrails,
             evidence=evidence,
-            spoofing_flags=fused.spoofing_flags,
+            spoofing_flags=flags,
             recommended_plan_ref=None,  # ADR-0006: u08 owns plan building.
         )
 
@@ -151,8 +203,16 @@ class FingerprintEngine:
 #: no signal, so the family comes from the response envelope alone or is unknown.
 NON_DISCRIMINATING_FLAG = "non_discriminating_target"
 
+#: Flag set when one or more probes of the pass got no usable reply (§7 A-35): the fingerprint
+#: was built from the replies that came back. :func:`failed_probes` lists them.
+PROBES_FAILED_FLAG = "probes_failed"
+
+#: The detail of the engine's own evidence that lists the failed probes.
+PROBE_ERRORS_DETAIL = "probe_errors"
+
 _CARRIER_LAYER = "carrier"
 _METADATA_LAYER = "metadata"
+_ENGINE_LAYER = "engine"
 
 #: Fewer answered probes than this is too little to call a target constant.
 _MIN_PROBES_FOR_CONSTANT = 3
@@ -203,6 +263,69 @@ def _from_model_field(evidence: list[FingerprintEvidence]) -> CombinedFingerprin
         if ev.layer == _METADATA_LAYER and "model=" in parse_signal(ev.signal).detail
     ]
     return combine(kept)
+
+
+def failed_probes(fingerprint: ModelFingerprint) -> list[str]:
+    """The probes of the pass that got no usable reply, as ``"<layer>/<probe>: <error class>"``.
+
+    In send order; empty when every probe was answered. The layer is there because two layers
+    send the same probe (``metadata`` and ``behavioral`` both send ``self_id``).
+    """
+
+    prefix = f"{PROBE_ERRORS_DETAIL}="
+    for ev in fingerprint.evidence:
+        if ev.layer == _ENGINE_LAYER and ev.signal.startswith(prefix):
+            parsed = json.loads(ev.signal.split("=", 1)[1])
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+    return []
+
+
+class _ProbeIsolation:
+    """Turns a refused reply to one probe into :class:`ProbeFailed`, and records it.
+
+    A refused reply is one that came back and cannot be used: an environment failure (the
+    injected predicate) marked ``retryable = False``, the marker ``core.execute`` reads (a reply
+    over the size cap, one it cannot decode, and ``ResponseTooDeep`` once
+    ``fix/target-deep-json`` lands). The target answered, and a retry would get the same reply.
+    A probe that got **no answer at all** (a 5xx, a 429, a timeout, a refused connection, still
+    failing after the meter's retries) goes through and stops the pass, as before: the target is
+    not answering, and isolating it too made a target that never replies cost 17 probes of three
+    30 s timeouts each, 25.5 minutes, before an attack that fails the same way, and made
+    ``dottore fingerprint`` exit 0 on a closed port (pre-commit audit of OD-23). Anything else
+    goes through too: a product error, a refusal by the scope, a budget breach, and every
+    ``BaseException`` (an interrupt, a cancellation).
+    """
+
+    def __init__(
+        self, inner: TargetAdapter, is_env_error: Callable[[BaseException], bool] | None
+    ) -> None:
+        self._inner = inner
+        self._is_env_error = is_env_error
+        self.id = inner.id
+        #: The layer probing now, set by the engine before each layer runs.
+        self.layer = ""
+        self.failures: list[str] = []
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        try:
+            return await self._inner.send(request)
+        except Exception as exc:
+            if not self._refused(exc):
+                raise
+            failed = ProbeFailed(str((request.metadata or {}).get("probe", "probe")), exc)
+            self.failures.append(f"{self.layer}/{failed}")
+            raise failed from exc
+
+    def capabilities(self) -> Capabilities:
+        return self._inner.capabilities()
+
+    def _refused(self, exc: Exception) -> bool:
+        return (
+            self._is_env_error is not None
+            and self._is_env_error(exc)
+            and getattr(exc, "retryable", True) is False
+        )
 
 
 class _RecordingAdapter:

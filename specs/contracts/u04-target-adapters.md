@@ -45,7 +45,10 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   `Accept-Encoding: gzip, deflate` (`base.ACCEPT_ENCODING`), so httpx never offers `br` or
   `zstd` it cannot hand to the cap. Any other `Content-Encoding`, or a corrupt or truncated
   body, is `ResponseUndecodable` on a 2xx; an error status keeps its status classification
-  with an empty body. Both errors are environment failures with `retryable = False`. The MCP
+  with an empty body, and so does an error status whose body is over the cap (2026-10-07: a
+  `401` with a 5 MB body was `ResponseTooLarge`, an inconclusive attempt, where a short one
+  stops the run; delta audit of OD-23). Both errors are environment failures with
+  `retryable = False`. The MCP
   adapter's `notifications/initialized` reply is streamed and never read.
 - KEEP: capabilities are **static per adapter+config** (declared), not inferred by probing at send
   time; live capability probing belongs to u09 fingerprint, not here.

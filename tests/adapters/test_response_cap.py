@@ -230,6 +230,33 @@ async def test_an_error_status_is_classified_by_its_status_not_its_body() -> Non
         await adapter.send(ModelRequest(prompt="hi"))
 
 
+async def test_an_error_status_over_the_cap_is_classified_by_its_status() -> None:
+    """A 401 with a body over 4 MiB was `ResponseTooLarge`, an inconclusive attempt, where a short
+    401 stops the run; and the `-sV` probe pass, which lets a refused reply fail only its probe,
+    then let `dottore fingerprint` exit 0 on a target refusing the credential (delta audit of
+    OD-23). Read no further than the cap, as before."""
+
+    from ildottore.adapters.base import AdapterProductError
+
+    sent: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(1)
+        return httpx.Response(401, content=_streamed(b"x" * (MAX_RESPONSE_BYTES + 65536)))
+
+    adapter = OpenAIAdapter(
+        id="t1",
+        base_url="https://api.example.test",
+        allowlist=EndpointAllowlist([Endpoint(host="api.example.test", path_prefixes=["/"])]),
+        api_key="k",
+        model="m",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    with pytest.raises(AdapterProductError, match="HTTP 401"):
+        await adapter.send(ModelRequest(prompt="hi"))
+    assert sent == [1]
+
+
 async def test_mcp_asks_for_decodable_encodings_and_skips_notification_replies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
