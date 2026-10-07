@@ -1191,7 +1191,14 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     wall = (
         opts.budget_wall_s if opts.budget_wall_s is not None else BUDGET_DERIVATION_CAP.max_wall_s
     )
-    if pacing_rate is not None and wall is not None and pacing_rate * wall < 1:
+    # Written so a NaN refuses: `--rate inf` against a zero ceiling is `inf * 0`, which no
+    # comparison holds for (pre-merge audit of A-55).
+    if pacing_rate is not None and wall is not None and not pacing_rate * wall >= 1:
+        if wall == 0:  # no pace sends under it, so raising the rate is no advice
+            raise ValueError(
+                "--budget-wall 0 leaves a live run no time to send anything, at any pace; "
+                "raise --budget-wall"
+            )
         pace = (
             f"--rate {pacing_rate:.3e}"
             if opts.rate is not None

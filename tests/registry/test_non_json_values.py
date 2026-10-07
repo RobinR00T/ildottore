@@ -161,6 +161,27 @@ def test_an_id_holding_half_a_character_is_reported_without_it(tmp_path: Path) -
     assert f"id: text holding {_HALF}" in line
 
 
+def test_a_suite_reference_holding_half_a_character_is_reported_without_it(
+    tmp_path: Path,
+) -> None:
+    """The unknown-reference finding printed the suite's spec id in its header, and printing it
+    raised ``UnicodeEncodeError``, as for a spec's own id (pre-merge audit of A-54)."""
+
+    pack = tmp_path / "reffy"
+    (pack / "attacks").mkdir(parents=True)
+    (pack / "suites").mkdir(parents=True)
+    (pack / "pack.yaml").write_text("id: reffy\npack_version: '1.0'\nname: reffy\n")
+    (pack / "suites" / "s.yaml").write_text(
+        f'id: s\nsuite_version: "1.0"\nname: s\nspecs:\n  - spec_id: "GHOST-999{_BS}ud800"\n'
+    )
+
+    result = runner.invoke(app, ["lint", str(pack)])
+
+    assert "Traceback" not in result.output
+    assert result.exit_code == 1, result.output
+    assert "references unknown spec id 'GHOST-999" + _BS + "ud800'" in result.output
+
+
 def test_the_json_report_names_the_file(tmp_path: Path) -> None:
     result = _lint(tmp_path, _TOOL, _with_returns("2026-01-01"), "--json")
 

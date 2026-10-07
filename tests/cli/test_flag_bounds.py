@@ -177,10 +177,6 @@ def _live_dry_run(*extra: str) -> Result:
         ("5e-324", [], "7,200"),
         ("0.0001", [], "7,200"),
         ("0.001", ["--budget-wall", "5"], "5"),  # still waiting past 45 s on a live stub
-        # A zero ceiling was exempt, and with -sV the probe pass, which reads no ceiling, waited
-        # without end (delta audit of A-55).
-        ("5", ["--budget-wall", "0"], "0"),
-        ("1e-308", ["--budget-wall", "0", "-sV"], "0"),
     ],
 )
 def test_a_rate_under_one_request_per_wall_ceiling_is_refused(
@@ -212,6 +208,42 @@ def test_a_rate_of_one_request_per_ceiling_or_more_is_accepted(rate: str, extra:
     result = _live_dry_run("--rate", rate, *extra)
 
     assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize(
+    ("rate", "extra"),
+    [
+        ("5", []),
+        ("1e9", []),
+        # `inf * 0` is NaN, which a `< 1` test let through to 17 live probes (pre-merge audit).
+        ("inf", []),
+        # A zero ceiling was exempt at first, and with -sV the probe pass, which reads no
+        # ceiling, waited without end (delta audit of A-55).
+        ("1e-308", ["-sV"]),
+    ],
+)
+def test_a_zero_ceiling_refuses_a_live_run_at_any_pace(rate: str, extra: list[str]) -> None:
+    """The advice names the one flag that helps: no rate sends under a zero ceiling."""
+
+    result = _live_dry_run("--rate", rate, "--budget-wall", "0", *extra)
+
+    assert "Traceback" not in result.output
+    assert result.exit_code == 3, result.output
+    assert (
+        "--budget-wall 0 leaves a live run no time to send anything, at any pace; raise "
+        "--budget-wall" in result.output
+    )
+
+
+def test_following_the_advice_of_a_refused_pace_is_accepted() -> None:
+    """A refusal's advice has to be one the tool takes: twice the pace it asks for passes."""
+
+    refused = _live_dry_run("--rate", "0.0001")
+    accepted = _live_dry_run("--rate", str(2 / 7200))
+
+    assert refused.exit_code == 3, refused.output
+    assert "raise the rate or --budget-wall" in refused.output
+    assert accepted.exit_code == 0, accepted.output
 
 
 def test_a_template_pace_is_checked_too() -> None:

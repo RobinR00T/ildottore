@@ -289,27 +289,30 @@ exactly ends; `--budget-wall` of that many seconds is 285 million years): `error
 most 9,007,199,254,740,992 (got a number of more than 21 digits)`. Through `run` and `fleet --run`,
 which builds its options in code. Once the timing is resolved, and before the resume block and the
 probe pass, which send, a live run whose pace (`--rate`, or the timing template's) is under one
-request per wall-clock ceiling (`--budget-wall`, 0 included, or the 7,200 s cap a derived ceiling
-cannot pass) is refused: `--rate 1.000e-308 is less than one request per 7,200-second wall-clock
-ceiling, so the run would wait past that ceiling between two sends; raise the rate or --budget-wall`
-(`the -T0 pace of 5.000e-01 requests per second ...` for a template). An offline mock run is not
-paced, so not checked. A resume inherits the count its run store recorded, after these checks, so
-the store refuses a stored `--runs` past `2**53` as a corrupt record, as it refuses one below 1 (a
-400-digit count edited into the store was the same traceback once inherited). A figure is printed
-with thousands separators, which the CLI's redactor left readable in all of 63,000 sampled values (1
-to 21 digits, either sign), and described past 21 digits; a rate in scientific notation, which it
-left readable in all of 20,000 sampled refused rates, where 2,782 written as typed were masked as
-phone or card numbers. The wall-clock derivation also bounds its quotient at `MAX_FLAG_VALUE` before
-`int()`, for any caller of `budgets_for`; the cap it is clamped to afterwards makes the result
-identical for every finite quotient. The flag sweep, repeated on the code before the delta audit: 0
-tracebacks in 216 cases (8 on `2f6201a`). Checked by `tests/cli/test_flag_bounds.py` (102 tests, 84
-failing on `c3e70d8`; the 18 that pass are the bound itself accepted for each flag, a zero budget
-still passing the dry run of a mock run, the three lower bounds that already existed keeping their
-message, four paces of one request per ceiling or more, a mock run not paced so not checked, and a
-paced wall under the cap derived as before; the refused paces are tried in dry runs, so a regression
-cannot hang the suite), and by three cases in `tests/cli/test_resume_integrity.py` that read a
-stored count in the store, not through a resume (it reads `2**53` and refuses `2**53 + 1` and a
-400-digit count; the last two fail on `c3e70d8`).
+request per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap a derived ceiling cannot pass)
+is refused, the product compared so that a NaN refuses too (`--rate inf` against a zero ceiling is
+`inf * 0`, which the pre-merge audit got past a `< 1` test): `--rate 1.000e-308 is less than one
+request per 7,200-second wall-clock ceiling, so the run would wait past that ceiling between two
+sends; raise the rate or --budget-wall` (`the -T0 pace of 5.000e-01 requests per second ...` for a
+template). Under `--budget-wall 0` no pace sends, so the advice names the one flag that helps:
+`--budget-wall 0 leaves a live run no time to send anything, at any pace; raise --budget-wall`. An
+offline mock run is not paced, so not checked. A resume inherits the count its run store recorded,
+after these checks, so the store refuses a stored `--runs` past `2**53` as a corrupt record, as it
+refuses one below 1 (a 400-digit count edited into the store was the same traceback once inherited).
+A figure is printed with thousands separators, which the CLI's redactor left readable in all of
+63,000 sampled values (1 to 21 digits, either sign), and described past 21 digits; a rate in
+scientific notation, which it left readable in all of 20,000 sampled refused rates, where 2,782
+written as typed were masked as phone or card numbers. The wall-clock derivation also bounds its
+quotient at `MAX_FLAG_VALUE` before `int()`, for any caller of `budgets_for`; the cap it is clamped
+to afterwards makes the result identical for every finite quotient. The flag sweep, repeated on the
+code before the delta audit: 0 tracebacks in 216 cases (8 on `2f6201a`). Checked by
+`tests/cli/test_flag_bounds.py` (105 tests, 87 failing on `c3e70d8`; the 18 that pass are the bound
+itself accepted for each flag, a zero budget still passing the dry run of a mock run, the three
+lower bounds that already existed keeping their message, four paces of one request per ceiling or
+more, a mock run not paced so not checked, and a paced wall under the cap derived as before; the
+refused paces are tried in dry runs, so a regression cannot hang the suite), and by three cases in
+`tests/cli/test_resume_integrity.py` that read a stored count in the store, not through a resume (it
+reads `2**53` and refuses `2**53 + 1` and a 400-digit count; the last two fail on `c3e70d8`).
 
 Outside the clause, and said so rather than pinned:
 * the wall-clock ceiling is not a deadline at an accepted pace either: each concurrent spec waits
@@ -324,6 +327,10 @@ Outside the clause, and said so rather than pinned:
   it was stopped after 4.5 minutes on `2f6201a` (OD-32);
 * `-T` was already refused outside 0 to 5, but a value of 9 digits or more is printed as
   `«REDACTED:phone»`;
+* a resume is checked against the whole wall-clock ceiling, not what the halted run left of it (a
+  run halted at 12 s of 16 s resumed at 0.07 requests per second and stopped at 26.3 s, pre-merge
+  audit), and a live `--judge` in a run whose attack targets are all mocks is neither paced nor
+  checked, as on `c3e70d8`;
 * `--rate inf` turns pacing off (the limiter reads its interval as 0) and the dry run prints `inf
   req/s ceiling`; `--timeout inf` and `--timeout 1e308` are accepted.
 

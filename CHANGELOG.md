@@ -25,19 +25,22 @@ versioning: [SemVer](https://semver.org/).
   `setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as one), which JSON cannot hold;
   write it in quotes, without a tag` (lint exits 1, and `run` refuses the campaign with exit 3 in
   one `error:` line naming the file). A string key holding half a character is reported too, and a
-  spec `id` holding one is not printed in the finding header, which crashed lint with a traceback
-  for every finding of that spec (the file name is printed instead). The check keeps what JSON holds
-  and reports anything else, so a value built in code is named by its type. At most 20 are listed
-  and the rest counted, a set or a pair is the finding and what it holds is not walked, a container
-  shared through an alias is reported once, a key on this check's paths that is not printable is
-  written as its `repr` (A-40's own paths print keys as written until its follow-up lands), and a
-  value in a field the schema types (`name: 2026-01-01`) gets this message instead of the schema's
-  `datetime.date(2026, 1, 1) is not of type 'string'`. A key that is not a string is not this
-  check's: a date key, or keys of two types in one mapping (`{1: a, b: c}`), still pass lint and
-  crash the run until A-44 (#80) is in (an int, bool, null or float key alone runs, written as
-  text). None of the 75 shipped specs holds such a value (none of the 129 YAML files of the
-  repository that load is flagged). Found on 2026-10-07 by the pre-commit audit of
-  `fix/huge-int-repr` (finding F6). Clause A-54 (u02); `tests/registry/test_non_json_values.py`.
+  spec `id` (or a suite's reference to one) holding one is not printed in the finding header, which
+  crashed lint with a traceback (the file name is printed instead). A character outside the basic
+  plane written as a pair of escapes, as `json.dumps` writes it by default, is refused too, since
+  PyYAML builds two halves (pydantic already refused it in the fields it types); write the character
+  itself, or dump with `ensure_ascii=False`. The check keeps what JSON holds and reports anything
+  else, so a value built in code is named by its type. At most 20 are listed and the rest counted, a
+  set or a pair is the finding and what it holds is not walked, a container shared through an alias
+  is reported once, a key on this check's paths that is not printable is written as its `repr`
+  (A-40's own paths print keys as written until its follow-up lands), and a value in a field the
+  schema types (`name: 2026-01-01`) gets this message instead of the schema's `datetime.date(2026,
+  1, 1) is not of type 'string'`. A key that is not a string is not this check's: a date key, or
+  keys of two types in one mapping (`{1: a, b: c}`), still pass lint and crash the run until A-44
+  (#80) is in (an int, bool, null or float key alone runs, written as text). None of the 75 shipped
+  specs holds such a value (none of the 129 YAML files of the repository that load is flagged).
+  Found on 2026-10-07 by the pre-commit audit of `fix/huge-int-repr` (finding F6). Clause A-54
+  (u02); `tests/registry/test_non_json_values.py`.
 - **`--runs` past what a float holds exited 1 with a traceback.** `dottore run ... --dry-run --runs
   <4,300 nines>` (and `--estimate`, and the run) gave `OverflowError: int too large to convert to
   float` where the plan multiplied its token estimate by the budget headroom: from 305 nines with
@@ -69,13 +72,15 @@ versioning: [SemVer](https://semver.org/).
   25 once the quotient no longer overflowed, and `--budget-wall 0 --rate 1e-6 -sV` past 25 seconds,
   the probe pass reading no ceiling (the pre-commit and delta audits of this fix). A live run whose
   pace (`--rate`, or the timing template's: `-T0` is 0.5 requests per second) is under one request
-  per wall-clock ceiling (`--budget-wall`, 0 included, or the 7,200 s cap of a derived one) is now
-  refused with exit 3 before anything is sent: `--rate 1.000e-308 is less than one request per
-  7,200-second wall-clock ceiling, so the run would wait past that ceiling between two sends; raise
-  the rate or --budget-wall`. The rate is printed in scientific notation: as typed, the CLI's
-  redactor masked 2,782 of 20,000 sampled refused rates as phone or card numbers, and none written
-  this way. An offline mock run is not paced, so not checked. The derivation also bounds its
-  quotient before `int()`, for any other caller.
+  per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap of a derived one) is now refused with
+  exit 3 before anything is sent: `--rate 1.000e-308 is less than one request per 7,200-second
+  wall-clock ceiling, so the run would wait past that ceiling between two sends; raise the rate or
+  --budget-wall`. So is a live run under `--budget-wall 0` at any pace, `--rate inf` included:
+  `--budget-wall 0 leaves a live run no time to send anything, at any pace; raise --budget-wall`.
+  The rate is printed in scientific notation: as typed, the CLI's redactor masked 2,782 of 20,000
+  sampled refused rates as phone or card numbers, and none written this way. An offline mock run is
+  not paced, so not checked. The derivation also bounds its quotient before `int()`, for any other
+  caller.
 - **Found while measuring, and not fixed here.** The wall-clock ceiling is still not a deadline: at
   an accepted pace, each concurrent spec waits its own interval and the `-sV` probe pass reads no
   ceiling, so `--rate 0.5 --budget-wall 2` against a local stub ran 2.6 s at `--concurrency 1`, 8.6
@@ -85,8 +90,11 @@ versioning: [SemVer](https://semver.org/).
   `PI-DIRECT-001` and `OUT-XSS-001` a stored count of 10^6 took 209 MiB with one spec started and
   653 to 678 MiB with both, 10^7 with one spec took 3.5 s and 1.3 GiB, and `2**53 + 1` was still
   growing at 3.7 GB when it was stopped after 4.5 minutes on `2f6201a`. A bound with a meaning, or a
-  runner that does not build the set, is the owner's call (OD-32). `--rate inf` turns pacing off,
-  and a `-T` of 9 digits or more is refused as before but printed as `«REDACTED:phone»`.
+  runner that does not build the set, is the owner's call (OD-32). A resume is checked against the
+  whole wall-clock ceiling, not what the halted run left of it, and a live `--judge` in a run whose
+  attack targets are all mocks is neither paced nor checked, as on `c3e70d8` (pre-merge audit).
+  `--rate inf` turns pacing off, and a `-T` of 9 digits or more is refused as before but printed as
+  `«REDACTED:phone»`.
 
 ### Fixed (a number too long to write out)
 

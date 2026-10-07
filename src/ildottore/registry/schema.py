@@ -326,7 +326,7 @@ def _non_json_values(data: object) -> list[str]:
                 keys.pop()
             continue
         key, value = step
-        if isinstance(key, str) and not _encodes(key):
+        if isinstance(key, str) and not encodes_utf8(key):
             report([*keys, key], f"a key holding {_HALF_CHARACTER}")
         if isinstance(value, dict | list):
             if id(value) not in entered:
@@ -354,7 +354,7 @@ def _not_json(value: object) -> str | None:
     if value is None or isinstance(value, int):  # a bool is an int
         return None
     if isinstance(value, str):
-        return None if _encodes(value) else f"text holding {_HALF_CHARACTER}"
+        return None if encodes_utf8(value) else f"text holding {_HALF_CHARACTER}"
     if isinstance(value, float):
         if math.isfinite(value):
             return None
@@ -370,8 +370,12 @@ def _not_json(value: object) -> str | None:
     return f"a value of type {type(value).__name__}, {_CANNOT_HOLD}; write a JSON value"
 
 
-def _encodes(text: str) -> bool:
-    """Whether UTF-8, the encoding of a JSON document, can write ``text``."""
+def encodes_utf8(text: str) -> bool:
+    """Whether UTF-8, the encoding of a JSON document and of the terminal, can write ``text``.
+
+    Not when it holds half a character (a lone surrogate): a spec value, and an id printed in a
+    finding header, raised ``UnicodeEncodeError`` where they were written (A-54).
+    """
 
     if text.isascii():
         return True

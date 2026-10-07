@@ -30,7 +30,7 @@ from ildottore.shared.config_errors import validation_problems
 
 from .errors import LintCode, LintError
 from .pack import LoadedPack
-from .schema import SafeLoadError, load_yaml_file, validate_attack_spec_schema
+from .schema import SafeLoadError, encodes_utf8, load_yaml_file, validate_attack_spec_schema
 
 _SYNTHETIC_PACK_ID = "loose-specs"
 
@@ -113,13 +113,9 @@ def _short_id(data: dict[str, object]) -> str | None:
     """
 
     value = data.get("id")
-    if not isinstance(value, str) or len(value) > _MAX_ID_CHARS:
-        return None
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError:
-        return None
-    return value
+    if isinstance(value, str) and len(value) <= _MAX_ID_CHARS and encodes_utf8(value):
+        return value
+    return None
 
 
 _MAX_ID_CHARS = 128

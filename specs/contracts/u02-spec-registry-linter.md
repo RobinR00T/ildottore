@@ -248,15 +248,18 @@ holds (a mapping, a list, a string that UTF-8 can write, an int, a finite float,
 reporting anything else as a `SCHEMA` finding at its path that says what it is, what YAML builds it
 from and what to write instead: `setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as
 one), which JSON cannot hold; write it in quotes, without a tag`. A string key holding half a
-character is reported at its own path, and a spec `id` holding one is not attached to the findings
-(the file names them): printing the finding header raised `UnicodeEncodeError`, a lint traceback for
-every finding of that spec (delta audit). A value built in code is named by its type (`a value of
-type Decimal`). The schema is not run on that file, and its other findings come once the values are
-fixed; a value in a field the schema types (`name: 2026-01-01`) gets this message instead of the
-schema's `datetime.date(2026, 1, 1) is not of type 'string'`. At most 20 are listed and the rest
-counted; a set or a pair is the finding and what it holds is not walked; a container YAML shares
-through an alias is entered once (where the walk first meets it), while a scalar aliased in two
-places is reported in each; the path is cut at 300 characters, and a part of it that is not
+character is reported at its own path, and a spec `id`, or a suite's reference to one, holding one
+is not attached to the findings (the file names them): printing the finding header raised
+`UnicodeEncodeError`, a lint traceback (delta and pre-merge audits). A character outside the basic
+plane written as a pair of escapes, as `json.dumps` writes it by default, is refused too, since
+PyYAML builds two halves; pydantic already refused it in the fields it types, and joining such pairs
+at load, which would accept it, is not done here. A value built in code is named by its type (`a
+value of type Decimal`). The schema is not run on that file, and its other findings come once the
+values are fixed; a value in a field the schema types (`name: 2026-01-01`) gets this message instead
+of the schema's `datetime.date(2026, 1, 1) is not of type 'string'`. At most 20 are listed and the
+rest counted; a set or a pair is the finding and what it holds is not walked; a container YAML
+shares through an alias is entered once (where the walk first meets it), while a scalar aliased in
+two places is reported in each; the path is cut at 300 characters, and a part of it that is not
 printable text is written as its `repr` (a key holding an escape sequence or a newline cannot forge
 a finding line in this check's messages, and a key that is not text never breaks the path; A-40's
 message prints the keys on its path as written, so a key holding half a character or a newline on
@@ -274,7 +277,7 @@ and `render-media` load through the same path, so they leave such a spec out as 
 that does not load (`run` refuses the campaign with exit 3, one `error:` line naming the file). That
 is a change for a pair, NaN or an infinity, which ran and are refused now. None of the 129 YAML
 files of the repository that load is flagged. Checked by `tests/registry/test_non_json_values.py`
-(65 tests, 64 failing on `c3e70d8`, 19 of them because the walk they call is not there; the one that
+(66 tests, 65 failing on `c3e70d8`, 19 of them because the walk they call is not there; the one that
 passes checks that the shipped battery still lints clean, and another pins that no shipped spec
 holds such a value).
 
