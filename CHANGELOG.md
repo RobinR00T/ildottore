@@ -5,6 +5,60 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a YAML file that expands past what the CLI can hold)
+
+- **Only the spec loader capped a YAML document's size with its aliases expanded.** The scope,
+  target, fleet and labels files and the policy and signature packs, read through
+  `safe_yaml.safe_load`, had the depth limit and no size cap. An 835-byte labels file of 45 anchors,
+  each a list of two aliases of the one before (46 levels deep, under the depth limit), made
+  `dottore calibrate report.json labels.yaml` run past 25 s at 1.7 GB before it was killed (here:
+  killed at 12 s with 839 MB and growing), because formatting the verdict expands the value. A `<<`
+  that merges the previous map twice is worse: PyYAML doubles the pairs itself while it builds the
+  mapping, so 586 bytes took 2.6 s to load and each further line doubles that, whatever the caller
+  does next. Every loader now refuses, before anything is built from it, a document over 100,000
+  nodes with every alias counted where it is used (a text one more node per 64 characters), the spec
+  loader's cap since SEC-09: `labels file labels.yaml is not valid YAML: document is too large (over
+  100000 nodes, counting every alias where it is used and a text as one node per 64 characters) at
+  line 1, column 266`, exit 3, in 0.4 s and 71 MB. The position is where the value crosses the cap,
+  here the anchor whose two aliases take it past; 15 such anchors, 265 bytes, already take the list
+  past it. The largest file the repository ships, the signature corpus, holds 407 nodes.
+- **The count also stops composition.** The measure needs the whole document composed, and the
+  operator's files have no size limit: the first version of this fix composed a 3 MB labels file of
+  a million plain texts whole, 785 MB, before refusing it (on `main` that file is not refused at
+  all: `calibrate` builds it, 762 MB, and reports an invalid verdict). Composition now stops as soon
+  as the nodes written pass the cap, an alias counting the node it names: the same file is refused
+  at its 100,000th text in 1.4 s and 134 MB, and a list of 200,000 aliases, which the first count
+  skipped, at its 99,999th alias in 3 s and 73 MB. Such a document is reported as too large before
+  its depth or a recursion is checked. A tag longer than 256 characters is refused there too,
+  without quoting it: a `%TAG` prefix is copied into the tag of every node that uses its handle, so
+  1,000 nodes of a 100,000-character prefix held 187 MB, and PyYAML's refusal quoted the whole tag.
+  Each count is per document. Found by the pre-commit and delta audits of this fix.
+- **One measure, computed once per node.** `safe_yaml.check_expanded` measures depth and size in one
+  bottom-up pass over the node graph, without recursion and without expanding an alias; the spec
+  loader's own recursive measure is gone. Each size stops counting just past the cap: without that,
+  anchor `b<i>` of a long chain held an `i`-bit integer, and the measure's memory grew with the
+  square of the chain (33 MB against 7 MB for 20,000 anchors). Too deep is reported before too large
+  in both loaders, bar the case above; the spec loader used to report the size first, without a
+  position, and now gives one, as it does for a recursive alias. Nesting written out deep enough to
+  overflow PyYAML's composer, a few hundred levels, is still refused without a position. Tests:
+  `tests/cli/test_yaml_expansion.py`: the cap exactly, with the 64-character rule and a `!!binary`
+  text; the position, and the first of two values whose aliases cross the cap; the precedence; where
+  composition stops for texts, long texts, empty lists and aliases, one count per document, and the
+  tag limit; linear memory; the pack loaders; `calibrate`, `run -t`, `run --scope` and `fleet` in
+  process; and in a subprocess bounded at 20 s and 256 MiB, those four, `calibrate` on the flat list
+  and `lint` on a merge bomb. 31 of the 34 tests fail on `0501752` (main): 17 because the file is
+  not refused, nine because main has no count that stops composition, two because a long tag is
+  neither refused nor kept out of the message, two for the spec loader's position and order, and one
+  because the measure is new. Twenty mutants of the fix are all killed. Clause A-37 (u01), u02 §4,
+  u12 A-9. Found by the pre-merge audit of #61. - **Left open, each its own task (found by the
+  audits, not introduced here).** Under the cap, a base-60 integer (`1:59:59:...`) builds in time
+  quadratic in its length (a 1 MiB spec took `lint` 43 s) and integer keys that share one hash make
+  a mapping quadratic (27 s); `run` loads the target file four times; a 4,000-digit integer in a
+  typed spec field crashes `lint` with a traceback; and the operator's files are read whole with no
+  byte limit, their validation errors listed with no limit. An undefined alias or an unknown tag is
+  still named in the refusal, as `shared/config_errors.py` documents (a tag is now at most 256
+  characters).
+
 ### Fixed (a file nested past what the CLI can hold)
 
 - **`dottore diff` and `dottore calibrate` exited 1 on a report nested too deeply.** `json.loads`

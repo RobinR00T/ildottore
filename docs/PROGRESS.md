@@ -3,6 +3,27 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): every YAML loader capped by expanded size
+
+- Closes the second item left open below. On `fix/yaml-alias-expansion-cap`, on main after #61: the
+  scope, target, fleet and labels files and the policy and signature packs had the depth limit but
+  no size cap with aliases expanded, which only the spec loader had (SEC-09). An 835-byte labels
+  file of doubling anchors ran `calibrate` past 25 s and 1.7 GB, and a `<<` merging the previous map
+  twice doubles the work inside PyYAML itself. All of them now share the spec loader's cap (100,000
+  nodes, a text one node per 64 characters) through one measure, `safe_yaml.check_expanded`: depth
+  and size in one pass over the node graph, each size saturating past the cap, too deep before too
+  large, refused at the node where the value crosses the limit, in 0.4 s and 71 MB. Two audits found
+  holes in the fix itself, all closed: unsaturated, the measure's own memory grew with the square of
+  an anchor chain; measuring only a fully composed document let a 3 MB file of plain texts cost 785
+  MB, and then a list of aliases, uncounted, the same; and a `%TAG` prefix copied into every node's
+  tag held 187 MB for 1,000 nodes. Composition now stops at the cap (an alias counting what it
+  names; 1.4 s and 134 MB for that file) and a tag past 256 characters is refused. Clause A-37
+  (u01). 31 of the 34 new tests fail on `0501752`. Twenty mutants of the fix are all killed. Left
+  open as their own tasks: construction costs under the cap (base-60 integers, colliding integer
+  keys, the target loaded four times per `run`; taken by the session "Bound YAML construction cost
+  under the node cap", stacked on this branch), a huge integer that crashes `lint`, and no byte
+  limit on the operator's files.
+
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
 - Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and
