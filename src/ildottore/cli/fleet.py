@@ -127,14 +127,16 @@ class MaterializedFleet(BaseModel):
 
 
 def _split(endpoint: str) -> SplitResult:
-    """``urlsplit(endpoint)``, refused with the endpoint quoted up to 300 characters.
+    """``urlsplit`` of the endpoint as a run reads it (stripped), refused quoted up to 300
+    characters.
 
-    urllib refuses a bracket left open or a host NFKC changes, and its error quoted the whole
-    endpoint (pre-merge audit of A-51).
+    urllib refuses a host it cannot read (a bracket, a host NFKC turns into a path) with no
+    file named, and quoted the whole endpoint for some (pre-merge audit of A-51). Read raw, a
+    leading U+00A0 hid the host here and the generated target failed later (delta audit).
     """
 
     try:
-        return urlsplit(endpoint)
+        return urlsplit(endpoint.strip())
     except ValueError as exc:
         raise ValueError(f"endpoint {quoted(endpoint)} is not a URL that can be read") from exc
 

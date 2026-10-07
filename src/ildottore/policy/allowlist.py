@@ -137,15 +137,33 @@ def _split_host_port(value: str) -> tuple[str, int | None]:
             return value.lower(), None
         if not rest:
             return host.lower(), None
-        if rest.startswith(":") and rest[1:].isdigit():
-            return host.lower(), int(rest[1:])
+        port = _port(rest[1:]) if rest.startswith(":") else None
+        if port is not None:
+            return host.lower(), port
         return value.lower(), None
     if value.count(":") > 1:
         return value.lower(), None
-    host, sep, port = value.partition(":")
-    if sep and port.isdigit():
-        return host.lower(), int(port)
+    host, sep, text = value.partition(":")
+    port = _port(text) if sep else None
+    if port is not None:
+        return host.lower(), port
     return value.lower(), None
+
+
+def _port(text: str) -> int | None:
+    """``text`` as the port an entry pins, or ``None`` when it cannot be read as one.
+
+    ``int()`` refuses digits ``isdigit`` accepts (U+00B2) and more than 4,300 of them: an entry
+    pinned to such a port raised, and denied every URL checked after it, its neighbours'
+    included (delta audit of A-51). It matches nothing now; the other entries still decide.
+    """
+
+    if not text.isdigit():
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
 
 
 def _host_matches(candidate: str, candidate_port: int | None, allowed: str) -> bool:
@@ -196,10 +214,10 @@ class EndpointAllowlist:
         allowed prefix. Everything else - unknown host, off-prefix path, empty
         allowlist, unparseable URL - is denied (S3 default-deny).
 
-        Unparseable is denied, not raised: urllib refuses a bracket left open, a host NFKC
-        changes or a port that is not a number, and its error quoted the whole URL, 900 KB from
-        a scope or target file (pre-merge audit of A-51); an allowed host pinned to a port of
-        thousands of digits raised too. The refusal quotes the URL cut instead.
+        Unparseable is denied, not raised: urllib refuses a host it cannot read (a bracket, a
+        host NFKC turns into a path) or a port that is not a number, with no file named, and
+        some of its errors quoted the whole URL, 900 KB from a scope or target file (pre-merge
+        audit of A-51). The refusal quotes the URL cut instead.
         """
 
         try:

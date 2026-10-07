@@ -30,6 +30,8 @@ from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.cli.resume import _assert_same_target
 from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, target_uses_mock
+from ildottore.policy.allowlist import EndpointAllowlist
+from ildottore.policy.scope import Endpoint
 from ildottore.shared.config_errors import (
     MAX_PROBLEM_CHARS,
     _repr_head,
@@ -746,6 +748,7 @@ def test_a_credential_variable_is_named_up_to_300_characters(
 #: audit of A-51). The fullwidth solidus is a host NFKC turns into a path.
 LONG = "x" * 300_000
 SOLIDUS = chr(0xFF0F)
+NBSP = chr(0xA0)
 BAD_PORT = f"https://api.openai.com:{LONG}/v1/chat/completions"
 
 
@@ -763,6 +766,32 @@ URLS: dict[str, Callable[[Path], Case]] = {
     ),
     "target-endpoint-nfkc-host": lambda t: _with(
         _live(t, f"https://h{SOLIDUS}{LONG}/v1"), 0, "'endpoint' is not a URL that can be read"
+    ),
+    # Not an IP between the brackets: urllib quoted the whole host.
+    "target-endpoint-bracketed-host": lambda t: _with(
+        _live(t, f"https://[{LONG}]/v1"), 0, "'endpoint' is not a URL that can be read"
+    ),
+    # The gate strips the endpoint; read raw, U+00A0 in front hid the host from the check.
+    "target-endpoint-nbsp-nfkc-host": lambda t: _with(
+        _live(t, f"{NBSP}https://h{SOLIDUS}{LONG}/v1"),
+        0,
+        "'endpoint' is not a URL that can be read",
+    ),
+    "scope-base-url-bracketed-host": lambda t: _with(
+        _run(t, scope=SCOPE_HEAD + scope_entry().replace("mock://mock-target", f"mock://[{LONG}]")),
+        None,
+        "not on allowlist",
+        cut_of(f"mock://[{LONG}]"),
+    ),
+    "fleet-endpoint-nbsp-nfkc-host": lambda t: _with(
+        _fleet(
+            t,
+            f'version: "1"\ntargets:\n  - id: x\n    endpoint: "{NBSP}http://h{SOLIDUS}{LONG}"\n'
+            "    model: m\n",
+        ),
+        None,
+        "is not a URL that can be read",
+        cut_of(f"{NBSP}http://h{SOLIDUS}{LONG}"),
     ),
     "run-target-port": lambda t: _with(
         _live(t, BAD_PORT), None, "not on allowlist", cut_of(BAD_PORT)
@@ -820,6 +849,39 @@ def test_a_url_urllib_cannot_read_is_refused_without_its_error(tmp_path: Path, n
     assert case.reason in line and all(str(p) in line for p in case.files), line
     assert all(cut in line for cut in case.cuts), line
     assert "Exceeds the limit" not in line and "could not be cast" not in line, line
+    if case.reason.startswith("'endpoint'"):
+        # The target loader names the field, never the value: an endpoint can hold a password.
+        assert "x" * 50 not in line, line
+
+
+@pytest.mark.parametrize("command", ["run", "fingerprint"])
+def test_an_endpoint_urllib_cannot_read_never_prints_its_password(
+    tmp_path: Path, command: str
+) -> None:
+    endpoint = f"{NBSP}https://admin:Hunter2!Secret@gateway{SOLIDUS}v1/chat/completions"
+    target = live_target().replace(LIVE_URL, endpoint)
+    case = _run(tmp_path, target) if command == "run" else _fingerprint(tmp_path, target)
+
+    result = runner.invoke(app, case.args)
+
+    assert result.exit_code == ExitCode.ERROR, result.output
+    [line] = result.stderr.splitlines()
+    assert "'endpoint' is not a URL that can be read" in line and str(case.files[0]) in line
+    assert "Hunter2" not in line and "netloc" not in line, line
+
+
+def test_an_entry_the_allowlist_cannot_read_matches_nothing_and_blocks_nothing() -> None:
+    # Pinned to a port of 5,000 digits it raised, and denied every URL checked after it, so a
+    # good entry behind it was refused and in front of it allowed (delta audit of A-51).
+    bad = Endpoint(host="api.openai.com:" + "9" * 5_000, path_prefixes=["/"])
+    good = Endpoint(host="api.openai.com", path_prefixes=["/"])
+
+    assert EndpointAllowlist([bad, good]).is_allowed(LIVE_URL)
+    assert EndpointAllowlist([good, bad]).is_allowed(LIVE_URL)
+    assert not EndpointAllowlist([bad]).is_allowed(LIVE_URL)
+    for port in (chr(0xB2), "abc"):
+        entry = Endpoint(host=f"api.openai.com:{port}")
+        assert not EndpointAllowlist([entry]).is_allowed(LIVE_URL), port
 
 
 # --- what the text checks kept as it was -----------------------------------------------------

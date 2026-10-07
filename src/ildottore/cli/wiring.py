@@ -1057,12 +1057,15 @@ def load_target(path: Path) -> Target:
         raise ValueError(f"target file {path} is missing a string 'id'")
     endpoint_raw = raw.get("endpoint")
     if isinstance(endpoint_raw, str):
+        # Read as the gate reads it (`request_url_for` strips it): read raw, a leading U+00A0
+        # hid the host from this check and urllib's error reached the CLI later, password
+        # included (delta audit of A-51).
         try:
-            parts = urlsplit(endpoint_raw)
+            parts = urlsplit(endpoint_raw.strip())
         except ValueError as exc:
-            # urllib refuses a bracket left open or a host NFKC changes, and quoted the whole
-            # value doing so: 900 KB with no file named (pre-merge audit of A-51). Not quoted
-            # here, as the URL can hold a password.
+            # urllib refuses a host it cannot read (a bracket, a host NFKC turns into a path)
+            # with no file named, and quoted the whole value for some (900 KB: pre-merge audit
+            # of A-51). Not quoted here, as the URL can hold a password.
             raise ValueError(
                 f"target file {path} 'endpoint' is not a URL that can be read (its host)"
             ) from exc
