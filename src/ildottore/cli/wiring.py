@@ -867,7 +867,7 @@ def fingerprint_probe(
     evidence: FsEvidenceStore | None = None,
     run_id: str | None = None,
     mock_scenario: str | None = None,
-    max_requests: int | None = None,
+    ledger: BudgetLedger | None = None,
 ) -> ProbePass:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
@@ -876,13 +876,17 @@ def fingerprint_probe(
     paces the probes exactly like the attack traffic; ``None`` leaves them unpaced, which is
     what an offline mock wants.
 
-    Every wire send is paced, debited against ``max_requests`` and recorded, retries included.
+    Every wire send is paced, debited against ``ledger`` and recorded, retries included.
     The live probe adapter used to keep its own two retries under one pacer slot: on a target
     answering 429 to every first send, 17 nominal probes were 34 requests, half of them 53 ms
     after the last, and the ledger was charged 17 (leftovers of the 2026-10-03 audit). Same
     shape as the judge: no adapter retries, a :class:`MeteredAdapter` owns them. A breach of
-    ``max_requests`` raises :class:`ProbeCeilingReached`, carrying the requests really sent so
-    the caller can record them.
+    the ledger's request ceiling raises :class:`ProbeCeilingReached`, carrying the requests
+    really sent.
+
+    The caller owns ``ledger`` so it can read what was sent however the pass ends: an
+    environment or product error, Ctrl-C or SIGTERM end it with an exception that carries no
+    count, and a resumed run lost those requests (u12 A-46). ``None`` is an unbounded ledger.
     """
 
     adapter = build_probe_adapter(
@@ -896,7 +900,7 @@ def fingerprint_probe(
         # Recording is innermost, so what is stored is every send that went on the wire.
         adapter = cast("TargetAdapter", _RecordingAdapter(adapter, evidence, run_id))
     meter = SendMeter()
-    ledger = BudgetLedger(max_requests=max_requests)
+    ledger = ledger if ledger is not None else BudgetLedger()
     metered = MeteredAdapter(inner=adapter, meter=meter)
     try:
         with meter.bound(ledger, RateLimiter(rate_rps)):
