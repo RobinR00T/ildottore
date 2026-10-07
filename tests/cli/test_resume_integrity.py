@@ -227,6 +227,51 @@ def test_an_integrity_record_nested_too_deeply_is_corrupt(tmp_path: Path, column
         )
 
 
+def test_a_stored_column_is_bounded_at_a_hundred_levels() -> None:
+    """Under the parser's stack a value can still be too deep to write back (below)."""
+
+    from ildottore.store.run_sqlite import _loads
+
+    assert _loads("[" * 100 + "]" * 100) is not None
+    with pytest.raises(ValueError, match="nested too deeply"):
+        _loads("[" * 101 + "]" * 101)
+    with pytest.raises(ValueError, match="nested too deeply"):
+        _loads('{"a": ' * 101 + "1" + "}" * 101)
+
+
+def test_a_context_too_deep_to_write_back_is_corrupt(tmp_path: Path) -> None:
+    """110,000 levels inside the scope list parse on 3.14, and the resume that wrote the
+    context back overflowed `json.dumps` (past about 104,500): a traceback and exit 1
+    (pre-merge audit of #61). An older parser refuses the text first; exit 3 either way."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    deep = "[" * 110_000 + "]" * 110_000
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        raw = store._conn.execute(
+            "SELECT context_json FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        assert '"scope_sha256s":["' in raw, "precondition: the stored form the edit targets"
+        edited = raw.replace('"scope_sha256s":["', '"scope_sha256s":[' + deep + ',"')
+        store._conn.execute(_SET_COLUMN["context_json"], (edited, run_id))
+        store._conn.commit()
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            *("-t", str(tmp_path / "target.yaml"), "--scope", str(tmp_path / "scope.yaml")),
+            *("--spec-path", str(spec_dir), "--resume", run_id, "--budget-requests", "100"),
+            *("--concurrency", "1", "-q", "--evidence-root", str(tmp_path / "ev")),
+            *("--run-db", str(tmp_path / "runs.sqlite")),
+        ],
+    )
+
+    assert result.exit_code == ExitCode.ERROR, (result.exception, result.stderr[-300:])
+    errors = [line for line in result.stderr.splitlines() if line.startswith("error:")]
+    assert len(errors) == 1 and "context_json is not readable JSON" in errors[0]
+
+
 def test_the_cli_exits_3_on_a_run_store_nested_too_deeply(tmp_path: Path) -> None:
     """Clause A-9 through the command itself: one `error:` line and exit 3."""
 
@@ -495,15 +540,15 @@ def test_the_route_cannot_be_flipped_by_the_unverified_flag(tmp_path: Path) -> N
         execute_run(flipped, [spec_dir])
 
 
-def test_a_context_row_missing_its_target_digest_refuses(tmp_path: Path) -> None:
-    """A row that exists but carries no digest verified nothing, silently and with no notice."""
+@pytest.mark.parametrize("context", ['{"runs": 3}', '{"target_digest": null}'])
+def test_a_context_row_missing_its_target_digest_refuses(tmp_path: Path, context: str) -> None:
+    """A row that exists but carries no digest verified nothing, silently and with no notice.
+    A null digest with no count gets this refusal too, not the one about the count."""
 
     spec_dir = _specs(tmp_path)
     run_id = _halted_run(tmp_path, spec_dir)
     with SqliteRunStore(tmp_path / "runs.sqlite") as store:
-        store._conn.execute(
-            "UPDATE runs SET context_json = ? WHERE run_id = ?", ('{"runs": 3}', run_id)
-        )
+        store._conn.execute("UPDATE runs SET context_json = ? WHERE run_id = ?", (context, run_id))
         store._conn.commit()
 
     with pytest.raises(ValueError, match=r"no flag for this|target and the route"):

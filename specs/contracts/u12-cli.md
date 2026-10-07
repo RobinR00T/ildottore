@@ -140,10 +140,11 @@ A file nested past the JSON parser's stack is one of them (2026-10-07): `json.lo
 `RecursionError`, which is not a `ValueError`, and `diff`, `calibrate`, `replay` and
 `run --resume` exited 1 on it. The fix is where the file or column is parsed, into a
 `ValueError` that names the file or the column. So is a value that parsed and overflowed later,
-when it was formatted or walked: a report's run status is formatted only as text, and a YAML
-file (spec, scope, target, fleet, labels, pack) is refused past 100 levels with its aliases
-expanded, which chained anchors reach from 4 KB of text (`tests/cli/test_deep_json.py`,
-`test_replay.py`, `test_resume_integrity.py`).
+when it was formatted, walked or written back: a report's run status is formatted only as
+text, a run store column is refused past 100 levels, and a YAML file (spec, scope, target,
+fleet, labels, pack) is refused past 100 levels with its aliases expanded, which chained anchors
+reach from 4 KB of text (`tests/cli/test_deep_json.py`, `test_replay.py`,
+`test_resume_integrity.py`).
 
 **A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
 belongs to a different target, and refuses when no run store is available to check. Unbound, it

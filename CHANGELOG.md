@@ -16,20 +16,24 @@ versioning: [SemVer](https://semver.org/).
   now refuse it with exit 3 and one `error:` line that names the file and quotes none of it. A
   report that is not UTF-8 or not JSON names its file too: `Expecting value: line 1 column 1 (char
   0)` did not say which of the two files it was. These messages name the report by its absolute
-  path, never followed by a colon: the CLI keeps an existing absolute path readable, and a relative
-  path, or `<path>:`, is not one, so a report named after a commit SHA had its name masked as a
-  high-entropy value (a directory whose name holds a space still cuts the path short, as in every
-  message of the CLI). Found by the pre-merge audit of #51.
+  path, quoted and escaped as an `OSError` names a file, never followed by a colon: the CLI keeps an
+  existing absolute path readable, and a relative path, or `<path>:`, is not one, so a report named
+  after a commit SHA had its name masked as a high-entropy value; and a newline in the name would
+  have split the line. A directory whose name holds a space or one of `()[],;'"` still cuts the path
+  short, as in every message of the CLI. Found by the pre-merge audit of #51.
 - **A value that parses and overflows later.** On 3.14 the parser holds about 116,000 levels and
   `repr` overflows from about 69,500, so a report whose run status carried a reason nested 70,000
   levels deep was read and then overflowed when the refusal of an incomplete run formatted it (exit
   1). The state and the reason are used only when they are text, as this tool writes them.
 - **The run store had the same hole.** `dottore replay` and `dottore run --resume` read JSON columns
   from `--run-db`, and a battery, context or spend record nested too deeply exited 1 the same way.
-  It now reads as unreadable JSON (exit 3, `<column> is not readable JSON`). A finding's evidence
-  references nested too deeply are handled as unreadable references always were (that finding's
-  references cannot be checked; artifacts the journal recorded still are), instead of aborting the
-  replay.
+  It now reads as unreadable JSON (exit 3, `<column> is not readable JSON`), and so does a column
+  deeper than 100 levels (this tool writes them at most 3 deep): under the parser's stack a value
+  could still be too deep to write back, 110,000 levels parse on 3.14 and `json.dumps` overflows
+  past about 104,500, so a resume that rewrote the context exited 1 (already on main; pre-merge
+  audit). A finding's evidence references nested too deeply are handled as unreadable references
+  always were (that finding's references cannot be checked; artifacts the journal recorded still
+  are), instead of aborting the replay.
 - **A stored figure that is not an amount is corrupt.** `run --resume` converted the stored spend
   and `--runs` with `int()` and `float()`: an infinity or a list raised `OverflowError` or
   `TypeError` (a traceback and exit 1), an integer too large for a float did the same when the
@@ -48,14 +52,16 @@ versioning: [SemVer](https://semver.org/).
   target, fleet, labels, policy and signature packs) now refuses a document deeper than 100 levels
   with its aliases expanded (the repository's own files nest at most 11), measured on the node graph
   before anything is built, so shared aliases are not expanded to measure them, and reported where
-  the nesting crosses the limit; a recursive alias is refused there too, as the spec loader already
-  did.
+  the nesting crosses the limit (nesting written out deep enough to overflow the composer itself, a
+  few hundred levels, is still refused without a position); a recursive alias is refused there too,
+  as the spec loader already did.
 - **Checked, nothing to fix:** an evidence artifact is parsed by pydantic, which stops at its own
-  depth limit with a validation error (exit 3); a deep value inside a finding is refused by pydantic
-  (exit 3); and at the depths the 3.14 parser accepts, no other command overflowed afterwards
-  (probed from 500 to 116,000 levels, arrays and objects, as a whole report, inside a finding and in
-  each run store column, alone and next to valid content). Tests: `tests/cli/test_deep_json.py`, and
-  the nested, spend and `--runs` cases in `tests/cli/test_replay.py` and
+  depth limit with a validation error (exit 3); a deep value in a typed field of a finding is
+  refused by pydantic (exit 3), and one in a free-form field (`request.metadata`) is read and
+  ignored; and at the depths the 3.14 parser accepts, no other read of a report overflowed
+  afterwards (probed from 500 to 116,000 levels, arrays and objects, as a whole report, inside a
+  finding and in its run status). Tests: `tests/cli/test_deep_json.py`, and the nested, column
+  depth, spend and `--runs` cases in `tests/cli/test_replay.py` and
   `tests/cli/test_resume_integrity.py`.
 
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)

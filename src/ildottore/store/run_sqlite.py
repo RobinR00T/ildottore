@@ -345,7 +345,8 @@ class SqliteRunStore:
         # invocation's default instead and wrote it over the record (delta audit).
         fields = context or {}
         runs = fields.get("runs")
-        recorded = "runs" in fields or "target_digest" in fields
+        # A null digest is the target refusal's case, which no flag waives (delta audit of #61).
+        recorded = "runs" in fields or fields.get("target_digest") is not None
         if recorded and (isinstance(runs, bool) or not isinstance(runs, int) or runs < 1):
             raise CorruptRunContext(
                 "context_json holds no runs value, or one that is not a positive whole number. "
@@ -543,18 +544,35 @@ class CorruptRunContext(ValueError):
     """
 
 
-def _loads(raw: str) -> Any:
-    """``json.loads`` for a stored column, where nesting past the parser's stack is bad JSON too.
+#: The deepest a stored column may nest. This tool writes them at most 3 levels deep.
+_MAX_COLUMN_DEPTH = 100
 
-    It raises ``RecursionError`` there, which is not a ``ValueError``, so every reader of these
-    columns let it through and ``replay`` or ``run --resume`` on a tampered store exited 1, the
-    code for findings below ``--fail-on`` (2026-10-07).
+
+def _loads(raw: str) -> Any:
+    """``json.loads`` for a stored column, where a value nested too deeply is bad JSON too.
+
+    Past the parser's stack it raises ``RecursionError``, which is not a ``ValueError``, so every
+    reader of these columns let it through and ``replay`` or ``run --resume`` on a tampered store
+    exited 1, the code for findings below ``--fail-on`` (2026-10-07). Under that stack a value can
+    still be too deep to write back: 110,000 levels parse on 3.14 and ``json.dumps`` overflows
+    past about 104,500, so a resume that rewrote the context exited 1 too (pre-merge audit of
+    #61). A column is refused past :data:`_MAX_COLUMN_DEPTH` levels, measured without recursion.
     """
 
     try:
-        return json.loads(raw)
+        value = json.loads(raw)
     except RecursionError as exc:
         raise ValueError("nested too deeply to read") from exc
+    level = [(value, 1)]
+    while level:
+        item, depth = level.pop()
+        if depth > _MAX_COLUMN_DEPTH:
+            raise ValueError("nested too deeply to read")
+        if isinstance(item, dict):
+            level.extend((child, depth + 1) for child in item.values())
+        elif isinstance(item, list):
+            level.extend((child, depth + 1) for child in item)
+    return value
 
 
 def _is_amount(value: object) -> bool:
