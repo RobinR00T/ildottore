@@ -85,8 +85,10 @@ and
 are required; the rest are needed only for a live scan.
 .B capabilities
 takes tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal and audio, each
-false unless set; any other key, or a capabilities that is not a mapping (false and [] included),
-is refused before anything is sent. To declare none, leave it out or write {}.
+false unless set; any other key, or a capabilities that is neither a mapping nor null (false and
+[] included), is refused before anything is sent. To declare none, leave it out or write {}. A
+capabilities line with nothing under it is null, so keys below it that lost their indent are
+top-level keys, which are still ignored.
 .B sampling_defaults
 is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
 their own sampling.
@@ -150,7 +152,11 @@ anthropic, otherwise rest.
 .B api_key_env
 names an environment variable, never the key itself. Each entry becomes a chatbot target (an
 mcp one an api target) with no seeded_setup, so a spec that needs documents, tools or memory is
-setup_not_seeded there; scan those with a target file.
+setup_not_seeded there; scan those with a target file. An entry's
+.B capabilities
+takes the target file's keys; its target file gets tools false (true for an mcp entry) and rag
+false unless the entry sets them, plus every key it sets, and a key capabilities does not know is
+refused before anything is written.
 .SH "SEE ALSO"
 .BR dottore (1)
 .PP

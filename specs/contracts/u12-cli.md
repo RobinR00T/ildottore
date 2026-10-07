@@ -330,14 +330,16 @@ file it wrote, with exit 0, where the loader then dropped it. Now:
   for `kind: mcp`) and `rag` overridden by exactly the keys the entry wrote, as before, though in
   the model's field order rather than the order written (same values, same loaded target).
 
-`tests/cli/test_target_capabilities_strict.py`: 18 of its 39 tests fail on `2f6201a`, each on the
+`tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`, each on the
 old behavior (the file loads, or the command exits 0); the other 21 guard what stays (a file with no
 capabilities, every known key, the values that were already refused, what `fleet` writes) and that
 the redactor leaves each test value readable, and one loads every target and fleet file under
 `examples/`, `specs/` and `tests/` and every such YAML block of the docs through the real loaders.
 Refusing both is the owner's call (OD-29), built as the smallest reversible change: the filter and
 the `or {}` in `load_target`, and `dict[str, bool]` in `FleetTarget` with `**entry.capabilities`
-in `_target_doc`, undo it. Outside the clause, and said so rather than pinned (pre-commit audit):
+in `_target_doc` (the `Capabilities` import in `cli/fleet.py` then goes, or ruff fails), undo it,
+with this test file removed. Outside the clause, and said so rather than pinned (pre-commit and
+delta audits):
 * a top-level key a target file does not know (`endpont:`, or `tools: true` under a
   `capabilities:` left empty by a lost indent) is still dropped without a word, and so is a `name`,
   `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text;
@@ -348,15 +350,18 @@ in `_target_doc`, undo it. Outside the clause, and said so rather than pinned (p
 * an unknown key is printed as the location, as A-45 says of any key: one that is not text as
   pydantic renders it (`on:` as `1`, `off:` as `0`, `~:` as `None`), an empty key as `<root>`, and
   control characters as written until #51 writes them out; a credential pasted as a key is printed
-  as any key is, masked only by the redactor's own rules (an `sk-` key by its entropy; a 64-hex
-  string stays readable, as digests do);
+  as any key is, masked only by the redactor's entropy rule, which masks an `sk-` key and most
+  random 64-hex strings but leaves a low-entropy one readable (about 1 in 20 random 64-hex keys,
+  and the tests' repeated value);
 * every unknown key is listed on the one line, as `sampling_defaults` lists them on `2f6201a`
   (20,000 keys gave a 789 KB line); the default of 20 listed problems that #76
   (`fix/operator-file-read-cap`) gives `validation_problems` bounds both once it lands;
 * a run halted before this change with such a key resumes once the key is deleted (it was never
   read, so the target is the same; measured end to end, exit 0) and is refused as another target
   once the key is corrected to the one meant, which changes the capabilities; that refusal's
-  advice to restore the target as it was cannot be followed, since that file no longer loads.
+  advice to restore the target as it was is followed by deleting the key, since the file as
+  written no longer loads. A `capabilities: false` resumes the same way once deleted or written
+  as `{}`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
@@ -385,4 +390,5 @@ in `_target_doc`, undo it. Outside the clause, and said so rather than pinned (p
   or leaving the key out says it too). A file that loads on main and is refused now holds a key
   `Capabilities` does not know or a `capabilities` of `false`, `0`, `[]` or `""`; no file of the
   repository does. Reversal: the filter and the `or {}` in `load_target`, `dict[str, bool]` in
-  `FleetTarget` and `**entry.capabilities` in `_target_doc`.
+  `FleetTarget` and `**entry.capabilities` in `_target_doc` (dropping the `Capabilities` import in
+  `cli/fleet.py`), and `tests/cli/test_target_capabilities_strict.py` removed.

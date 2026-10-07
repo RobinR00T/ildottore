@@ -235,6 +235,28 @@ def test_the_fleet_command_refuses_a_typo_and_writes_nothing(tmp_path: Path) -> 
     assert not out.exists()
 
 
+def test_the_fleet_command_refuses_a_judge_file_with_a_typo(tmp_path: Path) -> None:
+    """The judge file matches the fleet's declaration, so on ``2f6201a`` `fleet --judge` wrote
+    the scope and the files with exit 0 (delta audit: no test went through this path)."""
+
+    endpoint = "http://localhost:11434/v1/chat/completions"
+    path = write_fleet(
+        tmp_path, LLM + f"judge:\n  id: local-judge\n  endpoint: {endpoint}\n  model: j\n"
+    )
+    judge = tmp_path / "judge.yaml"
+    judge.write_text(
+        f"id: local-judge\ntype: model\nprovider: openai\nendpoint: {endpoint}\nmodel: j\n"
+        "capabilities:\n  tool: true\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+
+    result = runner.invoke(app, ["fleet", str(path), "--judge", str(judge), "--out", str(out)])
+
+    assert "tool: Extra inputs are not permitted" in refusal(result, judge)
+    assert not out.exists()
+
+
 #: (fleet entry, the ``capabilities`` the generated target file must hold, key for key).
 FLEET_CAPABILITIES = {
     "llm, none written": (LLM, {"tools": False, "rag": False}),

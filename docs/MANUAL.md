@@ -224,9 +224,12 @@ is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `tem
 for `tools:` is refused (`tool: Extra inputs are not permitted`); until 2026-10-07 it was ignored,
 and the target ran with tools off and without the specs that need them. A `capabilities` that is
 not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
-included: to declare none, leave the key out or write `capabilities: {}` (open decision OD-29). A
-run halted before then with such a key resumes once you delete the key, which was never read;
-correcting it to the key you meant changes the target, and the resume is refused.
+included, unless it is null: to declare none, leave the key out or write `capabilities: {}` (open
+decision OD-29). A `capabilities:` with nothing under it is null too, so if the keys below it lost
+their indent they are top-level keys, which are still ignored without a word. A run halted before
+this change with such a key or value resumes once you delete it (or write `{}` for `false`), since
+it was never read; correcting a key to the one you meant changes the target, and the resume is
+refused.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.

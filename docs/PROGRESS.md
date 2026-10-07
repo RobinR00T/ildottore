@@ -16,7 +16,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   Found while writing it and left as its own task: a top-level key a target file does not know
   (`endpont:`, or a `capabilities` block whose indent was lost) and a `name`, `provider`,
   `endpoint`, `model`, `auth_ref` or `transport` that is not text are still dropped without a
-  word. `tests/cli/test_target_capabilities_strict.py`: 18 of its 39 tests fail on `2f6201a`.
+  word. `tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`.
+  Pre-commit and delta audits found nothing high or medium; their lows (key order in what `fleet`
+  writes, keys printed as pydantic renders them, a long line until #76, how a halted run resumes,
+  the reversal recipe) are written in A-50. PR #78, open for the owner's decision.
 
 ## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
 

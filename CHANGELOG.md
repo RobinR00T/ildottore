@@ -26,7 +26,7 @@ versioning: [SemVer](https://semver.org/).
   owner's call, open as OD-29 and built as the smallest reversible change. Still dropped without a
   word, and written in the clause: a top-level key a target file does not know, and a `name`,
   `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text. Contract u12 A-50;
-  `tests/cli/test_target_capabilities_strict.py` (18 of its 39 tests fail on `2f6201a`).
+  `tests/cli/test_target_capabilities_strict.py` (19 of its 40 tests fail on `2f6201a`).
 
 ### Fixed (a resumed run recorded its `-sV` probe pass only when the ceiling stopped it)
 
