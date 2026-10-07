@@ -224,27 +224,37 @@ or anything stopping the run between a pass that succeeded and the runner's ledg
 the pass the same way; the next resume then probed again against a ceiling that had never seen
 those requests (delta audit of PR #68, reproduced on main `0501752`). The CLI now owns the pass's
 ledger and, on a resume whose spend is recorded, writes the prior spend plus every request the
-pass sent, retries included, as soon as the pass ends, success included. That write sits inside
-the handlers: placed after them, a real SIGINT a few milliseconds after the last probe lost all 17
-in 2 of 16 tries (pre-commit audit). When an error or a signal stops the pass, stderr says how many
-requests it sent and what the run now records, even under `-q`: the error's own text says
-`exhausted 1 attempt(s)` after three sends, because the meter, not the adapter, owns the retries
-(the ceiling's refusal gives its own count). Each probe is counted once: the store keeps the
-highest figure per axis, so the runner's later record of the same probes plus the attack does not
-add them again. A send in flight when a signal arrives is counted, so the record can exceed what
-the target received by that one request. It falls below only if a second signal lands while the
-record is being written (a few milliseconds), which, like a SIGKILL, loses the pass; that second
-signal can also cut the stderr line. Not recorded, as on the ceiling path before: a fresh run's
-pass (its run row is written after the pass, so there is nothing to resume) and a
-`--resume-unverified` run whose spend was never recorded (it was told its ceiling covers that
-invocation alone). Such a resume that completes still records its own invocation's spend as the
-run's, which predates this clause and is not changed by it. A failed write is a warning and never
-replaces the error or the Ctrl-C that stopped the pass. Checked through the real CLI against a
-counting stub by `tests/cli/test_probe_pass_spend.py`: a 503, a 401 and a 200 that is not JSON on
-the first and on the sixth probe, SIGINT and SIGTERM sent to a subprocess with a probe on the
-wire, an interruption at the write after a pass that succeeded, a stop after that write, a resume
-that completes, and the two cases not recorded, each comparing the store with what the stub
-served.
+pass sent, retries included, as soon as the pass ends, success included. Requests are counted as
+the ledger counts them, every send attempted: one that never reached the target (a refused
+connection) counts, as it does for the attack traffic, and so does a send in flight when a signal
+arrives. Each probe is counted once: the store keeps the highest figure per axis, so the runner's
+later record of the same probes plus the attack does not add them again.
+
+Signals were the hard part, found by two audit rounds. The write after a pass that succeeded sits
+inside the handlers: placed after them, a real SIGINT a few milliseconds after the last probe lost
+all 17 in 2 of 16 tries (pre-commit audit). A handler's own write has nothing after it, and one
+SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries (delta audit), so a
+signal during the write is absorbed once: the record is written again, then the interrupt goes
+on. The record falls below what was sent only if a second signal lands within those milliseconds,
+which loses it like a SIGKILL, or if the write itself fails, which is a warning and never
+replaces the error or the Ctrl-C that stopped the pass.
+
+When an error or a signal ends the pass before its record is complete, stderr says how many
+requests it sent and what the run now records, or that they could not be added, even under `-q`:
+the error's own text says `exhausted 1 attempt(s)` after three sends, because the meter, not the
+adapter, owns the retries (the ceiling's refusal gives its own count). A signal absorbed during a
+handler's write cuts that line. Not recorded, as on the ceiling path before: a fresh run's pass
+(its run row is written after the pass, so there is nothing to resume) and a `--resume-unverified`
+run whose spend was never recorded (it was told its ceiling covers that invocation alone). Such a
+resume that completes still records its own invocation's spend as the run's, which predates this
+clause and is not changed by it.
+
+Checked through the real CLI against a counting stub by `tests/cli/test_probe_pass_spend.py`: a
+503, a 401 and a 200 that is not JSON on the first and on the sixth probe; SIGINT and SIGTERM sent
+to a subprocess with a probe on the wire; an interruption at the write after a pass that
+succeeded, and at a handler's write after a 503 and at the ceiling; a write that fails; a stop
+after the write; a resume that completes; and the two cases not recorded, each comparing the store
+with what the stub served.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the

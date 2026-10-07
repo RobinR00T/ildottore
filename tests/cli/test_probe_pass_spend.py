@@ -315,10 +315,82 @@ def test_a_signal_on_the_write_after_a_successful_pass_still_records_it(
 
     probes = fingerprint_probe_count()
     assert resumed.exit_code != 0
-    assert calls == [_HALT_AT + probes] * 2, "interrupted after the pass, then written again"
     assert state["served"] == _HALT_AT + probes
     assert _recorded(tmp_path, run_id) == state["served"]
+    assert calls == [_HALT_AT + probes] * 2, "interrupted after the pass, then written again"
     assert f"stopped after {probes} request(s), retries included" in resumed.stderr
+
+
+@pytest.mark.usefixtures("no_delay")
+@pytest.mark.parametrize("stop", ["error", "ceiling"])
+def test_a_signal_on_a_handlers_write_is_absorbed_once(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], monkeypatch: pytest.MonkeyPatch, stop: str
+) -> None:
+    """A handler's write has no handler after it: one SIGINT landing there lost the pass in 2 of
+    41 real tries just after a 503 stop (delta audit). The write is made again once."""
+
+    from ildottore.cli import run as run_mod
+
+    port, state = stub
+    run_id = _halted_run(tmp_path, port, state)
+    probes = fingerprint_probe_count()
+    if stop == "error":
+        state["script"] = dict.fromkeys(range(_HALT_AT + 1, _HALT_AT + 10), _unavailable)
+        budget, sent = "200", 3
+    else:
+        # Two retries on the first probe push the pass past a ceiling sized for 17 probes.
+        state["script"] = dict.fromkeys((_HALT_AT + 1, _HALT_AT + 2), _unavailable)
+        budget, sent = str(_HALT_AT + probes), probes
+    write = run_mod._recorded_requests
+    calls: list[int] = []
+
+    def _interrupted_once(*args: Any, **kwargs: Any) -> int | None:
+        calls.append(state["served"])
+        if len(calls) == 1:
+            raise KeyboardInterrupt
+        return write(*args, **kwargs)
+
+    monkeypatch.setattr(run_mod, "_recorded_requests", _interrupted_once)
+    resumed = CliRunner().invoke(
+        app, _argv(tmp_path, port, "--budget-requests", budget, "--resume", run_id)
+    )
+
+    assert resumed.exit_code != 0
+    assert state["served"] == _HALT_AT + sent
+    assert _recorded(tmp_path, run_id) == state["served"]
+    assert len(calls) == 2, "the interrupted write, then the one made again"
+
+
+@pytest.mark.usefixtures("no_delay")
+def test_a_write_that_fails_is_said_and_keeps_the_error(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The count still reaches stderr when the store refuses it, and the 503 is still the error."""
+
+    from ildottore.cli import run as run_mod
+
+    port, state = stub
+    run_id = _halted_run(tmp_path, port, state)
+    state["script"] = dict.fromkeys(range(_HALT_AT + 1, _HALT_AT + 10), _unavailable)
+
+    def _locked(*_a: object, **_k: object) -> int:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(run_mod, "_persist_spend", _locked)
+    resumed = CliRunner().invoke(
+        app, _argv(tmp_path, port, "--budget-requests", "200", "--resume", run_id)
+    )
+
+    assert resumed.exit_code == 3, resumed.output
+    assert f"warning: the spend of {run_id} could not be recorded: database is locked" in (
+        resumed.stderr
+    )
+    assert (
+        "resume: the -sV probe pass on 'hostile' stopped after 3 request(s), retries included; "
+        f"they could not be added to the spend of {run_id}"
+    ) in resumed.stderr
+    assert "HTTP 503" in resumed.stderr
+    assert _recorded(tmp_path, run_id) == _HALT_AT, "the documented loss of a failed write"
 
 
 @pytest.mark.usefixtures("no_delay")

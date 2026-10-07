@@ -1343,11 +1343,16 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 # retries of its own (the meter owns them), so three 503s read "exhausted 1
                 # attempt(s)". The count is the ledger's. Plain print, as the resume notice.
                 recorded = _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
-                if recorded is not None:
+                sent = probe_ledger.spend().requests
+                if prior_spend is not None and sent:
                     print(
-                        f"resume: the -sV probe pass on {target.id!r} stopped after "
-                        f"{probe_ledger.spend().requests} request(s), retries included; "
-                        f"{run_ids[target.id]} now records {recorded} request(s) spent",
+                        f"resume: the -sV probe pass on {target.id!r} stopped after {sent} "
+                        "request(s), retries included; "
+                        + (
+                            f"{run_ids[target.id]} now records {recorded} request(s) spent"
+                            if recorded is not None
+                            else f"they could not be added to the spend of {run_ids[target.id]}"
+                        ),
                         file=sys.stderr,
                     )
                 raise
@@ -1947,16 +1952,25 @@ def _charge_probe_pass(
     loses nothing either. The figure is written whole, not added: the store keeps the highest
     per axis, so the runner's later record of the same probes plus the attack counts each probe
     once. Returns the requests the store then holds, or ``None`` when nothing was recorded:
-    nothing sent, a failed write, or no prior spend. A fresh run has no row a resume could open
-    (its run row is written after the pass), and a ``--resume-unverified`` run without a
-    recorded spend was told its ceiling covers this invocation alone, so a figure of the probes
-    alone would understate the campaign while looking like its total.
+    nothing sent, no prior spend, or a failed write (a warning says so). No prior spend is a
+    fresh run, whose run row is written after the pass so there is nothing to resume, or a
+    ``--resume-unverified`` run with no recorded spend, told its ceiling covers this invocation
+    alone; neither recorded the probes before, at the ceiling either.
     """
 
     sent = ledger.spend().requests
     if prior is None or sent == 0:
         return None
-    return _recorded_requests(run_db, run_id, prior.plus(Spend(requests=sent)))
+    spend = prior.plus(Spend(requests=sent))
+    try:
+        return _recorded_requests(run_db, run_id, spend)
+    except KeyboardInterrupt:
+        # A signal during the write. In the probe loop's handlers nothing catches it after,
+        # and one landing there lost the pass in 2 of 41 real SIGINTs just after a 503 stop
+        # (delta audit). Written again once, then let through: only a second signal within
+        # these milliseconds loses it now.
+        _recorded_requests(run_db, run_id, spend)
+        raise
 
 
 def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> int:

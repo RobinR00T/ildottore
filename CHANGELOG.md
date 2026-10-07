@@ -16,21 +16,27 @@ versioning: [SemVer](https://semver.org/).
   next resume then probed again against a ceiling that had never seen those requests. The CLI now
   owns the pass's ledger and writes the prior spend plus every request the pass sent, retries
   included, as soon as the pass ends, success included; each probe is counted once, because the
-  store keeps the highest figure per axis. When an error or a signal stops the pass, stderr says
-  how many requests it sent and what the run now records, under `-q` too: `resume: the -sV probe
-  pass on 'api' stopped after 3 request(s), retries included; run-<id> now records 23 request(s)
-  spent` (the ceiling's refusal gives its own count). A send in flight when a signal arrives is
-  counted, so the record can exceed what the target received by that one request; it falls below
-  only if a second signal lands during the few milliseconds of the write, which loses the pass like
-  a SIGKILL. The pre-commit audit found the first version writing after a successful pass outside
-  the handlers: a real SIGINT a few milliseconds after the last probe lost all 17 in 2 of 16 tries.
-  A fresh run stopped by its pass (no run row, nothing to resume) and a `--resume-unverified` run
-  whose spend was never recorded record nothing, as before. Found by the delta audit of PR #68,
-  reproduced on main `0501752`. Contract u12 A-46; `tests/cli/test_probe_pass_spend.py` (13 tests,
-  through the real CLI against a counting stub, SIGINT and SIGTERM in a subprocess). 10 fail on
-  `0501752`: nine on their store assertion, and the one that interrupts the write after a
-  successful pass because that write does not exist there (it fails on its store assertion with
-  the write moved back outside the handlers).
+  store keeps the highest figure per axis. Requests are counted as the ledger counts them, every
+  send attempted: a refused connection counts, as for the attack traffic, and so does a send in
+  flight when a signal arrives. When an error or a signal ends the pass before its record is
+  complete, stderr says how many requests it sent and what the run now records (or that they could
+  not be added), under `-q` too: `resume: the -sV probe pass on 'api' stopped after 3 request(s),
+  retries included; run-<id> now records 23 request(s) spent` (the ceiling's refusal gives its own
+  count). A fresh run stopped by its pass (no run row, nothing to resume) and a
+  `--resume-unverified` run whose spend was never recorded record nothing, as before. Found by the
+  delta audit of PR #68, reproduced on main `0501752`. Contract u12 A-46.
+- **Signals, found by two audit rounds on this fix.** The first version wrote after a successful
+  pass outside the handlers, and a real SIGINT a few milliseconds after the last probe lost all 17
+  in 2 of 16 tries; the write is inside them now. A handler's own write had nothing after it, and
+  one SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries; a signal during
+  the write is now absorbed once (the record is written again, then the interrupt goes on). The
+  record falls below what was sent only if a second signal lands within those milliseconds, like a
+  SIGKILL, or the write fails, which is a warning that never replaces the error that stopped the
+  pass.
+- `tests/cli/test_probe_pass_spend.py`: 16 tests through the real CLI against a counting stub,
+  SIGINT and SIGTERM in a subprocess. 13 fail on `2f6201a`: nine on their store assertion, three
+  because the write they interrupt does not exist there (each fails on its store assertion with
+  its piece of the fix removed), and the failed write because main never attempts it.
 - **Still open: the error after those three sends says `exhausted 1 attempt(s)`.** The adapters
   are built with no retries of their own (the meter or the runner owns them), so the adapter's
   message counts its single send: in the error that stops a probe pass, and in an attack
