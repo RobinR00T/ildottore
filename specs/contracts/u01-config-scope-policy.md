@@ -21,7 +21,9 @@ present, and unkeyed, so it is not a signature (OD-2). Since 2026-10-05,
 `load_scope_with_digest()` returns the scope with the `scope_hash()` of the bytes it parsed, and
 `dottore run` records it in the run store and every report, audit D-17. Since 2026-10-06 a key
 written twice in one YAML mapping is refused with both positions, through `safe_yaml`, and two
-identities of one target with the same name or the same canary are refused.) Provide
+identities of one target with the same name or the same canary are refused. Since 2026-10-07 a
+scope or policy pack that is too large or too deep with its aliases expanded is refused before
+it is built, by the spec loader's own measure, A-37.) Provide
 `PolicyEngine.check(target, endpoint, spec)`
 → `allow` | `blocked_by_policy(reason)` answering: target in scope? endpoint on allowlist
 (default-deny, S3)? spec's category/id enabled by the active **policy pack**? dangerous payload
@@ -137,6 +139,67 @@ file's own `judge:` block, never from a `--judge` file, which could otherwise na
 any credential and have both written into the scope (SEC-04). Checks: the same file, plus
 `tests/cli/test_fleet.py`.
 
+**A-37 Every YAML file is measured with its aliases expanded, by one measure (added 2026-10-07).** A
+scope, target, fleet, labels, policy pack or signature pack file holding more than 100,000 nodes
+with every alias counted where it is used (a text one more node per 64 characters), nested deeper
+than 100 levels, or holding a recursive alias is refused before anything is built from it, as a YAML
+error with no quoted line (exit 3 at the CLI) and with the position where the value crosses the
+limit (nesting written out deep enough to overflow PyYAML's composer, a few hundred levels, has
+none). The measure is `safe_yaml.check_expanded`, the one the spec loader uses (u02 §4): one
+bottom-up pass over the node graph, each node measured once and each size saturating just past the
+cap, too deep reported before too large. Composition itself stops once the nodes written pass the
+cap, an alias counting the node it names (each document counted on its own), as the expanded value
+can only weigh more, so such a document is reported as too large before its depth or a recursion is
+checked; and a tag longer than 256 characters is refused there, unquoted. Only the spec loader had
+the size cap (SEC-09), so the loaders of the operator's own files expanded whatever they were given:
+an 835-byte labels file of 45 anchors, each a list of two aliases of the one before, ran `calibrate`
+past 25 s at 1.7 GB while it formatted the verdict, and a `<<` merging the previous map twice
+doubles the pairs inside PyYAML itself, so no caller had to walk the value (pre-merge audit of #61).
+The fix's own audits found four more ways to the same cost: a size without saturation grew with the
+square of an anchor chain, so the measure was itself the amplification; a measure run only on a
+composed document let a 3 MB list of plain texts cost 785 MB first; a count that skipped aliases let
+a list of aliases do the same; and a `%TAG` prefix, copied into the tag of every node that uses its
+handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Construction costs under the
+cap (a base-60 integer, integer keys sharing one hash) are A-41's; the byte size of the file read
+is A-43's. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
+position, a recursive alias's anchor, the precedence, where composition stops for texts, long texts,
+empty lists, aliases and aliases of a long text, the per-document count, the tag limit on texts,
+lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a subprocess bounded at
+20 s and 256 MiB: `calibrate` on the alias bomb and on the flat list, `run -t`, `run --scope`,
+`fleet`, and `lint` on a merge bomb).
+
+**A-41 A YAML value that costs far more to build than it weighs is refused before it is built (added
+2026-10-07).** Every loader (the spec loader and `safe_yaml.safe_load`, so the scope, target, fleet
+and labels files and the policy and signature packs) refuses, as it composes the document and before
+anything is built, a number written in more than 1,000 characters (`cannot build this value (a
+number written in over 1000 characters)`), wherever it is written (a value, a key, a list item, in
+flow, at the root), and the key that takes a document past 1,000 keys that are numbers, in block or
+flow mappings, a key merged in by `<<` counted in every mapping it is merged into, through as many
+merges as pass it on (`document has over 1000 keys that are numbers ...`): a YAML error at that
+number, that key or what the `<<` merges in, quoting no value, exit 3 at the CLI and a `PARSE_ERROR`
+in `lint`. The rest of the file is not parsed. The size cap (A-37) bounds what a document holds, not
+what PyYAML spends building it, and two shapes cost far more than they weigh: YAML 1.1 reads
+`1:59:59` as a base-60 integer, built by a loop whose time grows with the square of its length, and
+integers that differ by a multiple of `sys.hash_info.modulus` share one hash, so the dict of a
+mapping of them is built in time that grows with the square of their count. A spec just under the 1
+MiB cap took `lint` 55 s with one base-60 value and 24 s with 36,320 such keys, and `run --dry-run`
+accepted a 450 KB target with a base-60 value after 37 s and a 1.3 MB target with 45,000 such keys
+after 247 s, at a load average of 6 to 10 on 15 cores (found by the pre-commit audit of A-37,
+measured on its branch); each is now refused in 1 to 1.5 s. The keys are counted from their tags, so
+before any of them is hashed, and across the whole document, not per mapping: 1,000 keys per mapping
+still allowed about fifty such mappings under the node cap. Only numbers count: text, bytes, dates
+and timestamps without an offset hash with a key Python draws at random for each process, a
+timestamp with an offset hashes by its instant, with no thousand instants sharing one hash within
+reach, and booleans and null have three distinct values between them, a fourth being a repeated key.
+A number of 1,000 hexadecimal digits has about 1,204 decimal digits, under the 4,300 Python converts
+by default (a lower `PYTHONINTMAXSTRDIGITS` is A-40's). No YAML file the repository ships has a key
+that is a number or a number over 20 characters. Checks: `tests/cli/test_yaml_construction_cost.py`
+(each number notation at 1,001 characters in each position and at 1,000 as a value; a long text;
+1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge shapes,
+a map merged where it is written, a map that merges passing its keys on; where composition stops; a
+stream of documents; keys that are not numbers; both loaders; and in a subprocess bounded at 15 s:
+`lint` on each 1 MiB spec, and `run --dry-run` on the 450 KB and the 1.3 MB target).
+
 **A-43 An operator's file is read up to 1 MiB, and its validation errors are listed up to 20
 (added 2026-10-07).** The scope, target, fleet and labels files and the policy and signature
 packs are read through `shared.files.read_text_capped`: a regular file over 1 MiB
@@ -161,17 +224,20 @@ delta audit); one is held at a time. `shared.config_errors.validation_problems` 
 the spec loader cuts its schema messages; the scope, fleet and policy-pack loaders use that
 default, and so does the target loader for `capabilities` and `sampling_defaults` since #73
 (A-45). Both holes were found by the pre-commit audit of the alias-expansion cap (PR #71): the
-files were read whole with `Path.read_text`, so 100 MB of comments in a scope or labels file
-cost 39.5 s and 244 MB before the refusal and a sparse gigabyte of labels peaked at about 2 GiB
-(2,009 and 2,116 MiB in two measures), while a check on the parsed document bounds what is built
-from the text, not the text; and every validation error was listed whole, so a 5.5 MB scope with
-5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058 characters from
+files were read whole with `Path.read_text`, so a scope or labels file padded with 100 MB of
+comments was read and parsed whole (39.5 s and 244 MB) and a sparse gigabyte of labels peaked at
+about 2 GiB (2,009 and 2,116 MiB in two measures), and a limit on the parsed document does not
+bound the text it is parsed from; and every validation error was listed whole, so a 5.5 MB scope
+with 5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058 characters from
 `dottore run --dry-run`. The figure and reading any file type, not only a regular one, are the
 owner's decisions of 2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and
 a labels file through a pipe worked and still do, and a named pipe with no writer still blocks,
-as before. A target file cannot be a pipe, as before: `run` reads it four times and
-`fingerprint` three, so the second read of `<(...)` is empty and a named pipe blocks it. Not
-covered (OD-26): the report JSON that `dottore diff` and `calibrate` read, and the evidence
+as before. A target file could not be a pipe while `run` read it four times and `fingerprint`
+three; since #77 parses it once (A-42), `run -t <(...)`, `run --judge <(...)` and `fingerprint
+<(...)` read it through a pipe as well. An anchor used many times is A-37's, not this clause's:
+this read cap and the listing do not bound it (a 30,852-byte scope of aliases peaked at 1,066
+MiB in validation before A-37 was in, pre-merge audit), and A-37's node cap refuses that file.
+Not covered (OD-26): the report JSON that `dottore diff` and `calibrate` read, and the evidence
 artifacts `replay` and `run --resume` read. An error outside the validation listing quoted a
 value of the file whole (an unknown target `type`, a duplicate target id, an undefined YAML
 alias), bounded only by the 1 MiB read: A-51 cuts it. Checks:
@@ -267,34 +333,39 @@ ids get a length bound when they are loaded, as a fleet's already have (64 chara
 stdio `command` made of YAML aliases is joined into one text wherever the target is authorized
 (`wiring.request_url_for`, the engine's gate included) and in that advice: 20,000 aliases of one 10
 KB text, a 90 KB file, make a line of about 200 MB, 1.09 to 1.49 GB of resident memory and about 30
-s (five measures; the times depend on the machine), on this branch as on `a0bca70`. #71 (open) caps
-every YAML file at 100,000 nodes with its aliases expanded, which that file passes about 30 times
-over. Checks: `tests/cli/test_operator_file_quoted_values.py` (each refusal of the table through the
-CLI with a value past the cut: the line under 2,500 characters, the file named where the refusal
-names it, the exact cut and no mask; twenty ids or references listed and the rest counted, through
-`run`, `fingerprint` and the credential refusal; the three refusals of `--resume`; a `repr` of
-exactly 300 characters quoted whole and one of 301 cut; the head equal to the start of `repr` over
-generated values; a list and a mapping of aliases quoted, and refused as a `type` through
-`load_target`, under a memory bound; an integer Python will not write, and no other failure of
-`repr` hidden; nested aliases one level down; a verdict and a `provider` of aliases not turned into
-text; an integer labels key and `seeded_setup` key, and a date key written as before; verdicts in
-any case and with spaces; a stdio target real only with a command; a `transport` of aliases; twelve
-URLs urllib cannot read, through `run`, `fingerprint` and `fleet`, the endpoint never quoted by the
-target loader and its password never printed, by `fleet` either, a tab between the slashes and a
-second `@` included; an unreadable allowlist entry matching nothing whatever its place, an IPvFuture
-literal included; the variable name; a `--judge` file whose id differs from the fleet's judge; the
-UTF-8 refusal through each command, and its offset past one decoder chunk), and the reader test of
-`tests/cli/test_operator_file_cap.py`, changed on purpose from "the same `UnicodeDecodeError` as
-`read_text`" to "an `OSError` at the same byte, naming the file". On `4a572f0` (#76 with #81 merged
-in), with the new helpers stubbed to what the base does (`quoted` and fleet's `_shown_endpoint` as
-`repr`, `listed` as a plain join), 83 of these 106 tests (the 105 of the file and the changed reader
-test) fail, each for its reason; of the 23 that pass, 4 were fixed first by #81 (A-40: a labels key
-and a `provider` that are huge integers, a `provider` and a `transport` of aliases), and 19 guard
-what must not change (two of them, an endpoint with no user information quoted as `repr` quotes it):
-a short value quoted as before, any other failure of `repr` raised, verdicts in any case and with
-spaces, a stdio target real only with a command, a date key written as before. Of 75 mutants, one
-per site and one per fix of the six audits, 73 are killed; the two that live are equivalent (they
-quote a fleet id, which the fleet's model holds to 64 characters).
+s (five measures; the times depend on the machine), on this branch as on `a0bca70`. Since this
+branch merged #71, A-37's node cap (100,000 nodes with the aliases expanded) refuses that file when
+it is loaded (`document is too large`, exit 3, 0.3 s and 71 MB); under the cap a value's `repr` can
+still reach about 6.4 MB, which `quoted` never builds, and the memory tests use a 13 KB file of
+1,000 aliases of a 6,000-character text (a `repr` of 6,004,000 characters). The integer cases use a
+600-digit hex number under the digit limit Python allows at its lowest (640), as #77 refuses a YAML
+number of more than 1,000 characters. Checks: `tests/cli/test_operator_file_quoted_values.py` (each
+refusal of the table through the CLI with a value past the cut: the line under 2,500 characters, the
+file named where the refusal names it, the exact cut and no mask; twenty ids or references listed
+and the rest counted, through `run`, `fingerprint` and the credential refusal; the three refusals of
+`--resume`; a `repr` of exactly 300 characters quoted whole and one of 301 cut; the head equal to
+the start of `repr` over generated values; a list and a mapping of aliases quoted, and refused as a
+`type` through `load_target`, under a memory bound; an integer Python will not write, and no other
+failure of `repr` hidden; nested aliases one level down; a verdict and a `provider` of aliases not
+turned into text; an integer labels key and `seeded_setup` key, and a date key written as before;
+verdicts in any case and with spaces; a stdio target real only with a command; a `transport` of
+aliases; twelve URLs urllib cannot read, through `run`, `fingerprint` and `fleet`, the endpoint
+never quoted by the target loader and its password never printed, by `fleet` either, a tab between
+the slashes and a second `@` included; an unreadable allowlist entry matching nothing whatever its
+place, an IPvFuture literal included; the variable name; a `--judge` file whose id differs from the
+fleet's judge; the UTF-8 refusal through each command, and its offset past one decoder chunk), and
+the reader test of `tests/cli/test_operator_file_cap.py`, changed on purpose from "the same
+`UnicodeDecodeError` as `read_text`" to "an `OSError` at the same byte, naming the file". On
+`4a572f0` (#76 with #81 merged in), with the new helpers stubbed to what the base does (`quoted` and
+fleet's `_shown_endpoint` as `repr`, `listed` as a plain join), 83 of these 106 tests (the 105 of
+the file and the changed reader test) fail, each for its reason; of the 23 that pass, 4 were fixed
+first by #81 (A-40: a labels key and a `provider` that are huge integers, a `provider` and a
+`transport` of aliases), and 19 guard what must not change (two of them, an endpoint with no user
+information quoted as `repr` quotes it): a short value quoted as before, any other failure of `repr`
+raised, verdicts in any case and with spaces, a stdio target real only with a command, a date key
+written as before. Of 75 mutants, one per site and one per fix of the six audits, 73 are killed; the
+two that live are equivalent (they quote a fleet id, which the fleet's model holds to 64
+characters).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

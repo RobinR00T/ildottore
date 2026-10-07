@@ -86,6 +86,7 @@ __all__ = [
     "BuiltRunner",
     "ProbeCeilingReached",
     "ProbePass",
+    "TargetFile",
     "bare_adapter_factory",
     "build_evidence_store",
     "build_fingerprint_engine",
@@ -109,6 +110,7 @@ __all__ = [
     "load_target",
     "mock_adapter_factory",
     "planted_secrets",
+    "read_target_file",
     "real_adapter_factory",
     "request_url_for",
     "resolve_auth_ref",
@@ -870,7 +872,7 @@ def fingerprint_probe(
     evidence: FsEvidenceStore | None = None,
     run_id: str | None = None,
     mock_scenario: str | None = None,
-    max_requests: int | None = None,
+    ledger: BudgetLedger | None = None,
 ) -> ProbePass:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
@@ -879,13 +881,17 @@ def fingerprint_probe(
     paces the probes exactly like the attack traffic; ``None`` leaves them unpaced, which is
     what an offline mock wants.
 
-    Every wire send is paced, debited against ``max_requests`` and recorded, retries included.
+    Every wire send is paced, debited against ``ledger`` and recorded, retries included.
     The live probe adapter used to keep its own two retries under one pacer slot: on a target
     answering 429 to every first send, 17 nominal probes were 34 requests, half of them 53 ms
     after the last, and the ledger was charged 17 (leftovers of the 2026-10-03 audit). Same
     shape as the judge: no adapter retries, a :class:`MeteredAdapter` owns them. A breach of
-    ``max_requests`` raises :class:`ProbeCeilingReached`, carrying the requests really sent so
-    the caller can record them.
+    the ledger's request ceiling raises :class:`ProbeCeilingReached`, carrying the requests
+    really sent.
+
+    The caller owns ``ledger`` so it can read what was sent however the pass ends: an
+    environment or product error, Ctrl-C or SIGTERM end it with an exception that carries no
+    count, and a resumed run lost those requests (u12 A-46). ``None`` is an unbounded ledger.
     """
 
     adapter = build_probe_adapter(
@@ -899,7 +905,7 @@ def fingerprint_probe(
         # Recording is innermost, so what is stored is every send that went on the wire.
         adapter = cast("TargetAdapter", _RecordingAdapter(adapter, evidence, run_id))
     meter = SendMeter()
-    ledger = BudgetLedger(max_requests=max_requests)
+    ledger = ledger if ledger is not None else BudgetLedger()
     metered = MeteredAdapter(inner=adapter, meter=meter)
     try:
         with meter.bound(ledger, RateLimiter(rate_rps)):
@@ -1024,6 +1030,41 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
     return raw
 
 
+@dataclass(frozen=True)
+class TargetFile:
+    """A ``target.yaml`` parsed once: the target, and how a run routes it (u12 A-42).
+
+    ``run`` parsed the file again for each thing it asked of it, four times for a mock target and
+    five for a live one, so a file that was costly to build cost that many times over, and the
+    target handed to the adapter came from another read than the one the scope authorized
+    (pre-commit audit of the YAML size cap, 2026-10-07).
+    """
+
+    path: Path
+    target: Target
+    #: :func:`target_uses_mock` of the same text.
+    uses_mock: bool
+    #: The ``mock_scenario`` as written, checked only when the mock is used, as before.
+    scenario_written: object
+
+    def mock_scenario(self) -> str:
+        """:func:`load_mock_scenario` of the same text."""
+
+        return _mock_scenario(self.path, self.scenario_written)
+
+
+def read_target_file(path: Path) -> TargetFile:
+    """Parse ``target.yaml`` once into the target and its routing (:class:`TargetFile`)."""
+
+    raw = _read_target_yaml(path)
+    return TargetFile(
+        path=path,
+        target=_target_from(path, raw),
+        uses_mock=_uses_mock(raw),
+        scenario_written=raw.get("mock_scenario", "bare"),
+    )
+
+
 #: What a target file's ``type`` can say.
 _TARGET_TYPES = frozenset(t.value for t in TargetType)
 
@@ -1039,7 +1080,12 @@ def load_target(path: Path) -> Target:
     here (S6); it is resolved only at send time via :func:`resolve_auth_ref`.
     """
 
-    raw = _read_target_yaml(path)
+    return _target_from(path, _read_target_yaml(path))
+
+
+def _target_from(path: Path, raw: dict[str, Any]) -> Target:
+    """The :class:`Target` a parsed ``target.yaml`` declares (:func:`load_target`)."""
+
     target_id = raw.get("id")
     if not isinstance(target_id, str) or not target_id:
         raise ValueError(f"target file {path} is missing a string 'id'")
@@ -1223,8 +1269,12 @@ def load_mock_scenario(path: Path) -> str:
     verdict; the runtime :class:`Target` model is unchanged (this is composition config).
     """
 
-    raw = _read_target_yaml(path)
-    scenario = raw.get("mock_scenario", "bare")
+    return _mock_scenario(path, _read_target_yaml(path).get("mock_scenario", "bare"))
+
+
+def _mock_scenario(path: Path, scenario: object) -> str:
+    """The ``mock_scenario`` written in ``path``, refused unless one of :data:`MOCK_SCENARIOS`."""
+
     if not isinstance(scenario, str) or scenario not in MOCK_SCENARIOS:
         raise ValueError(
             f"target file {path} has invalid mock_scenario {quoted(scenario)}; "
@@ -1245,7 +1295,12 @@ def target_uses_mock(path: Path) -> bool:
     completely unaffected by this - they keep resolving here to ``True``).
     """
 
-    raw = _read_target_yaml(path)
+    return _uses_mock(_read_target_yaml(path))
+
+
+def _uses_mock(raw: dict[str, Any]) -> bool:
+    """:func:`target_uses_mock` of a parsed ``target.yaml``."""
+
     if "mock_scenario" in raw:
         return True
     # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real

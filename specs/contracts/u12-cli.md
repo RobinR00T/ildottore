@@ -145,7 +145,8 @@ when it was formatted, walked or written back: a report's run status is formatte
 text, a run store column is refused past 100 levels, and a YAML file (spec, scope, target,
 fleet, labels, pack) is refused past 100 levels with its aliases expanded, which chained anchors
 reach from 4 KB of text (`tests/cli/test_deep_json.py`, `test_replay.py`,
-`test_resume_integrity.py`).
+`test_resume_integrity.py`), and past 100,000 nodes with them expanded, which 15 doubling
+anchors reach from 265 bytes (u01 A-37, `tests/cli/test_yaml_expansion.py`).
 
 **A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
 belongs to a different target, and refuses when no run store is available to check. Unbound, it
@@ -183,7 +184,8 @@ a claim about a whole campaign checked only against the invocation in front of i
 * **The money.** The hard budget reset on every command. The cumulative spend is persisted and
   the ledger opens there, **including the `-sV` probe pass**, which runs outside the runner's
   ledger by design and was therefore pre-checked against the ceiling and then never billed: 17
-  requests per target per resume, unrecorded. It binds **sequential** invocations: two concurrent
+  requests per target per resume, unrecorded (and recorded only at the ceiling when the pass
+  stopped, until A-46). It binds **sequential** invocations: two concurrent
   resumes of one run id are not serialised (no lease), so they can each spend the remainder. The
   write is monotonic per axis, so a refused write can no longer discard a higher token or wall
   figure along with the request count, and the record cannot under-report what was spent.
@@ -209,9 +211,54 @@ on disk and no row, and its resume was refused outright because the target could
 verified: the resume you most want after a crash was the one you could not have. Everything in
 the integrity half is known before the first request. The spend is not; since 2026-10-04 the
 runner hands it to the store however the campaign stops (a ceiling, an abort, Ctrl-C, and SIGTERM
-or SIGHUP, which `execute_run` turns into Ctrl-C). A SIGKILL still loses the dead half's spend,
-and so does a Ctrl-C during a resumed run's `-sV` probe pass; the resume then opens at whatever
-was last recorded: the trade against a database write per request.
+or SIGHUP, which `execute_run` turns into Ctrl-C), and a resumed run's `-sV` probe pass is
+recorded however it ends (A-46). A SIGKILL still loses the dead half's spend; the resume then
+opens at whatever was last recorded: the trade against a database write per request.
+
+**A-46 A resumed run records what its `-sV` probe pass sent, however the pass ends (added
+2026-10-07).** The pass runs outside the runner's ledger, and only the request ceiling recorded
+what it had sent before stopping. Every other stop lost it: a probe answered 503 three times (the
+meter retries it twice, then the adapter's environment error stops the pass) left the run store
+at 20 requests while the target had served 23, and a 401, a 200 that is not JSON, Ctrl-C, SIGTERM,
+or anything stopping the run between a pass that succeeded and the runner's ledger opening lost
+the pass the same way; the next resume then probed again against a ceiling that had never seen
+those requests (delta audit of PR #68, reproduced on main `0501752`). The CLI now owns the pass's
+ledger and, on a resume whose spend is recorded, writes the prior spend plus every request the
+pass sent, retries included, as soon as the pass ends, success included. Requests are counted as
+the ledger counts them, every send attempted: one that never reached the target (a refused
+connection) counts, as it does for the attack traffic, and so does a send in flight when a signal
+arrives. Each probe is counted once: the store keeps the highest figure per axis, so the runner's
+later record of the same probes plus the attack does not add them again.
+
+Signals were the hard part, found by three audit rounds. The write after a pass that succeeded
+sits inside the handlers: placed after them, a real SIGINT a few milliseconds after the last probe
+lost all 17 in 2 of 16 tries (pre-commit audit). A handler's own write has nothing after it: one
+SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries (delta audit). Writing
+again on that signal closed it, and on a locked store made Ctrl-C wait one more busy timeout per
+interrupted write (9.9 s instead of 4.7 after a 503, 15.1 instead of 9.8 after a pass that
+succeeded) for a record lost anyway (pre-merge audit); it was withdrawn rather than given a further
+rule. So the record can fall below what was sent in three cases: a signal landing while a handler
+writes it (a few milliseconds; after an error or the ceiling stopped the pass one signal is
+enough, after a signal or a pass that succeeded it takes a second), a SIGKILL, and a write that
+fails, which is a warning and never replaces the error or the Ctrl-C that stopped the pass. The
+first two are written here and not pinned by a test.
+
+When an error or a signal ends the pass before its record is complete, stderr says how many
+requests it sent and what the run now records, or that they could not be added, even under `-q`:
+the error's own text says `exhausted 1 attempt(s)` after three sends, because the meter, not the
+adapter, owns the retries (the ceiling's refusal gives its own count). A signal landing during that
+write also cuts the line. Not recorded, as on the ceiling path before: a fresh run's pass
+(its run row is written after the pass, so there is nothing to resume) and a `--resume-unverified`
+run whose spend was never recorded (it was told its ceiling covers that invocation alone). Such a
+resume that completes still records its own invocation's spend as the run's, which predates this
+clause and is not changed by it.
+
+Checked through the real CLI against a counting stub by `tests/cli/test_probe_pass_spend.py`: a
+503, a 401 and a 200 that is not JSON on the first and on the sixth probe; SIGINT and SIGTERM sent
+to a subprocess with a probe on the wire (its Ctrl-C handler restored, since a shell that starts
+pytest with `&` passes SIGINT on ignored); an interruption at the write after a pass that
+succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases
+not recorded, each comparing the store with what the stub served.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
@@ -227,6 +274,25 @@ spend figure that is not a finite, non-negative number and a stored `--runs` tha
 beside the target digest or not a positive whole number (an infinity or a list was a traceback
 and exit 1, a negative spend was taken as spent, `true` resumed at one run, a missing count at
 the invocation's default).
+
+**A-42 A run parses each target file once (added 2026-10-07).** `dottore run` and `dottore
+fingerprint` parse a target file once per time it is named (`wiring.read_target_file`), and the
+target the scope authorizes, its route (mock or live), its `mock_scenario`, the target handed to the
+live adapter, the plans and a resume's binding all come from that one parse. `run --dry-run` parsed
+a mock target four times (to load it, to ask whether it is a mock, to read its scenario, and for the
+plan) and a live one five (the target loaded again for the adapter, and a second plan), three times
+under `--hardened`, and `fingerprint` up to four, so a file costly to build cost that many times
+over (a 450 KB target with a base-60 value was accepted after 37 s, found by the pre-commit audit of
+A-37), the live target sent to came from a later read of the file than the one the scope authorized,
+and a target that can be read once (`-t /dev/stdin`) was refused on its second read. Not covered: a
+file named twice is parsed once per name (`-t X -t X`, refused as a repeated id, and `-t X --judge
+X`), and `fleet --run --judge` parses its judge file once to generate the scope and once to run. A
+scope with a `checksum:` line is still parsed twice, by design: the second parse is the check that
+the line is part of no other value (u01). Checks: `tests/cli/test_yaml_construction_cost.py`,
+counting parses where the YAML is parsed: a mock run under `--dry-run`, `--estimate`, both with
+`-sV`, a full run, `-sV` and `--hardened`; a live dry run and estimate; `--hardened` on a live
+target; two targets; a resumed run; a judge file; a target piped in on `/dev/stdin`; and
+`fingerprint` offline and on a mock target, each target file parsed exactly once.
 
 **A-45 A target file's `capabilities` or `sampling_defaults` refusal names the file, the field and
 the reason, on one line, never the value (added 2026-10-07).** `load_target` handed a target file's

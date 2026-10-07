@@ -13,8 +13,9 @@ name, where the spec loader says ``not UTF-8 text (byte N)`` beside its path. Cl
 from __future__ import annotations
 
 import errno
+import sys
 import tracemalloc
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -171,23 +172,24 @@ def test_the_head_is_the_start_of_repr(value: object, budget: int) -> None:
         assert quoted(value) == repr(value)
 
 
-#: 90 KB of YAML whose ``type`` is 20,000 aliases of one 10 KB text: a repr of 200,080,000
-#: characters, 2.6 s and 202 MiB to build whole. As a list, and as a mapping of 20,000 keys.
-#: The anchor under a key every target reader accepts (`name`), not a spare one a stricter
-#: target loader would refuse first.
-ANCHOR = "name: &a " + "a" * 10_000 + "\n"
-ALIASES = "[" + ", ".join(["*a"] * 20_000) + "]"
+#: 13 KB of YAML whose ``type`` is 1,000 aliases of one 6,000-character text: under the node cap
+#: every YAML file has (A-37: 100,000 nodes with its aliases expanded, a text one per 64
+#: characters), and still a repr of 6,004,000 characters. Before that cap, 20,000 aliases of a
+#: 10 KB text made 200,080,000 (A-51). As a list, and as a mapping of 1,000 keys. The anchor sits
+#: under a key every target reader accepts (`name`), not a spare one a stricter loader refuses.
+ANCHOR = "name: &a " + "a" * 6_000 + "\n"
+ALIASES = "[" + ", ".join(["*a"] * 1_000) + "]"
 ALIASED = {
     "list": f"{ANCHOR}type: {ALIASES}\n",
-    "mapping": ANCHOR + "type: {" + ", ".join(f"k{i}: *a" for i in range(20_000)) + "}\n",
+    "mapping": ANCHOR + "type: {" + ", ".join(f"k{i}: *a" for i in range(1_000)) + "}\n",
     # One level down, where a walk that wrote each item whole would build it all again.
     "nested-list": f"{ANCHOR}type: [{ALIASES}]\n",
     "nested-mapping": ANCHOR + "type: {k: " + ALIASES + "}\n",
 }
 #: How each one's quote starts, and how many items its outer container holds.
 ALIASED_HEAD = {
-    "list": ("['", 20_000),
-    "mapping": ("{'k0': '", 20_000),
+    "list": ("['", 1_000),
+    "mapping": ("{'k0': '", 1_000),
     "nested-list": ("[['", 1),
     "nested-mapping": ("{'k': ['", 1),
 }
@@ -221,7 +223,7 @@ def test_aliases_are_quoted_without_building_the_repr(shape: str) -> None:
 @pytest.mark.parametrize("shape", list(ALIASED))
 def test_an_aliased_type_is_refused_without_building_the_repr(tmp_path: Path, shape: str) -> None:
     # The enum's own error built it before the refusal could quote the value: 474 MB of
-    # memory for this 90 KB file (audit of A-51).
+    # memory for a 90 KB file before the node cap, about 12 MB for this one (audit of A-51).
     path = tmp_path / "target.yaml"
     path.write_text("id: mock-target\n" + ALIASED[shape], encoding="utf-8")
     loaded, reference = peak_of(lambda: safe_yaml.safe_load(path.read_text(encoding="utf-8")))
@@ -230,7 +232,7 @@ def test_an_aliased_type_is_refused_without_building_the_repr(tmp_path: Path, sh
     refused, peak = peak_of(lambda: load_target(path))
 
     assert isinstance(refused, ValueError) and "has invalid type" in str(refused), refused
-    assert peak < reference + 8_000_000, (peak, reference)
+    assert peak < reference + 3_000_000, (peak, reference)
 
 
 def test_an_integer_python_will_not_write_is_described() -> None:
@@ -690,15 +692,28 @@ def test_a_credential_refusal_lists_twenty_declared_references(tmp_path: Path) -
 
 # --- values turned into text before they are checked -----------------------------------------
 
-#: A YAML integer of 20,000 bits, written in hex: past the 4,300 digits Python writes as text.
-HEX = "0x" + "f" * 5_000
+#: A YAML integer written in 600 hex digits: under the 1,000 characters a YAML number may have
+#: (#77), and past the digits Python writes as text once the limit is the lowest it allows.
+HEX = "0x" + "f" * 600
+
+
+@pytest.fixture
+def low_limit() -> Iterator[None]:
+    """The lowest digit limit Python allows, as ``PYTHONINTMAXSTRDIGITS=640`` sets it."""
+
+    before = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(640)
+    try:
+        yield
+    finally:
+        sys.set_int_max_str_digits(before)
 
 
 @pytest.mark.parametrize(
     ("load", "body"),
     [
         # The anchor inside the list: a label before it would be refused first.
-        (load_labels, "y: [&a " + "a" * 10_000 + ", " + ALIASES[1:] + "\n"),
+        (load_labels, "y: [&a " + "a" * 6_000 + ", " + ALIASES[1:] + "\n"),
         (
             target_uses_mock,
             f"{ANCHOR}id: t\ntype: chatbot\nprovider: {ALIASES}\ntransport: stdio\n",
@@ -717,9 +732,10 @@ def test_a_list_of_aliases_is_not_turned_into_text(
 
     _, peak = peak_of(lambda: load(path))
 
-    assert peak < reference + 8_000_000, (peak, reference)
+    assert peak < reference + 3_000_000, (peak, reference)
 
 
+@pytest.mark.usefixtures("low_limit")
 def test_an_integer_label_key_is_refused_as_a_key_not_as_its_verdict(tmp_path: Path) -> None:
     case = _calibrate(tmp_path, f"? {HEX}\n: pass\n")
 
@@ -731,6 +747,7 @@ def test_an_integer_label_key_is_refused_as_a_key_not_as_its_verdict(tmp_path: P
     assert f"the spec id of entry 1 is {described()}" in line, line
 
 
+@pytest.mark.usefixtures("low_limit")
 def test_an_integer_key_or_provider_of_a_target_is_not_turned_into_text(tmp_path: Path) -> None:
     path = tmp_path / "target.yaml"
     path.write_text(f"id: t\ntype: chatbot\nprovider: {HEX}\ntransport: {HEX}\n", "utf-8")
@@ -992,7 +1009,7 @@ def test_a_transport_of_aliases_is_not_turned_into_text(tmp_path: Path) -> None:
     uses_mock, peak = peak_of(lambda: target_uses_mock(path))
 
     assert uses_mock is True
-    assert peak < reference + 8_000_000, (peak, reference)
+    assert peak < reference + 3_000_000, (peak, reference)
 
 
 def test_a_date_key_of_seeded_setup_is_written_as_before(tmp_path: Path) -> None:
