@@ -327,12 +327,15 @@ def register_known_secret(value: str | None) -> None:
     if not value:
         return
     with _KNOWN_LOCK:
-        for form in _escaped_forms(value):
+        for candidate in _escaped_forms(value):
             # The text loses its stash delimiters before any rule runs (`redact_text`), so a form
-            # keeping one matched only across a stash token, which broke it: a raw delimiter in
+            # holding one matched only across a stash token, which broke it: a raw delimiter in
             # the output, a second pass that differed, and the evidence store refusing the reply
-            # (pre-commit audit of the split-credential block, on main).
-            candidate = _without_stash_delimiters(form)
+            # (pre-commit audit of the split-credential block, on main). Its escaped forms are
+            # still registered. Registered without the delimiter instead, it crossed a URL's `@`
+            # and left the password's first part readable (as PR #56 found).
+            if _STASH_OPEN in candidate or _STASH_CLOSE in candidate:
+                continue
             if len(candidate) >= _KNOWN_MIN_LEN:
                 _KNOWN_SECRETS.add(candidate)
 

@@ -71,7 +71,9 @@ versioning: [SemVer](https://semver.org/).
 - **A registered value holding `\x00` or `\x01` no longer breaks a stash token** (on main): the
   text loses those characters before any rule runs, so a form keeping one matched only across a
   stash token, which left a raw delimiter in the output, made a second pass differ and had the
-  evidence store refuse the reply. Each form is registered without them.
+  evidence store refuse the reply. A form holding one is not registered (its escaped forms still
+  are), as PR #56 does: registered without them, a form crossed a URL's `@` and left the start of
+  the password readable.
 - **Known cases left open:** a credential split by a printable character (a space, a no-break
   space, `␀`) or around a mask (as listed on 2026-10-06); a key the tool did not register
   and only a shape rule recognises (`sk-...`, `AKIA...`, a JWT) split by such a character (each

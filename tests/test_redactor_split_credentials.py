@@ -437,6 +437,16 @@ def test_a_registered_value_holding_a_stash_delimiter_breaks_no_stash_token(
     assert store.put("run-1", attempt).sha256 is not None
 
 
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_value_holding_a_stash_delimiter_does_not_cross_a_url_separator() -> None:
+    """Registered without the delimiter, `abc@host` took the URL's `@` and left the start of
+    the password readable, where main masks the whole password (as PR #56 found)."""
+
+    register_known_secret("abc\x00@host.example")
+    out = Redactor(salt="s").redact_text("https://u:xyzabc@host.example/p")
+    assert out == "https://u:«REDACTED:url_password»@host.example/p"
+
+
 def test_a_lone_surrogate_in_a_hashed_value_is_digested() -> None:
     """`_digest` encoded strictly and raised `UnicodeEncodeError` (on main)."""
 
