@@ -3,6 +3,26 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
+
+- Found by the delta audit of PR #68 and fixed on `fix/sv-probe-spend-on-stop`: on `run --resume
+  <id> -sV`, only the request ceiling wrote what the probe pass had sent to the run store. A probe
+  answered 503 three times left the store at 20 while the stub had served 23 (reproduced on main
+  `0501752`); a 401, a 200 that is not JSON, Ctrl-C, SIGTERM and a stop after a pass that
+  succeeded lost the pass too. The CLI now owns the pass's ledger and records prior spend plus the
+  pass as soon as it ends, success included (the store's per-axis maximum keeps each probe counted
+  once), and says the real count on stderr when an error or a signal stops the pass. The
+  pre-commit audit found the write after a successful pass outside the handlers (a real SIGINT a
+  few milliseconds after the last probe lost all 17 in 2 of 16 tries); it is inside them now.
+  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 10 of its 13 tests fail on `0501752`.
+  Not changed: a fresh run's pass and a `--resume-unverified` run with no recorded spend record
+  nothing; a SIGKILL, or a second signal during the write, still loses it. Left open as a
+  follow-up: the adapters are built with no retries of their own, so the error that stops a probe
+  pass, and an attack attempt's evidence, say `exhausted 1 attempt(s)` after three sends. Merged in
+  a scratch repository with PR #66 and with PR #68, code, u12 and the index merge cleanly (only
+  `CHANGELOG.md` and `docs/PROGRESS.md` conflict) and the merged trees pass both PRs' tests and
+  these.
+
 ## State, 2026-10-07 (afternoon): every YAML loader capped by expanded size
 
 - Closes the second item left open below. On `fix/yaml-alias-expansion-cap`, on main after #61: the

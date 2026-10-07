@@ -5,6 +5,38 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a resumed run recorded its `-sV` probe pass only when the ceiling stopped it)
+
+- **A resume lost what its probe pass had sent whenever the pass stopped on anything but the
+  request ceiling.** The pass runs outside the runner's ledger and only the ceiling path wrote its
+  requests to the run store: a probe answered 503 three times (the meter retries it twice, then
+  the adapter's environment error stops the pass) left the store at 20 requests while the target
+  had served 23. A 401, a 200 that is not JSON, Ctrl-C and SIGTERM did the same, and so did
+  anything stopping the run after a pass that succeeded and before the runner's ledger opened. The
+  next resume then probed again against a ceiling that had never seen those requests. The CLI now
+  owns the pass's ledger and writes the prior spend plus every request the pass sent, retries
+  included, as soon as the pass ends, success included; each probe is counted once, because the
+  store keeps the highest figure per axis. When an error or a signal stops the pass, stderr says
+  how many requests it sent and what the run now records, under `-q` too: `resume: the -sV probe
+  pass on 'api' stopped after 3 request(s), retries included; run-<id> now records 23 request(s)
+  spent` (the ceiling's refusal gives its own count). A send in flight when a signal arrives is
+  counted, so the record can exceed what the target received by that one request; it falls below
+  only if a second signal lands during the few milliseconds of the write, which loses the pass like
+  a SIGKILL. The pre-commit audit found the first version writing after a successful pass outside
+  the handlers: a real SIGINT a few milliseconds after the last probe lost all 17 in 2 of 16 tries.
+  A fresh run stopped by its pass (no run row, nothing to resume) and a `--resume-unverified` run
+  whose spend was never recorded record nothing, as before. Found by the delta audit of PR #68,
+  reproduced on main `0501752`. Contract u12 A-46; `tests/cli/test_probe_pass_spend.py` (13 tests,
+  through the real CLI against a counting stub, SIGINT and SIGTERM in a subprocess). 10 fail on
+  `0501752`: nine on their store assertion, and the one that interrupts the write after a
+  successful pass because that write does not exist there (it fails on its store assertion with
+  the write moved back outside the handlers).
+- **Still open: the error after those three sends says `exhausted 1 attempt(s)`.** The adapters
+  are built with no retries of their own (the meter or the runner owns them), so the adapter's
+  message counts its single send: in the error that stops a probe pass, and in an attack
+  attempt's evidence. The new stderr line gives the real count for a resumed probe pass; the
+  message itself is a follow-up (MANUAL, Troubleshooting).
+
 ### Fixed (a YAML file that expands past what the CLI can hold)
 
 - **Only the spec loader capped a YAML document's size with its aliases expanded.** The scope,

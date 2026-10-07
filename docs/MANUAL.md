@@ -445,6 +445,18 @@ know nothing about. The findings are still written to every report. If your pipe
 `3` as "infrastructure, retry", read `summary.status.reason` before retrying: it names the
 breached axis and how many specs never ran.
 
+A resume with `-sV` records what its probe pass sent as soon as the pass ends, whether it
+finished, reached the request ceiling, stopped on an error (a probe with no answer after its
+retries, a 401, a reply that is not JSON) or was stopped by Ctrl-C or SIGTERM, so the next
+resume's ceiling counts those requests too. When an error or a signal stops the pass, stderr gives
+the real count, retries included, even under `-q`: `resume: the -sV probe pass on 'api' stopped
+after 3 request(s), retries included; run-<id> now records 23 request(s) spent`. The error line
+after it can say `exhausted 1 attempt(s)` for those three sends (see Troubleshooting); a refusal at
+the request ceiling gives its own count. A second Ctrl-C pressed during the few milliseconds of
+that write can still lose it, as a SIGKILL does. Nothing is recorded for a fresh run stopped by its
+probe pass (it has no run row and nothing to resume) or for a `--resume-unverified` run whose
+spend was never recorded.
+
 ### `dottore fingerprint`, identify the model + guardrails
 
 ```
@@ -1124,3 +1136,4 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. |
 | `authz_leak` is `capability_unavailable` | A cross-tenant spec needs the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
+| `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the real count, which the run store has added to the run's spend. |
