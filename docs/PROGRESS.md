@@ -3,6 +3,25 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): a spec key that is not a string
+
+- On `fix/lint-nonstring-arg-key` (clause A-44 in u02, `tests/registry/test_non_string_keys.py`):
+  YAML builds `5:` as an int, a bare `on:` as a bool, `~:` as null and `2026-10-07:` as a date,
+  and in a fixture's tool-call arguments such a key made `dottore lint` a traceback with exit 1
+  (the offline stub's `key.lower()`). Every mapping of a spec is now checked before the JSON
+  schema (not the keys of an `!!omap` or `!!pairs` entry, nor `!!set` members), and a key that is
+  not a string is a `SCHEMA` finding at its path. Swept over the 41 fixture tool calls with
+  arguments in the 75 shipped specs: on `0501752` an int key added after the others crashed lint
+  in 5 and passed unreported in 36 (6 and 35 added first); now all 41 are a finding. Keys of two
+  types in one mapping also crashed the sort of the schema errors, and a `!!binary` key passed
+  lint. `run` now refuses such a spec (exit 3, as any spec that does not load) where it used to
+  run it. Found by the session on `fix/huge-int-repr` (A-40, #81), which merged first: its check
+  runs first, this one after it, and the branch of this one for an int too long to write out was
+  dropped as unreachable. 76 of the 77 new tests fail on `0501752`. The pre-commit and delta
+  audits found no high or medium defect; the first listed pre-existing gaps between the lint stub
+  and the real `tool_call` evaluator (a confirm flag or forbidden key inside a list, an injection
+  in a nested value, `arguments` as a JSON string), left for a separate task.
+
 ## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
 
 - Found by the delta audit of PR #68 and fixed on `fix/sv-probe-spend-on-stop`: on `run --resume
