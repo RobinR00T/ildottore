@@ -150,8 +150,8 @@ bottom-up pass over the node graph, each node measured once and each size satura
 cap, too deep reported before too large. Composition itself stops once the nodes written pass the
 cap, an alias counting the node it names (each document counted on its own), as the expanded value
 can only weigh more, so such a document is reported as too large before its depth or a recursion is
-checked, unless a list or a map was written past the depth limit first (A-52); and a tag longer
-than 256 characters is refused there, unquoted. Only the spec loader had
+checked, unless composition reaches a list or a map past the depth limit before the count crosses
+(A-52); and a tag longer than 256 characters is refused there, unquoted. Only the spec loader had
 the size cap (SEC-09), so the loaders of the operator's own files expanded whatever they were given:
 an 835-byte labels file of 45 anchors, each a list of two aliases of the one before, ran `calibrate`
 past 25 s at 1.7 GB while it formatted the verdict, and a `<<` merging the previous map twice
@@ -224,27 +224,30 @@ it that way). It names where the first list or map written past the limit starts
 first node at that depth down the first of the deepest branches, aliases expanded: the same place
 unless another branch is deeper, or as deep and written first (a branch deepened by an alias
 included), or that list or map is empty and a text or a key at its level is written before it (`k:
-[]`). Refusals made while composing (this one, the size cap's count, a tag past 256 characters,
-A-41's numbers) are reported in the order written, and before what A-37 measures on the whole
-document, wherever that is written: a recursive alias written before the nesting is no longer the
-one reported. A text or an alias opens no level and is not refused by this check: one written at
-level 101 is refused where it was (an alias at its anchor), by A-37 once the document is composed,
-unless another check refuses it while it is composed, at the cost of a document accepted at the
-limit. Nesting written thousands of levels deep, which overflowed PyYAML's recursive composer and
-was refused without a position, now has one. Not covered, OD-30: under the limit the cost per token
-stays, and the same 198 KB of chains 98 deep is accepted in 5.5 to 5.6 s, about 2.3 times the flat
-list here (3 to 4 times at depth 95 in the audit, under another load), the scanner walking 29.8
-million keys; chains 98 deep holding 300 texts at the bottom walk 52 million and take about 3 times
-the flat list, the worst accepted shape the audit found. Checks:
-`tests/cli/test_yaml_written_nesting.py` (where composition stops, by a character no token can start
-written lines inside the collection at level 101, for flow and block lists and maps and in both
-loaders; the position against `check_expanded`'s on the whole document; several branches; a key
-before an empty list; a text, an alias and a map's keys at level 101; every shape at the limit,
-siblings included, loading as plain PyYAML loads it; the precedence; one count per document; a tag
-too long reported first, as before; 5,000 levels; a `RecursionError` while composing, raised without
-recursing, and in a subprocess a caller with little stack left, both still refused as too deep; and
-in a subprocess bounded at 20 s, the possible keys the scanner walks for `lint` and `calibrate` on
-the audit's 198 KB file, under 5 million: 1.1 million now, 97.4 million before).
+[]`). Refusals made while composing are reported in the order they are made, which is not always the
+order written: this one and the tag limit as a node starts, the size cap's count and A-41's numbers
+once a node is composed (each at the position where that node starts), so a list or a map past the
+depth limit inside a collection is reported before the count that the collection's own end takes
+past the cap. All of them come before what A-37 measures on the whole document, wherever that is
+written: a recursive alias written before the nesting is no longer the one reported. A text or an
+alias opens no level and is not refused by this check: one written at level 101 is refused where it
+was (an alias at its anchor), by A-37 once the document is composed, unless another check refuses it
+while it is composed, at the cost of a document accepted at the limit. Nesting written thousands of
+levels deep, which overflowed PyYAML's recursive composer and was refused without a position, now
+has one. Not covered, OD-30: under the limit the cost per token stays, and the same 198 KB of chains
+98 deep is accepted in 5.5 to 5.6 s, about 2.3 times the flat list here (3 to 4 times at depth 95 in
+the audit, under another load), the scanner walking 29.8 million keys; chains 98 deep holding 300
+texts at the bottom walk 52 million and take about 3 times the flat list, the worst accepted shape
+the audit found. Checks: `tests/cli/test_yaml_written_nesting.py` (where composition stops, by a
+character no token can start written lines inside the collection at level 101, for flow and block
+lists and maps and in both loaders; the position against `check_expanded`'s on the whole document;
+several branches; a key before an empty list; a text, an alias and a map's keys at level 101; every
+shape at the limit, siblings included, loading as plain PyYAML loads it; the precedence, in the
+order written and in the order checked; one count per document; a tag too long reported first, as
+before; 5,000 levels; a `RecursionError` while composing, raised without recursing, and in a
+subprocess a caller with little stack left, both still refused as too deep; and in a subprocess
+bounded at 20 s, the possible keys the scanner walks for `lint` and `calibrate` on the audit's 198
+KB file, under 5 million: 1.1 million now, 97.4 million before).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

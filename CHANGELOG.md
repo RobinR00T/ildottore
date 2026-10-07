@@ -27,31 +27,34 @@ versioning: [SemVer](https://semver.org/).
   such a document; nothing in `src/` does that). The position is where the first list or map written
   past the limit starts; the measure on the whole document named the deepest branch instead, and,
   when that list or map is empty, a text or a key written before it at its level (`k: []`). Refusals
-  made while composing (this one, the size cap's count, a tag too long) are reported in the order
-  written, and before what is measured on the whole document, wherever that is written: a file
-  written deep was reported as too large if its nodes passed the cap before the end, and a recursive
-  alias written before the nesting was reported instead of it. A text or an alias written at level
-  101 opens no level and is left to what refused it before, where it was. Nesting written thousands
-  of levels deep, which the entry below still refused without a position, now has one. Under the
-  limit the cost stays: the same chains 98 deep are accepted in 5.5 to 5.6 s, about 2.3 times the
-  flat list, and up to about 3 times when the chains hold their texts at the bottom (an open
-  decision, OD-30: a lower limit for flow nesting only, where the repository's own files nest at
-  most 2 flow levels, or libyaml's scanner). Tests: `tests/cli/test_yaml_written_nesting.py`. 16 of
-  the 30 fail on `df75d3d` (`main` with #71): eight because composing goes on to a character no
-  token can start, written lines inside the collection at level 101; two because the scanner walks
-  97.4 million possible keys for `lint` and `calibrate` on the audit's 198 KB file, over a bound of
-  5 million (1.1 million now), the file refused with the same message and position; two because a
-  file written deep first is reported as too large; two because the deepest branch, or a key before
-  an empty list, is named; one because `yaml.load_all` does not refuse; and one because 5,000 levels
-  have no position. The other fourteen pin what does not change: the position for one branch, a
-  text, an alias and a map's keys at level 101, every shape at the limit loading as plain PyYAML
-  loads it, and the refusal a `RecursionError` while composing still gets (both loaders catch it,
-  and no other test reaches those handlers now), simulated in process, since a real overflow
-  switches off a pure-Python tracer, and real in a subprocess with little stack left, and a tag too
-  long on the list at level 101, reported as such. Thirteen mutants of the check and of those two
-  handlers are all killed. Clause A-52 (u01), u02 §4. Found by the pre-commit audit of the
-  construction-cost fix (A-41 and A-42); the same on `main` (`2f6201a`), whose depth limit is #61's:
-  refused after the same 97.4 million keys.
+  made while composing are reported as they are made, not always in the order written: this one and
+  the tag limit as a node starts, the size cap's count and the number checks once a node is
+  composed, so a list or a map past the depth limit inside a collection comes before the count that
+  the collection's own end takes past the cap. All come before what is measured on the whole
+  document, wherever that is written: a file written deep was reported as too large if its nodes
+  passed the cap before the end, and a recursive alias written before the nesting was reported
+  instead of it. A text or an alias written at level 101 opens no level and is left to what refused
+  it before, where it was. Nesting written thousands of levels deep, which the entry below still
+  refused without a position, now has one. Under the limit the cost stays: the same chains 98 deep
+  are accepted in 5.5 to 5.6 s, about 2.3 times the flat list, and up to about 3 times when the
+  chains hold their texts at the bottom (an open decision, OD-30: a lower limit for flow nesting
+  only, where the repository's own files nest at most 2 flow levels, or libyaml's scanner). Tests:
+  `tests/cli/test_yaml_written_nesting.py`. 18 of the 32 fail on `5fdac72` (`main`): eight because
+  composing goes on to a character no token can start, written lines inside the collection at level
+  101; two because the scanner walks 97.4 million possible keys for `lint` and `calibrate` on the
+  audit's 198 KB file, over a bound of 5 million (1.1 million now), the file refused with the same
+  message and position; four because a file is reported as too large, two written deep first and two
+  whose list past the limit sits inside lists whose ends would take the count past the cap; two
+  because the deepest branch, or a key before an empty list, is named; one because `yaml.load_all`
+  does not refuse; and one because 5,000 levels have no position. The other fourteen pin what does
+  not change: the position for one branch, a text, an alias and a map's keys at level 101, every
+  shape at the limit loading as plain PyYAML loads it, and the refusal a `RecursionError` while
+  composing still gets (both loaders catch it, and no other test reaches those handlers now),
+  simulated in process, since a real overflow switches off a pure-Python tracer, and real in a
+  subprocess with little stack left, and a tag too long on the list at level 101, reported as such.
+  Thirteen mutants of the check and of those two handlers are all killed. Clause A-52 (u01), u02 §4.
+  Found by the pre-commit audit of the construction-cost fix (A-41 and A-42); the same on `main`
+  (`2f6201a`), whose depth limit is #61's: refused after the same 97.4 million keys.
 
 ### Fixed (a YAML value that costs far more to build than it weighs)
 

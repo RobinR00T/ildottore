@@ -213,6 +213,25 @@ def test_the_limit_written_past_first_is_the_one_reported(
 
 
 @pytest.mark.parametrize("load", LOADERS)
+def test_a_list_past_the_limit_comes_before_the_count_its_parents_end_would_cross(
+    load: Callable[[str], Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A list or a map is counted once it is composed, so the order reported is the order the
+    checks are made, not the order written: 999 texts, then lists 100 deep, whose ends would take
+    the count past a cap of 1,000 at the outer ones, are refused at the list that opens level 101
+    (pre-merge audit; on the base, too large at the list at level 100)."""
+
+    monkeypatch.setattr(safe_yaml, "MAX_NODES", 1_000)
+    text = "[" + "x, " * 999 + "[" * LIMIT + "]" * LIMIT + "]"
+
+    with pytest.raises((yaml.YAMLError, SafeLoadError)) as caught:
+        load(text)
+
+    assert TOO_DEEP in str(caught.value), caught.value
+    assert f"line 1, column {1 + 3 * 999 + LIMIT}" in str(caught.value), caught.value
+
+
+@pytest.mark.parametrize("load", LOADERS)
 def test_a_list_past_the_limit_with_a_tag_too_long_is_refused_for_the_tag(
     load: Callable[[str], Any],
 ) -> None:
