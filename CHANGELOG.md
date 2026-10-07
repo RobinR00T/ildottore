@@ -5,6 +5,56 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a CLI error names the operator's file, and `diff` masks a report's reason)
+
+- **An existing file in a CLI error keeps its name.** `_masked` (cli/app.py) kept a path out of
+  the entropy rule only when it was absolute, existed, and ended at a space or a quote. A report
+  named after a commit SHA (`report-9f86d081...e2.json`) read `«REDACTED:high_entropy:...».json`
+  when the message wrote it before a colon (`invalid YAML in scope file <path>: ...`, the
+  signature pack loader, `labels file <path>: ...`, `<path>: expected a JSON run report ...`),
+  when it was relative, and when a directory on the way held a space or one of `()[],;'"`. A
+  path is now read directory by directory from its first name, so a directory with a space or a
+  bracket is read whole, and its last name is the longest that exists and is followed by none of
+  the characters the entropy rule joins into a token, `/` included: a `:` or `.` after it is the
+  message's. A relative path is resolved from the working directory, read as one word and kept
+  only whole.
+- **What is not the operator's file is still masked.** Every rule but the entropy fallback still
+  runs on the whole text first. A path is kept where it is written, not as text matched anywhere
+  else in the message; a key glued to an existing directory is judged whole; a name inside
+  another token is not that file; a file followed by `/` is not that file either (a file has no
+  child); a path written with `//` keeps nothing; and a kept path holding a run of 8 or more
+  token characters that is, or is part of, a registered credential is masked. The `/` before a
+  masked name is printed (`<dir>/«REDACTED...».json`): the mask used to take it, which read as a
+  sibling of the directory.
+- **A file that does not exist keeps its directory, not its name** (OD-25, open). Keeping the
+  name an `OSError` carries when it looked like a file's (an extension, a directory that
+  exists) was built and withdrawn before commit: the pre-commit audit printed an `sk-ant-` key
+  given as `<key>.json`, an `sk-proj-` key as `<key>.yaml` and an Azure connection string, which
+  ends in `.windows.net`, all of which main masked.
+- **One error costs at most 1,024 filesystem lookups**, each check made once. A 1 MiB message of
+  `/a/a/...` tokens (a target's transport error quoted in a halted report's reason, which
+  `calibrate` prints) cost 524,032 lookups and about 7 s; it costs 2 and about 0.5 s, and past
+  the cap nothing more is kept, so it is masked. A word with no run of 16 characters the entropy
+  rule could mask is not looked up.
+- **`dottore diff` masks an incomplete report's reason, as `calibrate` does.** The refusal printed
+  `summary.status.reason`, which quotes a target's transport error, without the redactor: a key or
+  a high-entropy token in it printed in clear while `calibrate` masked the same text. It is now a
+  `ValueError` printed through `_masked`, with the same text and exit 3. A newline in the reason
+  still prints two lines until PR #51, which writes control characters out inside `_masked`.
+- Not covered, and masked: a relative path through a directory whose name holds a space or one
+  of `()[],;'"` (a relative path is one word), a name holding a newline, and the name of a file
+  that does not exist. What follows a kept directory is judged from its `/` on, as it was for an
+  existing directory on main, so a base64 key of 16 or 17 characters holding a `/` can fall under
+  the entropy threshold there; that directory may now hold a space or a bracket. The `diff`
+  table prints a report's spec ids as they are (on main too; PR #51 refuses one that is not a
+  spec id).
+- Tests: `tests/cli/test_masked_paths.py` (CliRunner; SHA-named files, absolute and relative,
+  existing and missing, in directories named with a space, parentheses, brackets, a comma, a
+  semicolon and quotes, and the keys and credential parts the pre-commit audit printed). Each
+  part of the fix was removed in turn and a test failed every time.
+  `test_a_path_longer_than_path_max_is_not_walked` now asserts that the walk keeps what exists of
+  a 4,200-character token at a lookup per directory, not that it keeps nothing.
+
 ### Fixed (a file nested past what the CLI can hold)
 
 - **`dottore diff` and `dottore calibrate` exited 1 on a report nested too deeply.** `json.loads`
@@ -16,11 +66,11 @@ versioning: [SemVer](https://semver.org/).
   now refuse it with exit 3 and one `error:` line that names the file and quotes none of it. A
   report that is not UTF-8 or not JSON names its file too: `Expecting value: line 1 column 1 (char
   0)` did not say which of the two files it was. These messages name the report by its absolute
-  path, never followed by a colon: the CLI keeps an existing absolute path readable, and a relative
-  path, or `<path>:`, is not one, so a report named after a commit SHA had its name masked as a
-  high-entropy value. As in every message of the CLI, a directory whose name holds a space or one of
-  `()[],;'"` still cuts the path short, and a control character in a name reaches the terminal as
-  written until #51, which escapes them there, is in. Found by the pre-merge audit of #51.
+  path, never followed by a colon: the CLI then kept only an existing absolute path readable, so a
+  report named after a commit SHA had its name masked as a high-entropy value when it was relative
+  or written `<path>:` (since fixed, see the entry above). A control character in a name reaches
+  the terminal as written until #51, which escapes them there, is in. Found by the pre-merge audit
+  of #51.
 - **A value that parses and overflows later.** On 3.14 the parser holds about 116,000 levels and
   `repr` overflows from about 69,500, so a report whose run status carried a reason nested 70,000
   levels deep was read and then overflowed when the refusal of an incomplete run formatted it (exit

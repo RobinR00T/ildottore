@@ -89,10 +89,9 @@ def _read_report(path: Path) -> Any:
     two files it was about either.
     """
 
-    # Absolute and never followed by a colon: the CLI keeps an existing absolute path readable,
-    # and a relative path, or one with a colon after it, is not one, so a report named after a
-    # commit SHA had its name masked as a high-entropy value (pre-commit and delta audits). Not
-    # escaped here: an escaped name is no longer a path on disk, so the CLI masked it too.
+    # Absolute, so the line says which file whatever the working directory (the CLI keeps an
+    # existing path readable, relative or not, since A-38). Not escaped here: an escaped name is
+    # no longer a path on disk, so the CLI masked it as a high-entropy value.
     # Control characters are escaped for every message on the terminal once #51 is in.
     shown = path.absolute()
     try:

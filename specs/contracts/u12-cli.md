@@ -77,7 +77,9 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   in `exit_codes.py`: no side effects, table-tested.
 - All terminal output honors the central redactor; secrets/PII never printed (`AGENTS.md §2`).
   (As built, for errors, `cli/app._masked`: URL passwords are masked first, on the whole text.
-  A 64-hex value is then kept readable in exactly two cases: an evidence file name
+  A path is then kept out of the entropy rule where the message writes it and it exists
+  (A-38); the name of a file that does not exist is not (OD-25).
+  Outside one, a 64-hex value is kept readable in exactly two cases: an evidence file name
   (`<sha256>.json`), and a digest the error itself carries as one the tool computed (the
   `digests` attribute: on a scope checksum mismatch the digest computed from the body; the
   `checksum:` value the operator typed is not quoted at all; on a tamper refusal the hash the
@@ -227,6 +229,21 @@ beside the target digest or not a positive whole number (an infinity or a list w
 and exit 1, a negative spend was taken as spent, `true` resumed at one run, a missing count at
 the invocation's default).
 
+**A-38 A CLI error names the operator's existing file, and nothing else leaves the entropy rule
+(added 2026-10-07).** `_masked` keeps a path out of the entropy rule only where the message
+writes it and it exists on this machine: absolute, or relative to the working directory as one
+word and only whole; read directory by directory, so a directory holding a space or a bracket is
+read whole; its last name followed by none of the characters the entropy rule joins into a
+token, `/` included; never through `//`. Every other rule runs first on the whole text, and a
+kept path holding a run of 8 or more token characters of a registered credential is masked. A
+report named after a commit SHA read `«REDACTED:high_entropy»` before a colon, relative, or
+under a directory with a space, and `dottore diff` printed the key in an incomplete report's
+reason that `calibrate` masked (audits of PR #61). Keeping the name a failed `OSError` carried,
+when it looked like a file's, printed keys given where a file belongs (`<key>.json`, an Azure
+connection string) and was withdrawn before commit (OD-25). `diff`'s incomplete-report refusal
+goes through `_masked`, and one error costs at most 1,024 filesystem lookups (a 1 MiB message
+cost 524,032). Checked by `tests/cli/test_masked_paths.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -244,3 +261,11 @@ the invocation's default).
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-25** the name of a file that does not exist in a CLI error (a mistyped report named
+  after a commit SHA): print it, or keep it masked. Built reversibly (2026-10-07, A-38):
+  masked, as on main, its existing directory printed. Printing the name an `OSError`
+  carries when it looks like a file's (an extension, a directory that exists) printed an
+  `sk-ant-` key given as `<key>.json` and an Azure connection string in the pre-commit audit.
+  Alternatives: print the directory and the extension and mask the stem unless it is a 40- or
+  64-hex run (a hex key typed as a path would then print); or print a name only when it is
+  the command line's own argument.

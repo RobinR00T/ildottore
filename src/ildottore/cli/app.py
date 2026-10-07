@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from pathlib import Path
 from typing import Annotated
@@ -104,41 +105,123 @@ def _spec_paths(spec: list[Path] | None) -> list[Path]:
 # refusal needs to show; the entropy rule would otherwise mask it.
 _ARTIFACT_NAME = r"[0-9a-f]{64}\.json"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-# An absolute filesystem path in an error message (`/` not preceded by a word character, `:`,
-# `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after an IPv6 host,
-# credentials or a masked host included).
-_ABS_PATH = re.compile(r"(?<![\w:/\]@»])/[^\s'\"()\[\],;]+")
-#: Longer tokens are not checked (PATH_MAX): each parent costs a filesystem lookup.
+# Where an absolute filesystem path can start in an error message (`/` not preceded by a word
+# character, `:`, `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after
+# an IPv6 host, credentials or a masked host included; and followed by a name, so neither a lone
+# `/` nor a `//` host is one).
+_ABS_PATH_START = re.compile(r"(?<![\w:/\]@»])/(?=[^\s'\"()\[\],;/])")
+# A word that may be a relative path: a run between spaces, quotes, brackets, commas and
+# semicolons, not starting with `/` (absolute) or `«` (a mask).
+_RELATIVE_WORD = re.compile(r"(?<![^\s'\"(\[,;`])[^\s'\"()\[\],;`/«][^\s'\"()\[\],;`]*")
+# What the entropy rule could mask: a word without such a run is not worth a lookup.
+_ENTROPY_RUN = re.compile(r"[A-Za-z0-9+/_=-]{16,}")
+# A character the entropy rule reads as part of a token, `/` included. The last name of a kept
+# path is never followed by one, so keeping it never leaves the tail of a token to be judged on
+# its own; a kept directory is, by its `/`, and what follows is judged from that `/` on.
+_TOKEN_CHAR = re.compile(r"[A-Za-z0-9+/_=-]")
+# Where one name ends for certain: a name holds no `/`, and an error line breaks at a newline.
+_NAME_STOP = re.compile(r"[/\n\r\x00]")
+# The runs of a kept path checked against the registered credentials: a name of 16 characters
+# that is part of one is neither the whole key nor contains it (pre-commit audit of A-38).
+_KEPT_RUNS = (re.compile(r"[A-Za-z0-9+_=-]{8,}"), re.compile(r"[A-Za-z0-9+/_=-]{8,}"))
+#: Longer paths are not walked (PATH_MAX), and no single name is longer (NAME_MAX).
 _MAX_PATH_LEN = 4096
+_MAX_NAME_LEN = 255
+#: Filesystem lookups one message may cost. Past it nothing more is kept, so it is masked: a
+#: 1 MiB message of `/a/a/...` tokens cost 524,032 lookups and seven seconds when a target's
+#: transport error quoted it (`dottore calibrate` on a halted report).
+_MAX_LOOKUPS = 1024
 
 
-def _existing_prefixes(text: str) -> list[str]:
-    """The part of each absolute path in ``text`` that exists on this machine.
+class _Lookups:
+    """``os.path`` checks for one message: each path once, at most ``_MAX_LOOKUPS`` in all."""
+
+    def __init__(self) -> None:
+        self._seen: dict[tuple[str, bool], bool] = {}
+
+    def __call__(self, path: str, *, directory: bool) -> bool:
+        key = (path, directory)
+        if key not in self._seen:
+            if len(self._seen) >= _MAX_LOOKUPS:
+                return False
+            self._seen[key] = os.path.isdir(path) if directory else os.path.exists(path)
+        return self._seen[key]
+
+
+def _path_end(text: str, start: int, limit: int, lookup: _Lookups, *, partial: bool) -> int:
+    """Where the longest existing path written from ``text[start]`` ends (``start`` for none).
+
+    Directory by directory from its first name, so a directory holding a space or a bracket is
+    read whole; the last name is the longest that exists and is not followed by a token
+    character, so `{path}: ...` and `{path}.` keep the path and the `:` or `.` is the message's.
+    With ``partial``, a path whose last name does not exist keeps its existing directories.
+    """
+
+    kept = start
+    head = start + 1 if text.startswith("/", start) else start
+    while head - start <= _MAX_PATH_LEN:
+        bound = min(limit, head + _MAX_NAME_LEN)
+        stop = _NAME_STOP.search(text, head, bound)
+        name_end = stop.start() if stop else bound
+        if stop and text[name_end] == "/":
+            if name_end == head:
+                # `//`: kept up to it, a key after it was judged with its slashes (`/var//<key>`).
+                return start
+            if lookup(text[start:name_end], directory=True):
+                kept, head = name_end, name_end + 1
+                continue
+        for end in range(name_end, head, -1):
+            # A file has no child, so a name before a `/` is not this file.
+            if end < len(text) and _TOKEN_CHAR.match(text, end):
+                continue
+            if lookup(text[start:end], directory=False):
+                return end
+        break
+    return kept if partial else start
+
+
+def _existing_path_spans(text: str) -> list[tuple[int, int]]:
+    """Where ``text`` names a path that exists on this machine, as ``(start, end)`` spans.
 
     Kept readable: the redactor masked any high-entropy segment, so a macOS temp directory or a
     CI runner's workspace read `«REDACTED:high_entropy»` in "two formats would write the same
     file" and "is not a directory" errors. What exists on disk is the operator's own tree, not
     a value they typed; the rest of the path still goes through the redactor.
+
+    Absolute paths, and relative ones as the operator's shell resolves them (from the working
+    directory): a report named after a commit SHA lost its name when it was relative, when the
+    message wrote it before a colon, and when a directory on the way held a space or one of
+    ``()[],;'"`` (audits of PR #61). A relative path is read as one word, and kept only whole: a
+    short existing name (`X`, a file `+`) was often the head of a base64 key, whose rest was then
+    judged alone, under the entropy rule's threshold (pre-commit audit).
     """
 
-    prefixes: list[str] = []
-    for match in _ABS_PATH.finditer(text):
-        token = match.group(0)
-        if len(token) > _MAX_PATH_LEN:
+    lookup = _Lookups()
+    starts = [(m.start(), len(text), True) for m in _ABS_PATH_START.finditer(text)]
+    starts += [
+        (m.start(), m.end(), False)
+        for m in _RELATIVE_WORD.finditer(text)
+        if _ENTROPY_RUN.search(m.group(0))
+    ]
+    spans: list[tuple[int, int]] = []
+    for start, limit, partial in sorted(starts):
+        if spans and start < spans[-1][1]:
             continue
-        candidate = Path(token)
-        for path in (candidate, *candidate.parents):
-            shown = str(path)
-            if shown == "/" or not token.startswith(shown):
-                break
-            try:
-                exists = path.exists()
-            except OSError:
-                break
-            if exists:
-                prefixes.append(shown)
-                break
-    return prefixes
+        end = _path_end(text, start, limit, lookup, partial=partial)
+        if end > start:
+            spans.append((start, end))
+    return spans
+
+
+def _entropy_masked(entropy: Redactor, part: str) -> str:
+    """``part`` through the entropy rule, the `/` in front of a masked name kept.
+
+    The mask took the separator with it, so ``<dir>/<masked name>`` printed as
+    ``<dir>«REDACTED...»``, a sibling of the directory rather than a file in it.
+    """
+
+    shown = entropy.redact_text(part)
+    return "/" + shown if part.startswith("/") and not shown.startswith("/") else shown
 
 
 def _masked(exc: BaseException) -> str:
@@ -167,21 +250,26 @@ def _masked(exc: BaseException) -> str:
     # A kept token that overlaps a registered credential is masked: `sk-<64 hex>` and
     # `<64 hex>-v2` contain one (re-audit of the digest change).
     text = plain.redact_text(mask_url_passwords(str(exc)))
-    paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
-    keep = re.compile(
-        r"(\b(?:"
-        + "|".join([_ARTIFACT_NAME, *carried])
-        + r")\b"
-        + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
-        + ")"
-    )
-    parts = keep.split(text)
-    return "".join(
-        part
-        if keep.fullmatch(part) and not overlaps_known_secret(part.removesuffix(".json"))
-        else entropy.redact_text(part)
-        for part in parts
-    )
+    keep = re.compile(r"\b(?:" + "|".join([_ARTIFACT_NAME, *carried]) + r")\b")
+    spans = [m.span() for m in keep.finditer(text)] + _existing_path_spans(text)
+    merged: list[list[int]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    shown: list[str] = []
+    done = 0
+    for start, end in merged:
+        kept = text[start:end]
+        shown.append(_entropy_masked(entropy, text[done:start]))
+        masked = overlaps_known_secret(kept.removesuffix(".json")) or any(
+            overlaps_known_secret(run) for runs in _KEPT_RUNS for run in runs.findall(kept)
+        )
+        shown.append(entropy.redact_text(kept) if masked else kept)
+        done = end
+    shown.append(_entropy_masked(entropy, text[done:]))
+    return "".join(shown)
 
 
 @app.command()
@@ -754,14 +842,15 @@ def diff(
         for label, path in (("baseline", baseline), ("current", current)):
             incomplete = diff_mod.incomplete_reason(path)
             if incomplete is not None:
-                typer.echo(
-                    f"error: the {label} report describes a run that did not complete "
+                # Printed through `_masked` below, as calibrate prints it: the reason is the
+                # report's and quotes a target's transport error, which printed a key in clear
+                # here while calibrate masked it (audit of PR #61).
+                raise ValueError(
+                    f"the {label} report describes a run that did not complete "
                     f"({incomplete}). Its missing specs would diff as ONLY-IN-BASELINE, "
                     "which is not a regression, so the comparison would read clean. "
-                    "Re-run that scan, or diff two complete reports.",
-                    err=True,
+                    "Re-run that scan, or diff two complete reports."
                 )
-                raise typer.Exit(ExitCode.ERROR)
         report = diff_mod.diff_reports(baseline, current)
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
