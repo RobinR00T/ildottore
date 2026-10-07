@@ -139,7 +139,8 @@ Once the scope, the targets and the specs are loaded, and before anything is sen
 block and the `-sV` probe pass included), a live run whose pace (`--rate`, or the `-T`
 template's) is under one request per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap of
 a derived one) is refused too, as is any live run under `--budget-wall 0`: the ceiling is
-checked when a send is charged, and such a run waited past it (A-55).
+checked when a send is charged, and such a run waited past it (A-55). A live `--judge` over
+attack targets that are all mocks is excepted: that run is not paced, so not checked.
 
 **Resume sends again what ended in an environment error (F11, built 2026-10-04).** `--resume
 <run-id>` skips every attempt the halted run ANSWERED and sends again, under the same attempt

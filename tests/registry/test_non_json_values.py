@@ -155,6 +155,8 @@ def test_an_id_holding_half_a_character_is_reported_without_it(tmp_path: Path) -
 
     result = _lint(tmp_path, _TOOL, text)
 
+    # CliRunner turns the crash into exit 1, lint's code for findings (delta audit).
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
     assert "Traceback" not in result.output
     assert result.exit_code == 1, result.output
     (line,) = _findings(result)
@@ -177,6 +179,8 @@ def test_a_suite_reference_holding_half_a_character_is_reported_without_it(
 
     result = runner.invoke(app, ["lint", str(pack)])
 
+    # CliRunner turns the crash into exit 1, lint's code for findings (delta audit).
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
     assert "Traceback" not in result.output
     assert result.exit_code == 1, result.output
     assert "references unknown spec id 'GHOST-999" + _BS + "ud800'" in result.output

@@ -25,22 +25,22 @@ versioning: [SemVer](https://semver.org/).
   `setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as one), which JSON cannot hold;
   write it in quotes, without a tag` (lint exits 1, and `run` refuses the campaign with exit 3 in
   one `error:` line naming the file). A string key holding half a character is reported too, and a
-  spec `id` (or a suite's reference to one) holding one is not printed in the finding header, which
-  crashed lint with a traceback (the file name is printed instead). A character outside the basic
-  plane written as a pair of escapes, as `json.dumps` writes it by default, is refused too, since
-  PyYAML builds two halves (pydantic already refused it in the fields it types); write the character
-  itself, or dump with `ensure_ascii=False`. The check keeps what JSON holds and reports anything
-  else, so a value built in code is named by its type. At most 20 are listed and the rest counted, a
-  set or a pair is the finding and what it holds is not walked, a container shared through an alias
-  is reported once, a key on this check's paths that is not printable is written as its `repr`
-  (A-40's own paths print keys as written until its follow-up lands), and a value in a field the
-  schema types (`name: 2026-01-01`) gets this message instead of the schema's `datetime.date(2026,
-  1, 1) is not of type 'string'`. A key that is not a string is not this check's: a date key, or
-  keys of two types in one mapping (`{1: a, b: c}`), still pass lint and crash the run until A-44
-  (#80) is in (an int, bool, null or float key alone runs, written as text). None of the 75 shipped
-  specs holds such a value (none of the 129 YAML files of the repository that load is flagged).
-  Found on 2026-10-07 by the pre-commit audit of `fix/huge-int-repr` (finding F6). Clause A-54
-  (u02); `tests/registry/test_non_json_values.py`.
+  spec `id` (or a suite's reference to one) holding one is not attached to the finding (its header
+  crashed lint with a traceback; the file name is printed instead, and `lint --json` writes a null
+  `spec_id`). A character outside the basic plane written as a pair of escapes, as `json.dumps`
+  writes it by default, is refused too, since PyYAML builds two halves (pydantic already refused it
+  in the fields it types); write the character itself, or dump with `ensure_ascii=False`. The check
+  keeps what JSON holds and reports anything else, so a value built in code is named by its type. At
+  most 20 are listed and the rest counted, a set or a pair is the finding and what it holds is not
+  walked, a container shared through an alias is reported once, a key on this check's paths that is
+  not printable is written as its `repr` (A-40's own paths print keys as written until its follow-up
+  lands), and a value in a field the schema types (`name: 2026-01-01`) gets this message instead of
+  the schema's `datetime.date(2026, 1, 1) is not of type 'string'`. A key that is not a string is
+  not this check's: a date key, or keys of two types in one mapping (`{1: a, b: c}`), still pass
+  lint and crash the run until A-44 (#80) is in (an int, bool, null or float key alone runs, written
+  as text). None of the 75 shipped specs holds such a value (none of the 129 YAML files of the
+  repository that load is flagged). Found on 2026-10-07 by the pre-commit audit of
+  `fix/huge-int-repr` (finding F6). Clause A-54 (u02); `tests/registry/test_non_json_values.py`.
 - **`--runs` past what a float holds exited 1 with a traceback.** `dottore run ... --dry-run --runs
   <4,300 nines>` (and `--estimate`, and the run) gave `OverflowError: int too large to convert to
   float` where the plan multiplied its token estimate by the budget headroom: from 305 nines with
