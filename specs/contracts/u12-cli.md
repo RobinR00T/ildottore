@@ -145,7 +145,8 @@ when it was formatted, walked or written back: a report's run status is formatte
 text, a run store column is refused past 100 levels, and a YAML file (spec, scope, target,
 fleet, labels, pack) is refused past 100 levels with its aliases expanded, which chained anchors
 reach from 4 KB of text (`tests/cli/test_deep_json.py`, `test_replay.py`,
-`test_resume_integrity.py`).
+`test_resume_integrity.py`), and past 100,000 nodes with them expanded, which 15 doubling
+anchors reach from 265 bytes (u01 A-37, `tests/cli/test_yaml_expansion.py`).
 
 **A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
 belongs to a different target, and refuses when no run store is available to check. Unbound, it
