@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from pydantic import ValidationError
+
 from ildottore.adapters import (
     AnthropicAdapter,
     MCPAdapter,
@@ -60,7 +62,7 @@ from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
-from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.config_errors import validation_problems, yaml_problem
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import (
@@ -1059,7 +1061,14 @@ def load_target(path: Path) -> Target:
     if not isinstance(caps_raw, dict):
         raise ValueError(f"target file {path} 'capabilities' must be a mapping")
     known = set(Capabilities.model_fields)
-    caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
+    # Field and reason only, as the scope, fleet and pack loaders give them: pydantic's own text
+    # ran to four lines, quoted the value written and did not name the file (A-45).
+    try:
+        caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"
+        ) from exc
     name = raw.get("name") if isinstance(raw.get("name"), str) else None
 
     provider = raw.get("provider") if isinstance(raw.get("provider"), str) else None
@@ -1071,7 +1080,13 @@ def load_target(path: Path) -> Target:
     if sampling_raw is not None:
         if not isinstance(sampling_raw, dict):
             raise ValueError(f"target file {path} 'sampling_defaults' must be a mapping")
-        sampling = Sampling.model_validate(sampling_raw)
+        try:
+            sampling = Sampling.model_validate(sampling_raw)
+        except ValidationError as exc:
+            raise ValueError(
+                f"target file {path} 'sampling_defaults' failed validation: "
+                f"{validation_problems(exc)}"
+            ) from exc
 
     transport = raw.get("transport") if isinstance(raw.get("transport"), str) else None
     command_raw = raw.get("command")
