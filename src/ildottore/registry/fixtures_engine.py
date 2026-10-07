@@ -140,8 +140,9 @@ def _stub_tool_args(call: dict[str, object]) -> dict[str, object]:
 
 
 def _stub_confirmed(args: dict[str, object]) -> bool:
+    # String keys only, as in the evaluator: a spec built in code can hold any key (A-44).
     for key, value in args.items():
-        if key.lower() in _STUB_CONFIRM_KEYS and bool(value):
+        if isinstance(key, str) and key.lower() in _STUB_CONFIRM_KEYS and bool(value):
             return True
         if isinstance(value, dict) and _stub_confirmed(value):
             return True
@@ -184,7 +185,7 @@ def _stub_forbidden_hit(args: dict[str, object], forbidden: frozenset[str]) -> b
     if not forbidden:
         return False
     for key, value in args.items():
-        if key.lower() in forbidden and bool(value):
+        if isinstance(key, str) and key.lower() in forbidden and bool(value):
             return True
         if isinstance(value, dict) and _stub_forbidden_hit(value, forbidden):
             return True
