@@ -46,18 +46,21 @@ versioning: [SemVer](https://semver.org/).
   directory that exists) printed an `sk-ant-` key given as `<key>.json`, an `sk-proj-` key as
   `<key>.yaml` and an Azure connection string, which ends in `.windows.net`, all of which main
   masked, and was withdrawn before commit.
-- **The cost is main's or less, and what this adds is capped.** Main's rule walks each distinct
-  token once and builds its parents as it reaches them: 256 copies of a token of `/a` written 2,047
-  times (a target's transport error quoted in a halted report's reason, which `calibrate` prints)
-  cost 2,048 lookups and 0.4 s of CPU where main made 524,032 and 4.8 s (3.14, on a quiet machine),
-  and the other hostile shapes measured cost main's lookups or fewer. The whole-path walk adds at
-  most 1,024 lookups and 65,536 checks (a cached answer is a check, and a walk in progress refuses
-  at most one name's 255 candidates more); past either it keeps nothing more, which costs
-  readability only. One start tries at most 255 candidates for a name (NAME_MAX), no walk starts
-  inside what another already read (`/./././...//` cost the square of its length), and the
-  registered credentials are checked through one set built per error (a check per kept path and per
-  part cost 55 s on a 1 MiB error with a 2,000-character credential). A relative word with no run of
-  16 characters the entropy rule could mask is not looked up.
+- **The cost is main's or less, and what this adds is capped.** Main's rule makes main's lookups and
+  holds nothing between tokens (holding every path it asked took 1.3 GiB for a 1 MiB message where
+  main took 21 MiB, final audit); a token written again is walked once and its parents are built as
+  they are reached. 256 copies of a token of `/a` written 2,047 times (a target's transport error
+  quoted in a halted report's reason, which `calibrate` prints) cost 2,048 lookups, 0.4 s of CPU and
+  4 MiB where main made 524,032 and took 4.7 s and 23 MiB; 255 distinct tokens of 2,046 directories
+  cost main's lookups (and 255 of the whole-path walk), 3.7 s and 2 MiB where main took 4.7 s and 21
+  MiB (3.14, on a quiet machine). The whole-path walk adds at most 1,024 lookups and 65,536 checks
+  (a cached answer is a check, and a walk in progress refuses at most one name's 255 candidates
+  more); past either it keeps nothing more, which costs readability only. One start tries at most
+  255 candidates for a name (NAME_MAX), no walk starts inside what another already read
+  (`/./././...//` cost the square of its length), and the registered credentials are checked through
+  one set built per error (a check per kept path and per part cost 55 s on a 1 MiB error with a
+  2,000-character credential). A relative word with no run of 16 characters the entropy rule could
+  mask is not looked up.
 - **`dottore diff` masks an incomplete report's reason, as `calibrate` does.** The refusal printed
   `summary.status.reason`, which quotes a target's transport error, without the redactor: a key or a
   high-entropy token in it printed in clear while `calibrate` masked the same text. It is now a
@@ -66,15 +69,18 @@ versioning: [SemVer](https://semver.org/).
 - Not covered, as on main: a missing file under a directory whose name holds a space or one of
   `()[],;'"` keeps its directories only up to that character, what follows the existing part of a
   missing path is judged from its `/` on, a key glued before an existing absolute path by `+`, `=`
-  or `-` is judged alone, and main's rule costs what it cost on main for many distinct deep tokens.
-  Also not covered: a whole path right after `]`, `:`, `@`, `=`, `+` or `-`, a relative path with a
-  space, a name holding a newline, the name of a file that does not exist. The `diff` table prints a
-  report's spec ids as they are (on main too; PR #51 refuses one that is not a spec id).
+  or `-` is judged alone, main's rule makes main's lookups for many distinct deep tokens, and a
+  failure inside the masking itself (out of memory) prints the original error unmasked in the
+  traceback. Also not covered: a whole path right after `]`, `:`, `@`, `=`, `+` or `-`, a relative
+  path with a space, a name holding a newline, the name of a file that does not exist. The `diff`
+  table prints a report's spec ids as they are (on main too; PR #51 refuses one that is not a spec
+  id).
 - Tests: `tests/cli/test_masked_paths.py` (CliRunner; SHA-named files, absolute and relative,
   existing and missing, in directories named with a space, parentheses, brackets, a comma, a
   semicolon and quotes, and every key and credential part the audits printed). Each guard was
-  removed in turn and a test failed every time (26 mutants); the lazy parents of main's rule save
-  CPU that no count shows, and are measured, not tested.
+  removed in turn and a test failed every time (26 mutants), a cache across tokens included (by peak
+  memory); the lazy parents of main's rule save CPU that no count shows, and are measured, not
+  tested.
 
 ### Fixed (a number too long to write out)
 

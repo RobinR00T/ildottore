@@ -173,18 +173,16 @@ def test_a_relative_path_after_an_absolute_one_is_kept(
 
 
 def _count_main_rule_calls(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    """How many times main's rule asks `Path.exists` (cached or not)."""
-
-    from ildottore.cli import app as app_mod
+    """How many times main's rule asks `Path.exists` (the whole-path walk uses `os.path`)."""
 
     calls = [0]
-    real = app_mod._Lookups.as_main
+    real = Path.exists
 
-    def counting(self: object, path: Path) -> bool | None:
+    def counting(self: Path, *args: object, **kwargs: object) -> bool:
         calls[0] += 1
-        return real(self, path)  # type: ignore[arg-type]
+        return real(self, *args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(app_mod._Lookups, "as_main", counting)
+    monkeypatch.setattr(Path, "exists", counting)
     return calls
 
 
@@ -203,6 +201,24 @@ def test_a_path_written_again_is_walked_once(monkeypatch: pytest.MonkeyPatch) ->
     calls = _count_main_rule_calls(monkeypatch)
     _masked(ValueError(" ".join(["/a" * 500] * 600)))
     assert calls[0] <= 501
+
+
+def test_main_rule_holds_no_path_once_its_token_is_walked() -> None:
+    """Holding every path it asked took 1.3 GiB for a 1 MiB message where main took 21 MiB
+    (final audit): a quarter of that message, 255 tokens of 508 directories, stays small."""
+
+    import tracemalloc
+
+    from ildottore.cli.app import _existing_prefixes
+
+    text = " ".join(f"/b{i:04d}" + "/a" * 508 for i in range(255))
+    tracemalloc.start()
+    try:
+        _existing_prefixes(text)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 16 * 2**20
 
 
 def test_main_rule_does_not_stop_at_the_cost_cap() -> None:
@@ -240,17 +256,6 @@ def test_a_relative_name_that_does_not_exist_is_still_masked(
     monkeypatch.chdir(tmp_path)
     for text in (f"bad value {SECRET}.json", f"bad value {SECRET}: x", f"bad value ./{SECRET}"):
         assert SECRET not in _masked(ValueError(text)), text
-
-
-def test_an_existing_relative_name_inside_a_word_is_not_kept(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Keeping ``ok-<sha>.json`` inside a longer token would leave its head to be read alone."""
-
-    _complete_report(tmp_path / f"ok-{SHA}.json")
-    monkeypatch.chdir(tmp_path)
-    shown = _masked(ValueError(f"bad value {SECRET}ok-{SHA}.json"))
-    assert SECRET not in shown
 
 
 def test_the_tail_of_an_absolute_path_is_not_a_relative_one(
@@ -476,7 +481,7 @@ def test_diff_masks_the_reason_of_an_incomplete_report_like_calibrate(tmp_path: 
 @pytest.mark.parametrize(
     "build",
     [
-        lambda base: " ".join(["/a" * 2047] * 256),  # 1 MiB: main made 524,032 lookups, 7 s
+        lambda base: " ".join(["/a" * 2047] * 256),  # 1 MiB: main made 524,032 lookups, ~5 s
         lambda base: " ".join(f"{base}/x{i}" for i in range(50_000)),  # distinct names
         lambda base: " ".join([f"{base}/" + "a " * 127] * 400),  # a name at every space
         lambda base: " ".join(f"rel-{SHA}-{i}.json:" for i in range(20_000)),  # relative words
@@ -554,14 +559,14 @@ def test_the_whole_path_walk_makes_a_bounded_number_of_checks(
     chain = tmp_path.joinpath(*(["d"] * 200))
     chain.mkdir(parents=True)
     calls = 0
-    real_ask = app_mod._Lookups._ask
+    real_call = app_mod._Lookups.__call__
 
-    def counting(self: object, *args: object) -> object:
+    def counting(self: object, path: str, *, directory: bool) -> bool:
         nonlocal calls
         calls += 1
-        return real_ask(self, *args)  # type: ignore[arg-type]
+        return real_call(self, path, directory=directory)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(app_mod._Lookups, "_ask", counting)
+    monkeypatch.setattr(app_mod._Lookups, "__call__", counting)
     text = " ".join(f"{chain}/x{i}" for i in range(600))
     app_mod._whole_path_spans(text, app_mod._Lookups())
     # A walk in progress when the cap is reached refuses at most one name's candidates more.

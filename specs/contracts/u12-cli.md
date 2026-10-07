@@ -245,9 +245,10 @@ Three versions that kept more (the name an `OSError` quotes, the existing direct
 path through a space, a `//` or a `/./`) printed keys that main masked and were withdrawn (OD-25;
 pre-commit, delta and pre-merge audits). `diff`'s incomplete-report refusal goes through `_masked`.
 The whole-path walk costs at most 1,024 filesystem lookups and 65,536 checks, and no walk starts
-inside what another already read; main's rule walks each distinct token once (a 1 MiB message that
-cost 524,032 lookups costs 2,048). Main's rule stopped at a cap printed a value main masked (audit
-of the cap). Checked by `tests/cli/test_masked_paths.py`, and by a differential fuzz against main:
+inside what another already read; main's rule walks each distinct token once and holds no path
+between tokens (a 1 MiB message that cost 524,032 lookups costs 2,048; held, the paths took 1.3 GiB
+where main took 21 MiB). Main's rule stopped at a cap printed a value main masked (audit of the
+cap). Checked by `tests/cli/test_masked_paths.py`, and by a differential fuzz against main:
 no key main masked printed, in 120,000 messages.
 
 **A-45 A target file's `capabilities` or `sampling_defaults` refusal names the file, the field and

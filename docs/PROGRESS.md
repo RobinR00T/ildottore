@@ -18,8 +18,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   messages finds no such key now. The delta audit of the rebuild found main's rule calling
   `os.path.exists` where main called `Path.exists` (which raises on 3.11 and 3.12), cached checks
   left uncounted, and touching parts merged; all three fixed. The audit of that fix found the cap
-  stopping main's rule, which then printed a value main masked; main's rule has no cap now, and
-  costs main's lookups or fewer. Open for the owner: OD-25, printing the name of a file that
+  stopping main's rule, which then printed a value main masked; main's rule has no cap now, makes
+  main's lookups or fewer and, after the final audit (a cache of every path took 1.3 GiB where
+  main took 21 MiB), holds nothing between tokens. Open for the owner: OD-25, printing the name
+  of a file that
   does not exist. PR #51 touches the same S6 row and `diff` refusal lines, so the second to merge
   resolves them (`_masked` applies `visible_controls` after #51, so the wrapper on the refusal
   goes).

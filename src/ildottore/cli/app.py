@@ -16,7 +16,6 @@ import json
 import math
 import os
 import re
-from collections.abc import Callable
 from itertools import chain
 from pathlib import Path
 from typing import Annotated
@@ -135,54 +134,33 @@ _NAME_STOP = re.compile(r"[/\n\r\x00]")
 #: after a `/` cannot use up the lookups the other paths of the message need.
 _MAX_NAME_LEN = 255
 #: What the whole-path walk may cost one message: filesystem lookups, and checks (a lookup or a
-#: cached answer). Past either it keeps nothing more, which costs readability only. Main's rule
-#: has no cap: stopping it early kept nothing where main kept a directory, and the rest of the
-#: token, judged whole, printed a value main masked (audit of the cap); its cost is main's, less
-#: what the cache and one walk per token save (main: 524,032 lookups and 8.9 s of CPU for 256
-#: tokens of `/a` written 2,047 times, a target's transport error in a halted report's reason).
+#: cached answer). Past either it keeps nothing more, which costs readability only.
 _MAX_LOOKUPS = 1024
 _MAX_CHECKS = 65_536
 
 
 class _Lookups:
-    """Filesystem checks for one message, each path once. ``capped``: a new lookup past
+    """The whole-path walk's filesystem checks for one message, each path once: a new lookup past
     ``_MAX_LOOKUPS``, and any check past ``_MAX_CHECKS``, answers False and sets ``spent``."""
 
-    def __init__(self, *, capped: bool = True) -> None:
-        self._seen: dict[tuple[str, str], bool | None] = {}
+    def __init__(self) -> None:
+        self._seen: dict[tuple[str, bool], bool] = {}
         self._checks = 0
-        self._capped = capped
         self.spent = False
 
-    def _ask(self, path: str, kind: str, probe: Callable[[], bool | None]) -> bool | None:
+    def __call__(self, path: str, *, directory: bool) -> bool:
         self._checks += 1
-        key = (path, kind)
-        over = self._capped and (len(self._seen) >= _MAX_LOOKUPS or self._checks > _MAX_CHECKS)
+        key = (path, directory)
+        over = len(self._seen) >= _MAX_LOOKUPS or self._checks > _MAX_CHECKS
         if over and (key not in self._seen or self._checks > _MAX_CHECKS):
             self.spent = True
             return False
         if key not in self._seen:
-            self._seen[key] = probe()
+            self._seen[key] = os.path.isdir(path) if directory else os.path.exists(path)
         return self._seen[key]
 
-    def __call__(self, path: str, *, directory: bool) -> bool:
-        probe = (lambda: os.path.isdir(path)) if directory else (lambda: os.path.exists(path))
-        return bool(self._ask(path, "dir" if directory else "any", probe))
 
-    def as_main(self, path: Path) -> bool | None:
-        """``path.exists()`` as main called it: ``None`` where it raised, which Python 3.11 and
-        3.12 do for a name too long or a directory that cannot be read (3.14 returns False)."""
-
-        def probe() -> bool | None:
-            try:
-                return path.exists()
-            except OSError:
-                return None
-
-        return self._ask(str(path), "main", probe)
-
-
-def _existing_prefixes(text: str, lookup: _Lookups | None = None) -> list[str]:
+def _existing_prefixes(text: str) -> list[str]:
     """The part of each absolute path in ``text`` that exists on this machine.
 
     Kept readable: the redactor masked any high-entropy segment, so a macOS temp directory or a
@@ -191,11 +169,14 @@ def _existing_prefixes(text: str, lookup: _Lookups | None = None) -> list[str]:
     a value they typed; the rest of the path still goes through the redactor.
     """
 
-    # Main's calls, so main's answer on every Python version: with `os.path.exists`, a name
-    # too long went on to its parent where 3.11 raised and main kept nothing, and printed the
-    # key that main masked (delta audit of A-38). No cap (`_MAX_LOOKUPS`); one walk per
-    # distinct token, its parents built as they are reached.
-    check = lookup or _Lookups(capped=False)
+    # Main's rule, main's calls, so main's answer on every Python version and main's cost or
+    # less. `Path.exists` raises on 3.11 and 3.12 for a name too long or a directory that cannot
+    # be read, and main kept nothing for that token: `os.path.exists` went on to the parent and
+    # printed a key main masked (delta audit of A-38). No cap: stopped early it kept nothing
+    # where main kept a directory, and the rest of the token, judged whole, printed a value main
+    # masked (audit of the cap). No cache across tokens: holding every path asked took 1.3 GiB
+    # for a 1 MiB message where main took 21 MiB (final audit). What it saves: a token written
+    # again is not walked again, and the parents are built as they are reached.
     prefixes: list[str] = []
     walked: set[str] = set()
     for match in _ABS_PATH.finditer(text):
@@ -208,8 +189,9 @@ def _existing_prefixes(text: str, lookup: _Lookups | None = None) -> list[str]:
             shown = str(path)
             if shown == "/" or not token.startswith(shown):
                 break
-            exists = check.as_main(path)
-            if exists is None:
+            try:
+                exists = path.exists()
+            except OSError:
                 break
             if exists:
                 prefixes.append(shown)
