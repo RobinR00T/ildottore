@@ -13,7 +13,15 @@ The carryover ledger. Every agent session updates this so context survives even 
   its placeholder and scrubbed by value, every frame in the evidence, a turn bounded in time
   (inconclusive), bytes and frames (not retried), one connection per conversation, no query
   resent by the adapter. Worked example `examples/target.websocket.yaml` (Scenario H, dry run
-  pinned: 10 specs, 125 requests). `make gates` green: 2373 tests, 96.53% coverage, bandit
+  pinned: 10 specs, 125 requests). The pre-commit audit (33 mutants, twelve findings, all
+  reproduced) is closed in the same PR: a nested frame no longer aborts the campaign, the
+  handshake phase is capped, the transcript is recorded once, no live conversation is evicted,
+  the credential is scrubbed from every error message and refused under 8 characters, the
+  query send is under the turn timeout, a lost conversation is debited once, the loader
+  refuses request placeholders in connection templates, placeholders in `vars` and the
+  library's own upgrade headers, `equals`/`final_value` compare by type, cleartext `ws://`
+  never goes through a proxy (`tests/adapters/test_websocket_audit.py`). `make gates` green:
+  2404 tests, 96.56% coverage, bandit
   and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no dependencies). Open for the
   owner: OD-30 (a transcript field on `ModelResponse` instead of `raw_ids["websocket"]`),
   OD-31 (several queries on one socket), OD-32 (a reconnect mid-conversation for a stateless

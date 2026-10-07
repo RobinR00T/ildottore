@@ -362,23 +362,32 @@ templates: static fields plus `{{name}}` placeholders. Four are reserved: `{{tok
 credential `auth_ref` resolves to), `{{prompt}}` (the attack text of the turn: the request's
 prompt, else its last user message), `{{system_prompt}}` (the spec's system prompt, empty when
 none) and `{{messages}}` (the whole history as a JSON list, for a server that keeps no state).
-Any other name must be declared under `vars`. A string that is exactly one placeholder takes
-the value's own type (`"{{messages}}"` becomes the list); inside a longer string it is spliced
-as text. The loader refuses, before anything is sent: a block missing or on another provider;
-an endpoint that is not `ws://` or `wss://`, or that carries a query, a fragment or a
-user:password; a placeholder that is neither reserved nor in `vars`; `{{token}}` without an
-`auth_ref`, or inside `vars`; a `message.send` with neither `{{prompt}}` nor `{{messages}}`;
+Any other name must be declared under `vars`, which are plain values: a placeholder inside a
+`vars` value is refused (it would go on the wire literally). `headers`, `handshake.send` and
+`session.start` are sent before any query, so they may use only `{{token}}` and `vars`. A
+string that is exactly one placeholder takes the value's own type (`"{{messages}}"` becomes
+the list); inside a longer string it is spliced as text. The loader refuses, before anything
+is sent: a block missing or on another provider; an endpoint that is not `ws://` or `wss://`,
+or that carries a query, a fragment or a user:password; a placeholder that is neither reserved
+nor in `vars`; `{{token}}` without an `auth_ref`, or inside `vars`; a request placeholder in a
+connection template; a `message.send` with neither `{{prompt}}` nor `{{messages}}`; an upgrade
+header the library writes itself (`Host`, `Connection`, `Upgrade`, `Sec-WebSocket-*`);
 `one_query_in_flight: false`; a `timeout_seconds` outside (0, 600]; a `reconnect.max_attempts`
-outside 0 to 5. The error names the field and never quotes the value.
+outside 0 to 5. The error names the field and never quotes the value. At send time, before any
+dial, a resolved credential shorter than 8 characters is refused too: the redactor masks a
+credential by value only from that length.
 
 **One connection per conversation.** A single-turn attempt dials, sends the handshake and the
 session start, sends its query, reads the turn and closes. A multi-turn attempt keeps one
 connection across its turns and closes it after the last; a later turn whose connection is gone
-(the turn before it failed, or more than 16 conversations were open at once) is an environment
-error (`inconclusive`), never a silent restart of the session. Concurrent specs therefore never
-interleave on one socket, and one query is in flight per connection. The `-sV` probes are
-single-turn attempts: one connection each. One request in the budget is one query turn; the
-handshake and session frames ride on it.
+(the turn before it failed) is an environment error (`inconclusive`, not retried), never a
+silent restart of the session. A live conversation is never evicted: past 256 open at once, a
+new one is refused (`inconclusive`, not retried) and the open ones keep working. Concurrent
+specs therefore never interleave on one socket, and one query is in flight per connection. The
+`-sV` probes are single-turn attempts: one connection each. One request in the budget is one
+query turn; the handshake and session frames ride on it. Cleartext `ws://` never goes through a
+proxy; `wss://` honours the proxy environment (`https_proxy`, `wss_proxy`) as the HTTP adapters
+do, TLS end to end.
 
 **Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a product
 defect, as a malformed HTTP reply is). A frame whose `type_path` value is in `ignore_types` is
@@ -387,9 +396,12 @@ error, retried by the runner's policy and debited each time); every string at `t
 appended; the frame satisfying `final_path`/`final_value` ends the turn; its `usage_path`
 mapping, if any, trues up the token ledger (without one the pre-send estimate stands, as for a
 REST target). A turn with no text at all is a product defect. No final frame within
-`timeout_seconds`, or a connection closed mid-turn, is an environment error: inconclusive, and
-the runner's `--timeout` still bounds the whole send. A turn over 4 MiB, over 4096 frames, or
-a single frame over 4 MiB is refused unread and not retried. Compression is not negotiated.
+`timeout_seconds` (counted from the query send, which is inside it), or a connection closed
+mid-turn, is an environment error: inconclusive, and the runner's `--timeout` still bounds the
+whole send. The handshake and session phase runs under the same timeout and caps. A turn over
+4 MiB, over 4096 frames, a single frame over 4 MiB, or a frame nested deeper than 64 levels is
+refused unread and not retried (inconclusive): a deeper frame would have overflowed the
+evidence store's serializer and aborted the campaign. Compression is not negotiated.
 `sampling_defaults` do not apply: the templates carry no sampling fields.
 
 **Tool calls.** The adapter reads tool calls only when `tool_calls_path` is declared (each
@@ -401,11 +413,14 @@ a memory seed needs `{{system_prompt}}` in a template.
 **Evidence and the credential.** Every frame sent and received is kept on the attempt
 (`response.raw_ids.websocket.frames`, in order, with its direction) and filed by the evidence
 store redacted at rest, so `dottore replay` re-derives the verdict from what went over the
-socket. The credential is inserted in memory at send time and recorded as `{{token}}`; a
-server that echoes it back has it scrubbed from the recorded frame by value, and the error
-message of an error frame is redacted too. `-sV` probes a WebSocket target like any other live
-one: the text layers read the replies, and the envelope layer reads a model name only when
-`model_path` is declared (there is no HTTP envelope to read).
+socket. In a multi-turn attempt the stored attempt is built from the final turn, whose record
+carries the whole conversation's frames (an intermediate turn's record carries only its own).
+The credential is inserted in memory at send time and recorded as `{{token}}`; a server that
+echoes it back, in a frame, an error frame or a close reason, has it scrubbed by value from
+the record and from the error message, which is redacted too. `-sV` probes a WebSocket target
+like any other live one: the text layers read the replies, and the envelope layer reads a
+model name only when `model_path` is declared (there is no HTTP envelope to read; the
+transcript is never read as a tell).
 
 **Not covered.** A connection shared by several concurrent queries (a correlation id); an
 HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (`dottore fleet`

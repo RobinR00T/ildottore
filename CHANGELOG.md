@@ -51,13 +51,32 @@ versioning: [SemVer](https://semver.org/).
   `websockets` 17.2 has no dependencies), contracts u01 (A-19) and u04 (§1 and OD-30 to
   OD-33), `docs/12`, the scope and target templates. `tests/ws_chat_server.py` is a loopback
   JSON-over-WebSocket server with thirteen behaviours; `tests/adapters/test_websocket.py` and
-  `tests/cli/test_websocket_target.py` hold 71 tests (the gate with zero connections, the
+  `tests/cli/test_websocket_target.py` hold 102 tests with `tests/adapters/test_websocket_audit.py` (the gate with zero connections, the
   redirect, streaming, the final frame, timeouts, errors, reconnects, one connection per
   conversation, the evidence on disk, a real campaign, its replay, a real `-sV` pass).
-  `make gates`: 2373 tests, 96.53% coverage. Not built, open for the owner: a dedicated
+  `make gates`: 2404 tests, 96.56% coverage. Not built, open for the owner: a dedicated
   transcript field on `ModelResponse` (OD-30), several queries multiplexed on one socket
   (OD-31), a reconnect mid-conversation for a stateless server (OD-32), a `websocket:` block in
   a fleet entry (OD-33: `dottore fleet` infers `rest` from a `wss://` endpoint).
+- **The pre-commit audit** (a detached worktree at the code commit, 33 mutants, every finding
+  reproduced by execution) found twelve things, all closed before the PR: a frame nested past
+  what the evidence store serializes aborted the campaign (now `inconclusive`, not retried,
+  bounded at 64 levels); the handshake phase had no byte cap (it has the turn's); the whole
+  transcript was copied into every turn's record, quadratic in turns (an intermediate turn
+  records its own frames, the last the conversation's); the conversation cap evicted live
+  conversations, mid-turn included (never evicted now: past 256 a new one is refused); the
+  credential reached exception text through a reflected upgrade header and a close reason, and
+  one shorter than 4 characters was recorded verbatim (one helper scrubs and redacts every
+  message that quotes the wire; a credential shorter than 8 characters is refused before any
+  dial); the query send and the handshake sat outside the turn timeout; a lost conversation was
+  retried and debited three times for nothing (not retried now); request placeholders were
+  accepted in the connection templates and placeholders inside `vars` went on the wire
+  literally (both refused by the loader); `equals` and `final_value` read `1`, `1.0` and `true`
+  as one value (strict now); cleartext `ws://` could go through the environment's proxy (never
+  now; `wss://` still honours it, TLS end to end) and a `Host` header went out twice (the
+  library's headers are refused). Five surviving mutants got a test each (compression never
+  offered, in-memory redaction, a bounded close, the transcript not a metadata tell, an absent
+  block out of the digest). `tests/adapters/test_websocket_audit.py` holds the regressions.
 
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 
