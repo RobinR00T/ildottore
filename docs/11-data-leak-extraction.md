@@ -48,7 +48,9 @@ design, with no spec yet. The design ids of the unbuilt rows are placeholders, n
 - **logprobs capture**: adapters must expose token logprobs where the provider supports them
   (`capabilities.logprobs`). Membership inference and confidence side-channels depend on it.
   Missing ⇒ a spec that requires it (today `DL-MEMORIZE-DIVERGENCE-001`; the membership specs
-  are not built) returns `inconclusive: capability_unavailable`.
+  are not built) returns `inconclusive: capability_unavailable`. A block in which a token's figure is
+  one no model produces (anything but a finite number at or below zero) reads as missing, so it
+  is never scored (u04 §7 A-39).
 - **multi-identity scope**: `scope.yaml` may declare ≥2 auth identities for the same target so
   cross-tenant/authz specs can run. Absent ⇒ those specs skip (logged, not silent).
 - **reference corpus (optional)**: operator-provided set for `verbatim_overlap`, stored as

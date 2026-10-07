@@ -35,6 +35,7 @@ import httpx
 
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
+from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
     ModelRequest,
@@ -247,30 +248,50 @@ class RetryConfig:
         return min(self.backoff_base_s * (2.0**attempt), self.backoff_cap_s)
 
 
-def _coerce_top(
-    raw_top: Sequence[Any] | Mapping[str, Any] | None,
-) -> list[tuple[str, float]] | None:
+class _ImpossibleFigure(Exception):
+    """A logprob figure no model produces (u04 §7, A-39): what holds it is not read."""
+
+
+def _figure(value: object) -> float:
+    """``value`` as a logprob (:func:`~ildottore.shared.logprobs.readable_logprob`), or raise."""
+
+    figure = readable_logprob(value)
+    if figure is None:
+        raise _ImpossibleFigure
+    return figure
+
+
+def _coerce_top(raw_top: object) -> list[tuple[str, float]] | None:
     """Normalize a provider ``top_logprobs`` blob into ``[(token, logprob), …]``.
 
     Accepts either a list of ``{"token": str, "logprob": float}`` entries
     (OpenAI shape) or a ``{token: logprob}`` mapping. Returns ``None`` when
-    nothing usable is present (ADR-0005: no fabricated alternatives).
+    nothing usable is present (ADR-0005: no fabricated alternatives). A null
+    alternative is skipped in both shapes, and a blob of neither shape is no
+    alternatives (a number or a bool there raised ``TypeError``). One alternative
+    whose figure no model produces, whether or not it names a token, makes them all
+    ``None`` (u04 §7, A-39), not the whole block: no alternative is ever scored, so
+    the token's own figure still is.
     """
 
-    if raw_top is None:
-        return None
     pairs: list[tuple[str, float]] = []
-    if isinstance(raw_top, Mapping):
-        for map_token, map_logprob in raw_top.items():
-            pairs.append((str(map_token), float(map_logprob)))
-        return pairs or None
-    for entry in raw_top:
-        if isinstance(entry, Mapping):
-            token = entry.get("token")
-            logprob = entry.get("logprob")
-            if token is None or logprob is None:
-                continue
-            pairs.append((str(token), float(logprob)))
+    try:
+        if isinstance(raw_top, Mapping):
+            for map_token, map_logprob in raw_top.items():
+                if map_logprob is not None:
+                    pairs.append((str(map_token), _figure(map_logprob)))
+        elif isinstance(raw_top, Sequence) and not isinstance(raw_top, str):
+            for entry in raw_top:
+                if isinstance(entry, Mapping):
+                    token = entry.get("token")
+                    logprob = entry.get("logprob")
+                    if logprob is None:
+                        continue
+                    figure = _figure(logprob)  # before the token, as in `map_logprobs`
+                    if token is not None:
+                        pairs.append((str(token), figure))
+    except _ImpossibleFigure:
+        return None
     return pairs or None
 
 
@@ -283,27 +304,44 @@ def map_logprobs(
     Returns ``None`` (not ``[]``) when ``entries`` is ``None`` - so
     ``logprob_membership`` returns ``inconclusive: capability_unavailable``
     (contract §4 KEEP, ADR-0005). An empty-but-present list stays ``[]``.
+
+    A block in which any entry's own figure is one no model produces, whether or not
+    the entry names its token, is ``None`` too, as if the reply carried no block
+    (u04 §7, A-39): the attempt and every evaluator of its text go on, and nothing
+    is scored from the rest of the block. Such a figure among a token's
+    alternatives drops only those alternatives (:func:`_coerce_top`).
     """
 
     if entries is None:
         return None
     out: list[TokenLogprob] = []
-    for entry in entries:
-        token = entry.get("token")
-        logprob = entry.get("logprob")
-        if token is None or logprob is None:
-            # A present-but-broken entry is a product-shape problem; skip it here
-            # and let the adapter's response validation decide. Being lenient
-            # keeps a single stray null from nuking an otherwise-valid list.
-            continue
-        raw_top = entry.get("top_logprobs")
-        out.append(
-            TokenLogprob(
-                token=str(token),
-                logprob=float(logprob),
-                top=_coerce_top(raw_top),
+    try:
+        for entry in entries:
+            token = entry.get("token")
+            logprob = entry.get("logprob")
+            if logprob is None:
+                # A present-but-broken entry is a product-shape problem; skip it here
+                # and let the adapter's response validation decide. Being lenient
+                # keeps a single stray null from nuking an otherwise-valid list.
+                continue
+            # Read before the token is: skipping an entry with no token first let its
+            # impossible figure pass unseen and the rest be scored (delta audit, L2).
+            figure = _figure(logprob)
+            if token is None:
+                continue
+            out.append(
+                TokenLogprob(
+                    token=str(token),
+                    logprob=figure,
+                    top=_coerce_top(entry.get("top_logprobs")),
+                )
             )
-        )
+    except _ImpossibleFigure:
+        # The whole block, not the entry (OD-24): the readable rest scored alone is not the
+        # reply's figure, and confident tokens around one positive figure read as "likely
+        # memorized". Before, ``float()`` raised here and stopped the command (exit 1 or 3).
+        # Only an entry's own figure gets here; `_coerce_top` keeps its alternatives' to itself.
+        return None
     return out
 
 

@@ -3,6 +3,21 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): a logprob figure no model produces
+
+- On `fix/hostile-logprob`: a reply whose logprob (or one of its `top_logprobs`) was a 400-digit
+  integer, a list or an object made `dottore fingerprint` and `run -sV` exit 1 with a traceback
+  and no report, and `run` abort with exit 3; a positive token figure scored
+  `DL-MEMORIZE-DIVERGENCE-001` "likely memorized"; NaN and infinities reached the report as
+  non-JSON tokens. A figure is now read only when it is a finite JSON number at or below zero; an
+  entry's own figure that is not (named token or not) makes the block read as no block, so the attempt and its text
+  evaluators go on and the membership spec is inconclusive, and an alternative that is not costs
+  only its token's alternatives (u04 §7 A-39, `tests/cli/test_logprob_figures.py`). Open for the
+  owner (OD-24): the whole block versus only the bad entry, a positive figure counted as
+  impossible, and whether the evidence should say the block was unreadable rather than absent.
+  Found by the pre-commit audit and left open: a lone surrogate in a token or the reply's text
+  still aborts `run` (exit 3, `UnicodeEncodeError`), on main too.
+
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
 - Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and

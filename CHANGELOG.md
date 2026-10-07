@@ -5,6 +5,38 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a reply's logprob figure that no model produces stops nothing and decides nothing)
+
+- **A logprob that no float holds, or that is not a number, crashed the command.** The OpenAI
+  adapter asks for token logprobs on every request (the `--judge` model's too) and passed each
+  figure of `choices[0].logprobs` to `float()`. A 400-digit integer there, or in one of
+  `top_logprobs` (list or map shape), raised `OverflowError`, and a list or an object
+  `TypeError`: neither is caught by the CLI, so `dottore fingerprint` and `dottore run -sV`
+  exited 1, the code CI reads as findings below `--fail-on`, with a traceback and no report, and
+  plain `run` and `fleet --run` aborted the campaign with exit 3 and a partial report. A string
+  that is not a number exited 3 (one that is was read: `"1"` scored "likely memorized" and `"nan"`
+  wrote a bare `NaN`), and a `top_logprobs` that was a number or a bool, or a null alternative in the map
+  shape, raised `TypeError` too. The `-sV` probes read no logprob at all.
+- **An impossible figure was scored.** A logprob is `log p`, never above zero, and a positive
+  token figure (0.5, 1e300, or `true`, read as 1.0) made `DL-MEMORIZE-DIVERGENCE-001` fail as
+  "likely memorized" (exit 1). A NaN or an infinity was written into the report and the evidence
+  as a bare `NaN` or `Infinity` token, which a strict JSON reader refuses.
+- **Now** a figure is read only when it is a JSON number that converts to a finite float at or
+  below zero (`shared.logprobs.readable_logprob`); a bool is not one, nor a string that spells
+  one (`"-0.5"` was read before). A block in which any entry's own figure is not readable,
+  whether or not the entry names its token, reads as no block (`logprobs: null`): the attempt and every evaluator of its text go on, and the
+  membership evaluator is inconclusive (`capability_unavailable`). The whole block, not only the
+  bad entry, because the rest scored alone would read as the reply's; whether that is the right
+  call is open decision OD-24. An alternative that is not readable costs only its token's
+  alternatives, which are never scored. A null figure is still skipped, in both `top_logprobs`
+  shapes now, and a `top_logprobs` of neither shape is no alternatives. `logprob_membership`
+  checks what it scores with the same predicate, so an adapter that builds its own logprobs
+  cannot have an impossible one scored. Known: the evidence does not say a block was unreadable
+  rather than absent, such an adapter's own figures still reach the evidence as it built
+  them, and a run halted before this change keeps, when resumed, the verdicts and figures its
+  stored attempts carry (u04 §7 A-39, OD-24). Found by the code audit of `fix/usage-figure-overflow` (F1, F2, F4,
+  F5).
+
 ### Fixed (a file nested past what the CLI can hold)
 
 - **`dottore diff` and `dottore calibrate` exited 1 on a report nested too deeply.** `json.loads`
