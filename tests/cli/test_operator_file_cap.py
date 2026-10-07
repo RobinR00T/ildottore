@@ -1,8 +1,8 @@
 """An operator's file is read up to 1 MiB, and its validation errors are listed up to 20.
 
 The scope, target, fleet and labels files and the policy and signature packs were read whole
-with ``Path.read_text``: 100 MB of comments in a scope or labels file cost 39.5 s and 244 MB
-before the refusal, and a check on the parsed document bounds what is built, not what is read.
+with ``Path.read_text``: a scope or labels file padded with 100 MB of comments was read and
+parsed whole (39.5 s and 244 MB), and a limit on the parsed document does not bound what is read.
 Only the spec loader capped its read (``MAX_YAML_BYTES``, 1 MiB). Their validation errors were
 listed whole: a 5.5 MB scope with 5,500 extra keys of 1,000 characters made ``dottore run
 --dry-run`` print one ``error:`` line of 5,687,058 characters (pre-commit audit of the
@@ -89,6 +89,16 @@ def padded(body: str, size: int) -> bytes:
     return out
 
 
+def names(text: str, path: Path) -> bool:
+    """Whether ``text`` names ``path``, as written or as ``OSError`` quotes it.
+
+    ``OSError`` quotes the path with ``repr``, which doubles a Windows backslash (pre-merge
+    audit; CI runs on Linux only).
+    """
+
+    return str(path) in text or repr(str(path))[1:-1] in text
+
+
 def write(tmp_path: Path, name: str, raw: bytes) -> Path:
     path = tmp_path / name
     path.write_bytes(raw)
@@ -144,7 +154,13 @@ def test_a_file_at_the_cap_is_read_and_one_byte_more_is_refused(tmp_path: Path) 
 
 
 def test_a_large_file_is_refused_before_any_of_it_is_read(tmp_path: Path) -> None:
-    """A sparse gigabyte: refused on its size, so not even one cap of it is allocated."""
+    """A sparse gigabyte: refused on its size (the message gives it), with no cap allocated.
+
+    What is allocated is the buffer of ``open()``, sized from the file system's block: 132,713
+    bytes on Python 3.14 (at least 128 KiB there), 5,765 on 3.12 (pre-merge audit). On a file
+    system whose blocks reach a quarter of the cap, that buffer alone tells nothing, and the
+    sized message is the proof that the file was not read.
+    """
 
     path = tmp_path / "huge.yaml"
     with path.open("wb") as handle:
@@ -156,7 +172,8 @@ def test_a_large_file_is_refused_before_any_of_it_is_read(tmp_path: Path) -> Non
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
-    assert peak < CAP // 4, peak
+    if os.stat(tmp_path).st_blksize < CAP // 4:
+        assert peak < CAP // 2, peak
 
 
 def test_a_file_grown_past_the_cap_after_its_size_was_taken_is_refused(
@@ -349,7 +366,7 @@ def test_each_loader_reads_up_to_the_cap(
     with pytest.raises(refusal) as caught:
         load(over)
     shown = str(caught.value)
-    assert f"file is {CAP + 1:,} bytes, {OVER}" in shown and str(over) in shown, shown
+    assert f"file is {CAP + 1:,} bytes, {OVER}" in shown and names(shown, over), shown
 
 
 @POSIX_ONLY
@@ -567,7 +584,7 @@ def error_line(result: Result, path: Path, reason: str) -> str:
     lines = result.stderr.splitlines()
     assert len(lines) == 1, (result.exception, result.stderr[:2000])
     line = lines[0]
-    assert line.startswith("error: ") and str(path) in line and reason in line, line[:2000]
+    assert line.startswith("error: ") and names(line, path) and reason in line, line[:2000]
     return line
 
 
@@ -658,4 +675,4 @@ def test_a_gigabyte_file_is_refused_in_bounded_time_and_memory(tmp_path: Path, n
     peak = outcome["peak"]
     assert peak < MAX_PEAK_BYTES, f"{peak / 2**20:.0f} MiB"
     assert outcome["exit"] == ExitCode.ERROR, done.stderr[-2000:]
-    assert any(str(path) in m and f"{2**30:,} bytes, {OVER}" in m for m in messages), messages
+    assert any(names(m, path) and f"{2**30:,} bytes, {OVER}" in m for m in messages), messages

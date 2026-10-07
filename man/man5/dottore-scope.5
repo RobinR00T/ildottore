@@ -16,7 +16,8 @@ mapping are refused too, so merge several maps with one list (<<: [*a, *b]). Eac
 three, and a labels file of dottore calibrate, is read up to 1 MiB: a larger file is refused
 before any of it is read, and a pipe or other stream is read up to one byte past 1 MiB and
 refused if that byte comes (exit 3). A target file cannot be a pipe, as it is read more than
-once. dottore fleet refuses to write a scope, target or judge file over 1 MiB. A scope, target or
+once. dottore fleet refuses to write a scope, target or judge file over 1 MiB (the judge file
+only when no --judge file replaces it). A scope, target or
 fleet file that fails validation lists at most 20 problems and counts the rest.
 .SH "SCOPE FILE"
 The authorization record. No scanning command runs without it. Default-deny: any host or

@@ -8,18 +8,18 @@ versioning: [SemVer](https://semver.org/).
 ### Fixed (an operator's file read whole, and its validation errors listed whole)
 
 - **An operator's file was read whole.** The scope, target, fleet and labels files and the policy
-  and signature packs were read with `Path.read_text`, with no limit: 100 MB of comments in a scope
-  or labels file took 39.5 s and 244 MB before the YAML loader refused it, and a sparse gigabyte of
-  labels peaked at about 2 GiB in `dottore calibrate` (2,009 and 2,116 MiB in two measures). A check
-  on the parsed document bounds what is built from the text, not the text. They are now read up to 1
-  MiB, the spec loader's limit: a larger regular file is refused before any of it is read (68 MiB
-  peak for the same gigabyte, most of it the CLI's imports), and a pipe or a device is read up to
-  one byte past the limit and refused if that byte comes, so `--scope <(cat scope.yaml)` and
-  `dottore fleet <(...)` still work (a target file still cannot be a pipe: `run` reads it more than
-  once). Exit 3, with an error that names the file and the sizes: `file is 1,073,741,824 bytes, over
-  the 1,048,576-byte cap`. The sizes carry thousands separators because, written bare, a size of
-  nine digits or more was masked by the CLI's redactor as a phone number. The figure, and reading
-  any file type rather than only a regular one, are the owner's decisions (OD-26). 1 MiB holds about
+  and signature packs were read with `Path.read_text`, with no limit: a scope or labels file padded
+  with 100 MB of comments was read and parsed whole (39.5 s and 244 MB), and a sparse gigabyte of
+  labels peaked at about 2 GiB in `dottore calibrate` (2,009 and 2,116 MiB in two measures). A limit
+  on the parsed document does not bound the text it is parsed from. They are now read up to 1 MiB,
+  the spec loader's limit: a larger regular file is refused before any of it is read (68 MiB peak
+  for the same gigabyte, most of it the CLI's imports), and a pipe or a device is read up to one
+  byte past the limit and refused if that byte comes, so `--scope <(cat scope.yaml)` and `dottore
+  fleet <(...)` still work (a target file still cannot be a pipe: `run` reads it more than once).
+  Exit 3, with an error that names the file and the sizes: `file is 1,073,741,824 bytes, over the
+  1,048,576-byte cap`. The sizes carry thousands separators because, written bare, a size of nine
+  digits or more was masked by the CLI's redactor as a phone number. The figure, and reading any
+  file type rather than only a regular one, are the owner's decisions (OD-26). 1 MiB holds about
   22,000 labels, 2,000 scope targets with two identities each, or the scope written for about 3,800
   fleet entries; the largest file shipped here that is read this way, the signature corpus, is 8.7
   KB.

@@ -161,19 +161,22 @@ delta audit); one is held at a time. `shared.config_errors.validation_problems` 
 the spec loader cuts its schema messages; the scope, fleet and policy-pack loaders use that
 default, and so does the target loader for `capabilities` and `sampling_defaults` since #73
 (A-45). Both holes were found by the pre-commit audit of the alias-expansion cap (PR #71): the
-files were read whole with `Path.read_text`, so 100 MB of comments in a scope or labels file
-cost 39.5 s and 244 MB before the refusal and a sparse gigabyte of labels peaked at about 2 GiB
-(2,009 and 2,116 MiB in two measures), while a check on the parsed document bounds what is built
-from the text, not the text; and every validation error was listed whole, so a 5.5 MB scope with
-5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058 characters from
+files were read whole with `Path.read_text`, so a scope or labels file padded with 100 MB of
+comments was read and parsed whole (39.5 s and 244 MB) and a sparse gigabyte of labels peaked at
+about 2 GiB (2,009 and 2,116 MiB in two measures), and a limit on the parsed document does not
+bound the text it is parsed from; and every validation error was listed whole, so a 5.5 MB scope
+with 5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058 characters from
 `dottore run --dry-run`. The figure and reading any file type, not only a regular one, are the
 owner's decisions of 2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and
 a labels file through a pipe worked and still do, and a named pipe with no writer still blocks,
 as before. A target file cannot be a pipe, as before: `run` reads it four times and
 `fingerprint` three, so the second read of `<(...)` is empty and a named pipe blocks it. Not
-covered (OD-26): the report JSON that `dottore diff` and `calibrate` read, and the evidence
-artifacts `replay` and `run --resume` read; and an error outside the validation listing can
-still quote a value of the file whole (an unknown target `type`, a duplicate target id, an
+covered: an anchor used many times in an operator file, which this read cap and the listing do
+not bound (PR #71 extends the spec loader's 100,000-node cap to these files): a 30,852-byte
+scope of aliases peaked at 1,066 MiB in validation, 1,215 MiB on main (pre-merge audit). Not
+covered either (OD-26): the report JSON that `dottore diff` and `calibrate` read, and the
+evidence artifacts `replay` and `run --resume` read; and an error outside the validation listing
+can still quote a value of the file whole (an unknown target `type`, a duplicate target id, an
 undefined YAML alias), now bounded by the 1 MiB read. Checks:
 `tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after a growth, a
 pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each loader, the

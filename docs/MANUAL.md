@@ -92,7 +92,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and the
   command exits 3. `dottore fleet` measures every file it would write and refuses, before
   writing any, one over the limit: the scope repeats each endpoint and is usually the largest,
-  but a target or the judge file can be larger, as non-ASCII text is written escaped.
+  but a target or the judge file can be larger, as non-ASCII text is written escaped. The judge
+  file is measured only when no `--judge` file replaces it, so with `--judge` a `judge.yaml` over
+  the limit is still written, and a later `run --judge` naming it is refused.
   1 MiB holds about 22,000 labels, 2,000 scope targets with two identities each, or the scope
   written for about 3,800 fleet entries; the largest file shipped here that is read this way,
   the signature corpus, is 8.7 KB.

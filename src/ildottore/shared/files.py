@@ -1,10 +1,10 @@
 """Reading a file the operator names, never more than a fixed size of it.
 
 The scope, target, fleet and labels files and the policy and signature packs were read whole
-with ``Path.read_text``: 100 MB of comments in a scope or labels file cost 39.5 s and 244 MB
-before the YAML loader refused it, and a gigabyte was read into memory before anything looked
-at it. A check on the parsed document bounds what is built from the text, not the text
-(pre-commit audit of the alias-expansion cap, 2026-10-07). The spec loader has its own read, at
+with ``Path.read_text``: a scope or labels file padded with 100 MB of comments was read and
+parsed whole (39.5 s and 244 MB), and a gigabyte was read into memory before anything looked at
+it. A limit on the parsed document does not bound the text it is parsed from (pre-commit audit
+of the alias-expansion cap, 2026-10-07). The spec loader has its own read, at
 most 1 MiB of a regular file inside its pack (``registry.schema.load_yaml_file``). This one
 reads any file the operator points at, a pipe included (``--scope <(cat scope.yaml)`` worked
 and still does), but never more than the cap: the owner's decision of 2026-10-07.
