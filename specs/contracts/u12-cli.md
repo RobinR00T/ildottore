@@ -115,6 +115,16 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   under `--dry-run` on 2026-10-04 (the first as written, the others against offline mock target
   and scope files) and each exited 0. The `eu:ai-act` preset line was removed from `docs/09 §3`
   because it exits 3 (the preset is not built).
+- **Every long option the tool names is one it accepts** (`tests/cli/test_flags.py`, added
+  2026-10-07). A string literal under `src/ildottore` (docstrings aside) or a help text the command
+  tree renders that names a `--option` no command or group accepts fails the test (an option is
+  `--`, not right after a letter, a digit, `_` or `-`, then a lowercase ASCII letter, read up to the
+  first character that is not a letter, a digit, `_` or `-`, so `--budget-wall_s` is not taken for
+  `--budget-wall`). The resume refusal for a spent wall-clock ceiling told the operator to raise
+  `--budget-wall-s`, which `dottore run` answers with "No such option"; the flag is `--budget-wall`.
+  That refusal is also followed through the CLI as an operator would follow it: the flags it names
+  are read from `dottore run`'s parameters, and raising them lets the resume through
+  (`tests/cli/test_resume_integrity.py`).
 - **Composition smoke** (`tests/cli/test_wiring.py`): `wiring.build()` returns an engine whose
   injected components satisfy each `shared.protocols` type; no concrete leaks past the root.
 - `--dry-run` sends nothing (fake adapter send-count == 0); `-oA` writes exactly 4 report files.
