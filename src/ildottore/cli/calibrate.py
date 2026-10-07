@@ -24,6 +24,7 @@ import yaml
 from ildottore import safe_yaml
 from ildottore.cli.diff import load_findings
 from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import Finding
 
@@ -46,7 +47,11 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
     if not isinstance(raw, dict):
         raise ValueError(f"labels file {path} must be a mapping of spec_id -> verdict")
     labels: dict[str, VerdictStatus] = {}
-    for spec_id, verdict in raw.items():
+    for entry, (spec_id, verdict) in enumerate(raw.items(), start=1):
+        if too_long(spec_id):
+            # `str(spec_id)` raised in the `try` and the message below raised again: exit 3 with
+            # `error: Exceeds the limit`, naming no file (A-40).
+            raise ValueError(f"labels file {path}: the spec id of entry {entry} is {described()}")
         try:
             labels[str(spec_id)] = VerdictStatus(str(verdict).strip().lower())
         except ValueError as exc:

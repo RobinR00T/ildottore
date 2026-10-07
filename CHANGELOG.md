@@ -56,10 +56,73 @@ versioning: [SemVer](https://semver.org/).
 - **Left open, each its own task (found by the audits, not introduced here).** Under the cap, a
   base-60 integer (`1:59:59:...`) builds in time quadratic in its length (a 1 MiB spec took `lint`
   43 s) and integer keys that share one hash make a mapping quadratic (27 s); `run` loads the target
-  file four times; a 4,000-digit integer in a typed spec field crashes `lint` with a traceback; and
-  the operator's files are read whole with no byte limit, their validation errors listed with no
-  limit. An undefined alias or an unknown tag is still named in the refusal, as
-  `shared/config_errors.py` documents (a tag is now at most 256 characters).
+  file four times; a 4,000-digit integer in a typed spec field crashed `lint` with a traceback
+  (fixed since by #81); and the operator's files are read whole with no byte limit, their validation
+  errors listed with no limit. An undefined alias or an unknown tag is still named in the refusal,
+  as `shared/config_errors.py` documents (a tag is now at most 256 characters).
+
+### Fixed (a number too long to write out)
+
+- **`dottore lint` printed a traceback on a spec holding a huge number.** Python refuses to turn an
+  int of more than 4,300 decimal digits into text (`sys.get_int_max_str_digits()`; 640 at the
+  lowest `PYTHONINTMAXSTRDIGITS` allows), and YAML builds one from `0x` and 4,000 `f`. As a spec's
+  `name`, `owasp` or `spec_version`, jsonschema's message `<value> is not of type 'string'` raised
+  `ValueError: Exceeds the limit`: a traceback and exit 1, which this tool uses for "findings below
+  the threshold". Planted at every value and key of the 75 shipped specs under the lowest limit,
+  6,112 of 7,599 placements were that traceback. The spec validator now reports each such number
+  as a `SCHEMA` finding at its path, `name: a number too long to write out (over 4300 digits)` (or
+  `a key that is a number ...`), at most 20 per spec, and quotes none of it, wherever it sits: a
+  `!!set`, `!!omap` or `!!pairs` included. Found by the pre-commit audit of
+  `fix/yaml-alias-expansion-cap`.
+- **`dottore run --spec-path` refused such a spec without naming it.** It exited 3 with `error:
+  Exceeds the limit (4300 digits) ...`. It now refuses it as any spec that fails to load,
+  naming the file, before anything is sent. In 313 placements the schema took the number and lint
+  passed; of those, the 221 a mock model target runs all exited 3 the same way in the live run,
+  where the number was written. They are refused at load now, in the dry run too. `registry ls`,
+  `describe` and `coverage` leave such a spec out with their load warning; they printed a traceback
+  or exited 3 naming nothing.
+- **`dottore calibrate` with such a number as a labels key** exited 3 with the same unnamed
+  message (the error for an invalid verdict formatted the id). It now says `labels file <path>:
+  the spec id of entry <n> is a number too long to write out (...)`. As a verdict it was already
+  refused by name, and still is.
+- **`dottore diff` and `dottore calibrate` on a report with a number past the limit** exited 3
+  naming neither file: `json.loads` raises a plain `ValueError` there, not a `JSONDecodeError`.
+  It now says `the report <path> holds a number too long to read (over 4300 digits)`.
+- **A target file's `type`, `mock_scenario` or a key of its `seeded_setup`** as such a number
+  exited 3 with the same unnamed message; the refusal now names the target file and says what the
+  value is instead of quoting it. As `provider` or `transport` it exited 3 too, because the mock
+  routing called `str` on them before the target loader, which reads them only as text, ignored
+  it; they are read only as text there as well, so the number is no provider, as `5` always was.
+  The signature pack's `pack_version` is refused the same way (a library path; the CLI loads the
+  built-in pack).
+- Each check stands on its own: a cap on a literal's length in the YAML loader does not cover a
+  limit set below it, nor a value read from JSON. Clause A-40 (u02).
+
+### Fixed (a target file's bad value printed pydantic's error, value included)
+
+- **A value under a target file's `capabilities` or `sampling_defaults` that pydantic could not read
+  printed pydantic's own error.** `capabilities: {tools: maybe-later}` or `sampling_defaults:
+  {temperature: warm}` made `dottore run --dry-run` print four lines (`error: 1 validation error for
+  Capabilities`, the field, `input_value='maybe-later'` and a pydantic docs URL): the operator's
+  value quoted, which the loaders of the operator's own files avoid because a key gets pasted there
+  by mistake, and no file name, so with a target and a judge the operator could not tell which file
+  it was. Exit 3 was already right. `load_target` now gives the kind of line the scope and fleet
+  loaders give: `error: target file target.yaml 'capabilities' failed validation: tools: Input
+  should be a valid boolean, unable to interpret input`, the block's problems on that one line as
+  `validation_problems` lists them (the `capabilities` block's alone when both blocks are wrong),
+  the value never. The same through `run -t`, `run --judge`, `fingerprint` and `fleet --judge`. Not
+  changed, and written in the clause: other refusals of a target file still quote what it says
+  (`type`, `mock_scenario`, a `seeded_setup` tool name, the `id`); a key is printed as pydantic
+  renders it, control characters included, so one with a line break still splits the line until #51
+  is in; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true` is
+  1.0, no range on `temperature` or `top_p`); and a key `capabilities` does not know, or a
+  `capabilities` that is empty or `false`, is still ignored without a word. Contract u12 A-45;
+  `tests/cli/test_target_file_validation.py` (19 of its 24 tests fail on `0501752`; the other 5
+  check that the CLI's redactor leaves each test value readable, and the CLI tests fail on any mask
+  in the output, because a first `987654321` was masked as a phone number and the check proved
+  nothing). Found on `fix/huge-int-repr`. The same shape remains in `dottore diff` and `dottore
+  calibrate` on a report whose finding does not validate (pre-commit audit); left for its own
+  change.
 
 ### Fixed (a file nested past what the CLI can hold)
 

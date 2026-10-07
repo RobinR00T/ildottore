@@ -31,6 +31,7 @@ from jsonschema.exceptions import ValidationError
 
 from ildottore.safe_yaml import SafeValueLoader, check_expanded
 from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.digits import described, path_text, too_long_paths
 
 # Repo layout: <root>/schemas/attack-spec.schema.json ; this file lives at
 # <root>/src/ildottore/registry/schema.py → three parents up to the package src root,
@@ -169,7 +170,21 @@ def validate_attack_spec_schema(data: object) -> list[str]:
     JSON path keeps the output deterministic for golden comparisons. At most
     :data:`_MAX_SCHEMA_ERRORS` are listed and the rest counted: a 99,000-item list of the wrong
     type printed 5.7 MB (pre-commit audit of the SEC-09 fix).
+
+    A number too long to write out is reported where it is, and nothing else is checked: every
+    jsonschema message that quotes a value raised on it, a lint traceback with exit 1, and one
+    the schema accepted failed later where the run wrote it (A-40).
     """
+    too_long = list(too_long_paths(data))
+    if too_long:
+        shown = [
+            f"{_cut(path_text(path))}: {'a key that is ' if is_key else ''}{described()}"
+            for path, is_key in too_long[:_MAX_SCHEMA_ERRORS]
+        ]
+        if len(too_long) > _MAX_SCHEMA_ERRORS:
+            more = len(too_long) - _MAX_SCHEMA_ERRORS
+            shown.append(f"<root>: and {more} more numbers too long to write out")
+        return shown
     validator = _attack_spec_validator()
     errors: list[ValidationError] = sorted(
         validator.iter_errors(data), key=lambda e: list(e.absolute_path)
@@ -188,7 +203,12 @@ def _format_error(err: ValidationError) -> str:
     """
 
     location = "/".join(str(p) for p in err.absolute_path) or "<root>"
-    message = err.message
-    if len(message) > _MAX_MESSAGE_CHARS:
-        message = message[:_MAX_MESSAGE_CHARS] + f"... ({len(err.message)} characters)"
-    return f"{location}: {message}"
+    return f"{location}: {_cut(err.message)}"
+
+
+def _cut(text: str) -> str:
+    """``text`` cut at :data:`_MAX_MESSAGE_CHARS`, saying how long it was."""
+
+    if len(text) <= _MAX_MESSAGE_CHARS:
+        return text
+    return text[:_MAX_MESSAGE_CHARS] + f"... ({len(text)} characters)"

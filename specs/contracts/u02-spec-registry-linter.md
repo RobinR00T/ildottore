@@ -111,6 +111,62 @@ percentage), shape where it drives only a rollup and we have not transcribed the
 Pinning a universe nobody diffed against its primary source is the mistake that made the ATLAS
 axis wrong in numerator and denominator at once.
 
+**A-40 A number too long to write out is reported with its file where it enters, never printed
+(added 2026-10-07).** Python refuses to turn an int of more than `sys.get_int_max_str_digits()`
+decimal digits into text (4,300 by default, 640 at the lowest `PYTHONINTMAXSTRDIGITS` allows):
+`str`, `repr`, an f-string and `json.dumps` raise `ValueError`, and YAML builds such an int from
+`0x` and 4,000 `f`. As a spec's `name`, `owasp` or `spec_version`, jsonschema's message
+`<value> is not of type 'string'` raised it: `dottore lint` printed a traceback and exited 1, the
+code for findings below the threshold, and `dottore run --spec-path` exited 3 with
+`error: Exceeds the limit (4300 digits) ...`, naming no spec (pre-commit audit of
+`fix/yaml-alias-expansion-cap`, reproduced on `main` at `0501752`). Planted at every value and
+every key of the 75 shipped specs under the lowest limit, 6,112 of 7,599 placements were a lint
+traceback on the number (jsonschema's `type`, `additionalProperties` and `maximum` messages, and
+the linter's tool-allowlist rule), and in 313 the schema took it and lint passed. Of those 313,
+the 221 a mock target runs all exited 3 the same way in the live run, where it wrote the number
+(8 already in the dry run); the other 92 were refused as unrunnable there before any send.
+
+`validate_attack_spec_schema` now walks the document first (`shared/digits.too_long_paths`: keys
+included; mappings, lists, tuples and sets, since YAML builds a list of tuples for `!!omap` and
+`!!pairs` and a set for `!!set`, whose members are its keys; without recursion, each place holding a
+link to its parent until a path is yielded; a container shared through an alias entered once) and,
+when it holds such a number, reports each one as a `SCHEMA` finding at its path and checks nothing
+else: `name: a number too long to write out (over 4300 digits)`, or `a key that is a number ...` at
+the mapping that holds the key, a path cut at 300 characters, at most 20 and the rest counted. The
+interpreter's own conversion decides, so no number the check passes, in a document YAML or JSON can
+build, fails to print later, and the number is never quoted. `run` refuses the file before anything
+is sent, in the dry run too, as any spec that fails to load (F-10), naming it; `registry ls`,
+`describe` and `coverage` leave it out with their load warning (they printed a traceback, or exited
+3 naming nothing). The other inputs of the CLI that formatted such a number follow the same rule: a
+labels key in `calibrate` (`str(spec_id)` raised, and the message formatting the id raised again:
+exit 3 naming no file), a report read by `diff` or `calibrate` (`json.loads` raises a plain
+`ValueError` past the limit, not a `JSONDecodeError`: same exit, same silence), a target file's
+`type`, `mock_scenario` and `seeded_setup` keys (u12), and the signature pack's `pack_version`
+(u09). A target file's `provider` and `transport` are read only as text, as the target loader always
+read them (the mock routing called `str` on them first), so such a number there is no provider, as
+`5` is.
+
+The first version walked mappings and lists only, and its pre-commit audit planted the number inside
+a `!!set` or an `!!omap` at every value of the 75 specs: 3,539 of 3,751 placements of each were
+still the lint traceback, and 120 of each passed lint and the dry run and exited 3 unnamed in the
+live run. The same audit found `provider`, `transport` and `mock_scenario`, and a walk that built a
+full path for every node (on a 300 KB spec, lint's peak resident memory rose by 38 MB over the base
+in two measurements of a lint subprocess's ru_maxrss, 114 to 152 MB and 139 to 177 MB; with parent
+links it is back to the base's).
+
+It holds on its own. A cap on a literal's length in the YAML loader (A-41, on another branch) does
+not replace it: the limit can sit at 640 digits, under the about 1,200 a 1,000-character hex literal
+yields, and a value can come from JSON or be built in code. Not claimed: a number up to the limit is
+still a number and loads (a 640-digit `sampling.seed` under the lowest limit); a target's reply is
+u04's (A-36, A-39); the run store's columns already read such a number as unreadable JSON. Found by
+the same sweeps and open, being of other kinds: a number of any size as a key of a fixture tool
+call's `args` is a lint traceback where the evaluator matches argument names (`'int' object has no
+attribute 'lower'`, on another branch); a value JSON cannot hold (an unquoted date, a set) passes
+lint and the dry run exits 1 on it; `--runs` past what a float holds exits 1. Checked by
+`tests/cli/test_huge_numbers.py` (lint, `run` dry and live, sets and pairs, `calibrate`, `diff`, the
+target file, the validator without YAML in front, sets and keys built in code, a shared container
+and a shared number, 640 against 641 digits) and `tests/fingerprint/test_signatures.py`.
+
 **A-27 An oracle may not be satisfied by an echo (added 2026-09-23).** A `regex_presence`
 pattern is a SECURE marker and a `regex_absence` pattern is an EXPLOITED one, so a marker the
 spec itself puts in front of the target can be satisfied without the target doing anything: a

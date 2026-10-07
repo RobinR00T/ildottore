@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from pydantic import ValidationError
+
 from ildottore.adapters import (
     AnthropicAdapter,
     MCPAdapter,
@@ -60,7 +62,8 @@ from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
-from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.digits import described, shown, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.models import (
     AttackSpec,
@@ -1051,14 +1054,21 @@ def load_target(path: Path) -> Target:
         target_type = TargetType(type_raw)
     except ValueError as exc:
         raise ValueError(
-            f"target file {path} has invalid type {type_raw!r}; "
+            f"target file {path} has invalid type {shown(type_raw)}; "
             f"expected one of {', '.join(t.value for t in TargetType)}"
         ) from exc
     caps_raw = raw.get("capabilities") or {}
     if not isinstance(caps_raw, dict):
         raise ValueError(f"target file {path} 'capabilities' must be a mapping")
     known = set(Capabilities.model_fields)
-    caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
+    # Field and reason only, as the scope, fleet and pack loaders give them: pydantic's own text
+    # ran to four lines, quoted the value written and did not name the file (A-45).
+    try:
+        caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"
+        ) from exc
     name = raw.get("name") if isinstance(raw.get("name"), str) else None
 
     provider = raw.get("provider") if isinstance(raw.get("provider"), str) else None
@@ -1070,7 +1080,13 @@ def load_target(path: Path) -> Target:
     if sampling_raw is not None:
         if not isinstance(sampling_raw, dict):
             raise ValueError(f"target file {path} 'sampling_defaults' must be a mapping")
-        sampling = Sampling.model_validate(sampling_raw)
+        try:
+            sampling = Sampling.model_validate(sampling_raw)
+        except ValidationError as exc:
+            raise ValueError(
+                f"target file {path} 'sampling_defaults' failed validation: "
+                f"{validation_problems(exc)}"
+            ) from exc
 
     transport = raw.get("transport") if isinstance(raw.get("transport"), str) else None
     command_raw = raw.get("command")
@@ -1126,7 +1142,8 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} 'seeded_setup' must be a mapping")
     known = ("specs", "tools", "granted_tools", "run_token")
-    unknown = sorted(str(key) for key in raw if key not in known)
+    # A key that is a number too long to write out raised in `str` (A-40).
+    unknown = sorted(described() if too_long(key) else str(key) for key in raw if key not in known)
     if unknown:
         raise ValueError(
             f"target file {path} 'seeded_setup' has unknown key(s) {', '.join(unknown)}; "
@@ -1189,7 +1206,7 @@ def load_mock_scenario(path: Path) -> str:
     scenario = raw.get("mock_scenario", "bare")
     if not isinstance(scenario, str) or scenario not in MOCK_SCENARIOS:
         raise ValueError(
-            f"target file {path} has invalid mock_scenario {scenario!r}; "
+            f"target file {path} has invalid mock_scenario {shown(scenario)}; "
             f"expected one of {', '.join(MOCK_SCENARIOS)}"
         )
     return scenario
@@ -1212,14 +1229,20 @@ def target_uses_mock(path: Path) -> bool:
         return True
     # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real
     # over-the-wire (subprocess) target even though it declares no ``endpoint``.
-    provider = str(raw.get("provider") or "").strip().lower()
-    transport = str(raw.get("transport") or "").strip().lower()
+    # Text only, as `load_target` reads them: `str` raised on a number too long to write out
+    # (A-40), and no other value could have read as `mcp` or `stdio`.
+    provider = _lowered(raw.get("provider"))
+    transport = _lowered(raw.get("transport"))
     if provider == "mcp" and transport == "stdio" and raw.get("command"):
         return False
     endpoint = raw.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint:
         return True
     return endpoint.startswith("mock://")
+
+
+def _lowered(value: object) -> str:
+    return value.strip().lower() if isinstance(value, str) else ""
 
 
 # --- the runner --------------------------------------------------------------------

@@ -210,6 +210,16 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
+A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
+`max_tokens` outside 1 to its cap or a key `sampling_defaults` does not know is refused before
+anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
+problems found in that block (the `capabilities` block alone if both are wrong), never the value
+written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
+valid boolean, unable to interpret input`. The field is printed from the key you wrote, so a control
+character in a key reaches the terminal as written (a line break splits the line). What can be read
+is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
+`top_p` have no range check. A key `capabilities` does not know is ignored, and so is a
+`capabilities` that is empty or `false`.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.
@@ -540,7 +550,14 @@ A key written twice in one
 mapping is a `PARSE_ERROR` too. A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
-schema errors are listed per file. An oracle marker that an echo of the
+schema errors are listed per file. A number too long for Python to write out (more than
+`sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
+`f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included), and
+nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
+as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
+`mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An
+oracle marker that an echo of the
 request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered
 into the spec's images (see `CONTRIBUTING.md`). An evaluator config that would silently not
 check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no usable
