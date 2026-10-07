@@ -169,9 +169,7 @@ async def test_a_secure_reply_passes_without_two_identities(
     assert finding.status is VerdictStatus.PASS
     for attempt in finding.attempts:
         assert attempt.verdict is not None
-        assert attempt.verdict.reasoning.endswith(
-            "; authz_leak set aside: fewer than two identities to compare"
-        )
+        assert attempt.verdict.reasoning.endswith("; authz_leak set aside: no identity sweep ran")
 
 
 async def test_a_leaked_canary_still_fails_without_two_identities(
@@ -213,9 +211,7 @@ async def test_an_unwired_judge_is_not_set_aside(tmp_path, evaluators, mutators,
     for attempt in finding.attempts:
         assert attempt.verdict is not None
         assert attempt.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
-        assert attempt.verdict.reasoning.endswith(
-            "; authz_leak set aside: fewer than two identities to compare"
-        )
+        assert attempt.verdict.reasoning.endswith("; authz_leak set aside: no identity sweep ran")
 
 
 async def test_authz_leak_alone_is_not_set_aside(tmp_path, evaluators, mutators, scorer) -> None:  # type: ignore[no-untyped-def]
@@ -365,9 +361,7 @@ async def test_no_sweep_over_an_in_band_scene(tmp_path, evaluators, mutators, sc
     assert finding.status is VerdictStatus.PASS
     for attempt in finding.attempts:
         assert attempt.verdict is not None
-        assert attempt.verdict.reasoning.endswith(
-            "; authz_leak set aside: fewer than two identities to compare"
-        )
+        assert attempt.verdict.reasoning.endswith("; authz_leak set aside: no identity sweep ran")
 
 
 def test_which_specs_sweep() -> None:

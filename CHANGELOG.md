@@ -24,9 +24,10 @@ versioning: [SemVer](https://semver.org/).
   echoing it read as "A received B-only data". The spec keeps `requires: [rag]`, so it still
   runs on single-identity RAG targets. With no sweep behind it, an `authz_leak` on a spec that
   does not require two identities is set aside and the verdict says so (`authz_leak set aside:
-  fewer than two identities to compare`); after a sweep where fewer than two identities answered
-  it is kept (`authz_leak kept: fewer than two identities answered the identity sweep`), since
-  the one that answered may have shown a leak. `DL-XTENANT-001`, which requires
+  no identity sweep ran`, whatever kept it from running); after a sweep where fewer than two
+  identities answered it is kept (`authz_leak kept: fewer than two identities answered the
+  identity sweep`), since the one that answered may have shown a leak. Both notes sit in each
+  attempt's verdict, which only the JSON report carries. `DL-XTENANT-001`, which requires
   `multi_identity`, a spec whose only evaluator is `authz_leak`, and a compared `authz_leak`
   that only finds a shared line (needs-review) are unchanged. Two scope identities on a target
   that does not declare `multi_identity` are not taken for tenants: no sweep there, as for

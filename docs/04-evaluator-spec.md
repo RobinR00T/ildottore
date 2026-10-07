@@ -68,12 +68,13 @@ evaluator types without a stub are skipped):
 - An `authz_leak` that had fewer than two identities to compare (`capability_unavailable`), on
   a spec that does not require `multi_identity`, only corroborates the spec's own checks
   (`EMB-XTENANT-RETRIEVAL-001` requires only `rag`). With no identity sweep behind it it is set
-  aside, and the verdict says so (`authz_leak set aside: fewer than two identities to compare`):
+  aside, and the verdict says so (`authz_leak set aside: no identity sweep ran`):
   kept, its gap held that spec `inconclusive` on every single-identity target, a secure reply
   included (until 2026-10-07). After a sweep that got fewer than two answers it is kept (`authz_leak
   kept: fewer than two identities answered the identity sweep`), since the identity that answered
   may have shown a leak. A spec that requires `multi_identity` (`DL-XTENANT-001`), or whose only
-  evaluator is `authz_leak`, keeps it.
+  evaluator is `authz_leak`, keeps it. Both notes sit in each attempt's verdict reasoning, which
+  the JSON report carries and the HTML, SARIF, JUnit and terminal outputs do not.
 - **Open question for the owner (judge self-consistency).** `docs/02 §4` and §4 item 4 below
   say a disagreement between the judge's passes makes the result `inconclusive`. The judge
   evaluator does return `inconclusive`, but with no reason, and the runner drops a reasonless

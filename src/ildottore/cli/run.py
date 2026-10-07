@@ -413,7 +413,7 @@ def estimate_plan(
             )
         requests = len(mutators) * runs * n_turns * sends_per_turn
         if identities >= 2 and target is not None and sweeps_identities(spec, target):
-            requests += identities  # one plain send per identity, scene included, no rounds
+            requests += identities  # one plain send per identity: no scene, no rounds
         in_tokens = max(1, len(prompt) // 4)
         out_tokens = (
             spec.sampling.max_tokens

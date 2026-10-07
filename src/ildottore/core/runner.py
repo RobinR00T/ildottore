@@ -1421,7 +1421,7 @@ def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec, *, swept: bool 
         combined = _combine_decisive(
             [v for v in verdicts if not _uncompared_authz_leak(v, spec)], spec
         )
-        note = "authz_leak set aside: fewer than two identities to compare"
+        note = "authz_leak set aside: no identity sweep ran"
     return combined.model_copy(update={"reasoning": f"{combined.reasoning}; {note}"})
 
 
