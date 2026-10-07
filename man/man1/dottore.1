@@ -76,7 +76,7 @@ refused (exit 3). Without such a store the replay says on stderr that this was n
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
-a report covering several targets is refused.
+a report covering several targets, or one that cannot be read, is refused (exit 3).
 .TP
 .B coverage
 What the battery tests, per framework (OWASP LLM, MITRE ATLAS, Nova IoPC, OWASP AISVS by

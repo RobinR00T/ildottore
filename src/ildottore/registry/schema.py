@@ -28,7 +28,7 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
-from ildottore.safe_yaml import SafeValueLoader
+from ildottore.safe_yaml import SafeValueLoader, check_depth
 from ildottore.shared.config_errors import yaml_problem
 
 # Repo layout: <root>/schemas/attack-spec.schema.json ; this file lives at
@@ -81,6 +81,7 @@ def safe_load_yaml(text: str) -> Any:
         if node is None:
             return None
         _check_expanded_size(node)
+        check_depth(node)
         return loader.construct_document(node)  # type: ignore[no-untyped-call,unused-ignore]
     except yaml.YAMLError as exc:  # includes ConstructorError for unsafe tags
         # Reason and position only: PyYAML's own text quotes a snippet of the line, which for
