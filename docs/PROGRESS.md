@@ -6,7 +6,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 ## State, 2026-10-07 (night): a load refusal names its spec file
 
 - On `fix/spec-load-error-names` (PR #49, opened on `d54097c` on 2026-10-06, merged with main at
-  `15e5550`; `tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
+  `5fdac72`; `tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
   that fails to load printed its path as `«REDACTED:high_entropy:…».yaml` (found by the #47
   pre-merge audit); it names `attacks/DL-PII-ELICIT-001.yaml` now, kept only when it is an entry
   on disk under a spec path, nothing the entropy rule reads as a token is glued to it, and it
@@ -15,8 +15,39 @@ The carryover ledger. Every agent session updates this so context survives even 
   to the entropy rule. The pre-commit audit (3,996 cases main against branch, no secret exposed)
   found two test gaps and four low items, all fixed; `no_known_secrets` moved to
   `tests/conftest.py`. The pre-merge audit (73,812 cases of `_masked`, main against branch) found
-  no reason to block; its two wording items are fixed. `make gates` green: 2,576 tests (2,562 on
-  `15e5550`), coverage 96.57%, `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+  no reason to block; its two wording items are fixed. `make gates` green: 2,702 tests (2,688 on
+  `5fdac72`), coverage 96.58%, `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+
+## State, 2026-10-07 (afternoon): YAML construction cost bounded under the size cap
+
+- Closes the construction costs left open just below. On `fix/yaml-construction-cost`, stacked on
+  `fix/yaml-alias-expansion-cap` (`982bfe4`): under the size cap, a base-60 integer (`1:59:59...`)
+  is built in time quadratic in its length, and integer keys that share one hash make a mapping
+  quadratic. A 1 MiB spec took `lint` 55 s and 24 s; `run --dry-run` accepted a 450 KB and a 1.3 MB
+  target after 37 s and 247 s, having parsed each four times (load average 6 to 10 on 15 cores).
+  Every loader now refuses, as it composes and before anything is built, a number written in more
+  than 1,000 characters and the key that takes a document past 1,000 keys that are numbers (a merged
+  key counted in each mapping it is merged into), in 1 to 1.5 s for each of those files; `run` and
+  `fingerprint` parse a target file once, so a piped target (`-t /dev/stdin`) works. Clauses A-41
+  (u01) and A-42 (u12). 112 of the 126 new tests fail on `982bfe4`. Twenty-seven distinct mutants of
+  the fix are all killed, among them the eight the audits found surviving. A first version counted
+  the keys only once the whole file was composed: refused, but the 1.3 MB target still took 3 to 11
+  s and its timing test was unstable on a loaded machine; counting each key as it is composed stops
+  at the 1,001st. The pre-commit audit (three auditors on a frozen copy) found no way past either
+  limit (40,000 keys sharing one hash refused in under a second in twenty forms) and no extra parse
+  on any path but a file named twice and the judge file of `fleet --run --judge`; what it found in
+  the tests and the docs is closed: shapes no test pinned (a number in a list, in flow or at the
+  root; keys in a flow mapping; a merge passed on), a resume, a judge file and a piped target no
+  test watched, and parse counts, timings and wording wider than measured. It also found a
+  pre-existing cost, left as its own task: flow nesting makes PyYAML's scanner pay per open level,
+  so 198 KB nested 95 deep costs 3 to 4 times a flat file, and one past the depth cap is refused
+  only after it is all composed. The pre-merge audit built main, #71 and this branch together:
+  conflicts only in the docs, every gate green, 2,489 tests; its four findings (tests for every
+  notation in every position, and three sentences) are closed. Left open: a file named twice is
+  parsed once per name (`-t X --judge X`), and `fleet --run --judge` parses its judge file twice; a
+  scope with a `checksum:` line is still parsed twice, by design (the second parse is the coverage
+  check); an operator file of plain text still costs its composition, 3 s for 6.3 MB under the size
+  cap; the byte cap is `fix/operator-file-read-cap`.
 
 ## State, 2026-10-07 (afternoon): a spec key that is not a string
 
