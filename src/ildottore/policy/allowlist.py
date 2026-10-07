@@ -150,12 +150,18 @@ def _split_host_port(value: str) -> tuple[str, int | None]:
     return value.lower(), None
 
 
+#: The port an entry pins when ``int()`` cannot read its digits: no URL has it.
+_UNREADABLE_PORT = -1
+
+
 def _port(text: str) -> int | None:
-    """``text`` as the port an entry pins, or ``None`` when it cannot be read as one.
+    """``text`` as the port an entry pins, or ``None`` when it is not digits.
 
     ``int()`` refuses digits ``isdigit`` accepts (U+00B2) and more than 4,300 of them: an entry
     pinned to such a port raised, and denied every URL checked after it, its neighbours'
-    included (delta audit of A-51). It matches nothing now; the other entries still decide.
+    included (delta audit of A-51). It pins :data:`_UNREADABLE_PORT` now, so it matches nothing
+    and the other entries still decide; read as a bare host instead, it matched an IPvFuture
+    literal that repeated it, ``[v1.a:<digits>]`` (second delta audit).
     """
 
     if not text.isdigit():
@@ -163,7 +169,7 @@ def _port(text: str) -> int | None:
     try:
         return int(text)
     except ValueError:
-        return None
+        return _UNREADABLE_PORT
 
 
 def _host_matches(candidate: str, candidate_port: int | None, allowed: str) -> bool:

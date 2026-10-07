@@ -27,6 +27,7 @@ from typer.testing import CliRunner
 from ildottore import safe_yaml
 from ildottore.cli.calibrate import load_labels
 from ildottore.cli.exit_codes import ExitCode
+from ildottore.cli.fleet import _shown_endpoint
 from ildottore.cli.main import app
 from ildottore.cli.resume import _assert_same_target
 from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, target_uses_mock
@@ -882,6 +883,41 @@ def test_an_entry_the_allowlist_cannot_read_matches_nothing_and_blocks_nothing()
     for port in (chr(0xB2), "abc"):
         entry = Endpoint(host=f"api.openai.com:{port}")
         assert not EndpointAllowlist([entry]).is_allowed(LIVE_URL), port
+    # Read as a bare host, an unreadable port matched an IPvFuture literal that repeated it.
+    for port in (chr(0xB2), "9" * 5_000):
+        entry = Endpoint(host=f"v1.a:{port}")
+        for url in (f"https://[v1.a:{port}]/x", f"mock://[v1.a:{port}]/x"):
+            assert not EndpointAllowlist([entry]).is_allowed(url), url[:40]
+
+
+@pytest.mark.parametrize(
+    ("fleet", "judge"),
+    [
+        (f"http://:Hunter2Secret@h{SOLIDUS}x", None),
+        ("http://u:pass word Hunter2@localhost:x/v1", None),
+        (f"{NBSP}http://a@b:Hunter2@h{SOLIDUS}x", None),
+        (
+            "http://localhost:1/v1/chat/completions",
+            "http://u:pass word Hunter2@localhost:2/v1/chat/completions",
+        ),
+    ],
+    ids=["empty-user", "space-in-password", "second-at", "judge-mismatch"],
+)
+def test_fleet_never_prints_an_endpoint_password(
+    tmp_path: Path, fleet: str, judge: str | None
+) -> None:
+    # The CLI masks a password only in the `user:password@` shape (delta audit of A-51).
+    body = f'version: "1"\ntargets:\n  - id: x\n    endpoint: "{fleet}"\n    model: m\n'
+    judge_file = None
+    if judge is not None:
+        body += f'judge:\n  id: judge\n  endpoint: "{judge}"\n  model: m\n'
+        judge_file = f'id: judge\ntype: model\nendpoint: "{fleet}"\nmodel: m\n'
+    case = _fleet(tmp_path, body, judge=judge_file)
+
+    result = runner.invoke(app, case.args)
+
+    assert result.exit_code == ExitCode.ERROR, result.output
+    assert "Hunter2" not in result.stderr, result.stderr
 
 
 # --- what the text checks kept as it was -----------------------------------------------------
@@ -939,3 +975,18 @@ def test_a_date_key_of_seeded_setup_is_written_as_before(tmp_path: Path) -> None
 
     assert result.exit_code == ExitCode.ERROR, result.output
     assert "has unknown key(s) 2024-01-01;" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "shown"),
+    [
+        ("http://u:Hunter2@h/v1@x", "'http://h/v1@x'"),
+        ("//u:Hunter2@h/v1", "'//h/v1'"),
+        ("https://h/v1", "'https://h/v1'"),
+        ("no-authority@h", "'no-authority@h'"),
+    ],
+)
+def test_an_endpoint_is_quoted_without_what_precedes_the_last_at_of_its_authority(
+    endpoint: str, shown: str
+) -> None:
+    assert _shown_endpoint(endpoint) == shown

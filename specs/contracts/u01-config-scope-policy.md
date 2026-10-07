@@ -191,7 +191,7 @@ its file (90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000 cha
 about 200 MB to build); an integer Python will not write out (a YAML hex or base-60 integer past
 4,300 digits, whose `repr` raises) is shown as `<an integer of N bits>`. They are: an invalid target
 `type`, refused before the enum looks it up, because the enum's own error built the whole `repr`
-(that 90 KB file as a `type:` took 1.28 to 1.49 GB of resident memory and 31 to 50 s in four
+(that 90 KB file as a `type:` took 1.28 to 1.49 GB of resident memory and 29 to 50 s in five
 measures on `a0bca70`, and printed a line of about 200 MB; it takes 72 MB and 0.6 s now: audit of
 this clause), and an invalid `mock_scenario`; a duplicated scope target id, a duplicated identity
 name and an identity that shares a canary, with the id of the target they belong to; a labels entry
@@ -220,23 +220,30 @@ written as `str()` writes it (a date stays `2024-01-01`), quoted only when `str(
 An endpoint or a `base_url` that urllib cannot read (a bracket, a host NFKC turns into a path, a
 port that is not a number or has thousands of digits) raised urllib's or Python's error with no file
 named, and for a host NFKC turns into a path, a bracketed host that is not an IP address or a port
-that is not a number that error quoted the URL whole (900,052 to 900,077 bytes: pre-merge audit).
-The target loader reads the endpoint stripped, as the gate reads it (read raw, a leading U+00A0 hid
-the host from it and urllib's error reached the terminal later with the endpoint's password: delta
-audit), and refuses an unreadable one naming the file and the field and not the value, which can
-hold a password; `EndpointAllowlist.is_allowed` denies what it cannot read, as its docstring always
-said, so the authorization refusal quotes the URL cut, and an allowlist entry pinned to a port
-`int()` cannot read (thousands of digits, U+00B2) matches nothing instead of raising and denying
-every URL checked after it; and `dottore fleet` reads an endpoint stripped too and refuses an
-unreadable one quoted cut. Before, each quoted the value whole, bounded only by A-43's 1 MiB read: a
-1 MB `type:` printed an `error:` line of 1,000,108 bytes, a duplicated target id of 500 KB one of
-500,136, and an undefined alias of a million characters about 1,000,100 from `run --scope`,
-`calibrate` and `lint` (pre-commit audit of A-43, in its measure, file paths included); this
-clause's sweep found the rest, up to 2,000,108 bytes from `fingerprint` for a target id of a million
-characters (the id in the message and again in the reason), and the 24 refusals of the test's table,
-with values of 300,000 to 1,000,000 characters, printed lines of 400,080 to 2,000,247 characters on
-`c9f27cc` and `a0bca70`. The lengths are written bare, as the spec loader writes them; for the
-`repr` of a text value the length stays under 10,485,762, short of the nine digits the CLI's
+that is not a number that error quoted the netloc, the host or the port whole (about 900 KB from a
+900,000-character value: pre-merge audit). The target loader reads the endpoint stripped, as the
+gate reads it (read raw, a leading U+00A0 hid the host from it and urllib's error reached the
+terminal later with the endpoint's password: delta audit), and refuses an unreadable one naming the
+file and the field and not the value, which can hold a password; `EndpointAllowlist.is_allowed`
+denies what it cannot read, as its docstring always said, so the authorization refusal quotes the
+URL cut, and an allowlist entry pinned to a port `int()` cannot read (thousands of digits, U+00B2)
+pins a port no URL has, so it matches nothing instead of raising and denying every URL checked after
+it (read as a bare host, it matched an IPvFuture literal that repeated it: second delta audit); and
+`dottore fleet` reads an endpoint stripped too and refuses an unreadable one, or one with a port it
+cannot read, or a `--judge` endpoint that differs, quoting it cut and without what precedes its last
+`@` (the CLI masks a password only in the `user:password@` shape, so an empty user, a space or a
+second `@` printed it). The adapter `run` builds still reads the target's endpoint unstripped: an
+endpoint with a Unicode space in front passes the gate and the run stops at its first send (exit 3,
+`EndpointNotAllowed`), its password masked, as on `a0bca70` for `run` and newly for `fleet --run`,
+which stopped at the pre-flight before. Before, each quoted the value whole, bounded only by A-43's
+1 MiB read: a 1 MB `type:` printed an `error:` line of 1,000,108 bytes, a duplicated target id of
+500 KB one of 500,136, and an undefined alias of a million characters about 1,000,100 from `run
+--scope`, `calibrate` and `lint` (pre-commit audit of A-43, in its measure, file paths included);
+this clause's sweep found the rest, up to 2,000,108 bytes from `fingerprint` for a target id of a
+million characters (the id in the message and again in the reason), and the 24 refusals of the
+test's table, with values of 300,000 to 1,000,000 characters, printed lines of 400,080 to 2,000,247
+characters on `c9f27cc` and `a0bca70`. The lengths are written bare, as the spec loader writes them;
+for the `repr` of a text value the length stays under 10,485,762, short of the nine digits the CLI's
 redactor masks as a phone number (`repr` writes at most ten characters for a character the file
 spends a byte or more on), and an item count is smaller. The redactor can still read a head that
 ends in a digit after a character that is not a letter, together with the `... (N` behind it, as one
@@ -255,31 +262,33 @@ the run store), and a labels spec id where `calibrate` lists the labels the repo
 Whether ids get a length bound when they are loaded, as a fleet's already have (64 characters), is
 OD-27. A stdio `command` made of YAML aliases is joined into one text wherever the target is
 authorized (`wiring.request_url_for`, the engine's gate included) and in that advice: 20,000 aliases
-of one 10 KB text, a 90 KB file, make a line of about 200 MB (200,020,409 to 200,020,417 bytes, the
-paths in it varying), 1.09 to 1.49 GB of resident memory and 29 to 32 s in four measures, on this
-branch as on `a0bca70`. #71 (open) caps every YAML file at 100,000 nodes with its aliases expanded,
-which that file passes about 30 times over. Checks: `tests/cli/test_operator_file_quoted_values.py`
-(each refusal of the table through the CLI with a value past the cut: the line under 2,500
-characters, the file named where the refusal names it, the exact cut and no mask; twenty ids or
-references listed and the rest counted, through `run`, `fingerprint` and the credential refusal; the
-three refusals of `--resume`; a `repr` of exactly 300 characters quoted whole and one of 301 cut;
-the head equal to the start of `repr` over generated values; a list and a mapping of aliases quoted,
-and refused as a `type` through `load_target`, under a memory bound; an integer Python will not
-write, and no other failure of `repr` hidden; nested aliases one level down; a verdict and a
-`provider` of aliases not turned into text; an integer labels key and `seeded_setup` key, and a date
-key written as before; verdicts in any case and with spaces; a stdio target real only with a
-command; a `transport` of aliases; twelve URLs urllib cannot read, through `run`, `fingerprint` and
-`fleet`, the endpoint never quoted by the target loader and its password never printed; an
-unreadable allowlist entry matching nothing whatever its place; the variable name; the UTF-8 refusal
-through each command, and its offset past one decoder chunk), and the reader test of
+of one 10 KB text, a 90 KB file, make a line of about 200 MB, 1.09 to 1.49 GB of resident memory and
+about 30 s (five measures; the times depend on the machine), on this branch as on `a0bca70`. #71
+(open) caps every YAML file at 100,000 nodes with its aliases expanded, which that file passes about
+30 times over. Checks: `tests/cli/test_operator_file_quoted_values.py` (each refusal of the table
+through the CLI with a value past the cut: the line under 2,500 characters, the file named where the
+refusal names it, the exact cut and no mask; twenty ids or references listed and the rest counted,
+through `run`, `fingerprint` and the credential refusal; the three refusals of `--resume`; a `repr`
+of exactly 300 characters quoted whole and one of 301 cut; the head equal to the start of `repr`
+over generated values; a list and a mapping of aliases quoted, and refused as a `type` through
+`load_target`, under a memory bound; an integer Python will not write, and no other failure of
+`repr` hidden; nested aliases one level down; a verdict and a `provider` of aliases not turned into
+text; an integer labels key and `seeded_setup` key, and a date key written as before; verdicts in
+any case and with spaces; a stdio target real only with a command; a `transport` of aliases; twelve
+URLs urllib cannot read, through `run`, `fingerprint` and `fleet`, the endpoint never quoted by the
+target loader and its password never printed, by `fleet` either; an unreadable allowlist entry
+matching nothing whatever its place, an IPvFuture literal included; the variable name; the UTF-8
+refusal through each command, and its offset past one decoder chunk), and the reader test of
 `tests/cli/test_operator_file_cap.py`, changed on purpose from "the same `UnicodeDecodeError` as
 `read_text`" to "an `OSError` at the same byte, naming the file". On `a0bca70`, with the new helpers
-stubbed to what the base does (`quoted` as `repr`, `listed` as a plain join), 75 of these 92 tests
-(the 91 of the file and the changed reader test) fail, each for its reason, and the 17 that pass
-guard what must not change: a short value quoted as before, any other failure of `repr` raised,
-verdicts in any case and with spaces, a stdio target real only with a command, a date key written as
-before. Of 68 mutants, one per site and one per fix of the four audits, 66 are killed; the two that
-live are equivalent (they quote a fleet id, which the fleet's model holds to 64 characters).
+stubbed to what the base does (`quoted` and fleet's `_shown_endpoint` as `repr`, `listed` as a plain
+join), 81 of these 100 tests (the 99 of the file and the changed reader test) fail, each for its
+reason, and the 19 that pass guard what must not change (two of them, an endpoint with no user
+information quoted as `repr` quotes it): a short value quoted as before, any other failure of `repr`
+raised, verdicts in any case and with spaces, a stdio target real only with a command, a date key
+written as before. Of 73 mutants, one per site and one per fix of the five audits, 71 are killed;
+the two that live are equivalent (they quote a fleet id, which the fleet's model holds to 64
+characters).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

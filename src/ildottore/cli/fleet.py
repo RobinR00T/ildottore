@@ -138,7 +138,26 @@ def _split(endpoint: str) -> SplitResult:
     try:
         return urlsplit(endpoint.strip())
     except ValueError as exc:
-        raise ValueError(f"endpoint {quoted(endpoint)} is not a URL that can be read") from exc
+        raise ValueError(
+            f"endpoint {_shown_endpoint(endpoint)} is not a URL that can be read"
+        ) from exc
+
+
+def _shown_endpoint(endpoint: str) -> str:
+    """The endpoint as an error may quote it: without what precedes its last ``@``, cut.
+
+    The CLI masks a URL's password only in the ``user:password@`` shape, so an empty user, a
+    space in the password or a second ``@`` printed it (delta audit of A-51). Found by position,
+    not by a pattern, so a long hostile endpoint costs one pass.
+    """
+
+    start = endpoint.find("//")  # a scheme-relative `//user:password@host` too
+    if start < 0:
+        return quoted(endpoint)
+    start += 2
+    ends = [i for i in (endpoint.find(c, start) for c in "/?#") if i >= 0]
+    at = endpoint.rfind("@", start, min(ends, default=len(endpoint)))
+    return quoted(endpoint if at < 0 else endpoint[:start] + endpoint[at + 1 :])
 
 
 def infer_provider(endpoint: str) -> str:
@@ -202,7 +221,7 @@ def _scope_endpoint(endpoint: str) -> tuple[str, str]:
     try:
         port = parts.port or _DEFAULT_PORTS.get(parts.scheme.lower())
     except ValueError as exc:
-        raise ValueError(f"endpoint {quoted(endpoint)} has an invalid port") from exc
+        raise ValueError(f"endpoint {_shown_endpoint(endpoint)} has an invalid port") from exc
     shown = f"[{host}]" if ":" in host else host
     return (f"{shown}:{port}" if port else shown), path
 
@@ -316,11 +335,14 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
 def _shown(field: str, value: str | None) -> str:
     """A judge field as an error may quote it: an ``auth_ref`` literal never (it is a key).
 
-    Anything else is quoted up to 300 characters (clause A-51).
+    Anything else is quoted up to 300 characters, an endpoint without what precedes its last
+    ``@`` (clause A-51).
     """
 
     if field == "auth_ref" and value is not None:
         return shown_auth_ref(value)
+    if field == "endpoint" and value is not None:
+        return _shown_endpoint(value)
     return quoted(value)
 
 
