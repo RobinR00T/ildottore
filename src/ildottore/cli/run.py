@@ -1964,9 +1964,9 @@ def _charge_probe_pass(
     # Not retried when a signal lands during the write. In the probe loop's handlers nothing
     # catches it after, so one landing there loses the pass (2 of 41 real SIGINTs just after a
     # 503 stop, delta audit). Writing again closed that, and on a locked store made Ctrl-C wait
-    # one more busy timeout per write (9.9 s instead of 4.7 after a 503, 15.1 instead of 9.8
-    # after a pass that succeeded) for a record lost anyway (pre-merge audit). The window
-    # stays, like a SIGKILL's, and u12 A-46 says so.
+    # one more busy timeout per interrupted write (9.9 s instead of 4.7 after a 503, 15.1
+    # instead of 9.8 after a pass that succeeded) for a record lost anyway (pre-merge audit).
+    # The window stays, like a SIGKILL's, and u12 A-46 says so.
     return _recorded_requests(run_db, run_id, prior.plus(Spend(requests=sent)))
 
 

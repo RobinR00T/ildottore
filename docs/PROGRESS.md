@@ -15,9 +15,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   found signal windows: the write after a successful pass sat outside the handlers (a real SIGINT
   a few milliseconds after the last probe lost all 17 in 2 of 16 tries; moved inside), and a
   handler's own write has nothing after it (2 of 41 tries just after a 503 stop). Writing again on
-  that signal was built and withdrawn (on a locked store it made Ctrl-C wait up to 15.1 s instead of
-  9.8 for a record lost anyway); the window is written in u12 A-46. Contract u12 A-46;
-  `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not changed: a fresh
+  that signal was built and withdrawn (on a locked store, one Ctrl-C after a pass that succeeded
+  waited 15.1 s instead of 9.8 for a record lost anyway); the window is written in the contract.
+  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not changed: a fresh
   run's pass and a `--resume-unverified` run with no recorded spend record nothing; a signal during
   a handler's write, a SIGKILL, or a write that fails (a warning) still leave the record low. Left open as a follow-up: the adapters
   are built with no retries of their own, so the error that stops a probe pass, and an attack

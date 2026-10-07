@@ -29,8 +29,9 @@ versioning: [SemVer](https://semver.org/).
   pass outside the handlers, and a real SIGINT a few milliseconds after the last probe lost all 17
   in 2 of 16 tries; the write is inside them now. A handler's own write has nothing after it: one
   SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries. Writing again on that
-  signal closed it and, on a locked store, made Ctrl-C wait one more busy timeout per write (up to
-  15.1 s instead of 9.8) for a record lost anyway, so it was withdrawn. The record falls below what
+  signal closed it and, on a locked store, made Ctrl-C wait one more busy timeout per interrupted
+  write (15.1 s instead of 9.8 with one Ctrl-C after a pass that succeeded) for a record lost
+  anyway, so it was withdrawn. The record falls below what
   was sent only when a signal lands during the few milliseconds of a handler's write (one is
   enough after an error or the ceiling, two after a signal or a pass that succeeded), on a
   SIGKILL, or when the write fails, which is a warning that never replaces the error that stopped

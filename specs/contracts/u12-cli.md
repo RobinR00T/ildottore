@@ -235,13 +235,13 @@ sits inside the handlers: placed after them, a real SIGINT a few milliseconds af
 lost all 17 in 2 of 16 tries (pre-commit audit). A handler's own write has nothing after it: one
 SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries (delta audit). Writing
 again on that signal closed it, and on a locked store made Ctrl-C wait one more busy timeout per
-write (9.9 s instead of 4.7 after a 503, 15.1 instead of 9.8 after a pass that succeeded) for a
-record lost anyway (pre-merge audit); it was withdrawn rather than given a further rule. So the
-record falls below what was sent in three cases, each written here and not pinned by a test: a
-signal landing while a handler writes it (a few milliseconds; after an error or the ceiling stopped
-the pass one signal is enough, after a signal or a pass that succeeded it takes a second), a
-SIGKILL, and a write that fails, which is a warning and never replaces the error or the Ctrl-C
-that stopped the pass.
+interrupted write (9.9 s instead of 4.7 after a 503, 15.1 instead of 9.8 after a pass that
+succeeded) for a record lost anyway (pre-merge audit); it was withdrawn rather than given a further
+rule. So the record can fall below what was sent in three cases: a signal landing while a handler
+writes it (a few milliseconds; after an error or the ceiling stopped the pass one signal is
+enough, after a signal or a pass that succeeded it takes a second), a SIGKILL, and a write that
+fails, which is a warning and never replaces the error or the Ctrl-C that stopped the pass. The
+first two are written here and not pinned by a test.
 
 When an error or a signal ends the pass before its record is complete, stderr says how many
 requests it sent and what the run now records, or that they could not be added, even under `-q`:
