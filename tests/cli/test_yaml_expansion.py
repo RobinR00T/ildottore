@@ -145,7 +145,8 @@ def test_a_document_too_deep_and_too_large_is_refused_as_too_deep(
     """In both loaders the depth refusal, with its position, comes first: the spec loader used to
     report the size first, and the nesting fix's own cases are deep and large at once. (A document
     whose written nodes pass the cap, an alias counting what it names, is refused as too large
-    while it is composed, before its depth or a recursion is checked.)"""
+    while it is composed, before its depth or a recursion is checked, unless a list or a map was
+    written past the depth limit first: A-52, ``test_yaml_written_nesting.py``.)"""
 
     limit = safe_yaml.MAX_DEPTH
     deep_and_wide = "[" * (limit + 1) + doubling_list(LEVELS) + "]" * (limit + 1)

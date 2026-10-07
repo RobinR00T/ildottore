@@ -3,6 +3,29 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): YAML nesting refused where it is written
+
+- On `fix/yaml-flow-nesting-depth`, on `main` after #71 (`df75d3d`): a finding of the pre-commit
+  audit of the construction-cost fix, the same on `main`. PyYAML's pure-Python scanner walks one
+  possible key per open flow level on every token, and the depth limit was measured only on the
+  composed document, so a 198 KB file of chains of `[` 320 deep was composed whole before it was
+  refused (11.3 s against 2.5 s for a flat list of as many texts, at a load average of 9 to 14).
+  Every loader now refuses a list or a map written inside 100 others where it starts (0.11 s, same
+  message and position), which can only refuse earlier what the measure refused later. Clause A-52
+  (u01). 16 of the 30 new tests fail on `df75d3d`, and thirteen mutants are all killed; the
+  pre-commit audit found no defect in the code (a differential fuzz of 14,800 documents through both
+  loaders: none accepted by one tree and refused by the other) ten claims in the docs and tests that
+  promised more than the code, and one order no test pinned (a tag too long before the depth); all
+  corrected, and the delta audit five more wording slips, also corrected. Open, OD-30 (the owner's):
+  under the limit the per-token cost stays (chains 98 deep accepted at about 2.3 times the flat
+  list); a lower limit for flow nesting only (the repository's 130 YAML files nest at most 2 flow
+  levels) or libyaml's scanner (whose C composer would take the per-node checks with it).
+  `fix/yaml-construction-cost` edits the same `compose_node`: a three-way merge of `safe_yaml.py`
+  merges that method cleanly and conflicts in four places, each an addition on both sides (the
+  module docstring, the constants, the class docstring, `__init__`); with both sides kept, the two
+  branches' tests pass together (pre-commit audit). CHANGELOG, PROGRESS and u01 conflict at their
+  top entries.
+
 ## State, 2026-10-07 (afternoon): every YAML loader capped by expanded size
 
 - Closes the second item left open below. On `fix/yaml-alias-expansion-cap`, on main after #61: the

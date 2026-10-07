@@ -144,13 +144,14 @@ scope, target, fleet, labels, policy pack or signature pack file holding more th
 with every alias counted where it is used (a text one more node per 64 characters), nested deeper
 than 100 levels, or holding a recursive alias is refused before anything is built from it, as a YAML
 error with no quoted line (exit 3 at the CLI) and with the position where the value crosses the
-limit (nesting written out deep enough to overflow PyYAML's composer, a few hundred levels, has
-none). The measure is `safe_yaml.check_expanded`, the one the spec loader uses (u02 §4): one
+limit (a list or a map written past the depth limit is refused where it starts, as it is composed:
+A-52). The measure is `safe_yaml.check_expanded`, the one the spec loader uses (u02 §4): one
 bottom-up pass over the node graph, each node measured once and each size saturating just past the
 cap, too deep reported before too large. Composition itself stops once the nodes written pass the
 cap, an alias counting the node it names (each document counted on its own), as the expanded value
 can only weigh more, so such a document is reported as too large before its depth or a recursion is
-checked; and a tag longer than 256 characters is refused there, unquoted. Only the spec loader had
+checked, unless a list or a map was written past the depth limit first (A-52); and a tag longer
+than 256 characters is refused there, unquoted. Only the spec loader had
 the size cap (SEC-09), so the loaders of the operator's own files expanded whatever they were given:
 an 835-byte labels file of 45 anchors, each a list of two aliases of the one before, ran `calibrate`
 past 25 s at 1.7 GB while it formatted the verdict, and a `<<` merging the previous map twice
@@ -168,6 +169,51 @@ lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a su
 20 s and 256 MiB: `calibrate` on the alias bomb and on the flat list, `run -t`, `run --scope`,
 `fleet`, and `lint` on a merge bomb).
 
+**A-52 A list or a map written past the depth limit is refused where it starts, as the document is
+composed (added 2026-10-07).** Every loader (the spec loader and `safe_yaml.safe_load`, so the
+scope, target, fleet and labels files and the policy and signature packs) refuses a list or a map,
+flow or block, written inside 100 others, with the depth limit's message (`document is nested too
+deeply`) at the position where it starts, before anything in it or after it is composed (the scanner
+reads ahead to the end of that line, at most 1,024 characters, and one token past it, each token
+read whole however long, so an error in that window, such as a character no token can start or a bad
+escape in a long quoted text, is reported instead): a YAML error, exit 3 at the CLI and a
+`PARSE_ERROR` in `lint`. PyYAML's pure-Python scanner keeps one possible simple key per open flow
+level and walks them all on every token, so a token costs in proportion to the flow levels open
+around it, and A-37 measured the depth only on the composed document, after that cost: a 198 KB list
+of chains of `[` 320 deep was refused (`at line 1, column 101`) once all of it was composed, 3.3 to
+6.7 times what as many flat texts take, depending on the machine's load (pre-commit audit of A-41
+and A-42, the same on `main` and on #71). Measured on #71's head, best of three at a load average of
+9 to 14: 11.3 s against 2.5 s for the flat list, and the scanner walked 97.4 million possible keys
+against 0.3 million; now 0.11 s and 1.1 million, a constant (what it reads ahead on the first line).
+A list or a map is written at most as deep as its aliases expand it, so through these two loaders
+this refuses earlier only what A-37 refuses (`SafeValueLoader` used directly, by `yaml.load_all` for
+instance, has no A-37 and now refuses such a document where it accepted it; nothing in `src/` uses
+it that way). It names where the first list or map written past the limit starts; A-37 named the
+first node at that depth down the first of the deepest branches, aliases expanded: the same place
+unless another branch is deeper, or as deep and written first (a branch deepened by an alias
+included), or that list or map is empty and a text or a key at its level is written before it (`k:
+[]`). Refusals made while composing (this one, the size cap's count, a tag past 256 characters) are
+reported in the order written, and before what A-37 measures on the whole document, wherever that is
+written: a recursive alias written before the nesting is no longer the one reported. A text or an
+alias opens no level and is not refused by this check: one written at level 101 is refused where it
+was (an alias at its anchor), by A-37 once the document is composed, unless another check refuses it
+while it is composed, at the cost of a document accepted at the limit. Nesting written thousands of
+levels deep, which overflowed PyYAML's recursive composer and was refused without a position, now
+has one. Not covered, OD-30: under the limit the cost per token stays, and the same 198 KB of chains
+98 deep is accepted in 5.5 to 5.6 s, about 2.3 times the flat list here (3 to 4 times at depth 95 in
+the audit, under another load), the scanner walking 29.8 million keys; chains 98 deep holding 300
+texts at the bottom walk 52 million and take about 3 times the flat list, the worst accepted shape
+the audit found. Checks: `tests/cli/test_yaml_written_nesting.py` (where composition stops, by a
+character no token can start written lines inside the collection at level 101, for flow and block
+lists and maps and in both loaders; the position against `check_expanded`'s on the whole document;
+several branches; a key before an empty list; a text, an alias and a map's keys at level 101; every
+shape at the limit, siblings included, loading as plain PyYAML loads it; the precedence; one count
+per document; a tag too long reported first, as before; 5,000 levels; a `RecursionError` while
+composing, raised without recursing, and in a subprocess a caller with little stack left, both still
+refused as too deep; and in a subprocess bounded at 20 s, the possible keys the scanner walks for
+`lint` and `calibrate` on the audit's 198 KB file, under 5 million: 1.1 million now, 97.4 million
+before).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).
@@ -181,3 +227,14 @@ lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a su
   checksum now, pluggable verifier interface so sigstore drops in without a shape change).
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
+- **OD-30** (2026-10-07) Flow nesting under the depth limit still costs per token. A-52 refuses a
+  list or a map written past the limit before the scanner pays for what follows, but PyYAML's
+  pure-Python scanner walks one possible simple key per open flow level on every token, so a
+  document nested close to the limit is accepted at a few times what a flat one costs (A-52 gives
+  the measure). Options: (A) a lower limit for flow nesting only: the repository's 130 YAML files
+  nest at most 2 flow levels (6 of any style), so a limit of, say, 20 would bound each walk of the
+  scanner at about 20 keys (it passes over them about three times per token) without refusing any of
+  them; (B) libyaml's scanner (`yaml.CSafeLoader`, in the installed PyYAML), whose composer is C, so
+  the per-node checks of `safe_yaml` (the size count, the tag limit, keys written twice, A-52) would
+  have to move to its events, to be measured; (C) leave it: each walk is bounded at about 100 keys.
+  Owner's call.

@@ -5,6 +5,54 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a YAML file nested past the depth limit, refused where it is written)
+
+- **A file nested past the depth limit was composed whole before it was refused.** PyYAML's
+  pure-Python scanner keeps one possible simple key per open flow level and walks them all on every
+  token, so each token costs in proportion to the flow levels open around it, and the depth limit
+  (100 levels) was measured only on the composed document. A 198 KB list of chains of `[` 320 deep
+  was refused (`document is nested too deeply at line 1, column 101`) after 11.3 s, 4.6 times the
+  2.5 s of a flat list of as many texts (best of three, alternating, at a load average of 9 to 14;
+  4.5 times at 157 to 282, and the audits 3.3 to 6.7 times under other loads), the scanner walking
+  97.4 million possible keys against 0.3 million. Every loader (the spec loader and
+  `safe_yaml.safe_load`, so the scope, target, fleet and labels files and the policy and signature
+  packs) now refuses a list or a map, flow or block, written inside 100 others, where it starts,
+  before anything in it or after it is composed (the scanner reads ahead to the end of that line, at
+  most 1,024 characters, and one token past it, each token read whole however long, so an error in
+  that window, such as a character no token can start or a bad escape in a long quoted text, is
+  reported instead): the same file in 0.11 s, with the same message and position, the scanner
+  walking 1.1 million keys, a constant (what it reads ahead on the first line). A list or a map is
+  written at most as deep as its aliases expand it, so through these loaders this only refuses
+  earlier what was refused later (`SafeValueLoader` used directly, without the measure, now refuses
+  such a document; nothing in `src/` does that). The position is where the first list or map written
+  past the limit starts; the measure on the whole document named the deepest branch instead, and,
+  when that list or map is empty, a text or a key written before it at its level (`k: []`). Refusals
+  made while composing (this one, the size cap's count, a tag too long) are reported in the order
+  written, and before what is measured on the whole document, wherever that is written: a file
+  written deep was reported as too large if its nodes passed the cap before the end, and a recursive
+  alias written before the nesting was reported instead of it. A text or an alias written at level
+  101 opens no level and is left to what refused it before, where it was. Nesting written thousands
+  of levels deep, which the entry below still refused without a position, now has one. Under the
+  limit the cost stays: the same chains 98 deep are accepted in 5.5 to 5.6 s, about 2.3 times the
+  flat list, and up to about 3 times when the chains hold their texts at the bottom (an open
+  decision, OD-30: a lower limit for flow nesting only, where the repository's own files nest at
+  most 2 flow levels, or libyaml's scanner). Tests: `tests/cli/test_yaml_written_nesting.py`. 16 of
+  the 30 fail on `df75d3d` (`main` with #71): eight because composing goes on to a character no
+  token can start, written lines inside the collection at level 101; two because the scanner walks
+  97.4 million possible keys for `lint` and `calibrate` on the audit's 198 KB file, over a bound of
+  5 million (1.1 million now), the file refused with the same message and position; two because a
+  file written deep first is reported as too large; two because the deepest branch, or a key before
+  an empty list, is named; one because `yaml.load_all` does not refuse; and one because 5,000 levels
+  have no position. The other fourteen pin what does not change: the position for one branch, a
+  text, an alias and a map's keys at level 101, every shape at the limit loading as plain PyYAML
+  loads it, and the refusal a `RecursionError` while composing still gets (both loaders catch it,
+  and no other test reaches those handlers now), simulated in process, since a real overflow
+  switches off a pure-Python tracer, and real in a subprocess with little stack left, and a tag too
+  long on the list at level 101, reported as such. Thirteen mutants of the check and of those two
+  handlers are all killed. Clause A-52 (u01), u02 §4. Found by the pre-commit audit of the
+  construction-cost fix (A-41 and A-42); the same on `main` (`2f6201a`), whose depth limit is #61's:
+  refused after the same 97.4 million keys.
+
 ### Fixed (a YAML file that expands past what the CLI can hold)
 
 - **Only the spec loader capped a YAML document's size with its aliases expanded.** The scope,

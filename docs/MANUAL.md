@@ -543,9 +543,21 @@ points at the anchor whose two aliases take it past the cap. Composition stops a
 written in a file pass the cap, an alias counting the node it names, so a large file is refused
 without being composed whole (the first version of this cap composed a 3 MB list of a million texts,
 785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as too large before
-its depth is checked. The file itself is still read whole: these files have no byte limit. A tag
-longer than 256 characters is refused at the first one, without quoting it. Nesting written out a
-few hundred levels deep, past what PyYAML's composer holds, is refused without a position.
+its depth is checked, unless a list or a map was written past the depth limit first. The file itself
+is still read whole: these files have no byte limit. A tag
+longer than 256 characters is refused at the first one, without quoting it. A list or a map written
+inside 100 others is refused where it starts, before anything in it or after it is composed (the
+scanner reads ahead to the end of that line, at most 1,024 characters, and one token past it, each
+token read whole, and an error there is reported instead): PyYAML's scanner pays on every token for
+each flow level open around it, and a file nested past the limit used to be composed whole first
+(198 KB of chains of `[` 320 deep, 11 s, 4.6 times a flat list of as many texts; now 0.1 s). The
+position is where the first list or map written past the limit starts (a deeper branch, or one as
+deep written first, aliases expanded, used to be named instead, and so did a key before an empty
+list, as in `k: []`), and a recursive alias written before the nesting is no longer what is
+reported. A text or an alias written at level 101 opens no level and is left to what refused it
+before. Under the limit the cost stays: the same chains 98 deep are accepted in about 2.3 times the
+time of the flat list, and up to about 3 times when they hold their texts at the bottom (an open
+decision, OD-30).
 A key written twice in one
 mapping is a `PARSE_ERROR` too. A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
