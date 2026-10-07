@@ -15,8 +15,8 @@ versioning: [SemVer](https://semver.org/).
   the spec loader's limit: a larger regular file is refused before any of it is read (68 MiB peak
   for the same gigabyte, most of it the CLI's imports), and a pipe or a device is read up to one
   byte past the limit and refused if that byte comes, so `--scope <(cat scope.yaml)` and `dottore
-  fleet <(...)` still work (a target file still cannot be a pipe: `run` reads it more than once).
-  Exit 3, with an error that names the file and the sizes: `file is 1,073,741,824 bytes, over the
+  fleet <(...)` still work (and, since #77 parses a target file once, `run -t <(...)` too). Exit 3,
+  with an error that names the file and the sizes: `file is 1,073,741,824 bytes, over the
   1,048,576-byte cap`. The sizes carry thousands separators because, written bare, a size of nine
   digits or more was masked by the CLI's redactor as a phone number. The figure, and reading any
   file type rather than only a regular one, are the owner's decisions (OD-26). 1 MiB holds about
@@ -47,6 +47,63 @@ versioning: [SemVer](https://semver.org/).
   error outside the validation listing can still quote a value of the file whole (an unknown target
   `type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Found by
   the pre-commit audit of the alias-expansion cap (#71). Clause A-43 (u01).
+
+### Fixed (a YAML value that costs far more to build than it weighs)
+
+- **A number written in thousands of characters took the linter most of a minute.** YAML 1.1 reads
+  `1:59:59` as a base-60 integer, and PyYAML builds one with a loop whose time grows with the square
+  of its length: a spec just under the 1 MiB cap holding one such value took `dottore lint` 55 s,
+  and `run --dry-run` accepted a 450 KB target file with one in a field nothing reads after 37 s.
+  The size cap below does not see it: a 1 MiB value counts as about 16,000 of its 100,000 nodes.
+  Every loader now refuses a number, an integer or a float in any notation, written in more than
+  1,000 characters, as soon as it is composed: `cannot build this value (a number written in over
+  1000 characters) at line 2, column 8`, a `PARSE_ERROR` in `lint` and exit 3 elsewhere, in 1 to 1.5
+  s for either file, most of it starting the CLI. A number of 1,000 hexadecimal digits has about
+  1,204 decimal digits, under the 4,300 Python converts by default. 6,000 base-60 numbers of 1,000
+  characters, a 6 MB file, still load, in about twice what 6,000 texts of the same size take (8.5 s
+  against 4.1 s, best of three on a heavily loaded machine): base 60 is the costliest notation, and
+  a number now costs a small multiple of a text of its size, not its square.
+- **Integer keys that share one hash made a mapping cost the square of their count.** Integers that
+  differ by a multiple of `2 ** 61 - 1` (`sys.hash_info.modulus`) all hash alike, so the dict PyYAML
+  builds for a mapping of them costs the square of their count: 36,320 such keys, a 1 MiB spec, took
+  `lint` 24 s, and 45,000 in a 1.3 MB target file took `run --dry-run` 247 s. Every loader now
+  refuses the key that takes a document past 1,000 keys that are numbers, counted from their tags as
+  each is composed, so before any of them is hashed and without parsing the rest of the file, across
+  the whole document and with a key merged in by `<<` counted in every mapping it is merged into (a
+  `<<: [*a, *b, ...]` gathers many maps' keys into one dict): ``document has over 1000 keys that are
+  numbers (a key merged in by `<<` counted in every mapping it is merged into) at line 1003, column
+  3``, in 1 to 1.5 s for either file. Per mapping, the same limit still let about fifty such
+  mappings through under the node cap. Keys that are text, bytes, dates or timestamps are not
+  counted: all but a timestamp with an offset hash with a key Python draws at random for each
+  process, and a timestamp with an offset hashes by its instant, with no thousand instants sharing
+  one hash within reach. No YAML file the repository ships has a key that is a number.
+- **`run` parsed a target file up to five times, `fingerprint` up to four.** Each question the CLI
+  asked of a target file parsed it again: to load it, whether it is a mock, its scenario, each plan,
+  and for a live target the target handed to the adapter, four parses of a mock target in a dry run
+  and five of a live one. A costly file was paid that many times over, the live target sent to came
+  from a later read than the one the scope authorized, and a target that can be read only once, such
+  as `-t /dev/stdin`, was refused on its second read (`must be a mapping at top level`). `run` and
+  `fingerprint` now parse each target file once (`wiring.read_target_file`), and a piped target
+  works. A file named twice is still parsed once per name (`-t X -t X`, refused as a repeated id,
+  and `-t X --judge X`), and a scope with a `checksum:` line is still parsed twice, by design: the
+  second parse is the check that the line is part of no other value. - Tests:
+  `tests/cli/test_yaml_construction_cost.py`: each number notation at 1,001 characters as a value, a
+  key, a list item, in a flow list or mapping and at the root, and at 1,000 as a value; a long text;
+  1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge
+  shapes, a map merged where it is written and a map that merges passing its keys on; where
+  composition stops; a stream of documents; keys that are not numbers; both loaders; in a subprocess
+  bounded at 15 s, `lint` on each 1 MiB spec and `run --dry-run` on each target; and the parses of a
+  target file counted where the YAML is parsed, for a mock run under seven flag sets, a live dry run
+  and estimate, `--hardened` on a live target, two targets, a resumed run, a judge file, a target
+  piped in, and `fingerprint` offline and on a mock. 112 of the 126 tests fail on `982bfe4`, each
+  because nothing is refused, the timeout runs out, composition reads on to a later syntax error, or
+  the file is parsed more than once or refused when piped in; the other 14 pass on both sides by
+  design (a number at the cap in each notation, a long text and keys that are not numbers still
+  load). Twenty-seven distinct mutants of the fix are all killed, among them the eight the audits
+  found surviving. Clauses A-41 (u01) and A-42 (u12). Timings on a 15-core machine at a load average
+  of 6 to 10; under heavier load the base took longer still (up to 2.2 times, and the 1.3 MB target
+  did not finish in 15 minutes). Found by the pre-commit audit of the size cap below, and the gaps
+  in the first version of this fix by its own pre-commit and pre-merge audits.
 
 ### Fixed (a spec key that is not a string)
 
@@ -177,6 +234,14 @@ versioning: [SemVer](https://semver.org/).
   file four times; a 4,000-digit integer in a typed spec field crashed `lint` with a traceback
   (fixed since by #81); and the operator's files are read whole with no byte limit, their validation
   errors listed with no limit (both fixed since by #76). An undefined alias or an unknown tag is still named in the refusal,
+
+  base-60 integer (`1:59:59:...`) built in time quadratic in its length and integer keys that share
+  one hash made a mapping quadratic, and `run` parsed the target file four times (all three fixed in
+  the section above); an integer past Python's 4,300-digit limit, written in hexadecimal, octal,
+  binary or base 60, crashed `lint` with a traceback (fixed since: at the default limit the
+  1,000-character cap above refuses it first, and under a lower `PYTHONINTMAXSTRDIGITS` #81 reports
+  it with its file); and the operator's files are read whole with no byte limit, their validation
+  errors listed with no limit. An undefined alias or an unknown tag is still named in the refusal,
   as `shared/config_errors.py` documents (a tag is now at most 256 characters).
 
 ### Fixed (a number too long to write out)

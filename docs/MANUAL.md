@@ -87,17 +87,16 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
   from the command line). A larger regular file is refused before any of it is read; anything
   else, such as a pipe (`--scope <(cat scope.yaml)`) or a device, is read up to one byte past
-  the limit and refused if that byte comes. A target file cannot be a pipe: `run` and
-  `fingerprint` read it more than once. The error names the file and the sizes, written with
-  thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and the
-  command exits 3. `dottore fleet` measures every file it would write and refuses, before
+  the limit and refused if that byte comes.  The error names the file and the sizes, written
+  with thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and
+  the command exits 3. `dottore fleet` measures every file it would write and refuses, before
   writing any, one over the limit: the scope repeats each endpoint and is usually the largest,
   but a target or the judge file can be larger, as non-ASCII text is written escaped. The judge
-  file is measured only when no `--judge` file replaces it, so with `--judge` a `judge.yaml` over
-  the limit is still written, and a later `run --judge` naming it is refused.
-  1 MiB holds about 22,000 labels, 2,000 scope targets with two identities each, or the scope
-  written for about 3,800 fleet entries; the largest file shipped here that is read this way,
-  the signature corpus, is 8.7 KB.
+  file is measured only when no `--judge` file replaces it, so with `--judge` a `judge.yaml`
+  over the limit is still written, and a later `run --judge` naming it is refused. 1 MiB holds
+  about 22,000 labels, 2,000 scope targets with two identities each, or the scope written for
+  about 3,800 fleet entries; the largest file shipped here that is read this way, the signature
+  corpus, is 8.7 KB.
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -164,7 +163,17 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   mapping, first at line 5, column 5 and again at line 11, column 5`. Keys pulled in by a `<<`
   merge can still be overridden; a map merged in is checked too, and two `<<` in one mapping are
   refused (merge several maps with one list, `<<: [*a, *b]`). A key written as an alias
-  (`*k :`) is reported where the alias is written. An error quotes an `auth_ref` only when it
+  (`*k :`) is reported where the alias is written.
+  Two values that cost far more to build than they weigh are refused the same way, in every file
+  and in specs, where they are written and before the rest of the file is parsed: a number written
+  in more than 1,000 characters (`cannot build this value (a number written in over 1000
+  characters)`; YAML 1.1 reads `1:59:59` as a base-60 integer, which PyYAML builds in time that
+  grows with the square of its length, so one such value in a 1 MiB spec took `lint` 55 s), and
+  the key that takes a file past 1,000 keys that are numbers, a key merged in by `<<` counted in
+  every mapping it is merged into (integers that differ by a multiple of `2 ** 61 - 1` share one
+  hash, and the mapping that holds them is built in time that grows with the square of their
+  count). Keys that are text, as in every file this tool reads, are not counted.
+  An error quotes an `auth_ref` only when it
   is a reference (it contains `://`, such as `env://NAME` or `vault://x`); a literal value
   pasted where a reference belongs is printed as `a literal value (not shown)`, for example
   `target 'live' auth_ref a literal value (not shown) is not authorized by the scope (declared:
@@ -241,6 +250,11 @@ is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `tem
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.
+
+`run` and `fingerprint` parse a target file once: the target the scope authorizes, its route and
+the target a live adapter sends to all come from that one parse, even if the file changes while the
+command starts, and a target can come from a pipe (`-t /dev/stdin`). A file named twice
+(`-t X --judge X`) is parsed once per name.
 
 `type: model` means a bare model API, and changes what a spec with setup sends: its memory seed
 goes as saved memory from earlier sessions after the system prompt, its documents as retrieved
@@ -577,16 +591,17 @@ nodes written in a file pass the cap, an alias counting the node it names, so a 
 refused without being composed whole (the first version of this cap composed a 3 MB list of a
 million texts, 785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as
 too large before its depth is checked. Each file is read up to 1 MiB (see **Bounded operator
-files** in §3), from any file; a scope, fleet or labels file can be a pipe. A tag longer than
+files** in §3), from any file; a scope, target, fleet or labels file can be a pipe. A tag longer than
 256 characters is refused at the first one, without quoting it. Nesting written out a few
 hundred levels deep, past what PyYAML's composer holds, is refused without a position.
 A key written twice in one
-mapping is a `PARSE_ERROR` too. A key YAML builds as something other than text (`5:`, a bare
-`on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its mapping, such as
-`fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write it in quotes,
-without a tag`: a spec is JSON, whose keys are strings, and such a key in a fixture's tool-call
-arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`). A YAML
-error gives the line and
+mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a
+file with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than
+text (`5:`, a bare `on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its
+mapping, such as `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write
+it in quotes, without a tag`: a spec is JSON, whose keys are strings, and such a key in a fixture's
+tool-call arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`).
+A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. A number too long for Python to write out (more than

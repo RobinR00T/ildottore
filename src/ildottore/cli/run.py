@@ -512,7 +512,7 @@ def budgets_for(
 def resolve_target_plans(
     *,
     scope: Scope,
-    targets: list[tuple[Path, Target]],
+    targets: list[wiring.TargetFile],
     specs: list[AttackSpec],
     runs: int,
     rate_rps: float | None = None,
@@ -532,7 +532,8 @@ def resolve_target_plans(
     pack = wiring.build_permissive_pack(specs)
     policy = wiring.build_policy_engine(scope, pack)
     plans: list[TargetPlan] = []
-    for path, target in targets:
+    for loaded in targets:
+        path, target = loaded.path, loaded.target
         endpoint = wiring.scope_endpoint_of(scope, target)
         decision = authorize_target(scope, target.id, endpoint)
         fingerprint = (fingerprints or {}).get(target.id)
@@ -559,7 +560,7 @@ def resolve_target_plans(
                 blocked.append((spec.id, verdict.reason or "blocked_by_policy"))
         # The offline mock replays the specs' fixtures, written for the scene, so it holds every
         # scene; a live deployment holds only those its operator declared seeded (OD-18 B).
-        fixtures_hold_scene = wiring.target_uses_mock(path)
+        fixtures_hold_scene = loaded.uses_mock
         # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
         # declared, a per-run canary with no run_token, two scene tools under one deployment
         # name, or a trace spec through an adapter that reads no tool calls.
@@ -1007,11 +1008,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # reachability), not a second, weaker one written here: asking only whether the id is
     # present left the false green one character away, because `ScopeTarget.endpoints`
     # defaults to empty and a typo in `host` reads exactly like a missing allowlist.
-    loaded_targets = [(path, wiring.load_target(path)) for path in opts.targets]
+    # Each file parsed once: everything below asks the same read (u12 A-42).
+    loaded_targets = [wiring.read_target_file(path) for path in opts.targets]
     # Two target files with the same id shared one run id and one evidence tree, so one
     # report held a PASS and a FAIL for the same spec on "the same" target (audit R11).
     seen_ids: dict[str, Path] = {}
-    for path, target in loaded_targets:
+    for loaded in loaded_targets:
+        path, target = loaded.path, loaded.target
         if target.id in seen_ids:
             raise ValueError(
                 f"two target files declare the id {target.id!r} ({seen_ids[target.id]} and "
@@ -1019,7 +1022,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             )
         seen_ids[target.id] = path
     judge_target = wiring.load_target(opts.judge) if opts.judge is not None else None
-    to_authorize = list(loaded_targets)
+    to_authorize = [(loaded.path, loaded.target) for loaded in loaded_targets]
     if judge_target is not None and opts.judge is not None:
         # The judge is a model we send prompts to, so it goes through the same gate. It used
         # to be loaded and never checked: with the judge absent from the scope (which is what
@@ -1146,7 +1149,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     evidence_root = opts.evidence_root or Path(".dottore/evidence")
     run_db = opts.run_db or Path(".dottore/runs.sqlite")
 
-    routes = [(path, target, _route_for(opts, path)) for path, target in loaded_targets]
+    routes = [(loaded.path, loaded.target, _route_for(opts, loaded)) for loaded in loaded_targets]
     any_live = any(real is not None for _, _, (_, real) in routes)
     # Pacing applies to traffic that leaves the process. An offline mock campaign is not
     # paced (there is nobody to be polite to, and pacing CI would only slow it); the plan
@@ -1197,7 +1200,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         resume_from = resume_mod.load_resume_run(
             evidence_root,
             opts.resume,
-            loaded_targets[0][1],
+            loaded_targets[0].target,
             run_db=run_db,
             specs=selected,
             mock_scenario=routes[0][2][0],
@@ -1260,8 +1263,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # pass happens first and its evidence has to file under the run it belongs to. A resumed
     # campaign keeps the original id (the evidence and the run store are keyed by it).
     run_ids = {
-        target.id: (opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}")
-        for _, target in loaded_targets
+        loaded.target.id: (
+            opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}"
+        )
+        for loaded in loaded_targets
     }
 
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
@@ -1622,7 +1627,7 @@ def _refusal_for(scope: Scope, target: Target) -> str | None:
     return None if decision.allowed else (decision.reason or "not authorized by the scope")
 
 
-def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target | None]:
+def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None, Target | None]:
     """Decide the adapter route for one target: ``(mock_scenario, real_target)``.
 
     ``--hardened`` always forces the offline hardened replay (a mock-only flag); otherwise a
@@ -1632,22 +1637,20 @@ def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target 
     (contract §5).
     """
 
-    uses_mock = wiring.target_uses_mock(target_path)
-    if opts.hardened and not uses_mock:
+    if opts.hardened and not loaded.uses_mock:
         # It replayed offline fixtures, sent nothing, and published ten passes, "complete" and
         # exit 0 under the live target's name, with no marker anywhere that it was a replay
         # (audit 2026-10-03, R3). A clean report about a model nobody contacted is refused.
-        target = wiring.load_target(target_path)
         raise ValueError(
             f"--hardened replays the offline hardened fixtures and sends nothing, so it cannot "
-            f"be used with the live target {target.id!r} ({target_path}): the report would "
+            f"be used with the live target {loaded.target.id!r} ({loaded.path}): the report would "
             "describe a model that was never contacted. Drop --hardened, or point it at a "
             "mock target."
         )
-    if opts.hardened or uses_mock:
-        scenario = "hardened" if opts.hardened else wiring.load_mock_scenario(target_path)
+    if opts.hardened or loaded.uses_mock:
+        scenario = "hardened" if opts.hardened else loaded.mock_scenario()
         return scenario, None
-    return None, wiring.load_target(target_path)
+    return None, loaded.target
 
 
 def _run_one_target(

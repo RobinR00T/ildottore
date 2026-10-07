@@ -372,8 +372,13 @@ def test_each_loader_reads_up_to_the_cap(
 @POSIX_ONLY
 @pytest.mark.parametrize(
     ("body", "load"),
-    [(SCOPE, load_scope_with_digest), (FLEET, load_fleet), (LABELS, load_labels)],
-    ids=["scope", "fleet", "labels"],
+    [
+        (SCOPE, load_scope_with_digest),
+        (TARGET, load_target),
+        (FLEET, load_fleet),
+        (LABELS, load_labels),
+    ],
+    ids=["scope", "target", "fleet", "labels"],
 )
 def test_a_loader_still_reads_a_pipe(
     tmp_path: Path, body: str, load: Callable[[Path], Any]
