@@ -194,7 +194,11 @@ def low_digit_limit() -> Iterator[None]:
 
 @pytest.mark.usefixtures("low_digit_limit")
 def test_a_key_too_long_to_print_is_described_not_quoted(tmp_path: Path) -> None:
-    """``repr`` of such an int raises ``ValueError``; the message must not."""
+    """``repr`` of such an int raises ``ValueError``; the message must not.
+
+    Only the path is pinned: with A-40 (``fix/huge-int-repr``) in, its own check reports this key
+    first, in its words (pre-merge audit of #80).
+    """
 
     big = "0x" + "f" * 600
     text = (
@@ -207,7 +211,7 @@ def test_a_key_too_long_to_print_is_described_not_quoted(tmp_path: Path) -> None
     )
     # The key sits at the root, beside an unknown property: the key is reported, not the property.
 
-    line = _assert_finding(_lint(tmp_path, _SELFCORRECT, text), _SELFCORRECT, "x-check: key")
+    line = _assert_finding(_lint(tmp_path, _SELFCORRECT, text), _SELFCORRECT, "x-check: ")
 
     assert "too long to write out" in line
     assert "fff" not in line
