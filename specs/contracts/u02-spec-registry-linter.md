@@ -45,7 +45,13 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   at most 1 MiB, is read; a document that expands, counting every alias where it is used, past
   100,000 nodes (a text counts one node per 64 characters), nests deeper than 100 levels with
   its aliases expanded (since 2026-10-07) or holds a recursive alias is a
-  `PARSE_ERROR` before anything is built from it; a key written twice in one mapping is a
+  `PARSE_ERROR` before anything is built from it, reported with the position where the value
+  crosses the limit (none for nesting written out past what PyYAML's composer holds), too deep
+  before too large (bar a document whose written nodes, an alias counting what it names, pass the
+  cap: composition stops there; a tag past 256 characters is refused there too, unquoted). Since
+  2026-10-07 the measure is
+  `safe_yaml.check_expanded`, one pass over the node graph shared with the loaders of the
+  operator's files (u01 A-37), which had no size cap; a key written twice in one mapping is a
   `PARSE_ERROR` too, found while the document is built (since 2026-10-06; a `<<` merge can still
   be overridden); a value JSON cannot hold is a `SCHEMA` finding at its path, found before the
   JSON schema runs (since 2026-10-07, A-54); a YAML error gives reason and position, never a

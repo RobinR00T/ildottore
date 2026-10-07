@@ -539,7 +539,19 @@ expands, counting every alias where it is used, past 100,000 nodes (a long text 
 per 64 characters), that nests deeper than 100 levels once its aliases are expanded, or that
 holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases used to turn a
 4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
-linter overflowed on. The scope, target, fleet and labels files have the same depth limit.
+linter overflowed on. The scope, target, fleet and labels files have the same three limits, and
+so do the policy and signature packs (since 2026-10-07; they had only the depth limit, and an
+835-byte labels file of anchors that each list the previous one twice ran `calibrate` past 25 s
+and 1.7 GB). Too deep is reported before too large, and each where the value crosses its limit:
+`labels file labels.yaml is not valid YAML: document is too large (over 100000 nodes, counting
+every alias where it is used and a text as one node per 64 characters) at line 1, column 266`
+points at the anchor whose two aliases take it past the cap. Composition stops as soon as the nodes
+written in a file pass the cap, an alias counting the node it names, so a large file is refused
+without being composed whole (the first version of this cap composed a 3 MB list of a million texts,
+785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as too large before
+its depth is checked. The file itself is still read whole: these files have no byte limit. A tag
+longer than 256 characters is refused at the first one, without quoting it. Nesting written out a
+few hundred levels deep, past what PyYAML's composer holds, is refused without a position.
 A key written twice in one
 mapping is a `PARSE_ERROR` too. A value JSON cannot hold (an unquoted date or timestamp such as
 `2026-01-01`, a `!!set`, an entry of `!!omap` or `!!pairs`, `!!binary`, `.nan`, `.inf`, an
