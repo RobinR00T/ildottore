@@ -16,11 +16,11 @@ versioning: [SemVer](https://semver.org/).
   now refuse it with exit 3 and one `error:` line that names the file and quotes none of it. A
   report that is not UTF-8 or not JSON names its file too: `Expecting value: line 1 column 1 (char
   0)` did not say which of the two files it was. These messages name the report by its absolute
-  path, quoted and escaped as an `OSError` names a file, never followed by a colon: the CLI keeps an
-  existing absolute path readable, and a relative path, or `<path>:`, is not one, so a report named
-  after a commit SHA had its name masked as a high-entropy value; and a newline in the name would
-  have split the line. A directory whose name holds a space or one of `()[],;'"` still cuts the path
-  short, as in every message of the CLI. Found by the pre-merge audit of #51.
+  path, never followed by a colon: the CLI keeps an existing absolute path readable, and a relative
+  path, or `<path>:`, is not one, so a report named after a commit SHA had its name masked as a
+  high-entropy value. As in every message of the CLI, a directory whose name holds a space or one of
+  `()[],;'"` still cuts the path short, and a control character in a name reaches the terminal as
+  written (#51 escapes them there). Found by the pre-merge audit of #51.
 - **A value that parses and overflows later.** On 3.14 the parser holds about 116,000 levels and
   `repr` overflows from about 69,500, so a report whose run status carried a reason nested 70,000
   levels deep was read and then overflowed when the refusal of an incomplete run formatted it (exit

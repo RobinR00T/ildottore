@@ -91,10 +91,10 @@ def _read_report(path: Path) -> Any:
 
     # Absolute and never followed by a colon: the CLI keeps an existing absolute path readable,
     # and a relative path, or one with a colon after it, is not one, so a report named after a
-    # commit SHA had its name masked as a high-entropy value (pre-commit and delta audits). Quoted
-    # with its control characters escaped, as an OSError names a file: a newline in the name
-    # split the error line in two (pre-merge audit of #61).
-    shown = repr(str(path.absolute()))
+    # commit SHA had its name masked as a high-entropy value (pre-commit and delta audits). Not
+    # escaped here: an escaped name is no longer a path on disk, so the CLI masked it too; the
+    # terminal escapes control characters for every message (#51).
+    shown = path.absolute()
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except RecursionError as exc:

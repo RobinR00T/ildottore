@@ -345,9 +345,11 @@ class SqliteRunStore:
         # invocation's default instead and wrote it over the record (delta audit).
         fields = context or {}
         runs = fields.get("runs")
-        # A null digest is the target refusal's case, which no flag waives (delta audit of #61).
-        recorded = "runs" in fields or fields.get("target_digest") is not None
-        if recorded and (isinstance(runs, bool) or not isinstance(runs, int) or runs < 1):
+        # A count that is there is checked whatever else is (`stored_runs` reads it alone); a
+        # missing one only beside a digest. Without a digest the target refusal, which no flag
+        # waives, says what is wrong (pre-merge and delta audits of #61).
+        expected = runs is not None or fields.get("target_digest") is not None
+        if expected and (isinstance(runs, bool) or not isinstance(runs, int) or runs < 1):
             raise CorruptRunContext(
                 "context_json holds no runs value, or one that is not a positive whole number. "
                 "An integrity record that cannot be read is not the same as one that was never "

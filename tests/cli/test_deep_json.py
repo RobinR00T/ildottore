@@ -93,22 +93,6 @@ def test_a_relative_report_path_keeps_its_name(
     assert SHA_NAME in line and "nested too deeply" in line
 
 
-def test_a_control_character_in_the_report_name_stays_on_one_line(tmp_path: Path) -> None:
-    """The name is written as an OSError writes it, escaped: a newline in it split the error
-    line in two, and a BEL went out raw (pre-merge audit of #61)."""
-
-    bad = tmp_path / "nl\nx\a-report.json"
-    bad.write_text("{not json", encoding="utf-8")
-    other = tmp_path / "other.json"
-    other.write_text("[]", encoding="utf-8")
-
-    result = runner.invoke(app, ["diff", str(other), str(bad)])
-
-    assert result.exit_code == ExitCode.ERROR
-    line = error_line(result)
-    assert "nl\\nx\\x07-report.json" in line and "\a" not in line
-
-
 def test_load_findings_refuses_a_report_nested_too_deeply(tmp_path: Path) -> None:
     """The commands read the file through `incomplete_reason` first, so this is the reader
     `diff_reports` and `calibrate_reports` reach on their own."""

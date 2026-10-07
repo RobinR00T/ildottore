@@ -227,6 +227,21 @@ def test_an_integrity_record_nested_too_deeply_is_corrupt(tmp_path: Path, column
         )
 
 
+@pytest.mark.parametrize("context", ['{"runs": []}', '{"runs": 1e400, "target_digest": null}'])
+def test_a_bad_count_without_a_digest_is_still_refused(tmp_path: Path, context: str) -> None:
+    """The inherited `--runs` is read on its own, before the target is checked, so a count that
+    is there is checked whether or not a digest is."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store._conn.execute(_SET_COLUMN["context_json"], (context, run_id))
+        store._conn.commit()
+
+    with pytest.raises(ValueError, match="context_json holds no runs value"):
+        execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
+
+
 def test_a_stored_column_is_bounded_at_a_hundred_levels() -> None:
     """Under the parser's stack a value can still be too deep to write back (below)."""
 
@@ -540,10 +555,19 @@ def test_the_route_cannot_be_flipped_by_the_unverified_flag(tmp_path: Path) -> N
         execute_run(flipped, [spec_dir])
 
 
-@pytest.mark.parametrize("context", ['{"runs": 3}', '{"target_digest": null}'])
+@pytest.mark.parametrize(
+    "context",
+    [
+        '{"runs": 3}',
+        '{"target_digest": null}',
+        '{"runs": null}',
+        '{"target_digest": null, "runs": null}',
+    ],
+)
 def test_a_context_row_missing_its_target_digest_refuses(tmp_path: Path, context: str) -> None:
     """A row that exists but carries no digest verified nothing, silently and with no notice.
-    A null digest with no count gets this refusal too, not the one about the count."""
+    Without a digest, a missing or null count gets this refusal too, not the one about the
+    count."""
 
     spec_dir = _specs(tmp_path)
     run_id = _halted_run(tmp_path, spec_dir)

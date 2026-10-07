@@ -18,7 +18,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   Contract u12 A-9 and A-24 and u02 §4 say so; no new clause. Left open as their own tasks: a
   hostile target's reply nested too deeply aborts the whole campaign (exit 3) instead of failing one
   attempt (`fix/target-deep-json`), and the YAML loaders other than the spec loader have no cap on
-  expanded size. `tests/cli/test_deep_json.py`; 43 of the 45 new tests fail on `0f936b6`.
+  expanded size. `tests/cli/test_deep_json.py`; 44 of the 48 new tests fail on `0f936b6`.
 
 ## State, 2026-10-07 (night): OD-18 option B built
 
