@@ -455,8 +455,8 @@ probe pass on 'api' stopped after 3 request(s), retries included; run-<id> now r
 request(s) spent`, or `they could not be added to the spend of run-<id>` after a warning when the
 run store could not be written. The error line after it can say `exhausted 1 attempt(s)` for
 those three sends (see Troubleshooting); a refusal at the request ceiling gives its own count. A
-Ctrl-C landing during the few milliseconds of that write is absorbed once (the write is made
-again, the line may be cut); a second one within them can still lose it, as a SIGKILL does.
+Ctrl-C landing during the few milliseconds of that write loses the record, as a SIGKILL does, and
+cuts the line; after a Ctrl-C, or a pass that finished, it takes a second one in that window.
 Nothing is recorded for a fresh run stopped by its probe pass (it has no run row and nothing to
 resume) or for a `--resume-unverified` run whose spend was never recorded.
 

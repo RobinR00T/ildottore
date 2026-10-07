@@ -20,23 +20,27 @@ versioning: [SemVer](https://semver.org/).
   send attempted: a refused connection counts, as for the attack traffic, and so does a send in
   flight when a signal arrives. When an error or a signal ends the pass before its record is
   complete, stderr says how many requests it sent and what the run now records (or that they could
-  not be added), under `-q` too: `resume: the -sV probe pass on 'api' stopped after 3 request(s),
+  not be added; a signal during that write cuts the line), under `-q` too: `resume: the -sV probe pass on 'api' stopped after 3 request(s),
   retries included; run-<id> now records 23 request(s) spent` (the ceiling's refusal gives its own
   count). A fresh run stopped by its pass (no run row, nothing to resume) and a
   `--resume-unverified` run whose spend was never recorded record nothing, as before. Found by the
   delta audit of PR #68, reproduced on main `0501752`. Contract u12 A-46.
-- **Signals, found by two audit rounds on this fix.** The first version wrote after a successful
+- **Signals, found by three audit rounds on this fix.** The first version wrote after a successful
   pass outside the handlers, and a real SIGINT a few milliseconds after the last probe lost all 17
-  in 2 of 16 tries; the write is inside them now. A handler's own write had nothing after it, and
-  one SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries; a signal during
-  the write is now absorbed once (the record is written again, then the interrupt goes on). The
-  record falls below what was sent only if a second signal lands within those milliseconds, like a
-  SIGKILL, or the write fails, which is a warning that never replaces the error that stopped the
-  pass.
-- `tests/cli/test_probe_pass_spend.py`: 16 tests through the real CLI against a counting stub,
-  SIGINT and SIGTERM in a subprocess. 13 fail on `2f6201a`: nine on their store assertion, three
-  because the write they interrupt does not exist there (each fails on its store assertion with
-  its piece of the fix removed), and the failed write because main never attempts it.
+  in 2 of 16 tries; the write is inside them now. A handler's own write has nothing after it: one
+  SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries. Writing again on that
+  signal closed it and, on a locked store, made Ctrl-C wait one more busy timeout per write (up to
+  15.1 s instead of 9.8) for a record lost anyway, so it was withdrawn. The record falls below what
+  was sent only when a signal lands during the few milliseconds of a handler's write (one is
+  enough after an error or the ceiling, two after a signal or a pass that succeeded), on a
+  SIGKILL, or when the write fails, which is a warning that never replaces the error that stopped
+  the pass; the stderr line is then cut or says the requests could not be added.
+- `tests/cli/test_probe_pass_spend.py`: 14 tests through the real CLI against a counting stub,
+  SIGINT and SIGTERM in a subprocess (whose Ctrl-C handler the test restores: a shell that starts
+  pytest with `&` passes SIGINT on ignored). 11 fail on `2f6201a`: nine on their store assertion,
+  the interruption at the write after a successful pass because that write does not exist there
+  (with it moved back after the handlers, it fails on its store assertion), and the failed write
+  because main never attempts it.
 - **Still open: the error after those three sends says `exhausted 1 attempt(s)`.** The adapters
   are built with no retries of their own (the meter or the runner owns them), so the adapter's
   message counts its single send: in the error that stops a probe pass, and in an attack

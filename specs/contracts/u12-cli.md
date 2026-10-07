@@ -230,20 +230,24 @@ connection) counts, as it does for the attack traffic, and so does a send in fli
 arrives. Each probe is counted once: the store keeps the highest figure per axis, so the runner's
 later record of the same probes plus the attack does not add them again.
 
-Signals were the hard part, found by two audit rounds. The write after a pass that succeeded sits
-inside the handlers: placed after them, a real SIGINT a few milliseconds after the last probe lost
-all 17 in 2 of 16 tries (pre-commit audit). A handler's own write has nothing after it, and one
-SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries (delta audit), so a
-signal during the write is absorbed once: the record is written again, then the interrupt goes
-on. The record falls below what was sent only if a second signal lands within those milliseconds,
-which loses it like a SIGKILL, or if the write itself fails, which is a warning and never
-replaces the error or the Ctrl-C that stopped the pass.
+Signals were the hard part, found by three audit rounds. The write after a pass that succeeded
+sits inside the handlers: placed after them, a real SIGINT a few milliseconds after the last probe
+lost all 17 in 2 of 16 tries (pre-commit audit). A handler's own write has nothing after it: one
+SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries (delta audit). Writing
+again on that signal closed it, and on a locked store made Ctrl-C wait one more busy timeout per
+write (9.9 s instead of 4.7 after a 503, 15.1 instead of 9.8 after a pass that succeeded) for a
+record lost anyway (pre-merge audit); it was withdrawn rather than given a further rule. So the
+record falls below what was sent in three cases, each written here and not pinned by a test: a
+signal landing while a handler writes it (a few milliseconds; after an error or the ceiling stopped
+the pass one signal is enough, after a signal or a pass that succeeded it takes a second), a
+SIGKILL, and a write that fails, which is a warning and never replaces the error or the Ctrl-C
+that stopped the pass.
 
 When an error or a signal ends the pass before its record is complete, stderr says how many
 requests it sent and what the run now records, or that they could not be added, even under `-q`:
 the error's own text says `exhausted 1 attempt(s)` after three sends, because the meter, not the
-adapter, owns the retries (the ceiling's refusal gives its own count). A signal absorbed during a
-handler's write cuts that line. Not recorded, as on the ceiling path before: a fresh run's pass
+adapter, owns the retries (the ceiling's refusal gives its own count). A signal landing during that
+write also cuts the line. Not recorded, as on the ceiling path before: a fresh run's pass
 (its run row is written after the pass, so there is nothing to resume) and a `--resume-unverified`
 run whose spend was never recorded (it was told its ceiling covers that invocation alone). Such a
 resume that completes still records its own invocation's spend as the run's, which predates this
@@ -251,10 +255,10 @@ clause and is not changed by it.
 
 Checked through the real CLI against a counting stub by `tests/cli/test_probe_pass_spend.py`: a
 503, a 401 and a 200 that is not JSON on the first and on the sixth probe; SIGINT and SIGTERM sent
-to a subprocess with a probe on the wire; an interruption at the write after a pass that
-succeeded, and at a handler's write after a 503 and at the ceiling; a write that fails; a stop
-after the write; a resume that completes; and the two cases not recorded, each comparing the store
-with what the stub served.
+to a subprocess with a probe on the wire (its Ctrl-C handler restored, since a shell that starts
+pytest with `&` passes SIGINT on ignored); an interruption at the write after a pass that
+succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases
+not recorded, each comparing the store with what the stub served.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the

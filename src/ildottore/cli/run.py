@@ -1961,16 +1961,13 @@ def _charge_probe_pass(
     sent = ledger.spend().requests
     if prior is None or sent == 0:
         return None
-    spend = prior.plus(Spend(requests=sent))
-    try:
-        return _recorded_requests(run_db, run_id, spend)
-    except KeyboardInterrupt:
-        # A signal during the write. In the probe loop's handlers nothing catches it after,
-        # and one landing there lost the pass in 2 of 41 real SIGINTs just after a 503 stop
-        # (delta audit). Written again once, then let through: only a second signal within
-        # these milliseconds loses it now.
-        _recorded_requests(run_db, run_id, spend)
-        raise
+    # Not retried when a signal lands during the write. In the probe loop's handlers nothing
+    # catches it after, so one landing there loses the pass (2 of 41 real SIGINTs just after a
+    # 503 stop, delta audit). Writing again closed that, and on a locked store made Ctrl-C wait
+    # one more busy timeout per write (9.9 s instead of 4.7 after a 503, 15.1 instead of 9.8
+    # after a pass that succeeded) for a record lost anyway (pre-merge audit). The window
+    # stays, like a SIGKILL's, and u12 A-46 says so.
+    return _recorded_requests(run_db, run_id, prior.plus(Spend(requests=sent)))
 
 
 def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> int:

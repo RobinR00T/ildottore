@@ -241,8 +241,11 @@ def test_a_signal_during_a_resumed_probe_pass_records_what_it_sent(
     process["cli"] = subprocess.Popen(  # noqa: S603 - this interpreter running this CLI
         [
             sys.executable,
-            "-m",
-            "ildottore.cli.main",
+            "-c",
+            # A shell that starts pytest with `&` passes SIGINT on ignored, and Python then
+            # installs no Ctrl-C handler in the child (pre-merge audit: 5 of 5 failed so).
+            "import signal, sys; signal.signal(signal.SIGINT, signal.default_int_handler); "
+            "from ildottore.cli.main import main; sys.argv[0] = 'dottore'; main()",
             *_argv(tmp_path, port, "--budget-requests", "200", "--resume", run_id),
         ],
         stdout=subprocess.DEVNULL,
@@ -319,46 +322,6 @@ def test_a_signal_on_the_write_after_a_successful_pass_still_records_it(
     assert _recorded(tmp_path, run_id) == state["served"]
     assert calls == [_HALT_AT + probes] * 2, "interrupted after the pass, then written again"
     assert f"stopped after {probes} request(s), retries included" in resumed.stderr
-
-
-@pytest.mark.usefixtures("no_delay")
-@pytest.mark.parametrize("stop", ["error", "ceiling"])
-def test_a_signal_on_a_handlers_write_is_absorbed_once(
-    tmp_path: Path, stub: tuple[int, dict[str, Any]], monkeypatch: pytest.MonkeyPatch, stop: str
-) -> None:
-    """A handler's write has no handler after it: one SIGINT landing there lost the pass in 2 of
-    41 real tries just after a 503 stop (delta audit). The write is made again once."""
-
-    from ildottore.cli import run as run_mod
-
-    port, state = stub
-    run_id = _halted_run(tmp_path, port, state)
-    probes = fingerprint_probe_count()
-    if stop == "error":
-        state["script"] = dict.fromkeys(range(_HALT_AT + 1, _HALT_AT + 10), _unavailable)
-        budget, sent = "200", 3
-    else:
-        # Two retries on the first probe push the pass past a ceiling sized for 17 probes.
-        state["script"] = dict.fromkeys((_HALT_AT + 1, _HALT_AT + 2), _unavailable)
-        budget, sent = str(_HALT_AT + probes), probes
-    write = run_mod._recorded_requests
-    calls: list[int] = []
-
-    def _interrupted_once(*args: Any, **kwargs: Any) -> int | None:
-        calls.append(state["served"])
-        if len(calls) == 1:
-            raise KeyboardInterrupt
-        return write(*args, **kwargs)
-
-    monkeypatch.setattr(run_mod, "_recorded_requests", _interrupted_once)
-    resumed = CliRunner().invoke(
-        app, _argv(tmp_path, port, "--budget-requests", budget, "--resume", run_id)
-    )
-
-    assert resumed.exit_code != 0
-    assert state["served"] == _HALT_AT + sent
-    assert _recorded(tmp_path, run_id) == state["served"]
-    assert len(calls) == 2, "the interrupted write, then the one made again"
 
 
 @pytest.mark.usefixtures("no_delay")
