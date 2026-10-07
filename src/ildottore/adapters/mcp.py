@@ -313,7 +313,8 @@ class MCPAdapter:
     def _decode(self, response: httpx.Response, method: str) -> Any:
         """Decode a JSON-RPC reply that is either JSON or a Streamable-HTTP SSE event.
 
-        A lone surrogate in it is read as U+FFFD, as in every adapter (A-47).
+        A lone surrogate in it is read as U+FFFD, as where every adapter parses a reply (A-47).
+        An SSE stream is decoded as text first, so a raw byte of one is U+FFFD already there.
         """
 
         ctype = response.headers.get("content-type", "")
@@ -428,9 +429,9 @@ class MCPAdapter:
             if not raw:
                 raise AdapterEnvError(f"{self.id}: stdio stream closed during {method}")
             try:
-                # `surrogatepass`, as `json.loads` reads the bytes of an HTTP reply: strict
-                # decoding skipped a line holding the raw bytes of half a character as stray
-                # output, and the call timed out (pre-commit audit, A-47).
+                # `surrogatepass`, the error handler `json.loads` decodes an HTTP reply's bytes
+                # with: strict decoding skipped a line holding the raw bytes of half a character
+                # as stray output, and the call timed out (pre-commit audit, A-47).
                 msg = well_formed_json(json.loads(raw.decode("utf-8", "surrogatepass").strip()))
             except ValueError:
                 continue  # non-JSON line on stdout: skip (should not happen per spec)

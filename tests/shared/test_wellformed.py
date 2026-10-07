@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 
@@ -62,7 +63,7 @@ def test_a_text_with_no_surrogate_is_returned_as_it_is(text: str) -> None:
     assert well_formed_text(text) is text
 
 
-def test_a_parsed_reply_is_copied_with_every_string_well_formed() -> None:
+def test_a_parsed_reply_is_made_well_formed_in_place() -> None:
     value = {
         "id": "c" + _HIGH,
         "n": 3,
@@ -72,7 +73,10 @@ def test_a_parsed_reply_is_copied_with_every_string_well_formed() -> None:
         "choices": [{"message": {"content": "hi" + _LOW, "tool_calls": [{"name": _HIGH}]}}],
         "nested": [["a", [_HIGH, {"k": [_LOW]}]]],
     }
+    choices = value["choices"]
     out = well_formed_json(value)
+    assert out is value
+    assert out["choices"] is choices
     assert out == {
         "id": "c" + _R,
         "n": 3,
@@ -83,7 +87,6 @@ def test_a_parsed_reply_is_copied_with_every_string_well_formed() -> None:
         "nested": [["a", [_R, {"k": [_R]}]]],
     }
     json.dumps(out, ensure_ascii=False).encode("utf-8")
-    assert value["id"] == "c" + _HIGH  # the input is not changed
 
 
 def test_a_parsed_reply_keeps_its_order() -> None:
@@ -162,12 +165,28 @@ def test_a_value_nested_past_the_recursion_limit_is_walked() -> None:
 
 
 def test_a_reply_with_no_surrogate_is_returned_as_it_is() -> None:
-    """The same object, not a copy: copying every reply tripled the peak memory of a 4 MiB body
+    """The same object, unchanged: copying every reply tripled the peak memory of a 4 MiB body
     of small containers, surrogate or not (pre-commit audit)."""
 
     value = {"items": [{"t": "abcdefgh", "n": i, "f": [1.5, None, True]} for i in range(10_000)]}
+    before = copy.deepcopy(value)
     assert well_formed_json(value) is value
+    assert value == before
     assert well_formed_json([[], {}, [[{"k": "v"}]]]) == [[], {}, [[{"k": "v"}]]]
+
+
+def test_one_surrogate_copies_nothing() -> None:
+    """Copying a reply that holds a surrogate gave a target the same tripled peak for three
+    bytes (delta audit): every container stays the object it was, a dict refilled in place."""
+
+    big = [[i, {"v": str(i)}] for i in range(1_000)]
+    keyed = {"k" + _HIGH: 1, "j": 2}
+    value = {"big": big, "keyed": keyed, "s": "x" + _HIGH}
+    out = well_formed_json(value)
+    assert out is value
+    assert out["big"] is big and out["big"][7] is big[7] and out["big"][7][1] is big[7][1]
+    assert out["keyed"] is keyed and list(keyed) == ["k" + _R, "j"]
+    assert out["s"] == "x" + _R
 
 
 @pytest.mark.parametrize(
@@ -176,10 +195,24 @@ def test_a_reply_with_no_surrogate_is_returned_as_it_is() -> None:
         {"a": [{"k" + _HIGH: 1}]},
         [[[[{"x": [0, "y" + _LOW]}]]]],
         {"a": 1, "b": [None, True, 2.5, {"c": {"d" + _HIGH: {}}}]},
+        {"a": [], "b": {}, "c": "x" + _HIGH},
+        [[] for _ in range(2_000)] + ["x" + _HIGH],
+        {**{f"k{i}": [] for i in range(2_000)}, "last": "x" + _LOW},
+        [{f"k{i}": i} for i in range(2_000)] + [{"z" + _HIGH: 0}],
     ],
-    ids=["key-in-a-list", "value-deep-in-lists", "key-after-scalars"],
+    ids=[
+        "key-in-a-list",
+        "value-deep-in-lists",
+        "key-after-scalars",
+        "after-sibling-containers",
+        "after-many-list-items",
+        "after-many-dict-entries",
+        "key-after-many-dicts",
+    ],
 )
 def test_a_surrogate_anywhere_is_found(value: object) -> None:
+    """Wherever it sits, after sibling containers or thousands of entries included (a walk that
+    stopped early passed the first three cases: delta audit)."""
+
     out = well_formed_json(value)
-    assert out is not value
     json.dumps(out, ensure_ascii=False).encode("utf-8")

@@ -47,7 +47,7 @@ build must satisfy it.
 | Spec pack from a third party contains a malicious payload / SSRF carrier | Spec linter + policy pack allowlist + `test_only` enforcement + no network from spec loading (`docs/06 §5`). |
 | Operator scans out of scope | S3/S4 default-deny gate. |
 | Cost blow-up (recursive/expensive specs) | S8 budgets, enforced in the runner, not the spec. |
-| Malicious target reply holding half a character (a lone surrogate) that no UTF-8 writer accepts | Read as U+FFFD where the reply is parsed (contract u04 §7, A-47), so the evidence store, the run store and the next request can hold it, and the attempt is still judged: refusing the reply would let six characters hide a leak. (Status, 2026-10-07: what it should become is open decision OD-28; half a character inside a canary or a credential splits it as a zero-width space does.) |
+| Malicious target reply holding half a character (a lone surrogate) that no UTF-8 writer accepts | Read as U+FFFD where the reply is parsed (contract u04 §7, A-47), so the evidence store, the run store and the next request can hold it, and the attempt is still judged: refusing the reply would let six characters hide a leak. (Status, 2026-10-07: what it should become is open decision OD-28. Half a character inside a canary or a credential splits it as a zero-width space does: `secret_leakage` misses the canary, and the spec passes when a judge says secure.) |
 
 ## 5. Out of scope (v1)
 
