@@ -28,11 +28,17 @@ The carryover ledger. Every agent session updates this so context survives even 
   `lIama` pass), three more survivors (the default note for an explicit `id: judge`, ids swapped
   against their numbers, a later twin reported as a duplicate) and the sibling judge message
   without the default note. All fixed. The pre-merge round (combined trees with #76, #78 and
-  #86, both merge orders) found no conflict or failure of this PR's own, and four lows, fixed:
+  #86, both merge orders) found no failure of this PR's own; its conflicts are the expected
+  ones (doc appends, a man5 paragraph with #78, the two fleet messages with #86). Four lows,
+  fixed:
   the agreed `quoted()` resolution with #86 would have left one line at 101 columns (each id is
   now formatted once, in a variable, so the switch is four assignments), the credential half of
   A-30 untested, MANUAL's "shares its entry" without the condition, and the `--judge` file
-  mismatch naming the default id with no note. Numbering: A-56 and OD-33 came from the session
+  mismatch naming the default id with no note. A fourth round on that fix compared 96,120 fleets
+  and 3,024 CLI runs against the previous head (the only difference was the intended note) and
+  found two test gaps, closed: the note could have spread to the endpoint or `auth_ref` row of
+  the `--judge` refusal, and A-30's credential half was tested with the key on one side only.
+  Numbering: A-56 and OD-33 came from the session
   keeping the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without
   having claimed them, so it has to renumber.
 

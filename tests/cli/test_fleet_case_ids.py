@@ -107,7 +107,8 @@ def _judge_beside_a_target(tmp_path: Path, target_id: str, judge_block: str) -> 
     return fleet_file
 
 
-_DEFAULT = "(the default of a judge: block that names no id)"
+_NOTE = "the default of a judge: block that names no id"
+_DEFAULT = f"({_NOTE})"
 
 
 @pytest.mark.parametrize(
@@ -144,43 +145,83 @@ def test_a_judge_refusal_says_when_its_id_is_the_default(
     assert expected in str(caught.value), str(caught.value)
 
 
+@pytest.mark.parametrize(("target_key", "judge_key"), [(None, "J_KEY"), ("T_KEY", None)])
 def test_a_judge_with_a_targets_id_and_endpoint_but_another_credential_is_refused(
-    tmp_path: Path,
+    tmp_path: Path, target_key: str | None, judge_key: str | None
 ) -> None:
     """A-30's other half: the judge shares a target's entry only when the endpoint AND the
-    credential match. The credential half had no test (pre-merge audit of #85)."""
+    credential match, whichever side declares the key. The credential half had no test
+    (pre-merge audit of #85), then only one direction (its delta audit)."""
 
-    judge = fleet_mod.FleetJudge(id="prod", endpoint="mock://host-0/chat", api_key_env="J_KEY")
+    target = fleet_mod.FleetTarget(id="prod", endpoint="mock://host-0/chat", api_key_env=target_key)
+    judge = fleet_mod.FleetJudge(id="prod", endpoint="mock://host-0/chat", api_key_env=judge_key)
+    config = fleet_mod.FleetConfig(targets=[target], judge=judge)
     expected = "the fleet's judge.id 'prod' is targets.0.id, a target with a different endpoint"
     with pytest.raises(ValueError, match=re.escape(expected)):
-        fleet_mod.materialize_fleet(_fleet("prod", judge=judge), tmp_path / "out")
+        fleet_mod.materialize_fleet(config, tmp_path / "out")
+
+
+_ENDPOINT = "http://localhost:11434/v1/chat/completions"
 
 
 @pytest.mark.parametrize(
-    ("judge_block", "declares"),
+    ("judge_block", "file_id", "file_endpoint", "file_extra", "expected"),
     [
-        ("", "'judge', the default of a judge: block that names no id"),
-        ("  id: judge\n", "'judge'"),
+        (
+            "",
+            "local-judge",
+            _ENDPOINT,
+            "",
+            f"id 'local-judge' (the fleet declares 'judge', {_NOTE})",
+        ),
+        (
+            "  id: judge\n",
+            "local-judge",
+            _ENDPOINT,
+            "",
+            "id 'local-judge' (the fleet declares 'judge')",
+        ),
+        (
+            "",
+            "judge",
+            "http://127.0.0.1:18093/v1/chat/completions",
+            "",
+            f"endpoint 'http://127.0.0.1:18093/v1/chat/completions' (the fleet declares "
+            f"'{_ENDPOINT}')",
+        ),
+        (
+            "",
+            "judge",
+            _ENDPOINT,
+            'auth_ref: "env://OTHER_KEY"\n',
+            "auth_ref 'env://OTHER_KEY' (the fleet declares None)",
+        ),
     ],
 )
 def test_a_judge_file_refusal_says_when_the_fleets_judge_id_is_the_default(
-    tmp_path: Path, judge_block: str, declares: str
+    tmp_path: Path,
+    judge_block: str,
+    file_id: str,
+    file_endpoint: str,
+    file_extra: str,
+    expected: str,
 ) -> None:
     """``--judge`` naming another id than a ``judge:`` block with no ``id:`` said "the fleet
-    declares 'judge'", an id the fleet file never wrote (pre-merge audit of #85)."""
+    declares 'judge'", an id the fleet file never wrote (pre-merge audit of #85). The note goes
+    on the id row only: a mismatch of another field says nothing about the id (delta audit)."""
 
-    endpoint = "http://localhost:11434/v1/chat/completions"
-    fleet_file = _judge_beside_a_target(tmp_path, "t", f"{judge_block}  endpoint: {endpoint}\n")
+    fleet_file = _judge_beside_a_target(tmp_path, "t", f"{judge_block}  endpoint: {_ENDPOINT}\n")
     judge_file = tmp_path / "judge.yaml"
     judge_file.write_text(
-        f'id: local-judge\ntype: model\nprovider: openai\nendpoint: "{endpoint}"\n',
+        f'id: {file_id}\ntype: model\nprovider: openai\nendpoint: "{file_endpoint}"\n' + file_extra,
         encoding="utf-8",
     )
     with pytest.raises(ValueError) as caught:
         fleet_mod.materialize_fleet(
             fleet_mod.load_fleet(fleet_file), tmp_path / "out", judge=wiring.load_target(judge_file)
         )
-    assert f"id 'local-judge' (the fleet declares {declares})" in str(caught.value)
+    message = str(caught.value)
+    assert message == f"--judge does not match the fleet's judge: {expected}", message
 
 
 def test_a_judge_spelled_exactly_as_a_target_still_shares_its_entry(tmp_path: Path) -> None:

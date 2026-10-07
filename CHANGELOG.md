@@ -38,13 +38,14 @@ versioning: [SemVer](https://semver.org/).
   compare ids exactly; no file of a run is named by a target id, and the run store's finding key
   `<spec id>::<target id>` is compared case-sensitively, so two hand-written target files `Prod`
   and `prod` run together with two run ids, both in every report format. Contract u01 A-56;
-  `tests/cli/test_fleet_case_ids.py` (18 of its 21 tests fail on `c3e70d8`, on APFS: 10 because
-  nothing is refused, 2 on exit 0, 5 on the message, with no line for `--run` and no location or
+  `tests/cli/test_fleet_case_ids.py` (19 of its 24 tests fail on `c3e70d8`, on APFS: 10 because
+  nothing is refused, 2 on exit 0, 6 on the message, with no line for `--run` and no location or
   default note in the duplicate and judge refusals, and the enumeration on both; on a
-  case-sensitive file system the `--run` test fails on its exit code instead. The other 3 check
+  case-sensitive file system the `--run` test fails on its exit code instead. The other 5 check
   that the enumeration reaches every refusal, that a judge spelled as a target still shares its
-  entry, and that an `id: judge` the operator wrote is named without the note). Found by the
-  delta audit of PR #76.
+  entry, and that the `--judge` refusals that did not change stay as they were: an `id: judge`
+  the operator wrote, and an endpoint or `auth_ref` mismatch, carry no note). Found by the delta
+  audit of PR #76.
 
 ### Fixed (a number too long to write out)
 
