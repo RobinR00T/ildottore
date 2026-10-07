@@ -22,6 +22,24 @@ The carryover ledger. Every agent session updates this so context survives even 
   20 and 300. Open (OD-26): the report JSON of `diff` and `calibrate` and the evidence artifacts
   of `replay` and `--resume` are still read whole. Clause A-43 (u01).
 
+## State, 2026-10-07 (afternoon): a number too long to write out
+
+- On `fix/huge-int-repr` (`tests/cli/test_huge_numbers.py`, clause A-40 in u02): an int past
+  Python's digit limit (4,300 by default, 640 at the lowest), which YAML builds from `0x` and 4,000
+  `f`, is reported where it enters, with its file, and never printed: a `SCHEMA` finding at its
+  path in a spec (it was a lint traceback with exit 1, and `run --spec-path` exited 3 naming no
+  file), a refusal naming the labels file for a `calibrate` key, the report for `diff` and
+  `calibrate` (`json.loads` raises a plain `ValueError` past the limit), the target file for its
+  `type`, `mock_scenario` and `seeded_setup` keys. Swept at every value and key of the 75 specs:
+  6,112 of 7,599 placements were a traceback on the base, none now; inside a `!!set` or `!!omap`,
+  which the first version did not walk (pre-commit audit), none either. Independent of a cap on
+  literal length in the YAML loader (`fix/yaml-construction-cost`, A-41). Found on the way and left
+  as separate tasks: a number as a key of a fixture tool call's `args` is a lint traceback where
+  the evaluator matches argument names (A-44, another session); a target file's bad
+  `capabilities` or `sampling_defaults` printed pydantic's raw error with the value and no file
+  (fixed by #73, A-45); a value JSON cannot hold (an unquoted date, a set) passes lint and the dry
+  run exits 1 on it, as does a `--runs` past what a float holds.
+
 ## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
 
 - Found on `fix/huge-int-repr` and fixed on `fix/target-file-validation`: a wrong value under a
