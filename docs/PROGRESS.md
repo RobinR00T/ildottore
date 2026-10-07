@@ -6,7 +6,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 ## State, 2026-10-07 (night): a load refusal names its spec file
 
 - On `fix/spec-load-error-names` (PR #49, opened on `d54097c` on 2026-10-06, merged with main at
-  `de392e1`; `tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
+  `15e5550`; `tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
   that fails to load printed its path as `«REDACTED:high_entropy:…».yaml` (found by the #47
   pre-merge audit); it names `attacks/DL-PII-ELICIT-001.yaml` now, kept only when it is an entry
   on disk under a spec path, nothing the entropy rule reads as a token is glued to it, and it
@@ -15,8 +15,27 @@ The carryover ledger. Every agent session updates this so context survives even 
   to the entropy rule. The pre-commit audit (3,996 cases main against branch, no secret exposed)
   found two test gaps and four low items, all fixed; `no_known_secrets` moved to
   `tests/conftest.py`. The pre-merge audit (73,812 cases of `_masked`, main against branch) found
-  no reason to block; its two wording items are fixed. `make gates` green: 2,499 tests (2,485 on
-  `de392e1`), coverage 96.55%, `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+  no reason to block; its two wording items are fixed. `make gates` green: 2,576 tests (2,562 on
+  `15e5550`), coverage 96.57%, `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+
+## State, 2026-10-07 (afternoon): a spec key that is not a string
+
+- On `fix/lint-nonstring-arg-key` (clause A-44 in u02, `tests/registry/test_non_string_keys.py`):
+  YAML builds `5:` as an int, a bare `on:` as a bool, `~:` as null and `2026-10-07:` as a date,
+  and in a fixture's tool-call arguments such a key made `dottore lint` a traceback with exit 1
+  (the offline stub's `key.lower()`). Every mapping of a spec is now checked before the JSON
+  schema (not the keys of an `!!omap` or `!!pairs` entry, nor `!!set` members), and a key that is
+  not a string is a `SCHEMA` finding at its path. Swept over the 41 fixture tool calls with
+  arguments in the 75 shipped specs: on `0501752` an int key added after the others crashed lint
+  in 5 and passed unreported in 36 (6 and 35 added first); now all 41 are a finding. Keys of two
+  types in one mapping also crashed the sort of the schema errors, and a `!!binary` key passed
+  lint. `run` now refuses such a spec (exit 3, as any spec that does not load) where it used to
+  run it. Found by the session on `fix/huge-int-repr` (A-40, #81), which merged first: its check
+  runs first, this one after it, and the branch of this one for an int too long to write out was
+  dropped as unreachable. 76 of the 77 new tests fail on `0501752`. The pre-commit and delta
+  audits found no high or medium defect; the first listed pre-existing gaps between the lint stub
+  and the real `tool_call` evaluator (a confirm flag or forbidden key inside a list, an injection
+  in a nested value, `arguments` as a JSON string), left for a separate task.
 
 ## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
 
