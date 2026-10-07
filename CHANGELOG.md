@@ -47,11 +47,12 @@ versioning: [SemVer](https://semver.org/).
   aliases of a long text, one count per document, and the tag limit on texts, lists and maps; linear
   memory; the pack loaders; `calibrate`, `run -t`, `run --scope` and `fleet` in process; and in a
   subprocess bounded at 20 s and 256 MiB, those four, `calibrate` on the flat list and `lint` on a
-  merge bomb. 34 of the 38 tests fail on `0501752` (main): 17 because the file is not refused,
-  eleven because main has no count that stops composition, two because a long tag is neither refused
-  nor kept out of the message, three for the spec loader's positions and order, and one because the
-  measure is new. Twenty-three mutants of the fix are all killed. Clause A-37 (u01), u02 §4, u12
-  A-9. Found by the pre-merge audit of #61.
+  merge bomb, the 256 MiB being the child's own peak (`VmHWM` on Linux, where `ru_maxrss` survives
+  `execve` and CI read the pytest process's 314 MiB for every case). 34 of the 38 tests fail on
+  `0501752` (main): 17 because the file is not refused, eleven because main has no count that stops
+  composition, two because a long tag is neither refused nor kept out of the message, three for the
+  spec loader's positions and order, and one because the measure is new. Twenty-three mutants of the
+  fix are all killed. Clause A-37 (u01), u02 §4, u12 A-9. Found by the pre-merge audit of #61.
 - **Left open, each its own task (found by the audits, not introduced here).** Under the cap, a
   base-60 integer (`1:59:59:...`) builds in time quadratic in its length (a 1 MiB spec took `lint`
   43 s) and integer keys that share one hash make a mapping quadratic (27 s); `run` loads the target

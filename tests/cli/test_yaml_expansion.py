@@ -322,7 +322,10 @@ def test_fleet_refuses_a_fleet_file_that_expands_too_far(tmp_path: Path, shape: 
 
 # --- the CLI, in a subprocess: bounded time and memory ----------------------------------------
 
-#: Runs the CLI with this interpreter and reports its exit code and peak resident memory.
+#: Runs the CLI with this interpreter and reports its exit code and its own peak resident memory,
+#: in bytes. On Linux that is ``VmHWM``: ``ru_maxrss`` survives ``execve`` there, so the child
+#: started at the pytest process's peak, and CI read 314 MiB for every case before the CLI did
+#: anything. Without ``/proc`` (macOS) it is ``ru_maxrss``, which is in bytes there.
 _CHILD = """
 import json, resource, sys
 from ildottore.cli.main import app
@@ -331,7 +334,11 @@ try:
     app(sys.argv[1:], prog_name="dottore")
 except SystemExit as exc:
     code = exc.code
-peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+try:
+    with open("/proc/self/status", encoding="ascii") as status:
+        peak = next(int(line.split()[1]) * 1024 for line in status if line.startswith("VmHWM:"))
+except OSError:
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 print(json.dumps({"exit": code, "peak": peak}), file=sys.stderr)
 """
 
@@ -379,7 +386,7 @@ def _hostile_files(tmp_path: Path, command: str) -> tuple[list[str], Path]:
     return [*args, "--dry-run"], hostile
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="ru_maxrss is a Unix measure")
+@pytest.mark.skipif(sys.platform == "win32", reason="the peak is a Unix measure")
 @pytest.mark.parametrize(
     "command", ["calibrate", "calibrate-flat", "run-target", "run-scope", "fleet", "lint"]
 )
@@ -409,5 +416,4 @@ def test_an_expanding_file_is_refused_in_bounded_time_and_memory(
     if command == "calibrate-flat":
         # At the 100,000th text: after `PI-DIRECT-001: [`, 16 characters, and three per text.
         assert refusal[0].endswith(f"at line 1, column {16 + 3 * 99_999 + 1}"), refusal[0]
-    peak = outcome["peak"] if sys.platform == "darwin" else outcome["peak"] * 1024
-    assert peak < MAX_PEAK_BYTES, f"{peak / 2**20:.0f} MiB"
+    assert outcome["peak"] < MAX_PEAK_BYTES, f"{outcome['peak'] / 2**20:.0f} MiB"
