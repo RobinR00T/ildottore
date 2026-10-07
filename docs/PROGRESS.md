@@ -27,9 +27,14 @@ The carryover ledger. Every agent session updates this so context survives even 
   from 0, "never two ids a reader cannot tell apart" in MANUAL and man5 (`Ilama`, `llama`,
   `lIama` pass), three more survivors (the default note for an explicit `id: judge`, ids swapped
   against their numbers, a later twin reported as a duplicate) and the sibling judge message
-  without the default note. All fixed. Numbering: A-56 and OD-33 came from the session keeping
-  the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without having
-  claimed them, so it has to renumber.
+  without the default note. All fixed. The pre-merge round (combined trees with #76, #78 and
+  #86, both merge orders) found no conflict or failure of this PR's own, and four lows, fixed:
+  the agreed `quoted()` resolution with #86 would have left one line at 101 columns (each id is
+  now formatted once, in a variable, so the switch is four assignments), the credential half of
+  A-30 untested, MANUAL's "shares its entry" without the condition, and the `--judge` file
+  mismatch naming the default id with no note. Numbering: A-56 and OD-33 came from the session
+  keeping the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without
+  having claimed them, so it has to renumber.
 
 ## State, 2026-10-07 (afternoon): a number too long to write out
 

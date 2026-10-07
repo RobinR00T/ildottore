@@ -30,17 +30,21 @@ versioning: [SemVer](https://semver.org/).
   no `id:` is `judge`, so a target `Judge` beside it is now refused; this refusal, and the
   existing one for a judge with a target's exact id on another endpoint (now `the fleet's
   judge.id 'judge' ... is targets.0.id, a target with a different endpoint or credential; give
-  the judge its own id`), say when the id is that default. Refusing on a case-sensitive file
+  the judge its own id`), say when the id is that default, and so does a `--judge` file that
+  names another id (`id 'local-judge' (the fleet declares 'judge', the default of a judge: block
+  that names no id)`; it said "the fleet declares 'judge'" alone). Refusing on a case-sensitive file
   system too, where nothing collided, is a decision recorded as OD-33 (the owner may prefer
   refusing only where the file system folds case). Not changed: `run` and the scope loader still
   compare ids exactly; no file of a run is named by a target id, and the run store's finding key
   `<spec id>::<target id>` is compared case-sensitively, so two hand-written target files `Prod`
   and `prod` run together with two run ids, both in every report format. Contract u01 A-56;
-  `tests/cli/test_fleet_case_ids.py` (16 of its 18 tests fail on `c3e70d8`: 10 because nothing
-  is refused, 2 on exit 0, 3 on the message, with no line for `--run` and no locations or default
-  note in the duplicate and judge refusals, and the enumeration on both; the other 2 check that
-  the enumeration reaches every refusal and that a judge spelled as a target still shares its
-  entry). Found by the delta audit of PR #76.
+  `tests/cli/test_fleet_case_ids.py` (18 of its 21 tests fail on `c3e70d8`, on APFS: 10 because
+  nothing is refused, 2 on exit 0, 5 on the message, with no line for `--run` and no location or
+  default note in the duplicate and judge refusals, and the enumeration on both; on a
+  case-sensitive file system the `--run` test fails on its exit code instead. The other 3 check
+  that the enumeration reaches every refusal, that a judge spelled as a target still shares its
+  entry, and that an `id: judge` the operator wrote is named without the note). Found by the
+  delta audit of PR #76.
 
 ### Fixed (a number too long to write out)
 

@@ -265,28 +265,30 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
     """
 
     declared = config.judge
+    # Every refusal that names the judge's id says when it is the default, which the fleet file
+    # never wrote; the two below also locate the judge and the target as validation errors do
+    # (`targets.1.id`, counted from 0), since the CLI may mask an id.
+    unnamed = declared is not None and "id" not in declared.model_fields_set
+    note = "the default of a judge: block that names no id" if unnamed else ""
     if declared is not None:
-        # Both refusals locate the judge and the target as validation errors do (`targets.1.id`,
-        # counted from 0), since the CLI may mask an id, and say when the judge's id is the
-        # default: the fleet file never wrote it.
-        named = "id" in declared.model_fields_set
-        default = "" if named else " (the default of a judge: block that names no id)"
+        judge_id = repr(declared.id) + (f" ({note})" if note else "")
         for index, target in enumerate(config.targets):
+            target_id = repr(target.id)
             # The generated scope holds the judge beside the targets, and an id spelled as a
             # target's only up to case got an entry of its own: two ids that differ only by
             # case, in the record that authorizes both (A-56, OD-33).
             if target.id != declared.id and target.id.casefold() == declared.id.casefold():
                 raise ValueError(
-                    f"the fleet's judge.id {declared.id!r}{default} and targets.{index}.id "
-                    f"{target.id!r} differ only by case; spell the judge's id as the target's "
-                    "if the judge is that target, or give it an id that differs in more than case"
+                    f"the fleet's judge.id {judge_id} and targets.{index}.id {target_id} differ "
+                    "only by case; spell the judge's id as the target's if the judge is that "
+                    "target, or give it an id that differs in more than case"
                 )
             if target.id == declared.id and (
                 target.endpoint != declared.endpoint or target.api_key_env != declared.api_key_env
             ):
                 raise ValueError(
-                    f"the fleet's judge.id {declared.id!r}{default} is targets.{index}.id, a "
-                    "target with a different endpoint or credential; give the judge its own id"
+                    f"the fleet's judge.id {judge_id} is targets.{index}.id, a target with a "
+                    "different endpoint or credential; give the judge its own id"
                 )
     if judge is None:
         return
@@ -298,11 +300,11 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
         )
     expected_auth = f"env://{declared.api_key_env}" if declared.api_key_env else None
     mismatches = [
-        f"{name} {_shown(name, got)} (the fleet declares {_shown(name, want)})"
-        for name, got, want in (
-            ("id", judge.id, declared.id),
-            ("endpoint", judge.endpoint, declared.endpoint),
-            ("auth_ref", judge.auth_ref, expected_auth),
+        f"{name} {_shown(name, got)} (the fleet declares {_shown(name, want)}{also})"
+        for name, got, want, also in (
+            ("id", judge.id, declared.id, f", {note}" if note else ""),
+            ("endpoint", judge.endpoint, declared.endpoint, ""),
+            ("auth_ref", judge.auth_ref, expected_auth, ""),
         )
         if got != want
     ]
@@ -361,16 +363,17 @@ def materialize_fleet(
             seen[target.id.casefold()] = (index, target.id)
             continue
         first_index, first_id = first
+        shown_first, shown = repr(first_id), repr(target.id)
         if first_id == target.id:
             raise ValueError(
-                f"duplicate target id {target.id!r} in fleet "
+                f"duplicate target id {shown} in fleet "
                 f"(targets.{first_index}.id and targets.{index}.id)"
             )
         raise ValueError(
-            f"the fleet's targets.{first_index}.id {first_id!r} and targets.{index}.id "
-            f"{target.id!r} differ only by case, so target-{first_id}.yaml and "
-            f"target-{target.id}.yaml are one file on a case-insensitive file system (the "
-            "macOS and Windows default); give each target an id that differs in more than case"
+            f"the fleet's targets.{first_index}.id {shown_first} and targets.{index}.id {shown} "
+            f"differ only by case, so target-{first_id}.yaml and target-{target.id}.yaml are "
+            "one file on a case-insensitive file system (the macOS and Windows default); give "
+            "each target an id that differs in more than case"
         )
 
     _check_judge(config, judge)

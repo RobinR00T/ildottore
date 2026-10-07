@@ -120,8 +120,10 @@ first version counted from 1, delta audit). A judge id spelled as a target's onl
 refused the same way: no file collides (the judge is written to `judge.yaml`), but it got a
 scope entry of its own beside the target's, two ids that differ only by case in the record
 that authorizes both. The same spelling still shares the target's entry when the endpoint and
-credential match (A-30). Both judge refusals say when the id is the default `judge` of a
-`judge:` block that names none, and only then. Target pairs are reported before the judge. The
+credential match (A-30; the credential half had no test until the pre-merge audit of #85).
+Every refusal that names the judge's id says when it is the default `judge` of a `judge:` block
+that names none, and only then, the `--judge` file mismatch included. Target pairs are
+reported before the judge, and only the first colliding pair of a fleet is named. The
 rule holds on a case-sensitive file system too, where nothing collided, so a fleet file means
 the same wherever it is expanded (OD-33). Fleet ids are ASCII (`[A-Za-z0-9._-]`), so
 `casefold()` is lowercasing here and no Unicode normalization arises (writing all 4,092 ids of
