@@ -3,6 +3,33 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (midday): a SARIF fixture under `tests/` is no longer ignored
+
+- Found by the pre-commit audit of `fix/gitignore-venv-symlink` (PR #62): on `main` at
+  `0f936b6`, `.gitignore` line 30 was `!tests/**/*.sarif` with its comment after it on the same
+  line. Git reads no trailing comments, so the negation was the rule and the comment together
+  and re-included nothing: a SARIF fixture added under `tests/` would have been ignored with no
+  warning, the class of bug that broke CI on 2026-07-08 ("CI GREEN on GitHub Actions" below).
+  On `fix/gitignore-sarif-negation` the comment has a line of its own above the rule.
+- Checked with `git check-ignore --no-index`: `tests/fx/a.sarif`, `tests/a.sarif` and
+  `tests/reporting/fixtures/reports/x.sarif`, all three ignored before by `.gitignore:29:*.sarif`,
+  are no longer ignored; a root `x.sarif`, `src/x.sarif`, `reports/x.sarif` and
+  `evidence/x.sarif` still are. With real files, `git status` lists `tests/fx/a.sarif` and not
+  the root one. A folder a directory rule excludes stays excluded (`tests/build/x.sarif`,
+  `tests/__pycache__/x.sarif`): git cannot re-include a file under an excluded directory.
+  `git ls-files -ci --exclude-standard` is empty before and after. No SARIF file is tracked
+  under `tests/` (the reporting snapshot is `golden.sarif.json`, which `*.sarif` never
+  matched), so nothing was lost. Note for the next check: `git check-ignore -v` exits 0 for a
+  path a `!` rule matches, because it prints that rule, so read the rule it names, or drop `-v`
+  and read the exit code.
+- Every other line of `.gitignore` checked by a Python scan for a comment after a pattern and
+  for trailing whitespace: none. `!specs/scope.example.yaml` has no comment and works as
+  written; it re-includes a file no rule excludes (`/scope.yaml` is root-anchored and the name
+  differs), so it changes nothing today and stays.
+- PR #62 changes `.gitignore` at line 8 only, so the two branches do not collide in that file;
+  both insert at the top of CHANGELOG `[Unreleased]` and of this ledger, so whichever merges
+  second rebases and keeps both entries.
+
 ## State, 2026-10-07 (night): OD-18 option B built
 
 - On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec

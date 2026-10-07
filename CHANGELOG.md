@@ -5,6 +5,18 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a SARIF fixture under `tests/` would have been ignored)
+
+- **`.gitignore` re-included no SARIF file under `tests/`.** The rule `!tests/**/*.sarif` had
+  its comment after it on the same line, and git reads no trailing comments, so the pattern was
+  the rule and the comment together and re-included nothing: `git check-ignore -v --no-index
+  tests/fx/a.sarif` named `.gitignore:29:*.sarif`. The comment now has a line of its own above
+  the rule; a `.sarif` file under `tests/` is no longer ignored (unless a directory rule such as
+  `build/` or `__pycache__/` excludes its folder), while a root `x.sarif`, `src/x.sarif` and
+  `reports/x.sarif` still are. No SARIF file is tracked under `tests/` (the reporting snapshot
+  is `golden.sarif.json`, which `*.sarif` never matched), so nothing was lost, and no tracked
+  file becomes ignored. It was the only line of the file with a comment after a pattern.
+
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 
 - **The second half of OD-18** (ADR-0009, C with A first, decided 2026-10-06). A deployed
