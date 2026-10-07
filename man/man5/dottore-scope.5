@@ -82,11 +82,11 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 .B id
 and
 .B type
-are required; the rest are needed only for a live scan. The file holds these keys and
-name, transport, command, seeded_setup and mock_scenario, and no others: any other key, or a
-name, provider, endpoint, model, auth_ref or transport that is not text, is refused before
-anything is sent, naming the file and the key. Quote a model id YAML reads as a number. A key
-that only holds an anchor for a << merge is refused like any other: write the merged map inline.
+are required; the rest are needed only for a live scan. The file holds these keys and name,
+transport, command, seeded_setup and mock_scenario, and no others: any other key, or a name,
+provider, endpoint, model, auth_ref or transport that is not text, is refused before anything is
+sent, naming the file and the key. Quote a model id YAML reads as a number or a date. A key that
+only holds an anchor for a << merge is refused like any other: write the merged map inline.
 .B sampling_defaults
 is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
 their own sampling.

@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, StrictStr, ValidationError
+from pydantic import ConfigDict, StrictStr, ValidationError, create_model
 
 from ildottore.adapters import (
     AnthropicAdapter,
@@ -1003,29 +1003,25 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
 # --- target.yaml -------------------------------------------------------------------
 
 
-class _TargetFileTopLevel(BaseModel):
-    """The top level of a target file: the keys its readers read, and text where they read text.
+#: The fields of :class:`Target` that ``load_target`` reads as text; anything else written there
+#: was read as absent (A-53).
+_TEXT_FIELDS = ("name", "provider", "endpoint", "model", "auth_ref", "transport")
 
-    A field of :class:`Target` that ``load_target`` reads goes here too, or every file that
-    writes it is refused. ``null`` is absent, as before; each block is checked by its reader.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: Any = None
-    type: Any = None
-    name: StrictStr | None = None
-    provider: StrictStr | None = None
-    endpoint: StrictStr | None = None
-    model: StrictStr | None = None
-    auth_ref: StrictStr | None = None
-    transport: StrictStr | None = None
-    capabilities: Any = None
-    sampling_defaults: Any = None
-    command: Any = None
-    seeded_setup: Any = None
-    #: Read by :func:`load_mock_scenario`, not part of the :class:`Target`.
-    mock_scenario: Any = None
+#: The top level of a target file: the fields of :class:`Target`, which ``load_target`` reads, and
+#: ``mock_scenario``, which :func:`load_mock_scenario` reads; text where text is read, ``null`` as
+#: absent, and each block left to its reader. Built from ``Target``, so a field added there is a
+#: key the file may hold without a second list to keep in step (pre-merge audit: a new
+#: ``websocket`` field on another branch would have been refused).
+_TOP_LEVEL_FIELDS: dict[str, Any] = {
+    **{
+        name: ((StrictStr | None) if name in _TEXT_FIELDS else Any, None)
+        for name in Target.model_fields
+    },
+    "mock_scenario": (Any, None),
+}
+_TargetFileTopLevel = create_model(
+    "_TargetFileTopLevel", __config__=ConfigDict(extra="forbid"), **_TOP_LEVEL_FIELDS
+)
 
 
 def _read_target_yaml(path: Path) -> dict[str, Any]:

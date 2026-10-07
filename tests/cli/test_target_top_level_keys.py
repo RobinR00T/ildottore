@@ -248,7 +248,11 @@ def test_the_cli_redactor_leaves_each_value_readable(case: str) -> None:
     assert value in _masked(ValueError(f"got {value} here"))
 
 
-def test_every_legal_key_loads(tmp_path: Path) -> None:
+def test_a_file_with_each_key_the_manual_lists_loads(tmp_path: Path) -> None:
+    """The thirteen keys docs/MANUAL.md section 4.2 lists, in one file, through every reader. A
+    field added to ``Target`` with its own rules (another branch's ``websocket`` needs
+    ``provider: websocket``) is covered key by key below, not by adding it here."""
+
     path = tmp_path / "t.yaml"
     path.write_text(
         "id: t\ntype: chatbot\nname: Support bot\nprovider: mcp\n"
@@ -259,7 +263,7 @@ def test_every_legal_key_loads(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     written = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert set(written) == LEGAL  # every legal key, so the test is not a subset by accident
+    assert len(written) == 13 and set(written) <= LEGAL
 
     target = wiring.load_target(path)
 
@@ -324,11 +328,17 @@ def test_a_text_field_with_nothing_or_null_is_still_absent(
     assert wiring.target_uses_mock(path)
 
 
-def test_the_legal_keys_are_the_targets_fields_and_the_mock_selector() -> None:
-    """The check keeps a list of its own: a field added to :class:`Target` and read by
-    ``load_target`` has to be added to it, or every file that writes it is refused."""
+@pytest.mark.parametrize("key", sorted(LEGAL - {"id", "type"}))
+def test_every_legal_key_passes_the_top_level_check(tmp_path: Path, key: str) -> None:
+    """Every field of :class:`Target`, and ``mock_scenario``, with nothing after it: what is
+    tested is the top-level check alone, not each block's own reader. The check is built from
+    ``Target``, so a field added there (another branch adds ``websocket``) is legal at once
+    (pre-merge audit: a list kept by hand refused it)."""
 
-    assert set(wiring._TargetFileTopLevel.model_fields) == LEGAL
+    path = tmp_path / "t.yaml"
+    path.write_text(f"id: t\ntype: chatbot\n{key}:\n", encoding="utf-8")
+
+    assert wiring._read_target_yaml(path)[key] is None
 
 
 # --- every target file the repository ships or documents still loads ----------------------

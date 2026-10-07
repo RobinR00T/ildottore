@@ -352,8 +352,10 @@ validation: endpont: Extra inputs are not permitted` (`model: Input should be a 
 that is not text: `1: Keys should be strings`), never the value:
 * the keys are the fields of `Target` (`id`, `type`, `name`, `provider`, `endpoint`, `model`,
   `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`) and
-  `mock_scenario`; a field added to `Target` and read by `load_target` has to be added to the
-  model, or every file that writes it is refused (a test pins the two sets equal);
+  `mock_scenario`; the model is built from `Target`, so a field added there is a key the file may
+  hold at once, and a test passes each key through the check (the pre-merge audit found that a list
+  kept by hand refused the `websocket` field #87 adds: 35 tests failed on the two merged, none once
+  the model was built from `Target`); `_TEXT_FIELDS` names the six read as text;
 * `name`, `provider`, `endpoint`, `model`, `auth_ref` and `transport` are text (`StrictStr`, so
   `!!binary` bytes are refused too) or absent: the key with nothing after it, `null` or `~`,
   as before; an empty string is text, so `endpoint: ""` still routes to the mock; a number as
