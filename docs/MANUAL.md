@@ -533,8 +533,11 @@ A spec pack can come from a third party, so lint reads only regular files that r
 their pack directory (or, for loose specs, the directory they were found in), at most 1 MiB
 each; a file named directly on the command line is read wherever it points. A document that
 expands, counting every alias where it is used, past 100,000 nodes (a long text counts one node
-per 64 characters), or that holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a
-few aliases used to turn a 4 KB file into 52 MB of error text. A key written twice in one
+per 64 characters), that nests deeper than 100 levels once its aliases are expanded, or that
+holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases used to turn a
+4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
+linter overflowed on. The scope, target, fleet and labels files have the same depth limit.
+A key written twice in one
 mapping is a `PARSE_ERROR` too. A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
@@ -629,9 +632,11 @@ inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits 
 regression is present, so it is CI-gateable like `run`. A report covering several targets, or
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
-complete is refused too. `dottore calibrate REPORT LABELS` applies the same one-target rule,
-counts agreement as an exact status match, prints an undefined precision or recall as `n/a`
-and floors its percentages (99.6% is shown as 99%, not 100%).
+complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
+what the JSON parser holds), with the file named. `dottore calibrate REPORT LABELS` applies the
+same one-target rule and the same refusals, counts agreement as an exact status match, prints an
+undefined precision or recall as `n/a` and floors its percentages (99.6% is shown as 99%, not
+100%).
 
 ### `dottore schema export`, the JSON Schemas
 

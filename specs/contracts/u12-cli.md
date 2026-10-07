@@ -136,6 +136,15 @@ requests where the run sent 499, and understated a multi-target run by half.
 command: a malformed YAML, an adapter refusal, a tampered artifact, an unreadable scope. Each
 one shipped as a 1 or a 2 at some point, because the handler tuple was written by listing the
 classes somebody remembered. A test drives each failure through the CLI and asserts the code.
+A file nested past the JSON parser's stack is one of them (2026-10-07): `json.loads` raises
+`RecursionError`, which is not a `ValueError`, and `diff`, `calibrate`, `replay` and
+`run --resume` exited 1 on it. The fix is where the file or column is parsed, into a
+`ValueError` that names the file or the column. So is a value that parsed and overflowed later,
+when it was formatted, walked or written back: a report's run status is formatted only as
+text, a run store column is refused past 100 levels, and a YAML file (spec, scope, target,
+fleet, labels, pack) is refused past 100 levels with its aliases expanded, which chained anchors
+reach from 4 KB of text (`tests/cli/test_deep_json.py`, `test_replay.py`,
+`test_resume_integrity.py`).
 
 **A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
 belongs to a different target, and refuses when no run store is available to check. Unbound, it
@@ -212,6 +221,11 @@ that the ceiling then covers one invocation. A **corrupt** integrity record is n
 absent one and raises rather than continuing. All of it is checked before the fingerprint pass,
 which sends: `-sV --resume` used to put 17 probes on a live endpoint and then exit 3 having done
 no work. Checked by `tests/cli/test_resume_integrity.py`.
+A **corrupt** record includes, since 2026-10-07, a column nested past the JSON parser's stack, a
+spend figure that is not a finite, non-negative number and a stored `--runs` that is missing
+beside the target digest or not a positive whole number (an infinity or a list was a traceback
+and exit 1, a negative spend was taken as spent, `true` resumed at one run, a missing count at
+the invocation's default).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

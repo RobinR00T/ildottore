@@ -43,7 +43,8 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   schema-validate → model-construct → register.
   (Since 2026-10-05, audit SEC-09: only a regular file that resolves inside its pack directory,
   at most 1 MiB, is read; a document that expands, counting every alias where it is used, past
-  100,000 nodes (a text counts one node per 64 characters) or holds a recursive alias is a
+  100,000 nodes (a text counts one node per 64 characters), nests deeper than 100 levels with
+  its aliases expanded (since 2026-10-07) or holds a recursive alias is a
   `PARSE_ERROR` before anything is built from it; a key written twice in one mapping is a
   `PARSE_ERROR` too, found while the document is built (since 2026-10-06; a `<<` merge can still
   be overridden); a YAML error gives reason and position, never a quoted line; at most 20

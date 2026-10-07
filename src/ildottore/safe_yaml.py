@@ -14,6 +14,12 @@ second one said, while a reviewer reading the first one approved something else 
 2026-10-06). Keys pulled in by a ``<<`` merge are not duplicates: overriding them is what a
 merge is for. A map merged in is checked too, and so is a second ``<<`` in one mapping, which
 PyYAML would also resolve to the last one.
+
+A value nested deeper than :data:`MAX_DEPTH` once its aliases are expanded is refused too. The
+composer's own guard sees only the nesting as written, and anchors chained through aliases built
+a value 1,600 levels deep from 4 KB of text, which the linter, the target loader and the labels
+of ``calibrate`` overflowed on: a traceback and exit 1 (pre-commit audit of the nesting fix,
+2026-10-07).
 """
 
 from __future__ import annotations
@@ -23,7 +29,11 @@ from typing import Any
 
 import yaml
 
-__all__ = ["SafeValueLoader", "safe_load"]
+__all__ = ["MAX_DEPTH", "SafeValueLoader", "check_depth", "safe_load"]
+
+#: The deepest nesting a document may hold with its aliases expanded. The files this tool reads
+#: (specs, scopes, targets, fleets, labels, packs) nest about 10 levels.
+MAX_DEPTH = 100
 
 _CANNOT_BUILD = "cannot build this value (an invalid date, number or tag)"
 _TWICE = "found a key written twice in one mapping"
@@ -112,12 +122,61 @@ def _written_twice(first: yaml.Mark, again: yaml.Mark) -> yaml.constructor.Const
     )
 
 
+def check_depth(root: yaml.Node) -> None:
+    """Refuse a node graph nested past :data:`MAX_DEPTH` with its aliases expanded.
+
+    Each node's expanded depth is computed once, bottom up and without recursion, so a document
+    of shared aliases is measured without being expanded. A recursive alias (``&a [*a]``) has no
+    depth and is refused as such, as the spec loader refuses it.
+    """
+
+    depth: dict[yaml.Node, int] = {}
+    on_path: set[yaml.Node] = set()
+    stack: list[tuple[yaml.Node, bool]] = [(root, False)]
+    while stack:
+        node, children_done = stack.pop()
+        if children_done:
+            on_path.discard(node)
+            depth[node] = 1 + max((depth[child] for child in _children(node)), default=0)
+        elif node not in depth:
+            if node in on_path:
+                raise _refusal(node, "document contains a recursive alias")
+            on_path.add(node)
+            stack.append((node, True))
+            stack.extend((child, False) for child in _children(node) if child not in depth)
+    if depth[root] > MAX_DEPTH:
+        # The position is where the nesting crosses the limit, down the deepest branch: the node
+        # that first measured too deep was the root of any document just past it (delta audit).
+        node = root
+        for _ in range(MAX_DEPTH):
+            node = max(_children(node), key=depth.__getitem__)
+        raise _refusal(node, "document is nested too deeply")
+
+
+def _children(node: yaml.Node) -> list[yaml.Node]:
+    if isinstance(node, yaml.MappingNode):
+        return [part for pair in node.value for part in pair]
+    if isinstance(node, yaml.SequenceNode):
+        return list(node.value)
+    return []
+
+
+def _refusal(node: yaml.Node, problem: str) -> yaml.composer.ComposerError:
+    """The refusal, at the node whose expanded nesting crossed the limit or that recurses."""
+
+    return yaml.composer.ComposerError(None, None, problem, node.start_mark)
+
+
 def safe_load(text: str) -> Any:
-    """``yaml.safe_load`` through :class:`SafeValueLoader`."""
+    """``yaml.safe_load`` through :class:`SafeValueLoader`, refusing a value nested too deeply."""
 
     loader = SafeValueLoader(text)
     try:
-        return loader.get_single_data()  # type: ignore[no-untyped-call,unused-ignore]
+        node = loader.get_single_node()  # type: ignore[no-untyped-call,unused-ignore]
+        if node is None:
+            return None
+        check_depth(node)
+        return loader.construct_document(node)  # type: ignore[no-untyped-call,unused-ignore]
     except RecursionError as exc:  # hundreds of nested levels: an error, not a traceback
         raise yaml.composer.ComposerError(
             None, None, "document is nested too deeply", None

@@ -20,7 +20,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   among others, a quadratic string pattern, a lost detection on unbalanced tool arguments and
   carriage-return lines past the stdio total; all fixed, and the last round found only wording.
   Found while fixing
-  the operator-file case on `fix/cli-deep-json` (PR #61, a parallel branch, not touched here).
+  the operator-file case on `fix/cli-deep-json` (PR #61, merged first as `0501752`).
 - **Left for separate fixes** (pre-commit audit, both also on `main`): with `-sV` or `-A`, one
   refused reply in the probe pass stops the run before the attack; and a 400-digit token count in
   `usage` crashes `dottore run` with a traceback (exit 1, no report). The first is in progress on
@@ -29,6 +29,23 @@ The carryover ledger. Every agent session updates this so context survives even 
   (`AdapterProductError`, runner `aborted`, exit 3, one request sent): measured, not as the
   finding assumed. Whether it should fail only its attempt, as a reply too deep now does, is a
   decision, not a fix; the trade-off is a misconfigured endpoint caught at the first request.
+
+## State, 2026-10-07 (morning): a file nested past what the CLI can hold
+
+- Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and
+  `dottore calibrate` exited 1 (findings below `--fail-on`) with a `RecursionError` traceback on a
+  report nested past the JSON parser's stack, and so did `replay` and `run --resume` on a run store
+  column nested the same way. Each is now refused where it is parsed (exit 3, one `error:` line
+  naming the file or the column). The probe and three audits found the same exit 1 one step later: a
+  run status formatted after it parsed, a run store column too deep to write back, a stored spend or
+  `--runs` that is not an amount (an infinity, a list, an integer past a float; a negative spend,
+  and `true` or a missing `--runs`, were accepted), and YAML anchors chained into a value 1,600 to
+  80,000 levels deep that `lint`, `run -t` and `calibrate` overflowed on. Run store columns and
+  every YAML loader (aliases expanded) now stop at 100 levels; the repository nests at most 11.
+  Contract u12 A-9 and A-24 and u02 §4 say so; no new clause. Left open as their own tasks: a
+  hostile target's reply nested too deeply aborts the whole campaign (exit 3) instead of failing one
+  attempt (`fix/target-deep-json`), and the YAML loaders other than the spec loader have no cap on
+  expanded size. `tests/cli/test_deep_json.py`; 45 of the 49 new tests fail on `0f936b6`.
 
 ## State, 2026-10-07 (night): OD-18 option B built
 
