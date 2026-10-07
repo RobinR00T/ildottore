@@ -23,7 +23,7 @@ versioning: [SemVer](https://semver.org/).
   behavior change:** a target or fleet file that loads today with such a key or value is refused;
   no file of the repository has one (a new test loads every target and fleet file, and the target
   and fleet blocks of the docs and man pages, through the real loaders). Refusing both is the
-  owner's call, open as OD-29 and built as the smallest reversible change. Still dropped without a
+  owner's decision (OD-29), built as the smallest reversible change. Still dropped without a
   word, and written in the clause: a top-level key a target file does not know, and a `name`,
   `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text. Contract u12 A-50;
   `tests/cli/test_target_capabilities_strict.py` (19 of its 40 tests fail on `2f6201a`).

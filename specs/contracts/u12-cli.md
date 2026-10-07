@@ -309,7 +309,7 @@ pinned:
 
 **A-50 A target file's `capabilities` is a mapping of the keys `Capabilities` knows, or nothing;
 anything else is refused before anything is sent, and `dottore fleet` refuses it before it writes
-(added 2026-10-07; OD-29, open).** `load_target` validated only the keys of `capabilities` that
+(added 2026-10-07; OD-29 decided).** `load_target` validated only the keys of `capabilities` that
 `Capabilities` knows and dropped the rest without a word, so `tool: true` written for `tools` ran
 the target with tools off and took the tool specs out of the plan: on `2f6201a`, a chatbot with
 `rag` and `memory` on planned 40 specs with 33 skipped for a capability, against 59 and 8 with
@@ -335,7 +335,7 @@ old behavior (the file loads, or the command exits 0); the other 21 guard what s
 capabilities, every known key, the values that were already refused, what `fleet` writes) and that
 the redactor leaves each test value readable, and one loads every target and fleet file under
 `examples/`, `specs/` and `tests/` and every such YAML block of the docs through the real loaders.
-Refusing both is the owner's call (OD-29), built as the smallest reversible change: the filter and
+Refusing both is the owner's decision (OD-29), as the smallest reversible change: the filter and
 the `or {}` in `load_target`, and `dict[str, bool]` in `FleetTarget` with `**entry.capabilities`
 in `_target_doc` (the `Capabilities` import in `cli/fleet.py` then goes, or ruff fails), undo it,
 with this test file removed. Outside the clause, and said so rather than pinned (pre-commit, delta
@@ -381,15 +381,15 @@ and pre-merge audits):
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
-- **OD-29** (open, built reversibly, 2026-10-07, A-50): whether a target file's `capabilities`
-  refuses a key it does not know and a value that is not a mapping but reads as false, as
-  `sampling_defaults` does. Built: both refused before anything is sent, and in `dottore fleet`
-  before anything is written. Alternatives: keep dropping them in silence (main until A-50: a typo
-  of `tools` takes the tool specs out of the plan); warn and go on (the warning goes where the
-  run's output goes, and a CI log nobody reads loses the same specs); refuse the unknown key and
-  keep `false` as none (the one shape an operator may write on purpose to mean "none", though `{}`
-  or leaving the key out says it too). A file that loads on main and is refused now holds a key
-  `Capabilities` does not know or a `capabilities` of `false`, `0`, `[]` or `""`; no file of the
-  repository does. Reversal: the filter and the `or {}` in `load_target`, `dict[str, bool]` in
-  `FleetTarget` and `**entry.capabilities` in `_target_doc` (dropping the `Capabilities` import in
-  `cli/fleet.py`), and `tests/cli/test_target_capabilities_strict.py` removed.
+- **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
+  file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
+  as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in
+  `dottore fleet` before anything is written. Alternatives: keep dropping them in silence (main
+  until A-50: a typo of `tools` takes the tool specs out of the plan); warn and go on (the warning
+  goes where the run's output goes, and a CI log nobody reads loses the same specs); refuse the
+  unknown key and keep `false` as none (the one shape an operator may write on purpose to mean
+  "none", though `{}` or leaving the key out says it too). A file that loads on main and is refused
+  now holds a key `Capabilities` does not know or a `capabilities` of `false`, `0`, `[]` or `""`; no
+  file of the repository does. Reversal: the filter and the `or {}` in `load_target`, `dict[str,
+  bool]` in `FleetTarget` and `**entry.capabilities` in `_target_doc` (dropping the `Capabilities`
+  import in `cli/fleet.py`), and `tests/cli/test_target_capabilities_strict.py` removed.

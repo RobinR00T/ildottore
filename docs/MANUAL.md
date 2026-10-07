@@ -224,7 +224,7 @@ is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `tem
 for `tools:` is refused (`tool: Extra inputs are not permitted`); older versions ignored it, and
 the target ran with tools off and without the specs that need them. A `capabilities` that is
 not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
-included, unless it is null: to declare none, leave the key out or write `capabilities: {}` (open
+included, unless it is null: to declare none, leave the key out or write `capabilities: {}` (owner's
 decision OD-29). A `capabilities:` with nothing under it is null too, so if the keys below it lost
 their indent they are top-level keys, which are still ignored without a word. A run an older
 version halted with such a key or value resumes once you delete it (or write `{}` for `false`),

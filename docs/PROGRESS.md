@@ -5,7 +5,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 ## State, 2026-10-07 (evening): a typo under a target file's `capabilities`
 
-- On `fix/target-capabilities-strict` (u12 A-50; OD-29, open for the owner): `load_target` dropped a
+- On `fix/target-capabilities-strict` (u12 A-50; OD-29 decided): `load_target` dropped a
   key `capabilities` does not know and read `false`, `0`, `[]` and `""` as no capabilities, so
   `tool: true` written for `tools` took the specs that need tools out of the plan without a word
   (40 specs planned instead of 59 on a chatbot with `rag` and `memory`, on `2f6201a`), and `dottore
@@ -20,8 +20,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   Pre-commit, delta and pre-merge audits found nothing high or medium and no open PR that combines
   into wrong behavior; their lows (key order in what `fleet` writes, keys printed as pydantic
   renders them, a long line until #76, how a halted run resumes, the reversal recipe) are written
-  in A-50. Merging next to #76 conflicts on `cli/fleet.py`'s imports (keep both). PR #78, open
-  for the owner's decision.
+  in A-50. Merging next to #76 conflicts on `cli/fleet.py`'s imports (keep both). PR #78; the owner
+  chose option 1 (refuse both) on 2026-10-07.
 
 ## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
 
