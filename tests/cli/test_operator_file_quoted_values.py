@@ -173,7 +173,9 @@ def test_the_head_is_the_start_of_repr(value: object, budget: int) -> None:
 
 #: 90 KB of YAML whose ``type`` is 20,000 aliases of one 10 KB text: a repr of 200,080,000
 #: characters, 2.6 s and 202 MiB to build whole. As a list, and as a mapping of 20,000 keys.
-ANCHOR = "x: &a " + "a" * 10_000 + "\n"
+#: The anchor under a key every target reader accepts (`name`), not a spare one a stricter
+#: target loader would refuse first.
+ANCHOR = "name: &a " + "a" * 10_000 + "\n"
 ALIASES = "[" + ", ".join(["*a"] * 20_000) + "]"
 ALIASED = {
     "list": f"{ANCHOR}type: {ALIASES}\n",
