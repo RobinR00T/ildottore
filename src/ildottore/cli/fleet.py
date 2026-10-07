@@ -143,21 +143,29 @@ def _split(endpoint: str) -> SplitResult:
         ) from exc
 
 
+#: What urllib removes from a URL anywhere in it before reading it (the WHATWG rule).
+_URL_IGNORED = str.maketrans("", "", "\t\r\n")
+
+
 def _shown_endpoint(endpoint: str) -> str:
-    """The endpoint as an error may quote it: without what precedes its last ``@``, cut.
+    """The endpoint as an error may quote it: as urllib reads it, without what precedes the last
+    ``@`` of its authority, cut.
 
     The CLI masks a URL's password only in the ``user:password@`` shape, so an empty user, a
-    space in the password or a second ``@`` printed it (delta audit of A-51). Found by position,
-    not by a pattern, so a long hostile endpoint costs one pass.
+    space in the password or a second ``@`` printed it (delta audit of A-51). It is read as
+    urllib reads it, its tabs and line breaks removed: urllib found an authority in
+    ``http:/<TAB>/user:password@host`` that a search for ``//`` missed (final audit). Found by
+    position, not by a pattern, so a long hostile endpoint costs one pass.
     """
 
-    start = endpoint.find("//")  # a scheme-relative `//user:password@host` too
+    text = endpoint.translate(_URL_IGNORED)
+    start = text.find("//")  # a scheme-relative `//user:password@host` too
     if start < 0:
-        return quoted(endpoint)
+        return quoted(text)
     start += 2
-    ends = [i for i in (endpoint.find(c, start) for c in "/?#") if i >= 0]
-    at = endpoint.rfind("@", start, min(ends, default=len(endpoint)))
-    return quoted(endpoint if at < 0 else endpoint[:start] + endpoint[at + 1 :])
+    ends = [i for i in (text.find(c, start) for c in "/?#") if i >= 0]
+    at = text.rfind("@", start, min(ends, default=len(text)))
+    return quoted(text if at < 0 else text[:start] + text[at + 1 :])
 
 
 def infer_provider(endpoint: str) -> str:

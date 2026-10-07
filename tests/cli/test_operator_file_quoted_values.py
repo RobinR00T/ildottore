@@ -896,12 +896,28 @@ def test_an_entry_the_allowlist_cannot_read_matches_nothing_and_blocks_nothing()
         (f"http://:Hunter2Secret@h{SOLIDUS}x", None),
         ("http://u:pass word Hunter2@localhost:x/v1", None),
         (f"{NBSP}http://a@b:Hunter2@h{SOLIDUS}x", None),
+        # urllib removes a tab or a line break anywhere: it read an authority here.
+        ("http:/\t/u:Hunter2Secret@h:x/v1", None),
+        # The last `@` ends the user information, not the first.
+        ("http://a@:pass word Hunter2Secret@h:x/v1", None),
         (
             "http://localhost:1/v1/chat/completions",
             "http://u:pass word Hunter2@localhost:2/v1/chat/completions",
         ),
+        (
+            "http://localhost:1/v1/chat/completions",
+            "http:/\t/u:Hunter2Secret@localhost:2/v1/chat/completions",
+        ),
     ],
-    ids=["empty-user", "space-in-password", "second-at", "judge-mismatch"],
+    ids=[
+        "empty-user",
+        "space-in-password",
+        "second-at",
+        "tab-between-slashes",
+        "first-at-not-last",
+        "judge-mismatch",
+        "judge-mismatch-tab",
+    ],
 )
 def test_fleet_never_prints_an_endpoint_password(
     tmp_path: Path, fleet: str, judge: str | None
@@ -981,6 +997,8 @@ def test_a_date_key_of_seeded_setup_is_written_as_before(tmp_path: Path) -> None
     ("endpoint", "shown"),
     [
         ("http://u:Hunter2@h/v1@x", "'http://h/v1@x'"),
+        ("http:/\t/u:Hunter2@h/v1", "'http://h/v1'"),
+        ("http://a@:pw x@h/v1", "'http://h/v1'"),
         ("//u:Hunter2@h/v1", "'//h/v1'"),
         ("https://h/v1", "'https://h/v1'"),
         ("no-authority@h", "'no-authority@h'"),

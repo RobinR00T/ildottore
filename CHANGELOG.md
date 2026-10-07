@@ -42,10 +42,11 @@ versioning: [SemVer](https://semver.org/).
   (a leading U+00A0 had let urllib's error through later, the endpoint's password included), and
   names the file and the field without the value; the allowlist denies what it cannot read, as it
   always said it would, so the authorization refusal quotes it cut, and an entry pinned to a port
-  that cannot be read matches nothing instead of denying every URL after it; `fleet` quotes it cut
-  and without what precedes its last `@`, so a password the CLI's URL mask misses (an empty user, a
-  space) is not printed. The 24 refusals of the new test printed lines of 400,080 to 2,000,247
-  characters on `c9f27cc`; now each is under 2,500.
+  that cannot be read matches nothing instead of denying every URL after it; `fleet` quotes it as
+  urllib reads it, cut and without what precedes the last `@` of its authority, so a password the
+  CLI's URL mask misses (an empty user, a space, a tab between the slashes) is not printed. The 24
+  refusals of the new test printed lines of 400,080 to 2,000,247 characters on `c9f27cc`; now each
+  is under 2,500.
 - **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
   or labels file (or a policy or signature pack) printed `error: 'utf-8' codec can't decode byte
   0xff in position 15: invalid start byte`, with no file name, where the spec loader says `not
