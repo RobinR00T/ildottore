@@ -126,7 +126,14 @@ not read by the runner: every mutation variant of every spec is sent `--runs` ti
 **Options are validated before the campaign.** `run` refuses, with exit 3 and before the scope
 is loaded or anything is sent: a `--rate` that is not greater than 0; an unknown `--fail-on`
 band; `--timeout` not greater than 0; `--concurrency`, `--top-tests` or `--runs` below 1; a
-report path whose directory does not exist; and two report formats that would write the same
+negative `--budget-tokens`, `--budget-requests` or `--budget-wall` (the dry run printed it and
+exited 0, the run refused it); any of those six past `2**53` (9,007,199,254,740,992, where the
+run of whole numbers a float holds exactly ends: `--runs` of a few hundred digits crashed the
+plan's float arithmetic with exit 1, A-55); on a live target, a pace (`--rate`, or the `-T`
+template's) under one request per wall-clock ceiling (`--budget-wall`, 0 included, or the 7,200 s
+cap of a derived one), since the ceiling is checked when a send is charged and such a run waited
+past it; a report path whose directory does not exist; and two
+report formats that would write the same
 file (paths compared after resolving, Unicode-normalized and case-folded, because a
 case-insensitive volume treats `R.json` and `r.json` as one file). These used to be accepted,
 and some failed only after the whole campaign had run.

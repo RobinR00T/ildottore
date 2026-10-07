@@ -47,8 +47,9 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   its aliases expanded (since 2026-10-07) or holds a recursive alias is a
   `PARSE_ERROR` before anything is built from it; a key written twice in one mapping is a
   `PARSE_ERROR` too, found while the document is built (since 2026-10-06; a `<<` merge can still
-  be overridden); a YAML error gives reason and position, never a quoted line; at most 20
-  schema errors are listed per file, each JSON-schema message cut at 300 characters, and a
+  be overridden); a value JSON cannot hold is a `SCHEMA` finding at its path, found before the
+  JSON schema runs (since 2026-10-07, A-54); a YAML error gives reason and position, never a
+  quoted line; at most 20 schema errors are listed per file, each JSON-schema message cut at 300 characters, and a
   pydantic error names field and reason, never the value.)
   No `eval`, no `!!python` tags, no `import`, no socket. Enforced by test (§7).
 - KEEP: id immutability + collision = **lint error, not a warning** (`docs/06 §4`); later-pack
@@ -222,6 +223,60 @@ Only IDs, levels and section headings are reproduced: AISVS is CC-BY-SA 4.0 and 
 is MIT, so requirement text stays upstream. Checked by `tests/registry/test_linter.py` and
 `tests/shared/test_aisvs.py`; bucket membership is pinned per axis in
 `tests/cli/test_coverage_cmd.py` (A-26).
+
+**A-54 A spec's values are JSON values, and one that is not is a finding where it is (added
+2026-10-07).** A spec is a JSON document written in YAML, but YAML's safe loader builds more than
+JSON holds: an unquoted `2026-01-01` is a `datetime.date`, `2026-01-01T10:00:00Z` a `datetime`,
+`!!set` a `set`, each entry of `!!omap` and `!!pairs` a `tuple`, `!!binary` `bytes`, `.nan`, `.inf`
+and `-.inf` floats that no JSON number writes, and an escape between U+D800 and U+DFFF half a
+character (a lone surrogate) that UTF-8 cannot write; PyYAML builds even a pair of such escapes, an
+emoji, as two halves. The JSON schema leaves a tool's `returns`, the objects of `documents` and
+`memory_seed` and a fixture's tool-call arguments free-form, so `returns: 2026-01-01` in
+`PI-INDIRECT-TOOL-001` gave `lint OK`, and `dottore run --dry-run` (and `--estimate`, and the run)
+then exited 1 with `TypeError: Object of type date is not JSON serializable`, raised where the
+in-band setup turned the value into JSON (`core/setup_delivery._as_text`): a traceback, and the code
+this tool uses for "findings below the threshold". `returns: !!set {plain: null}`, a timestamp and
+`!!binary` did the same; half a character passed the dry run and stopped the run with exit 3 where
+the request was encoded, naming no file; a pair, NaN and an infinity ran, written into the scene as
+`[["a", 1]]`, `NaN` and `Infinity`, which the spec did not write. Found on 2026-10-07 by the
+pre-commit audit of `fix/huge-int-repr` (finding F6), which checked that none of the 105 shipped
+YAML files holds such a value; half a character was found by the pre-commit audit of this clause.
+
+So the loader walks every value of a spec before the JSON schema (after the A-40 check, which
+reports a number too long to write out, a key included, and returns first), and keeps what JSON
+holds (a mapping, a list, a string that UTF-8 can write, an int, a finite float, a boolean, null),
+reporting anything else as a `SCHEMA` finding at its path that says what it is, what YAML builds it
+from and what to write instead: `setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as
+one), which JSON cannot hold; write it in quotes, without a tag`. A string key holding half a
+character is reported at its own path, and a spec `id` holding one is not attached to the findings
+(the file names them): printing the finding header raised `UnicodeEncodeError`, a lint traceback for
+every finding of that spec (delta audit). A value built in code is named by its type (`a value of
+type Decimal`). The schema is not run on that file, and its other findings come once the values are
+fixed; a value in a field the schema types (`name: 2026-01-01`) gets this message instead of the
+schema's `datetime.date(2026, 1, 1) is not of type 'string'`. At most 20 are listed and the rest
+counted; a set or a pair is the finding and what it holds is not walked; a container YAML shares
+through an alias is entered once (where the walk first meets it), while a scalar aliased in two
+places is reported in each; the path is cut at 300 characters, and a part of it that is not
+printable text is written as its `repr` (a key holding an escape sequence or a newline cannot forge
+a finding line in this check's messages, and a key that is not text never breaks the path; A-40's
+message prints the keys on its path as written, so a key holding half a character or a newline on
+the way to a number too long to write out still breaks or forges a line there, until A-40's own
+follow-up lands). The walk holds one iterator per open container and the ids of the containers
+entered: on specs of about 90,000 nodes it peaked at 3.1 MiB with 30,000 containers and 8.4 MiB with
+89,000, and added 44 to 52 ms to the check at a load average of 7 (a first version that kept a link
+to its parent per node peaked at 10.4 and 16.4 MiB).
+
+A key that is not a string is not this clause's: it is A-44's (#80), and until that check is in, a
+date key or keys of two types in one mapping (`{1: a, b: c}`) still pass lint and crash the run
+(`json.dumps` takes no date key, and with `sort_keys=True` cannot order keys of two types), while an
+int, bool, null or float key alone runs, written as text. `run`, `describe`, `coverage`, `registry`
+and `render-media` load through the same path, so they leave such a spec out as they do any spec
+that does not load (`run` refuses the campaign with exit 3, one `error:` line naming the file). That
+is a change for a pair, NaN or an infinity, which ran and are refused now. None of the 129 YAML
+files of the repository that load is flagged. Checked by `tests/registry/test_non_json_values.py`
+(65 tests, 64 failing on `c3e70d8`, 19 of them because the walk they call is not there; the one that
+passes checks that the shipped battery still lints clean, and another pins that no shipped spec
+holds such a value).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).

@@ -260,6 +260,73 @@ pinned:
   as no capabilities, and a key it does not know is dropped without a word (`sampling_defaults`
   refuses both).
 
+**A-55 Every integer flag of `run` is bounded above as well as below, and so is a live run's pace
+against the wall-clock ceiling (added 2026-10-07).** `--runs` had a lower bound only, and the plan
+multiplies its token estimate by the budget headroom, a float: `dottore run ... --dry-run --runs
+<4,300 nines>` (and `--estimate`, and the run) exited 1 with `OverflowError: int too large to
+convert to float`, a traceback and the code this tool uses for "findings below the threshold" (from
+305 nines with `PI-DIRECT-001` alone, 303 with the shipped battery, against a mock target with every
+capability). Found on 2026-10-07 by the pre-commit audit of `fix/huge-int-repr` (finding F6). A
+sweep of every numeric flag of `run` (the seven integer ones and `--rate` and `--timeout`) with
+hostile values, 168 dry-run and estimate cases and 48 runs against the mock, found two more: `--rate
+1e-308` (or `5e-324`) on a live target was the same traceback in `budgets_for` (`cannot convert
+float infinity to integer`, from the request count over the rate), `--dry-run` included; and
+`--budget-tokens`, `--budget-requests` or `--budget-wall` of `-1` passed `--dry-run` and
+`--estimate` with exit 0 while the run refused it with exit 3. The pre-commit audit of this clause
+found that bounding the quotient alone turned `--rate 1e-308` into a live run that never stopped
+(still running after 25 s with `--budget-wall 3`): the ceiling is checked when a send is charged
+(`core/budgets.py`), not while the rate limiter waits for the next one (`core/pacing.py`), and the
+same held for any pace slow enough (`--rate 0.001 --budget-wall 5` was still running after 45 s
+against a local stub). Its delta audit found the first answer exempting a zero ceiling, where
+`--budget-wall 0 --rate 1e-6 -sV` ran past 25 s because the probe pass reads no ceiling, and reading
+`--rate` only, so `-T0 --budget-wall 1` passed where `--rate 0.5 --budget-wall 1` was refused.
+
+So `_validate_options` refuses, with exit 3 and before anything is sent (`fleet --run` writes its
+scope and target files first), a `--runs`, `--top-tests` or `--concurrency` below 1, a
+`--budget-tokens`, `--budget-requests` or `--budget-wall` below 0, and any of the six above
+`MAX_FLAG_VALUE`, `2**53` (9,007,199,254,740,992, where the run of whole numbers a float holds
+exactly ends; `--budget-wall` of that many seconds is 285 million years): `error: --runs must be at
+most 9,007,199,254,740,992 (got a number of more than 21 digits)`. Through `run` and `fleet --run`,
+which builds its options in code. Once the timing is resolved, and before the resume block and the
+probe pass, which send, a live run whose pace (`--rate`, or the timing template's) is under one
+request per wall-clock ceiling (`--budget-wall`, 0 included, or the 7,200 s cap a derived ceiling
+cannot pass) is refused: `--rate 1.000e-308 is less than one request per 7,200-second wall-clock
+ceiling, so the run would wait past that ceiling between two sends; raise the rate or --budget-wall`
+(`the -T0 pace of 5.000e-01 requests per second ...` for a template). An offline mock run is not
+paced, so not checked. A resume inherits the count its run store recorded, after these checks, so
+the store refuses a stored `--runs` past `2**53` as a corrupt record, as it refuses one below 1 (a
+400-digit count edited into the store was the same traceback once inherited). A figure is printed
+with thousands separators, which the CLI's redactor left readable in all of 63,000 sampled values (1
+to 21 digits, either sign), and described past 21 digits; a rate in scientific notation, which it
+left readable in all of 20,000 sampled refused rates, where 2,782 written as typed were masked as
+phone or card numbers. The wall-clock derivation also bounds its quotient at `MAX_FLAG_VALUE` before
+`int()`, for any caller of `budgets_for`; the cap it is clamped to afterwards makes the result
+identical for every finite quotient. The flag sweep, repeated on the code before the delta audit: 0
+tracebacks in 216 cases (8 on `2f6201a`). Checked by `tests/cli/test_flag_bounds.py` (102 tests, 84
+failing on `c3e70d8`; the 18 that pass are the bound itself accepted for each flag, a zero budget
+still passing the dry run of a mock run, the three lower bounds that already existed keeping their
+message, four paces of one request per ceiling or more, a mock run not paced so not checked, and a
+paced wall under the cap derived as before; the refused paces are tried in dry runs, so a regression
+cannot hang the suite), and by three cases in `tests/cli/test_resume_integrity.py` that read a
+stored count in the store, not through a resume (it reads `2**53` and refuses `2**53 + 1` and a
+400-digit count; the last two fail on `c3e70d8`).
+
+Outside the clause, and said so rather than pinned:
+* the wall-clock ceiling is not a deadline at an accepted pace either: each concurrent spec waits
+  its own interval and the `-sV` probe pass reads no ceiling, so `--rate 0.5 --budget-wall 2`
+  against a local stub ran 2.6 s at `--concurrency 1`, 8.6 s at the default 4, 18.7 s at 12 and 34.8
+  s with `-sV` (delta audit); a deadline in the rate limiter, or the probe pass under the campaign's
+  ceiling, would close it and is u08's and u09's;
+* `2**53` is not a bound with a meaning, and it does not bound the work: a resume builds a set of
+  mutators x runs attempt ids for each spec the halted run had started, so with `PI-DIRECT-001` and
+  `OUT-XSS-001` a stored count of 10^6 took 209 MiB with one spec started and 653 to 678 MiB with
+  both, 10^7 with one spec took 3.5 s and 1.3 GiB, and `2**53 + 1` was still growing at 3.7 GB when
+  it was stopped after 4.5 minutes on `2f6201a` (OD-32);
+* `-T` was already refused outside 0 to 5, but a value of 9 digits or more is printed as
+  `«REDACTED:phone»`;
+* `--rate inf` turns pacing off (the limiter reads its interval as 0) and the dry run prints `inf
+  req/s ceiling`; `--timeout inf` and `--timeout 1e308` are accepted.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -277,3 +344,13 @@ pinned:
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-32** how far `--runs` may go (2026-10-07). A-55 bounds it at `2**53`, which only keeps
+  the plan's float arithmetic finite. The runner builds a set of mutators x runs attempt ids per
+  spec on a resume (`core/runner.py`, the prior-finding and seeding-gate checks) and in the
+  multi-identity sweep, for each spec the halted run had started: with `PI-DIRECT-001` and
+  `OUT-XSS-001`, a stored count of 10^6 took 209 MiB with one spec started and 653 to 678 MiB
+  with both, 10^7 with one took 3.5 s and 1.3 GiB, and `2**53 + 1` was still growing at 3.7 GB
+  when it was stopped after 4.5 minutes on `2f6201a`. Propose: a bound with a meaning (the
+  schema caps a spec's own unread `runs:` at 50), or the runner comparing a prior's attempts
+  with the count instead of building the set, once #66 and #60, which change those lines, are
+  in.

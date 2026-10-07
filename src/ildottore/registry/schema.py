@@ -17,9 +17,12 @@ u00 models, so those are validated by constructing the model, not against a JSON
 
 from __future__ import annotations
 
+import datetime
 import json
+import math
 import os
 import stat
+from collections.abc import Iterator
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -215,6 +218,13 @@ def validate_attack_spec_schema(data: object) -> list[str]:
     A number too long to write out is reported where it is, and nothing else is checked: every
     jsonschema message that quotes a value raised on it, a lint traceback with exit 1, and one
     the schema accepted failed later where the run wrote it (A-40).
+
+    A value JSON cannot hold is reported where it is, and nothing else is checked: a spec is a
+    JSON document, but YAML builds a date from an unquoted ``2026-01-01``, a set from ``!!set``,
+    a tuple from each entry of ``!!omap`` and ``!!pairs``, bytes from ``!!binary``, and from
+    ``.nan`` and ``.inf`` floats no JSON number writes. The schema leaves a tool's ``returns``
+    and a fixture's tool-call arguments free-form, so such a value passed lint, and ``run`` died
+    where it first turned it into JSON: ``TypeError``, a traceback and exit 1 (A-54).
     """
     too_long = list(too_long_paths(data))
     if too_long:
@@ -226,6 +236,9 @@ def validate_attack_spec_schema(data: object) -> list[str]:
             more = len(too_long) - _MAX_SCHEMA_ERRORS
             shown.append(f"<root>: and {more} more numbers too long to write out")
         return shown
+    not_json = _non_json_values(data)
+    if not_json:
+        return not_json
     validator = _attack_spec_validator()
     errors: list[ValidationError] = sorted(
         validator.iter_errors(data), key=lambda e: list(e.absolute_path)
@@ -253,3 +266,134 @@ def _cut(text: str) -> str:
     if len(text) <= _MAX_MESSAGE_CHARS:
         return text
     return text[:_MAX_MESSAGE_CHARS] + f"... ({len(text)} characters)"
+
+
+_CANNOT_HOLD = "which JSON cannot hold"
+_QUOTED = "write it in quotes, without a tag"
+_HALF_CHARACTER = (
+    "half a character (a lone surrogate, which YAML builds from an escape between U+D800 and "
+    f"U+DFFF, even from a pair of them), {_CANNOT_HOLD}; write the character itself"
+)
+#: What a value YAML builds and JSON cannot hold is, checked in order (a timestamp is a date),
+#: and what to write instead.
+_NOT_JSON: tuple[tuple[type | tuple[type, ...], str, str], ...] = (
+    (datetime.datetime, "a timestamp (YAML reads an unquoted 2026-01-01T10:00:00 as one)", _QUOTED),
+    (datetime.date, "a date (YAML reads an unquoted 2026-01-01 as one)", _QUOTED),
+    ((set, frozenset), "a set (!!set)", "write a list or a mapping"),
+    (tuple, "a key and value pair (an entry of !!omap or !!pairs)", "write a list or a mapping"),
+    ((bytes, bytearray), "binary data (!!binary)", "write it as text"),
+)
+
+
+def _non_json_values(data: object) -> list[str]:
+    """A message per value in ``data`` that JSON cannot hold, in document order.
+
+    What JSON holds is kept (a mapping, a list, a string, a number, a boolean, null) and anything
+    else is reported, rather than a list of what it does not hold. At most
+    :data:`_MAX_SCHEMA_ERRORS` are listed and the rest counted. A set or a pair is the finding,
+    and what it holds is not walked. Text, a value or a key, holding half a character (a lone
+    surrogate) is reported too: UTF-8 cannot write it, so lint passed and the run stopped where
+    it encoded the request (pre-commit audit of A-54); a key that is not text is A-44's.
+    A container that YAML shares
+    through an alias is entered once (where the walk first meets it), so the walk visits each
+    node once whatever the aliases repeat. Walked without recursion, one iterator per open
+    container, so what it holds beyond the ids of the containers entered follows the depth
+    of the document: on specs of about 90,000 nodes it peaked at 3.1 MiB with 30,000
+    containers and 8.4 MiB with 89,000 (a first version that kept a link per node, 10.4 and
+    16.4 MiB).
+    """
+
+    if not isinstance(data, dict | list):
+        problem = _not_json(data)
+        return [] if problem is None else [f"<root>: {problem}"]
+    found: list[str] = []
+    count = 0
+
+    def report(path: list[object], problem: str) -> None:
+        nonlocal count
+        count += 1
+        if len(found) < _MAX_SCHEMA_ERRORS:
+            found.append(f"{_location(path)}: {problem}")
+
+    entered = {id(data)}
+    keys: list[object] = []  # the key of each open container but the document
+    walks = [_entries(data)]
+    while walks:
+        step = next(walks[-1], None)
+        if step is None:
+            walks.pop()
+            if keys:
+                keys.pop()
+            continue
+        key, value = step
+        if isinstance(key, str) and not _encodes(key):
+            report([*keys, key], f"a key holding {_HALF_CHARACTER}")
+        if isinstance(value, dict | list):
+            if id(value) not in entered:
+                entered.add(id(value))
+                keys.append(key)
+                walks.append(_entries(value))
+            continue
+        problem = _not_json(value)
+        if problem is not None:
+            report([*keys, key], problem)
+    if count > len(found):
+        found.append(f"<root>: and {count - len(found)} more values that JSON cannot hold")
+    return found
+
+
+def _entries(container: dict[Any, Any] | list[Any]) -> Iterator[tuple[object, object]]:
+    """``(key, value)`` of a mapping, ``(index, value)`` of a list."""
+
+    return iter(container.items()) if isinstance(container, dict) else enumerate(container)
+
+
+def _not_json(value: object) -> str | None:
+    """What ``value`` is and what to write instead, or None when JSON holds it."""
+
+    if value is None or isinstance(value, int):  # a bool is an int
+        return None
+    if isinstance(value, str):
+        return None if _encodes(value) else f"text holding {_HALF_CHARACTER}"
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return None
+        kind = (
+            "NaN (YAML reads .nan as one)"
+            if math.isnan(value)
+            else "an infinity (YAML reads .inf or -.inf as one)"
+        )
+        return f"{kind}, {_CANNOT_HOLD}; {_QUOTED}"
+    for cls, kind, advice in _NOT_JSON:
+        if isinstance(value, cls):
+            return f"{kind}, {_CANNOT_HOLD}; {advice}"
+    return f"a value of type {type(value).__name__}, {_CANNOT_HOLD}; write a JSON value"
+
+
+def _encodes(text: str) -> bool:
+    """Whether UTF-8, the encoding of a JSON document, can write ``text``."""
+
+    if text.isascii():
+        return True
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:  # a lone surrogate
+        return False
+    return True
+
+
+def _location(path: list[object]) -> str:
+    """``a/b/0/c`` for the keys and indexes of ``path``, cut when long.
+
+    A key is a string from the spec, printed as written when it is printable; any other part is
+    written as its ``repr``, so a key holding an escape sequence or a newline cannot forge a
+    finding line, and a key that is not text (A-44's finding) never breaks the path.
+    """
+
+    parts: list[str] = []
+    for part in path:
+        try:
+            parts.append(part if isinstance(part, str) and part.isprintable() else repr(part))
+        except ValueError:  # an int key past the interpreter's digit limit for text (A-40)
+            parts.append("<number>")
+    return _cut("/".join(parts))

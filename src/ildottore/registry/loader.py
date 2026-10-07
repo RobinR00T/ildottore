@@ -107,11 +107,19 @@ def _short_id(data: dict[str, object]) -> str | None:
     """The spec's ``id`` to attach to its findings, when it is a plausible id.
 
     Attached to every schema error, a 1 MB id printed 21 MB for one spec (pre-merge audit of
-    #39); a real id is short.
+    #39); a real id is short. One holding half a character (a lone surrogate) is not attached:
+    printing the finding header raised ``UnicodeEncodeError``, a lint traceback with exit 1, and
+    the finding that reports it is the id's own (delta audit of A-54).
     """
 
     value = data.get("id")
-    return value if isinstance(value, str) and len(value) <= _MAX_ID_CHARS else None
+    if not isinstance(value, str) or len(value) > _MAX_ID_CHARS:
+        return None
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+    return value
 
 
 _MAX_ID_CHARS = 128

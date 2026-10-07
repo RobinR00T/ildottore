@@ -423,7 +423,13 @@ error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` 
 usage error (an unknown option, a value of the wrong type) is `3` too: the command-line library
 defaults to `2`, which here would read as "findings". Options that can only be wrong are
 refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
-`--top-tests 0`, `--runs 0`, `--rate 0`, a report path in a directory that does not exist (`-oA`
+`--top-tests 0`, `--runs 0`, `--rate 0`, a negative `--budget-tokens`, `--budget-requests` or
+`--budget-wall`, any of those six integer flags past 9,007,199,254,740,992 (`2**53`; `--runs` of
+a few hundred digits used to crash the plan's arithmetic with exit 1), a live run whose pace
+(`--rate`, or the `-T` template's) is under one request per wall-clock ceiling (`--budget-wall`,
+0 included, or the 7,200 s cap of a derived one; the ceiling is checked when a send is charged,
+so such a run waited past it; an offline mock run is not paced), a report path in a
+directory that does not exist (`-oA`
 expanded to its four files first), two target files with the same id, and two report formats
 that would write the same file (`two report formats would write the same file: <path>`). That
 last check compares the resolved paths case-insensitively and after Unicode normalization,
@@ -535,7 +541,13 @@ holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases u
 4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
 linter overflowed on. The scope, target, fleet and labels files have the same depth limit.
 A key written twice in one
-mapping is a `PARSE_ERROR` too. A YAML error gives the line and
+mapping is a `PARSE_ERROR` too. A value JSON cannot hold (an unquoted date or timestamp such as
+`2026-01-01`, a `!!set`, an entry of `!!omap` or `!!pairs`, `!!binary`, `.nan`, `.inf`, an
+escape between U+D800 and U+DFFF, which PyYAML builds as half a character even in a pair) is a
+`SCHEMA` finding at its path, such as `setup/tools/0/returns: a date (YAML reads an unquoted
+2026-01-01 as one), which JSON cannot hold; write it in quotes, without a tag`: a spec is JSON,
+and such a value in a tool's `returns` or a tool call's arguments passed lint and then crashed
+`run`. A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. A number too long for Python to write out (more than
