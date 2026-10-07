@@ -31,8 +31,15 @@ The carryover ledger. Every agent session updates this so context survives even 
   password readable, which main masked. Fixed for every registered credential across `://`, the
   `:` or the `@` (the password joins its run), which closes that class on main too; plus two test
   gaps, the 16 KB wording and a memory figure. The fix's own first cut was quadratic in a reply
-  of URLs (a slice per URL); a growth test pins it. 32 mutants, each caught. `make gates` green
-  on `0f936b6`: 2,355 tests (2,302 on main), coverage 96.42%.
+  of URLs (a slice per URL); a growth test pins it. 32 mutants, each caught.
+- The delta audit of those follow-ups found that the separator pass read the first `:` and the
+  first `@`, which can sit inside a registered credential (`ops:svc-key` as the user, `P@ssw0rd!`
+  in the password), so the joined run stopped short and the rest of the password was readable,
+  where the first commit masked it. The password now runs to the authority's last `@` outside
+  the registered credentials, as `urlsplit` reads it. Also boundary tests for three off-by-one
+  mutants that leaked, CPU time in the growth test (wall time flaked under load), and the 16 KB
+  wording. 43 mutants, each caught. `make gates` green on `0f936b6`: 2,369 tests (2,302 on
+  main), coverage 96.43%.
 - Open, on main too: a raw `@` in a URL's user or unregistered password leaves the password, or
   its part after the `@`, readable (`myadmin@srv:<password>@localhost`); the labelled-secret rule
   stops at a mask (`api_key=<registered credential><tail>` keeps its tail), and a registered

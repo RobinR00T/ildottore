@@ -28,7 +28,12 @@ versioning: [SemVer](https://semver.org/).
   in `https://bob:hunter2XYZSECRET@intranet/v1`. That was so on main for any such credential,
   and the first version of this fix also reached it with a credential holding a stash
   delimiter (`pass\x01word@db`, read as `password@db` now), which main never matched (pre-merge
-  audit). The password now joins that run, and the two are one `credential` mask.
+  audit). The password now joins that run, and the two are one `credential` mask, up to the
+  authority's last `@` outside the registered credentials, where `urlsplit` ends the userinfo:
+  the first version of this read the first `:` and the first `@`, which can sit inside a
+  registered credential (`ops:svc-key` as the user, `P@ssw0rd!` in the password), and left the
+  rest of the password readable (delta audit). The same reading masks a raw `@` in such a
+  password whole.
 - **A mask no longer depends on the process or on the text before it.** The digest of a
   `pem_private_key` mask was computed over the key with the stash tokens of the masks inside it,
   whose numbers count the masks set aside before them and follow the order the registered
@@ -41,9 +46,9 @@ versioning: [SemVer](https://semver.org/).
   The key pattern bounds a key at 16 KB of the text as one pass reads it, where each mask inside
   the key is a stash token whose length grows with the masks before it. So a key near the bound
   may be masked as a key or not depending on the text before it, and one that a single pass
-  cannot take whole is masked on a later pass and digested over its text with the masks inside
-  it, not as written; on main too. A real key is far under the bound (a 26 KB one of random
-  base64 lines is still masked whole).
+  cannot take whole may be masked as a key on a later pass (digested over its text with the masks
+  inside it, not as written) or never, its contents then left to the other rules; on main too.
+  A real key is far under the bound (a 26 KB one of random base64 lines is still masked whole).
 - **Overlapping registered credentials are masked as one.** The same set order decided which of
   two overlapping credentials was masked (`12345678ab87654321` with `12345678ab` and
   `ab87654321` registered: seven seeds of twelve masked one, five the other), and the other's
@@ -75,7 +80,8 @@ versioning: [SemVer](https://semver.org/).
   against main `d19b221`. Tests: `tests/test_redactor_url_password_and_digests.py` (twelve hash
   seeds in subprocesses, digests checked against an HMAC computed in the test, the evidence
   store's leak guard, a Hypothesis property over URL shapes, the URL rule's memory measured in a
-  subprocess, the URL separator pass's growth); 32 mutants of the fix, each caught. Docs:
+  subprocess, the URL separator pass's growth and boundaries); 43 mutants of the fix, each
+  caught. Docs:
   `docs/02` (S6), the u01 contract (A-31) and the contract index, the manual, the playbook.
   Left open, on main too: a raw `@` in the user or in an unregistered password of a URL leaves
   the password, or its part after the `@`, readable (`myadmin@srv:<password>@localhost`, an

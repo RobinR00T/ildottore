@@ -149,6 +149,90 @@ def test_a_registered_credential_across_a_url_separator_takes_the_password_with_
     assert redactor.redact_text(out) == out
 
 
+@pytest.mark.parametrize(
+    ("credentials", "url", "expected"),
+    [
+        # A credential holding the URL's `:` as the user, one holding `@` in the password: read
+        # from the first `:` and the first `@`, the joined run left `TAIL5678` (delta audit).
+        (
+            ("ops:svc-key", "P@ssw0rd!"),
+            "ftp://ops:svc-key:xxP@ssw0rd!TAIL5678@db/v1",
+            "ftp://{ops:svc-key}@db/v1",
+        ),
+        (
+            ("ops:svc-key", "P@ssw0rd!"),
+            "redis://ops:svc-key:P@ssw0rd!@db",
+            "redis://{ops:svc-key}@db",
+        ),
+        (
+            ("svc-account-7:", "P@ssw0rd!"),
+            "https://svc-account-7::P@ssw0rd!Tail-9876@intranet/v1",
+            "https://{svc-account-7:}@intranet/v1",
+        ),
+        (("ops:svc-key",), "ftp://ops:svc-key:xxpa@ssTAIL5678@db/v1", "ftp://{ops:svc-key}@db/v1"),
+        # The authority ends at a `/` or whitespace: a later `@` is not the userinfo's.
+        (
+            ("bob:hunter2",),
+            "https://bob:hunter2XYZ@intranet/v1 then a@b.io",
+            "https://{bob:hunter2}@intranet/v1 then «REDACTED:email»",
+        ),
+        (
+            ("bob:hunter2",),
+            "https://bob:hunter2XYZ@intranet then a@b.io",
+            "https://{bob:hunter2}@intranet then «REDACTED:email»",
+        ),
+        # A registered host after the last `@` does not undo it.
+        (
+            ("ops:svc-key", "P@ssw0rd!", "db.example"),
+            "ftp://ops:svc-key:xxP@ssw0rd!TAIL5678@db.example/v1",
+            "ftp://{ops:svc-key}@{db.example}/v1",
+        ),
+        # A credential that ends inside `://` is stepped over, not walked back into.
+        (("xx-redis:/",), "xx-redis://u:Sup3r@ssTAIL5678@db/v1", "{xx-redis:/}@db/v1"),
+        # The separators' own boundaries.
+        (
+            ("://svc-account",),
+            "redis://svc-account:Sup3rS3cretPw@db:6379",
+            "redis{://svc-account}@db:6379",
+        ),
+        (
+            ("svc-account-7:",),
+            "https://svc-account-7:Sup3rS3cretPw@intranet/v1",
+            "https://{svc-account-7:}@intranet/v1",
+        ),
+        (("@db:6379/zero",), "redis://u:Sup3rS3cretPw@db:6379/zero", "redis://u:{@db:6379/zero}"),
+        (
+            ("intranet.example",),
+            "https://u:Sup3rS3cretPw@intranet.example/v1",
+            "https://u:«REDACTED:url_password»@{intranet.example}/v1",
+        ),
+        (
+            ("xx-redis",),
+            "xx-redis://u:Sup3rS3cretPw@db",
+            "{xx-redis}://u:«REDACTED:url_password»@db",
+        ),
+        (
+            ("aaaaaaaa1111",),
+            "aaaaaaaa1111 and aaaaaaaa1111 then https://u:Sup3rS3cretPw@h",
+            "{aaaaaaaa1111} and {aaaaaaaa1111} then https://u:«REDACTED:url_password»@h",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_crossing_run_reaches_the_last_at_of_the_authority(
+    credentials: tuple[str, ...], url: str, expected: str
+) -> None:
+    """The userinfo ends at the authority's last `@`, as `urlsplit` reads it."""
+
+    for value in credentials:
+        register_known_secret(value)
+    redactor = Redactor(salt=_SALT)
+    out = redactor.redact_text(url)
+    want = re.sub(r"\{([^}]*)\}", lambda m: f"«REDACTED:credential:{_hmac8(m.group(1))}»", expected)
+    assert out == want
+    assert redactor.redact_text(out) == out
+
+
 def test_the_url_separator_pass_is_linear_in_the_urls() -> None:
     """A slice of the runs per URL made it quadratic: 20,000 registered-user URLs took 0.35 s."""
 
@@ -158,10 +242,10 @@ def test_the_url_separator_pass_is_linear_in_the_urls() -> None:
         text = url * count
         runs = [(n * len(url) + 8, n * len(url) + 21, "svc-account-7") for n in range(count)]
         best = math.inf
-        for _ in range(3):
-            started = time.perf_counter()
+        for _ in range(3):  # CPU time: under a busy machine wall time reached a ratio of 14
+            started = time.process_time()
             assert redactor_mod._straddled_passwords(text, runs) == []  # every run is a user
-            best = min(best, time.perf_counter() - started)
+            best = min(best, time.process_time() - started)
         return best
 
     assert cost(80_000) / cost(20_000) < 10  # four times the URLs: 4 when linear, 16 when not

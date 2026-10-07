@@ -296,8 +296,12 @@ def _straddled_passwords(text: str, runs: list[tuple[int, int, str]]) -> list[tu
     A run is read by the URL rule as a mask, so it holds anywhere inside the user or inside the
     password; across ``://``, the ``:`` or the ``@`` it stops the rule, which then left the
     password or its first part readable (``password@db`` registered, in
-    ``redis://u:Sup3rS3cretpassword@db``; pre-merge audit). The password joins that run instead.
-    ``runs`` are disjoint and in order, as the URL matches are, so this is one pass over both.
+    ``redis://u:Sup3rS3cretpassword@db``; pre-merge audit). The password joins that run instead,
+    up to the authority's last ``@`` outside the runs, where ``urlsplit`` ends the userinfo: the
+    first ``:`` and the first ``@`` the URL rule finds may sit inside a credential (``ops:svc-key``
+    as the user, ``P@ssw0rd!`` in the password), and a span ending there left the rest of the
+    password readable (delta audit). ``runs`` are disjoint and in order, as the URL matches and
+    their authorities are, so this is one pass over both.
     """
 
     found: list[tuple[int, int, str]] = []
@@ -308,18 +312,51 @@ def _straddled_passwords(text: str, runs: list[tuple[int, int, str]]) -> list[tu
         password = match.span(2)
         while index < len(runs) and runs[index][1] <= first:
             index += 1
+        start = end = -1
         # By index: a slice per URL copied the rest of the runs, quadratic in a reply of URLs.
         for position in range(index, len(runs)):
-            start, end, _ = runs[position]
-            if start >= last:
+            run_start, run_end, _ = runs[position]
+            if run_start >= last:
                 break
-            inside_user = user[0] <= start and end <= user[1]
-            if not (inside_user or (password[0] <= start and end <= password[1])):
-                # From the run to the end of the password, so the two make one run even when
-                # the run ends at the `:` before it (`https://bob` registered).
-                found.append((min(start, password[0]), max(end, password[1]), ""))
-                break
+            inside_user = user[0] <= run_start and run_end <= user[1]
+            if not (inside_user or (password[0] <= run_start and run_end <= password[1])):
+                # From the run, so the two make one run even when it ends at the `:` before the
+                # password (`https://bob` registered).
+                start = min(run_start, password[0]) if start == -1 else start
+                end = max(end, run_end, password[1])
+        if start != -1:
+            found.append((start, max(end, _last_at(text, runs, index, user[0])), ""))
     return found
+
+
+#: Where a URL's authority ends, as the URL rule reads it: at a ``/`` or whitespace.
+_AUTHORITY_END: Final = re.compile(r"[/\s]")
+
+
+def _last_at(text: str, runs: list[tuple[int, int, str]], index: int, begin: int) -> int:
+    """The last ``@`` outside ``runs`` in the authority that starts at ``begin``, or -1.
+
+    The authority ends at a ``/`` or whitespace outside the runs (a credential holding one does
+    not end it); ``runs[index:]`` are the runs that end after ``begin``'s URL starts.
+    """
+
+    found = -1
+    cursor, position = begin, index
+    while True:
+        while position < len(runs) and runs[position][1] <= cursor:
+            position += 1
+        if position < len(runs) and runs[position][0] <= cursor:
+            cursor = runs[position][1]  # inside a run: step over it
+            position += 1
+            continue
+        limit = runs[position][0] if position < len(runs) else len(text)
+        stop = _AUTHORITY_END.search(text, cursor, limit)
+        at = text.rfind("@", cursor, stop.start() if stop else limit)
+        found = at if at != -1 else found
+        if stop or position >= len(runs):
+            return found
+        cursor = runs[position][1]
+        position += 1
 
 
 # The corroboration digest is 32 bits of an HMAC. Unsalted, anyone holding a report could

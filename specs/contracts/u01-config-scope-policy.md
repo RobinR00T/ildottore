@@ -147,12 +147,13 @@ same set order decided which of two overlapping registered credentials was maske
 other's tail readable; overlapping credentials are one run now, named after the longest. The
 URL rule holds when part of the URL is already masked: a URL's password stayed readable because
 its user was a registered credential, set aside before the rule ran; and a registered credential
-across the URL's `://`, `:` or `@` takes the password into its own mask. (Not yet every rule:
+across the URL's `://`, `:` or `@` takes the password into its own mask, up to the authority's
+last `@`, where `urlsplit` ends the userinfo. (Not yet every rule:
 the labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its
 tail readable, as on main. Nor every key: the key pattern's 16 KB bound counts each mask inside
 the key as a stash token whose length grows with the masks before it, so a key near the bound
 is masked as a key or not depending on the text before it, and one a single pass cannot take
-whole is digested over its text with the masks inside it; on main too.)
+whole is masked as a key later, over its text with the masks inside it, or never; on main too.)
 Checks: `tests/test_redactor_url_password_and_digests.py` (twelve hash seeds in subprocesses,
 digests against an HMAC computed in the test, the evidence store's leak guard, a property over
 URL shapes, credentials across a URL's separators).
