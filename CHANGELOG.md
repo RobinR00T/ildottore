@@ -5,6 +5,45 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (an operator's file read whole, and its validation errors listed whole)
+
+- **An operator's file was read whole.** The scope, target, fleet and labels files and the policy
+  and signature packs were read with `Path.read_text`, with no limit: 100 MB of comments in a scope
+  or labels file took 39.5 s and 244 MB before the YAML loader refused it, and a sparse gigabyte of
+  labels peaked at about 2 GiB in `dottore calibrate` (2,009 and 2,116 MiB in two measures). A check
+  on the parsed document bounds what is built from the text, not the text. They are now read up to 1
+  MiB, the spec loader's limit: a larger regular file is refused before any of it is read (68 MiB
+  peak for the same gigabyte, most of it the CLI's imports), and a pipe or a device is read up to
+  one byte past the limit and refused if that byte comes, so `--scope <(cat scope.yaml)` and
+  `dottore fleet <(...)` still work (a target file still cannot be a pipe: `run` reads it more than
+  once). Exit 3, with an error that names the file and the sizes: `file is 1,073,741,824 bytes, over
+  the 1,048,576-byte cap`. The sizes carry thousands separators because, written bare, a size of
+  nine digits or more was masked by the CLI's redactor as a phone number. The figure, and reading
+  any file type rather than only a regular one, are the owner's decisions (OD-26). 1 MiB holds about
+  22,000 labels, 2,000 scope targets with two identities each, or the scope written for about 3,800
+  fleet entries; the largest file shipped here that is read this way, the signature corpus, is 8.7
+  KB.
+- **`dottore fleet` wrote a scope it could not read back.** The scope it writes repeats each
+  endpoint, so a fleet file under the new limit could write a scope over it: an 845,022-byte fleet
+  wrote a 1,355,024-byte scope with exit 0, and the `dottore run` it printed was refused. `fleet`
+  now measures every file it would write and refuses, before writing any, one over 1 MiB (exit 3,
+  `the scope.yaml this fleet would write is 1,355,024 bytes, over the 1,048,576-byte cap a file is
+  read up to; split the fleet`). Generated files are written with LF line ends on every platform, as
+  measured. Found by the pre-commit audit of this change.
+- **A validation error listed every problem, whole.** A scope, fleet or policy-pack file that failed
+  validation listed every error, and a key the operator typed is part of an error's field path: a
+  5.5 MB scope with 5,500 extra keys of 1,000 characters made `dottore run --dry-run` print one
+  `error:` line of 5,687,058 characters (exit 3). The first 20 problems are listed and the rest
+  counted (`; and 980 more`), and a field path or a reason longer than 300 characters is cut (`...
+  (1000 characters)`), as the spec loader does: a 1 MB scope of 1,000 such keys, under the read cap,
+  printed 1,034,057 bytes and now prints 7,171.
+- Not covered (OD-26): the report JSON that `dottore diff` and `calibrate` read and the evidence
+  artifacts that `replay` and `run --resume` read are still read whole; both are the tool's own
+  output and can pass 1 MiB legitimately, so each cap needs a figure measured on a real run. An
+  error outside the validation listing can still quote a value of the file whole (an unknown target
+  `type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Found by
+  the pre-commit audit of the alias-expansion cap (#71). Clause A-43 (u01).
+
 ### Fixed (a file nested past what the CLI can hold)
 
 - **`dottore diff` and `dottore calibrate` exited 1 on a report nested too deeply.** `json.loads`

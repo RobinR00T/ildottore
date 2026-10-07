@@ -83,6 +83,18 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
   classified by the status (a `401` stays a `401`).
+- **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
+  limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
+  from the command line). A larger regular file is refused before any of it is read; anything
+  else, such as a pipe (`--scope <(cat scope.yaml)`) or a device, is read up to one byte past
+  the limit and refused if that byte comes. A target file cannot be a pipe: `run` and
+  `fingerprint` read it more than once. The error names the file and the sizes, written with
+  thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and the
+  command exits 3. `dottore fleet` measures every file it would write and refuses, before
+  writing any, one over the limit: the scope it writes repeats each endpoint and is the largest.
+  1 MiB holds about 22,000 labels, 2,000 scope targets with two identities each, or the scope
+  written for about 3,800 fleet entries; the largest file shipped here that is read this way,
+  the signature corpus, is 8.7 KB.
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -136,7 +148,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   masked a real sha256 there only by its entropy, about 19 times in 20, so what appeared in
   clear was mostly a value that was not a digest, such as a key typed by mistake. A scope or
   fleet file that fails validation names each field and the reason, never the value
-  (pydantic's own message echoes it), and a YAML error in a scope, target, fleet or labels file
+  (pydantic's own message echoes it), for at most 20 problems, the rest counted (`; and 980
+  more`), and cuts a field path or a reason longer than 300 characters (`... (1000
+  characters)`); a YAML error in a scope, target, fleet or labels file
   gives the problem and where PyYAML found it: line and column, plus where the entry it was
   reading starts when PyYAML records that and it differs (a missing space after a colon is
   reported on the next line); a control character is located by its position instead
@@ -523,7 +537,9 @@ expands, counting every alias where it is used, past 100,000 nodes (a long text 
 per 64 characters), that nests deeper than 100 levels once its aliases are expanded, or that
 holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases used to turn a
 4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
-linter overflowed on. The scope, target, fleet and labels files have the same depth limit.
+linter overflowed on. The scope, target, fleet and labels files have the same depth limit, and
+are read up to the same 1 MiB (see **Bounded operator files** in §3), from any file; a scope,
+fleet or labels file can be a pipe.
 A key written twice in one
 mapping is a `PARSE_ERROR` too. A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,

@@ -62,6 +62,7 @@ from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.config_errors import yaml_problem
 from ildottore.shared.enums import Category, TargetType
+from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -1010,7 +1011,7 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
     from ildottore import safe_yaml
 
     try:
-        raw = safe_yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = safe_yaml.safe_load(read_text_capped(path))
     except yaml.YAMLError as exc:
         raise ValueError(f"target file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):

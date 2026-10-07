@@ -137,6 +137,42 @@ file's own `judge:` block, never from a `--judge` file, which could otherwise na
 any credential and have both written into the scope (SEC-04). Checks: the same file, plus
 `tests/cli/test_fleet.py`.
 
+**A-43 An operator's file is read up to 1 MiB, and its validation errors are listed up to 20
+(added 2026-10-07).** The scope, target, fleet and labels files and the policy and signature
+packs are read through `shared.files.read_text_capped`: a regular file over 1 MiB
+(`MAX_FILE_BYTES`, the spec loader's `MAX_YAML_BYTES`, pinned equal by a test) is refused on its
+size before any of it is read, and anything else (a pipe, a device) is read up to one byte past
+the cap and refused if that byte comes, so `/dev/zero` costs one cap. The refusal is an
+`OSError` (`EFBIG`) with the path and the sizes written with thousands separators, which every
+loader already reported as a file it cannot read, exit 3 at the CLI: written bare, a size of
+nine digits or more was masked as a phone number by the CLI's redactor (found by this clause's
+own CLI test). The text is what `Path.read_text(encoding="utf-8")` gave, line endings included,
+so a scope checksum covers the same text. `dottore fleet` measures every file it would write
+before it writes any, and refuses one over the cap: the scope repeats each endpoint, so an
+845,022-byte fleet file wrote a 1,355,024-byte scope with exit 0 that the `run` it printed then
+refused (pre-commit audit of this clause); with entries of about 170 bytes the crossing is at
+3,870. `shared.config_errors.validation_problems` lists the first 20 errors by default, counts
+the rest, and cuts a field path or a reason past 300 characters, as the spec loader cuts its
+schema messages; the scope, fleet and policy-pack loaders use that default. Both holes were
+found by the pre-commit audit of the alias-expansion cap (PR #71): the files were read whole
+with `Path.read_text`, so 100 MB of comments in a scope or labels file cost 39.5 s and 244 MB
+before the refusal and a sparse gigabyte of labels peaked at about 2 GiB (2,009 and 2,116 MiB in
+two measures), while a check on the parsed document bounds what is built from the text, not the
+text; and every validation error was listed whole, so a 5.5 MB scope with 5,500 extra keys of
+1,000 characters printed one `error:` line of 5,687,058 characters from `dottore run --dry-run`.
+The figure and reading any file type, not only a regular one, are the owner's decisions of
+2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and a labels file
+through a pipe worked and still do, and a named pipe with no writer still blocks, as before. A
+target file cannot be a pipe, as before: `run` reads it four times and `fingerprint` three, and
+the second read is empty. Not covered (OD-26): the report JSON that `dottore diff` and
+`calibrate` read, and the evidence artifacts `replay` and `run --resume` read; and an error
+outside the validation listing can still quote a value of the file whole (an unknown target
+`type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Checks:
+`tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after a growth, a
+pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each loader, the
+`fleet` boundary, the listing and its cut, the CLI's exit 3 and its one short line, and a sparse
+gigabyte in a subprocess bounded at 20 s and 256 MiB).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).
@@ -150,3 +186,10 @@ any credential and have both written into the scope (SEC-04). Checks: the same f
   checksum now, pluggable verifier interface so sigstore drops in without a shape change).
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
+- **OD-26** reading the operator's files. **Decided 2026-10-07 by the owner, built (A-43):** 1
+  MiB, the spec loader's figure, for the scope, target, fleet and labels files and the policy
+  and signature packs; any file type, with the read bounded at one byte past the cap. **Open:**
+  two reads of the tool's own output are still whole, the report JSON `cli/diff.load_findings`
+  reads for `dottore diff` and `calibrate`, and the evidence artifacts `store/replay.py` reads
+  for `replay` and `run --resume` (512 MiB held twice, 1,092 MiB, in the audit's measure); both
+  can pass 1 MiB legitimately, so each cap needs a figure measured on a real run.

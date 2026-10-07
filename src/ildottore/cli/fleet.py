@@ -55,6 +55,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ildottore import safe_yaml
 from ildottore.cli.wiring import shown_auth_ref
 from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.files import MAX_FILE_BYTES, read_text_capped
 from ildottore.shared.models import Target
 
 __all__ = [
@@ -151,7 +152,7 @@ def load_fleet(path: str | Path) -> FleetConfig:
     # was echoed back by pydantic, and a YAML error escaped as a traceback with exit 1, the code
     # for "findings below the threshold" (fifth audit of the residuals).
     try:
-        raw = safe_yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        raw = safe_yaml.safe_load(read_text_capped(path))
     except yaml.YAMLError as exc:
         raise ValueError(f"fleet file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
@@ -304,6 +305,12 @@ def _shown(field: str, value: str | None) -> str:
     return repr(value)
 
 
+def _rendered(doc: dict[str, object]) -> bytes:
+    """A generated file's bytes, measured and written as they are (LF line ends everywhere)."""
+
+    return yaml.safe_dump(doc, sort_keys=False).encode("utf-8")
+
+
 def _scope_doc(config: FleetConfig) -> dict[str, object]:
     """Build the authorization ``scope.yaml`` document (serialized via safe_dump)."""
 
@@ -347,26 +354,27 @@ def materialize_fleet(
 
     # Everything that can refuse runs before anything touches the disk: a refused judge used
     # to leave an empty --out directory, or an older scope.yaml in an existing one (review of
-    # PR #32).
-    scope_doc = _scope_doc(config)
-    out.mkdir(parents=True, exist_ok=True)
-    scope_path = out / "scope.yaml"
-    scope_path.write_text(yaml.safe_dump(scope_doc, sort_keys=False), encoding="utf-8")
-
-    target_paths: list[Path] = []
-    for entry in scannable:
-        target_path = out / f"target-{entry.id}.yaml"  # id is charset-validated (safe filename)
-        target_path.write_text(
-            yaml.safe_dump(_target_doc(entry), sort_keys=False), encoding="utf-8"
-        )
-        target_paths.append(target_path)
-
-    judge_path: Path | None = None
+    # PR #32). That includes the size of each file written: the scope repeats every endpoint,
+    # so a fleet file of 845,022 bytes wrote a scope of 1,355,024 that `run`, `fleet --run` and
+    # the printed command then refused at the read cap (pre-commit audit of A-43).
+    files: dict[str, bytes] = {"scope.yaml": _rendered(_scope_doc(config))}
+    for entry in scannable:  # the id is charset-validated (a safe file name)
+        files[f"target-{entry.id}.yaml"] = _rendered(_target_doc(entry))
     if config.judge is not None:
-        judge_path = out / "judge.yaml"
-        judge_path.write_text(
-            yaml.safe_dump(_judge_doc(config.judge), sort_keys=False), encoding="utf-8"
-        )
+        files["judge.yaml"] = _rendered(_judge_doc(config.judge))
+    for name, data in files.items():
+        if len(data) > MAX_FILE_BYTES:
+            raise ValueError(
+                f"the {name} this fleet would write is {len(data):,} bytes, over the "
+                f"{MAX_FILE_BYTES:,}-byte cap a file is read up to; split the fleet"
+            )
+
+    out.mkdir(parents=True, exist_ok=True)
+    for name, data in files.items():
+        (out / name).write_bytes(data)
+    scope_path = out / "scope.yaml"
+    target_paths = [out / f"target-{entry.id}.yaml" for entry in scannable]
+    judge_path = out / "judge.yaml" if config.judge is not None else None
 
     return MaterializedFleet(
         scope_path=scope_path, target_paths=target_paths, skipped=skipped, judge_path=judge_path

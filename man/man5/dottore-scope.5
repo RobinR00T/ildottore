@@ -12,7 +12,12 @@ declares many targets at once. Secrets are never written into any of them: keys 
 referenced by environment variable and resolved only at send time. A key written twice in one
 mapping is refused in all three, with where it was first written and where again, instead of
 keeping the last value. Keys brought in by a << merge can still be overridden; two << in one
-mapping are refused too, so merge several maps with one list (<<: [*a, *b]).
+mapping are refused too, so merge several maps with one list (<<: [*a, *b]). Each of the
+three, and a labels file of dottore calibrate, is read up to 1 MiB: a larger file is refused
+before any of it is read, and a pipe or other stream is read up to one byte past 1 MiB and
+refused if that byte comes (exit 3). A target file cannot be a pipe, as it is read more than
+once. dottore fleet refuses to write a scope or target file over 1 MiB. A scope or fleet file
+that fails validation lists at most 20 problems and counts the rest.
 .SH "SCOPE FILE"
 The authorization record. No scanning command runs without it. Default-deny: any host or
 path not under a target's endpoints is never contacted. An optional top-level checksum

@@ -3,6 +3,22 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): operator files read up to 1 MiB
+
+- On `fix/operator-file-read-cap` (`tests/cli/test_operator_file_cap.py`): the scope, target,
+  fleet and labels files and the policy and signature packs are read up to 1 MiB
+  (`shared.files.read_text_capped`), a regular file refused on its size before the read, a pipe
+  or device read up to one byte past the cap; `dottore fleet` refuses to write a file over the
+  cap; and `validation_problems` lists 20 errors by default and cuts a path or reason past 300
+  characters. From the pre-commit audit of the alias-expansion cap: 100 MB of comments cost 39.5
+  s and 244 MB, a sparse gigabyte peaked at about 2 GiB (now 68 MiB), and a scope's error line
+  ran to 5,687,058 characters. The owner decided on 2026-10-07: 1 MiB, the spec loader's figure,
+  and any file type with a bounded read, so `--scope <(...)` keeps working (OD-26). The CLI test
+  found that the redactor masks a bare size of nine digits or more as a phone number (sizes now
+  carry thousands separators); this change's own pre-commit audit found the `fleet` scope over
+  the cap (it repeats each endpoint). Open (OD-26): the report JSON of `diff` and `calibrate`
+  and the evidence artifacts of `replay` and `--resume` are still read whole. Clause A-43 (u01).
+
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
 - Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and

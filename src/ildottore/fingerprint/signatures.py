@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ildottore import safe_yaml
 from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.files import read_text_capped
 
 __all__ = [
     "CorpusCase",
@@ -126,7 +127,7 @@ def _read_yaml(path: Path) -> Any:
     """Parse a YAML document, raising :class:`SignaturePackError` on I/O/parse error."""
 
     try:
-        raw = path.read_text(encoding="utf-8")
+        raw = read_text_capped(path)
     except OSError as exc:  # missing/unreadable pack is a hard load failure
         raise SignaturePackError(f"cannot read signature file {path}: {exc}") from exc
     try:
