@@ -119,7 +119,7 @@ dottore calibrate report.json labels.yaml
 | `--runs N` | reproducibility runs (default 5) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep`/`-A` imply 2; an explicit `-T` wins); higher is faster/louder |
 | `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
-| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`) |
+| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling, and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes |
 | `--dry-run` | resolve + validate, send nothing |
 | `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |

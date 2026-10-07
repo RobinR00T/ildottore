@@ -34,7 +34,13 @@ from ildottore.shared.models import (
 from ildottore.store import paths
 from ildottore.store.replay import replay_run
 
-__all__ = ["RESUME_PLACEHOLDER_RISK", "load_resume_run", "stored_runs"]
+__all__ = [
+    "RESUME_PLACEHOLDER_RISK",
+    "adopt_resumed",
+    "load_resume_run",
+    "stored_adaptive",
+    "stored_runs",
+]
 
 #: The reconstructed findings need a ``risk``, and a prior partial run's score is not stored
 #: with the attempts. It is never published: the runner rescores every resumed spec from the
@@ -124,21 +130,6 @@ def load_resume_run(
                 manifest_store.pending_artifacts(run_id),
                 battery=manifest_store.recorded_battery(run_id),
             )
-            # Adopt what is on disk into the journal, now that it passed: artifacts written
-            # before the journal existed (a run started by an older version) were otherwise
-            # known to no record once this resume journaled new ones under the same spec, and
-            # the next resume refused the run as tampered (pre-commit audit of F11). A pending
-            # row whose file is present is confirmed the same way.
-            if adopt:
-                manifest_store.adopt_artifacts(
-                    run_id,
-                    [
-                        (attempt.spec_id, digest)
-                        for digest, attempt in zip(
-                            result.attempt_hashes, result.attempts, strict=True
-                        )
-                    ],
-                )
             row = manifest_store.get_run(run_id) or {}
         except TamperError as exc:
             raise ValueError(f"run {run_id!r} cannot be resumed: {exc}") from exc
@@ -179,7 +170,37 @@ def load_resume_run(
         )
         for spec_id, attempts in sorted(by_spec.items())
     ]
-    return TestRun(run_id=run_id, targets=[target], findings=findings, started_at=started_at)
+    run = TestRun(run_id=run_id, targets=[target], findings=findings, started_at=started_at)
+    if adopt and run_db is not None:
+        adopt_resumed(run_db, run)
+    return run
+
+
+def adopt_resumed(run_db: Path, run: TestRun) -> None:
+    """Journal every artifact of a resumed ``run`` as written, now that it passed the check.
+
+    Artifacts written before the journal existed (a run started by an older version) were
+    otherwise known to no record once this resume journaled new ones under the same spec, and
+    the next resume refused the run as tampered (pre-commit audit of F11). A pending row whose
+    file is present is confirmed the same way. ``dottore run`` calls this itself, past the last
+    refusal before any traffic, so a resume refused before it sends writes nothing (u12 A-48).
+    """
+
+    from ildottore.store import SqliteRunStore
+
+    if not Path(run_db).is_file():
+        return
+    # Every reference load_resume_run builds carries the digest its artifact is stored under.
+    with SqliteRunStore(Path(run_db)) as store:
+        store.adopt_artifacts(
+            run.run_id,
+            [
+                (finding.spec_id, ref.sha256)
+                for finding in run.findings
+                for ref in finding.evidence
+                if ref.sha256 is not None
+            ],
+        )
 
 
 def _assert_same_target(
@@ -241,6 +262,23 @@ def stored_runs(run_db: Path, run_id: str) -> int | None:
         context = store.get_run_context(run_id)
     value = (context or {}).get("runs")
     return int(value) if value is not None else None
+
+
+def stored_adaptive(run_db: Path, run_id: str) -> bool | None:
+    """Whether the halted campaign planned adaptively; ``None`` when it recorded no mode.
+
+    A resume has to keep that mode (:func:`_assert_same_context`), so the advice of a refusal
+    can only offer what keeps it.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        return None
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
+    value = (context or {}).get("adaptive")
+    return bool(value) if value is not None else None
 
 
 def _unverifiable(run_id: str, what: str, *, allow: bool, waivable: bool = True) -> None:
@@ -376,11 +414,19 @@ def _assert_same_context(
         )
     stored_adaptive = context.get("adaptive")
     if adaptive is not None and stored_adaptive is not None and bool(stored_adaptive) != adaptive:
+        # The flags that turn it on are named: the refusal named none, and it is the one an
+        # operator meets first when a -sV resume of a campaign run without it is refused for
+        # money too (u12 A-48).
+        remedy = (
+            "Resume with -sV, -A or --deep, whichever it ran with"
+            if stored_adaptive
+            else "Resume without -sV, -A or --deep"
+        )
         raise ValueError(
             f"run {run_id!r} halted with adaptive planning "
             f"{'on' if stored_adaptive else 'off'} and this invocation asks for "
             f"{'on' if adaptive else 'off'}. It reorders the mutators a spec runs, so the two "
-            "halves would not be the same campaign."
+            f"halves would not be the same campaign. {remedy}, or start a fresh run."
         )
     stored_runs = context.get("runs")
     if runs is not None and stored_runs is not None and int(stored_runs) != runs:

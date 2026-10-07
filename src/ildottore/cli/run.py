@@ -619,6 +619,41 @@ def fingerprint_probe_count() -> int:
     )
 
 
+def _probe_pass_remedy(adaptive_campaign: bool, *, attack_room: bool) -> str:
+    """The advice of a refusal because the ``-sV`` probe pass does not fit the request ceiling.
+
+    Every half of it has to let the invocation through (u12 A-48). Dropping ``-sV`` turns
+    adaptive planning off, and a resume of a campaign that planned adaptively is refused for
+    that, so there it is not offered: the advice was "Raise --budget-requests, or drop -sV"
+    for every campaign, and dropping ``-sV`` was refused again for one run with ``-sV`` or
+    ``--deep``. Nor is it offered when the ceiling cannot hold the rest of the campaign without
+    the probes either (``attack_room`` false, see :func:`_fits_without_probes`): a resume whose
+    spend left one request of room halted after it, exit 3, keeping nothing.
+    """
+
+    if adaptive_campaign:
+        return (
+            "Raise --budget-requests (the campaign ran with adaptive planning, which its resume "
+            "has to keep)"
+        )
+    if not attack_room:
+        return (
+            "Raise --budget-requests (without the probes, it would still not hold the rest of "
+            "the campaign)"
+        )
+    return "Raise --budget-requests, or drop -sV"
+
+
+def _fits_without_probes(plans: list[TargetPlan], ceiling: int, *, spent: int, done: int) -> bool:
+    """Whether the rest of every target's campaign fits ``ceiling`` with no probe pass.
+
+    ``spent`` is the spend the campaign has on record, ``done`` the requests a resume does not
+    send again (:func:`_answered_requests`); the rest is priced as ``--estimate`` prices it.
+    """
+
+    return all(spent + max(0, plan.estimate.total_requests - done) <= ceiling for plan in plans)
+
+
 def _no_judge_warning(
     plans: list[TargetPlan], routes: list[Any], judge_target: Target | None
 ) -> str | None:
@@ -1161,14 +1196,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     prior_spend: Spend | None = None
     resume_from: TestRun | None = None
     provisional: list[TargetPlan] | None = None
-    if opts.resume is not None:
-        # The budgets are derived from a plan, and the real plan needs the fingerprint, which
-        # SENDS. A provisional plan resolved with no fingerprint derives the same ceilings (the
-        # estimate counts specs and mutators, which -sV reorders rather than changes), so the
-        # wall-clock refusal can happen here rather than after 17 probes have gone out. The
-        # first version of this check sat below the probe pass, which is the exact defect the
-        # clause above it says was fixed.
-        provisional = resolve_target_plans(
+
+    def provisional_plans() -> list[TargetPlan]:
+        # No fingerprint: it needs the probe pass, which SENDS (see the resume block below).
+        return resolve_target_plans(
             scope=scope,
             targets=loaded_targets,
             specs=selected,
@@ -1183,17 +1214,16 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             ),
             judge=judge_target is not None,
         )
-        prior_spend = _prior_spend(run_db, opts.resume, provisional[0].budgets)
-        if opts.fingerprint_first and prior_spend is not None:
-            ceiling = provisional[0].budgets.max_requests
-            probes = fingerprint_probe_count() * len(loaded_targets)
-            if ceiling is not None and prior_spend.requests + probes > ceiling:
-                raise ValueError(
-                    f"run {opts.resume!r} has already spent {prior_spend.requests} of its "
-                    f"{ceiling}-request ceiling, and -sV would send {probes} more before any "
-                    "attack traffic. Three sequential resumes used to run a whole probe pass "
-                    "each, past an exhausted ceiling. Raise --budget-requests, or drop -sV."
-                )
+
+    #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
+    #: campaign that planned adaptively is refused without it (u12 A-48).
+    adaptive_campaign = False
+    if opts.resume is not None:
+        # Same campaign first, then money. The ceiling refusals below used to run first and
+        # advise "Raise --budget-requests, or drop -sV" to a resume this check then refused
+        # whichever was followed: raising, for a campaign run without -sV ("halted with
+        # adaptive planning off"); dropping it, for one run with it (u12 A-48). Read-only here:
+        # the evidence is adopted into the journal below, past the last refusal before traffic.
         resume_from = resume_mod.load_resume_run(
             evidence_root,
             opts.resume,
@@ -1205,9 +1235,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             judge=judge_target,
             adaptive=adaptive,
             allow_unverified=opts.resume_unverified,
-            # The modes that send nothing write nothing either: no journal adoption.
-            adopt=not (opts.dry_run or opts.estimate or opts.discovery_only),
+            adopt=False,
         )
+        adaptive_campaign = resume_mod.stored_adaptive(run_db, opts.resume) is True
         inherited = resume_mod.stored_runs(run_db, opts.resume)
         if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
             # stderr and never suppressed: this changes the denominator of the reproducibility
@@ -1219,6 +1249,37 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 file=sys.stderr,
             )
             opts.runs = inherited
+        # Inherited BEFORE the provisional plan below: it derives the ceilings the refusals
+        # read, and at this invocation's --runs (5 by default) a campaign run at --runs 20
+        # was refused against a 2,000-request ceiling where its own was 3,300 (pre-commit
+        # audit of u12 A-48).
+        # The budgets are derived from a plan, and the real plan needs the fingerprint, which
+        # SENDS. A provisional plan resolved with no fingerprint derives the same ceilings (the
+        # estimate counts specs and mutators, which -sV reorders rather than changes), so the
+        # wall-clock refusal can happen here rather than after 17 probes have gone out. The
+        # first version of this check sat below the probe pass, which is the exact defect the
+        # clause above it says was fixed.
+        provisional = provisional_plans()
+        prior_spend = _prior_spend(run_db, opts.resume, provisional[0].budgets)
+        if opts.fingerprint_first and prior_spend is not None:
+            ceiling = provisional[0].budgets.max_requests
+            probes = fingerprint_probe_count() * len(loaded_targets)
+            if ceiling is not None and prior_spend.requests + probes > ceiling:
+                remedy = _probe_pass_remedy(
+                    adaptive_campaign,
+                    attack_room=_fits_without_probes(
+                        provisional,
+                        ceiling,
+                        spent=prior_spend.requests,
+                        done=_answered_requests(resume_from, selected),
+                    ),
+                )
+                raise ValueError(
+                    f"run {opts.resume!r} has already spent {prior_spend.requests} of its "
+                    f"{ceiling}-request ceiling, and -sV would send {probes} more before any "
+                    "attack traffic. Three sequential resumes used to run a whole probe pass "
+                    f"each, past an exhausted ceiling. {remedy}."
+                )
         if not opts.quiet:
             done, again = resume_progress(resume_from)
             print(
@@ -1250,12 +1311,27 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         # fingerprint is what feeds the plan the ledger is later derived from.
         probe_total = fingerprint_probe_count() * len(loaded_targets)
         if probe_total > opts.budget_requests:
+            # On a resume this is reached only with no spend on record (the pre-check above
+            # refuses first otherwise), so the ceiling covers this invocation alone.
+            remedy = _probe_pass_remedy(
+                adaptive_campaign,
+                attack_room=_fits_without_probes(
+                    provisional or provisional_plans(),
+                    opts.budget_requests,
+                    spent=0,
+                    done=_answered_requests(resume_from, selected),
+                ),
+            )
             raise ValueError(
                 f"-sV sends {probe_total} probe(s) ({fingerprint_probe_count()} per target "
                 f"across {len(loaded_targets)}), which is more than the --budget-requests "
-                f"ceiling of {opts.budget_requests}. Raise the ceiling or drop -sV: the probe "
-                "pass is traffic to the target like any other."
+                f"ceiling of {opts.budget_requests}: the probe pass is traffic to the target "
+                f"like any other. {remedy}."
             )
+    if resume_from is not None and not sends_nothing:
+        # Adopted only here, past the last refusal before any traffic, so a refused resume
+        # writes nothing; and the modes that send nothing write nothing either (u12 A-48).
+        resume_mod.adopt_resumed(run_db, resume_from)
     # One run id per target, minted HERE rather than inside the campaign, because the probe
     # pass happens first and its evidence has to file under the run it belongs to. A resumed
     # campaign keeps the original id (the evidence and the run store are keyed by it).
@@ -1305,6 +1381,21 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             if opts.budget_requests is not None
             else None
         )
+
+        def ceiling_remedy() -> str:
+            # A resumed pass that reaches the ceiling with a spend on record has its sends
+            # recorded, and they fill it; otherwise the ceiling covers this invocation alone.
+            return _probe_pass_remedy(
+                adaptive_campaign,
+                attack_room=prior_spend is None
+                and _fits_without_probes(
+                    provisional or provisional_plans(),
+                    opts.budget_requests or 0,
+                    spent=0,
+                    done=_answered_requests(resume_from, selected),
+                ),
+            )
+
         for _, target, (mock_scenario, real_target) in routes:
             if opts.resume is None:
                 starts[target.id] = wiring.utc_timestamp()
@@ -1330,8 +1421,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 raise ValueError(
                     f"the -sV probe pass on {target.id!r} reached the --budget-requests ceiling "
                     f"({exc}) after {exc.requests} request(s), before any attack traffic: "
-                    "retries count as requests. Raise the ceiling or drop -sV. The exchanges are "
-                    f"in {evidence_root / run_ids[target.id] / 'probes'}."
+                    f"retries count as requests. {ceiling_remedy()}. The exchanges are in "
+                    f"{evidence_root / run_ids[target.id] / 'probes'}."
                 ) from exc
             fingerprints[target.id] = probe_pass.fingerprint
             probes_sent[target.id] = probe_pass.requests

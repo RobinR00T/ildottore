@@ -3,6 +3,38 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): a refused `--resume -sV` whose advice was refused in turn
+
+- Found by the pre-commit audit of `fix/resume-wall-flag-name` and fixed on
+  `fix/resume-sv-ceiling-advice`: `run --resume -sV` with a request ceiling too small for the probe
+  pass was refused with "Raise --budget-requests, or drop -sV" before the planning-mode check, and
+  each half was refused again for one kind of campaign (measured through the CLI on `0501752`:
+  raising, on a campaign halted without `-sV`; dropping `-sV`, on one halted with `-sV` or
+  `--deep`). The campaign checks (target, route, judge, planning mode, `--runs`, battery, evidence)
+  now run before the wall-clock and request-ceiling refusals, and the campaign's `--runs` is
+  inherited before the plan those ceilings come from (a campaign at `--runs 20` was refused against
+  2,000 requests where its own derived ceiling was 3,300); the planning-mode refusal names `-sV`,
+  `-A` and `--deep`; the three probe-pass refusals offer dropping `-sV` only when it lets the resume
+  through (not on a campaign that planned adaptively, and only when the ceiling holds the rest of
+  the campaign without the probes, as `--estimate` prices it). The journal adoption moved past the
+  last refusal before traffic, so a resume refused before it sends writes nothing (on `0501752` the
+  `--budget-requests` pre-flight refused after adopting, when no spend was recorded; and no test
+  checked that `run` adopts at all, the new one checks the halted run's digests).
+  `tests/cli/test_resume_sv_advice.py` follows and pins every piece of advice through the CLI; 20 of
+  its 24 tests fail on `0501752`. Contract u12 A-48. The pre-commit audit of the change (a 120-case
+  matrix through the CLI) found the spent-ceiling case, the `--runs` order, an unfollowed pre-flight
+  advice and miscounted figures; its delta round (no regression, 2,367 tests green) a ceiling one
+  request past the spend, a ceiling of 0 and advice written ahead of the words the test reads; its
+  third round (no regression, 2,374 tests green) one untested refusal case; all fixed here. What
+  `--estimate` does not price (the multi-identity sweep, which the open #60 adds to the estimate,
+  and retries) can still halt a followed "drop -sV" at an exact fit; written in A-48. Left open, a
+  question for the owner: the recorded planning mode is one flag for `-sV`, `-A` and `--deep`, so a
+  campaign run with `-sV` resumes with `--deep` in its place (measured: it goes through), and its
+  second half runs the mutators in their declared order, with no fingerprint; the advice never
+  offers that swap. Also open, from `0501752`: a stored mode that is not a boolean is read by
+  truthiness (`"false"` reads as on), where a wrong-typed `runs` or spend is refused as corrupt; and
+  only the request axis is read, so a campaign halted on `--budget-tokens` is told about requests.
+
 ## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
 
 - Found on `fix/huge-int-repr` and fixed on `fix/target-file-validation`: a wrong value under a
