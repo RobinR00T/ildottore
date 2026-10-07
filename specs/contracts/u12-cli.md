@@ -232,19 +232,19 @@ the invocation's default).
 
 **A-38 A CLI error names the operator's existing file, and reads the rest of the message as
 before (added 2026-10-07).** Besides the existing part of an absolute path up to the first space,
-quote or bracket (unchanged), `_masked` keeps out of the entropy rule a path that exists written
+quote or bracket (main's rule, with main's `Path.exists` calls), `_masked` keeps out of the entropy rule a path that exists written
 whole: absolute, or relative to the working directory as one word; read directory by directory,
 so a directory holding a space or a bracket is read whole; starting and ending between
 characters the entropy rule does not join into a token, so every other token is judged exactly
-as before. A kept text holding 8 consecutive characters of a registered credential goes back to
+as before, up to the cost cap. Two kept parts that only touch are judged apart. A kept text holding 8 consecutive characters of a registered credential goes back to
 the entropy rule, and a whole path holding one is not kept. A report named after a commit SHA
 read `«REDACTED:high_entropy»` before a colon, relative, or under a directory with a space, and
 `dottore diff` printed the key in an incomplete report's reason that `calibrate` masked (audits
 of PR #61). Three versions that kept more (the name an `OSError` quotes, the existing directories
 of a missing path through a space, a `//` or a `/./`) printed keys that main masked and were
 withdrawn (OD-25; pre-commit, delta and pre-merge audits). `diff`'s incomplete-report refusal
-goes through `_masked`. One error costs at most 1,024 filesystem lookups (a 1 MiB message cost
-524,032), and no walk starts inside what another already read. Checked by
+goes through `_masked`. One error costs at most 1,024 filesystem lookups and 65,536 checks (a
+1 MiB message cost 524,032 lookups), and no walk starts inside what another already read. Checked by
 `tests/cli/test_masked_paths.py`, and by a differential fuzz against main: no key main masked
 printed, in 120,000 messages.
 
@@ -299,7 +299,8 @@ pinned:
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
 - **OD-25** the name of a file that does not exist in a CLI error (a mistyped report named
   after a commit SHA): print it, or keep it masked. Built reversibly (2026-10-07, A-38):
-  masked, as on main, its existing directory printed. Printing the name an `OSError`
+  masked, as on main, its existing directories printed up to the first space, quote or bracket.
+  Printing the name an `OSError`
   carries when it looks like a file's (an extension, a directory that exists) printed an
   `sk-ant-` key given as `<key>.json` and an Azure connection string in the pre-commit audit.
   Alternatives: print the directory and the extension and mask the stem unless it is a 40- or

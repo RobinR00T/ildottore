@@ -354,6 +354,65 @@ def test_part_of_a_registered_credential_after_an_existing_directory_is_masked(
     assert key[:16] not in _masked(ValueError(text))
 
 
+def test_a_part_shorter_than_the_entropy_minimum_keeps_its_path_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """12 characters of a key in a whole path: main judged `/report-<12>` and masked it; a
+    16-character window kept the path and printed them (delta audit of the rebuild)."""
+
+    monkeypatch.setattr(redactor_mod, "_KNOWN_SECRETS", set())
+    register_known_secret(PART_KEY)
+    _complete_report(tmp_path / f"report-{PART_KEY[:12]}.json")
+    text = f"cannot read {tmp_path}/report-{PART_KEY[:12]}.json: not a report"
+    assert PART_KEY[:12] not in _masked(ValueError(text))
+
+
+def test_the_window_is_eight_characters(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(redactor_mod, "_KNOWN_SECRETS", set())
+    register_known_secret(PART_KEY)
+    parts = redactor_mod.known_secret_parts()
+    assert redactor_mod.holds_known_secret_part(f"x-{PART_KEY[5:13]}-y", parts)
+    assert not redactor_mod.holds_known_secret_part(f"x-{PART_KEY[5:12]}-y", parts)
+
+
+def test_two_kept_parts_that_touch_are_judged_apart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A digest the error carries, glued to a long kept path: merged, the digest that is part of
+    a registered key was judged with the path and diluted below the threshold (delta audit)."""
+
+    import hashlib
+
+    digest = hashlib.sha256(b"carried").hexdigest()
+    monkeypatch.setattr(redactor_mod, "_KNOWN_SECRETS", set())
+    register_known_secret(f"sk-{digest}")
+    folder = tmp_path.joinpath(*(c * 250 for c in "abc"))
+    folder.mkdir(parents=True)
+
+    class Carrying(ValueError):
+        digests = (digest,)
+
+    assert digest not in _masked(Carrying(f"tampered: {digest}{folder} (see {folder})"))
+
+
+def test_main_rule_stops_where_path_exists_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Python 3.11 and 3.12 raise on a name too long, and main kept nothing for that token;
+    `os.path.exists` went on to `/usr`, and the key's 14 characters were judged alone."""
+
+    import errno
+
+    real_exists = Path.exists
+
+    def exists(self: Path, *args: object, **kwargs: object) -> bool:
+        if any(len(part) > 255 for part in self.parts):
+            raise OSError(errno.ENAMETOOLONG, "File name too long")
+        return real_exists(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "exists", exists)
+    text = "upstream said: /usr/Zq8Xv3Lm9Pw2Rt." + "a" * 300
+    assert "Zq8Xv3Lm9Pw2Rt" not in _masked(ValueError(text))
+
+
 # --- the incomplete-report refusal goes through the redactor -----------------------------------
 
 
@@ -446,3 +505,38 @@ def test_a_walk_that_keeps_nothing_is_not_read_again_from_inside(
     text = "cannot read " + "/." * 3000 + "//x"
     _masked(ValueError(text))
     assert calls <= 2 * 3000, "one walk, a check per name"
+
+
+def test_one_error_makes_a_bounded_number_of_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cached answers cost too: main's walk through 2,047 parents of each of 256 tokens made
+    524,288 checks after its 1,024 lookups (delta audit of the rebuild)."""
+
+    from ildottore.cli import app as app_mod
+
+    calls = 0
+    real_ask = app_mod._Lookups._ask
+
+    def counting(self: object, *args: object) -> object:
+        nonlocal calls
+        calls += 1
+        return real_ask(self, *args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(app_mod._Lookups, "_ask", counting)
+    deep = "/a" * 500
+    for text in (
+        " ".join(["/a" * 2047] * 256),
+        # One new lookup per token, 500 cached answers each: 261,000 checks under the lookup cap.
+        " ".join(f"{deep}/x{i}" for i in range(600)),
+    ):
+        calls = 0
+        _masked(ValueError(text))
+        assert calls <= 65_536 + 2, "the cap is `_MAX_CHECKS` in cli/app.py"
+
+
+def test_a_path_written_again_is_walked_once(tmp_path: Path) -> None:
+    """Each copy walked its 500 cached parents again and used up the checks a later report
+    needed."""
+
+    report = _not_a_report(tmp_path / f"report-{SHA}.json")
+    text = " ".join(["/a" * 500] * 600) + f" then {report}: expected a JSON run report"
+    assert f"{report}: expected" in _masked(ValueError(text))

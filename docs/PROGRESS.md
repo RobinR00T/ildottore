@@ -9,12 +9,14 @@ The carryover ledger. Every agent session updates this so context survives even 
   rule, `_masked` keeps an existing path written whole, absolute or relative (one word, from the
   working directory), before a colon or a period and through directories with a space or
   `()[],;'"`, between characters the entropy rule does not join into a token, so the rest of
-  the message is read as on main; one error costs at most 1,024 lookups. `dottore diff`'s
+  the message is read as on main up to a cost cap (1,024 lookups, 65,536 checks). `dottore diff`'s
   incomplete-report refusal goes through `_masked`, as `calibrate`'s does. Found by the audits of
   PR #61. Three audits found the fix printing keys main masked while it kept more than whole
   paths (the name an `OSError` quotes, the existing directories of a missing path through a
   space, a `//` or a `/./`), so it was rebuilt on main's rule; a differential fuzz of 120,000
-  messages finds no such key now. Open for the owner: OD-25, printing the name of a file that
+  messages finds no such key now. The delta audit of the rebuild found main's rule calling
+  `os.path.exists` where main called `Path.exists` (which raises on 3.11 and 3.12), cached checks
+  left uncounted, and touching parts merged; all three fixed. Open for the owner: OD-25, printing the name of a file that
   does not exist. PR #51 touches the same S6 row and `diff` refusal lines, so the second to merge
   resolves them (`_masked` applies `visible_controls` after #51, so the wrapper on the refusal
   goes).

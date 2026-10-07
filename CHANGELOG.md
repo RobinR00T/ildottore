@@ -20,33 +20,40 @@ versioning: [SemVer](https://semver.org/).
   relative to the working directory as one word.
 - **The rest of the message is read as before, by construction.** A whole path starts and ends
   between characters the entropy rule does not join into a token, so every other token is judged
-  exactly as on main, and main's rule is unchanged. Three versions of this fix kept more (the
+  exactly as on main, and main's rule makes main's calls (`Path.exists`, which on Python 3.11 and
+  3.12 raises on a name too long or a directory that cannot be read, and main kept nothing for
+  that token; `os.path.exists` went on to its parent and printed a key), until the cost cap
+  below. Three versions of this fix kept more (the
   existing directories of a missing path through a space or a `//`, the name an `OSError`
   quotes when it looked like a file's) and each printed keys that main masked: an `sk-ant-` key
   given as `<key>.json`, an Azure connection string, a key after `<dir with space>/` or `/./`
   (pre-commit, delta and pre-merge audits). A differential fuzz of 120,000 messages against main
-  finds no key printed that main masked; the earlier versions printed about 120 in every 20,000.
+  finds no key printed that main masked (on 3.14, and 23,000 more messages with other shapes in
+  the delta audit of the rebuild); the earlier versions printed about 120 in every 20,000.
 - **A kept text holding 8 consecutive characters of a registered credential goes back to the
   entropy rule** (`redactor.known_secret_parts`, `holds_known_secret_part`): judged on its own
   when main's rule kept it (main asked only whether it was inside the key or held it whole, and
   printed `<dir>/<16 characters of the key>.json` followed by a space), and not kept at all when
-  only the whole-path rule would have. The `/` before a masked name is printed
+  only the whole-path rule would have. Two kept parts that only touch stay two parts, as on
+  main: merged, a digest glued to a long kept path was diluted below the threshold. The `/`
+  before a masked name is printed
   (`<dir>/«REDACTED...».json`): the mask used to take it, which read as a sibling of the
   directory.
 - **A file that does not exist keeps no name** (OD-25, open): main's rule still prints the
-  existing directories of an absolute path. Keeping the name an `OSError` carries when it looked
+  existing directories of an absolute path, up to the first space, quote or bracket. Keeping the name an `OSError` carries when it looked
   like a file's (an extension, a directory that exists) printed an `sk-ant-` key given as
   `<key>.json`, an `sk-proj-` key as `<key>.yaml` and an Azure connection string, which ends in
   `.windows.net`, all of which main masked, and was withdrawn before commit.
-- **One error costs at most 1,024 filesystem lookups**, main's rule included, each check made
-  once; one start tries at most 255 candidates for a name (NAME_MAX); no walk starts inside what
-  another already read (`/./././...//` cost the square of its length); and the registered
-  credentials are checked through one set built per error (a check per kept path and per part
-  cost 55 s on a 1 MiB error with a 2,000-character credential). A 1 MiB message of `/a/a/...`
-  tokens (a target's transport error quoted in a halted report's reason, which `calibrate`
-  prints) cost 524,032 lookups and about 7 s on main; it costs 2 lookups. Past the cap nothing
-  more is kept, so it is masked. A word with no run of 16 characters the entropy rule could
-  mask is not looked up.
+- **One error costs at most 1,024 filesystem lookups and 65,536 checks** (a cached answer is a
+  check), main's rule included: each distinct token is walked once; one start tries at most 255
+  candidates for a name (NAME_MAX); no walk starts inside what another already read
+  (`/./././...//` cost the square of its length); and the registered credentials are checked
+  through one set built per error (a check per kept path and per part cost 55 s on a 1 MiB error
+  with a 2,000-character credential). A 1 MiB message of 256 tokens of `/a` written 2,047 times
+  (a target's transport error quoted in a halted report's reason, which `calibrate` prints) made
+  524,032 lookups and 8.9 s of CPU on main; it makes 1,024 and 0.5 s. Past either cap nothing
+  more is kept, so the rest is judged as text, a path main would have kept included. A relative
+  word with no run of 16 characters the entropy rule could mask is not looked up.
 - **`dottore diff` masks an incomplete report's reason, as `calibrate` does.** The refusal printed
   `summary.status.reason`, which quotes a target's transport error, without the redactor: a key or
   a high-entropy token in it printed in clear while `calibrate` masked the same text. It is now a
@@ -61,7 +68,7 @@ versioning: [SemVer](https://semver.org/).
 - Tests: `tests/cli/test_masked_paths.py` (CliRunner; SHA-named files, absolute and relative,
   existing and missing, in directories named with a space, parentheses, brackets, a comma, a
   semicolon and quotes, and every key and credential part the three audits printed). Each guard
-  was removed in turn and a test failed every time (20 mutants).
+  was removed in turn and a test failed every time (25 mutants).
 
 ### Fixed (a target file's bad value printed pydantic's error, value included)
 
