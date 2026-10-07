@@ -27,6 +27,56 @@ The carryover ledger. Every agent session updates this so context survives even 
   OD-31 (several queries on one socket), OD-32 (a reconnect mid-conversation for a stateless
   server), OD-33 (a `websocket:` block in a fleet entry). Not built: binary frames, SSE or
   polled streams (declare them as `rest`), a session that survives a reconnect.
+## State, 2026-10-07 (afternoon): a number too long to write out
+
+- On `fix/huge-int-repr` (`tests/cli/test_huge_numbers.py`, clause A-40 in u02): an int past
+  Python's digit limit (4,300 by default, 640 at the lowest), which YAML builds from `0x` and 4,000
+  `f`, is reported where it enters, with its file, and never printed: a `SCHEMA` finding at its
+  path in a spec (it was a lint traceback with exit 1, and `run --spec-path` exited 3 naming no
+  file), a refusal naming the labels file for a `calibrate` key, the report for `diff` and
+  `calibrate` (`json.loads` raises a plain `ValueError` past the limit), the target file for its
+  `type`, `mock_scenario` and `seeded_setup` keys. Swept at every value and key of the 75 specs:
+  6,112 of 7,599 placements were a traceback on the base, none now; inside a `!!set` or `!!omap`,
+  which the first version did not walk (pre-commit audit), none either. Independent of a cap on
+  literal length in the YAML loader (`fix/yaml-construction-cost`, A-41). Found on the way and left
+  as separate tasks: a number as a key of a fixture tool call's `args` is a lint traceback where
+  the evaluator matches argument names (A-44, another session); a target file's bad
+  `capabilities` or `sampling_defaults` printed pydantic's raw error with the value and no file
+  (fixed by #73, A-45); a value JSON cannot hold (an unquoted date, a set) passes lint and the dry
+  run exits 1 on it, as does a `--runs` past what a float holds.
+
+## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
+
+- Found on `fix/huge-int-repr` and fixed on `fix/target-file-validation`: a wrong value under a
+  target file's `capabilities` or `sampling_defaults` (`tools: maybe-later`, `temperature: warm`)
+  reached the CLI as pydantic's raw error, four lines quoting the value and naming no file (exit 3
+  was already right). `load_target` now wraps it like the scope, fleet and pack loaders: one
+  `error:` line, `target file <path> '<block>' failed validation: <field>: <reason>`, no value.
+  Contract u12 A-45 (A-43 and A-44 were claimed the same afternoon by `fix/operator-file-read-cap`
+  and `fix/lint-nonstring-arg-key`). Left open, written in the clause: a key `capabilities` does
+  not know, or a `capabilities` that is empty or `false`, is dropped without a word; other
+  refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
+  the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
+  `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
+  the value quoted, no file name); not fixed here. `tests/cli/test_target_file_validation.py`: 19
+  of its 24 tests fail on `0501752`, the other 5 guard that each test value survives the redactor.
+
+## State, 2026-10-07 (morning): a file nested past what the CLI can hold
+
+- Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and
+  `dottore calibrate` exited 1 (findings below `--fail-on`) with a `RecursionError` traceback on a
+  report nested past the JSON parser's stack, and so did `replay` and `run --resume` on a run store
+  column nested the same way. Each is now refused where it is parsed (exit 3, one `error:` line
+  naming the file or the column). The probe and three audits found the same exit 1 one step later: a
+  run status formatted after it parsed, a run store column too deep to write back, a stored spend or
+  `--runs` that is not an amount (an infinity, a list, an integer past a float; a negative spend,
+  and `true` or a missing `--runs`, were accepted), and YAML anchors chained into a value 1,600 to
+  80,000 levels deep that `lint`, `run -t` and `calibrate` overflowed on. Run store columns and
+  every YAML loader (aliases expanded) now stop at 100 levels; the repository nests at most 11.
+  Contract u12 A-9 and A-24 and u02 §4 say so; no new clause. Left open as their own tasks: a
+  hostile target's reply nested too deeply aborts the whole campaign (exit 3) instead of failing one
+  attempt (`fix/target-deep-json`), and the YAML loaders other than the spec loader have no cap on
+  expanded size. `tests/cli/test_deep_json.py`; 45 of the 49 new tests fail on `0f936b6`.
 
 ## State, 2026-10-07 (night): OD-18 option B built
 

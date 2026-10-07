@@ -151,6 +151,39 @@ class CountingAdapter:
         return Capabilities()
 
 
+# --- hostile JSON ------------------------------------------------------------------
+
+#: Past every supported interpreter's JSON parser. Measured on macOS: Python 3.12 stops near
+#: 10,000 levels and 3.14 near 116,000 (it measures the stack); 3.11 counts the levels against
+#: its recursion limit of 1,000 (not measured: no 3.11 here; CI runs 3.11).
+DEEP_JSON_DEPTH = 200_000
+
+
+def deep_json(shape: str = "array") -> str:
+    """A JSON document nested ``DEEP_JSON_DEPTH`` levels, as an array or as an object."""
+
+    if shape == "array":
+        return "[" * DEEP_JSON_DEPTH + "]" * DEEP_JSON_DEPTH
+    return '{"a":' * DEEP_JSON_DEPTH + "1" + "}" * DEEP_JSON_DEPTH
+
+
+def deep_yaml_anchors(per_anchor: int, anchors: int, line: str = "_{name}: {value}") -> str:
+    """YAML lines whose last anchor, ``*deep``, is ``per_anchor * anchors`` levels deep.
+
+    Each anchor nests the previous one ``per_anchor`` levels further, so no nesting as written
+    is deeper than ``per_anchor``: the composer's own guard never sees the depth. ``line`` places
+    each anchored value (a mapping key by default, or a list item where the schema allows one).
+    """
+
+    lines = []
+    for index in range(anchors):
+        name = "deep" if index == anchors - 1 else f"n{index}"
+        inner = f"*n{index - 1}" if index else ""
+        value = f"&{name} " + "[" * per_anchor + inner + "]" * per_anchor
+        lines.append(line.format(name=name, value=value))
+    return "\n".join(lines) + "\n"
+
+
 # --- on-disk scope + target fixtures -----------------------------------------------
 
 

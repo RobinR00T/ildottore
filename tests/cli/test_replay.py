@@ -11,13 +11,16 @@ import asyncio
 import uuid
 from pathlib import Path
 
+from click.testing import Result
 from typer.testing import CliRunner
 
 from ildottore.cli import replay as replay_mod
 from ildottore.cli import wiring
+from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
+from ildottore.store.run_sqlite import SqliteRunStore
 
-from .conftest import make_spec, write_scope, write_target
+from .conftest import deep_json, make_spec, write_scope, write_target
 
 runner = CliRunner()
 
@@ -61,3 +64,48 @@ def test_replay_cli(tmp_path: Path) -> None:
     res = runner.invoke(app, ["replay", run_id, "--evidence-root", str(evidence_root)])
     assert res.exit_code == 0
     assert run_id in res.stdout
+
+
+def _replay_with(tmp_path: Path, evidence_root: Path, run_id: str, sql: str, value: str) -> Result:
+    """Replay against the run store after one column was overwritten with ``value``."""
+
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store._conn.execute(sql, (value, run_id))
+        store._conn.commit()
+    return runner.invoke(
+        app,
+        [
+            *("replay", run_id, "--evidence-root", str(evidence_root)),
+            *("--run-db", str(tmp_path / "runs.sqlite")),
+        ],
+    )
+
+
+def test_replay_reads_evidence_refs_nested_too_deeply_as_unreadable(tmp_path: Path) -> None:
+    """As any reference column that is not JSON (its spec cannot be verified, and says so):
+    past the parser's stack it was a RecursionError, a traceback and exit 1 (2026-10-07)."""
+
+    evidence_root, run_id = _run_campaign_to_evidence(tmp_path)
+    sql = "UPDATE findings SET evidence_refs_json = ? WHERE run_id = ?"
+
+    unreadable = _replay_with(tmp_path, evidence_root, run_id, sql, "not json")
+    deep = _replay_with(tmp_path, evidence_root, run_id, sql, deep_json())
+
+    assert unreadable.exit_code == 0
+    assert (deep.exit_code, deep.stdout, deep.stderr) == (
+        unreadable.exit_code,
+        unreadable.stdout,
+        unreadable.stderr,
+    )
+
+
+def test_replay_exits_3_on_a_battery_record_nested_too_deeply(tmp_path: Path) -> None:
+    evidence_root, run_id = _run_campaign_to_evidence(tmp_path)
+    sql = "UPDATE runs SET spec_digests_json = ? WHERE run_id = ?"
+
+    result = _replay_with(tmp_path, evidence_root, run_id, sql, deep_json("object"))
+
+    assert result.exit_code == ExitCode.ERROR, (result.exception, result.stderr)
+    lines = result.stderr.splitlines()
+    assert len(lines) == 1 and lines[0].startswith("error: ")
+    assert "spec_digests_json is not readable JSON" in lines[0]

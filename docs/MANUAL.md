@@ -213,6 +213,16 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
+A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
+`max_tokens` outside 1 to its cap or a key `sampling_defaults` does not know is refused before
+anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
+problems found in that block (the `capabilities` block alone if both are wrong), never the value
+written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
+valid boolean, unable to interpret input`. The field is printed from the key you wrote, so a control
+character in a key reaches the terminal as written (a line break splits the line). What can be read
+is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
+`top_p` have no range check. A key `capabilities` does not know is ignored, and so is a
+`capabilities` that is empty or `false`.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.
@@ -632,12 +642,22 @@ A spec pack can come from a third party, so lint reads only regular files that r
 their pack directory (or, for loose specs, the directory they were found in), at most 1 MiB
 each; a file named directly on the command line is read wherever it points. A document that
 expands, counting every alias where it is used, past 100,000 nodes (a long text counts one node
-per 64 characters), or that holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a
-few aliases used to turn a 4 KB file into 52 MB of error text. A key written twice in one
+per 64 characters), that nests deeper than 100 levels once its aliases are expanded, or that
+holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases used to turn a
+4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
+linter overflowed on. The scope, target, fleet and labels files have the same depth limit.
+A key written twice in one
 mapping is a `PARSE_ERROR` too. A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
-schema errors are listed per file. An oracle marker that an echo of the
+schema errors are listed per file. A number too long for Python to write out (more than
+`sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
+`f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included), and
+nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
+as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
+`mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An
+oracle marker that an echo of the
 request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered
 into the spec's images (see `CONTRIBUTING.md`). An evaluator config that would silently not
 check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no usable
@@ -728,9 +748,11 @@ inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits 
 regression is present, so it is CI-gateable like `run`. A report covering several targets, or
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
-complete is refused too. `dottore calibrate REPORT LABELS` applies the same one-target rule,
-counts agreement as an exact status match, prints an undefined precision or recall as `n/a`
-and floors its percentages (99.6% is shown as 99%, not 100%).
+complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
+what the JSON parser holds), with the file named. `dottore calibrate REPORT LABELS` applies the
+same one-target rule and the same refusals, counts agreement as an exact status match, prints an
+undefined precision or recall as `n/a` and floors its percentages (99.6% is shown as 99%, not
+100%).
 
 ### `dottore schema export`, the JSON Schemas
 

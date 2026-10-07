@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,21 @@ def test_unsupported_pack_version_rejected(tmp_path: Path) -> None:
     bad.write_text("pack_version: 999\nname: x\nentries: []\n", encoding="utf-8")
     with pytest.raises(SignaturePackError, match="unsupported pack_version"):
         load_pack(bad)
+
+
+def test_pack_version_too_long_to_write_out_is_rejected(tmp_path: Path) -> None:
+    """Quoting it in the refusal raised ``ValueError: Exceeds the limit`` instead (A-40). At the
+    lowest digit limit, so a 600-character literal is past it whatever the YAML loader caps."""
+
+    bad = tmp_path / "pack.yaml"
+    bad.write_text(f"pack_version: 0x{'f' * 600}\nname: x\nentries: []\n", encoding="utf-8")
+    before = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(640)
+    try:
+        with pytest.raises(SignaturePackError, match="unsupported pack_version a number too long"):
+            load_pack(bad)
+    finally:
+        sys.set_int_max_str_digits(before)
 
 
 def test_non_mapping_pack_rejected(tmp_path: Path) -> None:

@@ -77,6 +77,127 @@ versioning: [SemVer](https://semver.org/).
   library's headers are refused). Five surviving mutants got a test each (compression never
   offered, in-memory redaction, a bounded close, the transcript not a metadata tell, an absent
   block out of the digest). `tests/adapters/test_websocket_audit.py` holds the regressions.
+### Fixed (a number too long to write out)
+
+- **`dottore lint` printed a traceback on a spec holding a huge number.** Python refuses to turn an
+  int of more than 4,300 decimal digits into text (`sys.get_int_max_str_digits()`; 640 at the
+  lowest `PYTHONINTMAXSTRDIGITS` allows), and YAML builds one from `0x` and 4,000 `f`. As a spec's
+  `name`, `owasp` or `spec_version`, jsonschema's message `<value> is not of type 'string'` raised
+  `ValueError: Exceeds the limit`: a traceback and exit 1, which this tool uses for "findings below
+  the threshold". Planted at every value and key of the 75 shipped specs under the lowest limit,
+  6,112 of 7,599 placements were that traceback. The spec validator now reports each such number
+  as a `SCHEMA` finding at its path, `name: a number too long to write out (over 4300 digits)` (or
+  `a key that is a number ...`), at most 20 per spec, and quotes none of it, wherever it sits: a
+  `!!set`, `!!omap` or `!!pairs` included. Found by the pre-commit audit of
+  `fix/yaml-alias-expansion-cap`.
+- **`dottore run --spec-path` refused such a spec without naming it.** It exited 3 with `error:
+  Exceeds the limit (4300 digits) ...`. It now refuses it as any spec that fails to load,
+  naming the file, before anything is sent. In 313 placements the schema took the number and lint
+  passed; of those, the 221 a mock model target runs all exited 3 the same way in the live run,
+  where the number was written. They are refused at load now, in the dry run too. `registry ls`,
+  `describe` and `coverage` leave such a spec out with their load warning; they printed a traceback
+  or exited 3 naming nothing.
+- **`dottore calibrate` with such a number as a labels key** exited 3 with the same unnamed
+  message (the error for an invalid verdict formatted the id). It now says `labels file <path>:
+  the spec id of entry <n> is a number too long to write out (...)`. As a verdict it was already
+  refused by name, and still is.
+- **`dottore diff` and `dottore calibrate` on a report with a number past the limit** exited 3
+  naming neither file: `json.loads` raises a plain `ValueError` there, not a `JSONDecodeError`.
+  It now says `the report <path> holds a number too long to read (over 4300 digits)`.
+- **A target file's `type`, `mock_scenario` or a key of its `seeded_setup`** as such a number
+  exited 3 with the same unnamed message; the refusal now names the target file and says what the
+  value is instead of quoting it. As `provider` or `transport` it exited 3 too, because the mock
+  routing called `str` on them before the target loader, which reads them only as text, ignored
+  it; they are read only as text there as well, so the number is no provider, as `5` always was.
+  The signature pack's `pack_version` is refused the same way (a library path; the CLI loads the
+  built-in pack).
+- Each check stands on its own: a cap on a literal's length in the YAML loader does not cover a
+  limit set below it, nor a value read from JSON. Clause A-40 (u02).
+
+### Fixed (a target file's bad value printed pydantic's error, value included)
+
+- **A value under a target file's `capabilities` or `sampling_defaults` that pydantic could not read
+  printed pydantic's own error.** `capabilities: {tools: maybe-later}` or `sampling_defaults:
+  {temperature: warm}` made `dottore run --dry-run` print four lines (`error: 1 validation error for
+  Capabilities`, the field, `input_value='maybe-later'` and a pydantic docs URL): the operator's
+  value quoted, which the loaders of the operator's own files avoid because a key gets pasted there
+  by mistake, and no file name, so with a target and a judge the operator could not tell which file
+  it was. Exit 3 was already right. `load_target` now gives the kind of line the scope and fleet
+  loaders give: `error: target file target.yaml 'capabilities' failed validation: tools: Input
+  should be a valid boolean, unable to interpret input`, the block's problems on that one line as
+  `validation_problems` lists them (the `capabilities` block's alone when both blocks are wrong),
+  the value never. The same through `run -t`, `run --judge`, `fingerprint` and `fleet --judge`. Not
+  changed, and written in the clause: other refusals of a target file still quote what it says
+  (`type`, `mock_scenario`, a `seeded_setup` tool name, the `id`); a key is printed as pydantic
+  renders it, control characters included, so one with a line break still splits the line until #51
+  is in; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true` is
+  1.0, no range on `temperature` or `top_p`); and a key `capabilities` does not know, or a
+  `capabilities` that is empty or `false`, is still ignored without a word. Contract u12 A-45;
+  `tests/cli/test_target_file_validation.py` (19 of its 24 tests fail on `0501752`; the other 5
+  check that the CLI's redactor leaves each test value readable, and the CLI tests fail on any mask
+  in the output, because a first `987654321` was masked as a phone number and the check proved
+  nothing). Found on `fix/huge-int-repr`. The same shape remains in `dottore diff` and `dottore
+  calibrate` on a report whose finding does not validate (pre-commit audit); left for its own
+  change.
+
+### Fixed (a file nested past what the CLI can hold)
+
+- **`dottore diff` and `dottore calibrate` exited 1 on a report nested too deeply.** `json.loads`
+  raises `RecursionError`, not a `ValueError`, on a document nested past its stack, and neither
+  command's handler caught it: a traceback and exit 1, which this tool uses for "findings below
+  `--fail-on`", so a CI step read a malformed report as an almost clean result. 200,000 levels of
+  `[` is past every supported Python (measured on macOS, 3.12 stops near 10,000 levels and 3.14 near
+  116,000; 3.11 counts them against its recursion limit of 1,000, not measured here). Both commands
+  now refuse it with exit 3 and one `error:` line that names the file and quotes none of it. A
+  report that is not UTF-8 or not JSON names its file too: `Expecting value: line 1 column 1 (char
+  0)` did not say which of the two files it was. These messages name the report by its absolute
+  path, never followed by a colon: the CLI keeps an existing absolute path readable, and a relative
+  path, or `<path>:`, is not one, so a report named after a commit SHA had its name masked as a
+  high-entropy value. As in every message of the CLI, a directory whose name holds a space or one of
+  `()[],;'"` still cuts the path short, and a control character in a name reaches the terminal as
+  written until #51, which escapes them there, is in. Found by the pre-merge audit of #51.
+- **A value that parses and overflows later.** On 3.14 the parser holds about 116,000 levels and
+  `repr` overflows from about 69,500, so a report whose run status carried a reason nested 70,000
+  levels deep was read and then overflowed when the refusal of an incomplete run formatted it (exit
+  1). The state and the reason are used only when they are text, as this tool writes them.
+- **The run store had the same hole.** `dottore replay` and `dottore run --resume` read JSON columns
+  from `--run-db`, and a battery, context or spend record nested too deeply exited 1 the same way.
+  It now reads as unreadable JSON (exit 3, `<column> is not readable JSON`), and so does a column
+  deeper than 100 levels (this tool writes them at most 3 deep): under the parser's stack a value
+  could still be too deep to write back, 110,000 levels parse on 3.14 and `json.dumps` overflows
+  past about 104,500, so a resume that rewrote the context exited 1 (already on main; pre-merge
+  audit). A finding's evidence references nested too deeply are handled as unreadable references
+  always were (that finding's references cannot be checked; artifacts the journal recorded still
+  are), instead of aborting the replay.
+- **A stored figure that is not an amount is corrupt.** `run --resume` converted the stored spend
+  and `--runs` with `int()` and `float()`: an infinity or a list raised `OverflowError` or
+  `TypeError` (a traceback and exit 1), an integer too large for a float did the same when the
+  resume wrote its spend back, a string as `--runs` was quoted in the error, a negative or NaN spend
+  was taken as what the campaign had spent, `true` or `1.9` as `--runs` resumed at one run, and a
+  null or missing `--runs` beside the target digest it is written with resumed at this invocation's
+  default and wrote that over the record. A spend figure must now be a finite, non-negative number
+  and `--runs` a positive whole number, present wherever the target digest is (a JSON `true` is
+  neither); anything else is refused like the other corrupt integrity records (exit 3), without
+  quoting the value.
+- **YAML anchors built depth the composer never saw.** PyYAML's composer, whose recursion the
+  loaders already turned into "nested too deeply", sees only the nesting as written; anchors chained
+  through aliases built a value 1,600 levels deep from 4 KB, and 80,000 from 175 KB. `lint`
+  overflowed on such a spec (its text walk), `run -t` on such a target and `calibrate` on such a
+  labels file (formatting the value): a traceback and exit 1. Every YAML loader (specs, scope,
+  target, fleet, labels, policy and signature packs) now refuses a document deeper than 100 levels
+  with its aliases expanded (the repository's own files nest at most 11), measured on the node graph
+  before anything is built, so shared aliases are not expanded to measure them, and reported where
+  the nesting crosses the limit (nesting written out deep enough to overflow the composer itself, a
+  few hundred levels, is still refused without a position); a recursive alias is refused there too,
+  as the spec loader already did.
+- **Checked, nothing to fix:** an evidence artifact is parsed by pydantic, which stops at its own
+  depth limit with a validation error (exit 3); a deep value in a typed field of a finding is
+  refused by pydantic (exit 3), and one in a free-form field (`request.metadata`) is read and
+  ignored; and at the depths the 3.14 parser accepts, no other read of a report overflowed
+  afterwards (probed from 500 to 116,000 levels, arrays and objects, as a whole report, inside a
+  finding and in its run status). Tests: `tests/cli/test_deep_json.py`, and the nested, column
+  depth, spend and `--runs` cases in `tests/cli/test_replay.py` and
+  `tests/cli/test_resume_integrity.py`.
 
 ### Added (a deployed application holds a spec's scene only when declared: OD-18, option B)
 

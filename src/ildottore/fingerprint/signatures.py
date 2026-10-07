@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ildottore import safe_yaml
 from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.digits import shown
 
 __all__ = [
     "CorpusCase",
@@ -150,7 +151,8 @@ def load_pack(path: Path | None = None) -> SignaturePack:
     declared = doc.get("pack_version")
     if declared != SUPPORTED_PACK_VERSION:
         raise SignaturePackError(
-            f"unsupported pack_version {declared!r}; loader supports {SUPPORTED_PACK_VERSION}"
+            # `shown`: a number too long to write out raised in `repr` (A-40).
+            f"unsupported pack_version {shown(declared)}; loader supports {SUPPORTED_PACK_VERSION}"
         )
     try:
         return SignaturePack.model_validate(doc)
