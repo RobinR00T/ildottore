@@ -59,6 +59,7 @@ from ildottore.core.setup_delivery import (
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
+from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import Category, EvaluatorType
 from ildottore.shared.models import (
@@ -1014,7 +1015,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     for path, target in loaded_targets:
         if target.id in seen_ids:
             raise ValueError(
-                f"two target files declare the id {target.id!r} ({seen_ids[target.id]} and "
+                f"two target files declare the id {quoted(target.id)} ({seen_ids[target.id]} and "
                 f"{path}); each target in one run needs its own id"
             )
         seen_ids[target.id] = path
@@ -1026,13 +1027,15 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         # `fleet --judge` generated), every semantic_judge verdict came back inconclusive
         # with the reason only in the JSON, and the run exited 0.
         to_authorize.append((opts.judge, judge_target))
+    # Each id cut at 300 characters, as the reason quotes it, and the scope's own ids listed up
+    # to 20, each cut (clause A-51).
     refusals = [
-        f"{target.id} ({reason})"
+        f"{cut(target.id)} ({reason})"
         for _, target in to_authorize
         if (reason := _refusal_for(scope, target)) is not None
     ]
     if refusals:
-        authorized = ", ".join(sorted(t.id for t in scope.targets)) or "<none>"
+        authorized = listed(sorted(t.id for t in scope.targets)) or "<none>"
         # A stdio MCP target is authorized by its COMMAND LINE, not by an endpoint, and the
         # generic advice ("allowlist the endpoint") pointed at the wrong field. The spelling
         # matters too: the scope's `commands` entries are matched against the joined argv, so
@@ -1042,7 +1045,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             if (target.transport or "").strip().lower() == "stdio" and target.command:
                 joined = " ".join(target.command)
                 stdio_hint = (
-                    f" {target.id!r} is a stdio MCP target, so it is authorized by its "
+                    f" {quoted(target.id)} is a stdio MCP target, so it is authorized by its "
                     f'command line, not by an endpoint: add commands: ["{joined}"] to its '
                     "scope entry (one string, exactly as shown)."
                 )
@@ -1617,7 +1620,7 @@ def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target 
         target = wiring.load_target(target_path)
         raise ValueError(
             f"--hardened replays the offline hardened fixtures and sends nothing, so it cannot "
-            f"be used with the live target {target.id!r} ({target_path}): the report would "
+            f"be used with the live target {quoted(target.id)} ({target_path}): the report would "
             "describe a model that was never contacted. Drop --hardened, or point it at a "
             "mock target."
         )

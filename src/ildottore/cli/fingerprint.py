@@ -26,6 +26,7 @@ from ildottore.cli import wiring
 from ildottore.cli.run import ScopeRequiredError
 from ildottore.policy import authorize_target
 from ildottore.policy.errors import ScopeError
+from ildottore.shared.config_errors import listed, quoted
 from ildottore.shared.models import ModelFingerprint
 
 __all__ = ["fingerprint_target"]
@@ -64,9 +65,9 @@ def fingerprint_target(
     endpoint = wiring.scope_endpoint_of(scope, target)
     decision = authorize_target(scope, target.id, endpoint)
     if not decision.allowed:
-        authorized = ", ".join(sorted(t.id for t in scope.targets)) or "<none>"
+        authorized = listed(sorted(t.id for t in scope.targets)) or "<none>"
         raise ScopeError(
-            f"target {target.id!r} is not authorized by the scope: "
+            f"target {quoted(target.id)} is not authorized by the scope: "
             f"{decision.reason}. The scope authorizes: {authorized}."
         )
 

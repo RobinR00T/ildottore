@@ -96,6 +96,16 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   1 MiB holds about 22,000 labels, 2,000 scope targets with two identities each, or the scope
   written for about 3,800 fleet entries; the largest file shipped here that is read this way,
   the signature corpus, is 8.7 KB.
+  A file that is not UTF-8 is refused the same way, naming the file and the offset of its first
+  bad byte (`[Errno 92] not UTF-8 text (byte 15): '/path/scope.yaml'` on macOS), exit 3. A
+  refusal that quotes a value of the file (an invalid `type`, a duplicated id, a target the
+  scope does not authorize, an undefined YAML alias) quotes it as it is when its `repr` is 300
+  characters or fewer, and otherwise its first 300 characters and its size, `... (1000002
+  characters)` or, for a list or a mapping, `... (9000 items)`; a list of what the file declares
+  (the ids a scope authorizes, the credentials it declares for a target) shows the first 20 and
+  counts the rest. Only the advice for a stdio target prints its command line whole, to be
+  copied. A target id itself has no length limit, and a run that starts prints it whole in its
+  plan and reports, as `calibrate` does with the labels a report does not cover (OD-27).
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -554,7 +564,8 @@ are read up to the same 1 MiB (see **Bounded operator files** in §3), from any 
 fleet or labels file can be a pipe.
 A key written twice in one
 mapping is a `PARSE_ERROR` too. A YAML error gives the line and
-the reason without quoting the line, a suite or pack error names the field without the value,
+the reason without quoting the line (a reason that names an alias or a tag is cut at 300
+characters), a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. An oracle marker that an echo of the
 request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered

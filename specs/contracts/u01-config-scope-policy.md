@@ -172,14 +172,85 @@ a labels file through a pipe worked and still do, and a named pipe with no write
 as before. A target file cannot be a pipe, as before: `run` reads it four times and
 `fingerprint` three, so the second read of `<(...)` is empty and a named pipe blocks it. Not
 covered (OD-26): the report JSON that `dottore diff` and `calibrate` read, and the evidence
-artifacts `replay` and `run --resume` read; and an error outside the validation listing can
-still quote a value of the file whole (an unknown target `type`, a duplicate target id, an
-undefined YAML alias), now bounded by the 1 MiB read. Checks:
+artifacts `replay` and `run --resume` read. An error outside the validation listing quoted a
+value of the file whole (an unknown target `type`, a duplicate target id, an undefined YAML
+alias), bounded only by the 1 MiB read: A-51 cuts it. Checks:
 `tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after a growth, a
 pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each loader, the
 `fleet` boundary, each target and the judge measured one at a time, the listing and its cut, the
 CLI's exit 3 and its one short line, and a sparse gigabyte in a subprocess bounded at 20 s and
 256 MiB).
+
+**A-51 A refusal of an operator's file quotes a value of it up to 300 characters, and names a file
+that is not UTF-8 (added 2026-10-07).** The refusals written by hand that name a value of the scope,
+target, fleet or labels file go through `shared.config_errors.quoted`: the value's `repr` when that
+is 300 characters or fewer, exactly as before; past that, its first 300 characters and its length
+(`... (N characters)`), or for a list, mapping or set its first 300 characters and how many items it
+holds (`... (N items)`), without building the `repr` whole, because YAML aliases make it larger than
+its file (90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000 characters of `repr`,
+2.6 s and 202 MiB to build); an integer Python will not write out (a YAML hex or base-60 integer
+past 4,300 digits, whose `repr` raises) is shown as `<an integer of N bits>`. They are: an invalid
+target `type`, refused before the enum looks it up, because the enum's own error built the whole
+`repr` (that 90 KB file as a `type:` took 1.28 GB of resident memory and 50 s and printed a
+200,080,338-byte line on `a0bca70`, and takes 72 MB and 0.6 s now: audit of this clause), and an
+invalid `mock_scenario`; a duplicated scope target id, a duplicated identity name and an identity
+that shares a canary, with the id of the target they belong to; a labels entry with an invalid
+verdict (its spec id); two target files with one id in `run`; the target id and the endpoint in the
+authorization refusal (`policy.authorize_target`, so `run`, `fingerprint` and the engine's gate on
+each attempt), the target id that `run` and `fingerprint` write in front of it, and the ids the
+scope authorizes, which they list after it (the first 20, each cut, then `and N more`:
+`shared.config_errors.listed`), since a target the scope names and refuses by endpoint or command
+came back whole there; the target id in the `--hardened`, stdio and credential refusals of `run`,
+and the references the scope declares, listed by the credential refusal (20, each as
+`shown_auth_ref` quotes it, and how many more: 3,000 printed 885,131 bytes); an `auth_ref` reference
+wherever `shown_auth_ref` quotes one (a literal is still never shown); the target id, and the one
+the run store recorded, in the three refusals that bind `run --resume` to its target; in `dottore
+fleet`, an endpoint with an invalid port, the judge id and the judge fields a `--judge` file gets
+wrong; and, cut as one text with `shared.config_errors.cut`, the unknown keys of a target's
+`seeded_setup` and the tools it both maps and grants. PyYAML's problem text
+(`shared.config_errors.yaml_problem`, so every YAML loader, the spec loader and `dottore lint`
+included) is cut the same way. Before, each quoted the value whole, bounded only by A-43's 1 MiB
+read: a 1 MB `type:` printed an `error:` line of 1,000,108 bytes, a duplicated target id of 500 KB
+one of 500,136, and an undefined alias of a million characters about 1,000,100 from `run --scope`,
+`calibrate` and `lint` (pre-commit audit of A-43, in its measure, file paths included); this
+clause's sweep found the rest, up to 2,000,108 bytes from `fingerprint` for a target id of a million
+characters (the id in the message and again in the reason), and the 24 refusals of the test's table,
+with values of 300,000 to 1,000,000 characters, printed lines of 400,080 to 2,000,247 characters on
+`c9f27cc` and `a0bca70`. The lengths are written bare, as the spec loader writes them; for the
+`repr` of a text value the length stays under 10,485,762, short of the nine digits the CLI's
+redactor masks as a phone number (`repr` writes at most ten characters for a character the file
+spends a byte or more on), and an item count is smaller. The redactor can still read a head that
+ends in a digit after a character that is not a letter, together with the `... (N` behind it, as one
+phone number, and masks both (a head ending in `:7` shows `:«REDACTED:phone» characters)`): the head
+is kept, its length is lost. Bytes that are not UTF-8 in any of these files, or in a policy or
+signature pack, are refused by `shared.files.read_text_capped` as an `OSError` (`EILSEQ`) with the
+path and the offset of the first bad byte in the file, in the spec loader's words (`not UTF-8 text
+(byte N)`), exit 3 in `run`, `fleet`, `calibrate` and `fingerprint`: they raised `read_text`'s own
+`UnicodeDecodeError`, which named no file (`error: 'utf-8' codec can't decode byte 0xff in position
+15: invalid start byte`). The path is shown as the CLI shows every path (A-38): an existing absolute
+one as written, a relative one through the redactor, which masks a directory name that looks random.
+A valid file's text, and so a scope checksum, is unchanged. Not covered: the stdio advice's command
+line, which is meant to be copied exactly, is written whole; so is a target id wherever a run that
+has started prints it (the plan, the progress and `-sV` lines, the reports and the run store), and a
+labels spec id where `calibrate` lists the labels the report does not cover. Whether ids get a
+length bound when they are loaded, as a fleet's already have (64 characters), is OD-27. A YAML
+integer past 4,300 digits as a labels key (`str()` of it raises before any quote) and a list of
+aliases that `str()` turns into one text (a label's verdict, a target's `provider`: about 675 MB
+each) are refused when they are built by #71 and #77, both open. Checks:
+`tests/cli/test_operator_file_quoted_values.py` (each refusal of the table through the CLI with a
+value past the cut: the line under 2,500 characters, the file named where the refusal names it, the
+exact cut and no mask; twenty ids or references listed and the rest counted, through `run`,
+`fingerprint` and the credential refusal; the three refusals of `--resume`; a `repr` of exactly 300
+characters quoted whole and one of 301 cut; the head equal to the start of `repr` over generated
+values; a list and a mapping of aliases quoted, and refused as a `type` through `load_target`, under
+a memory bound; an integer Python will not write; the UTF-8 refusal through each command, and its
+offset past one decoder chunk), and the reader test of `tests/cli/test_operator_file_cap.py`,
+changed on purpose from "the same `UnicodeDecodeError` as `read_text`" to "an `OSError` at the same
+byte, naming the file". On `a0bca70`, with the new helpers stubbed to what the base does (`quoted`
+as `repr`, `listed` as a plain join), 49 of these 59 tests fail, each for its reason, and the 10
+that pass guard that a short value is quoted as before. Of 48 mutants, one per site and one per fix
+of the audit, 46 are killed; the two that live are equivalent (they quote a fleet id, which the
+fleet's model holds to 64 characters).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
@@ -201,3 +272,15 @@ CLI's exit 3 and its one short line, and a sparse gigabyte in a subprocess bound
   reads for `dottore diff` and `calibrate`, and the evidence artifacts `store/replay.py` reads
   for `replay` and `run --resume` (512 MiB held twice, 1,092 MiB, in the audit's measure); both
   can pass 1 MiB legitimately, so each cap needs a figure measured on a real run.
+- **OD-27** a length bound on the ids of the operator's files. **Open (2026-10-07, from A-51):** a
+  scope or target id, an identity name, an `auth_ref` reference and an endpoint have no length limit
+  (a fleet's ids do: 64 characters and a pattern, because they name files). A-51 cuts them where a
+  refusal quotes them, but a target id is still written whole wherever a run that has started prints
+  it: the `--dry-run` plan, the progress and `-sV` lines, the reports and the run store; and
+  `calibrate` lists every label the report does not cover, ids whole (one of a million characters
+  printed 1,000,178 bytes, and 22,000 labels 902,176, both with exit 0). Options: (a) bound the ids
+  when they are loaded, for instance the fleet's 64 characters and pattern, which refuses files that
+  load today; (b) cut the id everywhere it is printed, which leaves reports without the id the scope
+  names; (c) leave it: the file is the operator's own and is read up to 1 MiB. Proposed: (a) for
+  target and identity ids, with a figure checked against real scopes; references and endpoints stay
+  unbounded and cut in refusals.

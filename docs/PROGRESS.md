@@ -3,6 +3,34 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): a refusal quoted the operator's value whole
+
+- On `fix/operator-file-quoted-values`, stacked on `fix/operator-file-read-cap` (#76, head
+  `a0bca70`), `tests/cli/test_operator_file_quoted_values.py`: the two LOW findings of #76's
+  pre-commit audit. (1) Refusals written by hand quoted a value of the scope, target, fleet or
+  labels file whole, bounded only by the 1 MiB read (a 1 MB `type:` printed 1,000,108 bytes, an
+  undefined alias of a million characters about 1,000,100 in `run`, `calibrate` and `lint`). They
+  now go through `shared.config_errors.quoted` (the `repr` up to 300 characters, then `... (N
+  characters)`, or `... (N items)` for a list or mapping, never building a container's `repr` whole:
+  90 KB of aliases made one of 200,080,000 characters), and `yaml_problem` cuts PyYAML's reason the
+  same way. The sweep found 24 such refusals, not the 4 reported, among them the authorization
+  refusal of `run` and `fingerprint` (2,000,108 bytes for one id) with the list of ids the scope
+  authorizes (now 20, each cut, `listed`) and two lists in `seeded_setup`. The pre-commit audit
+  found that the enum lookup of a target's `type` still built the whole `repr` (1.28 GB and 50 s for
+  a 90 KB file of aliases; now refused before the lookup, 72 MB), the credential refusal's unbounded
+  list of declared references (885,131 bytes), the three `--resume` refusals, an integer `repr`
+  cannot write, two surviving mutants and doc figures; all fixed. 49 of the 59 tests fail on
+  `a0bca70`, each for its reason; 46 of 48 mutants die (the 2 that live quote a fleet id, already
+  held to 64 characters). (2) A byte that is not UTF-8 in any operator file printed the codec's
+  error with no file name; `read_text_capped` now refuses it as an `OSError` (`EILSEQ`) with the
+  path and the offset, exit 3, as it refuses a file over the cap. Clause A-51 (u01; A-48 to A-50
+  were claimed the same evening by `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
+  `fix/target-capabilities-strict`). Open, OD-27: ids have no length bound, so a started run still
+  prints a target id whole (plan, progress, reports, run store), and `calibrate` lists uncovered
+  labels whole; proposed, a bound at load like the fleet's 64 characters. Left to #71 and #77
+  (open): a labels key that is an integer past 4,300 digits, and a list of aliases `str()` turns
+  into about 675 MB of text.
+
 ## State, 2026-10-07 (afternoon): operator files read up to 1 MiB
 
 - On `fix/operator-file-read-cap` (`tests/cli/test_operator_file_cap.py`): the scope, target,

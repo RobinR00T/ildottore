@@ -55,7 +55,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ildottore import safe_yaml
 from ildottore.cli.wiring import shown_auth_ref
-from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.files import MAX_FILE_BYTES, read_text_capped
 from ildottore.shared.models import Target
 
@@ -187,7 +187,7 @@ def _scope_endpoint(endpoint: str) -> tuple[str, str]:
     try:
         port = parts.port or _DEFAULT_PORTS.get(parts.scheme.lower())
     except ValueError as exc:
-        raise ValueError(f"endpoint {endpoint!r} has an invalid port") from exc
+        raise ValueError(f"endpoint {quoted(endpoint)} has an invalid port") from exc
     shown = f"[{host}]" if ":" in host else host
     return (f"{shown}:{port}" if port else shown), path
 
@@ -273,14 +273,14 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
                 target.endpoint != declared.endpoint or target.api_key_env != declared.api_key_env
             ):
                 raise ValueError(
-                    f"the fleet's judge {declared.id!r} has the id of a target with a different "
-                    "endpoint or credential; give the judge its own id"
+                    f"the fleet's judge {quoted(declared.id)} has the id of a target with a "
+                    "different endpoint or credential; give the judge its own id"
                 )
     if judge is None:
         return
     if declared is None:
         raise ValueError(
-            f"--judge names {judge.id!r}, which the fleet file does not declare. Add a "
+            f"--judge names {quoted(judge.id)}, which the fleet file does not declare. Add a "
             "`judge:` block to the fleet file with its id, endpoint and api_key_env: the fleet "
             "file is the authorization record, and a judge file cannot authorize itself"
         )
@@ -299,11 +299,14 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
 
 
 def _shown(field: str, value: str | None) -> str:
-    """A judge field as an error may quote it: an ``auth_ref`` literal never (it is a key)."""
+    """A judge field as an error may quote it: an ``auth_ref`` literal never (it is a key).
+
+    Anything else is quoted up to 300 characters (clause A-51).
+    """
 
     if field == "auth_ref" and value is not None:
         return shown_auth_ref(value)
-    return repr(value)
+    return quoted(value)
 
 
 def _rendered(doc: dict[str, object]) -> bytes:
@@ -352,7 +355,7 @@ def materialize_fleet(
     seen: set[str] = set()
     for target in config.targets:
         if target.id in seen:
-            raise ValueError(f"duplicate target id {target.id!r} in fleet")
+            raise ValueError(f"duplicate target id {quoted(target.id)} in fleet")
         seen.add(target.id)
 
     _check_judge(config, judge)

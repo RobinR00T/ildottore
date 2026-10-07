@@ -23,7 +23,7 @@ import yaml
 
 from ildottore import safe_yaml
 from ildottore.cli.diff import load_findings
-from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.config_errors import quoted, yaml_problem
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import Finding
@@ -51,9 +51,10 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
         try:
             labels[str(spec_id)] = VerdictStatus(str(verdict).strip().lower())
         except ValueError as exc:
-            # The spec id is the location; the value is not quoted (the other loaders' rule).
+            # The spec id is the location, quoted up to 300 characters (A-51); the value is not
+            # quoted (the other loaders' rule).
             raise ValueError(
-                f"labels file {path}: spec {spec_id!r} has an invalid verdict; "
+                f"labels file {path}: spec {quoted(spec_id)} has an invalid verdict; "
                 f"expected one of {', '.join(v.value for v in VerdictStatus)}"
             ) from exc
     return labels

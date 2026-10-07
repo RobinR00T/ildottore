@@ -17,7 +17,11 @@ three, and a labels file of dottore calibrate, is read up to 1 MiB: a larger fil
 before any of it is read, and a pipe or other stream is read up to one byte past 1 MiB and
 refused if that byte comes (exit 3). A target file cannot be a pipe, as it is read more than
 once. dottore fleet refuses to write a scope, target or judge file over 1 MiB. A scope, target or
-fleet file that fails validation lists at most 20 problems and counts the rest.
+fleet file that fails validation lists at most 20 problems and counts the rest. A file that is
+not UTF-8 is refused with its name and the offset of its first bad byte (exit 3), and a refusal
+that quotes a value of the file quotes at most its first 300 characters and its size, and lists at
+most 20 of what the file declares (the advice for a stdio target excepted, which prints its
+command line whole to be copied).
 .SH "SCOPE FILE"
 The authorization record. No scanning command runs without it. Default-deny: any host or
 path not under a target's endpoints is never contacted. An optional top-level checksum
