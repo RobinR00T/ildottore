@@ -23,7 +23,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   can still break a tie a full one leaves unknown. Its real domain, measured over 12,276
   passes: it never names more than the same probes answered with an empty reply. The pre-merge
   audit (PR #68; no high or medium) found refusals of varied replies getting a target flagged
-  constant (now never claimed on a partial pass), an unreproducible figure (replaced by the
+  constant (now never claimed once an attributing reply is refused; a refused carrier does not
+  count, the delta audit's last catch), an unreproducible figure (replaced by the
   measurement above), and three untested behaviours (tested). A 200 that is not JSON still
   stops the pass (OD-21). Mutation passes (17 mutants, then 6 and 6 for the first two audits'
   findings, every one caught but an equivalent one) found the one-probe layers' own handling

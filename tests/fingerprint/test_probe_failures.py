@@ -458,15 +458,16 @@ def test_the_warning_calls_the_fingerprint_empty_only_when_nothing_came_back(
     assert ("built from the replies that came back" in line) is not empty
 
 
-def test_alike_replies_with_refusals_are_not_called_constant() -> None:
+@pytest.mark.parametrize("refused", [1, 2])
+def test_alike_replies_with_refusals_are_not_called_constant(refused: int) -> None:
     """The replies that came back are alike, and the refused ones could have varied: the flag
     then said "every attributing probe alike" of a target a full pass names (pre-merge audit).
-    With attributing replies refused the check cannot be completed, so the text evidence is not
-    counted and the flag is not set."""
+    With attributing replies refused, one is enough, the check cannot be completed, so the text
+    evidence is not counted and the flag is not set."""
 
     attributing = [i for i, layer in enumerate(_LAYER_OF) if layer != "carrier"]
-    fp = _run_constant(_Constant(set(attributing[:2])))
-    assert len(failed_probes(fp)) == 2
+    fp = _run_constant(_Constant(set(attributing[:refused])))
+    assert len(failed_probes(fp)) == refused
     assert fp.family.guess == "unknown"
     assert "non_discriminating_target" not in fp.spoofing_flags
     assert PROBES_FAILED_FLAG in fp.spoofing_flags

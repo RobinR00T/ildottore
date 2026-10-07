@@ -33,19 +33,19 @@ versioning: [SemVer](https://semver.org/).
   `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` on stderr, not silenced
   by `-q` and on one line (not through `rich`, which cut the evidence path at 80 columns), ends
   the fingerprint line with `[N of 17 probes got no usable reply]`, and goes on to the attack;
-  `dottore fingerprint` warns on stderr and exits 0. When every probe is refused the line says
-  the fingerprint is empty, and `dottore fingerprint` prints it as an `error:` and exits 3: an
-  empty fingerprint printed with exit 0 read as a result to a script (delta audit). The line
-  promises nothing about what follows, since with several targets the next one's probe pass can
-  still stop the run. Refusals cannot get past the constant-target check, and a pass with an
-  attributing reply refused is never called constant: with fewer than three attributing
-  replies left, or the ones left all alike, the text evidence is not counted and the flag is
-  not set (a refused carrier does not count: the check never reads the carriers). Measured against the same
-  probes answered with an empty reply (12,276 passes over every subset of the attributing sends
-  of the 12 corpus targets), a partial pass never names more: identical when no statistical
-  probe is refused, otherwise `unknown` or lower confidence (2,344 of 10,752 differ, none the
-  other way). Against a full pass it can still break a tie the full pass leaves unknown, as a
-  bland reply would; the confidence is renormalized, not discounted.
+  `dottore fingerprint` warns on stderr and exits 0. When every probe is refused the line says the
+  fingerprint is empty, and `dottore fingerprint` prints it as an `error:` and exits 3: an empty
+  fingerprint printed with exit 0 read as a result to a script (delta audit). The line promises
+  nothing about what follows, since with several targets the next one's probe pass can still stop
+  the run. Refusals cannot get past the constant-target check, and a pass with an attributing
+  reply refused is never called constant: with fewer than three attributing replies left, or the
+  ones left all alike, the text evidence is not counted and the flag is not set (a refused carrier
+  does not count: the check never reads the carriers). Measured against the same probes answered
+  with an empty reply (12,276 passes over every subset of the attributing sends of the 12 corpus
+  targets), a partial pass never names more: identical when no statistical probe is refused,
+  otherwise `unknown` or lower confidence (2,344 of 10,752 differ, none the other way). Against a
+  full pass it can still break a tie the full pass leaves unknown, as a bland reply would; the
+  confidence is renormalized, not discounted.
 - **An error status whose body is over 4 MiB is classified by its status.** `read_capped`
   returned an empty body for an error status it could not decode ("a `401` stays a `401`") but
   raised `ResponseTooLarge` for one over the cap, so a `401` with a 5 MB body was an
