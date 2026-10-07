@@ -83,6 +83,10 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 and
 .B type
 are required; the rest are needed only for a live scan.
+.B capabilities
+takes tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal and audio, each
+false unless set; any other key, or a capabilities that is not a mapping (false and [] included),
+is refused before anything is sent. To declare none, leave it out or write {}.
 .B sampling_defaults
 is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
 their own sampling.

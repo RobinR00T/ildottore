@@ -211,15 +211,22 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
 A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
-`max_tokens` outside 1 to its cap or a key `sampling_defaults` does not know is refused before
+`max_tokens` outside 1 to its cap or a key either block does not know is refused before
 anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
 problems found in that block (the `capabilities` block alone if both are wrong), never the value
 written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
 valid boolean, unable to interpret input`. The field is printed from the key you wrote, so a control
-character in a key reaches the terminal as written (a line break splits the line). What can be read
+character in a key reaches the terminal as written (a line break splits the line), and a key that is
+not text is printed as pydantic renders it (`on:` as `1`). What can be read
 is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
-`top_p` have no range check. A key `capabilities` does not know is ignored, and so is a
-`capabilities` that is empty or `false`.
+`top_p` have no range check. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
+`logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set, so a `tool:` written
+for `tools:` is refused (`tool: Extra inputs are not permitted`); until 2026-10-07 it was ignored,
+and the target ran with tools off and without the specs that need them. A `capabilities` that is
+not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
+included: to declare none, leave the key out or write `capabilities: {}` (open decision OD-29). A
+run halted before then with such a key resumes once you delete the key, which was never read;
+correcting it to the key you meant changes the target, and the resume is refused.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.
@@ -350,6 +357,11 @@ targets:
 one target file per model. Each entry is written as a `chatbot` target (an `mcp` one as `api`)
 with no `seeded_setup`, so a spec that needs documents, tools or memory is `setup_not_seeded`
 on a fleet entry that declares the capability; for those, scan with a target file (§4.2). Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
+
+An entry may declare `capabilities` with the keys a target file takes (§4.2). Its target file
+gets `tools: false` (`true` for an `mcp` entry) and `rag: false` unless the entry sets them, plus
+every key the entry sets; a key `capabilities` does not know is refused before anything is
+written (exit 3).
 
 ## 5. Command reference
 

@@ -5,6 +5,29 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (a target file's `capabilities` refuses an unknown key and a non-mapping value; OD-29)
+
+- **A typo under a target file's `capabilities` was dropped without a word.** `load_target`
+  validated only the keys `Capabilities` knows, so `tool: true` written for `tools` ran the target
+  with tools off and the specs that need tools left the plan: a chatbot with `rag` and `memory` on
+  planned 40 specs instead of 59 (`--dry-run` on `2f6201a`), and nothing named the key. A
+  `capabilities` of `false`, `0`, `[]` or `""` read as no capabilities, while `true` or `[tools]`
+  was refused. Both are refused now, before anything is sent (exit 3), on the A-45 line: `error:
+  target file target.yaml 'capabilities' failed validation: tool: Extra inputs are not permitted`,
+  or `'capabilities' must be a mapping`, never with the value. An absent or null `capabilities`, or
+  `{}`, is still no capabilities. `dottore fleet` copied an unknown key into the target file it
+  wrote, with exit 0; an entry's `capabilities` is now the target file's own model, so `fleet`
+  refuses the key (exit 3) and writes nothing; the keys an entry sets are written as before, in the
+  model's field order rather than the order written. A run halted before this change with such a
+  key resumes once the key is deleted, not once it is corrected (that changes the target). **A
+  behavior change:** a target or fleet file that loads today with such a key or value is refused;
+  no file of the repository has one (a new test loads every target and fleet file, and the target
+  and fleet blocks of the docs and man pages, through the real loaders). Refusing both is the
+  owner's call, open as OD-29 and built as the smallest reversible change. Still dropped without a
+  word, and written in the clause: a top-level key a target file does not know, and a `name`,
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text. Contract u12 A-50;
+  `tests/cli/test_target_capabilities_strict.py` (18 of its 39 tests fail on `2f6201a`).
+
 ### Fixed (a resumed run recorded its `-sV` probe pass only when the ceiling stopped it)
 
 - **A resume lost what its probe pass had sent whenever the pass stopped on anything but the
@@ -159,7 +182,8 @@ versioning: [SemVer](https://semver.org/).
   renders it, control characters included, so one with a line break still splits the line until #51
   is in; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true` is
   1.0, no range on `temperature` or `top_p`); and a key `capabilities` does not know, or a
-  `capabilities` that is empty or `false`, is still ignored without a word. Contract u12 A-45;
+  `capabilities` that is empty or `false`, was still ignored without a word (since A-50, above, the
+  key is refused, and so is a `capabilities` of `false`, `0`, `[]` or `""`). Contract u12 A-45;
   `tests/cli/test_target_file_validation.py` (19 of its 24 tests fail on `0501752`; the other 5
   check that the CLI's redactor leaves each test value readable, and the CLI tests fail on any mask
   in the output, because a first `987654321` was masked as a phone number and the check proved

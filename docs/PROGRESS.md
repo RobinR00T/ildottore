@@ -3,6 +3,21 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): a typo under a target file's `capabilities`
+
+- On `fix/target-capabilities-strict` (u12 A-50; OD-29, open for the owner): `load_target` dropped a
+  key `capabilities` does not know and read `false`, `0`, `[]` and `""` as no capabilities, so
+  `tool: true` written for `tools` took the specs that need tools out of the plan without a word
+  (40 specs planned instead of 59 on a chatbot with `rag` and `memory`, on `2f6201a`), and `dottore
+  fleet` copied the key into the target file it wrote, with exit 0. Built reversibly: both refused
+  before anything is sent, on the A-45 line that names the file and the key, never the value, and
+  `fleet` refuses the key before it writes. Every target and fleet file of the repository, and the
+  target and fleet blocks of the docs and man pages, load through the real loaders (new test).
+  Found while writing it and left as its own task: a top-level key a target file does not know
+  (`endpont:`, or a `capabilities` block whose indent was lost) and a `name`, `provider`,
+  `endpoint`, `model`, `auth_ref` or `transport` that is not text are still dropped without a
+  word. `tests/cli/test_target_capabilities_strict.py`: 18 of its 39 tests fail on `2f6201a`.
+
 ## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
 
 - Found by the delta audit of PR #68 and fixed on `fix/sv-probe-spend-on-stop`: on `run --resume
@@ -74,7 +89,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   `error:` line, `target file <path> '<block>' failed validation: <field>: <reason>`, no value.
   Contract u12 A-45 (A-43 and A-44 were claimed the same afternoon by `fix/operator-file-read-cap`
   and `fix/lint-nonstring-arg-key`). Left open, written in the clause: a key `capabilities` does
-  not know, or a `capabilities` that is empty or `false`, is dropped without a word; other
+  not know, or a `capabilities` that is empty or `false`, is dropped without a word (on
+  `fix/target-capabilities-strict`, A-50, the key is refused and so is a `capabilities` of `false`,
+  `0`, `[]` or `""`; see the evening entry); other
   refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
   the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
   `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
