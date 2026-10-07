@@ -63,6 +63,43 @@ versioning: [SemVer](https://semver.org/).
   past the spend, a ceiling of 0 and advice written ahead of the words the test reads, and a third
   round a ProbeCeilingReached case no test covered and the limits above.
 
+### Fixed (a number too long to write out)
+
+- **`dottore lint` printed a traceback on a spec holding a huge number.** Python refuses to turn an
+  int of more than 4,300 decimal digits into text (`sys.get_int_max_str_digits()`; 640 at the
+  lowest `PYTHONINTMAXSTRDIGITS` allows), and YAML builds one from `0x` and 4,000 `f`. As a spec's
+  `name`, `owasp` or `spec_version`, jsonschema's message `<value> is not of type 'string'` raised
+  `ValueError: Exceeds the limit`: a traceback and exit 1, which this tool uses for "findings below
+  the threshold". Planted at every value and key of the 75 shipped specs under the lowest limit,
+  6,112 of 7,599 placements were that traceback. The spec validator now reports each such number
+  as a `SCHEMA` finding at its path, `name: a number too long to write out (over 4300 digits)` (or
+  `a key that is a number ...`), at most 20 per spec, and quotes none of it, wherever it sits: a
+  `!!set`, `!!omap` or `!!pairs` included. Found by the pre-commit audit of
+  `fix/yaml-alias-expansion-cap`.
+- **`dottore run --spec-path` refused such a spec without naming it.** It exited 3 with `error:
+  Exceeds the limit (4300 digits) ...`. It now refuses it as any spec that fails to load,
+  naming the file, before anything is sent. In 313 placements the schema took the number and lint
+  passed; of those, the 221 a mock model target runs all exited 3 the same way in the live run,
+  where the number was written. They are refused at load now, in the dry run too. `registry ls`,
+  `describe` and `coverage` leave such a spec out with their load warning; they printed a traceback
+  or exited 3 naming nothing.
+- **`dottore calibrate` with such a number as a labels key** exited 3 with the same unnamed
+  message (the error for an invalid verdict formatted the id). It now says `labels file <path>:
+  the spec id of entry <n> is a number too long to write out (...)`. As a verdict it was already
+  refused by name, and still is.
+- **`dottore diff` and `dottore calibrate` on a report with a number past the limit** exited 3
+  naming neither file: `json.loads` raises a plain `ValueError` there, not a `JSONDecodeError`.
+  It now says `the report <path> holds a number too long to read (over 4300 digits)`.
+- **A target file's `type`, `mock_scenario` or a key of its `seeded_setup`** as such a number
+  exited 3 with the same unnamed message; the refusal now names the target file and says what the
+  value is instead of quoting it. As `provider` or `transport` it exited 3 too, because the mock
+  routing called `str` on them before the target loader, which reads them only as text, ignored
+  it; they are read only as text there as well, so the number is no provider, as `5` always was.
+  The signature pack's `pack_version` is refused the same way (a library path; the CLI loads the
+  built-in pack).
+- Each check stands on its own: a cap on a literal's length in the YAML loader does not cover a
+  limit set below it, nor a value read from JSON. Clause A-40 (u02).
+
 ### Fixed (a target file's bad value printed pydantic's error, value included)
 
 - **A value under a target file's `capabilities` or `sampling_defaults` that pydantic could not read

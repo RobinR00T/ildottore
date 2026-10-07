@@ -20,6 +20,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from ildottore.shared.digits import described
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import Finding
 
@@ -103,6 +104,8 @@ def _read_report(path: Path) -> Any:
         raise ValueError(f"the report {shown} is not UTF-8 text (byte {exc.start})") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"the report {shown} is not valid JSON ({exc})") from exc
+    except ValueError as exc:  # past the digit limit, a plain ValueError naming no file (A-40)
+        raise ValueError(f"the report {shown} holds {described('read')}") from exc
 
 
 def incomplete_reason(path: Path) -> str | None:
