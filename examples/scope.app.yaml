@@ -1,0 +1,14 @@
+# scope.app.yaml, the AUTHORIZATION record for the deployed-application scenario (Scenario G).
+#
+# Default-DENY: the adapter refuses any host or path not listed under `endpoints`. The key is
+# referenced by env-var (`auth_ref`) and read only at send time, never written here.
+version: "1.0"
+targets:
+  - id: support-agent-staging       # must match target.app.yaml's id
+    base_url: "https://support-agent.example.test/v1/chat/completions"
+    endpoints:
+      - host: "support-agent.example.test"
+        path_prefixes: ["/v1/chat/completions"]
+    identities:
+      - name: default
+        auth_ref: "env://SUPPORT_AGENT_KEY"

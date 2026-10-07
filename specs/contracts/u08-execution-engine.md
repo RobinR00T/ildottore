@@ -84,7 +84,32 @@ concretes:
    → persist; checkpoint/resume by `run_id`; bounded-concurrency scheduler + circuit-breaker.
    (As built: plan-time capability filter → policy gate → mutation checks (an unregistered
    mutator or a parameter the mutator does not accept sends nothing for that spec) → mutate →
-   reproduce → evaluate/combine → score → persist. Setup is not materialized, OD-18.)
+   reproduce → evaluate/combine → score → persist. Setup is materialized in-band for a
+   `type: model` target only, OD-18 option A (ADR-0009): memory seed as saved memory after the
+   system prompt, documents
+   before the first attacker turn, tool definitions on every send, and a tool loop of at most 4
+   rounds per turn inside the conversation engine, each round a send under the budget and the
+   pacer; the final turn's scored text is the text of all its rounds; the attempt's request
+   records `setup_delivery`, `tool_rounds` and the tools. A round is answered only when every
+   call names a declared tool, there are at most 16 and their arguments fit 64 KB. An adapter
+   that cannot carry tool definitions, or that sends no system prompt for a memory seed, makes
+   such a spec `inconclusive` (`setup_not_delivered`) with no send. A
+   spec whose untrusted content is only a tool's result, judged by no trace evaluator, whose model
+   called none of those tools and whose evaluators did not fail, is `inconclusive`
+   (`setup_not_reached`), and the summary does not count it as exercised. Against any other
+   target type, OD-18 option B: a spec with setup is `inconclusive` (`setup_not_seeded`) before
+   the scene, with no send, when `setup_delivery.seeding_gap` names a reason (not declared in
+   `seeded_setup.specs`; a per-run canary in the scene and no `run_token`; two of its scene tools
+   under one deployment name; asked of the spec before its canary is bound), or
+   `setup_delivery.trace_gap` (a trace spec through an adapter without `returns_tool_calls`)
+   does, unless the adapter is an offline mock (`offline_mock`). A sent one binds `{{run_id}}` to
+   `<run_token>-<spec id>` when its canary has to be seeded, records `setup_delivery: seeded`
+   and `seeded_tools`,
+   and its response is renamed through `seeded_setup.tools` (per spec) before the evaluators,
+   which receive `seeded_setup.granted_tools` in their context; a seeded tool-carrier spec whose
+   reply shows no call to that tool is `setup_not_reached`. On resume, a spec the gate stops
+   that the stored run already sent is scored from its attempts when it holds all of them, and
+   otherwise kept as evidence, inconclusive, with nothing more sent.)
 
 ## §6 Data/wire shapes
 `TestPlan = {plan_ref: str, target_id: str, adaptive: bool, fingerprint_ref: str|None,

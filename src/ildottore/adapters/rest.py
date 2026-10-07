@@ -94,6 +94,16 @@ class RestAdapter(BaseAdapter):
     def _endpoint_path(self) -> str:
         return self.template.path
 
+    #: A REST template reads no tool calls from a reply (``tool_calls`` is always empty), so a
+    #: seeded spec judged on its tool trace is not sent through it (OD-18 B).
+    returns_tool_calls = False
+
+    @property
+    def carries_system_prompt(self) -> bool:
+        """True when the template has a field for the system prompt (OD-18 memory seed)."""
+
+        return self.template.system_field is not None
+
     def capabilities(self) -> Capabilities:
         return Capabilities(
             tools=self.tools_enabled,

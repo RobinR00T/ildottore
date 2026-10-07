@@ -209,7 +209,94 @@ capabilities:
 sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
-`id` and `type` are required; the rest are optional but needed for a live scan. `auth_ref`
+`id` and `type` are required; the rest are optional but needed for a live scan.
+A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
+`max_tokens` outside 1 to its cap or a key `sampling_defaults` does not know is refused before
+anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
+problems found in that block (the `capabilities` block alone if both are wrong), never the value
+written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
+valid boolean, unable to interpret input`. The field is printed from the key you wrote, so a control
+character in a key reaches the terminal as written (a line break splits the line). What can be read
+is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
+`top_p` have no range check. A key `capabilities` does not know is ignored, and so is a
+`capabilities` that is empty or `false`.
+`sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
+every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
+judge and the `-sV` probes. Whether to apply it or drop it is open.
+
+`type: model` means a bare model API, and changes what a spec with setup sends: its memory seed
+goes as saved memory from earlier sessions after the system prompt, its documents as retrieved
+context before the attack and its tools as tool definitions, with each tool call answered by the
+spec's declared result for at most 4 rounds (OD-18 option A). Declare `tools`, `rag` and
+`memory` under `capabilities` to send those specs; each attempt then records `setup_delivery:
+in_band`, and the result says how the model handles untrusted context, not how a deployed
+application does. A spec whose untrusted content is only a tool's result is `inconclusive`
+(`setup_not_reached`) when the model never called that tool and nothing else failed, and the
+coverage figures do not count it; an adapter that cannot carry the scene (no tool definitions,
+or no system prompt for a memory seed, as a REST template without a system field) leaves the
+spec `inconclusive: setup_not_delivered` with nothing sent.
+
+Any other `type` is a **deployed application**, which has its own documents, tools and memory,
+so the scene is the operator's to seed (OD-18 option B). The target file says which specs it
+holds:
+
+```yaml
+seeded_setup:
+  specs: [PI-INDIRECT-TOOL-001, "AG-TOOL-*"]   # spec ids or fnmatch globs (case kept)
+  tools:                                       # a spec's tool name -> the deployment's name
+    lookup_ticket: get_ticket
+    search_kb: kb_search
+  granted_tools: [escalate_to_human]           # the deployment's own tools outside any scene
+  run_token: "eng-2026-q4"                     # replaces {{run_id}} in what you seed
+```
+
+A spec with `setup.documents`, `setup.tools` or `setup.memory_seed` is sent only when the
+deployment holds its scene as declared; otherwise it is `inconclusive` (`setup_not_seeded`)
+with nothing sent, the dry run and `--estimate` count it as "not seeded" (`-vv` says why), and
+the coverage figures do not count it. Four things leave a spec unsent: `specs` does not match
+it; its canary has to be in your deployment (in its scene, or planted in a record outside it, as
+`AC-BOLA-001` plants one in another customer's) and no `run_token` is declared, since you seed
+before the run and a canary bound per run could never be there, so `secret_leakage` would be
+blind; two tools of its own scene map to one deployment name; or it is judged on its tool trace
+and the target's adapter reads no tool calls (a REST template, the MCP adapter:
+`setup_not_delivered`). With a `run_token`, each such spec's canary is
+`<run_token>-<spec id>` in place of `{{run_id}}`, so no two specs share one, and
+`--dry-run -vv` prints every canary to seed (`seed:` lines); a spec whose canary travels in the
+request keeps the per-run one. Use a fresh token per engagement.
+
+A seeded spec goes out as its plain prompt (or pinned turns), and each attempt records
+`setup_delivery: seeded` and the tool-name map it applied (`seeded_tools`). The map is applied
+per spec, to that spec's scene tools only, so two specs may give one deployment tool their own
+names (`lookup_ticket: get_ticket` and `read_ticket: get_ticket`). Calls are judged under the
+spec's names, so `get_ticket` is judged as `lookup_ticket` and a call under the deployment's
+own name is not "unauthorized"; the evidence keeps the call as the deployment made it. A call to
+a `granted_tools` name is not unauthorized either, though its arguments and a destructive name
+are still judged; a grant applies to every seeded spec, except that a name that is one of a
+spec's own scene tools is never granted for that spec (a grant of `http_post` would otherwise
+re-authorize the egress an exfiltration spec forbids). Any other tool is judged as one outside
+the spec's scene.
+
+**Your deployment must show its tool calls.** A spec whose untrusted content is a tool's
+result, and which judges no tool trace, is `inconclusive: setup_not_reached` when the reply
+shows no call to that tool: a deployment that runs its tools server-side and returns only text
+cannot show that the poisoned result was ever fetched. A spec judged on its trace is not sent
+through an adapter that reads no calls (above); through one that does, no call is the secure
+answer, so do not declare trace specs for a deployment that hides its tool calls. Nothing can
+show that a seeded document or memory was ever retrieved, so a plain answer to a seeded RAG or
+memory spec passes: what a seeded spec tests is only as good as what you seeded and what your
+deployment retrieves, which the tool cannot check.
+
+The loader refuses the block on a `type: model` target (which gets the scene in-band), an
+unknown key, an empty or non-string entry, a name both mapped and granted, and a `run_token`
+that is not 8 to 64 letters, digits, `_` or `-`. The block is part of the target's digest, so a
+run stored without it resumes, and one stored with a different declaration does not. Resuming
+a run stored before this check existed, a spec it now stops is scored from the attempts the run
+had sent when it holds all of them, and otherwise kept as evidence, inconclusive, with nothing
+more sent. The offline mocks (`vulnerable`, `hardened`,
+`bare`, `comprehending`) answer from the spec, not from a deployment, and need no declaration.
+Worked file: [`../examples/target.app.yaml`](../examples/target.app.yaml).
+
+`auth_ref`
 supports only `env://NAME`. Any other scheme is refused before anything is sent, `--dry-run`
 included (`unsupported auth_ref scheme in 'vault://kv/live'; only 'env://NAME' is supported`,
 exit 3): a `vault://` resolver is not built. A literal key pasted as the `auth_ref` is refused
@@ -260,7 +347,9 @@ targets:
 
 `provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
 `/messages` -> `anthropic`, otherwise `rest`. `dottore fleet` expands this into a scope plus
-one target file per model. Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
+one target file per model. Each entry is written as a `chatbot` target (an `mcp` one as `api`)
+with no `seeded_setup`, so a spec that needs documents, tools or memory is `setup_not_seeded`
+on a fleet entry that declares the capability; for those, scan with a target file (§4.2). Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
 
 ## 5. Command reference
 
@@ -356,6 +445,21 @@ know nothing about. The findings are still written to every report. If your pipe
 `3` as "infrastructure, retry", read `summary.status.reason` before retrying: it names the
 breached axis and how many specs never ran.
 
+A resume with `-sV` records what its probe pass sent as soon as the pass ends, whether it
+finished, reached the request ceiling, stopped on an error (a probe with no answer after its
+retries, a 401, a reply that is not JSON) or was stopped by Ctrl-C or SIGTERM, so the next
+resume's ceiling counts those requests too. They are counted as the request ceiling counts them,
+every send attempted, retries included, a send to a target that refused the connection too. When
+an error or a signal stops the pass, stderr gives that count even under `-q`: `resume: the -sV
+probe pass on 'api' stopped after 3 request(s), retries included; run-<id> now records 23
+request(s) spent`, or `they could not be added to the spend of run-<id>` after a warning when the
+run store could not be written. The error line after it can say `exhausted 1 attempt(s)` for
+those three sends (see Troubleshooting); a refusal at the request ceiling gives its own count. A
+Ctrl-C landing during the few milliseconds of that write can lose the record, as a SIGKILL does,
+and cuts the line; after a Ctrl-C, or a pass that finished, it takes a second one in that window.
+Nothing is recorded for a fresh run stopped by its probe pass (it has no run row and nothing to
+resume) or for a `--resume-unverified` run whose spend was never recorded.
+
 ### `dottore fingerprint`, identify the model + guardrails
 
 ```
@@ -441,14 +545,41 @@ A spec pack can come from a third party, so lint reads only regular files that r
 their pack directory (or, for loose specs, the directory they were found in), at most 1 MiB
 each; a file named directly on the command line is read wherever it points. A document that
 expands, counting every alias where it is used, past 100,000 nodes (a long text counts one node
-per 64 characters), or that holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a
-few aliases used to turn a 4 KB file into 52 MB of error text. A key written twice in one
+per 64 characters), that nests deeper than 100 levels once its aliases are expanded, or that
+holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases used to turn a
+4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
+linter overflowed on. The scope, target, fleet and labels files have the same three limits, and
+so do the policy and signature packs (since 2026-10-07; they had only the depth limit, and an
+835-byte labels file of anchors that each list the previous one twice ran `calibrate` past 25 s
+and 1.7 GB). Too deep is reported before too large, and each where the value crosses its limit:
+`labels file labels.yaml is not valid YAML: document is too large (over 100000 nodes, counting
+every alias where it is used and a text as one node per 64 characters) at line 1, column 266`
+points at the anchor whose two aliases take it past the cap. Composition stops as soon as the nodes
+written in a file pass the cap, an alias counting the node it names, so a large file is refused
+without being composed whole (the first version of this cap composed a 3 MB list of a million texts,
+785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as too large before
+its depth is checked. The file itself is still read whole: these files have no byte limit. A tag
+longer than 256 characters is refused at the first one, without quoting it. Nesting written out a
+few hundred levels deep, past what PyYAML's composer holds, is refused without a position.
+A key written twice in one
 mapping is a `PARSE_ERROR` too. A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
-schema errors are listed per file. An oracle marker that an echo of the
+schema errors are listed per file. A number too long for Python to write out (more than
+`sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
+`f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included), and
+nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
+as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
+`mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An
+oracle marker that an echo of the
 request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered
-into the spec's images (see `CONTRIBUTING.md`).
+into the spec's images (see `CONTRIBUTING.md`). An evaluator config that would silently not
+check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no usable
+`patterns`, and a `tool_call` allowlist (`patterns`, the tools the agent is authorized to call)
+that names a tool the setup marks `external: true`. An allowlist name the setup does not declare
+(when it declares tools) is the same code as a warning, naming the closest declared tool when
+one is close.
 
 ### `dottore describe`, one spec's detail card
 
@@ -532,9 +663,11 @@ inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits 
 regression is present, so it is CI-gateable like `run`. A report covering several targets, or
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
-complete is refused too. `dottore calibrate REPORT LABELS` applies the same one-target rule,
-counts agreement as an exact status match, prints an undefined precision or recall as `n/a`
-and floors its percentages (99.6% is shown as 99%, not 100%).
+complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
+what the JSON parser holds), with the file named. `dottore calibrate REPORT LABELS` applies the
+same one-target rule and the same refusals, counts agreement as an exact status match, prints an
+undefined precision or recall as `n/a` and floors its percentages (99.6% is shown as 99%, not
+100%).
 
 ### `dottore schema export`, the JSON Schemas
 
@@ -619,10 +752,13 @@ probes as test traffic for the operator's logging and alerting (C12.1, C12.2).
 Read the 17 covered requirements with four cautions. **Nine** of them (C5.2.2, C5.2.4, C8.1.3,
 C9.3.5, C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need something the
 operator provides: a seeded corpus or tool, a target that exposes its tool trace, or two
-identities. Today the runner sends a live target the prompt, the system prompt and the media, not
-a spec's documents, tool definitions or memory seed (OD-18), so eight of the 17 are exercisable
-by the tool alone. C10.4.2 is an MCP control: it applies only where the tools are served over
-MCP, while its two specs run against any tool-using agent. C9.5.4 also needs the
+identities. The runner builds a spec's documents, tool definitions and memory seed into the
+request only for a `type: model` target (OD-18 option A, which tests the model rather than an
+application); a deployed application holds the scene only where its operator has seeded it and
+declared it (`seeded_setup`, option B), and an undeclared spec sends nothing there, so eight of
+the 17 are exercisable by the tool alone against a deployed application. C10.4.2 is
+an MCP control: it applies only where the tools are served over MCP, while its two specs run
+against any tool-using agent. C9.5.4 also needs the
 `offensive_simulation` policy layer, which the CLI cannot enable today (§3), so that row cannot
 be exercised from `dottore` at all. And the rows are not independent evidence:
 `DL-XTENANT-001` carries four of them and `AC-BOLA-001` three, so one failure lights several
@@ -644,9 +780,10 @@ real adapter. It decides what an offline target answers:
 `comprehending` is a **simulated decoder, not a model**. It shows that a target which
 comprehends some carriers and not others changes the plan, through the real layer, the real
 mutators and the real planner. It says nothing about how any actual model behaves: that needs a
-live run, and the fingerprint line prints `[offline mock: <scenario>]` so an offline result is
-never read as one. Three specs decide against any fixed-string offline target (their oracles
-read only the response text); `comprehending` decides exactly what `bare` decides, no more.
+live run (the first, against a local `llama3.2:3b`, is in `docs/16` §1), and the fingerprint
+line prints `[offline mock: <scenario>]` so an offline result is never read as one. Three specs
+decide against any fixed-string offline target (their oracles read only the response text);
+`comprehending` decides exactly what `bare` decides, no more.
 
 Both offline fingerprint paths honour the key: `dottore run -sV` and `dottore fingerprint
 --offline` pass the target's `mock_scenario` to the mock. On a `comprehending` target the
@@ -778,7 +915,8 @@ Each spec names one or more evaluators. The design is **deterministic-first**:
   verdict (empty content, a refusal in prose) counts like no judge, never as a pass.
 
 The **`tool_call`** evaluator inspects the tool-call trace and fails on four abuse classes:
-an unauthorized tool (outside `patterns` / `setup.tools`), an unconfirmed destructive call, an
+an unauthorized tool (outside `patterns`, or with no `patterns` outside the `setup.tools` not
+marked `external: true`), an unconfirmed destructive call, an
 injection marker smuggled into an argument value, and **argument smuggling** (a.k.a. schema
 poisoning). For the last one the spec lists the out-of-schema/privileged argument keys under
 the evaluator's `forbidden_args`; a truthy value under any of them (at any nesting depth), on
@@ -814,7 +952,9 @@ are compared ignoring case and surrounding space. A chain that only partly compl
 
 Multi-turn chains are covered: the conversation engine accumulates the tool trace across every
 turn (the aggregate keeps the final turn's text but the whole dialogue's calls, in order), so an
-agent cannot answer on one turn and act on the next to split the chain.
+agent cannot answer on one turn and act on the next to split the chain. With an in-band scene
+(OD-18) the final turn's text is the text of every tool round of that turn, so what the model
+wrote before a call is scored too.
 
 Name matching alone would be **argument-blind**: mailing the record to the user who asked
 completes the same chain as mailing it to an attacker, and failing that is a confident false
@@ -999,3 +1139,4 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. |
 | `authz_leak` is `capability_unavailable` | A cross-tenant spec needs the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
+| `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |

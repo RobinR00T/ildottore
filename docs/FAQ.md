@@ -125,12 +125,26 @@ standard (training data, infrastructure, logging) needs an audit, not a scan.
 
 ### Does Il Dottore send a spec's documents, tools or memory to my target?
 
-Not yet, and this matters for reading a result. Today the runner sends the prompt, the system
-prompt and any media. A spec's `setup.documents`, mock `setup.tools` and `setup.memory_seed`
-are used by the evaluators but never delivered, so the 32 specs that depend on them only test
-something where you have seeded the same content into your deployment, and a tool spec can fail
-falsely when your tools have other names. How to close that is an open decision (OD-18,
-`docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`); decide it before a live campaign.
+To a bare model, yes; to a deployed application, no: you seed them and say so. When your target
+is `type: model`
+(a model API), the spec's memory seed goes as saved memory from earlier sessions after the
+system prompt, its documents as retrieved context
+before the attack, and its tools as tool definitions; when the model calls one, Il Dottore
+answers with what the spec says the tool returns and lets it continue, for at most 4 rounds.
+That tests how the model handles untrusted content, not your application's own retrieval or
+tools, and each attempt says `setup_delivery: in_band`. Any other target type is a deployed
+application, which has its own documents, tools and memory: a spec that depends on them is
+`inconclusive: setup_not_seeded`, with nothing sent, unless your target file declares it seeded
+under `seeded_setup.specs` (ids or globs such as `PI-INDIRECT-*`). Declared, it goes out as the
+plain prompt, and each attempt says `setup_delivery: seeded`. Map the spec's tool names to your
+deployment's under `seeded_setup.tools` (`lookup_ticket: get_ticket`), so a call under your
+name is judged as the spec's tool instead of failing as unauthorized, and list your own tools
+outside any scene under `seeded_setup.granted_tools`. A spec whose canary has to be in your
+deployment needs `seeded_setup.run_token` (`--dry-run -vv` prints the canary to seed), and your
+deployment must return its tool calls, or a spec whose poison is a tool's result is
+`setup_not_reached` (and a spec judged on its tool trace is not sent through a REST target).
+`examples/target.app.yaml` is a worked file. The offline mock needs none of this: its replies are written for the scene (OD-18,
+`docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`).
 
 ### Why does a run refuse my target with "target(s) not authorized by the scope"?
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import json
 import os
 import shutil
 import signal
@@ -44,9 +45,17 @@ from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
-from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, Spend
+from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
+from ildottore.core.setup_delivery import (
+    MAX_TOOL_ROUNDS,
+    delivers_in_band,
+    in_band_setup,
+    seeded_canaries,
+    seeding_gap,
+    trace_gap,
+)
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
@@ -339,6 +348,9 @@ class TargetPlan:
     estimate: PlanEstimate
     budgets: PlanBudgets
     mutators_by_spec: dict[str, list[str]]
+    # OD-18 B: specs that need the deployment's scene and that its target file does not declare
+    # seeded. The runner reports them (`setup_not_seeded`) and sends nothing for them.
+    not_seeded: list[tuple[str, str]] = field(default_factory=list)  # (spec id, reason)
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -368,12 +380,21 @@ def estimate_plan(
     *,
     mutators_by_spec: dict[str, list[str]] | None = None,
     judge: bool = False,
+    target: Target | None = None,
+    fixtures_hold_scene: bool = False,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
-    ``requests`` = sum over specs of ``mutators x runs x turns``. ``mutators_by_spec`` (from
-    a resolved :class:`~ildottore.shared.models.TestPlan`) is authoritative when given;
-    absent it, :func:`_effective_mutators` reproduces what the planner would choose. Tokens
+    ``requests`` = sum over specs of ``mutators x runs x turns``. A spec whose setup goes out
+    in-band to ``target`` (OD-18) counts each turn with every tool round it may play, so the
+    ceilings derived from this cover the worst case: a turn of a tool spec is up to
+    ``1 + MAX_TOOL_ROUNDS`` sends, and its input carries the documents and tool definitions.
+    A spec that needs a deployment's scene (OD-18 B) and is not declared seeded sends nothing,
+    so it costs nothing, unless ``fixtures_hold_scene`` (the offline mock, whose fixtures are
+    written for the scene).
+    ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
+    authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
+    planner would choose. Tokens
     are a deliberately rough gloss (prompt length / 4 for input; the spec's
     ``sampling.max_tokens`` or 512 for output). No per-model pricing is known, so this
     reports volume, not a dollar figure.
@@ -386,11 +407,35 @@ def estimate_plan(
     judge_tokens = 0
     by_category: dict[str, int] = {}
     for spec in specs:
+        if (
+            target is not None
+            and not fixtures_hold_scene
+            and (
+                seeding_gap(spec, target)
+                or trace_gap(
+                    spec,
+                    target,
+                    returns_tool_calls=wiring.provider_returns_tool_calls(target),
+                )
+            )
+        ):
+            continue  # setup_not_seeded: the runner sends nothing for it (OD-18 B)
         mutators = (mutators_by_spec or {}).get(spec.id) or _effective_mutators(spec)
         turns = spec.attack.turns
         n_turns = len(turns) if turns is not None and len(turns) >= 2 else 1
-        requests = len(mutators) * runs * n_turns
         prompt = spec.attack.user_prompt or spec.attack.carrier or (turns[0] if turns else "")
+        sends_per_turn = 1
+        if target is not None and delivers_in_band(spec, target):
+            scene = in_band_setup(spec)
+            if scene.tools and not spec.attack.media:
+                sends_per_turn += MAX_TOOL_ROUNDS
+            prompt = (
+                scene.memory
+                + scene.context
+                + prompt
+                + (json.dumps(scene.tools) if scene.tools else "")
+            )
+        requests = len(mutators) * runs * n_turns * sends_per_turn
         in_tokens = max(1, len(prompt) // 4)
         out_tokens = (
             spec.sampling.max_tokens
@@ -548,7 +593,33 @@ def resolve_target_plans(
                 runnable.append(spec)
             else:
                 blocked.append((spec.id, verdict.reason or "blocked_by_policy"))
-        estimate = estimate_plan(runnable, runs, mutators_by_spec=mutators_by_spec, judge=judge)
+        # The offline mock replays the specs' fixtures, written for the scene, so it holds every
+        # scene; a live deployment holds only those its operator declared seeded (OD-18 B).
+        fixtures_hold_scene = wiring.target_uses_mock(path)
+        # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
+        # declared, a per-run canary with no run_token, two scene tools under one deployment
+        # name, or a trace spec through an adapter that reads no tool calls.
+        calls_visible = wiring.provider_returns_tool_calls(target)
+        not_seeded = [
+            (spec.id, gap)
+            for spec in runnable
+            if not fixtures_hold_scene
+            and (
+                gap := seeding_gap(spec, target)
+                or trace_gap(spec, target, returns_tool_calls=calls_visible)
+            )
+            is not None
+        ]
+        unseeded = {spec_id for spec_id, _ in not_seeded}
+        runnable = [spec for spec in runnable if spec.id not in unseeded]
+        estimate = estimate_plan(
+            runnable,
+            runs,
+            mutators_by_spec=mutators_by_spec,
+            judge=judge,
+            target=target,
+            fixtures_hold_scene=fixtures_hold_scene,
+        )
         plans.append(
             TargetPlan(
                 target=target,
@@ -561,6 +632,7 @@ def resolve_target_plans(
                 estimate=estimate,
                 budgets=budgets_for(estimate, rate_rps=rate_rps, overrides=budget_overrides),
                 mutators_by_spec=mutators_by_spec,
+                not_seeded=not_seeded,
             )
         )
     return plans
@@ -692,6 +764,7 @@ def _print_estimate(
             f"{len(plan.selected)} specs"
             + (f", {skipped} skipped (capability)" if skipped else "")
             + (f", {blocked} blocked (policy)" if blocked else "")
+            + (f", {len(plan.not_seeded)} not seeded" if plan.not_seeded else "")
         )
     by_category: dict[str, int] = {}
     for plan in plans:
@@ -779,6 +852,21 @@ def _print_dry_run_plan(
             if detail >= 2:
                 for spec_id, reason in plan.blocked_by_policy:
                     print(f"    - {spec_id}: {reason}")
+        if plan.not_seeded:
+            print(
+                f"  not seeded: {len(plan.not_seeded)} spec(s) on {plan.target.id}, their "
+                "scene is not in the deployment as seeded_setup declares it, or their tool "
+                "trace cannot be read through this adapter (-vv says which)"
+            )
+            if detail >= 2:
+                for spec_id, reason in plan.not_seeded:
+                    print(f"    - {spec_id}: {reason}")
+        if detail >= 2:
+            # What the operator plants: each seeded spec's own canary (run_token-<spec id>).
+            for spec in plan.selected:
+                canaries = seeded_canaries(spec, plan.target)
+                if canaries:
+                    print(f"  seed:    {spec.id}: {', '.join(canaries)}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
     judge_requests = sum(p.estimate.judge_requests for p in plans)
     if judge_requests:
@@ -834,6 +922,7 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "
             f"{len(plan.blocked_by_policy)} blocked by policy"
+            + (f", {len(plan.not_seeded)} not seeded" if plan.not_seeded else "")
         )
     print("  reachability is authorization-level (scope + allowlist); no request was sent.")
 
@@ -1256,6 +1345,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         for _, target, (mock_scenario, real_target) in routes:
             if opts.resume is None:
                 starts[target.id] = wiring.utc_timestamp()
+            # The pass's ledger is made here, not inside the pass, so what it sent is known
+            # however it ends, and a resumed run records it then, success included (u12 A-46).
+            # Only the ceiling used to: a probe answered 503 three times left the store at 20
+            # while the target had served 23, and so did a product error, Ctrl-C, SIGTERM, or
+            # anything stopping the run before the runner's ledger opened. Each retry of the
+            # same resume then sent its probes against a ceiling that had never seen them.
+            probe_ledger = BudgetLedger(max_requests=probe_ceiling)
             try:
                 probe_pass = wiring.fingerprint_probe(
                     scope,
@@ -1265,22 +1361,38 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     evidence=probe_store,
                     run_id=run_ids[target.id],
                     mock_scenario=mock_scenario,
-                    max_requests=probe_ceiling,
+                    ledger=probe_ledger,
                 )
+                # Inside the try: a signal landing between the pass and this write lost the
+                # whole pass (2 of 16 real SIGINTs a few ms after the last probe, pre-commit
+                # audit). Interrupted here, the handler below writes it again.
+                _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
             except wiring.ProbeCeilingReached as exc:
-                if prior_spend is not None:
-                    # A resumed run records what this probe pass spent before refusing: it did
-                    # not, so each retry of the same command spent the ceiling again (60 allowed,
-                    # 106 sent after three tries; pre-commit audit of the leftovers).
-                    _persist_spend(
-                        run_db, run_ids[target.id], prior_spend.plus(Spend(requests=exc.requests))
-                    )
+                _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
                 raise ValueError(
                     f"the -sV probe pass on {target.id!r} reached the --budget-requests ceiling "
                     f"({exc}) after {exc.requests} request(s), before any attack traffic: "
                     "retries count as requests. Raise the ceiling or drop -sV. The exchanges are "
                     f"in {evidence_root / run_ids[target.id] / 'probes'}."
                 ) from exc
+            except BaseException:
+                # The error's own message can understate the sends: a probe adapter has no
+                # retries of its own (the meter owns them), so three 503s read "exhausted 1
+                # attempt(s)". The count is the ledger's. Plain print, as the resume notice.
+                recorded = _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
+                sent = probe_ledger.spend().requests
+                if prior_spend is not None and sent:
+                    print(
+                        f"resume: the -sV probe pass on {target.id!r} stopped after {sent} "
+                        "request(s), retries included; "
+                        + (
+                            f"{run_ids[target.id]} now records {recorded} request(s) spent"
+                            if recorded is not None
+                            else f"they could not be added to the spend of {run_ids[target.id]}"
+                        ),
+                        file=sys.stderr,
+                    )
+                raise
             fingerprints[target.id] = probe_pass.fingerprint
             probes_sent[target.id] = probe_pass.requests
     if fingerprints and not opts.quiet:
@@ -1330,7 +1442,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # three policy-blocked specs: "3 of 0 planned", exit 0, zero requests.
     barren = [
         f"{p.target.id} ({len(p.skipped_capability)} skipped for capabilities, "
-        f"{len(p.blocked_by_policy)} blocked by policy)"
+        f"{len(p.blocked_by_policy)} blocked by policy"
+        + (f", {len(p.not_seeded)} not seeded" if p.not_seeded else "")
+        + ")"
         for p in plans
         if not p.selected
     ]
@@ -1340,6 +1454,14 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{'; '.join(barren)}. Widen the selection or declare the capability on the "
             "target. A spec blocked by policy needs a policy pack that enables it, and the CLI "
             "cannot load one today (open decision), so it cannot run from `dottore`."
+            + (
+                " A spec counted as not seeded runs once what `--dry-run -vv` names for it is "
+                "fixed: its id in seeded_setup.specs, a seeded_setup.run_token, its own "
+                "deployment name for each of its scene tools in seeded_setup.tools, or an "
+                "adapter that returns tool calls."
+                if any(p.not_seeded for p in plans if not p.selected)
+                else ""
+            )
         )
 
     # Resolved BEFORE the three modes that send nothing, so a typo in the id is caught by the
@@ -1682,7 +1804,8 @@ def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> 
     """The requests a resume will not send again: one per turn of every answered attempt.
 
     `--estimate --resume` subtracted an attempt count from a request count, so a multi-turn spec
-    was priced at 15 still to send when 12 went out (pre-commit audit of F11).
+    was priced at 15 still to send when 12 went out (pre-commit audit of F11). An in-band
+    attempt (OD-18) adds the tool rounds it played, which its request records.
     """
 
     if resume_from is None:
@@ -1700,7 +1823,10 @@ def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> 
         for attempt in finding.attempts:
             if attempt.attempt_id in answered and attempt.attempt_id not in seen:
                 seen.add(attempt.attempt_id)
-                total += turns_by_spec.get(finding.spec_id, 1)
+                rounds = (attempt.request.metadata or {}).get("tool_rounds", 0)
+                total += turns_by_spec.get(finding.spec_id, 1) + (
+                    rounds if isinstance(rounds, int) and not isinstance(rounds, bool) else 0
+                )
     return total
 
 
@@ -1818,10 +1944,9 @@ def _persist_run_spend(run_db: Path, result: CampaignResult) -> None:
     """Record what the campaign consumed, once it is known.
 
     The runner also hands its spend to the store however it stops (a ceiling, an abort,
-    Ctrl-C, and SIGTERM or SIGHUP, which ``execute_run`` turns into Ctrl-C). A SIGKILL still
-    loses the dead half's spend, and so does a Ctrl-C during a resumed run's ``-sV`` probe pass
-    (the probes are counted only once the pass returns). Closing those would mean a write per
-    request.
+    Ctrl-C, and SIGTERM or SIGHUP, which ``execute_run`` turns into Ctrl-C), and a resumed run's
+    ``-sV`` probe pass is recorded however it ends (:func:`_charge_probe_pass`). A SIGKILL still
+    loses the dead half's spend: closing that would mean a write per request.
     """
 
     _persist_spend(run_db, result.run.run_id, result.spend)
@@ -1835,16 +1960,56 @@ def _record_spend_quietly(run_db: Path, run_id: str, spend: Spend) -> None:
     hygiene block). A finished run still records its spend through ``_persist_run_spend``.
     """
 
+    _recorded_requests(run_db, run_id, spend)
+
+
+def _recorded_requests(run_db: Path, run_id: str, spend: Spend) -> int | None:
+    """Record ``spend`` and return the requests the store then holds for ``run_id``.
+
+    ``None`` when it could not be recorded, which is said on stderr and is never the run's
+    error: a locked database must not replace the Ctrl-C or the error that stopped the run.
+    """
+
     try:
-        _persist_spend(run_db, run_id, spend)
+        return _persist_spend(run_db, run_id, spend)
     except Exception as exc:  # the database, not the campaign
         from ildottore.redactor import Redactor
 
         reason = Redactor().redact_text(str(exc))
         print(f"warning: the spend of {run_id} could not be recorded: {reason}", file=sys.stderr)
+        return None
 
 
-def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> None:
+def _charge_probe_pass(
+    run_db: Path, run_id: str, prior: Spend | None, ledger: BudgetLedger
+) -> int | None:
+    """Record a resumed run's spend with what its ``-sV`` probe pass sent (u12 A-46).
+
+    Called however the pass ends, success included, so a stop before the runner's ledger opens
+    loses nothing either. The figure is written whole, not added: the store keeps the highest
+    per axis, so the runner's later record of the same probes plus the attack counts each probe
+    once. Returns the requests the store then holds, or ``None`` when nothing was recorded:
+    nothing sent, no prior spend, or a failed write (a warning says so). No prior spend is a
+    fresh run, whose run row is written after the pass so there is nothing to resume, or a
+    ``--resume-unverified`` run with no recorded spend, told its ceiling covers this invocation
+    alone; neither recorded the probes before, at the ceiling either.
+    """
+
+    sent = ledger.spend().requests
+    if prior is None or sent == 0:
+        return None
+    # Not retried when a signal lands during the write. In the probe loop's handlers nothing
+    # catches it after, so one landing there loses the pass (2 of 41 real SIGINTs just after a
+    # 503 stop, delta audit). Writing again closed that, and on a locked store made Ctrl-C wait
+    # one more busy timeout per interrupted write (9.9 s instead of 4.7 after a 503, 15.1
+    # instead of 9.8 after a pass that succeeded) for a record lost anyway (pre-merge audit).
+    # The window stays, like a SIGKILL's, and u12 A-46 says so.
+    return _recorded_requests(run_db, run_id, prior.plus(Spend(requests=sent)))
+
+
+def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> int:
+    """Record ``spend`` (the highest per axis is kept) and return the requests now recorded."""
+
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
@@ -1857,6 +2022,7 @@ def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> None:
                 "wall_s": round(spend.wall_s, 6),
             },
         )
+        return int((store.get_run_spend(run_id) or {}).get("requests", 0))
 
 
 def _print_progress(

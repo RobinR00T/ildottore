@@ -68,6 +68,9 @@ class ComprehendingMock:
     """A deterministic offline target that follows a decodable instruction."""
 
     id: str
+    #: An offline mock answers from what it is sent, not from a deployment: no scene needs
+    #: seeding (OD-18 B). Without it the plan exempted this route and the run did not.
+    offline_mock = True
 
     def __init__(self, *, id: str = "mock", capabilities: Capabilities | None = None) -> None:
         self.id = id

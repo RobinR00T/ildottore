@@ -172,6 +172,19 @@ class MockTarget:
 
         return self._scenario.capabilities
 
+    @property
+    def carries_tool_definitions(self) -> bool:
+        """An in-band setup's tools reach this mock when it declares tools (OD-18)."""
+
+        return self._scenario.capabilities.tools
+
+    #: It takes a system prompt, as a live chat API does (OD-18).
+    carries_system_prompt = True
+    #: An offline mock answers from the spec (its fixtures, or a canned string), not from a
+    #: deployment, so a spec that needs a seeded deployment runs against it without a
+    #: ``seeded_setup`` declaration (OD-18 B). The plan exempts every mock route the same way.
+    offline_mock = True
+
     def reset(self) -> None:
         """Reset the internal sequence cursor to 0 (deterministic re-run)."""
 
@@ -217,7 +230,13 @@ class MockTarget:
         """
 
         attempt = self._attempt_index(request)
-        return self._build_response(attempt)
+        response = self._build_response(attempt)
+        history = request.messages or []
+        if history and history[-1].get("role") == "tool":
+            # A tool round (OD-18): the fixture's calls were made and answered; the scenario's
+            # text is the reply, with no further calls, so the round ends as it would live.
+            return response.model_copy(update={"tool_calls": []})
+        return response
 
 
 def bare_scenario(*, capabilities: Capabilities | None = None) -> MockScenario:

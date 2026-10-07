@@ -7,8 +7,9 @@ file is read only when it is a regular file inside its pack and at most 1 MiB, a
 refused when it expands, counting every alias where it is used, past a fixed budget (100,000
 nodes, a long text counting one node per 64 characters), and a YAML error never quotes a line of
 the file (audit SEC-09 of 2026-10-03: seven 50-byte alias lines made a 4 KB spec print 52 MB of
-schema errors). A JSON-schema message can still quote the offending value, cut at 300
-characters.
+schema errors). The budget and its measure are ``safe_yaml``'s, shared since 2026-10-07 with
+the loaders of the operator's own files, which had none. A JSON-schema message can still quote
+the offending value, cut at 300 characters.
 
 ``schemas/attack-spec.schema.json`` is the hand-authored oracle for attack specs; the
 ``suite`` and ``pack`` schemas are Pydantic-first (ADR-0006 / OD-14) and generated from the
@@ -28,8 +29,9 @@ import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
-from ildottore.safe_yaml import SafeValueLoader
+from ildottore.safe_yaml import SafeValueLoader, check_expanded
 from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.digits import described, path_text, too_long_paths
 
 # Repo layout: <root>/schemas/attack-spec.schema.json ; this file lives at
 # <root>/src/ildottore/registry/schema.py → three parents up to the package src root,
@@ -40,11 +42,6 @@ _ATTACK_SPEC_SCHEMA = _REPO_ROOT / "schemas" / "attack-spec.schema.json"
 
 #: Larger than any spec needs (the biggest shipped spec is under 5 KB; media assets are files).
 MAX_YAML_BYTES = 1024 * 1024
-#: Nodes a document may hold once every alias is counted where it is used.
-MAX_YAML_NODES = 100_000
-#: A scalar counts one more node per this many characters, so a long text repeated through
-#: aliases costs what its copies weigh: the budget bounds the expanded text at about 6 MB.
-_CHARS_PER_NODE = 64
 #: A schema message quotes the offending value; past this length it is cut.
 _MAX_MESSAGE_CHARS = 300
 #: Schema errors reported per spec; the rest are counted, not listed.
@@ -61,9 +58,10 @@ def safe_load_yaml(text: str) -> Any:
     The safe loader refuses ``!!python/object`` and other code-constructing tags, raising
     ``yaml.YAMLError``; it is re-raised as :class:`SafeLoadError` so callers get one exception
     type. No code is executed and no import is triggered. The document is composed first and
-    its size counted with every alias expanded, before anything is built from it: aliases are
-    shared references, so parsing stays cheap and the amplification only appears when the
-    value is walked (by the schema validator and its messages).
+    its size and depth measured with every alias expanded (``safe_yaml.check_expanded``),
+    before anything is built from it: aliases are shared references, so parsing stays cheap
+    and the amplification only appears when the value is walked (by the schema validator and
+    its messages).
     """
 
     if len(text) > MAX_YAML_BYTES:
@@ -80,7 +78,7 @@ def safe_load_yaml(text: str) -> Any:
         node = loader.get_single_node()
         if node is None:
             return None
-        _check_expanded_size(node)
+        check_expanded(node)
         return loader.construct_document(node)  # type: ignore[no-untyped-call,unused-ignore]
     except yaml.YAMLError as exc:  # includes ConstructorError for unsafe tags
         # Reason and position only: PyYAML's own text quotes a snippet of the line, which for
@@ -90,43 +88,6 @@ def safe_load_yaml(text: str) -> Any:
         raise SafeLoadError("document is nested too deeply") from exc
     finally:
         loader.dispose()  # type: ignore[no-untyped-call,unused-ignore]
-
-
-def _check_expanded_size(root: yaml.Node) -> None:
-    """Refuse a node graph that holds a cycle or expands past :data:`MAX_YAML_NODES`.
-
-    Each node's expanded size is computed once and reused, so a document of shared aliases is
-    measured without being expanded. A recursive alias (``&a [*a]``) is refused: no spec field
-    is self-containing, and the validator would walk it forever.
-    """
-
-    sizes: dict[int, int] = {}
-    in_progress: set[int] = set()
-
-    def size(node: yaml.Node) -> int:
-        key = id(node)
-        if key in sizes:
-            return sizes[key]
-        if key in in_progress:
-            raise SafeLoadError("document contains a recursive alias")
-        in_progress.add(key)
-        total = 1
-        if isinstance(node, yaml.ScalarNode):
-            total += len(node.value) // _CHARS_PER_NODE
-        elif isinstance(node, yaml.SequenceNode):
-            total += sum(size(child) for child in node.value)
-        elif isinstance(node, yaml.MappingNode):
-            total += sum(size(k) + size(v) for k, v in node.value)
-        in_progress.discard(key)
-        if total > MAX_YAML_NODES:
-            raise SafeLoadError(
-                f"document is too large (over {MAX_YAML_NODES} nodes, counting every alias "
-                f"where it is used and a text as one node per {_CHARS_PER_NODE} characters)"
-            )
-        sizes[key] = total
-        return total
-
-    size(root)
 
 
 def _check_readable(info: os.stat_result) -> None:
@@ -209,7 +170,21 @@ def validate_attack_spec_schema(data: object) -> list[str]:
     JSON path keeps the output deterministic for golden comparisons. At most
     :data:`_MAX_SCHEMA_ERRORS` are listed and the rest counted: a 99,000-item list of the wrong
     type printed 5.7 MB (pre-commit audit of the SEC-09 fix).
+
+    A number too long to write out is reported where it is, and nothing else is checked: every
+    jsonschema message that quotes a value raised on it, a lint traceback with exit 1, and one
+    the schema accepted failed later where the run wrote it (A-40).
     """
+    too_long = list(too_long_paths(data))
+    if too_long:
+        shown = [
+            f"{_cut(path_text(path))}: {'a key that is ' if is_key else ''}{described()}"
+            for path, is_key in too_long[:_MAX_SCHEMA_ERRORS]
+        ]
+        if len(too_long) > _MAX_SCHEMA_ERRORS:
+            more = len(too_long) - _MAX_SCHEMA_ERRORS
+            shown.append(f"<root>: and {more} more numbers too long to write out")
+        return shown
     validator = _attack_spec_validator()
     errors: list[ValidationError] = sorted(
         validator.iter_errors(data), key=lambda e: list(e.absolute_path)
@@ -228,7 +203,12 @@ def _format_error(err: ValidationError) -> str:
     """
 
     location = "/".join(str(p) for p in err.absolute_path) or "<root>"
-    message = err.message
-    if len(message) > _MAX_MESSAGE_CHARS:
-        message = message[:_MAX_MESSAGE_CHARS] + f"... ({len(err.message)} characters)"
-    return f"{location}: {message}"
+    return f"{location}: {_cut(err.message)}"
+
+
+def _cut(text: str) -> str:
+    """``text`` cut at :data:`_MAX_MESSAGE_CHARS`, saying how long it was."""
+
+    if len(text) <= _MAX_MESSAGE_CHARS:
+        return text
+    return text[:_MAX_MESSAGE_CHARS] + f"... ({len(text)} characters)"

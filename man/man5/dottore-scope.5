@@ -83,6 +83,9 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 and
 .B type
 are required; the rest are needed only for a live scan.
+.B sampling_defaults
+is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
+their own sampling.
 .B auth_ref
 accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
 refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is
@@ -90,6 +93,37 @@ refused too, and the error prints "a literal value (not shown)" instead of quoti
 secret is read at send time and never stored. A provider other than openai, anthropic or mcp routes to the generic REST
 adapter. An MCP target sets provider "mcp"; over the wire it gives an endpoint, or as a
 local subprocess it sets transport "stdio" and a command argv (authorized via scope commands).
+.PP
+A
+.B type
+other than model is a deployed application, which holds a spec's documents, tools and memory
+only where its operator has seeded them (OD-18 option B). It declares them under
+.BR seeded_setup :
+.nf
+seeded_setup:
+  specs: [PI-INDIRECT-TOOL-001, "AG-TOOL-*"]  # ids or fnmatch globs
+  tools: { lookup_ticket: get_ticket }        # spec tool name -> deployment name
+  granted_tools: [escalate_to_human]          # own tools outside any scene
+  run_token: "eng-2026-q4"                    # replaces {{run_id}} in what you seed
+.fi
+.PP
+A spec with setup is inconclusive (setup_not_seeded) with nothing sent when
+.B specs
+does not match it, when its canary has to be in the deployment and no
+.B run_token
+is declared, or when two of its scene tools map to one deployment name; a spec judged on its
+tool trace is not sent through an adapter that reads no tool calls (REST, MCP). With a token,
+each such spec's canary is <run_token>-<spec id>, and --dry-run -vv prints what to seed. A sent
+one records setup_delivery: seeded. Tool calls are judged under the spec's names through
+.BR tools ,
+applied per spec; a
+.B granted_tools
+call is not unauthorized unless the name is one of that spec's own scene tools (its arguments
+are judged either way). The deployment must return its tool calls: a reply that shows no call
+to the tool carrying the scene is inconclusive (setup_not_reached). The block is refused on a
+type: model target, which gets the scene in-band, and on an unknown key, a name both mapped
+and granted, or a run_token that is not 8 to 64 letters, digits, _ or -. Worked file:
+examples/target.app.yaml.
 .SH "FLEET FILE"
 .nf
 version: "1"
@@ -110,7 +144,9 @@ targets:
 is inferred from the endpoint when omitted: /chat/completions maps to openai, /messages to
 anthropic, otherwise rest.
 .B api_key_env
-names an environment variable, never the key itself.
+names an environment variable, never the key itself. Each entry becomes a chatbot target (an
+mcp one an api target) with no seeded_setup, so a spec that needs documents, tools or memory is
+setup_not_seeded there; scan those with a target file.
 .SH "SEE ALSO"
 .BR dottore (1)
 .PP

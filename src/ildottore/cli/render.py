@@ -172,8 +172,10 @@ def coverage_lines(
         *(
             [
                 f"Not exercised: {len(cov.not_exercised)} spec(s) got no reply that could be "
-                "scored (nothing sent: blocked by policy or a capability the target does not "
-                "declare; or every send ended in an environment error, such as a network "
+                "scored (nothing sent: blocked by policy, a capability the target does not "
+                "declare, or a scene the target file does not declare seeded or the adapter "
+                "could not carry; or a reply that never reached the tool carrying the scene; or "
+                "every send ended in an environment error, such as a network "
                 "failure, a timeout, HTTP 429 or 5xx, a reply over the size cap or one that could "
                 "not be decoded), so their framework codes are NOT counted as covered"
             ]

@@ -16,7 +16,7 @@ MVP-2 if Anthropic ships per-token logprobs.
 from __future__ import annotations
 
 import base64
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -50,6 +50,15 @@ class AnthropicAdapter(BaseAdapter):
     def _endpoint_path(self) -> str:
         return "/v1/messages"
 
+    @property
+    def carries_tool_definitions(self) -> bool:
+        """True when this endpoint takes tools: the in-band setup's are translated (OD-18)."""
+
+        return self.tools_enabled
+
+    #: The system prompt goes on the wire, so a memory seed reaches the model (OD-18).
+    carries_system_prompt = True
+
     def capabilities(self) -> Capabilities:
         return Capabilities(
             tools=self.tools_enabled,
@@ -75,7 +84,7 @@ class AnthropicAdapter(BaseAdapter):
         """
 
         if request.messages is not None:
-            return [self._project_message(m) for m in request.messages]
+            return self._project_history(request.messages)
         if request.media:
             return [{"role": "user", "content": self._multimodal_content(request)}]
         if request.prompt is not None:
@@ -111,6 +120,75 @@ class AnthropicAdapter(BaseAdapter):
         return content
 
     @staticmethod
+    def _project_tool(tool: Mapping[str, Any]) -> dict[str, Any]:
+        """A provider-neutral tool as a Messages API tool (``input_schema``); one already in
+        that shape passes through unchanged."""
+
+        if "input_schema" in tool:
+            return dict(tool)
+        return {
+            "name": tool.get("name", ""),
+            "description": tool.get("description", ""),
+            "input_schema": tool.get("parameters", {"type": "object", "properties": {}}),
+        }
+
+    @classmethod
+    def _project_history(cls, messages: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """The history in the Messages API shape, tool turns included (OD-18).
+
+        A provider-neutral assistant turn with ``tool_calls`` (``id``, ``name``, ``arguments``)
+        becomes ``text`` and ``tool_use`` blocks; the ``tool`` turns after it become one user
+        turn of ``tool_result`` blocks, as the API requires. Any other turn is projected to
+        ``role`` + ``content`` as before (an OpenAI-shaped ``tool_calls`` is still dropped).
+        """
+
+        projected: list[dict[str, Any]] = []
+        for message in messages:
+            role = message.get("role")
+            calls = message.get("tool_calls")
+            if role == "tool":
+                block = {
+                    "type": "tool_result",
+                    "tool_use_id": message.get("tool_call_id", ""),
+                    "content": message.get("content", ""),
+                }
+                last = projected[-1] if projected else None
+                if (
+                    last is not None
+                    and last["role"] == "user"
+                    and isinstance(last["content"], list)
+                ):
+                    last["content"].append(block)
+                else:
+                    projected.append({"role": "user", "content": [block]})
+            elif (
+                role == "assistant"
+                and isinstance(calls, list)
+                and calls
+                and all(
+                    isinstance(c, Mapping) and "function" not in c and "arguments" in c
+                    for c in calls
+                )
+            ):
+                text = message.get("content")
+                blocks: list[dict[str, Any]] = []
+                if isinstance(text, str) and text.strip():  # the API rejects a blank text block
+                    blocks.append({"type": "text", "text": text})
+                blocks.extend(
+                    {
+                        "type": "tool_use",
+                        "id": call.get("id", ""),
+                        "name": call.get("name", ""),
+                        "input": dict(call.get("arguments") or {}),
+                    }
+                    for call in calls
+                )
+                projected.append({"role": "assistant", "content": blocks})
+            else:
+                projected.append(cls._project_message(message))
+        return projected
+
+    @staticmethod
     def _project_message(message: Mapping[str, Any]) -> dict[str, Any]:
         """Keep only the Messages-API-valid fields of one turn (``role`` + ``content``).
 
@@ -140,7 +218,7 @@ class AnthropicAdapter(BaseAdapter):
         if request.system_prompt is not None:
             body["system"] = request.system_prompt
         if request.tools is not None:
-            body["tools"] = [dict(t) for t in request.tools]
+            body["tools"] = [self._project_tool(t) for t in request.tools]
         if sampling is not None:
             if sampling.temperature is not None:
                 body["temperature"] = sampling.temperature

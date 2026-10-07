@@ -3,10 +3,10 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
-## State, 2026-10-06 (midday): a load refusal names its spec file
+## State, 2026-10-07 (night): a load refusal names its spec file
 
-- PR #48 (the #46 pre-merge follow-ups) squash-merged as `d54097c`. On
-  `fix/spec-load-error-names` (`tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
+- On `fix/spec-load-error-names` (PR #49, opened on `d54097c` on 2026-10-06, merged with main at
+  `de392e1`; `tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
   that fails to load printed its path as `«REDACTED:high_entropy:…».yaml` (found by the #47
   pre-merge audit); it names `attacks/DL-PII-ELICIT-001.yaml` now, kept only when it is an entry
   on disk under a spec path, nothing the entropy rule reads as a token is glued to it, and it
@@ -14,8 +14,173 @@ The carryover ledger. Every agent session updates this so context survives even 
   registered credential (from 8 characters) prints as `«REDACTED:credential»` instead of going
   to the entropy rule. The pre-commit audit (3,996 cases main against branch, no secret exposed)
   found two test gaps and four low items, all fixed; `no_known_secrets` moved to
-  `tests/conftest.py`. `make gates` green: 2,172 tests (2,158 on `d54097c`), coverage 96.26%,
-  `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+  `tests/conftest.py`. The pre-merge audit (73,812 cases of `_masked`, main against branch) found
+  no reason to block; its two wording items are fixed. `make gates` green: 2,499 tests (2,485 on
+  `de392e1`), coverage 96.55%, `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+
+## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
+
+- Found by the delta audit of PR #68 and fixed on `fix/sv-probe-spend-on-stop`: on `run --resume
+  <id> -sV`, only the request ceiling wrote what the probe pass had sent to the run store. A probe
+  answered 503 three times left the store at 20 while the stub had served 23 (reproduced on main
+  `0501752`); a 401, a 200 that is not JSON, Ctrl-C, SIGTERM and a stop after a pass that
+  succeeded lost the pass too. The CLI now owns the pass's ledger and records prior spend plus the
+  pass as soon as it ends, success included (the store's per-axis maximum keeps each probe counted
+  once), and says the count on stderr when an error or a signal stops the pass. Three audit rounds
+  found signal windows: the write after a successful pass sat outside the handlers (a real SIGINT
+  a few milliseconds after the last probe lost all 17 in 2 of 16 tries; moved inside), and a
+  handler's own write has nothing after it (2 of 41 tries just after a 503 stop). Writing again on
+  that signal was built and withdrawn (on a locked store, one Ctrl-C after a pass that succeeded
+  waited 15.1 s instead of 9.8 for a record lost anyway); the window is written in the contract.
+  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not changed: a fresh
+  run's pass and a `--resume-unverified` run with no recorded spend record nothing; a signal during
+  a handler's write, a SIGKILL, or a write that fails (a warning) still leave the record low. Left open as a follow-up: the adapters
+  are built with no retries of their own, so the error that stops a probe pass, and an attack
+  attempt's evidence, say `exhausted 1 attempt(s)` after three sends. Merged in a scratch
+  repository with PR #66 and with PR #68, code, u12 and the index merge cleanly (only
+  `CHANGELOG.md` and `docs/PROGRESS.md` conflict) and the merged trees pass both PRs' tests and
+  these.
+
+## State, 2026-10-07 (afternoon): every YAML loader capped by expanded size
+
+- Closes the second item left open below. On `fix/yaml-alias-expansion-cap`, on main after #61: the
+  scope, target, fleet and labels files and the policy and signature packs had the depth limit but
+  no size cap with aliases expanded, which only the spec loader had (SEC-09). An 835-byte labels
+  file of doubling anchors ran `calibrate` past 25 s and 1.7 GB, and a `<<` merging the previous map
+  twice doubles the work inside PyYAML itself. All of them now share the spec loader's cap (100,000
+  nodes, a text one node per 64 characters) through one measure, `safe_yaml.check_expanded`: depth
+  and size in one pass over the node graph, each size saturating past the cap, too deep before too
+  large, refused at the node where the value crosses the limit, in 0.4 s and 71 MB. Two audits found
+  holes in the fix itself, all closed: unsaturated, the measure's own memory grew with the square of
+  an anchor chain; measuring only a fully composed document let a 3 MB file of plain texts cost 785
+  MB, and a list of aliases, uncounted, was still composed whole; and a `%TAG` prefix copied into
+  every node's tag held 187 MB for 1,000 nodes. Composition now stops at the cap (an alias counting
+  what it names; 1.4 s and 134 MB for that file) and a tag past 256 characters is refused. Clause
+  A-37 (u01). 34 of the 38 new tests fail on `0501752`. Twenty-three mutants of the fix are all
+  killed. Left open as their own tasks: construction costs under the cap (base-60 integers,
+  colliding integer keys, the target loaded four times per `run`; taken by the session "Bound YAML
+  construction cost under the node cap", stacked on this branch), a huge integer that crashes
+  `lint`, and no byte limit on the operator's files.
+
+## State, 2026-10-07 (afternoon): a number too long to write out
+
+- On `fix/huge-int-repr` (`tests/cli/test_huge_numbers.py`, clause A-40 in u02): an int past
+  Python's digit limit (4,300 by default, 640 at the lowest), which YAML builds from `0x` and 4,000
+  `f`, is reported where it enters, with its file, and never printed: a `SCHEMA` finding at its
+  path in a spec (it was a lint traceback with exit 1, and `run --spec-path` exited 3 naming no
+  file), a refusal naming the labels file for a `calibrate` key, the report for `diff` and
+  `calibrate` (`json.loads` raises a plain `ValueError` past the limit), the target file for its
+  `type`, `mock_scenario` and `seeded_setup` keys. Swept at every value and key of the 75 specs:
+  6,112 of 7,599 placements were a traceback on the base, none now; inside a `!!set` or `!!omap`,
+  which the first version did not walk (pre-commit audit), none either. Independent of a cap on
+  literal length in the YAML loader (`fix/yaml-construction-cost`, A-41). Found on the way and left
+  as separate tasks: a number as a key of a fixture tool call's `args` is a lint traceback where
+  the evaluator matches argument names (A-44, another session); a target file's bad
+  `capabilities` or `sampling_defaults` printed pydantic's raw error with the value and no file
+  (fixed by #73, A-45); a value JSON cannot hold (an unquoted date, a set) passes lint and the dry
+  run exits 1 on it, as does a `--runs` past what a float holds.
+
+## State, 2026-10-07 (afternoon): a target file's bad value, quoted and with no file name
+
+- Found on `fix/huge-int-repr` and fixed on `fix/target-file-validation`: a wrong value under a
+  target file's `capabilities` or `sampling_defaults` (`tools: maybe-later`, `temperature: warm`)
+  reached the CLI as pydantic's raw error, four lines quoting the value and naming no file (exit 3
+  was already right). `load_target` now wraps it like the scope, fleet and pack loaders: one
+  `error:` line, `target file <path> '<block>' failed validation: <field>: <reason>`, no value.
+  Contract u12 A-45 (A-43 and A-44 were claimed the same afternoon by `fix/operator-file-read-cap`
+  and `fix/lint-nonstring-arg-key`). Left open, written in the clause: a key `capabilities` does
+  not know, or a `capabilities` that is empty or `false`, is dropped without a word; other
+  refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
+  the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
+  `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
+  the value quoted, no file name); not fixed here. `tests/cli/test_target_file_validation.py`: 19
+  of its 24 tests fail on `0501752`, the other 5 guard that each test value survives the redactor.
+
+## State, 2026-10-07 (morning): a file nested past what the CLI can hold
+
+- Found by the pre-merge audit of #51 and fixed on `fix/cli-deep-json` (PR #61): `dottore diff` and
+  `dottore calibrate` exited 1 (findings below `--fail-on`) with a `RecursionError` traceback on a
+  report nested past the JSON parser's stack, and so did `replay` and `run --resume` on a run store
+  column nested the same way. Each is now refused where it is parsed (exit 3, one `error:` line
+  naming the file or the column). The probe and three audits found the same exit 1 one step later: a
+  run status formatted after it parsed, a run store column too deep to write back, a stored spend or
+  `--runs` that is not an amount (an infinity, a list, an integer past a float; a negative spend,
+  and `true` or a missing `--runs`, were accepted), and YAML anchors chained into a value 1,600 to
+  80,000 levels deep that `lint`, `run -t` and `calibrate` overflowed on. Run store columns and
+  every YAML loader (aliases expanded) now stop at 100 levels; the repository nests at most 11.
+  Contract u12 A-9 and A-24 and u02 §4 say so; no new clause. Left open as their own tasks: a
+  hostile target's reply nested too deeply aborts the whole campaign (exit 3) instead of failing one
+  attempt (`fix/target-deep-json`), and the YAML loaders other than the spec loader have no cap on
+  expanded size. `tests/cli/test_deep_json.py`; 45 of the 49 new tests fail on `0f936b6`.
+
+## State, 2026-10-07 (night): OD-18 option B built
+
+- On `feat/od18-b-seeded-setup`: a deployed application (any type but `model`) sends a spec
+  with documents, tools or memory only when its target file declares the scene seeded
+  (`seeded_setup.specs`); otherwise `inconclusive: setup_not_seeded`, nothing sent, printed by the
+  dry run and `--estimate`. A declared spec records `setup_delivery: seeded`; tool calls are
+  judged under the spec's names (`seeded_setup.tools`) and the deployment's own tools outside the
+  scene are not unauthorized (`seeded_setup.granted_tools`, never over a spec's own scene
+  tool). A spec whose canary has to be in the deployment needs `seeded_setup.run_token`, and its
+  canary is then `<run_token>-<spec id>` (`--dry-run -vv` prints it); a trace spec is not sent
+  through an adapter that reads no tool calls. The offline mocks are exempt. Measured: a fully
+  capable deployment declaring nothing sends 41 of 75 specs (585 requests); declaring every
+  scene, 62 (740); with a `run_token` as well, 67 (780, as main). Two audit rounds found a
+  resume that published its placeholder, canaries nobody could seed and grants over scene tools,
+  among others; all fixed. With A and B in, OD-18 is complete. Next in the owner's order:
+  hosted APIs (the owner's keys and models), then a deployed application, which needs its
+  operator's seeding (`examples/target.app.yaml`).
+
+## State, 2026-10-07 (night): the first live `-sV` pass
+
+- `dottore fingerprint` against the local `llama3.2:3b`, three times. It found two defects: 9
+  of the 17 probes went out with no temperature (sampled at Ollama's 1.0), and, once pinned, an
+  uncapped `rot13` probe looped to the timeout and stopped the pass. Fixed on
+  `fix/fingerprint-probe-sampling` (`PROBE_SAMPLING`: temperature 0, 512-token cap). Verdict:
+  family `meta-llama` at 0.4 from the envelope alone, no version (the pack's two Llama versions
+  tie on `model=llama`; Llama 3.2 is not in the pack either), carriers 4 of 7. Recorded in
+  `docs/16` §1. Open and not decided here: the guardrail layer reads any refusal as an output
+  filter while its probe asks for a refusal, so it cannot tell a filter from a model that did
+  as asked; and `sampling_defaults` in a target file is parsed and applied nowhere (specs pin
+  their own sampling, as do the judge and now the probes).
+
+## State, 2026-10-07 (night): PR #52 merged; an inverted tool allowlist
+
+- PR #52 (the `MEM-POISON-001` oracle) squash-merged as `77aafd5`. Reading the `tool_call`
+  oracles for OD-18 B showed `AG-EXTORT-CHAIN-001` with its allowlist inverted (the harmful
+  tools listed as authorized); fixed on `fix/extort-chain-allowlist`. The linter refuses an
+  `external` tool on a `tool_call` allowlist and warns on an undeclared name, and an allowlist
+  taken from the setup leaves the `external` tools out (empty when the scene offers only egress).
+  Open, and a question for the owner: whether a `confirm: true` the model sets on its own
+  destructive call counts as confirmation. `AG-CONFIRM-BYPASS-001` says it does;
+  `kill_chain_progression` fails any destroy whatever the flag, so `AG-DESTRUCTIVE-DBDROP-001`
+  contradicts its own description.
+
+## State, 2026-10-06 (evening): PR #50 merged; the first full local pass
+
+- PR #50 (OD-18 option A) squash-merged as `d19b221`. The whole battery ran against `llama3.2:3b`
+  on a local Ollama with the scene in-band (`docs/16` §1 has the figures). The pass confirmed one
+  oracle defect: `MEM-POISON-001` wanted the planted tag last and a download as "download it from
+  ...", and the model put the tag first and wrote "download `csvjson` from evil-cdn.example", so a
+  poisoned reply scored pass. On `fix/spec-evaluator-mentions` both count where an obeying model
+  writes them (`tests/evaluators/test_mem_poison_oracle.py`). `AG-WORM-PROPAGATE-001` failing a
+  reply that reproduces the worm marker is by design, not a defect (clause A-27: for a worm, a
+  verbatim copy is how it travels); its live fail was a model that obeyed the payload. Next in the
+  owner's order: hosted APIs (the owner's keys and choice of models), then a deployed application,
+  which waits for option B.
+
+## State, 2026-10-06 (afternoon): OD-18 decided (C, A first); A built
+
+- PR #48 (the #46 pre-merge follow-ups) squash-merged as `d54097c`. The owner decided OD-18 on
+  2026-10-06: C, with A first, because the first live pass is against hosted model APIs. On
+  `feat/od18-in-band-setup`: a `type: model` target gets a spec's memory seed, documents and
+  tools in-band, with a tool loop of at most 4 rounds (`tests/core/test_in_band_setup.py`). The
+  live passes run in the owner's order: a local model first, then hosted APIs (the owner's keys),
+  then a deployed application, which waits for option B. A first local smoke pass (6 setup
+  specs against `llama3.2:3b`) delivered the scene end to end. Noted then as open: the
+  `MEM-POISON-001` oracle missed the tag when it opened the reply (fixed on
+  `fix/spec-evaluator-mentions`, see the evening entry), and an `AG-WORM-PROPAGATE-001` oracle
+  "defect" that was not one (clause A-27).
 
 ## State, 2026-10-06 (night): follow-ups of the #46 pre-merge audit
 

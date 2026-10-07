@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
+
+from pydantic import ValidationError
 
 from ildottore.adapters import (
     AnthropicAdapter,
@@ -59,7 +62,8 @@ from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
-from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.digits import described, shown, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.models import (
     AttackSpec,
@@ -69,6 +73,7 @@ from ildottore.shared.models import (
     ModelRequest,
     ModelResponse,
     Sampling,
+    SeededSetup,
     Target,
 )
 from ildottore.shared.protocols import Reporter, TargetAdapter
@@ -862,7 +867,7 @@ def fingerprint_probe(
     evidence: FsEvidenceStore | None = None,
     run_id: str | None = None,
     mock_scenario: str | None = None,
-    max_requests: int | None = None,
+    ledger: BudgetLedger | None = None,
 ) -> ProbePass:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
@@ -871,13 +876,17 @@ def fingerprint_probe(
     paces the probes exactly like the attack traffic; ``None`` leaves them unpaced, which is
     what an offline mock wants.
 
-    Every wire send is paced, debited against ``max_requests`` and recorded, retries included.
+    Every wire send is paced, debited against ``ledger`` and recorded, retries included.
     The live probe adapter used to keep its own two retries under one pacer slot: on a target
     answering 429 to every first send, 17 nominal probes were 34 requests, half of them 53 ms
     after the last, and the ledger was charged 17 (leftovers of the 2026-10-03 audit). Same
     shape as the judge: no adapter retries, a :class:`MeteredAdapter` owns them. A breach of
-    ``max_requests`` raises :class:`ProbeCeilingReached`, carrying the requests really sent so
-    the caller can record them.
+    the ledger's request ceiling raises :class:`ProbeCeilingReached`, carrying the requests
+    really sent.
+
+    The caller owns ``ledger`` so it can read what was sent however the pass ends: an
+    environment or product error, Ctrl-C or SIGTERM end it with an exception that carries no
+    count, and a resumed run lost those requests (u12 A-46). ``None`` is an unbounded ledger.
     """
 
     adapter = build_probe_adapter(
@@ -891,7 +900,7 @@ def fingerprint_probe(
         # Recording is innermost, so what is stored is every send that went on the wire.
         adapter = cast("TargetAdapter", _RecordingAdapter(adapter, evidence, run_id))
     meter = SendMeter()
-    ledger = BudgetLedger(max_requests=max_requests)
+    ledger = ledger if ledger is not None else BudgetLedger()
     metered = MeteredAdapter(inner=adapter, meter=meter)
     try:
         with meter.bound(ledger, RateLimiter(rate_rps)):
@@ -1036,19 +1045,34 @@ def load_target(path: Path) -> Target:
         # A password in the endpoint URL is a credential the process now holds: mask it by
         # value everywhere, not only where it still sits inside a URL (SEC-02).
         register_known_secret(urlsplit(endpoint_raw).password)
-    type_raw = raw.get("type", TargetType.MODEL.value)
+    # Required, as the manual says: it defaulted to `model`, and since OD-18 a `model` target
+    # gets a spec's documents, tools and memory in-band, so a deployed application's file
+    # without the line was sent a synthetic scene and labelled so (pre-merge audit of #50).
+    type_raw = raw.get("type")
+    if type_raw is None:
+        raise ValueError(
+            f"target file {path} is missing 'type'; expected one of "
+            f"{', '.join(t.value for t in TargetType)}"
+        )
     try:
         target_type = TargetType(type_raw)
     except ValueError as exc:
         raise ValueError(
-            f"target file {path} has invalid type {type_raw!r}; "
+            f"target file {path} has invalid type {shown(type_raw)}; "
             f"expected one of {', '.join(t.value for t in TargetType)}"
         ) from exc
     caps_raw = raw.get("capabilities") or {}
     if not isinstance(caps_raw, dict):
         raise ValueError(f"target file {path} 'capabilities' must be a mapping")
     known = set(Capabilities.model_fields)
-    caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
+    # Field and reason only, as the scope, fleet and pack loaders give them: pydantic's own text
+    # ran to four lines, quoted the value written and did not name the file (A-45).
+    try:
+        caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"
+        ) from exc
     name = raw.get("name") if isinstance(raw.get("name"), str) else None
 
     provider = raw.get("provider") if isinstance(raw.get("provider"), str) else None
@@ -1060,7 +1084,13 @@ def load_target(path: Path) -> Target:
     if sampling_raw is not None:
         if not isinstance(sampling_raw, dict):
             raise ValueError(f"target file {path} 'sampling_defaults' must be a mapping")
-        sampling = Sampling.model_validate(sampling_raw)
+        try:
+            sampling = Sampling.model_validate(sampling_raw)
+        except ValidationError as exc:
+            raise ValueError(
+                f"target file {path} 'sampling_defaults' failed validation: "
+                f"{validation_problems(exc)}"
+            ) from exc
 
     transport = raw.get("transport") if isinstance(raw.get("transport"), str) else None
     command_raw = raw.get("command")
@@ -1069,6 +1099,8 @@ def load_target(path: Path) -> Target:
         if not (isinstance(command_raw, list) and all(isinstance(c, str) for c in command_raw)):
             raise ValueError(f"target file {path} 'command' must be a list of strings")
         command = command_raw
+
+    seeded = _seeded_setup(path, raw.get("seeded_setup"), target_type)
 
     return Target(
         id=target_id,
@@ -1082,7 +1114,87 @@ def load_target(path: Path) -> Target:
         sampling_defaults=sampling,
         transport=transport,
         command=command,
+        seeded_setup=seeded,
     )
+
+
+def provider_returns_tool_calls(target: Target) -> bool:
+    """True when the adapter ``target`` routes to reads tool calls from a reply.
+
+    The OpenAI and Anthropic adapters do; the REST template and the read-only MCP adapter
+    return none, so a seeded spec judged on its tool trace could never fail there (OD-18 B).
+    The runner asks the adapter itself (``returns_tool_calls``); the plan asks this.
+    """
+
+    return (target.provider or "").strip().lower() in ("openai", "anthropic")
+
+
+def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSetup | None:
+    """The ``seeded_setup`` block of a target file (OD-18 option B), checked field by field.
+
+    A ``type: model`` target gets the scene in-band (option A), so the block is refused there
+    rather than silently ignored: one of the two would have been read wrong.
+    """
+
+    if raw is None:
+        return None
+    if target_type is TargetType.MODEL:
+        raise ValueError(
+            f"target file {path} declares 'seeded_setup', which is for a deployed application; "
+            "a 'type: model' target gets a spec's setup in-band"
+        )
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'seeded_setup' must be a mapping")
+    known = ("specs", "tools", "granted_tools", "run_token")
+    # A key that is a number too long to write out raised in `str` (A-40).
+    unknown = sorted(described() if too_long(key) else str(key) for key in raw if key not in known)
+    if unknown:
+        raise ValueError(
+            f"target file {path} 'seeded_setup' has unknown key(s) {', '.join(unknown)}; "
+            "expected 'specs', 'tools', 'granted_tools' and 'run_token'"
+        )
+    specs = raw.get("specs", [])
+    if not (isinstance(specs, list) and all(isinstance(s, str) and s for s in specs)):
+        raise ValueError(f"target file {path} 'seeded_setup.specs' must be a list of spec ids")
+    tools = raw.get("tools", {})
+    if not (
+        isinstance(tools, dict)
+        and all(isinstance(k, str) and isinstance(v, str) and k and v for k, v in tools.items())
+    ):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.tools' must map each spec tool name to the "
+            "deployment's name for it"
+        )
+    # Two spec tools may share a deployment name (`lookup_ticket` and `read_ticket` in two
+    # specs, one `get_ticket` in the deployment): the map is applied per spec, and only two of
+    # one spec's own scene tools sharing a name is refused, for that spec, at run time.
+    deployment_names = list(tools.values())
+    granted = raw.get("granted_tools", [])
+    if not (isinstance(granted, list) and all(isinstance(g, str) and g for g in granted)):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.granted_tools' must be a list of the deployment's "
+            "tool names"
+        )
+    both = sorted(set(granted) & set(deployment_names))
+    if both:
+        raise ValueError(
+            f"target file {path} 'seeded_setup' both maps and grants {', '.join(both)}; a mapped "
+            "tool is one of the spec's scene, a granted one is outside every scene"
+        )
+    token = raw.get("run_token")
+    if token is not None and not (isinstance(token, str) and _RUN_TOKEN.fullmatch(token)):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.run_token' must be 8 to 64 letters, digits, '_' "
+            "or '-' (it replaces {{run_id}} in the canaries the operator seeds)"
+        )
+    return SeededSetup(
+        specs=list(specs), tools=dict(tools), granted_tools=list(granted), run_token=token
+    )
+
+
+#: A run token goes into a canary the evaluators match exactly: plain characters, and long
+#: enough not to occur by chance.
+_RUN_TOKEN = re.compile(r"[A-Za-z0-9_-]{8,64}")
 
 
 def load_mock_scenario(path: Path) -> str:
@@ -1098,7 +1210,7 @@ def load_mock_scenario(path: Path) -> str:
     scenario = raw.get("mock_scenario", "bare")
     if not isinstance(scenario, str) or scenario not in MOCK_SCENARIOS:
         raise ValueError(
-            f"target file {path} has invalid mock_scenario {scenario!r}; "
+            f"target file {path} has invalid mock_scenario {shown(scenario)}; "
             f"expected one of {', '.join(MOCK_SCENARIOS)}"
         )
     return scenario
@@ -1121,14 +1233,20 @@ def target_uses_mock(path: Path) -> bool:
         return True
     # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real
     # over-the-wire (subprocess) target even though it declares no ``endpoint``.
-    provider = str(raw.get("provider") or "").strip().lower()
-    transport = str(raw.get("transport") or "").strip().lower()
+    # Text only, as `load_target` reads them: `str` raised on a number too long to write out
+    # (A-40), and no other value could have read as `mcp` or `stdio`.
+    provider = _lowered(raw.get("provider"))
+    transport = _lowered(raw.get("transport"))
     if provider == "mcp" and transport == "stdio" and raw.get("command"):
         return False
     endpoint = raw.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint:
         return True
     return endpoint.startswith("mock://")
+
+
+def _lowered(value: object) -> str:
+    return value.strip().lower() if isinstance(value, str) else ""
 
 
 # --- the runner --------------------------------------------------------------------
