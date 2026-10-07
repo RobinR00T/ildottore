@@ -63,8 +63,13 @@ def _turn_request(
     turn_index: int,
     attempt_id: str,
     tools: list[JsonDict] | None = None,
+    turns_total: int | None = None,
 ) -> ModelRequest:
-    """Build the request for one turn: the accumulated history + a pinned mock index."""
+    """Build the request for one turn: the accumulated history + a pinned mock index.
+
+    ``turns_total`` lets an adapter that holds a connection per conversation (the WebSocket
+    adapter) close it after the last turn instead of waiting for garbage collection.
+    """
 
     return ModelRequest(
         messages=list(messages),
@@ -75,6 +80,7 @@ def _turn_request(
             _MOCK_ATTEMPT_KEY: turn_index,
             "turn_index": turn_index,
             "conversation": attempt_id,
+            "turns_total": turns_total,
         },
     )
 
@@ -206,6 +212,7 @@ async def execute_conversation(
             turn_index=turn_index,
             attempt_id=attempt_id,
             tools=tools,
+            turns_total=len(turns),
         )
         return await execute_attempt(
             adapter,
