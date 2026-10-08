@@ -18,7 +18,12 @@ before any of it is read, and a pipe or other stream is read up to one byte past
 refused if that byte comes (exit 3), so any of them can be a pipe. dottore fleet refuses to
 write a scope, target or judge file over 1 MiB (the judge file
 only when no --judge file replaces it). A scope, target or
-fleet file that fails validation lists at most 20 problems and counts the rest.
+fleet file that fails validation lists at most 20 problems and counts the rest. A file that is
+not UTF-8 is refused with its name and the offset of its first bad byte (exit 3), and a refusal
+that quotes a value of the file quotes at most its first 300 characters and its size, and lists at
+most 20 of what the file declares (the advice for a stdio target excepted, which prints its
+command line whole to be copied). A target id, in a scope or a target file, and an identity name
+are at most 128 characters; a longer one is refused when the file is loaded.
 .SH "SCOPE FILE"
 The authorization record. No scanning command runs without it. Default-deny: any host or
 path not under a target's endpoints is never contacted. An optional top-level checksum

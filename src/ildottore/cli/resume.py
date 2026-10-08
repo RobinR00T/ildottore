@@ -20,6 +20,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from ildottore.shared.config_errors import quoted
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import ScanBand, VerdictStatus
 from ildottore.shared.models import (
@@ -212,9 +213,9 @@ def _assert_same_target(
 
     if not Path(run_db).exists():
         raise ValueError(
-            f"cannot verify that run {run_id!r} belongs to target {target.id!r}: no run store "
-            f"at {run_db}. Point --run-db at the store the original run wrote, or the resume "
-            "could splice another target's evidence into this target's report."
+            f"cannot verify that run {run_id!r} belongs to target {quoted(target.id)}: no run "
+            f"store at {run_db}. Point --run-db at the store the original run wrote, or the "
+            "resume could splice another target's evidence into this target's report."
         )
     with SqliteRunStore(Path(run_db)) as store:
         row = store.get_run(run_id)
@@ -222,7 +223,7 @@ def _assert_same_target(
         raise ValueError(
             f"run {run_id!r} is not in the run store at {run_db}, so the target it was made "
             "against cannot be verified. Resuming would attribute its evidence to "
-            f"{target.id!r} on trust."
+            f"{quoted(target.id)} on trust."
         )
     stored = row.get("target_id")
     # Compare like with like. `save_run` writes `target_id` through the redactor, so a
@@ -245,9 +246,9 @@ def _assert_same_target(
         return
     if stored != target.id:
         raise ValueError(
-            f"run {run_id!r} was made against target {stored!r}, not {target.id!r}. Resuming "
-            "it here would report one target's evidence as another's, with zero requests "
-            "sent. Resume it against its own target, or start a fresh run."
+            f"run {run_id!r} was made against target {quoted(stored)}, not {quoted(target.id)}. "
+            "Resuming it here would report one target's evidence as another's, with zero "
+            "requests sent. Resume it against its own target, or start a fresh run."
         )
 
 
