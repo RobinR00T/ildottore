@@ -3,6 +3,33 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-08: a hostile reply nested too deeply fails one attempt (PR #65, open)
+
+- On `fix/target-deep-json` (PR #65): a target reply whose brackets balance and nest past 100
+  levels (`shared.nesting.MAX_DEPTH`), however deep, is `ResponseTooDeep`, an environment failure
+  that is not retried:
+  that attempt is inconclusive and the scan goes on. Before, `json.loads` raised
+  `RecursionError` past the parser's stack (400 KB of `[`) and pydantic overflowed past about
+  255 levels when writing evidence (600 bytes), and either aborted the campaign at the first
+  request (exit 3). Covers the OpenAI, Anthropic and REST bodies, the MCP JSON body, SSE event
+  and stdio line, a tool call's JSON-string arguments and the judge's reply. The depth is read
+  from the text before parsing, so it does not depend on the Python version; brackets that do
+  not balance are "not JSON". Also: an MCP stdio line may be 4 MiB (64 KiB stopped the campaign
+  on a server with 300 tools), with 4 MiB in all per request. Four audits (before the commit,
+  a delta round on its fixes, before the merge, and a delta round on those follow-ups) found,
+  among others, a quadratic string pattern, a lost detection on unbalanced tool arguments and
+  carriage-return lines past the stdio total; all fixed, and the last round found only wording.
+  Found while fixing
+  the operator-file case on `fix/cli-deep-json` (PR #61, merged first as `0501752`).
+- **Left for separate fixes** (pre-commit audit, both also on `main`): with `-sV` or `-A`, one
+  refused reply in the probe pass stops the run before the attack; and a 400-digit token count in
+  `usage` crashes `dottore run` with a traceback (exit 1, no report). The first is in progress on
+  `fix/sv-probe-env-error` (OD-23).
+- **For the owner (OD-21, open):** a 200 whose body is not JSON still stops the whole campaign
+  (`AdapterProductError`, runner `aborted`, exit 3, one request sent): measured, not as the
+  finding assumed. Whether it should fail only its attempt, as a reply too deep now does, is a
+  decision, not a fix; the trade-off is a misconfigured endpoint caught at the first request.
+
 ## State, 2026-10-08 (morning): a regex that does not compile is a lint finding (PR #63)
 
 - On `fix/lint-invalid-regex` (`tests/test_invalid_spec_patterns.py`, clause A-33 in `u02`): a
