@@ -146,7 +146,8 @@ attack targets that are all mocks is excepted: that run is not paced, so not che
 <run-id>` skips every attempt the halted run ANSWERED and sends again, under the same attempt
 id, each one that ended in an environment error (a timeout, a 5xx after retries, a conversation
 aborted on one), except an error that would repeat identically (a reply over the size cap, an
-undecodable body: recorded with `[not retryable]`). The failed try stays in the evidence tree
+undecodable body, a reply nested too deeply: recorded with `[not retryable]`). The failed try
+stays in the evidence tree
 and is cited as evidence; the finding scores one attempt per id, the answered one, as `replay`
 counts. A resume halted by a ceiling while re-sending keeps the finding a spec already had when
 that finding held every planned attempt. The resume message says how many attempts are kept and
