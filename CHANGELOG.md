@@ -5,6 +5,23 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a SIGTERM or SIGHUP dropped inside a callback, and the run went on)
+
+- **`dottore run` could ignore a SIGTERM or SIGHUP.** They were turned into Ctrl-C by installing
+  `signal.default_int_handler`, which raises KeyboardInterrupt wherever the main thread is; raised
+  inside a weakref callback, Python prints "Exception ignored" and drops it. In CI a resume kept
+  sending after its SIGTERM (41 requests served where 25 were expected, `WeakSet._remove` in the
+  child's stderr, twice on Linux with Python 3.11), which made the `[sigterm]` case of
+  `tests/cli/test_probe_pass_spend.py` fail now and then on unrelated PRs. Ctrl-C was never
+  dropped there, because inside `asyncio.run` asyncio's own handler cancels the run instead of
+  raising. SIGTERM and SIGHUP now call the SIGINT handler in place at that moment, so they cancel
+  the run as Ctrl-C does, and raise as before only when SIGINT has no Python handler (ignored, as
+  for a job a script starts with `&`). Still open: with Ctrl-C ignored a signal landing in a
+  callback can still be dropped, and so can one outside the event loop, where no request is sent,
+  as Ctrl-C can in any Python program. Contract u12 A-60; `tests/cli/test_termination_signals.py`
+  (8 tests, 3 of them raising the signal inside a real weakref callback; 2 fail on `e4d6c83`).
+  Reported by the session of PR #72 from its CI runs.
+
 ### Fixed (a regex a spec writes that does not compile)
 
 - **`dottore lint` crashed on it.** A `regex_absence` pattern `(x` made lint exit 1 with a

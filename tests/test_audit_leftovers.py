@@ -967,7 +967,7 @@ def test_the_fail_on_error_lists_info() -> None:
 def test_sigterm_and_sighup_become_an_interrupt_and_are_restored() -> None:
     import signal
 
-    from ildottore.cli.run import _termination_as_interrupt
+    from ildottore.cli.run import _interrupt_as_ctrl_c, _termination_as_interrupt
 
     def custom(_signum: int, _frame: object) -> None:
         return None
@@ -976,8 +976,9 @@ def test_sigterm_and_sighup_become_an_interrupt_and_are_restored() -> None:
     before_hup = signal.signal(signal.SIGHUP, custom)
     try:
         with _termination_as_interrupt():
-            assert signal.getsignal(signal.SIGTERM) is signal.default_int_handler
-            assert signal.getsignal(signal.SIGHUP) is signal.default_int_handler
+            # What the handler does is tested in tests/cli/test_termination_signals.py (A-60).
+            assert signal.getsignal(signal.SIGTERM) is _interrupt_as_ctrl_c
+            assert signal.getsignal(signal.SIGHUP) is _interrupt_as_ctrl_c
         assert signal.getsignal(signal.SIGTERM) is custom
         assert signal.getsignal(signal.SIGHUP) is custom
     finally:

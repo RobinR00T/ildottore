@@ -510,6 +510,16 @@ compile (a `regex_absence` or `regex_presence` pattern, a `step_arg_patterns` en
 evaluator could never decide), refuse the run (exit 3) naming them (five at most, then how many
 more) and pointing at `dottore lint`; `--exclude <id>` leaves such a spec out and runs the rest.
 
+Ctrl-C, SIGTERM (what `timeout`, `docker stop`, systemd and CI timeouts send) and SIGHUP all stop
+a run the same way: the requests in flight are cancelled and the spend is recorded, so a run that
+had started its attack traffic can be resumed (a fresh run stopped in its `-sV` probe pass has
+nothing to resume). An ignored SIGHUP stays ignored, so `nohup dottore run ...` survives a logout;
+a SIGKILL stops it without recording what the unfinished part spent. Until 2026-10-08 a SIGTERM
+or SIGHUP that arrived while requests were being sent could be dropped if Python was running a
+cleanup callback at that instant, and the run went on. That can still happen when Ctrl-C is
+ignored, as for a job a script starts with `&`: if such a job keeps running after a SIGTERM, send
+it again (a SIGKILL would stop it without recording the spend).
+
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an
 environment error (a timeout, a 5xx after retries) are sent again under the same attempt id
