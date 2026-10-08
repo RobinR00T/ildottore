@@ -32,9 +32,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   unreadable entry still matching an IPvFuture literal and `fleet` printing a password the URL mask
   misses; the final audit, a tab or line break between the slashes still hiding that password from
   `fleet`; all fixed. Left, written in A-51: the adapter reads the endpoint unstripped (fails closed
-  at the first send). 83 of the 106 tests (the file's 105 and #76's changed reader test) fail on
+  at the first send). 84 of the 107 tests (the file's 106 and #76's changed reader test) fail on
   `4a572f0`, each for its reason; of the 23 that pass, 4 were fixed first by #81 and 19 guard
-  behaviour that must not change; 73 of 75 mutants die (the 2 that live quote a fleet id, already
+  behaviour that must not change; 74 of 76 mutants die (the 2 that live quote a fleet id, already
   held to 64 characters). (2) A byte that is not UTF-8 in any operator file printed the codec's
   error with no file name; `read_text_capped` now refuses it as an `OSError` (`EILSEQ`) with the
   path and the offset, exit 3, as it refuses a file over the cap. Clause A-51 (u01; A-48 to A-50

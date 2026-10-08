@@ -315,57 +315,59 @@ message and again in the reason), and the 24 refusals of the test's table, with 
 The lengths are written bare, as the spec loader writes them; for the `repr` of a text value the
 length stays under 10,485,762, short of the nine digits the CLI's redactor masks as a phone number
 (`repr` writes at most ten characters for a character the file spends a byte or more on), and an
-item count is smaller. The redactor can still read a head that ends in a digit after a character
-that is not a letter, together with the `... (N` behind it, as one phone number, and masks both (a
-head ending in `:7` shows `:«REDACTED:phone» characters)`): the head is kept, its length is lost.
-Bytes that are not UTF-8 in any of these files, or in a policy or signature pack, are refused by
-`shared.files.read_text_capped` as an `OSError` (`EILSEQ`) with the path and the offset of the first
-bad byte in the file, in the spec loader's words (`not UTF-8 text (byte N)`), exit 3 in `run`,
-`fleet`, `calibrate` and `fingerprint`: they raised `read_text`'s own `UnicodeDecodeError`, which
-named no file (`error: 'utf-8' codec can't decode byte 0xff in position 15: invalid start byte`).
-The path is shown as the CLI shows every path (A-38): an existing absolute one as written, a
-relative one through the redactor, which masks a directory name that looks random. A valid file's
-text, and so a scope checksum, is unchanged. Not covered: the stdio advice's command line, which is
-meant to be copied exactly, is written whole; so are a target id and its endpoint wherever a run
-that has started prints them (the plan, the progress and `-sV` lines, the reports and the run
-store), and a labels spec id where `calibrate` lists the labels the report does not cover. Whether
-ids get a length bound when they are loaded, as a fleet's already have (64 characters), is OD-27. A
-stdio `command` made of YAML aliases is joined into one text wherever the target is authorized
-(`wiring.request_url_for`, the engine's gate included) and in that advice: 20,000 aliases of one 10
-KB text, a 90 KB file, make a line of about 200 MB, 1.09 to 1.49 GB of resident memory and about 30
-s (five measures; the times depend on the machine), on this branch as on `a0bca70`. Since this
-branch merged #71, A-37's node cap (100,000 nodes with the aliases expanded) refuses that file when
-it is loaded (`document is too large`, exit 3, 0.3 s and 71 MB); under the cap a value's `repr` can
-still reach about 6.4 MB, which `quoted` never builds, and the memory tests use a 13 KB file of
-1,000 aliases of a 6,000-character text (a `repr` of 6,004,000 characters). The integer cases use a
-600-digit hex number under the digit limit Python allows at its lowest (640), as #77 refuses a YAML
-number of more than 1,000 characters. Checks: `tests/cli/test_operator_file_quoted_values.py` (each
-refusal of the table through the CLI with a value past the cut: the line under 2,500 characters, the
-file named where the refusal names it, the exact cut and no mask; twenty ids or references listed
-and the rest counted, through `run`, `fingerprint` and the credential refusal; the three refusals of
-`--resume`; a `repr` of exactly 300 characters quoted whole and one of 301 cut; the head equal to
-the start of `repr` over generated values; a list and a mapping of aliases quoted, and refused as a
-`type` through `load_target`, under a memory bound; an integer Python will not write, and no other
-failure of `repr` hidden; nested aliases one level down; a verdict and a `provider` of aliases not
-turned into text; an integer labels key and `seeded_setup` key, and a date key written as before;
-verdicts in any case and with spaces; a stdio target real only with a command; a `transport` of
-aliases; twelve URLs urllib cannot read, through `run`, `fingerprint` and `fleet`, the endpoint
-never quoted by the target loader and its password never printed, by `fleet` either, a tab between
-the slashes and a second `@` included; an unreadable allowlist entry matching nothing whatever its
-place, an IPvFuture literal included; the variable name; a `--judge` file whose id differs from the
-fleet's judge; the UTF-8 refusal through each command, and its offset past one decoder chunk), and
-the reader test of `tests/cli/test_operator_file_cap.py`, changed on purpose from "the same
-`UnicodeDecodeError` as `read_text`" to "an `OSError` at the same byte, naming the file". On
-`4a572f0` (#76 with #81 merged in), with the new helpers stubbed to what the base does (`quoted` and
-fleet's `_shown_endpoint` as `repr`, `listed` as a plain join), 83 of these 106 tests (the 105 of
-the file and the changed reader test) fail, each for its reason; of the 23 that pass, 4 were fixed
-first by #81 (A-40: a labels key and a `provider` that are huge integers, a `provider` and a
-`transport` of aliases), and 19 guard what must not change (two of them, an endpoint with no user
-information quoted as `repr` quotes it): a short value quoted as before, any other failure of `repr`
-raised, verdicts in any case and with spaces, a stdio target real only with a command, a date key
-written as before. Of 75 mutants, one per site and one per fix of the six audits, 73 are killed; the
-two that live are equivalent (they quote a fleet id, which the fleet's model holds to 64
-characters).
+item count is smaller. The redactor can still read a head that ends in digits (after a character
+that is not a letter, or a value made of digits, a 900-digit `type`), together with the `... (N`
+behind it, as one phone number, and masks both (a head ending in `:7` shows `:«REDACTED:phone»
+characters)`, the 900-digit `type` `«REDACTED:phone» characters)`): the masking errs toward hiding,
+and the length is lost. Bytes that are not UTF-8 in any of these files, or in a policy or signature
+pack, are refused by `shared.files.read_text_capped` as an `OSError` (`EILSEQ`) with the path and
+the offset of the first bad byte in the file, in the spec loader's words (`not UTF-8 text (byte
+N)`), exit 3 in `run`, `fleet`, `calibrate` and `fingerprint`: they raised `read_text`'s own
+`UnicodeDecodeError`, which named no file (`error: 'utf-8' codec can't decode byte 0xff in position
+15: invalid start byte`). The path is shown as the CLI shows every path (A-38): an existing absolute
+one as written, a relative one through the redactor, which masks a directory name that looks random.
+A valid file's text, and so a scope checksum, is unchanged. Not covered: the stdio advice's command
+line, which is meant to be copied exactly, is written whole; so are a target id and its endpoint
+wherever a run that has started prints them (the plan, the progress and `-sV` lines, the reports and
+the run store), and a labels spec id where `calibrate` lists the labels the report does not cover.
+Whether ids get a length bound when they are loaded, as a fleet's already have (64 characters), is
+OD-27. A stdio `command` made of YAML aliases is joined into one text wherever the target is
+authorized (`wiring.request_url_for`, the engine's gate included) and in that advice: 20,000 aliases
+of one 10 KB text, a 90 KB file, make a line of about 200 MB, 1.09 to 1.49 GB of resident memory and
+about 30 s (five measures; the times depend on the machine), on this branch as on `a0bca70`. Since
+this branch merged #71, A-37's node cap (100,000 nodes with the aliases expanded) refuses that file
+when it is loaded (`document is too large`, exit 3, 0.3 s and 71 MB); under the cap a value's `repr`
+can still be tens of megabytes (60,004,000 characters from a 28 KB file of 1,000 aliases of 6,000
+characters `repr` writes as ten each: audit of the merge), which `quoted` never builds, and the
+memory tests use 10 to 16 KB files of 1,000 aliases of a 6,000-character text (a `repr` of 6,004,000
+characters). The integer cases use a 600-digit hex number under the digit limit Python allows at its
+lowest (640), as #77 refuses a YAML number of more than 1,000 characters. Checks:
+`tests/cli/test_operator_file_quoted_values.py` (each refusal of the table through the CLI with a
+value past the cut: the line under 2,500 characters, the file named where the refusal names it, the
+exact cut and no mask; twenty ids or references listed and the rest counted, through `run`,
+`fingerprint` and the credential refusal; the three refusals of `--resume`; a `repr` of exactly 300
+characters quoted whole and one of 301 cut; the head equal to the start of `repr` over generated
+values; a list and a mapping of aliases quoted, and refused as a `type` through `load_target`, under
+a memory bound; an integer Python will not write, and no other failure of `repr` hidden; nested
+aliases one level down; a verdict and a `provider` of aliases not turned into text; an integer
+labels key and `seeded_setup` key, and a date key written as before; verdicts in any case and with
+spaces; a stdio target real only with a command; a `transport` of aliases; twelve URLs urllib cannot
+read, through `run`, `fingerprint` and `fleet`, the endpoint never quoted by the target loader and
+its password never printed, by `fleet` either, a tab between the slashes and a second `@` included;
+an unreadable allowlist entry matching nothing whatever its place, an IPvFuture literal included;
+the variable name; a `--judge` file whose id differs from the fleet's judge; the UTF-8 refusal
+through each command, and its offset past one decoder chunk), and the reader test of
+`tests/cli/test_operator_file_cap.py`, changed on purpose from "the same `UnicodeDecodeError` as
+`read_text`" to "an `OSError` at the same byte, naming the file". On `4a572f0` (#76 with #81 merged
+in), with the new helpers stubbed to what the base does (`quoted` and fleet's `_shown_endpoint` as
+`repr`, `listed` as a plain join), 84 of these 107 tests (the 106 of the file and the changed reader
+test) fail, each for its reason; of the 23 that pass, 4 were fixed first by #81 (A-40: a labels key
+and a `provider` that are huge integers, a `provider` and a `transport` of aliases), and 19 guard
+what must not change (two of them, an endpoint with no user information quoted as `repr` quotes it):
+a short value quoted as before, any other failure of `repr` raised, verdicts in any case and with
+spaces, a stdio target real only with a command, a date key written as before. Of 76 mutants, one
+per site and one per fix of the audits, 74 are killed; the two that live are equivalent (they quote
+a fleet id, which the fleet's model holds to 64 characters).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

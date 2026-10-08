@@ -19,35 +19,35 @@ versioning: [SemVer](https://semver.org/).
   make it larger than its file: 90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000
   characters, about 200 MB). As a target's `type:`, that file took 1.28 to 1.49 GB of memory and 29
   to 50 s and printed a line of about 200 MB, because the type's own lookup wrote the value out
-  before the refusal could cut it; it is now refused before the lookup, in 72 MB and 0.6 s. An
-  integer Python will not write out (a YAML hex integer past 4,300 digits) is described as #81
-  describes it (`a number too long to write out`) instead of raising, inside a list too. It covers
-  an invalid target `type` and `mock_scenario`, the scope's duplicated target ids and identity names
-  and its shared canaries, the spec id of a label with an invalid verdict, two target files with one
-  id, the target id and endpoint of an authorization refusal in `run` and `fingerprint` and the ids
-  the scope authorizes, which it lists after (now the first 20, each cut, and how many more), the
-  target id of the `--hardened`, stdio and credential refusals and the references the scope declares
-  for that credential (the first 20; 3,000 references of 290 characters printed 885,131 bytes) and
-  the variable such a reference names, an `auth_ref` reference, the target ids of the refusals that
-  bind `run --resume` to its target (900,276 bytes for an id of 900,000 characters), `fleet`'s
-  invalid port and judge mismatches, the unknown keys and doubly listed tools of a target's
-  `seeded_setup`, and PyYAML's reason in every YAML error, the spec loader's and `dottore lint`'s
-  included. A label's verdict, a target's `provider` and `transport` and the keys of its
-  `seeded_setup` are checked as text before anything turns them into text: `str()` of a list of
-  aliases wrote about 675 MB, and of a YAML integer past 4,300 digits it raised (Python's `Exceeds
-  the limit (4300 digits)` error, naming no file; #81 refuses a labels key that is such an integer).
-  An endpoint or `base_url` urllib cannot read (a bracket, a host NFKC turns into a path, a port
-  that is not a number) raised urllib's error with no file named, for some kinds with the netloc,
-  host or port whole (900 KB for a long one): the target loader now reads the endpoint stripped, as
-  the gate does (a leading U+00A0 had let urllib's error through later, the endpoint's password
-  included), and names the file and the field without the value; the allowlist denies what it cannot
-  read, as it always said it would, so the authorization refusal quotes it cut, and an entry pinned
-  to a port that cannot be read matches nothing instead of denying every URL after it; `fleet`
-  quotes it as urllib reads it, cut and without what precedes the last `@` of its authority, so a
-  password the CLI's URL mask misses (an empty user, a space, a tab between the slashes) is not
-  printed. The 24 refusals of the new test printed lines of 400,080 to 2,000,247 characters on
-  `c9f27cc`; now each is under 2,500.
-- **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
+  before the refusal could cut it; it is now refused before the lookup, and since #71 a file of that
+  size is refused when it is loaded (A-37). An integer Python will not write out is described as #81
+  describes it (`a number too long to write out`) instead of raising, inside a list too; since #77
+  caps a YAML number at 1,000 characters, a file brings one only under a lowered digit limit. It
+  covers an invalid target `type` and `mock_scenario`, the scope's duplicated target ids and
+  identity names and its shared canaries, the spec id of a label with an invalid verdict, two target
+  files with one id, the target id and endpoint of an authorization refusal in `run` and
+  `fingerprint` and the ids the scope authorizes, which it lists after (now the first 20, each cut,
+  and how many more), the target id of the `--hardened`, stdio and credential refusals and the
+  references the scope declares for that credential (the first 20; 3,000 references of 290
+  characters printed 885,131 bytes) and the variable such a reference names, an `auth_ref`
+  reference, the target ids of the refusals that bind `run --resume` to its target (900,276 bytes
+  for an id of 900,000 characters), `fleet`'s invalid port and judge mismatches, the unknown keys
+  and doubly listed tools of a target's `seeded_setup`, and PyYAML's reason in every YAML error, the
+  spec loader's and `dottore lint`'s included. A label's verdict, a target's `provider` and
+  `transport` and the keys of its `seeded_setup` are checked as text before anything turns them into
+  text: `str()` of a list of aliases wrote about 675 MB, and of a YAML integer past 4,300 digits it
+  raised (Python's `Exceeds the limit (4300 digits)` error, naming no file; #81 refuses a labels key
+  that is such an integer). An endpoint or `base_url` urllib cannot read (a bracket, a host NFKC
+  turns into a path, a port that is not a number) raised urllib's error with no file named, for some
+  kinds with the netloc, host or port whole (900 KB for a long one): the target loader now reads the
+  endpoint stripped, as the gate does (a leading U+00A0 had let urllib's error through later, the
+  endpoint's password included), and names the file and the field without the value; the allowlist
+  denies what it cannot read, as it always said it would, so the authorization refusal quotes it
+  cut, and an entry pinned to a port that cannot be read matches nothing instead of denying every
+  URL after it; `fleet` quotes it as urllib reads it, cut and without what precedes the last `@` of
+  its authority, so a password the CLI's URL mask misses (an empty user, a space, a tab between the
+  slashes) is not printed. The 24 refusals of the new test printed lines of 400,080 to 2,000,247
+  characters on `c9f27cc`; now each is under 2,500.- **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
   or labels file (or a policy or signature pack) printed `error: 'utf-8' codec can't decode byte
   0xff in position 15: invalid start byte`, with no file name, where the spec loader says `not
   UTF-8 text (byte N)` beside its path. It is now refused where the file is read, with the file

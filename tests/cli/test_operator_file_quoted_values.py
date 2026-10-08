@@ -34,6 +34,7 @@ from ildottore.cli.resume import _assert_same_target
 from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, target_uses_mock
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.scope import Endpoint
+from ildottore.redactor import Redactor
 from ildottore.shared.config_errors import (
     MAX_PROBLEM_CHARS,
     _repr_head,
@@ -172,11 +173,11 @@ def test_the_head_is_the_start_of_repr(value: object, budget: int) -> None:
         assert quoted(value) == repr(value)
 
 
-#: 13 KB of YAML whose ``type`` is 1,000 aliases of one 6,000-character text: under the node cap
-#: every YAML file has (A-37: 100,000 nodes with its aliases expanded, a text one per 64
-#: characters), and still a repr of 6,004,000 characters. Before that cap, 20,000 aliases of a
-#: 10 KB text made 200,080,000 (A-51). As a list, and as a mapping of 1,000 keys. The anchor sits
-#: under a key every target reader accepts (`name`), not a spare one a stricter loader refuses.
+#: 10 to 16 KB of YAML whose ``type`` is 1,000 aliases of one 6,000-character text: under the node
+#: cap every YAML file has (A-37: 100,000 nodes with its aliases expanded, a text one per 64
+#: characters), and still a repr of 6,004,000 characters. Before that cap, 20,000 aliases of a 10 KB
+#: text made 200,080,000 (A-51). As a list, and as a mapping of 1,000 keys. The anchor sits under a
+#: key every target reader accepts (`name`), not a spare one a stricter loader refuses.
 ANCHOR = "name: &a " + "a" * 6_000 + "\n"
 ALIASES = "[" + ", ".join(["*a"] * 1_000) + "]"
 ALIASED = {
@@ -236,7 +237,8 @@ def test_an_aliased_type_is_refused_without_building_the_repr(tmp_path: Path, sh
 
 
 def test_an_integer_python_will_not_write_is_described() -> None:
-    # A YAML integer in hex or base 60 can pass the 4,300 digits Python converts to text.
+    # An integer Python will not write out. Since #77 caps a YAML number at 1,000 characters, a
+    # file brings one only under a lowered digit limit (`low_limit` below).
     huge = int("f" * 5_000, 16)
     with pytest.raises(ValueError):
         repr(huge)
@@ -1036,3 +1038,15 @@ def test_an_endpoint_is_quoted_without_what_precedes_the_last_at_of_its_authorit
     endpoint: str, shown: str
 ) -> None:
     assert _shown_endpoint(endpoint) == shown
+
+
+def test_a_password_in_an_endpoint_read_stripped_is_masked_by_value(tmp_path: Path) -> None:
+    # Read raw, a leading U+00A0 hid the password from the parse that registers it with the
+    # redactor, and it was printed in clear wherever the model echoed it (audit of the merge).
+    path = tmp_path / "target.yaml"
+    endpoint = f"{NBSP}https://admin:sunflowertwo@evil.example/v1"
+    path.write_text(f'id: live\ntype: model\nendpoint: "{endpoint}"\nmodel: m\n', "utf-8")
+
+    load_target(path)
+
+    assert "sunflowertwo" not in Redactor().redact_text("the model replied sunflowertwo today")

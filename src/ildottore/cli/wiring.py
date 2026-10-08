@@ -1116,7 +1116,8 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
             f"{', '.join(t.value for t in TargetType)}"
         )
     # Refused before the enum looks it up: its own error builds the whole repr of the value, and
-    # a 90 KB list of aliases is 200,080,026 characters of it (audit of A-51).
+    # a 90 KB list of aliases was 200,080,026 characters of it before the node cap (audit of A-51);
+    # under that cap it can still be tens of megabytes.
     if not isinstance(type_raw, str) or type_raw not in _TARGET_TYPES:
         raise ValueError(
             f"target file {path} has invalid type {quoted(type_raw)}; "
