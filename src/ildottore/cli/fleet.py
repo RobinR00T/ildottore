@@ -57,7 +57,7 @@ from ildottore import safe_yaml
 from ildottore.cli.wiring import shown_auth_ref
 from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.files import MAX_FILE_BYTES, read_text_capped
-from ildottore.shared.models import Target
+from ildottore.shared.models import Capabilities, Target
 
 __all__ = [
     "FleetConfig",
@@ -83,7 +83,9 @@ class FleetTarget(BaseModel):
     provider: str | None = None  # openai | anthropic | rest; inferred from endpoint if None
     model: str | None = None
     api_key_env: str | None = None  # env var NAME (never the key value)
-    capabilities: dict[str, bool] = Field(default_factory=dict)
+    # The target file's own model, so a key it does not know is refused here, before anything is
+    # written: as `dict[str, bool]` any text key was copied into the target file (A-50).
+    capabilities: Capabilities = Field(default_factory=Capabilities)
 
 
 class FleetJudge(BaseModel):
@@ -267,7 +269,13 @@ def _target_doc(entry: FleetTarget) -> dict[str, object]:
         "type": "api" if is_mcp else "chatbot",
         "provider": provider,
         "endpoint": entry.endpoint,
-        "capabilities": {"tools": is_mcp, "rag": False, **entry.capabilities},
+        # Only the keys the entry wrote override these two, as when the map was a plain dict,
+        # now in the model's field order rather than the order written.
+        "capabilities": {
+            "tools": is_mcp,
+            "rag": False,
+            **entry.capabilities.model_dump(exclude_unset=True),
+        },
     }
     if entry.model:
         doc["model"] = entry.model
