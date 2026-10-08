@@ -180,7 +180,8 @@ Print a pre-run cost estimate (requests and tokens); send nothing.
 .B --resume \fIRUN_ID\fR
 Finish a halted run; answered attempts are not re-sent, and those that ended in an
 environment error are sent again under the same attempt id (not one a retry would repeat,
-marked [not retryable]).
+marked [not retryable]). A campaign that already spent its wall-clock ceiling is
+refused before anything is sent: raise --budget-wall, or start a fresh run.
 .TP
 .B --resume-unverified
 Resume a run whose integrity record is missing (its ceiling then covers this invocation only).
