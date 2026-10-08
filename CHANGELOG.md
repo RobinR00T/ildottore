@@ -48,6 +48,24 @@ versioning: [SemVer](https://semver.org/).
 - **Two bullets glued into the paragraph before them are split again:** OD-33 in u01 §9 (glued by
   the reflow of OD-30 in #84) and the `Tests:` bullet of the construction-cost entry (from #77).
 
+### Fixed (a refusal that named a flag `dottore run` does not have)
+
+- **The resume refusal for a spent wall-clock ceiling named a flag that does not exist.** A `dottore
+  run --resume` whose campaign had already spent its wall-clock ceiling is refused (exit 3) before
+  anything is sent, and the refusal said "Raise --budget-wall-s for this campaign, or start a fresh
+  run". `dottore run` answers `--budget-wall-s` with "No such option": the flag is `--budget-wall`,
+  and the message now names it. A test follows the advice through the CLI as an operator would: the
+  flags the refusal names are read from `dottore run`'s own parameters, not from a string in the
+  test, and raising them past what the campaign spent lets the resume through. Another reads every
+  string literal under `src/ildottore`, docstrings aside, and every help text the commands render,
+  and fails on a long option that no command accepts; on `0501752` it found this flag and no other
+  (docstrings in the planner and the HTML reporter name `--no-adaptive` and `--unsafe-render`, which
+  are documented as not built). An option (`--`, not right after a letter, a digit, `_` or `-`, then
+  a lowercase ASCII letter) is read up to the first character that is not a letter, a digit, `_` or
+  `-`, so `--budget-wall_s` is not taken for `--budget-wall`. `docs/MANUAL.md`, `USAGE.md` and
+  `man/man1/dottore.1` now say that a resume past its wall-clock ceiling is refused and which flag
+  raises it. Found by the pre-commit audit of `fix/halt-reason-figures`.
+
 ### Fixed (a resume's work grew with --runs, not with what the run stored)
 
 - **A resume of a run with a large `--runs` grew without end.** For each spec the halted run had

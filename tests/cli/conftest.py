@@ -8,6 +8,7 @@ send-counting fake adapter used to prove the scope gate performs **zero** sends.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -205,6 +206,16 @@ def written_nesting(text: str) -> tuple[int, int]:
         elif isinstance(event, (yaml.SequenceEndEvent, yaml.MappingEndEvent)):
             open_styles.pop()
     return deepest, deepest_flow
+
+
+# --- flag names ----------------------------------------------------------------------
+
+# A long option as an operator would copy it out of a message: two dashes that do not follow a
+# letter, a digit, `_` or `-`, then a lowercase ASCII letter, read up to the first character that
+# is not a letter, a digit, `_` or `-`. So `--budget-wall_s`, `--budget-wall-S` and
+# `--budget-wall-` are not taken for the `--budget-wall` they start with (audits of
+# `fix/resume-wall-flag-name`); `--budget-wall.s` is, as a period ends a sentence.
+LONG_OPTION = re.compile(r"(?<![\w-])--[a-z][\w-]*")
 
 
 # --- on-disk scope + target fixtures -----------------------------------------------
