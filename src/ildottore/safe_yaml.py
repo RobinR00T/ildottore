@@ -44,8 +44,10 @@ open flow level and walks them all on every token, so the depth measured after c
 after a cost that grows with the levels open: a 198 KB list of chains of ``[`` 320 deep was
 composed whole, 3 to 7 times what as many flat texts take (depending on the machine's load),
 before it was refused (pre-commit audit of the construction-cost fix, 2026-10-07). A text or an
-alias opens no level and is not refused here. Under the limit the cost stays: chains of ``[``
-close to 100 deep still take a few times what flat texts do.
+alias opens no level and is not refused here. A list or a map written in flow style inside
+:data:`MAX_FLOW_DEPTH` others written that way is refused the same way, a limit of its own (OD-30):
+each open flow level costs on every token written inside it, and under the limit of 100, chains of
+``[`` 98 deep were accepted at 2 to 3 times what as many flat texts take.
 """
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ import yaml
 
 __all__ = [
     "MAX_DEPTH",
+    "MAX_FLOW_DEPTH",
     "MAX_NODES",
     "MAX_NUMBER_CHARS",
     "MAX_NUMBER_KEYS",
@@ -68,6 +71,10 @@ __all__ = [
 #: The deepest nesting a document may hold with its aliases expanded. The files this tool reads
 #: (specs, scopes, targets, fleets, labels, packs) nest about 10 levels.
 MAX_DEPTH = 100
+#: The deepest nesting a document may write in flow style, with ``[ ]`` and ``{ }``, counting only
+#: those: PyYAML's scanner walks one possible key per open flow level on every token, so each level
+#: open costs on every token after it (OD-30). The YAML files this tool ships nest at most 2.
+MAX_FLOW_DEPTH = 20
 #: The nodes a document may hold with every alias counted where it is used. The largest file this
 #: tool ships, the signature corpus, holds about 400.
 MAX_NODES = 100_000
@@ -87,6 +94,10 @@ _TOO_LARGE = (
 )
 _CANNOT_BUILD = "cannot build this value (an invalid date, number or tag)"
 _TOO_DEEP = "document is nested too deeply"
+_FLOW_TOO_DEEP = (
+    "document is nested too deeply in flow style "
+    f"(over {MAX_FLOW_DEPTH} levels of brackets or braces)"
+)
 #: The events that open a level, in the composer and, in flow style, in the scanner.
 _OPENS_A_LEVEL = (yaml.SequenceStartEvent, yaml.MappingStartEvent)
 _NUMBER_TOO_LONG = (
@@ -112,7 +123,8 @@ class SafeValueLoader(yaml.SafeLoader):
     It also refuses a key written twice in one mapping (``flatten_mapping``), as a
     ``ConstructorError`` with both positions and no value, and stops composing a document once
     the nodes written in it pass :data:`MAX_NODES`, a tag passes ``_MAX_TAG_CHARS`` or a list or a
-    map is written inside :data:`MAX_DEPTH` others (``compose_node``). It refuses there too,
+    map is written inside :data:`MAX_DEPTH` others, or in flow style inside :data:`MAX_FLOW_DEPTH`
+    others (``compose_node``). It refuses there too,
     before anything is built, a number written in more than :data:`MAX_NUMBER_CHARS` characters
     and the key that takes the document past :data:`MAX_NUMBER_KEYS` keys that are numbers.
     """
@@ -138,6 +150,8 @@ class SafeValueLoader(yaml.SafeLoader):
         self._composed = 0
         # The lists and maps open around the node being composed, as written.
         self._open = 0
+        # The lists and maps open around it written in flow style, the levels the scanner walks.
+        self._open_flow = 0
         # The keys that are numbers composed so far, and those each mapping holds, merges included.
         self._number_keys = 0
         self._numbers_held: dict[yaml.Node, int] = {}
@@ -158,6 +172,7 @@ class SafeValueLoader(yaml.SafeLoader):
             # whole tag (delta audit). Refused at the first one, without quoting it.
             raise _refusal(event.start_mark, _TAG_TOO_LONG)
         opens = isinstance(event, _OPENS_A_LEVEL)
+        flow = opens and _opens_a_flow_level(event)
         if opens:
             if self._open >= MAX_DEPTH:
                 # The scanner walks one possible key per open flow level on every token, so the
@@ -167,13 +182,20 @@ class SafeValueLoader(yaml.SafeLoader):
                 # that measure runs this refuses earlier only what it refuses, at the first list or
                 # map written past the limit (the measure names the deepest branch).
                 raise _refusal(event.start_mark, _TOO_DEEP)
+            if flow and self._open_flow >= MAX_FLOW_DEPTH:
+                # Each open flow level costs on every token written inside it: under the limit of
+                # 100, chains of ``[`` 98 deep were accepted at 2 to 3 times what as many flat texts
+                # take (OD-30, decided: a limit of its own for flow nesting).
+                raise _refusal(event.start_mark, _FLOW_TOO_DEEP)
             self._open += 1
+            self._open_flow += flow
         try:
             # PyYAML returns a node here every time; its type stub says ``Node | None``.
             node = cast("yaml.Node", super().compose_node(parent, index))
         finally:
             if opens:
                 self._open -= 1
+                self._open_flow -= flow
         # The value expanded weighs at least what is written, and an alias at least what it
         # names, so the rest of a document is not composed once that passes the cap: a 3 MB list
         # of plain texts took 785 MB to compose before its measure refused it (pre-commit audit),
@@ -299,6 +321,23 @@ def check_expanded(root: yaml.Node) -> None:
         while (over := next((c for c in _children(node) if size[c] > MAX_NODES), None)) is not None:
             node = over
         raise _refusal(node.start_mark, _TOO_LARGE)
+
+
+def _opens_a_flow_level(event: Any) -> bool:
+    """A list or a map written with ``[`` or ``{``: one level the scanner keeps open.
+
+    A single pair in a flow list (``[k: v]``, ``[? k : v]``) is a map in flow style with no bracket
+    of its own: the scanner opens no level for it, and its marks are those of its key, so it ends
+    where it starts (pre-commit audit). A collection read from a stream rather than a text has no
+    buffer to look at, and is counted when it is in flow style.
+    """
+
+    if not event.flow_style:
+        return False
+    start, end = event.start_mark, event.end_mark
+    if end.buffer is None:
+        return True
+    return bool(end.index > start.index and end.buffer[end.pointer - 1] in "[{")
 
 
 def _is_number(node: yaml.Node) -> bool:

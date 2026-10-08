@@ -7,43 +7,38 @@ levels open around it: a 198 KB list of chains of ``[`` 320 deep was refused ("d
 too deeply at line 1, column 101") only after composing all of it, 3 to 7 times what the same
 number of flat texts takes (pre-commit audit of the construction-cost fix, 2026-10-07). A list or a
 map written at level 101, inside 100 written ones, is now refused before it is composed, with the
-same message and, mostly, the same position (clause A-52, u01). The scanner's work is counted in a
-subprocess bounded in time, so a regression fails on the count, or on the timeout instead of
-hanging the suite.
+same message and, mostly, the same position (clause A-52, u01). Since A-58 a document nests at
+most 20 levels in flow style, so the shapes here reach level 101 in block style, or in block style
+with 20 flow levels inside (``tests/cli/test_yaml_flow_nesting.py`` has the flow limit and the
+scanner's cost).
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
 from ildottore import safe_yaml
-from ildottore.cli.exit_codes import ExitCode
-from ildottore.cli.lint import EXIT_LINT_FAILED
 from ildottore.registry.schema import SafeLoadError, safe_load_yaml
 
 #: The limit as the manual and contract u01 state it, pinned here rather than read from the code.
 LIMIT = 100
+#: The flow limit (A-58): flow shapes here stay within it.
+FLOW = 20
 TOO_DEEP = "document is nested too deeply"
 LOADERS = [safe_yaml.safe_load, safe_load_yaml]
 
 
-def chains(depth: int, chars: int) -> str:
-    """A flow list of chains of ``[`` ``depth`` deep around one text, about ``chars`` long.
+def under_maps(levels: int) -> str:
+    """Block mappings ``levels`` deep, up to ``k: `` on line ``levels``: what follows is the value
+    of the mapping at level ``levels``, written from column ``2 * levels + 2``."""
 
-    The audit's shape: every chain opens and closes ``depth`` levels on one line, so the scanner
-    walks the keys of all of them on every token. The text of a chain is at level ``depth + 2``.
-    """
-
-    chain = "[" * depth + "a" + "]" * depth
-    return "[" + ",".join([chain] * (chars // (len(chain) + 1))) + "]\n"
+    return "".join("  " * i + "k:\n" for i in range(levels - 1)) + "  " * (levels - 1) + "k: "
 
 
 def block_map(levels: int, leaf: str = "v") -> str:
@@ -52,21 +47,33 @@ def block_map(levels: int, leaf: str = "v") -> str:
     return "".join("  " * i + "k:\n" for i in range(levels)) + "  " * levels + leaf + "\n"
 
 
+#: Block mappings this deep, then ``FLOW`` flow levels: the last of those opens level 101.
+BLOCKS = LIMIT + 1 - FLOW
 #: Each collection written exactly one level past the limit: the text up to the first entry of the
 #: collection at level 101, included, the text after it, and where that collection starts (line,
-#: column, from 1). The flow shapes open the root at column 1, so a list at level ``n`` is at column
-#: ``n``; a block mapping at level ``n`` starts at its first key, on line ``n``.
+#: column, from 1). A block mapping at level ``n`` starts at its first key, on line ``n``; a block
+#: sequence at level ``n`` at column ``2 * n - 1``; the flow shapes start on line ``BLOCKS``.
 CROSSING: dict[str, tuple[str, str, tuple[int, int]]] = {
-    "flow sequences": ("[" * (LIMIT + 1) + "a", "]" * (LIMIT + 1), (1, LIMIT + 1)),
-    "flow mappings": ("{a: " * (LIMIT + 1) + "b", "}" * (LIMIT + 1), (1, 4 * LIMIT + 1)),
+    "flow sequences": (
+        under_maps(BLOCKS) + "[" * FLOW + "a",
+        "]" * FLOW + "\n",
+        (BLOCKS, 2 * BLOCKS + 2 + FLOW - 1),
+    ),
+    "flow mappings": (
+        under_maps(BLOCKS) + "{a: " * FLOW + "b",
+        "}" * FLOW + "\n",
+        (BLOCKS, 2 * BLOCKS + 2 + 4 * (FLOW - 1)),
+    ),
     "block mappings": (block_map(LIMIT + 1), "", (LIMIT + 1, 2 * LIMIT + 1)),
     "block sequences": ("- " * (LIMIT + 1) + "x\n", "", (1, 2 * LIMIT + 1)),
 }
+#: Continuation lines of a flow collection inside block mappings, indented past them.
+_PAD = " " * (2 * BLOCKS)
 #: More entries of that collection, on the lines below its first, the last one starting with a
 #: character no token can start: only composing the collection reaches it.
 FURTHER = {
-    "flow sequences": "".join(f",\nz{i}" for i in range(5)) + ",\n@",
-    "flow mappings": "".join(f",\nz{i}: 1" for i in range(5)) + ",\n@: 1",
+    "flow sequences": "".join(f",\n{_PAD}z{i}" for i in range(5)) + f",\n{_PAD}@",
+    "flow mappings": "".join(f",\n{_PAD}z{i}: 1" for i in range(5)) + f",\n{_PAD}@: 1",
     "block mappings": "".join("  " * LIMIT + f"z{i}: 1\n" for i in range(5))
     + "  " * LIMIT
     + "@: 1\n",
@@ -136,12 +143,12 @@ def test_with_several_branches_the_first_one_written_past_the_limit_is_named() -
     """The document is not composed past it, so a deeper branch written later is never seen;
     ``check_expanded`` names the deepest branch, which only a whole document shows."""
 
-    first = "[" * (LIMIT + 1) + "]" * (LIMIT + 1)
-    deeper = "[" * (LIMIT + 50) + "]" * (LIMIT + 50)
-    text = f"[\n{first},\n{deeper}\n]\n"
+    first = "- " + "- " * LIMIT + "x\n"  # an item of the root list, then lists to level 101
+    deeper = "- " + "- " * (LIMIT + 50) + "x\n"
+    text = first + deeper
 
-    assert problem_mark(text) == (2, LIMIT)  # line 2 starts at level 2
-    assert measured_after_composing(text) == (3, LIMIT)
+    assert problem_mark(text) == (1, 2 * LIMIT + 1)
+    assert measured_after_composing(text) == (2, 2 * LIMIT + 1)
 
 
 def test_an_empty_list_past_the_limit_is_named_where_it_starts() -> None:
@@ -157,9 +164,9 @@ def test_an_empty_list_past_the_limit_is_named_where_it_starts() -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "[" * LIMIT + "a" + "]" * LIMIT,  # a text
-        "- &a x\n- " + "[" * (LIMIT - 1) + "*a" + "]" * (LIMIT - 1) + "\n",  # an alias
-        "{a: " * LIMIT + "b" + "}" * LIMIT,  # the keys of the map at level 100
+        "- " * LIMIT + "a\n",  # a text
+        "- &a x\n- " + "- " * (LIMIT - 1) + "*a\n",  # an alias
+        block_map(LIMIT),  # the key and the value of the map at level 100
     ],
 )
 def test_a_leaf_written_past_the_limit_is_measured_after_composing_as_before(text: str) -> None:
@@ -176,14 +183,17 @@ def test_a_document_written_at_the_limit_loads_as_before(load: Callable[[str], A
     chain), builds the value plain PyYAML builds."""
 
     at_limit = [
-        "[" * LIMIT + "]" * LIMIT,
-        "[" * (LIMIT - 1) + "a" + "]" * (LIMIT - 1),
-        "{a: " * (LIMIT - 1) + "b" + "}" * (LIMIT - 1),
+        "- " * (LIMIT - 1) + "[]",
+        "- " * (LIMIT - 1) + "a",
+        under_maps(LIMIT - FLOW - 1) + "[" * FLOW + "a" + "]" * FLOW + "\n",
+        under_maps(LIMIT - FLOW - 1) + "{a: " * FLOW + "b" + "}" * FLOW + "\n",
         block_map(LIMIT - 1),
-        "- " * (LIMIT - 1) + "x",
-        "[" + ", ".join(["[" * (LIMIT - 2) + "a" + "]" * (LIMIT - 2)] * 50) + "]",
-        "k:\n"
-        + "".join(f"  s{i}: " + "[" * (LIMIT - 3) + "]" * (LIMIT - 3) + "\n" for i in range(9)),
+        "".join("- " + "- " * (LIMIT - 2) + "a\n" for _ in range(50)),
+        "".join("  " * i + "k:\n" for i in range(LIMIT - FLOW - 2))
+        + "".join(
+            "  " * (LIMIT - FLOW - 2) + f"s{i}: " + "[" * FLOW + "a" + "]" * FLOW + "\n"
+            for i in range(9)
+        ),
     ]
 
     for text in at_limit:
@@ -200,13 +210,13 @@ def test_the_limit_written_past_first_is_the_one_reported(
 
     monkeypatch.setattr(safe_yaml, "MAX_NODES", 1_000)
     texts = "x, " * 1_200
-    deep_first = "[" * (LIMIT + 1) + texts + "]" * (LIMIT + 1)
-    large_first = "[" + texts + "[" * LIMIT + "]" * LIMIT + "]"
+    deep_first = "- " * LIMIT + "[" + texts + "]"
+    large_first = "[" + texts + "[" * FLOW + "]" * FLOW + "]"
 
     with pytest.raises((yaml.YAMLError, SafeLoadError)) as caught:
         load(deep_first)
     assert TOO_DEEP in str(caught.value), caught.value
-    assert f"line 1, column {LIMIT + 1}" in str(caught.value), caught.value
+    assert f"line 1, column {2 * LIMIT + 1}" in str(caught.value), caught.value
     with pytest.raises((yaml.YAMLError, SafeLoadError)) as caught:
         load(large_first)
     assert "document is too large" in str(caught.value), caught.value
@@ -218,17 +228,17 @@ def test_a_list_past_the_limit_comes_before_the_count_its_parents_end_would_cros
 ) -> None:
     """A list or a map is counted once it is composed, so the order reported is the order the
     checks are made, not the order written: 999 texts, then lists 100 deep, whose ends would take
-    the count past a cap of 1,000 at the outer ones, are refused at the list that opens level 101
-    (pre-merge audit; on the base, too large at the list at level 100)."""
+    the count past a cap of 1,000, are refused at the list that opens level 101 (pre-merge audit;
+    before A-52, too large at that list, once its text and its end were counted)."""
 
     monkeypatch.setattr(safe_yaml, "MAX_NODES", 1_000)
-    text = "[" + "x, " * 999 + "[" * LIMIT + "]" * LIMIT + "]"
+    text = "- x\n" * 999 + "- " + "- " * LIMIT + "y\n"
 
     with pytest.raises((yaml.YAMLError, SafeLoadError)) as caught:
         load(text)
 
     assert TOO_DEEP in str(caught.value), caught.value
-    assert f"line 1, column {1 + 3 * 999 + LIMIT}" in str(caught.value), caught.value
+    assert f"line 1000, column {2 * LIMIT + 1}" in str(caught.value), caught.value
 
 
 @pytest.mark.parametrize("load", LOADERS)
@@ -237,20 +247,20 @@ def test_a_list_past_the_limit_with_a_tag_too_long_is_refused_for_the_tag(
 ) -> None:
     """As before: the tag is checked first, at the same node."""
 
-    tagged = "[" * LIMIT + "!" + "t" * 300 + " []" + "]" * LIMIT
+    tagged = "- " * LIMIT + "!" + "t" * 300 + " []"
 
     with pytest.raises((yaml.YAMLError, SafeLoadError)) as caught:
         load(tagged)
 
     assert "found a tag longer than 256 characters" in str(caught.value), caught.value
-    assert f"line 1, column {LIMIT + 1}" in str(caught.value), caught.value
+    assert f"line 1, column {2 * LIMIT + 1}" in str(caught.value), caught.value
 
 
 def test_the_count_is_per_document() -> None:
     """``yaml.load_all`` composes several documents with one loader: each starts at the root."""
 
-    at_limit = "[" * LIMIT + "]" * LIMIT
-    stream = "\n---\n".join([at_limit] * 3) + "\n---\n" + "[" * (LIMIT + 1) + "]" * (LIMIT + 1)
+    at_limit = "- " * (LIMIT - 1) + "[]"
+    stream = "\n---\n".join([at_limit] * 3) + "\n---\n" + "- " * LIMIT + "[]"
 
     loader = yaml.load_all(stream, Loader=safe_yaml.SafeValueLoader)
     assert [next(loader) for _ in range(3)] == [yaml.safe_load(at_limit)] * 3
@@ -263,7 +273,7 @@ def test_the_count_is_per_document() -> None:
 def test_nesting_written_past_what_the_composer_holds_has_a_position() -> None:
     """Thousands of levels used to overflow PyYAML's recursive composer, refused without one."""
 
-    assert problem_mark("[" * 5_000 + "]" * 5_000) == (1, LIMIT + 1)
+    assert problem_mark("- " * 5_000 + "x") == (1, 2 * LIMIT + 1)
     assert problem_mark(block_map(5_000)) == (LIMIT + 1, 2 * LIMIT + 1)
 
 
@@ -288,90 +298,17 @@ def test_a_recursion_error_while_composing_is_a_refusal(
     assert isinstance(caught.value.__cause__, RecursionError)
 
 
-# --- the CLI, in a subprocess: the scanner's work, bounded in time ----------------------------
+# --- a caller with little stack left, in a subprocess ----------------------------------------
 
-#: Runs the CLI with this interpreter and reports its exit code and how many possible simple keys
-#: PyYAML's scanner walked (in both methods that walk them), a count the machine's load does not
-#: change.
-_CHILD = """
-import json, sys
-from yaml.scanner import Scanner
-walked = 0
-def counting(walk):
-    def counted(self):
-        global walked
-        walked += len(self.possible_simple_keys)
-        return walk(self)
-    return counted
-Scanner.stale_possible_simple_keys = counting(Scanner.stale_possible_simple_keys)
-Scanner.next_possible_simple_key = counting(Scanner.next_possible_simple_key)
-from ildottore.cli.main import app
-code = None
-try:
-    app(sys.argv[1:], prog_name="dottore")
-except SystemExit as exc:
-    code = exc.code
-print(json.dumps({"exit": code, "walked": walked}), file=sys.stderr)
-"""
-
-#: The audit's file: 198 KB of chains of ``[`` 320 deep, under the size cap, so the base composed it
-#: whole and only then refused it, with the same message and position. Its scanner walked about 97
-#: million keys (4.5 times the time of a flat list of as many texts). Refused at the 101st
-#: character, it walks about 1.1 million: what it reads ahead on the first line.
-CHAINS_DEPTH, CHAINS_CHARS = 320, 198_000
-MAX_WALKED = 5_000_000
-#: Most of the time is importing the CLI. A regression fails on the count, or on the timeout instead
-#: of hanging the suite.
+#: Most of the time is starting the interpreter; the timeout keeps a regression from hanging.
 TIMEOUT_S = 20
-
-
-@pytest.mark.parametrize("command", ["lint", "calibrate"])
-def test_a_file_nested_past_the_limit_is_refused_before_the_scanner_pays_for_it(
-    tmp_path: Path, command: str
-) -> None:
-    text = chains(CHAINS_DEPTH, CHAINS_CHARS)
-    assert 1 + text.count("a") * (CHAINS_DEPTH + 1) < 100_000  # nodes, under the size cap
-    if command == "lint":  # the spec loader
-        specs = tmp_path / "specs"
-        specs.mkdir()
-        hostile = specs / "X-DEEP-001.yaml"
-        hostile.write_text(text, encoding="utf-8")
-        args = ["lint", str(specs)]
-    else:  # safe_yaml.safe_load
-        report = tmp_path / "report.json"
-        report.write_text("[]", encoding="utf-8")
-        hostile = tmp_path / "labels.yaml"
-        hostile.write_text(text, encoding="utf-8")
-        args = ["calibrate", str(report), str(hostile)]
-
-    done = subprocess.run(  # noqa: S603 - this interpreter running this CLI
-        [sys.executable, "-c", _CHILD, *args],
-        capture_output=True,
-        text=True,
-        timeout=TIMEOUT_S,
-        check=False,
-    )
-
-    *messages, measured = done.stderr.splitlines()
-    outcome = json.loads(measured)
-    if command == "lint":  # a finding on stdout, naming the spec file
-        assert outcome["exit"] == EXIT_LINT_FAILED, done.stderr
-        messages, named = done.stdout.splitlines(), f"PARSE_ERROR ({hostile.name})"
-    else:
-        assert outcome["exit"] == ExitCode.ERROR, done.stderr
-        named = str(hostile)
-    refusal = [m for m in messages if named in m and TOO_DEEP in m]
-    assert refusal, (done.stdout, done.stderr)
-    assert f"line 1, column {LIMIT + 1}" in refusal[0], refusal[0]
-    assert 0 < outcome["walked"] < MAX_WALKED, f"{outcome['walked']:,} keys walked"
-
 
 #: Loads a file at the limit with less stack left than its composition needs, in each loader.
 _LITTLE_STACK = """
 import sys
 from ildottore import safe_yaml
 from ildottore.registry.schema import safe_load_yaml
-at_limit = "[" * 100 + "]" * 100
+at_limit = "- " * 99 + "[]"
 frame, depth = sys._getframe(), 0
 while frame is not None:
     frame, depth = frame.f_back, depth + 1

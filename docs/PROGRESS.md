@@ -82,6 +82,21 @@ The carryover ledger. Every agent session updates this so context survives even 
   change the same lines (the halt path, the seeding gate, the sweep): whoever merges second keeps
   the count, not the set.
 
+## State, 2026-10-08 (morning): a limit of its own for flow nesting (OD-30)
+
+- On `fix/yaml-flow-nesting-limit`, on `main` after #84 (`9b8b511`): the owner decided OD-30 on
+  2026-10-08, option A with a limit of 20. A list or a map written with brackets or braces inside 20
+  others written that way is now refused where it starts (A-58): chains of `[` 98 deep, accepted
+  under the limit of 100 at 2 to 3 times the time of a flat list, are refused at the 21st `[` in
+  0.01 s, and chains at the limit holding 300 texts each walk a fifth of the keys they did at 98
+  levels (11.4 million against 52.0); the limit bounds each token's walk, not a file's (a denser
+  file walks 21.0 million). Block nesting does not count; the repository nests at most 2 flow
+  levels. Converting the depth tests to block style uncovered that three alias-depth tests of #61
+  had, since #84, passed for the wrong reason (their anchors were written 101 deep, so they were
+  refused as written): fixed, and they now assert their written nesting. Also splits two glued
+  bullets (OD-33, from #84; a `Tests:` bullet, from #77). 22 of the 28 new tests fail on `9b8b511`;
+  nine mutants killed. To merge after #76, as agreed with its session.
+
 ## State, 2026-10-08: a live fingerprint orders a live plan (run 2026-10-07)
 
 - PR #58 (OD-18 option B) squash-merged as `0f936b6`: with #50, OD-18 is complete. A live
@@ -230,13 +245,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   (main with #77 and every open PR) found no failure due to this change and one more claim, the
   order in which refusals made while composing are reported (the order they are made, not the order
   written), corrected with a test; and #87 numbering its own OD-30 to OD-33 in u04, which it has to
-  renumber. OD-30, decided by the owner on 2026-10-08: option A, a lower limit for flow nesting
-  only, to be built on its own branch. Until then, under the limit the per-token cost stays (chains
-  98 deep accepted at about 2.3 times the flat list); the repository's 130 YAML files nest at most 2
-  flow levels; libyaml's scanner, whose C composer would take the per-node checks with it, was not
-  chosen. #77 (A-41 and A-42, merged first) edits the same `compose_node`: the merge kept both sides
-  of four additions (the module docstring, the constants, the class docstring, `__init__`), the
-  method itself merged cleanly, and both branches' tests pass together.
+  renumber. OD-30, decided by the owner on 2026-10-08: option A, built as A-58 (entry above);
+  libyaml's scanner, whose C composer would take the per-node checks with it, was not chosen. #77
+  (A-41 and A-42, merged first) edits the same `compose_node`: the merge kept both sides of four
+  additions (the module docstring, the constants, the class docstring, `__init__`), the method
+  itself merged cleanly, and both branches' tests pass together.
 
 ## State, 2026-10-07 (evening): fleet target ids that differ only by case
 
