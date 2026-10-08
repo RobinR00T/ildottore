@@ -36,7 +36,7 @@ versioning: [SemVer](https://semver.org/).
   `validation_problems` (20,000 unknown keys gave a 788,937-byte line). A number as `provider` or
   `transport`, which A-40 (above) read as no provider, is refused as not text, and A-40's two tests
   of it now expect the refusal. Contract u12 A-53; `tests/cli/test_target_top_level_keys.py` (43 of
-  its 90 tests fail on `15e5550`, this branch's base).
+  its 90 tests fail on `9b8b511`, this branch's base).
 
 ### Fixed (a YAML file nested past the depth limit, refused where it is written)
 

@@ -18,7 +18,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   Left open, written in the clause: a misspelled value (`provider: opnai` goes to the REST adapter,
   and `transport: stido` on a stdio MCP target runs it on the offline mock, where its `mcp` suite
   scores a PASS with exit 0). `tests/cli/test_target_top_level_keys.py`: 43 of its 90 tests fail on
-  `15e5550`. A number as `provider` or `transport`, which A-40 (#81) read as no provider, is refused
+  `9b8b511`. A number as `provider` or `transport`, which A-40 (#81) read as no provider, is refused
   as not text; A-40's two tests of it now expect that. The check is built from `Target`'s fields, so
   the `websocket` field #87 adds is legal when it lands (pre-merge audit: a list kept by hand failed
   35 tests on the two merged).
