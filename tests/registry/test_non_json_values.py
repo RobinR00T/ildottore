@@ -395,7 +395,7 @@ def test_a_key_on_the_path_that_the_terminal_would_act_on_is_escaped() -> None:
 
 
 def test_a_key_that_is_not_text_is_written_as_its_repr() -> None:
-    """Such a key is A-44's finding where that check exists (#80); this walk never fails on one."""
+    """Such a key is A-44's finding, which runs first; this walk never fails on one either."""
 
     data = {"a": {5: datetime.date(2026, 1, 1), None: float("nan")}}
 
