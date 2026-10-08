@@ -14,12 +14,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   fleet's 64, about six times the longest example id (21); no pattern. The audits of A-57
   (2026-10-08) found that removing A-51's cases of a long id left 14 of the 19 sites that quote a
   target id or an identity name unguarded, as an id of 128 characters can have a `repr` of 1,282
-  (`\U000e0001` each): those cases use such ids now, with a check that no id is quoted whole
-  anywhere in the output, Rich's folding undone, and all 19 mutants are killed. Not covered, found
-  by those audits: spec ids (a pattern, no bound), `dottore diff` and `calibrate` printing a
-  report's target ids whole, a stored run with a longer id no longer resumable, control characters
-  in ids. 9 of the 11 new tests fail without the bound; 5 mutants of the bound killed. Clause A-57
-  (u01).
+  (`\U000e0001` each): those cases use such ids now, with a check that no id's `repr` appears whole
+  anywhere in the output (line breaks removed, in case Rich folds a message), and all 19 mutants are
+  killed. Not covered, found by those audits: spec ids (a pattern, no bound), `dottore diff` and
+  `calibrate` printing a report's target ids whole, a stored run with a longer id no longer
+  resumable, control characters in ids. 9 of the 11 new tests fail without the bound; 5 mutants of
+  the bound killed. Clause A-57 (u01).
 
 ## State, 2026-10-07 (evening): a refusal quoted the operator's value whole
 

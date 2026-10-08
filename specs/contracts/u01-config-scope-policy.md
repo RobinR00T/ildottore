@@ -411,9 +411,8 @@ raised, verdicts in any case and with spaces, a stdio target real only with a co
 written as before. Of 76 mutants, one per site and one per fix of the audits, 74 are killed; the two
 that live are equivalent (they quote a fleet id, which the fleet's model holds to 64 characters).
 These counts were measured with ids of 300,000 to 1,000,000 characters, before A-57 bounded them;
-A-57 changed those cases to ids of 128 characters whose `repr` still passes 300, and the 19 sites
-that quote a target id or an identity name (on 18 lines; the ids of a fleet, held to 64 characters,
-aside) are still killed as mutants.
+A-57 changed those cases to ids of 128 characters whose `repr` still passes 300, and the sites that
+quote a target id or an identity name are still killed as mutants (A-57 counts them).
 
 **A-52 A list or a map written past the depth limit is refused where it starts, as the document is
 composed (added 2026-10-07).** Every loader (the spec loader and `safe_yaml.safe_load`, so the
@@ -485,16 +484,19 @@ examples (21 characters); a fleet's ids keep their 64 characters and their patte
 is imposed here, so an id with spaces or other characters loads as before. A-51's quote of an id
 still matters: an id of 128 characters can have a `repr` of 1,282 (U+E0001 is written `\U000e0001`),
 so A-51's cases of a long id use such ids, and its test checks that no id is quoted whole anywhere
-in the output (the first 300 characters of its `repr`, with Rich's line folding undone), which a
-second, cut quote of the same id on the line would otherwise hide. Not covered: a spec id has a
-pattern and no length bound, and a run prints it whole (a spec id of 500,003 characters printed
-about 507 KB on a mock run, exit 0); `dottore diff` prints a report's target id whole when two
-reports disagree, and `dottore diff` and `calibrate` list every target id of a report with several
-targets whole, a report being the tool's own output (OD-26) and one written before A-57 able to hold
-a longer id; a run stored with a longer id cannot be resumed, its target file being refused now; and
-an id may hold control characters, which reach the terminal as they are. Endpoints, `auth_ref`
-references and labels spec ids stay unbounded, cut in refusals, and `calibrate` still lists the
-labels a report does not cover whole, as its normal output. Checks:
+in the output, which a second, cut quote of the same id on the line would otherwise hide: it looks
+for the 300 characters of the id's `repr` after the opening quote, one more than a cut keeps, with
+the line breaks removed first so that a message Rich folds would be caught too (none that quotes an
+id goes through Rich today, so that part is defensive). The `-sV` probe ceiling refusal and its
+resume notice write the `repr` whole, and no case of that test reaches them. Not covered: a spec id
+has a pattern and no length bound, and a run prints it whole (a spec id of 500,003 characters
+printed about 507 KB on a mock run, exit 0); `dottore diff` prints a report's target id whole when
+two reports disagree, and `dottore diff` and `calibrate` list every target id of a report with
+several targets whole, a report being the tool's own output (OD-26) and one written before A-57 able
+to hold a longer id; a run stored with a longer id cannot be resumed, its target file being refused
+now; and an id may hold control characters, which reach the terminal as they are. Endpoints,
+`auth_ref` references and labels spec ids stay unbounded, cut in refusals, and `calibrate` still
+lists the labels a report does not cover whole, as its normal output. Checks:
 `tests/cli/test_operator_id_length.py` (the figure; 128 characters load and 129 are refused, for a
 scope id, an identity name and a target id; a long id refused when its file is loaded, through
 `run`, `run --judge`, `fingerprint` and `fleet --judge`, on one short line that names the file and

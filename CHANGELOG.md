@@ -20,9 +20,10 @@ versioning: [SemVer](https://semver.org/).
   id in the shipped examples (21 characters); there is no pattern, so an id with spaces or other
   characters loads as before. An endpoint, an `auth_ref` reference and a labels spec id stay
   unbounded and are cut in refusals. A refusal that quotes an id still cuts it past 300 characters
-  of `repr` (one of 128 characters can have a `repr` of 1,282, `\U000e0001` for each), except the
-  `-sV` probe ceiling refusal, which writes the `repr` whole. OD-27, decided (a) by the implementer
-  at the owner's request; clause A-57 (u01).
+  of `repr` (one of 128 characters can have a `repr` of 1,282, `\U000e0001` for each), except two
+  refusals that write the `repr` whole: the `-sV` probe ceiling refusal of `run`, and `dottore
+  diff`'s refusal of two reports about different targets. OD-27, decided (a) by the implementer at
+  the owner's request; clause A-57 (u01).
 - Not covered: a spec id has a pattern and no length bound, and a run prints it whole (a spec id of
   500,003 characters printed about 507 KB on a mock run, exit 0); `dottore diff` prints a report's
   target id whole when two reports disagree, and `dottore diff` and `calibrate` list every target id
