@@ -440,11 +440,10 @@ Outside the clause, and said so rather than pinned:
   against a local stub ran 2.6 s at `--concurrency 1`, 8.6 s at the default 4, 18.7 s at 12 and 34.8
   s with `-sV` (delta audit); a deadline in the rate limiter, or the probe pass under the campaign's
   ceiling, would close it and is u08's and u09's;
-* `2**53` is not a bound with a meaning, and it does not bound the work: a resume builds a set of
-  mutators x runs attempt ids for each spec the halted run had started, so with `PI-DIRECT-001` and
-  `OUT-XSS-001` a stored count of 10^6 took 209 MiB with one spec started and 653 to 678 MiB with
-  both, 10^7 with one spec took 3.5 s and 1.3 GiB, and `2**53 + 1` was still growing at 3.7 GB when
-  it was stopped after 4.5 minutes on `2f6201a` (OD-32);
+* `2**53` is not a bound with a meaning. It did not bound the work either: a resume built a set of
+  mutators x runs attempt ids for each spec the halted run had started (10^7 runs, 1.3 to 3.7 GiB;
+  `2**53 + 1` still growing at 3.7 GB after 4.5 minutes), until A-59 (u08) had the runner count what
+  is stored instead (OD-32, decided 2026-10-08);
 * `-T` was already refused outside 0 to 5, but a value of 9 digits or more is printed as
   `«REDACTED:phone»`;
 * a resume is checked against the whole wall-clock ceiling, not what the halted run left of it (a
@@ -471,13 +470,13 @@ Outside the clause, and said so rather than pinned:
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
-- **OD-32** how far `--runs` may go (2026-10-07). A-55 bounds it at `2**53`, which only keeps
-  the plan's float arithmetic finite. The runner builds a set of mutators x runs attempt ids per
-  spec on a resume (`core/runner.py`, the prior-finding and seeding-gate checks) and in the
-  multi-identity sweep, for each spec the halted run had started: with `PI-DIRECT-001` and
-  `OUT-XSS-001`, a stored count of 10^6 took 209 MiB with one spec started and 653 to 678 MiB
-  with both, 10^7 with one took 3.5 s and 1.3 GiB, and `2**53 + 1` was still growing at 3.7 GB
-  when it was stopped after 4.5 minutes on `2f6201a`. Propose: a bound with a meaning (the
-  schema caps a spec's own unread `runs:` at 50), or the runner comparing a prior's attempts
-  with the count instead of building the set, once #66 and #60, which change those lines, are
-  in.
+- **OD-32** how far `--runs` may go (2026-10-07). **Decided 2026-10-08 by the owner: the runner
+  counts what is stored instead of building the plan (A-59, u08), and `--runs` keeps its `2**53`
+  bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The
+  runner built a set of mutators x runs attempt ids per spec on a resume and in the multi-identity
+  sweep, for each spec the halted run had started: with `PI-DIRECT-001` and `OUT-XSS-001`, a stored
+  count of 10^6 took 209 MiB with one spec started and 593 to 679 MiB with both (three
+  measurements; 653 to 678 on 2026-10-07), 10^7 took 3.5 s and 1.3 GiB with one and 16.3 s and
+  3.7 GiB with both, and `2**53 + 1` was still growing at 3.7 GB when it was stopped after 4.5
+  minutes on `2f6201a`. A bound with a meaning (the schema caps a
+  spec's own unread `runs:` at 50) would have refused values that run today; counting does not.

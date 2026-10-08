@@ -63,6 +63,26 @@ versioning: [SemVer](https://semver.org/).
   past the spend, a ceiling of 0 and advice written ahead of the words the test reads, and a third
   round a ProbeCeilingReached case no test covered and the limits above.
 
+### Fixed (a resume's work grew with --runs, not with what the run stored)
+
+- **A resume of a run with a large `--runs` grew without end.** For each spec the halted run had
+  started, the runner asked whether the stored attempts held every planned attempt (each mutation,
+  `--runs` times) by building the set of all `mutators x --runs` attempt ids: on the halt path of a
+  resume, at the seeding gate, and before the multi-identity sweep. The work followed `--runs`, not
+  what was stored, and a resume inherits the stored count: with `PI-DIRECT-001` and `OUT-XSS-001`, a
+  stored count of 10^7 took 3.5 s and 1.3 GiB with one spec started and 16.3 s and 3.7 GiB with
+  both, and `2**53`, the largest count `run` and the run store accept since #89, grew past 1 GB in
+  1.7 s in that PR's pre-commit audit (`2**53 + 1` was still growing at 3.7 GB after 4.5 minutes on
+  `2f6201a`). The runner now counts the planned attempts in what is stored, reading it once, and
+  compares that with the plan's size (`core/reproduce.planned_attempts_held`): the same answer,
+  without building the plan. A resume of a stored count of 10^6, 10^7, 10^8 or `2**53` took 0.7 to
+  1.0 s and 71 MiB. An id counts only in the exact form the runner writes, so a stored id cannot
+  pass for one, and the seeding gate's message prints its counts with thousands separators ("had
+  sent 1 of 18,014,398,509,481,984 attempts"), which the report redactor leaves readable: a count of
+  9 digits or more came out as `«REDACTED:phone»`. OD-32 decided by the owner on 2026-10-08: the
+  runner counts, and `--runs` keeps its bound. Clause A-59 (u08);
+  `tests/core/test_planned_attempts.py`, `tests/cli/test_resume_integrity.py`.
+
 ### Documentation (a live fingerprint ordering a live plan)
 
 - `docs/16` §1 records `dottore run -sV --spec PI-INDIRECT-TOOL-001 --runs 1` against the local
