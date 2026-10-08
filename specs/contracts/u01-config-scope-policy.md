@@ -106,6 +106,45 @@ passed, with the invariant resting on adapter implementation rather than on the 
 returns the first match, so a permissive entry silently shadowed a narrowing one, including its
 credential allowlist.
 
+**A-56 A fleet's ids are unique ignoring case, on every file system (added 2026-10-07).**
+`dottore fleet` writes one `target-<id>.yaml` per target, and on a case-insensitive file system
+(the macOS and Windows default) `target-Prod.yaml` and `target-prod.yaml` are one file.
+`materialize_fleet` compared ids exactly, so a fleet declaring `Prod` and `prod` wrote `prod`
+over `Prod`, listed two target files and exited 0, and the `dottore run` it printed (and
+`fleet --run`) refused "two target files declare the id 'prod'", an id the fleet declared once
+(delta audit of PR #76). Two target ids equal under `casefold()` are refused before anything is
+written, on one line with both locations, both ids and both file names. Every refusal of the
+fleet's ids locates its entries as the validation errors of the same command do
+(`targets.1.id`, counted from 0; `judge.id`), an exact duplicate included, because the CLI
+masks what its redactor reads as high entropy and a model name such as
+`Meta-Llama-3-70B-Instruct` comes out masked, ids and file names alike (pre-commit audit; the
+first version counted from 1, delta audit). A judge id spelled as a target's only up to case is
+refused the same way: no file collides (the judge is written to `judge.yaml`), but it got a
+scope entry of its own beside the target's, two ids that differ only by case in the record
+that authorizes both. The same spelling still shares the target's entry when the endpoint and
+credential match (A-30; the credential half had no test until the pre-merge audit of #85, and
+is now tested with the key on either side).
+Every refusal that names the judge's id says when it is the default `judge` of a `judge:` block
+that names none, and only then, the `--judge` file mismatch included. Target pairs are
+reported before the judge, and one refusal names one pair: the first entry whose id repeats
+an earlier one under `casefold()`, with that earlier entry (`[A, B, b, a]` names targets.1 and
+targets.2). The
+rule holds on a case-sensitive file system too, where nothing collided, so a fleet file means
+the same wherever it is expanded (OD-33). Fleet ids are ASCII (`[A-Za-z0-9._-]`), so
+`casefold()` is lowercasing here and no Unicode normalization arises (writing all 4,092 ids of
+one or two characters on APFS gave 1,440 files, the number of distinct ids under `casefold()`).
+Out of reach, stated rather than hidden: ids that only look alike (`Ilama`, `llama`, `lIama`)
+are distinct and accepted. Not changed, measured: `run`'s own duplicate check and
+`load_scope`'s (A-20) stay exact. No file of a run is named by a target id (evidence and probes
+sit under the run id), and the run store keys a finding by its run id and
+`<spec id>::<target id>` under SQLite's default, case-sensitive collation; two hand-written
+target files `Prod` and `prod` in one run get two run ids and two evidence trees, every report
+format lists both with their own results, and `--resume` of one against the other is refused.
+Checks: `tests/cli/test_fleet_case_ids.py`, including all 1,332 fleets of one to three targets
+named from `a`, `A`, `b` and `c`, with no judge or a judge `a`, `A`, `c` or `d` on its own
+endpoint or any target's, each checked against the start of the refusal (locations included)
+that the rules, written apart from the code, require.
+
 **A-29 A gate keys on what a spec cannot opt out of (added 2026-10-03).** The `test_only`
 criterion above is enforced at run time from the spec's **category**: an unmarked spec in a
 flagged family is `blocked_by_policy`. The engine used to read the mark as rendering-only and
@@ -159,14 +198,46 @@ The fix's own audits found four more ways to the same cost: a size without satur
 square of an anchor chain, so the measure was itself the amplification; a measure run only on a
 composed document let a 3 MB list of plain texts cost 785 MB first; a count that skipped aliases let
 a list of aliases do the same; and a `%TAG` prefix, copied into the tag of every node that uses its
-handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Not covered, each its own
-task: construction costs under the cap (a base-60 integer, integer keys sharing one hash) and the
-byte size of the file read. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
+handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Construction costs under the
+cap (a base-60 integer, integer keys sharing one hash) are A-41's; the byte size of the file read
+is its own task. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
 position, a recursive alias's anchor, the precedence, where composition stops for texts, long texts,
 empty lists, aliases and aliases of a long text, the per-document count, the tag limit on texts,
 lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a subprocess bounded at
 20 s and 256 MiB: `calibrate` on the alias bomb and on the flat list, `run -t`, `run --scope`,
 `fleet`, and `lint` on a merge bomb).
+
+**A-41 A YAML value that costs far more to build than it weighs is refused before it is built (added
+2026-10-07).** Every loader (the spec loader and `safe_yaml.safe_load`, so the scope, target, fleet
+and labels files and the policy and signature packs) refuses, as it composes the document and before
+anything is built, a number written in more than 1,000 characters (`cannot build this value (a
+number written in over 1000 characters)`), wherever it is written (a value, a key, a list item, in
+flow, at the root), and the key that takes a document past 1,000 keys that are numbers, in block or
+flow mappings, a key merged in by `<<` counted in every mapping it is merged into, through as many
+merges as pass it on (`document has over 1000 keys that are numbers ...`): a YAML error at that
+number, that key or what the `<<` merges in, quoting no value, exit 3 at the CLI and a `PARSE_ERROR`
+in `lint`. The rest of the file is not parsed. The size cap (A-37) bounds what a document holds, not
+what PyYAML spends building it, and two shapes cost far more than they weigh: YAML 1.1 reads
+`1:59:59` as a base-60 integer, built by a loop whose time grows with the square of its length, and
+integers that differ by a multiple of `sys.hash_info.modulus` share one hash, so the dict of a
+mapping of them is built in time that grows with the square of their count. A spec just under the 1
+MiB cap took `lint` 55 s with one base-60 value and 24 s with 36,320 such keys, and `run --dry-run`
+accepted a 450 KB target with a base-60 value after 37 s and a 1.3 MB target with 45,000 such keys
+after 247 s, at a load average of 6 to 10 on 15 cores (found by the pre-commit audit of A-37,
+measured on its branch); each is now refused in 1 to 1.5 s. The keys are counted from their tags, so
+before any of them is hashed, and across the whole document, not per mapping: 1,000 keys per mapping
+still allowed about fifty such mappings under the node cap. Only numbers count: text, bytes, dates
+and timestamps without an offset hash with a key Python draws at random for each process, a
+timestamp with an offset hashes by its instant, with no thousand instants sharing one hash within
+reach, and booleans and null have three distinct values between them, a fourth being a repeated key.
+A number of 1,000 hexadecimal digits has about 1,204 decimal digits, under the 4,300 Python converts
+by default (a lower `PYTHONINTMAXSTRDIGITS` is A-40's). No YAML file the repository ships has a key
+that is a number or a number over 20 characters. Checks: `tests/cli/test_yaml_construction_cost.py`
+(each number notation at 1,001 characters in each position and at 1,000 as a value; a long text;
+1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge shapes,
+a map merged where it is written, a map that merges passing its keys on; where composition stops; a
+stream of documents; keys that are not numbers; both loaders; and in a subprocess bounded at 15 s:
+`lint` on each 1 MiB spec, and `run --dry-run` on the 450 KB and the 1.3 MB target).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
@@ -181,3 +252,11 @@ lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a su
   checksum now, pluggable verifier interface so sigstore drops in without a shape change).
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
+- **OD-33** fleet ids that differ only by case. **Decided 2026-10-07 by the conductor and
+  confirmed by the owner the same evening, built (A-56):** refused on every file system, not only
+  where the file system folds case: it is portable and the simplest rule (`run` already compares
+  report paths case-folded everywhere), and a fleet file then means the same wherever it is
+  expanded. What it costs: a fleet with `Prod` and `prod` that expanded on Linux is now refused
+  there too, and so is a judge spelled as a target only up to case, which worked. The alternative
+  not taken: refuse only where the `--out` directory's file system folds case, found by probing
+  it.

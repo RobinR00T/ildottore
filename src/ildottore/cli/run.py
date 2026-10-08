@@ -118,6 +118,42 @@ class ScopeRequiredError(PolicyError):
     """
 
 
+class SpecLoadError(ValueError):
+    """Spec files failed to load, so the run is refused rather than run on what parsed.
+
+    ``spec_files`` are the names the CLI prints in clear: each is a path relative to a spec root
+    that names an entry on disk under it. Whoever wrote the spec tree chose it (the operator, or
+    the author of a pack they installed), so it carries nothing of this run, and it is what the
+    operator has to find; a credential or PII shape inside it is still masked by the value and
+    shape rules. The entropy rule masked them (`attacks/DL-PII-ELICIT-001.yaml` read
+    `«REDACTED:high_entropy:…».yaml`), so the refusal could not say which file to fix (pre-merge
+    audit of PR #47).
+    """
+
+    def __init__(self, message: str, *, spec_files: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.spec_files = spec_files
+
+
+def _spec_files_on_disk(spec_paths: list[Path], names: list[str]) -> tuple[str, ...]:
+    """The ``names`` that are a relative path to an entry on disk under one of ``spec_paths``.
+
+    An entry, not only a regular file: a directory or a dangling link named ``*.yaml`` fails to
+    load too, and its name is just as much the tree's. A spec path given as a file is its
+    own parent's tree, as the loader displays it. ``os.path.lexists`` answers False, never
+    raises, for a name the filesystem refuses (too long, a NUL byte).
+    """
+
+    roots = [path if path.is_dir() else path.parent for path in spec_paths]
+    return tuple(
+        name
+        for name in dict.fromkeys(names)
+        if not Path(name).is_absolute()
+        and ".." not in Path(name).parts
+        and any(os.path.lexists(root / name) for root in roots)
+    )
+
+
 @dataclass
 class RunOptions:
     """Resolved options for one ``run`` invocation (CLI parses into this)."""
@@ -512,7 +548,7 @@ def budgets_for(
 def resolve_target_plans(
     *,
     scope: Scope,
-    targets: list[tuple[Path, Target]],
+    targets: list[wiring.TargetFile],
     specs: list[AttackSpec],
     runs: int,
     rate_rps: float | None = None,
@@ -532,7 +568,8 @@ def resolve_target_plans(
     pack = wiring.build_permissive_pack(specs)
     policy = wiring.build_policy_engine(scope, pack)
     plans: list[TargetPlan] = []
-    for path, target in targets:
+    for loaded in targets:
+        path, target = loaded.path, loaded.target
         endpoint = wiring.scope_endpoint_of(scope, target)
         decision = authorize_target(scope, target.id, endpoint)
         fingerprint = (fingerprints or {}).get(target.id)
@@ -559,7 +596,7 @@ def resolve_target_plans(
                 blocked.append((spec.id, verdict.reason or "blocked_by_policy"))
         # The offline mock replays the specs' fixtures, written for the scene, so it holds every
         # scene; a live deployment holds only those its operator declared seeded (OD-18 B).
-        fixtures_hold_scene = wiring.target_uses_mock(path)
+        fixtures_hold_scene = loaded.uses_mock
         # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
         # declared, a per-run canary with no run_token, two scene tools under one deployment
         # name, or a trace spec through an adapter that reads no tool calls.
@@ -1007,11 +1044,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # reachability), not a second, weaker one written here: asking only whether the id is
     # present left the false green one character away, because `ScopeTarget.endpoints`
     # defaults to empty and a typo in `host` reads exactly like a missing allowlist.
-    loaded_targets = [(path, wiring.load_target(path)) for path in opts.targets]
+    # Each file parsed once: everything below asks the same read (u12 A-42).
+    loaded_targets = [wiring.read_target_file(path) for path in opts.targets]
     # Two target files with the same id shared one run id and one evidence tree, so one
     # report held a PASS and a FAIL for the same spec on "the same" target (audit R11).
     seen_ids: dict[str, Path] = {}
-    for path, target in loaded_targets:
+    for loaded in loaded_targets:
+        path, target = loaded.path, loaded.target
         if target.id in seen_ids:
             raise ValueError(
                 f"two target files declare the id {target.id!r} ({seen_ids[target.id]} and "
@@ -1019,7 +1058,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             )
         seen_ids[target.id] = path
     judge_target = wiring.load_target(opts.judge) if opts.judge is not None else None
-    to_authorize = list(loaded_targets)
+    to_authorize = [(loaded.path, loaded.target) for loaded in loaded_targets]
     if judge_target is not None and opts.judge is not None:
         # The judge is a model we send prompts to, so it goes through the same gate. It used
         # to be loaded and never checked: with the judge absent from the scope (which is what
@@ -1072,9 +1111,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{e.path or e.spec_id or '?'}: {e.message[:120]}" for e in load_errors[:5]
         )
         more = f" (and {len(load_errors) - 5} more problem(s))" if len(load_errors) > 5 else ""
-        raise ValueError(
+        raise SpecLoadError(
             f"{len(files)} spec file(s) failed to load and would silently leave the "
-            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first."
+            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first.",
+            spec_files=_spec_files_on_disk(spec_paths, [e.path for e in load_errors[:5] if e.path]),
         )
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
@@ -1146,7 +1186,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     evidence_root = opts.evidence_root or Path(".dottore/evidence")
     run_db = opts.run_db or Path(".dottore/runs.sqlite")
 
-    routes = [(path, target, _route_for(opts, path)) for path, target in loaded_targets]
+    routes = [(loaded.path, loaded.target, _route_for(opts, loaded)) for loaded in loaded_targets]
     any_live = any(real is not None for _, _, (_, real) in routes)
     # Pacing applies to traffic that leaves the process. An offline mock campaign is not
     # paced (there is nobody to be polite to, and pacing CI would only slow it); the plan
@@ -1197,7 +1237,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         resume_from = resume_mod.load_resume_run(
             evidence_root,
             opts.resume,
-            loaded_targets[0][1],
+            loaded_targets[0].target,
             run_db=run_db,
             specs=selected,
             mock_scenario=routes[0][2][0],
@@ -1260,8 +1300,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # pass happens first and its evidence has to file under the run it belongs to. A resumed
     # campaign keeps the original id (the evidence and the run store are keyed by it).
     run_ids = {
-        target.id: (opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}")
-        for _, target in loaded_targets
+        loaded.target.id: (
+            opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}"
+        )
+        for loaded in loaded_targets
     }
 
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
@@ -1622,7 +1664,7 @@ def _refusal_for(scope: Scope, target: Target) -> str | None:
     return None if decision.allowed else (decision.reason or "not authorized by the scope")
 
 
-def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target | None]:
+def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None, Target | None]:
     """Decide the adapter route for one target: ``(mock_scenario, real_target)``.
 
     ``--hardened`` always forces the offline hardened replay (a mock-only flag); otherwise a
@@ -1632,22 +1674,20 @@ def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target 
     (contract §5).
     """
 
-    uses_mock = wiring.target_uses_mock(target_path)
-    if opts.hardened and not uses_mock:
+    if opts.hardened and not loaded.uses_mock:
         # It replayed offline fixtures, sent nothing, and published ten passes, "complete" and
         # exit 0 under the live target's name, with no marker anywhere that it was a replay
         # (audit 2026-10-03, R3). A clean report about a model nobody contacted is refused.
-        target = wiring.load_target(target_path)
         raise ValueError(
             f"--hardened replays the offline hardened fixtures and sends nothing, so it cannot "
-            f"be used with the live target {target.id!r} ({target_path}): the report would "
+            f"be used with the live target {loaded.target.id!r} ({loaded.path}): the report would "
             "describe a model that was never contacted. Drop --hardened, or point it at a "
             "mock target."
         )
-    if opts.hardened or uses_mock:
-        scenario = "hardened" if opts.hardened else wiring.load_mock_scenario(target_path)
+    if opts.hardened or loaded.uses_mock:
+        scenario = "hardened" if opts.hardened else loaded.mock_scenario()
         return scenario, None
-    return None, wiring.load_target(target_path)
+    return None, loaded.target
 
 
 def _run_one_target(
