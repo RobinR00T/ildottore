@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ildottore import safe_yaml
 from ildottore.policy.errors import ChecksumMismatchError, ScopeError
 from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.files import read_text_capped
 
 
 class Endpoint(BaseModel):
@@ -180,6 +181,7 @@ def load_scope_with_digest(
     records the record that authorized it, not a second read of a file that may have changed
     in between (audit D-17, threat model S4).
 
+    * Reads at most 1 MiB of the file (``shared.files.read_text_capped``, clause A-43).
     * Parses YAML with a **safe** loader - no code execution, no network.
     * Validates the :class:`Scope` model (default-deny: unknown fields rejected).
     * If a ``checksum`` is present, verifies it via ``verifier`` (SHA-256 by
@@ -192,8 +194,8 @@ def load_scope_with_digest(
     verifier = verifier if verifier is not None else Sha256Verifier()
     file_path = Path(path)
     try:
-        raw_text = file_path.read_text(encoding="utf-8")
-    except OSError as exc:  # pragma: no cover - filesystem error surface
+        raw_text = read_text_capped(file_path)
+    except OSError as exc:  # over the 1 MiB cap (A-43), or a filesystem error
         raise ScopeError(f"cannot read scope file {file_path}: {exc}") from exc
 
     try:
@@ -268,5 +270,5 @@ def scope_hash(path: str | Path, *, verifier: IntegrityVerifier | None = None) -
     """
 
     verifier = verifier if verifier is not None else Sha256Verifier()
-    raw_text = Path(path).read_text(encoding="utf-8")
+    raw_text = read_text_capped(path)
     return verifier.compute(_strip_checksum_line(raw_text).encode("utf-8"))

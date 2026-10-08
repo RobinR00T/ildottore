@@ -18,23 +18,40 @@ from pydantic import ValidationError
 if TYPE_CHECKING:  # annotation only: `shared` imports pydantic and the stdlib at run time
     import yaml
 
-__all__ = ["validation_problems", "yaml_problem"]
+__all__ = ["MAX_LISTED_PROBLEMS", "MAX_PROBLEM_CHARS", "validation_problems", "yaml_problem"]
+
+#: Errors listed by default; the rest are counted, not listed. The spec loader's figure.
+MAX_LISTED_PROBLEMS = 20
+#: A field path or a reason longer than this is cut. The spec loader's figure for a message.
+MAX_PROBLEM_CHARS = 300
 
 
-def validation_problems(exc: ValidationError, *, limit: int | None = None) -> str:
-    """``field.path: reason`` for every error, without the input value or a docs URL.
+def validation_problems(exc: ValidationError, *, limit: int = MAX_LISTED_PROBLEMS) -> str:
+    """``field.path: reason`` for the first ``limit`` errors, without the input value or a docs URL.
 
-    With ``limit``, only the first ``limit`` errors are listed and the rest counted.
+    The rest are counted, not listed, and a path or a reason past :data:`MAX_PROBLEM_CHARS` is
+    cut. Listing every error, whole, made a 5.5 MB scope with 5,500 extra keys of 1,000
+    characters print one ``error:`` line of 5,687,058 characters (pre-commit audit of the
+    alias-expansion cap, 2026-10-07): a key the operator typed is part of the path.
     """
 
     errors = exc.errors(include_input=False, include_url=False)
-    shown = errors if limit is None else errors[:limit]
+    shown = errors[:limit]
     text = "; ".join(
-        f"{'.'.join(str(part) for part in err['loc']) or '<root>'}: {err['msg']}" for err in shown
+        f"{_cut('.'.join(str(part) for part in err['loc']) or '<root>')}: {_cut(err['msg'])}"
+        for err in shown
     )
     if len(shown) < len(errors):
         text += f"; and {len(errors) - len(shown)} more"
     return text
+
+
+def _cut(text: str) -> str:
+    """``text``, or its first :data:`MAX_PROBLEM_CHARS` characters and its length."""
+
+    if len(text) <= MAX_PROBLEM_CHARS:
+        return text
+    return f"{text[:MAX_PROBLEM_CHARS]}... ({len(text)} characters)"
 
 
 def yaml_problem(exc: yaml.YAMLError) -> str:

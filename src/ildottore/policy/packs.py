@@ -34,6 +34,7 @@ from ildottore.policy.errors import PolicyPackError
 from ildottore.policy.scope import Scope
 from ildottore.shared.config_errors import validation_problems, yaml_problem
 from ildottore.shared.enums import FLAGGED_FAMILIES, Category
+from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import AttackSpec
 
 __all__ = [
@@ -90,8 +91,8 @@ def load_pack(path: str | Path) -> PolicyPack:
 
     file_path = Path(path)
     try:
-        raw_text = file_path.read_text(encoding="utf-8")
-    except OSError as exc:  # pragma: no cover - filesystem error surface
+        raw_text = read_text_capped(file_path)
+    except OSError as exc:  # over the 1 MiB cap (A-43), or a filesystem error
         raise PolicyPackError(f"cannot read policy pack {file_path}: {exc}") from exc
     try:
         data = safe_yaml.safe_load(raw_text)
