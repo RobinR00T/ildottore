@@ -8,10 +8,11 @@ read it here.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 
-__all__ = ["call_arguments", "call_id", "call_name"]
+from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+
+__all__ = ["call_arguments", "call_id", "call_name", "check_argument_nesting"]
 
 
 def call_name(call: Mapping[str, object]) -> str:
@@ -38,20 +39,52 @@ def call_id(call: Mapping[str, object], fallback: str) -> str:
 def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
     """The arguments of a call as a mapping: ``arguments`` / ``input`` / ``args`` /
     ``parameters``, or ``function.arguments``, each either a mapping or OpenAI's JSON string.
-    A string that is not a JSON object reads as ``{}``.
+    A string that is not a JSON object reads as ``{}``, and so does one nested deeper than
+    :data:`~ildottore.shared.nesting.MAX_DEPTH`. A live reply carrying one never gets here:
+    its adapter refuses it (:func:`check_argument_nesting`), so only a call from elsewhere (a
+    fixture) can read as ``{}`` for its depth, where ``json.loads`` raised ``RecursionError``.
     """
+
+    value = _raw_arguments(call)
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = bounded_loads(value)
+        except ValueError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def check_argument_nesting(call: Mapping[str, object]) -> None:
+    """Raise :class:`~ildottore.shared.nesting.NestedTooDeeply` when the arguments
+    :func:`call_arguments` would read are a JSON string nested too deeply.
+
+    A string is the one part of a reply its own parse never opened; arguments that are a
+    mapping were parsed, and measured, with the reply. A string that is not JSON passes: it
+    reads as ``{}``, as before.
+    """
+
+    value = _raw_arguments(call)
+    if not isinstance(value, str):
+        return
+    try:
+        bounded_loads(value)
+    except NestedTooDeeply:
+        raise
+    except ValueError:
+        return
+
+
+def _raw_arguments(call: Mapping[str, object]) -> object:
+    """The first candidate that is a mapping or a string: the one :func:`call_arguments` reads."""
 
     candidates = [call.get(key) for key in ("arguments", "input", "args", "parameters")]
     fn = call.get("function")
     if isinstance(fn, Mapping):
         candidates.append(fn.get("arguments"))
     for value in candidates:
-        if isinstance(value, Mapping):
-            return dict(value)
-        if isinstance(value, str):
-            try:
-                parsed = json.loads(value)
-            except ValueError:
-                return {}
-            return dict(parsed) if isinstance(parsed, dict) else {}
-    return {}
+        if isinstance(value, Mapping | str):
+            return value
+    return None
