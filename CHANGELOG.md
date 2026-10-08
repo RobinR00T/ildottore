@@ -63,6 +63,214 @@ versioning: [SemVer](https://semver.org/).
   past the spend, a ceiling of 0 and advice written ahead of the words the test reads, and a third
   round a ProbeCeilingReached case no test covered and the limits above.
 
+### Fixed (a YAML file nested past the depth limit, refused where it is written)
+
+- **A file nested past the depth limit was composed whole before it was refused.** PyYAML's
+  pure-Python scanner keeps one possible simple key per open flow level and walks them all on every
+  token, so each token costs in proportion to the flow levels open around it, and the depth limit
+  (100 levels) was measured only on the composed document. A 198 KB list of chains of `[` 320 deep
+  was refused (`document is nested too deeply at line 1, column 101`) after 11.3 s, 4.6 times the
+  2.5 s of a flat list of as many texts (best of three, alternating, at a load average of 9 to 14;
+  4.5 times at 157 to 282, and the audits 3.3 to 6.7 times under other loads), the scanner walking
+  97.4 million possible keys against 0.3 million. Every loader (the spec loader and
+  `safe_yaml.safe_load`, so the scope, target, fleet and labels files and the policy and signature
+  packs) now refuses a list or a map, flow or block, written inside 100 others, where it starts,
+  before anything in it or after it is composed (the scanner reads ahead to the end of that line, at
+  most 1,024 characters, and one token past it, each token read whole however long, so an error in
+  that window, such as a character no token can start or a bad escape in a long quoted text, is
+  reported instead): the same file in 0.11 s, with the same message and position, the scanner
+  walking 1.1 million keys, a constant (what it reads ahead on the first line). A list or a map is
+  written at most as deep as its aliases expand it, so through these loaders this only refuses
+  earlier what was refused later (`SafeValueLoader` used directly, without the measure, now refuses
+  such a document; nothing in `src/` does that). The position is where the first list or map written
+  past the limit starts; the measure on the whole document named the deepest branch instead, and,
+  when that list or map is empty, a text or a key written before it at its level (`k: []`). Refusals
+  made while composing are reported as they are made, not always in the order written: this one and
+  the tag limit as a node starts, the size cap's count and the number checks once a node is
+  composed, so a list or a map past the depth limit inside a collection comes before the count that
+  the collection's own end takes past the cap. All come before what is measured on the whole
+  document, wherever that is written: a file written deep was reported as too large if its nodes
+  passed the cap before the end, and a recursive alias written before the nesting was reported
+  instead of it. A text or an alias written at level 101 opens no level and is left to what refused
+  it before, where it was. Nesting written thousands of levels deep, which the entry below still
+  refused without a position, now has one. Under the limit the cost stays: the same chains 98 deep
+  are accepted in 5.5 to 5.6 s, about 2.3 times the flat list, and up to about 3 times when the
+  chains hold their texts at the bottom (OD-30, decided by the owner on 2026-10-08: a lower limit
+  for flow nesting only, where the repository's own files nest at most 2 flow levels, to be built on
+  its own branch). Tests: `tests/cli/test_yaml_written_nesting.py`. 18 of the 32 fail on `5fdac72`
+  (`main`): eight because composing goes on to a character no token can start, written lines inside
+  the collection at level 101; two because the scanner walks 97.4 million possible keys for `lint`
+  and `calibrate` on the audit's 198 KB file, over a bound of 5 million (1.1 million now), the file
+  refused with the same message and position; four because a file is reported as too large, two
+  written deep first and two whose list past the limit sits inside lists whose ends would take the
+  count past the cap; two because the deepest branch, or a key before an empty list, is named; one
+  because `yaml.load_all` does not refuse; and one because 5,000 levels have no position. The other
+  fourteen pin what does not change: the position for one branch, a text, an alias and a map's keys
+  at level 101, every shape at the limit loading as plain PyYAML loads it, and the refusal a
+  `RecursionError` while composing still gets (both loaders catch it, and no other test reaches
+  those handlers now), simulated in process, since a real overflow switches off a pure-Python
+  tracer, and real in a subprocess with little stack left, and a tag too long on the list at level
+  101, reported as such. Thirteen mutants of the check and of those two handlers are all killed.
+  Clause A-52 (u01), u02 §4. Found by the pre-commit audit of the construction-cost fix (A-41 and
+  A-42); the same on `main` (`2f6201a`), whose depth limit is #61's: refused after the same 97.4
+  million keys.
+
+### Fixed (two fleet target ids that differ only by case)
+
+- **`dottore fleet` wrote one target over another when their ids differed only by case.** Each
+  target is written to `target-<id>.yaml`, and on a case-insensitive file system (the macOS and
+  Windows default) `target-Prod.yaml` and `target-prod.yaml` are one file. The duplicate check
+  compared ids exactly, so a fleet declaring `Prod` and `prod` wrote `prod` over `Prod`, printed
+  two `target:` lines and exited 0, and the `dottore run` it printed (and `fleet --run`) then
+  refused with exit 3, "two target files declare the id 'prod'", an id the fleet declared once
+  (measured on `2f6201a` and `c3e70d8`, APFS). Two ids equal under `casefold()` are now refused
+  before anything is written, on every file system, on one line: `error: the fleet's
+  targets.0.id 'Prod' and targets.1.id 'prod' differ only by case, so target-Prod.yaml and
+  target-prod.yaml are one file on a case-insensitive file system (the macOS and Windows
+  default); give each target an id that differs in more than case`. Each entry is located as the
+  validation errors of the same command locate it (`targets.1.id`, counted from 0), because the
+  CLI masks what its redactor reads as high entropy: with `Meta-Llama-3-70B-Instruct` and its
+  upper-case twin, both ids and both file names come out as `REDACTED`, and the locations still
+  say which two entries to change. An exact duplicate keeps its wording and gains the two
+  locations (`duplicate target id 'prod' in fleet (targets.0.id and targets.2.id)`). A `judge:`
+  id spelled as a target's only up to case is refused too, with both locations: no file
+  collides (the judge goes to `judge.yaml`), but it got a scope entry of its own beside the
+  target's, which worked and put two ids that differ only by case in the authorization record
+  (spelled exactly the same, the judge still shares the target's entry). A `judge:` block with
+  no `id:` is `judge`, so a target `Judge` beside it is now refused; this refusal, and the
+  existing one for a judge with a target's exact id on another endpoint (now `the fleet's
+  judge.id 'judge' ... is targets.0.id, a target with a different endpoint or credential; give
+  the judge its own id`), say when the id is that default, and so does a `--judge` file that
+  names another id (`id 'local-judge' (the fleet declares 'judge', the default of a judge: block
+  that names no id)`; it said "the fleet declares 'judge'" alone). Refusing on a case-sensitive file
+  system too, where nothing collided, is decision OD-33, confirmed by the owner (the alternative
+  was refusing only where the file system folds case). Not changed: `run` and the scope loader still
+  compare ids exactly; no file of a run is named by a target id, and the run store's finding key
+  `<spec id>::<target id>` is compared case-sensitively, so two hand-written target files `Prod`
+  and `prod` run together with two run ids, both in every report format. Contract u01 A-56;
+  `tests/cli/test_fleet_case_ids.py` (19 of its 24 tests fail on `c3e70d8`, on APFS: 10 because
+  nothing is refused, 2 on exit 0, 6 on the message, with no line for `--run` and no location or
+  default note in the duplicate and judge refusals, and the enumeration on both; on a
+  case-sensitive file system the `--run` test fails on its exit code instead. The other 5 check
+  that the enumeration reaches every refusal, that a judge spelled as a target still shares its
+  entry, and that the `--judge` refusals that did not change stay as they were: an `id: judge`
+  the operator wrote, and an endpoint or `auth_ref` mismatch, carry no note). Found by the delta
+  audit of PR #76.
+
+### Fixed (found by the #47 pre-merge audit)
+
+- **`dottore run` names the spec file it could not load.** The refusal passed the file's path
+  through the redactor's entropy rule, which reads `attacks/DL-PII-ELICIT-001` (a lowercase
+  directory glued to an uppercase id fits neither exempt shape) as a key: it said
+  `1 spec file(s) failed to load and would silently leave the battery:
+  «REDACTED:high_entropy:21e2e946».yaml: <root>: 'severity' is a required property`, and the
+  operator could not tell which file to fix. It now says `attacks/DL-PII-ELICIT-001.yaml: <root>:
+  'severity' is a required property`. Only a name that is a relative path to an entry on disk
+  under one of the spec paths is kept (a directory or a dangling link named `*.yaml` included),
+  and only where no character the entropy rule reads as part of a token (`[\w+/=-]`) is glued
+  to it; what the loader quotes from inside the file still goes through the redactor (an
+  unexpected key `Xq9vT2mLp8RzK4wN7bYcD3` still reads `«REDACTED:high_entropy:…»`). A name that
+  holds a registered credential loses it to the value rule
+  (`attacks/ZZ-«REDACTED:credential:…»-001.yaml`), and one of 8 characters or more that is part
+  of a registered credential prints as `«REDACTED:credential»`. A spec path that does not exist
+  is no entry of the tree, and its `path not found` message still goes to the redactor.
+- **A kept token that overlaps a registered credential is masked outright in a CLI error.** An
+  evidence file name, a carried digest or an existing path that is part of a credential the run
+  read went to the entropy rule, which passes a low-entropy value: a carried digest `abab…ab`
+  (64 hex) inside a registered `sk-abab…ab` printed in clear. It prints as
+  `«REDACTED:credential»` now, as does a spec file name in the same position. A token shorter
+  than 8 characters (the floor below which no credential is registered) is not taken for part
+  of one: masking `x` would tell the reader the password holds an `x`.
+
+### Fixed (a YAML value that costs far more to build than it weighs)
+
+- **A number written in thousands of characters took the linter most of a minute.** YAML 1.1 reads
+  `1:59:59` as a base-60 integer, and PyYAML builds one with a loop whose time grows with the square
+  of its length: a spec just under the 1 MiB cap holding one such value took `dottore lint` 55 s,
+  and `run --dry-run` accepted a 450 KB target file with one in a field nothing reads after 37 s.
+  The size cap below does not see it: a 1 MiB value counts as about 16,000 of its 100,000 nodes.
+  Every loader now refuses a number, an integer or a float in any notation, written in more than
+  1,000 characters, as soon as it is composed: `cannot build this value (a number written in over
+  1000 characters) at line 2, column 8`, a `PARSE_ERROR` in `lint` and exit 3 elsewhere, in 1 to 1.5
+  s for either file, most of it starting the CLI. A number of 1,000 hexadecimal digits has about
+  1,204 decimal digits, under the 4,300 Python converts by default. 6,000 base-60 numbers of 1,000
+  characters, a 6 MB file, still load, in about twice what 6,000 texts of the same size take (8.5 s
+  against 4.1 s, best of three on a heavily loaded machine): base 60 is the costliest notation, and
+  a number now costs a small multiple of a text of its size, not its square.
+- **Integer keys that share one hash made a mapping cost the square of their count.** Integers that
+  differ by a multiple of `2 ** 61 - 1` (`sys.hash_info.modulus`) all hash alike, so the dict PyYAML
+  builds for a mapping of them costs the square of their count: 36,320 such keys, a 1 MiB spec, took
+  `lint` 24 s, and 45,000 in a 1.3 MB target file took `run --dry-run` 247 s. Every loader now
+  refuses the key that takes a document past 1,000 keys that are numbers, counted from their tags as
+  each is composed, so before any of them is hashed and without parsing the rest of the file, across
+  the whole document and with a key merged in by `<<` counted in every mapping it is merged into (a
+  `<<: [*a, *b, ...]` gathers many maps' keys into one dict): ``document has over 1000 keys that are
+  numbers (a key merged in by `<<` counted in every mapping it is merged into) at line 1003, column
+  3``, in 1 to 1.5 s for either file. Per mapping, the same limit still let about fifty such
+  mappings through under the node cap. Keys that are text, bytes, dates or timestamps are not
+  counted: all but a timestamp with an offset hash with a key Python draws at random for each
+  process, and a timestamp with an offset hashes by its instant, with no thousand instants sharing
+  one hash within reach. No YAML file the repository ships has a key that is a number.
+- **`run` parsed a target file up to five times, `fingerprint` up to four.** Each question the CLI
+  asked of a target file parsed it again: to load it, whether it is a mock, its scenario, each plan,
+  and for a live target the target handed to the adapter, four parses of a mock target in a dry run
+  and five of a live one. A costly file was paid that many times over, the live target sent to came
+  from a later read than the one the scope authorized, and a target that can be read only once, such
+  as `-t /dev/stdin`, was refused on its second read (`must be a mapping at top level`). `run` and
+  `fingerprint` now parse each target file once (`wiring.read_target_file`), and a piped target
+  works. A file named twice is still parsed once per name (`-t X -t X`, refused as a repeated id,
+  and `-t X --judge X`), and a scope with a `checksum:` line is still parsed twice, by design: the
+  second parse is the check that the line is part of no other value. - Tests:
+  `tests/cli/test_yaml_construction_cost.py`: each number notation at 1,001 characters as a value, a
+  key, a list item, in a flow list or mapping and at the root, and at 1,000 as a value; a long text;
+  1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge
+  shapes, a map merged where it is written and a map that merges passing its keys on; where
+  composition stops; a stream of documents; keys that are not numbers; both loaders; in a subprocess
+  bounded at 15 s, `lint` on each 1 MiB spec and `run --dry-run` on each target; and the parses of a
+  target file counted where the YAML is parsed, for a mock run under seven flag sets, a live dry run
+  and estimate, `--hardened` on a live target, two targets, a resumed run, a judge file, a target
+  piped in, and `fingerprint` offline and on a mock. 112 of the 126 tests fail on `982bfe4`, each
+  because nothing is refused, the timeout runs out, composition reads on to a later syntax error, or
+  the file is parsed more than once or refused when piped in; the other 14 pass on both sides by
+  design (a number at the cap in each notation, a long text and keys that are not numbers still
+  load). Twenty-seven distinct mutants of the fix are all killed, among them the eight the audits
+  found surviving. Clauses A-41 (u01) and A-42 (u12). Timings on a 15-core machine at a load average
+  of 6 to 10; under heavier load the base took longer still (up to 2.2 times, and the 1.3 MB target
+  did not finish in 15 minutes). Found by the pre-commit audit of the size cap below, and the gaps
+  in the first version of this fix by its own pre-commit and pre-merge audits.
+
+### Fixed (a spec key that is not a string)
+
+- **`dottore lint` exited 1 with a traceback on a key YAML builds as something other than text.** A
+  spec is a JSON document, whose keys are strings, but YAML reads `5:` as an int, a bare `on:`,
+  `off:`, `yes:` or `no:` as a bool, `~:` or an empty key as null, `2026-10-07:` as a date and
+  `1.5:` as a float. The JSON schema says nothing about the keys of a free-form object, so such a
+  key in a fixture's tool-call arguments reached the offline `tool_call` stub, whose `.lower()`
+  raised `AttributeError`: a traceback and exit 1, which this tool uses for "findings below the
+  threshold". Over the 41 fixture tool calls with arguments in the shipped specs, an int key added
+  after the others crashed lint in 5 and passed it unreported in the other 36 (added first, 6 and
+  35). Every mapping in a spec is now checked before the schema (including those inside an `!!omap`
+  or `!!pairs` entry; the keys of such an entry and the members of a `!!set` are not), and a key
+  that is not a string is a `SCHEMA` finding that names the path of its mapping, the value YAML
+  built from the key and its type: `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not
+  a string; write it in quotes, without a tag`. At most 20 are listed and the rest counted, a key
+  that is a number too long to write out is reported first by the check of the section below, and a
+  key on the path that is not printable (an escape sequence, a newline, a bidi control) is written
+  as its `repr`, so it cannot forge a finding line (the spec id and the paths of other schema errors
+  print as written, as before). Found on 2026-10-07 by the session on `fix/huge-int-repr`. Clause
+  A-44 (u02).
+- **Keys of two types in one mapping crashed the schema check itself.** `step_arg_patterns: {5: 1,
+  a: 2}` gave two schema errors whose paths were sorted, an int against a str: `TypeError` and
+  exit 1. The key check runs first, so the schema never sees such a mapping.
+- **A `!!binary` key passed lint.** `bytes` has a `lower`, so the stub read it and moved on. It is
+  now a finding like the others.
+- **`run` refuses such a spec.** `run`, `describe`, `coverage` and `registry` load specs the same
+  way, so a spec with such a key is left out as any spec that does not load is (`run` refuses the
+  campaign with exit 3, naming the file); `render-media` says the spec is not found, as it does
+  for any spec that does not load. Where the stub did not crash, the spec used to pass lint and
+  run; now it is refused until the key is quoted. The offline stub reads only string keys too, as
+  the `tool_call` evaluator does, for a spec built in code and passed to `lint_packs`.
+
 ### Fixed (a resumed run recorded its `-sV` probe pass only when the ceiling stopped it)
 
 - **A resume lost what its probe pass had sent whenever the pass stopped on anything but the
@@ -155,10 +363,12 @@ versioning: [SemVer](https://semver.org/).
   spec loader's positions and order, and one because the measure is new. Twenty-three mutants of the
   fix are all killed. Clause A-37 (u01), u02 §4, u12 A-9. Found by the pre-merge audit of #61.
 - **Left open, each its own task (found by the audits, not introduced here).** Under the cap, a
-  base-60 integer (`1:59:59:...`) builds in time quadratic in its length (a 1 MiB spec took `lint`
-  43 s) and integer keys that share one hash make a mapping quadratic (27 s); `run` loads the target
-  file four times; a 4,000-digit integer in a typed spec field crashed `lint` with a traceback
-  (fixed since by #81); and the operator's files are read whole with no byte limit, their validation
+  base-60 integer (`1:59:59:...`) built in time quadratic in its length and integer keys that share
+  one hash made a mapping quadratic, and `run` parsed the target file four times (all three fixed in
+  the section above); an integer past Python's 4,300-digit limit, written in hexadecimal, octal,
+  binary or base 60, crashed `lint` with a traceback (fixed since: at the default limit the
+  1,000-character cap above refuses it first, and under a lower `PYTHONINTMAXSTRDIGITS` #81 reports
+  it with its file); and the operator's files are read whole with no byte limit, their validation
   errors listed with no limit. An undefined alias or an unknown tag is still named in the refusal,
   as `shared/config_errors.py` documents (a tag is now at most 256 characters).
 

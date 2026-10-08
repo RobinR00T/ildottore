@@ -46,14 +46,17 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   100,000 nodes (a text counts one node per 64 characters), nests deeper than 100 levels with
   its aliases expanded (since 2026-10-07) or holds a recursive alias is a
   `PARSE_ERROR` before anything is built from it, reported with the position where the value
-  crosses the limit (none for nesting written out past what PyYAML's composer holds), too deep
-  before too large (bar a document whose written nodes, an alias counting what it names, pass the
-  cap: composition stops there; a tag past 256 characters is refused there too, unquoted). Since
+  crosses the limit, too deep before too large (bar a document whose written nodes, an alias
+  counting what it names, pass the cap, or with a list or a map written past the depth limit, u01
+  A-52: composition stops at whichever it reaches first; a tag past 256 characters is refused there
+  too, unquoted). Since
   2026-10-07 the measure is
   `safe_yaml.check_expanded`, one pass over the node graph shared with the loaders of the
   operator's files (u01 A-37), which had no size cap; a key written twice in one mapping is a
   `PARSE_ERROR` too, found while the document is built (since 2026-10-06; a `<<` merge can still
-  be overridden); a YAML error gives reason and position, never a quoted line; at most 20
+  be overridden); a mapping key that is not a string is a `SCHEMA` finding at its path, found
+  before the JSON schema runs (since 2026-10-07, A-44); a YAML error gives reason and position,
+  never a quoted line; at most 20
   schema errors are listed per file, each JSON-schema message cut at 300 characters, and a
   pydantic error names field and reason, never the value.)
   No `eval`, no `!!python` tags, no `import`, no socket. Enforced by test (§7).
@@ -228,6 +231,56 @@ Only IDs, levels and section headings are reproduced: AISVS is CC-BY-SA 4.0 and 
 is MIT, so requirement text stays upstream. Checked by `tests/registry/test_linter.py` and
 `tests/shared/test_aisvs.py`; bucket membership is pinned per axis in
 `tests/cli/test_coverage_cmd.py` (A-26).
+
+**A-44 A spec's keys are strings, and one that is not is a finding where it is (added
+2026-10-07).** A spec is a JSON document written in YAML, and JSON keys are strings, but YAML
+builds a key from whatever its scalar resolves to: `5:` is an int, a bare `on:` or `No:` a bool,
+`~:` or an empty key null, `2026-10-07:` a date, `1.5:` a float, `!!binary aGk=:` bytes. The JSON
+schema constrains the keys of the objects it describes and says nothing about those of a
+free-form object, such as the arguments of a fixture's tool call, so `5: "bad"` in
+`fixtures.vulnerable.tool_calls[0].args` of `AG-AUTONOMY-SELFCORRECT-001` reached the offline
+`tool_call` stub, whose `key.lower()` raised `AttributeError`: a traceback and exit 1, which this
+tool uses for "findings below the threshold". Swept over the 41 fixture tool calls with arguments
+in the 75 shipped specs, an int key added after the others crashed lint in 5 (the confirmation
+walk on a destructive call in the vulnerable fixture of three specs, the forbidden-argument walk
+in the hardened fixture of two) and **passed lint unreported in the other 36**: in 35 no walk of
+the stub reached the key, and in one the forbidden-argument walk stopped at an earlier forbidden
+key; added first, it crashed in 6 and passed in 35. Two keys of different types in one mapping
+(`step_arg_patterns: {5: 1, a: 2}`) crashed earlier, in the sort of the schema errors
+(`TypeError: '<' not supported` between an int and a str), and a `!!binary` key passed lint
+without a word, because `bytes` has a `lower`. Found on 2026-10-07 by the session on
+`fix/huge-int-repr`.
+
+So the loader walks every mapping of a spec before the JSON schema, including those inside a
+`!!omap` or `!!pairs` entry (which YAML builds as a tuple), and each mapping key that is not a
+string is a `SCHEMA` finding naming the path of its mapping, the value YAML built from the key
+(`0x1F:` is shown as `31`, `1.0e+3:` as `1000.0`) and its type:
+`fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write it in quotes,
+without a tag` (a tag such as `!!int "5"` makes even a quoted key a number). The schema is not run
+on that file, and its other findings come once the keys are fixed. At most 20 are listed and the
+rest counted, the path is cut at 300 characters, a key on the path that holds a character that is
+not printable (an escape sequence, a newline that would start a forged finding line, a bidi control)
+is written as its `repr` (this check prints keys of free-form objects that no message printed
+before; the spec id and the paths of other schema errors are printed as written, as on `0501752`), a
+container YAML shares through an alias is reported once (where the walk first meets it), and the
+value under such a key is not walked. A key that is an int too long to write out never reaches this
+check: A-40 runs first and reports it in its own words. The keys of an `!!omap` or `!!pairs` entry,
+and the members of a `!!set`, are not reported: none of them exists in JSON, and in a field the
+schema types they fail it. That gap is written here and not pinned by a test.
+
+`run`, `describe`, `coverage` and `registry` load through the same path, so they leave such a spec
+out as they do any spec that does not load (`run` refuses the campaign, exit 3, through the CLI's
+redactor, which can mask a key shaped like a phone number; `dottore lint` shows it in clear).
+`render-media` builds its registry without the load errors, so for such a spec it says the spec
+is not found, with no warning, as it already did for any spec that does not load. That is a
+change: where the stub did not crash, such a spec passed lint and ran (the runtime evaluator reads
+only string keys: `FUNCALL-ARGSMUGGLE-001` against a mock target replaying its vulnerable fixture
+with an int key added gave the same fail as without it), and now it is refused until the key is
+quoted. The offline stub reads only string keys too, as `evaluators/tool_call.py` does, for a spec
+built in code and handed to `lint_packs`, where pydantic keeps a nested key as it is. The keys a
+live target sends are strings (they come from JSON). Checked by
+`tests/registry/test_non_string_keys.py` (77 tests, 76 failing on `0501752`; the other checks that
+the sweep of the shipped fixture calls is not empty).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).

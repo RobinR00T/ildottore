@@ -83,8 +83,14 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   `checksum:` value the operator typed is not quoted at all; on a tamper refusal the hash the
   artifact's content has now). A scope validation error names fields and reasons, never the
   input value, and so does a target file's `capabilities` or `sampling_defaults` refusal (A-45).
-  A kept token that overlaps a credential the process
-  registered is masked anyway, and every other 64-hex value goes through the redactor. An error
+  A spec file a load refusal names is kept readable when it is a relative path to
+  an entry on disk under a spec path (the `spec_files` attribute of `SpecLoadError`) and no
+  token character of the entropy rule (`[\w+/=-]`) is glued to it where it matched; what the
+  loader quotes from inside the file goes through the redactor (the name is the spec tree
+  author's choice, the operator's or an installed pack's, not a value of the run). A kept token
+  that is part of a credential the process registered, from 8 characters, prints as
+  `«REDACTED:credential»` (one that contains a registered credential loses it to the value rule
+  first), and every other 64-hex value goes through the redactor. An error
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
   redactor alone caught such a value only by its entropy; the `fleet --judge` mismatch follows
@@ -274,6 +280,25 @@ spend figure that is not a finite, non-negative number and a stored `--runs` tha
 beside the target digest or not a positive whole number (an infinity or a list was a traceback
 and exit 1, a negative spend was taken as spent, `true` resumed at one run, a missing count at
 the invocation's default).
+
+**A-42 A run parses each target file once (added 2026-10-07).** `dottore run` and `dottore
+fingerprint` parse a target file once per time it is named (`wiring.read_target_file`), and the
+target the scope authorizes, its route (mock or live), its `mock_scenario`, the target handed to the
+live adapter, the plans and a resume's binding all come from that one parse. `run --dry-run` parsed
+a mock target four times (to load it, to ask whether it is a mock, to read its scenario, and for the
+plan) and a live one five (the target loaded again for the adapter, and a second plan), three times
+under `--hardened`, and `fingerprint` up to four, so a file costly to build cost that many times
+over (a 450 KB target with a base-60 value was accepted after 37 s, found by the pre-commit audit of
+A-37), the live target sent to came from a later read of the file than the one the scope authorized,
+and a target that can be read once (`-t /dev/stdin`) was refused on its second read. Not covered: a
+file named twice is parsed once per name (`-t X -t X`, refused as a repeated id, and `-t X --judge
+X`), and `fleet --run --judge` parses its judge file once to generate the scope and once to run. A
+scope with a `checksum:` line is still parsed twice, by design: the second parse is the check that
+the line is part of no other value (u01). Checks: `tests/cli/test_yaml_construction_cost.py`,
+counting parses where the YAML is parsed: a mock run under `--dry-run`, `--estimate`, both with
+`-sV`, a full run, `-sV` and `--hardened`; a live dry run and estimate; `--hardened` on a live
+target; two targets; a resumed run; a judge file; a target piped in on `/dev/stdin`; and
+`fingerprint` offline and on a mock target, each target file parsed exactly once.
 
 **A-45 A target file's `capabilities` or `sampling_defaults` refusal names the file, the field and
 the reason, on one line, never the value (added 2026-10-07).** `load_target` handed a target file's

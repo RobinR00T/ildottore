@@ -27,6 +27,25 @@ since audit SEC-09, measured here so that every loader shares it. The others had
 ``calibrate`` past 25 s at 1.7 GB while it formatted the verdict, and a ``<<`` merging the
 previous map twice doubles the work inside PyYAML itself, before any caller sees the value
 (pre-merge audit of the nesting fix, 2026-10-07).
+
+Two values cost far more to build than they weigh, and are refused as they are composed, before
+anything is built (pre-commit audit of the size cap, 2026-10-07). A number written in more than
+:data:`MAX_NUMBER_CHARS` characters: YAML 1.1 reads ``1:59:59`` as a base-60 integer, which PyYAML
+builds with a loop whose time grows with the square of its length, and a spec just under the 1 MiB
+cap took the linter 55 s. And more than :data:`MAX_NUMBER_KEYS` keys that are numbers in one
+document: integers that differ by a multiple of ``sys.hash_info.modulus`` share one hash, so the
+dict of a mapping of them is built in time that grows with the square of their count, and 36,320 of
+them, a 1 MiB spec, took the linter 24 s. Keys that are text, dates or bytes hash with a key Python
+draws at random for each process.
+
+A list or a map written inside :data:`MAX_DEPTH` others is refused where it starts, before it is
+composed, as a document too deep. PyYAML's pure-Python scanner keeps one possible simple key per
+open flow level and walks them all on every token, so the depth measured after composition came
+after a cost that grows with the levels open: a 198 KB list of chains of ``[`` 320 deep was
+composed whole, 3 to 7 times what as many flat texts take (depending on the machine's load),
+before it was refused (pre-commit audit of the construction-cost fix, 2026-10-07). A text or an
+alias opens no level and is not refused here. Under the limit the cost stays: chains of ``[``
+close to 100 deep still take a few times what flat texts do.
 """
 
 from __future__ import annotations
@@ -36,7 +55,15 @@ from typing import Any, cast
 
 import yaml
 
-__all__ = ["MAX_DEPTH", "MAX_NODES", "SafeValueLoader", "check_expanded", "safe_load"]
+__all__ = [
+    "MAX_DEPTH",
+    "MAX_NODES",
+    "MAX_NUMBER_CHARS",
+    "MAX_NUMBER_KEYS",
+    "SafeValueLoader",
+    "check_expanded",
+    "safe_load",
+]
 
 #: The deepest nesting a document may hold with its aliases expanded. The files this tool reads
 #: (specs, scopes, targets, fleets, labels, packs) nest about 10 levels.
@@ -44,6 +71,12 @@ MAX_DEPTH = 100
 #: The nodes a document may hold with every alias counted where it is used. The largest file this
 #: tool ships, the signature corpus, holds about 400.
 MAX_NODES = 100_000
+#: The longest number a document may write, in characters. In hexadecimal, the densest form, that
+#: is an integer of about 1,204 decimal digits, under the 4,300 Python converts by default.
+MAX_NUMBER_CHARS = 1_000
+#: The keys that are numbers a document may hold, a key merged in by ``<<`` counted in every mapping
+#: it is merged into. The files this tool reads key their mappings with text.
+MAX_NUMBER_KEYS = 1_000
 #: A text counts one more node per this many characters, so a long text repeated through aliases
 #: costs what its copies weigh: the cap bounds the expanded text at about 6 MB.
 _CHARS_PER_NODE = 64
@@ -53,6 +86,17 @@ _TOO_LARGE = (
     f"a text as one node per {_CHARS_PER_NODE} characters)"
 )
 _CANNOT_BUILD = "cannot build this value (an invalid date, number or tag)"
+_TOO_DEEP = "document is nested too deeply"
+#: The events that open a level, in the composer and, in flow style, in the scanner.
+_OPENS_A_LEVEL = (yaml.SequenceStartEvent, yaml.MappingStartEvent)
+_NUMBER_TOO_LONG = (
+    f"cannot build this value (a number written in over {MAX_NUMBER_CHARS} characters)"
+)
+_TOO_MANY_NUMBER_KEYS = (
+    f"document has over {MAX_NUMBER_KEYS} keys that are numbers (a key merged in by `<<` counted "
+    "in every mapping it is merged into)"
+)
+_NUMBER_TAGS = frozenset({"tag:yaml.org,2002:int", "tag:yaml.org,2002:float"})
 #: Longer than any tag this tool's files use (``!!binary`` is ``tag:yaml.org,2002:binary``).
 _MAX_TAG_CHARS = 256
 _TAG_TOO_LONG = f"found a tag longer than {_MAX_TAG_CHARS} characters"
@@ -67,8 +111,10 @@ class SafeValueLoader(yaml.SafeLoader):
 
     It also refuses a key written twice in one mapping (``flatten_mapping``), as a
     ``ConstructorError`` with both positions and no value, and stops composing a document once
-    the nodes written in it pass :data:`MAX_NODES` or a tag passes ``_MAX_TAG_CHARS``
-    (``compose_node``).
+    the nodes written in it pass :data:`MAX_NODES`, a tag passes ``_MAX_TAG_CHARS`` or a list or a
+    map is written inside :data:`MAX_DEPTH` others (``compose_node``). It refuses there too,
+    before anything is built, a number written in more than :data:`MAX_NUMBER_CHARS` characters
+    and the key that takes the document past :data:`MAX_NUMBER_KEYS` keys that are numbers.
     """
 
     def construct_object(self, node: yaml.Node, deep: bool = False) -> Any:
@@ -90,9 +136,15 @@ class SafeValueLoader(yaml.SafeLoader):
         self._alias_keys: dict[tuple[yaml.Node, int], yaml.Mark] = {}
         # The weight of the nodes composed so far, each counted once where it is written.
         self._composed = 0
+        # The lists and maps open around the node being composed, as written.
+        self._open = 0
+        # The keys that are numbers composed so far, and those each mapping holds, merges included.
+        self._number_keys = 0
+        self._numbers_held: dict[yaml.Node, int] = {}
 
     def compose_document(self) -> yaml.Node | None:
-        self._composed = 0  # per document: ``yaml.load_all`` composes several with one loader
+        # Per document: ``yaml.load_all`` composes several with one loader.
+        self._composed = self._number_keys = 0
         return super().compose_document()  # type: ignore[no-any-return,unused-ignore]
 
     def compose_node(self, parent: yaml.Node | None, index: Any) -> yaml.Node | None:
@@ -105,8 +157,23 @@ class SafeValueLoader(yaml.SafeLoader):
             # nodes of a 100,000-character prefix held 187 MB, and PyYAML's refusal quoted the
             # whole tag (delta audit). Refused at the first one, without quoting it.
             raise _refusal(event.start_mark, _TAG_TOO_LONG)
-        # PyYAML returns a node here every time; its type stub says ``Node | None``.
-        node = cast("yaml.Node", super().compose_node(parent, index))
+        opens = isinstance(event, _OPENS_A_LEVEL)
+        if opens:
+            if self._open >= MAX_DEPTH:
+                # The scanner walks one possible key per open flow level on every token, so the
+                # nesting written was paid for before ``check_expanded`` measured it: a 198 KB
+                # list of chains 320 deep took 3 to 7 times what as many flat texts take (audit of
+                # the construction-cost fix). Written depth is at most the expanded one, so where
+                # that measure runs this refuses earlier only what it refuses, at the first list or
+                # map written past the limit (the measure names the deepest branch).
+                raise _refusal(event.start_mark, _TOO_DEEP)
+            self._open += 1
+        try:
+            # PyYAML returns a node here every time; its type stub says ``Node | None``.
+            node = cast("yaml.Node", super().compose_node(parent, index))
+        finally:
+            if opens:
+                self._open -= 1
         # The value expanded weighs at least what is written, and an alias at least what it
         # names, so the rest of a document is not composed once that passes the cap: a 3 MB list
         # of plain texts took 785 MB to compose before its measure refused it (pre-commit audit),
@@ -115,7 +182,36 @@ class SafeValueLoader(yaml.SafeLoader):
         self._composed += _weight(node)
         if self._composed > MAX_NODES:
             raise _refusal(event.start_mark if alias else node.start_mark, _TOO_LARGE)
+        if not alias and _is_number(node) and len(node.value) > MAX_NUMBER_CHARS:
+            raise _refusal(node.start_mark, _NUMBER_TOO_LONG)
+        if isinstance(parent, yaml.MappingNode):
+            self._count_number_keys(parent, index, node, event.start_mark if alias else None)
         return node
+
+    def _count_number_keys(
+        self, mapping: yaml.MappingNode, index: Any, node: yaml.Node, alias_mark: yaml.Mark | None
+    ) -> None:
+        """Count the keys that are numbers ``mapping`` holds, as each is composed.
+
+        ``node`` is a key when ``index`` is ``None``, and else the value of the key ``index``. A
+        ``<<`` folds the keys of the maps it names into ``mapping``, whose dict then hashes them
+        again, so they count once more there: the maps a merge names were composed before it.
+        The refusal is at the key, or at what the ``<<`` merges in, that takes the document past
+        the limit, before any key is hashed.
+        """
+
+        if index is None:
+            held = 1 if _is_number(node) else 0
+        elif index.tag == _MERGE_TAG:
+            merged = node.value if isinstance(node, yaml.SequenceNode) else [node]
+            held = sum(self._numbers_held.get(item, 0) for item in merged)
+        else:
+            return
+        if held:
+            self._numbers_held[mapping] = self._numbers_held.get(mapping, 0) + held
+            self._number_keys += held
+            if self._number_keys > MAX_NUMBER_KEYS:
+                raise _refusal(alias_mark or node.start_mark, _TOO_MANY_NUMBER_KEYS)
 
     def flatten_mapping(self, node: yaml.MappingNode) -> None:
         # Checked here, before PyYAML folds the merged keys into ``node.value``: once it has,
@@ -195,7 +291,7 @@ def check_expanded(root: yaml.Node) -> None:
         node = root
         for _ in range(MAX_DEPTH):
             node = max(_children(node), key=depth.__getitem__)
-        raise _refusal(node.start_mark, "document is nested too deeply")
+        raise _refusal(node.start_mark, _TOO_DEEP)
     if size[root] > MAX_NODES:
         # Where the size crosses the cap: down the first branch over it, to the node none of whose
         # children is, such as the anchor whose aliases double it past the cap.
@@ -203,6 +299,12 @@ def check_expanded(root: yaml.Node) -> None:
         while (over := next((c for c in _children(node) if size[c] > MAX_NODES), None)) is not None:
             node = over
         raise _refusal(node.start_mark, _TOO_LARGE)
+
+
+def _is_number(node: yaml.Node) -> bool:
+    """A scalar YAML builds as an integer or a float, whatever its notation."""
+
+    return isinstance(node, yaml.ScalarNode) and node.tag in _NUMBER_TAGS
 
 
 def _weight(node: yaml.Node) -> int:
@@ -238,9 +340,7 @@ def safe_load(text: str) -> Any:
             return None
         check_expanded(node)
         return loader.construct_document(node)  # type: ignore[no-untyped-call,unused-ignore]
-    except RecursionError as exc:  # hundreds of nested levels: an error, not a traceback
-        raise yaml.composer.ComposerError(
-            None, None, "document is nested too deeply", None
-        ) from exc
+    except RecursionError as exc:  # a caller with little stack left: an error, not a traceback
+        raise yaml.composer.ComposerError(None, None, _TOO_DEEP, None) from exc
     finally:
         loader.dispose()  # type: ignore[no-untyped-call,unused-ignore]

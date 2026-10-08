@@ -11,6 +11,9 @@
 # only at send time. `provider` is inferred from the endpoint when omitted: the path first
 # (/chat/completions -> openai, /messages -> anthropic), then the host (a host containing
 # "anthropic" or "openai"), else rest. Both entries below are therefore `openai`.
+#
+# Each id names a generated file (target-<id>.yaml), so ids must differ in more than case:
+# `Prod` and `prod` are one file on macOS and Windows, and `dottore fleet` refuses the pair.
 version: "1"
 targets:
   - id: local-llama-1b
