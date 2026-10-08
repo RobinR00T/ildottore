@@ -150,7 +150,7 @@ def test_a_document_too_deep_and_too_large_is_refused_as_too_deep(
     ``test_yaml_written_nesting.py``.)"""
 
     limit = safe_yaml.MAX_DEPTH
-    deep_and_wide = "[" * (limit + 1) + doubling_list(LEVELS) + "]" * (limit + 1)
+    deep_and_wide = "- " * limit + doubling_list(LEVELS)  # block style: flow stops at 20 (A-58)
 
     with pytest.raises((yaml.YAMLError, SafeLoadError)) as caught:
         load(deep_and_wide)

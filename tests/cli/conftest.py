@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
+import yaml
 
 from ildottore.shared.enums import (
     Category,
@@ -170,9 +171,11 @@ def deep_json(shape: str = "array") -> str:
 def deep_yaml_anchors(per_anchor: int, anchors: int, line: str = "_{name}: {value}") -> str:
     """YAML lines whose last anchor, ``*deep``, is ``per_anchor * anchors`` levels deep.
 
-    Each anchor nests the previous one ``per_anchor`` levels further, so no nesting as written
-    is deeper than ``per_anchor``: the composer's own guard never sees the depth. ``line`` places
-    each anchored value (a mapping key by default, or a list item where the schema allows one).
+    Each anchor nests the previous one ``per_anchor`` levels further, in flow style, so the nesting
+    as written is ``per_anchor`` plus the levels of ``line``: with ``per_anchor`` at most 20 neither
+    written limit sees it (A-52, A-58, checked with :func:`written_nesting`), and only the depth
+    with the aliases expanded refuses it. ``line`` places each anchored value (a mapping key by
+    default, or a list item where the schema allows one).
     """
 
     lines = []
@@ -182,6 +185,26 @@ def deep_yaml_anchors(per_anchor: int, anchors: int, line: str = "_{name}: {valu
         value = f"&{name} " + "[" * per_anchor + inner + "]" * per_anchor
         lines.append(line.format(name=name, value=value))
     return "\n".join(lines) + "\n"
+
+
+def written_nesting(text: str) -> tuple[int, int]:
+    """The deepest lists and maps written in ``text``, of any style and in flow style only.
+
+    A test whose depth must come from aliases asserts both are under the written limits (100 and
+    20): above them the document is refused as it is written, and such a test passes for that
+    reason instead (it did, unseen, from #84 to A-58).
+    """
+
+    open_styles: list[bool] = []
+    deepest = deepest_flow = 0
+    for event in yaml.parse(text):
+        if isinstance(event, (yaml.SequenceStartEvent, yaml.MappingStartEvent)):
+            open_styles.append(bool(event.flow_style))
+            deepest = max(deepest, len(open_styles))
+            deepest_flow = max(deepest_flow, sum(open_styles))
+        elif isinstance(event, (yaml.SequenceEndEvent, yaml.MappingEndEvent)):
+            open_styles.pop()
+    return deepest, deepest_flow
 
 
 # --- on-disk scope + target fixtures -----------------------------------------------

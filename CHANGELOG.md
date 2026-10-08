@@ -5,6 +5,48 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (YAML nested more than 20 levels in flow style)
+
+- **Under the depth limit, flow nesting still cost on every token.** PyYAML's pure-Python scanner
+  keeps one possible simple key per open flow level (`[ ]`, `{ }`) and passes over them about three
+  times on every token, so each open flow level costs on every token written inside it. Under the
+  depth limit of 100, a 198 KB list of chains of `[` 98 deep was accepted after the scanner walked
+  29.8 million keys, and the same chains holding 300 texts each after 52.0 million: 1.65 s and 2.34
+  s, 2.0 and 2.8 times the 0.82 s of a flat list of as many texts (best of three, alternating, at a
+  load average of 4.5). The owner decided OD-30 on 2026-10-08: a limit of its own for flow nesting,
+  20 levels. Every loader now refuses a list or a map written with brackets or braces inside 20
+  others written that way, where it starts and before the rest of it is composed: `document is
+  nested too deeply in flow style (over 20 levels of brackets or braces)`, exit 3 at the CLI and a
+  `PARSE_ERROR` in `lint`. Both files are refused at the 21st `[` in 0.01 s (0.17 and 0.31 million
+  keys), and chains 19 deep in the root list holding 300 texts each, the costliest shape the audits
+  of #84 found, walk 11.4 million keys in 1.11 s, about 1.35 times the flat list. The limit bounds
+  what each token walks, about 21 keys a pass, not what a file walks: a denser file, whose entries
+  carry an anchor and a tag (four tokens each), walks 21.0 million keys in 789 KB, 2.3 times a flat
+  list (pre-commit audit). Block nesting does not count, only toward the limit of 100, which is
+  checked first, and neither does a single pair in a flow list (`[k: v]`), a map with no bracket of
+  its own (the first version counted it, and refused 11 such lists). The YAML files the repository
+  ships nest at most 2 flow levels. Tests: `tests/cli/test_yaml_flow_nesting.py`, 24 tests, 18 of
+  which fail on `9b8b511` (`main` with #84): eight because composing goes on to a character no token
+  can start, lines inside the collection at flow level 21; four because the CLI accepts chains 98
+  deep (`lint`: `document root is not a mapping`; `calibrate`: an invalid labels file) or refuses
+  chains 320 deep at level 101 with A-52's message; five because 21 lists holding single pairs, or
+  11 read from a stream, are accepted; one because `yaml.load_all` does not refuse. The other six
+  pin what holds on both: every shape at 20 levels, the depth limit checked first, the repository's
+  files, and what chains at the limit cost. Nine mutants of the check, of A-52's and of the depth
+  measured with aliases expanded are all killed. The two CLI tests of A-52 moved to the new file.
+  Clause A-58 (u01), OD-30, u02 §4.
+- **Three tests had passed for another reason since #84.** The alias-depth tests of #61
+  (`calibrate`, `run -t` and `lint` on a value 80,000 or 1,600 levels deep through aliases) wrote
+  each anchor 101 levels deep, so since #84 their files were refused as they were written, not for
+  their aliases, and their assertion, `nested too deeply`, could not tell: with the depth check of
+  `check_expanded` removed, all three still pass on `9b8b511`. They now nest 20 levels per anchor,
+  under both written limits, assert that with `written_nesting` (`tests/cli/conftest.py`), and fail
+  without that check. The tests that wrote their depth as chains of `[` (in
+  `test_yaml_written_nesting.py`, `test_deep_json.py` and `test_yaml_expansion.py`) now write it in
+  block style, or in block style with 20 flow levels inside, and pass on `9b8b511` as they did.
+- **Two bullets glued into the paragraph before them are split again:** OD-33 in u01 §9 (glued by
+  the reflow of OD-30 in #84) and the `Tests:` bullet of the construction-cost entry (from #77).
+
 ### Fixed (a YAML file nested past the depth limit, refused where it is written)
 
 - **A file nested past the depth limit was composed whole before it was refused.** PyYAML's
@@ -37,25 +79,24 @@ versioning: [SemVer](https://semver.org/).
   it before, where it was. Nesting written thousands of levels deep, which the entry below still
   refused without a position, now has one. Under the limit the cost stays: the same chains 98 deep
   are accepted in 5.5 to 5.6 s, about 2.3 times the flat list, and up to about 3 times when the
-  chains hold their texts at the bottom (OD-30, decided by the owner on 2026-10-08: a lower limit
-  for flow nesting only, where the repository's own files nest at most 2 flow levels, to be built on
-  its own branch). Tests: `tests/cli/test_yaml_written_nesting.py`. 18 of the 32 fail on `5fdac72`
-  (`main`): eight because composing goes on to a character no token can start, written lines inside
-  the collection at level 101; two because the scanner walks 97.4 million possible keys for `lint`
-  and `calibrate` on the audit's 198 KB file, over a bound of 5 million (1.1 million now), the file
-  refused with the same message and position; four because a file is reported as too large, two
-  written deep first and two whose list past the limit sits inside lists whose ends would take the
-  count past the cap; two because the deepest branch, or a key before an empty list, is named; one
-  because `yaml.load_all` does not refuse; and one because 5,000 levels have no position. The other
-  fourteen pin what does not change: the position for one branch, a text, an alias and a map's keys
-  at level 101, every shape at the limit loading as plain PyYAML loads it, and the refusal a
-  `RecursionError` while composing still gets (both loaders catch it, and no other test reaches
-  those handlers now), simulated in process, since a real overflow switches off a pure-Python
-  tracer, and real in a subprocess with little stack left, and a tag too long on the list at level
-  101, reported as such. Thirteen mutants of the check and of those two handlers are all killed.
-  Clause A-52 (u01), u02 §4. Found by the pre-commit audit of the construction-cost fix (A-41 and
-  A-42); the same on `main` (`2f6201a`), whose depth limit is #61's: refused after the same 97.4
-  million keys.
+  chains hold their texts at the bottom (OD-30, decided by the owner on 2026-10-08 and built as
+  A-58, the entry above). Tests: `tests/cli/test_yaml_written_nesting.py`. 18 of the 32 fail on
+  `5fdac72` (`main`): eight because composing goes on to a character no token can start, written
+  lines inside the collection at level 101; two because the scanner walks 97.4 million possible keys
+  for `lint` and `calibrate` on the audit's 198 KB file, over a bound of 5 million (1.1 million
+  now), the file refused with the same message and position; four because a file is reported as too
+  large, two written deep first and two whose list past the limit sits inside lists whose ends would
+  take the count past the cap; two because the deepest branch, or a key before an empty list, is
+  named; one because `yaml.load_all` does not refuse; and one because 5,000 levels have no position.
+  The other fourteen pin what does not change: the position for one branch, a text, an alias and a
+  map's keys at level 101, every shape at the limit loading as plain PyYAML loads it, and the
+  refusal a `RecursionError` while composing still gets (both loaders catch it, and no other test
+  reaches those handlers now), simulated in process, since a real overflow switches off a
+  pure-Python tracer, and real in a subprocess with little stack left, and a tag too long on the
+  list at level 101, reported as such. Thirteen mutants of the check and of those two handlers are
+  all killed. Clause A-52 (u01), u02 §4. Found by the pre-commit audit of the construction-cost fix
+  (A-41 and A-42); the same on `main` (`2f6201a`), whose depth limit is #61's: refused after the
+  same 97.4 million keys.
 
 ### Fixed (two fleet target ids that differ only by case)
 
@@ -162,7 +203,8 @@ versioning: [SemVer](https://semver.org/).
   `fingerprint` now parse each target file once (`wiring.read_target_file`), and a piped target
   works. A file named twice is still parsed once per name (`-t X -t X`, refused as a repeated id,
   and `-t X --judge X`), and a scope with a `checksum:` line is still parsed twice, by design: the
-  second parse is the check that the line is part of no other value. - Tests:
+  second parse is the check that the line is part of no other value.
+- Tests:
   `tests/cli/test_yaml_construction_cost.py`: each number notation at 1,001 characters as a value, a
   key, a list item, in a flow list or mapping and at the root, and at 1,000 as a value; a long text;
   1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge

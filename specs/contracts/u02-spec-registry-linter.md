@@ -48,8 +48,8 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   `PARSE_ERROR` before anything is built from it, reported with the position where the value
   crosses the limit, too deep before too large (bar a document whose written nodes, an alias
   counting what it names, pass the cap, or with a list or a map written past the depth limit, u01
-  A-52: composition stops at whichever it reaches first; a tag past 256 characters is refused there
-  too, unquoted). Since
+  A-52, or past 20 levels in flow style, u01 A-58: composition stops at whichever it reaches first;
+  a tag past 256 characters is refused there too, unquoted). Since
   2026-10-07 the measure is
   `safe_yaml.check_expanded`, one pass over the node graph shared with the loaders of the
   operator's files (u01 A-37), which had no size cap; a key written twice in one mapping is a
