@@ -58,6 +58,7 @@ from ildottore.core.setup_delivery import (
 )
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
+from ildottore.registry import uncompilable_patterns
 from ildottore.reporting import RunStatus
 from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
@@ -1073,7 +1074,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     2. a target (or the ``--judge`` model) not **reachable** under the scope ⇒
        :class:`ScopeError`. Reachable, not merely present: an entry with an empty endpoint
        allowlist used to pass this gate and then be denied on every single attempt;
-    3. an empty spec selection ⇒ :class:`ValueError`, rather than a green run of nothing.
+    3. an empty spec selection ⇒ :class:`ValueError`, rather than a green run of nothing;
+    4. a selected spec whose regex does not compile ⇒ :class:`ValueError`, naming it (A-33).
 
     ``-sn`` reports and stops. ``--estimate``/``--dry-run`` resolve the real per-target plan,
     print it and stop. Otherwise the campaign runs, and a campaign that did not finish
@@ -1226,6 +1228,21 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"(suite={suite_name!r}, categories={opts.categories or []}, "
             f"spec={opts.spec_globs or []}, exclude={opts.exclude_globs or []}); "
             "nothing would be tested. Check the selectors against `dottore registry ls`."
+        )
+    # A selected spec whose regex does not compile is refused, as a spec file that fails to load
+    # is (F-10): a defect in the battery, whatever this target would have done with the spec.
+    # Its evaluator abstains on every attempt, so a run that sent it spent on it, scored it
+    # `inconclusive` (or `fail` through another evaluator) with the reason in no report, and
+    # counted it as covered; the engine's other refusals aborted the campaign instead (A-33).
+    # Each refused spec is named with its first such pattern; `dottore lint` lists them all.
+    refused = [(spec.id, found[0]) for spec in selected if (found := uncompilable_patterns(spec))]
+    if refused:
+        shown = "; ".join(f"{spec_id}: {problem}" for spec_id, problem in refused[:5])
+        more = f" (and {len(refused) - 5} more spec(s))" if len(refused) > 5 else ""
+        raise ValueError(
+            f"{len(refused)} selected spec(s) write a regex that does not compile, so their "
+            f"oracle could never decide: {shown}{more}. Run `dottore lint` on the spec path, "
+            "then fix them or leave them out with --exclude."
         )
 
     if opts.resume is not None and len(loaded_targets) != 1:
