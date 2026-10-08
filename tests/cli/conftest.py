@@ -8,6 +8,7 @@ send-counting fake adapter used to prove the scope gate performs **zero** sends.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -182,6 +183,16 @@ def deep_yaml_anchors(per_anchor: int, anchors: int, line: str = "_{name}: {valu
         value = f"&{name} " + "[" * per_anchor + inner + "]" * per_anchor
         lines.append(line.format(name=name, value=value))
     return "\n".join(lines) + "\n"
+
+
+# --- flag names ----------------------------------------------------------------------
+
+# A long option as an operator would copy it out of a message: two dashes that do not follow a
+# letter, a digit, `_` or `-`, then a lowercase ASCII letter, read up to the first character that
+# is not a letter, a digit, `_` or `-`. So `--budget-wall_s`, `--budget-wall-S` and
+# `--budget-wall-` are not taken for the `--budget-wall` they start with (audits of
+# `fix/resume-wall-flag-name`); `--budget-wall.s` is, as a period ends a sentence.
+LONG_OPTION = re.compile(r"(?<![\w-])--[a-z][\w-]*")
 
 
 # --- on-disk scope + target fixtures -----------------------------------------------

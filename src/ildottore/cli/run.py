@@ -1947,7 +1947,7 @@ def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) 
         raise ValueError(
             f"run {run_id!r} already spent {prior.wall_s:.1f}s of its {ceiling}s wall-clock "
             "ceiling, which the campaign's budget covers as a whole. Resuming it would do no "
-            "work and halt again on the same axis. Raise --budget-wall-s for this campaign, or "
+            "work and halt again on the same axis. Raise --budget-wall for this campaign, or "
             "start a fresh run."
         )
     return prior
