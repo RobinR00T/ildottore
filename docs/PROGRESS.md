@@ -35,6 +35,25 @@ The carryover ledger. Every agent session updates this so context survives even 
   truthiness (`"false"` reads as on), where a wrong-typed `runs` or spend is refused as corrupt; and
   only the request axis is read, so a campaign halted on `--budget-tokens` is told about requests.
 
+## State, 2026-10-07 (evening): spec values JSON cannot hold, and bounded integer flags
+
+- On `fix/spec-non-json-values` (finding F6 of the pre-commit audit of `fix/huge-int-repr`): a spec
+  value YAML builds and JSON cannot hold (an unquoted date or timestamp, `!!set`, an `!!omap` or
+  `!!pairs` entry, `!!binary`, `.nan`, `.inf`, half a character from an escape between U+D800 and
+  U+DFFF) is a `SCHEMA` finding at its path, checked before the schema and after A-40 (#81) and A-44
+  (#80), and a spec id holding half a character is no longer printed in the finding header (u02
+  A-54); `returns: 2026-01-01` used to pass lint and crash `run --dry-run` with a traceback and exit
+  1. Every integer flag of `run` and `fleet --run` is bounded at `2**53`, a negative `--budget-*` is
+  refused before the dry run, a live run whose pace (a `-T` template's too) is under one request per
+  wall-clock ceiling (`--budget-wall 0` included) is refused (`--rate 1e-308` was a traceback, and
+  once that was bounded, a live run that never stopped), and the run store refuses a stored `--runs`
+  past `2**53`, which a resume inherits (u12 A-55; `--runs` of 305 nines used to exit 1). Until
+  A-40's follow-up (#90) lands, its own paths print keys as written. Left open: the wall-clock
+  ceiling is not a deadline at an accepted pace (each concurrent spec waits its interval, the `-sV`
+  probe pass reads no ceiling); a resume builds a set of mutators x runs attempt ids for each
+  started spec, so how far `--runs` may go is the owner's call (OD-32); `--rate inf` turns pacing
+  off.
+
 ## State, 2026-10-07 (evening): YAML nesting refused where it is written
 
 - On `fix/yaml-flow-nesting-depth`, on `main` after #71 (`df75d3d`): a finding of the pre-commit
