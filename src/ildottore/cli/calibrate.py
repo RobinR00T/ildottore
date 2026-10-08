@@ -26,6 +26,7 @@ from ildottore.cli.diff import load_findings
 from ildottore.shared.config_errors import yaml_problem
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import VerdictStatus
+from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import Finding
 
 __all__ = [
@@ -41,7 +42,7 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
     """Load an operator labels file (``spec_id -> pass|fail|inconclusive``, YAML or JSON)."""
 
     try:
-        raw = safe_yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        raw = safe_yaml.safe_load(read_text_capped(path))
     except yaml.YAMLError as exc:  # was a traceback and exit 1, "findings below the threshold"
         raise ValueError(f"labels file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
