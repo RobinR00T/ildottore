@@ -49,6 +49,22 @@ and send it elsewhere. Add the block; `fleet` then writes `judge.yaml` and `--ru
 `--judge` file is still accepted when it names the same id, endpoint and credential. `run`
 with your own scope is unchanged: the judge must be in that scope.
 
+### Why does `fleet` refuse two ids like `Prod` and `prod`?
+
+Each fleet target is written to `target-<id>.yaml`, and on a case-insensitive file system (the
+macOS and Windows default) `target-Prod.yaml` and `target-prod.yaml` are one file. Until
+2026-10-07 the second entry overwrote the first, `fleet` exited 0, and the `dottore run` it
+printed then refused "two target files declare the id 'prod'". The pair is now refused before
+anything is written, on Linux too, so a fleet file means the same on every machine; rename one
+of them. The message locates the two entries as validation errors do (`targets.0.id` and
+`targets.1.id`, counted from 0), because an id that looks random enough (a model name such as
+`Meta-Llama-3-70B-Instruct`) is masked in the CLI's errors. A `judge:` id spelled as a target's
+only up to case is refused as well, for another reason: no file collides (the judge is written
+to `judge.yaml`), but the generated scope would hold two ids that differ only by case; a
+`judge:` block with no `id:` is `judge`, so a target `Judge` beside it counts, and the message
+says the id is that default. Two target files you write yourself with ids `Prod` and `prod`
+still run together: `run` names no file after a target id.
+
 ### Do `--budget-requests` and `--rate` count the judge's requests?
 
 Yes, since 2026-10-03. The judge sends two requests per evaluated attempt, and they used to sit

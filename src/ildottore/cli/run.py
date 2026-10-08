@@ -119,6 +119,42 @@ class ScopeRequiredError(PolicyError):
     """
 
 
+class SpecLoadError(ValueError):
+    """Spec files failed to load, so the run is refused rather than run on what parsed.
+
+    ``spec_files`` are the names the CLI prints in clear: each is a path relative to a spec root
+    that names an entry on disk under it. Whoever wrote the spec tree chose it (the operator, or
+    the author of a pack they installed), so it carries nothing of this run, and it is what the
+    operator has to find; a credential or PII shape inside it is still masked by the value and
+    shape rules. The entropy rule masked them (`attacks/DL-PII-ELICIT-001.yaml` read
+    `«REDACTED:high_entropy:…».yaml`), so the refusal could not say which file to fix (pre-merge
+    audit of PR #47).
+    """
+
+    def __init__(self, message: str, *, spec_files: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.spec_files = spec_files
+
+
+def _spec_files_on_disk(spec_paths: list[Path], names: list[str]) -> tuple[str, ...]:
+    """The ``names`` that are a relative path to an entry on disk under one of ``spec_paths``.
+
+    An entry, not only a regular file: a directory or a dangling link named ``*.yaml`` fails to
+    load too, and its name is just as much the tree's. A spec path given as a file is its
+    own parent's tree, as the loader displays it. ``os.path.lexists`` answers False, never
+    raises, for a name the filesystem refuses (too long, a NUL byte).
+    """
+
+    roots = [path if path.is_dir() else path.parent for path in spec_paths]
+    return tuple(
+        name
+        for name in dict.fromkeys(names)
+        if not Path(name).is_absolute()
+        and ".." not in Path(name).parts
+        and any(os.path.lexists(root / name) for root in roots)
+    )
+
+
 @dataclass
 class RunOptions:
     """Resolved options for one ``run`` invocation (CLI parses into this)."""
@@ -1078,9 +1114,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{e.path or e.spec_id or '?'}: {e.message[:120]}" for e in load_errors[:5]
         )
         more = f" (and {len(load_errors) - 5} more problem(s))" if len(load_errors) > 5 else ""
-        raise ValueError(
+        raise SpecLoadError(
             f"{len(files)} spec file(s) failed to load and would silently leave the "
-            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first."
+            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first.",
+            spec_files=_spec_files_on_disk(spec_paths, [e.path for e in load_errors[:5] if e.path]),
         )
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
