@@ -228,13 +228,13 @@ that names the file and the key, never the value: `error: target file target.yam
 endpont: Extra inputs are not permitted`. Until 2026-10-07 both were read as absent, so `endpont:`
 left a live target with no endpoint and the run went to the offline mock, which sent it nothing and
 scored the mock's replies, and keys of `capabilities` that lost their indent were ignored at the top
-level (open decision OD-31). Quote a model id YAML reads as a number, a date or a boolean (`model:
-"20240613"`). One of the six text fields with nothing after it, `null` or `~` is still absent. A key
-that only holds an anchor for a `<<` merge (`x-defaults: &d`) is refused like any other: write the
-merged map inline. The key is printed as the location, as pydantic renders it (`on:` as `1`, a
-`!!binary` key decoded), so a control character in it reaches the terminal as written, as below. A
-run halted before then with such a key resumes once you delete the key; correcting it to the key you
-meant changes the target, and the resume is refused.
+level (owner's decision OD-31). Quote a model id YAML reads as a number, a date or a boolean
+(`model: "20240613"`). One of the six text fields with nothing after it, `null` or `~` is still
+absent. A key that only holds an anchor for a `<<` merge (`x-defaults: &d`) is refused like any
+other: write the merged map inline. The key is printed as the location, as pydantic renders it
+(`on:` as `1`, a `!!binary` key decoded), so a control character in it reaches the terminal as
+written, as below. A run halted before then with such a key resumes once you delete the key;
+correcting it to the key you meant changes the target, and the resume is refused.
 A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
 `max_tokens` outside 1 to its cap or a key `sampling_defaults` does not know is refused before
 anything is sent (exit 3), on one line that names the file and gives the field and the reason of the

@@ -9,7 +9,7 @@ sent it nothing and scored the mock's replies (one spec inconclusive with exit 0
 battery a FAIL and a PASS with exit 1). A ``capabilities:`` whose children
 lost their indent left ``tools``, ``rag`` and ``memory`` at the top level, ignored, and the specs
 that need them out of the plan (a ``type: model`` target planned 34 specs instead of 59, on
-``2f6201a``). Found while writing u12 A-50; clause u12 A-53, open decision OD-31.
+``2f6201a``). Found while writing u12 A-50; clause u12 A-53, owner's decision OD-31.
 """
 
 from __future__ import annotations

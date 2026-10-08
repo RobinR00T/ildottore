@@ -28,11 +28,11 @@ versioning: [SemVer](https://semver.org/).
   every target file and every target block of the docs and man pages through the three readers, and
   every target file `dottore fleet` writes). A run halted before this change with such a key resumes
   once the key is deleted (still on the mock, for a lost endpoint) and is refused as another target
-  once the key is corrected. Refusing is the owner's call, open as OD-31 and built as the smallest
-  reversible change. Still read as written, and said so in the clause: `provider: opnai` with an
-  endpoint routes to the REST adapter, and a stdio MCP target with `transport: stido` or `provider:
-  mpc` runs on the offline mock, where its `mcp` suite scores a PASS with exit 0; a key inside
-  `capabilities` is A-50's (#78); every problem is listed on the one line until #76 bounds
+  once the key is corrected. Refusing is the owner's decision, OD-31 (2026-10-08), built as the
+  smallest reversible change. Still read as written, and said so in the clause: `provider: opnai`
+  with an endpoint routes to the REST adapter, and a stdio MCP target with `transport: stido` or
+  `provider: mpc` runs on the offline mock, where its `mcp` suite scores a PASS with exit 0; a key
+  inside `capabilities` is A-50's (#78); every problem is listed on the one line until #76 bounds
   `validation_problems` (20,000 unknown keys gave a 788,937-byte line). A number as `provider` or
   `transport`, which A-40 (above) read as no provider, is refused as not text, and A-40's two tests
   of it now expect the refusal. Contract u12 A-53; `tests/cli/test_target_top_level_keys.py` (43 of

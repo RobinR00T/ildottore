@@ -333,7 +333,7 @@ pinned:
   refuses both).
 
 **A-53 A target file's top level holds only the keys its readers read, and text where they read
-text; anything else is refused before anything is sent (added 2026-10-07; OD-31, open).**
+text; anything else is refused before anything is sent (added 2026-10-07; OD-31 decided).**
 `load_target`, `target_uses_mock` and `load_mock_scenario` each took the keys they knew from the
 file's top level with `raw.get(...)` and never looked at the rest, and `load_target` read a `name`,
 `provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text as absent. So a
@@ -377,8 +377,8 @@ of A-40's, because the command exits 0; 17 because the reader does not raise; 1 
 file with each key the manual lists loads, a null text field is absent, `id` and `type` keep their
 own refusals) and that the redactor leaves each test value readable, and one loads every target file
 under `examples/`, `specs/` and `tests/` and every target block of the docs and man pages through
-the three readers. Refusing is the owner's call (OD-31), built as the smallest reversible change:
-the `_TargetFileTopLevel` check in `_read_target_yaml`, and the six `isinstance(..., str) else None`
+the three readers. Refusing is the owner's decision (OD-31), as the smallest reversible change: the
+`_TargetFileTopLevel` check in `_read_target_yaml`, and the six `isinstance(..., str) else None`
 reads of `load_target` and the `_lowered` reads of `target_uses_mock` (A-40) it made dead, which
 come back with it. Outside the
 clause, and said so rather than pinned:
@@ -428,16 +428,17 @@ clause, and said so rather than pinned:
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
-- **OD-31** (open, built reversibly, 2026-10-07, A-53): whether a target file's top level refuses a
-  key no reader reads and a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that
-  is not text, or keeps dropping them. Built: both refused before anything is sent, by every reader
-  of the file. Alternatives: keep the silence (main until A-53: `endpont:` runs a live target on the
-  offline mock and scores its replies); warn and go on (the warning goes where the run's output
-  goes, and a CI log nobody reads runs on the mock just the same); refuse only the text fields that
-  are not text and warn on an unknown key (an unknown key costs the same as a lost endpoint when it
-  is the endpoint); accept a key that only holds an anchor under a prefix (`x-`, as Compose does). A
-  file that loads on main and is refused now holds a key outside `Target`'s fields and
-  `mock_scenario` (an anchor holder included), or one of those six fields as anything but text (a
-  number, a boolean, a date, a list, a map, a set or bytes); no file of the repository does.
-  Reversal: the `_TargetFileTopLevel` check in `_read_target_yaml`, the six `isinstance(..., str)
-  else None` reads in `load_target` and the `_lowered` reads in `target_uses_mock`.
+- **OD-31** (decided 2026-10-08 by the owner: refuse both, as built; A-53): whether a target file's
+  top level refuses a key no reader reads and a `name`, `provider`, `endpoint`, `model`, `auth_ref`
+  or `transport` that is not text, or keeps dropping them. Built: both refused before anything is
+  sent, by every reader of the file. Alternatives: keep the silence (main until A-53: `endpont:`
+  runs a live target on the offline mock and scores its replies); warn and go on (the warning goes
+  where the run's output goes, and a CI log nobody reads runs on the mock just the same); refuse
+  only the text fields that are not text and warn on an unknown key (an unknown key costs the same
+  as a lost endpoint when it is the endpoint); accept a key that only holds an anchor under a prefix
+  (`x-`, as Compose does). A file that loads on main and is refused now holds a key outside
+  `Target`'s fields and `mock_scenario` (an anchor holder included), or one of those six fields as
+  anything but text (a number, a boolean, a date, a list, a map, a set or bytes); no file of the
+  repository does. Reversal: the `_TargetFileTopLevel` check in `_read_target_yaml`, the six
+  `isinstance(..., str) else None` reads in `load_target` and the `_lowered` reads in
+  `target_uses_mock`.
