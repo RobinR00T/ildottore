@@ -20,7 +20,8 @@ Deterministic: same target + same seed + same N ⇒ identical attempts and ident
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import sys
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 
 from ildottore.core.budgets import BudgetLedger
 from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error, execute_attempt
@@ -32,6 +33,7 @@ from ildottore.shared.protocols import TargetAdapter
 __all__ = [
     "DEFAULT_N",
     "attempt_id_for",
+    "planned_attempts_held",
     "repro_from_verdicts",
     "reproduce",
 ]
@@ -51,6 +53,40 @@ def attempt_id_for(spec_id: str, mutation: str, run_index: int) -> str:
     """
 
     return f"{spec_id}::{mutation}#{run_index}"
+
+
+def planned_attempts_held(
+    stored: Iterable[str], spec_id: str, mutators: Sequence[str], runs: int
+) -> int:
+    """How many of a spec's planned attempts (each mutation, ``runs`` times) are in ``stored``.
+
+    The same number as building every :func:`attempt_id_for` of the plan and intersecting, but
+    counted by reading ``stored`` once, so the work follows what is stored, not ``runs``: a
+    resume built that set for each started spec, and with the ``2**53`` a run store accepts it
+    grew without end (A-59, OD-32). An id counts only in the exact form ``attempt_id_for``
+    writes (an index without a leading zero, inside the plan), so no stored id passes for one;
+    an index longer than the interpreter writes out is not one it could have written.
+    """
+
+    limit = sys.get_int_max_str_digits()
+    prefix = f"{spec_id}::"
+    planned = set(mutators)
+    held = 0
+    for attempt_id in set(stored):
+        if not attempt_id.startswith(prefix):
+            continue
+        mutation, sep, index = attempt_id[len(prefix) :].rpartition("#")
+        if (
+            sep
+            and mutation in planned
+            and index.isascii()
+            and index.isdigit()
+            and (limit == 0 or len(index) <= limit)
+            and index == str(int(index))
+            and int(index) < runs
+        ):
+            held += 1
+    return held
 
 
 def _pin_attempt_index(request: ModelRequest, run_index: int) -> ModelRequest:

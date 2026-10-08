@@ -418,6 +418,51 @@ def test_a_stored_runs_count_is_read_up_to_the_flag_bound(
             assert context is not None and context["runs"] == runs
 
 
+def test_a_resume_of_the_largest_stored_count_checks_its_priors_without_building_the_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The halt path asked whether each started spec held every planned attempt by building the
+    set of mutators x runs ids: with the `2**53` the store accepts, a resume grew without end
+    (3.7 GB after 4.5 minutes on `2f6201a`, OD-32). Counted, and stopped past 10,000 ids, so a
+    runner that builds the plan fails here at once instead of taking the machine with it
+    (A-59)."""
+
+    import importlib
+
+    import ildottore.core.runner as runner_mod
+    from ildottore.core.reproduce import attempt_id_for
+
+    calls = [0]
+
+    def counting(spec_id: str, mutation: str, run_index: int) -> str:
+        calls[0] += 1
+        if calls[0] > 10_000:
+            raise AssertionError("the runner built more than 10,000 planned attempt ids")
+        return attempt_id_for(spec_id, mutation, run_index)
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        raw = store._conn.execute(
+            "SELECT context_json FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        assert '"runs":3,' in raw, "precondition: the stored form the replacement edits"
+        edited = raw.replace('"runs":3,', f'"runs":{2**53},')
+        store._conn.execute(_SET_COLUMN["context_json"], (edited, run_id))
+        store._conn.commit()
+    # The runner, and anything that reaches the builder through its module: the resume's own
+    # sends are a few hundred ids at most under this ceiling.
+    monkeypatch.setattr(runner_mod, "attempt_id_for", counting, raising=False)
+    monkeypatch.setattr(
+        importlib.import_module("ildottore.core.reproduce"), "attempt_id_for", counting
+    )
+
+    outcome = execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
+
+    assert outcome.exit_code == ExitCode.ERROR, "the request ceiling halts the resume again"
+    assert calls[0] < 10_000
+
+
 def test_the_offline_scenario_cannot_be_flipped_under_a_resume(tmp_path: Path) -> None:
     """`--resume --hardened` needed no file edit to publish one half as another's findings.
 
