@@ -132,13 +132,16 @@ def test_the_text_is_what_read_text_gave(tmp_path: Path, raw: bytes) -> None:
     assert read_text_capped(path) == path.read_text(encoding="utf-8")
 
 
-def test_text_that_is_not_utf8_is_refused_as_read_text_refused_it(tmp_path: Path) -> None:
+def test_text_that_is_not_utf8_is_refused_where_read_text_refused_it(tmp_path: Path) -> None:
+    # The same byte as read_text, now as an OSError naming the file: read_text's own error
+    # named no file, and it reached the terminal as it was (clause A-51).
     path = write(tmp_path, "f.yaml", b"a: 1\n\xff\xfe\n")
     with pytest.raises(UnicodeDecodeError) as before:
         path.read_text(encoding="utf-8")
-    with pytest.raises(UnicodeDecodeError) as now:
+    with pytest.raises(OSError) as now:
         read_text_capped(path)
-    assert str(now.value) == str(before.value)
+    assert now.value.errno == errno.EILSEQ and now.value.filename == str(path)
+    assert now.value.strerror == f"not UTF-8 text (byte {before.value.start})"
 
 
 def test_a_file_at_the_cap_is_read_and_one_byte_more_is_refused(tmp_path: Path) -> None:

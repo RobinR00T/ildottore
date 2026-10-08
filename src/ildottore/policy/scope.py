@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ildottore import safe_yaml
 from ildottore.policy.errors import ChecksumMismatchError, ScopeError
-from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.files import read_text_capped
 
 
@@ -128,15 +128,16 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
     for identity in entry.identities:
         if identity.name in names:
             raise ScopeError(
-                f"scope file {file_path} target {entry.id!r} declares identity "
-                f"{identity.name!r} more than once; each identity needs its own name"
+                f"scope file {file_path} target {quoted(entry.id)} declares identity "
+                f"{quoted(identity.name)} more than once; each identity needs its own name"
             )
         names.add(identity.name)
         if identity.canary:  # the runner ignores an empty one
             if identity.canary in canaries:
                 raise ScopeError(
-                    f"scope file {file_path} target {entry.id!r}: identity {identity.name!r} "
-                    "declares the canary of another identity; each canary has one owner"
+                    f"scope file {file_path} target {quoted(entry.id)}: identity "
+                    f"{quoted(identity.name)} declares the canary of another identity; each "
+                    "canary has one owner"
                 )
             canaries.add(identity.canary)
 
@@ -227,7 +228,7 @@ def load_scope_with_digest(
     for entry in scope.targets:
         if entry.id in seen:
             raise ScopeError(
-                f"scope file {file_path} declares target id {entry.id!r} more than once; "
+                f"scope file {file_path} declares target id {quoted(entry.id)} more than once; "
                 "an authorization record must have exactly one entry per target"
             )
         seen.add(entry.id)

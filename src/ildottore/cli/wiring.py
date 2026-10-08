@@ -62,8 +62,8 @@ from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
-from ildottore.shared.config_errors import validation_problems, yaml_problem
-from ildottore.shared.digits import described, shown, too_long
+from ildottore.shared.config_errors import cut, listed, quoted, validation_problems, yaml_problem
+from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import (
@@ -550,10 +550,12 @@ def shown_auth_ref(auth_ref: str) -> str:
 
     A raw key pasted where a reference belongs used to be quoted back. The CLI's redactor
     masked it only when its entropy was high enough: about 1 in 20 random 64-hex keys and 3 in 4
-    32-hex keys were printed in clear (fourth audit of the residuals).
+    32-hex keys were printed in clear (fourth audit of the residuals). A reference is quoted up
+    to 300 characters (``quoted``): one of a million characters printed the refusal whole
+    (clause A-51).
     """
 
-    return repr(auth_ref) if "://" in auth_ref else "a literal value (not shown)"
+    return quoted(auth_ref) if "://" in auth_ref else "a literal value (not shown)"
 
 
 def resolve_auth_ref(auth_ref: str | None) -> str | None:
@@ -589,7 +591,7 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
         # names the variable and never the value (review of PR #32).
         if any(not ch.isprintable() for ch in value):
             raise ValueError(
-                f"the credential in {name!r} contains a control character (a newline or "
+                f"the credential in {quoted(name)} contains a control character (a newline or "
                 "similar); fix the variable, it cannot be sent as a header"
             )
         return value
@@ -749,9 +751,9 @@ def _authorized_api_key(scope: Scope, target: Target) -> str | None:
     if scope_target is not None:
         authorized = {i.auth_ref for i in scope_target.identities}
         if target.auth_ref not in authorized:
-            declared = ", ".join(shown_auth_ref(ref) for ref in sorted(authorized))
+            declared = listed(sorted(authorized), show=shown_auth_ref)
             raise ValueError(
-                f"target {target.id!r} auth_ref {shown_auth_ref(target.auth_ref)} is not "
+                f"target {quoted(target.id)} auth_ref {shown_auth_ref(target.auth_ref)} is not "
                 f"authorized by the scope (declared: {declared}); refusing to read an "
                 "unauthorized credential"
             )
@@ -1063,6 +1065,10 @@ def read_target_file(path: Path) -> TargetFile:
     )
 
 
+#: What a target file's ``type`` can say.
+_TARGET_TYPES = frozenset(t.value for t in TargetType)
+
+
 def load_target(path: Path) -> Target:
     """Load a ``target.yaml`` into a :class:`~ildottore.shared.models.Target`.
 
@@ -1085,9 +1091,21 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         raise ValueError(f"target file {path} is missing a string 'id'")
     endpoint_raw = raw.get("endpoint")
     if isinstance(endpoint_raw, str):
+        # Read as the gate reads it (`request_url_for` strips it): read raw, a leading U+00A0
+        # hid the host from this check and urllib's error reached the CLI later, password
+        # included (delta audit of A-51).
+        try:
+            parts = urlsplit(endpoint_raw.strip())
+        except ValueError as exc:
+            # urllib refuses a host it cannot read (a bracket, a host NFKC turns into a path)
+            # with no file named, and quoted the whole value for some (900 KB: pre-merge audit
+            # of A-51). Not quoted here, as the URL can hold a password.
+            raise ValueError(
+                f"target file {path} 'endpoint' is not a URL that can be read (its host)"
+            ) from exc
         # A password in the endpoint URL is a credential the process now holds: mask it by
         # value everywhere, not only where it still sits inside a URL (SEC-02).
-        register_known_secret(urlsplit(endpoint_raw).password)
+        register_known_secret(parts.password)
     # Required, as the manual says: it defaulted to `model`, and since OD-18 a `model` target
     # gets a spec's documents, tools and memory in-band, so a deployed application's file
     # without the line was sent a synthetic scene and labelled so (pre-merge audit of #50).
@@ -1097,13 +1115,15 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
             f"target file {path} is missing 'type'; expected one of "
             f"{', '.join(t.value for t in TargetType)}"
         )
-    try:
-        target_type = TargetType(type_raw)
-    except ValueError as exc:
+    # Refused before the enum looks it up: its own error builds the whole repr of the value, and
+    # a 90 KB list of aliases was 200,080,026 characters of it before the node cap (audit of A-51);
+    # under that cap it can still be tens of megabytes.
+    if not isinstance(type_raw, str) or type_raw not in _TARGET_TYPES:
         raise ValueError(
-            f"target file {path} has invalid type {shown(type_raw)}; "
+            f"target file {path} has invalid type {quoted(type_raw)}; "
             f"expected one of {', '.join(t.value for t in TargetType)}"
-        ) from exc
+        )
+    target_type = TargetType(type_raw)
     caps_raw = raw.get("capabilities") or {}
     if not isinstance(caps_raw, dict):
         raise ValueError(f"target file {path} 'capabilities' must be a mapping")
@@ -1192,8 +1212,9 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
     # A key that is a number too long to write out raised in `str` (A-40).
     unknown = sorted(described() if too_long(key) else str(key) for key in raw if key not in known)
     if unknown:
+        # The names the file gives, up to 300 characters in all (clause A-51).
         raise ValueError(
-            f"target file {path} 'seeded_setup' has unknown key(s) {', '.join(unknown)}; "
+            f"target file {path} 'seeded_setup' has unknown key(s) {cut(', '.join(unknown))}; "
             "expected 'specs', 'tools', 'granted_tools' and 'run_token'"
         )
     specs = raw.get("specs", [])
@@ -1221,8 +1242,8 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
     both = sorted(set(granted) & set(deployment_names))
     if both:
         raise ValueError(
-            f"target file {path} 'seeded_setup' both maps and grants {', '.join(both)}; a mapped "
-            "tool is one of the spec's scene, a granted one is outside every scene"
+            f"target file {path} 'seeded_setup' both maps and grants {cut(', '.join(both))}; a "
+            "mapped tool is one of the spec's scene, a granted one is outside every scene"
         )
     token = raw.get("run_token")
     if token is not None and not (isinstance(token, str) and _RUN_TOKEN.fullmatch(token)):
@@ -1257,7 +1278,7 @@ def _mock_scenario(path: Path, scenario: object) -> str:
 
     if not isinstance(scenario, str) or scenario not in MOCK_SCENARIOS:
         raise ValueError(
-            f"target file {path} has invalid mock_scenario {shown(scenario)}; "
+            f"target file {path} has invalid mock_scenario {quoted(scenario)}; "
             f"expected one of {', '.join(MOCK_SCENARIOS)}"
         )
     return scenario
