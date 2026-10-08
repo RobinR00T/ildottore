@@ -43,10 +43,20 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   schema-validate → model-construct → register.
   (Since 2026-10-05, audit SEC-09: only a regular file that resolves inside its pack directory,
   at most 1 MiB, is read; a document that expands, counting every alias where it is used, past
-  100,000 nodes (a text counts one node per 64 characters) or holds a recursive alias is a
-  `PARSE_ERROR` before anything is built from it; a key written twice in one mapping is a
+  100,000 nodes (a text counts one node per 64 characters), nests deeper than 100 levels with
+  its aliases expanded (since 2026-10-07) or holds a recursive alias is a
+  `PARSE_ERROR` before anything is built from it, reported with the position where the value
+  crosses the limit, too deep before too large (bar a document whose written nodes, an alias
+  counting what it names, pass the cap, or with a list or a map written past the depth limit, u01
+  A-52: composition stops at whichever it reaches first; a tag past 256 characters is refused there
+  too, unquoted). Since
+  2026-10-07 the measure is
+  `safe_yaml.check_expanded`, one pass over the node graph shared with the loaders of the
+  operator's files (u01 A-37), which had no size cap; a key written twice in one mapping is a
   `PARSE_ERROR` too, found while the document is built (since 2026-10-06; a `<<` merge can still
-  be overridden); a YAML error gives reason and position, never a quoted line; at most 20
+  be overridden); a mapping key that is not a string is a `SCHEMA` finding at its path, found
+  before the JSON schema runs (since 2026-10-07, A-44); a YAML error gives reason and position,
+  never a quoted line; at most 20
   schema errors are listed per file, each JSON-schema message cut at 300 characters, and a
   pydantic error names field and reason, never the value.)
   No `eval`, no `!!python` tags, no `import`, no socket. Enforced by test (§7).
@@ -108,6 +118,62 @@ membership where the field drives a **denominator** (a wrong value moves a publi
 percentage), shape where it drives only a rollup and we have not transcribed the source list.
 Pinning a universe nobody diffed against its primary source is the mistake that made the ATLAS
 axis wrong in numerator and denominator at once.
+
+**A-40 A number too long to write out is reported with its file where it enters, never printed
+(added 2026-10-07).** Python refuses to turn an int of more than `sys.get_int_max_str_digits()`
+decimal digits into text (4,300 by default, 640 at the lowest `PYTHONINTMAXSTRDIGITS` allows):
+`str`, `repr`, an f-string and `json.dumps` raise `ValueError`, and YAML builds such an int from
+`0x` and 4,000 `f`. As a spec's `name`, `owasp` or `spec_version`, jsonschema's message
+`<value> is not of type 'string'` raised it: `dottore lint` printed a traceback and exited 1, the
+code for findings below the threshold, and `dottore run --spec-path` exited 3 with
+`error: Exceeds the limit (4300 digits) ...`, naming no spec (pre-commit audit of
+`fix/yaml-alias-expansion-cap`, reproduced on `main` at `0501752`). Planted at every value and
+every key of the 75 shipped specs under the lowest limit, 6,112 of 7,599 placements were a lint
+traceback on the number (jsonschema's `type`, `additionalProperties` and `maximum` messages, and
+the linter's tool-allowlist rule), and in 313 the schema took it and lint passed. Of those 313,
+the 221 a mock target runs all exited 3 the same way in the live run, where it wrote the number
+(8 already in the dry run); the other 92 were refused as unrunnable there before any send.
+
+`validate_attack_spec_schema` now walks the document first (`shared/digits.too_long_paths`: keys
+included; mappings, lists, tuples and sets, since YAML builds a list of tuples for `!!omap` and
+`!!pairs` and a set for `!!set`, whose members are its keys; without recursion, each place holding a
+link to its parent until a path is yielded; a container shared through an alias entered once) and,
+when it holds such a number, reports each one as a `SCHEMA` finding at its path and checks nothing
+else: `name: a number too long to write out (over 4300 digits)`, or `a key that is a number ...` at
+the mapping that holds the key, a path cut at 300 characters, at most 20 and the rest counted. The
+interpreter's own conversion decides, so no number the check passes, in a document YAML or JSON can
+build, fails to print later, and the number is never quoted. `run` refuses the file before anything
+is sent, in the dry run too, as any spec that fails to load (F-10), naming it; `registry ls`,
+`describe` and `coverage` leave it out with their load warning (they printed a traceback, or exited
+3 naming nothing). The other inputs of the CLI that formatted such a number follow the same rule: a
+labels key in `calibrate` (`str(spec_id)` raised, and the message formatting the id raised again:
+exit 3 naming no file), a report read by `diff` or `calibrate` (`json.loads` raises a plain
+`ValueError` past the limit, not a `JSONDecodeError`: same exit, same silence), a target file's
+`type`, `mock_scenario` and `seeded_setup` keys (u12), and the signature pack's `pack_version`
+(u09). A target file's `provider` and `transport` are read only as text, as the target loader always
+read them (the mock routing called `str` on them first), so such a number there is no provider, as
+`5` is.
+
+The first version walked mappings and lists only, and its pre-commit audit planted the number inside
+a `!!set` or an `!!omap` at every value of the 75 specs: 3,539 of 3,751 placements of each were
+still the lint traceback, and 120 of each passed lint and the dry run and exited 3 unnamed in the
+live run. The same audit found `provider`, `transport` and `mock_scenario`, and a walk that built a
+full path for every node (on a 300 KB spec, lint's peak resident memory rose by 38 MB over the base
+in two measurements of a lint subprocess's ru_maxrss, 114 to 152 MB and 139 to 177 MB; with parent
+links it is back to the base's).
+
+It holds on its own. A cap on a literal's length in the YAML loader (A-41, on another branch) does
+not replace it: the limit can sit at 640 digits, under the about 1,200 a 1,000-character hex literal
+yields, and a value can come from JSON or be built in code. Not claimed: a number up to the limit is
+still a number and loads (a 640-digit `sampling.seed` under the lowest limit); a target's reply is
+u04's (A-36, A-39); the run store's columns already read such a number as unreadable JSON. Found by
+the same sweeps and open, being of other kinds: a number of any size as a key of a fixture tool
+call's `args` is a lint traceback where the evaluator matches argument names (`'int' object has no
+attribute 'lower'`, on another branch); a value JSON cannot hold (an unquoted date, a set) passes
+lint and the dry run exits 1 on it; `--runs` past what a float holds exits 1. Checked by
+`tests/cli/test_huge_numbers.py` (lint, `run` dry and live, sets and pairs, `calibrate`, `diff`, the
+target file, the validator without YAML in front, sets and keys built in code, a shared container
+and a shared number, 640 against 641 digits) and `tests/fingerprint/test_signatures.py`.
 
 **A-27 An oracle may not be satisfied by an echo (added 2026-09-23).** A `regex_presence`
 pattern is a SECURE marker and a `regex_absence` pattern is an EXPLOITED one, so a marker the
@@ -216,6 +282,56 @@ and `--json`, in a run (refused, under `--dry-run`, `-sn`, `--estimate` and `--r
 run without it under `--exclude`) and in each evaluator; the `-W error` warning and `coverage`
 for one field; lint at every depth around its own limit, with `re`'s cache overrun; the fixture
 proof's refusal for each field; and the cap. The window itself is not pinned by a test.
+
+**A-44 A spec's keys are strings, and one that is not is a finding where it is (added
+2026-10-07).** A spec is a JSON document written in YAML, and JSON keys are strings, but YAML
+builds a key from whatever its scalar resolves to: `5:` is an int, a bare `on:` or `No:` a bool,
+`~:` or an empty key null, `2026-10-07:` a date, `1.5:` a float, `!!binary aGk=:` bytes. The JSON
+schema constrains the keys of the objects it describes and says nothing about those of a
+free-form object, such as the arguments of a fixture's tool call, so `5: "bad"` in
+`fixtures.vulnerable.tool_calls[0].args` of `AG-AUTONOMY-SELFCORRECT-001` reached the offline
+`tool_call` stub, whose `key.lower()` raised `AttributeError`: a traceback and exit 1, which this
+tool uses for "findings below the threshold". Swept over the 41 fixture tool calls with arguments
+in the 75 shipped specs, an int key added after the others crashed lint in 5 (the confirmation
+walk on a destructive call in the vulnerable fixture of three specs, the forbidden-argument walk
+in the hardened fixture of two) and **passed lint unreported in the other 36**: in 35 no walk of
+the stub reached the key, and in one the forbidden-argument walk stopped at an earlier forbidden
+key; added first, it crashed in 6 and passed in 35. Two keys of different types in one mapping
+(`step_arg_patterns: {5: 1, a: 2}`) crashed earlier, in the sort of the schema errors
+(`TypeError: '<' not supported` between an int and a str), and a `!!binary` key passed lint
+without a word, because `bytes` has a `lower`. Found on 2026-10-07 by the session on
+`fix/huge-int-repr`.
+
+So the loader walks every mapping of a spec before the JSON schema, including those inside a
+`!!omap` or `!!pairs` entry (which YAML builds as a tuple), and each mapping key that is not a
+string is a `SCHEMA` finding naming the path of its mapping, the value YAML built from the key
+(`0x1F:` is shown as `31`, `1.0e+3:` as `1000.0`) and its type:
+`fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write it in quotes,
+without a tag` (a tag such as `!!int "5"` makes even a quoted key a number). The schema is not run
+on that file, and its other findings come once the keys are fixed. At most 20 are listed and the
+rest counted, the path is cut at 300 characters, a key on the path that holds a character that is
+not printable (an escape sequence, a newline that would start a forged finding line, a bidi control)
+is written as its `repr` (this check prints keys of free-form objects that no message printed
+before; the spec id and the paths of other schema errors are printed as written, as on `0501752`), a
+container YAML shares through an alias is reported once (where the walk first meets it), and the
+value under such a key is not walked. A key that is an int too long to write out never reaches this
+check: A-40 runs first and reports it in its own words. The keys of an `!!omap` or `!!pairs` entry,
+and the members of a `!!set`, are not reported: none of them exists in JSON, and in a field the
+schema types they fail it. That gap is written here and not pinned by a test.
+
+`run`, `describe`, `coverage` and `registry` load through the same path, so they leave such a spec
+out as they do any spec that does not load (`run` refuses the campaign, exit 3, through the CLI's
+redactor, which can mask a key shaped like a phone number; `dottore lint` shows it in clear).
+`render-media` builds its registry without the load errors, so for such a spec it says the spec
+is not found, with no warning, as it already did for any spec that does not load. That is a
+change: where the stub did not crash, such a spec passed lint and ran (the runtime evaluator reads
+only string keys: `FUNCALL-ARGSMUGGLE-001` against a mock target replaying its vulnerable fixture
+with an int key added gave the same fail as without it), and now it is refused until the key is
+quoted. The offline stub reads only string keys too, as `evaluators/tool_call.py` does, for a spec
+built in code and handed to `lint_packs`, where pydantic keeps a nested key as it is. The keys a
+live target sends are strings (they come from JSON). Checked by
+`tests/registry/test_non_string_keys.py` (77 tests, 76 failing on `0501752`; the other checks that
+the sweep of the shipped fixture calls is not empty).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).

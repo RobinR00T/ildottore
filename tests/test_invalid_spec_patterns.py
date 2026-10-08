@@ -373,7 +373,7 @@ def test_a_long_pattern_or_reason_is_cut(tmp_path: Path, step: str, pattern: str
 
 def _deep_spec(where: str, groups: int) -> dict[str, Any]:
     """A spec whose valid pattern is nested ``groups`` deep, with 600 other patterns after it
-    (``re`` caches 512) and, for a step, arguments nested 300 deep."""
+    (``re`` caches 512) and, for a step, arguments nested 60 deep (YAML refuses past 100)."""
 
     deep = "(" * groups + _VALID[where] + ")" * groups
     spec = _spec(where, deep)
@@ -381,7 +381,7 @@ def _deep_spec(where: str, groups: int) -> dict[str, Any]:
         others = {f"s{n}": f"filler{n}x" for n in range(600)}
         spec["evaluators"][0]["step_arg_patterns"] = {"send_email": deep, **others}
         nested: object = "drop@collector.example"
-        for _ in range(300):
+        for _ in range(60):
             nested = {"k": nested}
         spec["fixtures"]["vulnerable"]["tool_calls"][1]["args"] = {"to": nested}
     else:

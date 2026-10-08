@@ -45,7 +45,7 @@ from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
-from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, Spend
+from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
 from ildottore.core.setup_delivery import (
@@ -117,6 +117,42 @@ class ScopeRequiredError(PolicyError):
     This is the non-bypassable gate (contract §4 KEEP): no ``-A``/flag can satisfy it,
     only a real scope authorization record.
     """
+
+
+class SpecLoadError(ValueError):
+    """Spec files failed to load, so the run is refused rather than run on what parsed.
+
+    ``spec_files`` are the names the CLI prints in clear: each is a path relative to a spec root
+    that names an entry on disk under it. Whoever wrote the spec tree chose it (the operator, or
+    the author of a pack they installed), so it carries nothing of this run, and it is what the
+    operator has to find; a credential or PII shape inside it is still masked by the value and
+    shape rules. The entropy rule masked them (`attacks/DL-PII-ELICIT-001.yaml` read
+    `«REDACTED:high_entropy:…».yaml`), so the refusal could not say which file to fix (pre-merge
+    audit of PR #47).
+    """
+
+    def __init__(self, message: str, *, spec_files: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.spec_files = spec_files
+
+
+def _spec_files_on_disk(spec_paths: list[Path], names: list[str]) -> tuple[str, ...]:
+    """The ``names`` that are a relative path to an entry on disk under one of ``spec_paths``.
+
+    An entry, not only a regular file: a directory or a dangling link named ``*.yaml`` fails to
+    load too, and its name is just as much the tree's. A spec path given as a file is its
+    own parent's tree, as the loader displays it. ``os.path.lexists`` answers False, never
+    raises, for a name the filesystem refuses (too long, a NUL byte).
+    """
+
+    roots = [path if path.is_dir() else path.parent for path in spec_paths]
+    return tuple(
+        name
+        for name in dict.fromkeys(names)
+        if not Path(name).is_absolute()
+        and ".." not in Path(name).parts
+        and any(os.path.lexists(root / name) for root in roots)
+    )
 
 
 @dataclass
@@ -513,7 +549,7 @@ def budgets_for(
 def resolve_target_plans(
     *,
     scope: Scope,
-    targets: list[tuple[Path, Target]],
+    targets: list[wiring.TargetFile],
     specs: list[AttackSpec],
     runs: int,
     rate_rps: float | None = None,
@@ -533,7 +569,8 @@ def resolve_target_plans(
     pack = wiring.build_permissive_pack(specs)
     policy = wiring.build_policy_engine(scope, pack)
     plans: list[TargetPlan] = []
-    for path, target in targets:
+    for loaded in targets:
+        path, target = loaded.path, loaded.target
         endpoint = wiring.scope_endpoint_of(scope, target)
         decision = authorize_target(scope, target.id, endpoint)
         fingerprint = (fingerprints or {}).get(target.id)
@@ -560,7 +597,7 @@ def resolve_target_plans(
                 blocked.append((spec.id, verdict.reason or "blocked_by_policy"))
         # The offline mock replays the specs' fixtures, written for the scene, so it holds every
         # scene; a live deployment holds only those its operator declared seeded (OD-18 B).
-        fixtures_hold_scene = wiring.target_uses_mock(path)
+        fixtures_hold_scene = loaded.uses_mock
         # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
         # declared, a per-run canary with no run_token, two scene tools under one deployment
         # name, or a trace spec through an adapter that reads no tool calls.
@@ -1009,11 +1046,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # reachability), not a second, weaker one written here: asking only whether the id is
     # present left the false green one character away, because `ScopeTarget.endpoints`
     # defaults to empty and a typo in `host` reads exactly like a missing allowlist.
-    loaded_targets = [(path, wiring.load_target(path)) for path in opts.targets]
+    # Each file parsed once: everything below asks the same read (u12 A-42).
+    loaded_targets = [wiring.read_target_file(path) for path in opts.targets]
     # Two target files with the same id shared one run id and one evidence tree, so one
     # report held a PASS and a FAIL for the same spec on "the same" target (audit R11).
     seen_ids: dict[str, Path] = {}
-    for path, target in loaded_targets:
+    for loaded in loaded_targets:
+        path, target = loaded.path, loaded.target
         if target.id in seen_ids:
             raise ValueError(
                 f"two target files declare the id {target.id!r} ({seen_ids[target.id]} and "
@@ -1021,7 +1060,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             )
         seen_ids[target.id] = path
     judge_target = wiring.load_target(opts.judge) if opts.judge is not None else None
-    to_authorize = list(loaded_targets)
+    to_authorize = [(loaded.path, loaded.target) for loaded in loaded_targets]
     if judge_target is not None and opts.judge is not None:
         # The judge is a model we send prompts to, so it goes through the same gate. It used
         # to be loaded and never checked: with the judge absent from the scope (which is what
@@ -1074,9 +1113,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{e.path or e.spec_id or '?'}: {e.message[:120]}" for e in load_errors[:5]
         )
         more = f" (and {len(load_errors) - 5} more problem(s))" if len(load_errors) > 5 else ""
-        raise ValueError(
+        raise SpecLoadError(
             f"{len(files)} spec file(s) failed to load and would silently leave the "
-            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first."
+            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first.",
+            spec_files=_spec_files_on_disk(spec_paths, [e.path for e in load_errors[:5] if e.path]),
         )
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
@@ -1163,7 +1203,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     evidence_root = opts.evidence_root or Path(".dottore/evidence")
     run_db = opts.run_db or Path(".dottore/runs.sqlite")
 
-    routes = [(path, target, _route_for(opts, path)) for path, target in loaded_targets]
+    routes = [(loaded.path, loaded.target, _route_for(opts, loaded)) for loaded in loaded_targets]
     any_live = any(real is not None for _, _, (_, real) in routes)
     # Pacing applies to traffic that leaves the process. An offline mock campaign is not
     # paced (there is nobody to be polite to, and pacing CI would only slow it); the plan
@@ -1214,7 +1254,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         resume_from = resume_mod.load_resume_run(
             evidence_root,
             opts.resume,
-            loaded_targets[0][1],
+            loaded_targets[0].target,
             run_db=run_db,
             specs=selected,
             mock_scenario=routes[0][2][0],
@@ -1277,8 +1317,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # pass happens first and its evidence has to file under the run it belongs to. A resumed
     # campaign keeps the original id (the evidence and the run store are keyed by it).
     run_ids = {
-        target.id: (opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}")
-        for _, target in loaded_targets
+        loaded.target.id: (
+            opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}"
+        )
+        for loaded in loaded_targets
     }
 
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
@@ -1325,6 +1367,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         for _, target, (mock_scenario, real_target) in routes:
             if opts.resume is None:
                 starts[target.id] = wiring.utc_timestamp()
+            # The pass's ledger is made here, not inside the pass, so what it sent is known
+            # however it ends, and a resumed run records it then, success included (u12 A-46).
+            # Only the ceiling used to: a probe answered 503 three times left the store at 20
+            # while the target had served 23, and so did a product error, Ctrl-C, SIGTERM, or
+            # anything stopping the run before the runner's ledger opened. Each retry of the
+            # same resume then sent its probes against a ceiling that had never seen them.
+            probe_ledger = BudgetLedger(max_requests=probe_ceiling)
             try:
                 probe_pass = wiring.fingerprint_probe(
                     scope,
@@ -1334,22 +1383,38 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     evidence=probe_store,
                     run_id=run_ids[target.id],
                     mock_scenario=mock_scenario,
-                    max_requests=probe_ceiling,
+                    ledger=probe_ledger,
                 )
+                # Inside the try: a signal landing between the pass and this write lost the
+                # whole pass (2 of 16 real SIGINTs a few ms after the last probe, pre-commit
+                # audit). Interrupted here, the handler below writes it again.
+                _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
             except wiring.ProbeCeilingReached as exc:
-                if prior_spend is not None:
-                    # A resumed run records what this probe pass spent before refusing: it did
-                    # not, so each retry of the same command spent the ceiling again (60 allowed,
-                    # 106 sent after three tries; pre-commit audit of the leftovers).
-                    _persist_spend(
-                        run_db, run_ids[target.id], prior_spend.plus(Spend(requests=exc.requests))
-                    )
+                _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
                 raise ValueError(
                     f"the -sV probe pass on {target.id!r} reached the --budget-requests ceiling "
                     f"({exc}) after {exc.requests} request(s), before any attack traffic: "
                     "retries count as requests. Raise the ceiling or drop -sV. The exchanges are "
                     f"in {evidence_root / run_ids[target.id] / 'probes'}."
                 ) from exc
+            except BaseException:
+                # The error's own message can understate the sends: a probe adapter has no
+                # retries of its own (the meter owns them), so three 503s read "exhausted 1
+                # attempt(s)". The count is the ledger's. Plain print, as the resume notice.
+                recorded = _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
+                sent = probe_ledger.spend().requests
+                if prior_spend is not None and sent:
+                    print(
+                        f"resume: the -sV probe pass on {target.id!r} stopped after {sent} "
+                        "request(s), retries included; "
+                        + (
+                            f"{run_ids[target.id]} now records {recorded} request(s) spent"
+                            if recorded is not None
+                            else f"they could not be added to the spend of {run_ids[target.id]}"
+                        ),
+                        file=sys.stderr,
+                    )
+                raise
             fingerprints[target.id] = probe_pass.fingerprint
             probes_sent[target.id] = probe_pass.requests
     if fingerprints and not opts.quiet:
@@ -1616,7 +1681,7 @@ def _refusal_for(scope: Scope, target: Target) -> str | None:
     return None if decision.allowed else (decision.reason or "not authorized by the scope")
 
 
-def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target | None]:
+def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None, Target | None]:
     """Decide the adapter route for one target: ``(mock_scenario, real_target)``.
 
     ``--hardened`` always forces the offline hardened replay (a mock-only flag); otherwise a
@@ -1626,22 +1691,20 @@ def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target 
     (contract §5).
     """
 
-    uses_mock = wiring.target_uses_mock(target_path)
-    if opts.hardened and not uses_mock:
+    if opts.hardened and not loaded.uses_mock:
         # It replayed offline fixtures, sent nothing, and published ten passes, "complete" and
         # exit 0 under the live target's name, with no marker anywhere that it was a replay
         # (audit 2026-10-03, R3). A clean report about a model nobody contacted is refused.
-        target = wiring.load_target(target_path)
         raise ValueError(
             f"--hardened replays the offline hardened fixtures and sends nothing, so it cannot "
-            f"be used with the live target {target.id!r} ({target_path}): the report would "
+            f"be used with the live target {loaded.target.id!r} ({loaded.path}): the report would "
             "describe a model that was never contacted. Drop --hardened, or point it at a "
             "mock target."
         )
-    if opts.hardened or uses_mock:
-        scenario = "hardened" if opts.hardened else wiring.load_mock_scenario(target_path)
+    if opts.hardened or loaded.uses_mock:
+        scenario = "hardened" if opts.hardened else loaded.mock_scenario()
         return scenario, None
-    return None, wiring.load_target(target_path)
+    return None, loaded.target
 
 
 def _run_one_target(
@@ -1901,10 +1964,9 @@ def _persist_run_spend(run_db: Path, result: CampaignResult) -> None:
     """Record what the campaign consumed, once it is known.
 
     The runner also hands its spend to the store however it stops (a ceiling, an abort,
-    Ctrl-C, and SIGTERM or SIGHUP, which ``execute_run`` turns into Ctrl-C). A SIGKILL still
-    loses the dead half's spend, and so does a Ctrl-C during a resumed run's ``-sV`` probe pass
-    (the probes are counted only once the pass returns). Closing those would mean a write per
-    request.
+    Ctrl-C, and SIGTERM or SIGHUP, which ``execute_run`` turns into Ctrl-C), and a resumed run's
+    ``-sV`` probe pass is recorded however it ends (:func:`_charge_probe_pass`). A SIGKILL still
+    loses the dead half's spend: closing that would mean a write per request.
     """
 
     _persist_spend(run_db, result.run.run_id, result.spend)
@@ -1918,16 +1980,56 @@ def _record_spend_quietly(run_db: Path, run_id: str, spend: Spend) -> None:
     hygiene block). A finished run still records its spend through ``_persist_run_spend``.
     """
 
+    _recorded_requests(run_db, run_id, spend)
+
+
+def _recorded_requests(run_db: Path, run_id: str, spend: Spend) -> int | None:
+    """Record ``spend`` and return the requests the store then holds for ``run_id``.
+
+    ``None`` when it could not be recorded, which is said on stderr and is never the run's
+    error: a locked database must not replace the Ctrl-C or the error that stopped the run.
+    """
+
     try:
-        _persist_spend(run_db, run_id, spend)
+        return _persist_spend(run_db, run_id, spend)
     except Exception as exc:  # the database, not the campaign
         from ildottore.redactor import Redactor
 
         reason = Redactor().redact_text(str(exc))
         print(f"warning: the spend of {run_id} could not be recorded: {reason}", file=sys.stderr)
+        return None
 
 
-def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> None:
+def _charge_probe_pass(
+    run_db: Path, run_id: str, prior: Spend | None, ledger: BudgetLedger
+) -> int | None:
+    """Record a resumed run's spend with what its ``-sV`` probe pass sent (u12 A-46).
+
+    Called however the pass ends, success included, so a stop before the runner's ledger opens
+    loses nothing either. The figure is written whole, not added: the store keeps the highest
+    per axis, so the runner's later record of the same probes plus the attack counts each probe
+    once. Returns the requests the store then holds, or ``None`` when nothing was recorded:
+    nothing sent, no prior spend, or a failed write (a warning says so). No prior spend is a
+    fresh run, whose run row is written after the pass so there is nothing to resume, or a
+    ``--resume-unverified`` run with no recorded spend, told its ceiling covers this invocation
+    alone; neither recorded the probes before, at the ceiling either.
+    """
+
+    sent = ledger.spend().requests
+    if prior is None or sent == 0:
+        return None
+    # Not retried when a signal lands during the write. In the probe loop's handlers nothing
+    # catches it after, so one landing there loses the pass (2 of 41 real SIGINTs just after a
+    # 503 stop, delta audit). Writing again closed that, and on a locked store made Ctrl-C wait
+    # one more busy timeout per interrupted write (9.9 s instead of 4.7 after a 503, 15.1
+    # instead of 9.8 after a pass that succeeded) for a record lost anyway (pre-merge audit).
+    # The window stays, like a SIGKILL's, and u12 A-46 says so.
+    return _recorded_requests(run_db, run_id, prior.plus(Spend(requests=sent)))
+
+
+def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> int:
+    """Record ``spend`` (the highest per axis is kept) and return the requests now recorded."""
+
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
@@ -1940,6 +2042,7 @@ def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> None:
                 "wall_s": round(spend.wall_s, 6),
             },
         )
+        return int((store.get_run_spend(run_id) or {}).get("requests", 0))
 
 
 def _print_progress(
