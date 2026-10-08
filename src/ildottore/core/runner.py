@@ -579,7 +579,7 @@ class CampaignRunner:
         started spec grew without end on a resume of a run stored with a huge ``--runs`` (A-59).
         """
 
-        planned = len(set(mutators)) * self._n
+        planned = len(set(mutators)) * max(self._n, 0)  # a negative n plans nothing, as before
         # Fewer stored ids than the plan cannot hold it: the sweep reads the run-wide set, so
         # this spares a scan of every spec's attempts (pre-commit audit of A-59).
         return len(done) >= planned and (
@@ -600,7 +600,7 @@ class CampaignRunner:
 
         done = {a.attempt_id for a in prior.attempts}
         sent = planned_attempts_held(done, spec.id, mutators, self._n)
-        planned = len(set(mutators)) * self._n
+        planned = len(set(mutators)) * max(self._n, 0)  # a negative n plans nothing, as before
         if sent == planned:
             return self._prior_finding(spec, target, prior)
         return Finding(

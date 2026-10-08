@@ -10,7 +10,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   bound (A-55). The three places that built the set of `mutators x --runs` attempt ids (the halt
   path of a resume, the seeding gate, the multi-identity sweep) now compare
   `core/reproduce.planned_attempts_held` with the plan's size; a resume of a stored count of `2**53`
-  takes under a second and 71 MiB, where 10^7 took up to 16.3 s and 3.7 GiB. Open PRs #66 and #60
+  takes about a second and 71 MiB, where 10^7 took up to 16.3 s and 3.7 GiB. Open PRs #66 and #60
   change the same lines (the halt path, the seeding gate, the sweep): whoever merges second keeps
   the count, not the set.
 

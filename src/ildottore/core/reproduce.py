@@ -64,11 +64,20 @@ def planned_attempts_held(
     counted by reading ``stored`` once, so the work follows what is stored, not ``runs``: a
     resume built that set for each started spec, and with the ``2**53`` a run store accepts it
     grew without end (A-59, OD-32). An id counts only in the exact form ``attempt_id_for``
-    writes (an index without a leading zero, inside the plan), so no stored id passes for one;
-    an index longer than the interpreter writes out is not one it could have written.
+    writes (an index without a leading zero, inside the plan), so no stored id passes for one,
+    and an index wider than the plan's last one is passed over without being converted (past the
+    interpreter's digit limit, that limit is the widest: ``attempt_id_for`` writes no longer one).
     """
 
-    limit = sys.get_int_max_str_digits()
+    if runs <= 0:
+        return 0
+    # The widest index of the plan: a longer one is not planned, and is passed over before
+    # ``int()``, which cost 4 s per check over 10,000 stored indexes of 4,300 digits (delta audit
+    # of A-59). A run count the interpreter cannot write out has no such width to read.
+    try:
+        widest = len(str(runs - 1))
+    except ValueError:
+        widest = sys.get_int_max_str_digits()
     prefix = f"{spec_id}::"
     planned = set(mutators)
     held = 0
@@ -81,7 +90,7 @@ def planned_attempts_held(
             and mutation in planned
             and index.isascii()
             and index.isdigit()
-            and (limit == 0 or len(index) <= limit)
+            and len(index) <= widest
             and index == str(int(index))
             and int(index) < runs
         ):

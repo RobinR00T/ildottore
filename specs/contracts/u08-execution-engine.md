@@ -195,25 +195,36 @@ and one of `2**53 + 1` was still growing at 3.7 GB after 4.5 minutes on `2f6201a
 the owner on 2026-10-08: the runner counts what is stored, and `--runs` keeps its bound). So
 `core/reproduce.planned_attempts_held` counts the planned attempts in a stored set by reading it
 once, accepting an id only in the exact form `attempt_id_for` writes (this spec's prefix, a planned
-mutation, an index of ASCII digits without a leading zero inside the plan, none longer than the
-interpreter writes out, so a corrupt store's id is ignored, never fatal), and the three places
-compare that count with the plan's size, `len(set(mutators)) x n` (the sweep only when something is
-planned, as before). A set smaller than the plan is answered without reading it, since the sweep's
-is the run-wide set of every spec. The gate's message prints both counts with thousands separators,
-which also stops the report redactor masking a count of 9 digits or more as a phone number, as it
-did on `76de469`. The work follows the stored attempts: a resume of a stored count of 10^6, 10^7,
-10^8 or `2**53` took 0.7 to 0.9 s and 71 MiB, with one spec started or with two, and the pre-commit
-audit found no verdict that changed on 200 combinations of specs, `n` and ceilings, nor a count that
-differed from the set's on 60,000 inputs. Checked by `tests/core/test_planned_attempts.py` (25
-tests, 15 failing on `76de469`: 12 because the count is not there, 1 because the runner's predicate
-is not, and 2 because the runner built more than 10,000 ids, counted and stopped there instead of
-growing; the 10 that pass pin what is unchanged: a gated prior holding its plan, with a mutation
-listed twice too, scored as before, and the sweep skipped only when every attempt of this spec is
-stored, not another spec's, and run when nothing is planned) and by
+mutation, an index of ASCII digits without a leading zero inside the plan), so a corrupt store's id
+is ignored, never fatal. An index wider than the plan's last one is passed over before it is
+converted: 10,000 stored indexes of 4,300 digits cost 4 s per check, and now 0.05 s. A run count
+the interpreter cannot write out (past its digit limit; only a library caller can pass one, as
+`run` and the run store stop at `2**53`) takes that limit as the widest index, keeps that cost, and
+does not count a longer index, which `attempt_id_for` could not write either. The three places
+compare the count with the plan's size, `len(set(mutators)) x n` (the sweep only when something is
+planned, as before; a negative `n`, which only a library caller can pass, plans nothing, as
+before). A set smaller than the plan is answered without reading it, since the sweep's is the
+run-wide set of every spec. The gate's message prints both counts with thousands separators, which
+also stops the report redactor masking a count of 9 digits or more as a phone number, as it did on
+`76de469`. The work follows the stored attempts: a resume of a stored count of 10^6, 10^7, 10^8 or
+`2**53` took 0.7 to 1.0 s and 71 MiB, with one spec started or with two. The pre-commit audit found
+no verdict that changed on 200 combinations of specs, `n` and ceilings, nor a count that differed
+from the set's on 60,000 inputs. The delta audits found no verdict that changed from the CLI; what
+they found is fixed here: the negative `n`, the cost of a wide index, the widest index one digit
+off at 10, 100 or 1,000 (untested until then), a test that read the environment's digit limit, and
+wording that claimed more than the counters see. Checked by `tests/core/test_planned_attempts.py`
+(29 tests, 19 failing on `76de469`: 15 because the count is not there, 2 because the runner's
+predicate is not, and 2 because the runner built more than 10,000 ids, counted and stopped there
+instead of growing; the 10 that pass pin what is unchanged: a gated prior holding its plan, with a
+mutation listed twice too, scored as before, and the sweep skipped only when every attempt of this
+spec is stored, not another spec's, and run when nothing is planned) and by
 `tests/cli/test_resume_integrity.py`, where a halted run resumed with the largest stored count
-builds no planned id (failing on `76de469` the same way). The counters watch the builder both under
-the runner's name and in its module. Every targeted mutant dies but dropping the early answer, which
-is equivalent: it only costs the read.
+builds no planned id (failing on `76de469` the same way). The counters watch `attempt_id_for` under
+the runner's name and in its module, so a plan built another way (an f-string, an alias) is not
+counted there; the equivalence and verdict tests still pin the answer. Every targeted mutant dies
+but four equivalent ones, which give the same counts: dropping the early answer (it only costs the
+read), dropping the `runs <= 0` return or making it `runs < 0`, and reading the widest index from
+`runs` instead of `runs - 1`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is

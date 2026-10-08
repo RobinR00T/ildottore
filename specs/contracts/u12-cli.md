@@ -427,7 +427,8 @@ Outside the clause, and said so rather than pinned:
   bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The
   runner built a set of mutators x runs attempt ids per spec on a resume and in the multi-identity
   sweep, for each spec the halted run had started: with `PI-DIRECT-001` and `OUT-XSS-001`, a stored
-  count of 10^6 took 209 MiB with one spec started and 593 to 678 MiB with both, 10^7 took 3.5 s and
-  1.3 GiB with one and 16.3 s and 3.7 GiB with both, and `2**53 + 1` was still growing at 3.7 GB
-  when it was stopped after 4.5 minutes on `2f6201a`. A bound with a meaning (the schema caps a
+  count of 10^6 took 209 MiB with one spec started and 593 to 679 MiB with both (three
+  measurements; 653 to 678 on 2026-10-07), 10^7 took 3.5 s and 1.3 GiB with one and 16.3 s and
+  3.7 GiB with both, and `2**53 + 1` was still growing at 3.7 GB when it was stopped after 4.5
+  minutes on `2f6201a`. A bound with a meaning (the schema caps a
   spec's own unread `runs:` at 50) would have refused values that run today; counting does not.

@@ -12,6 +12,7 @@ sweep of a resumed spec.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import itertools
 import random
@@ -36,7 +37,8 @@ from .conftest import (
     no_sleep,
 )
 
-#: More planned ids than any of these tests needs; a runner that builds the plan crosses it.
+#: More planned ids than any of these tests needs; a runner building the plan with
+#: ``attempt_id_for`` crosses it (one that writes the ids another way is not counted).
 _CAP = 10_000
 
 
@@ -44,8 +46,8 @@ _CAP = 10_000
 def counted_ids(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Count the attempt ids the runner builds, and stop it past :data:`_CAP`.
 
-    On a runner that builds the plan, a ``2**53`` plan stops here at once with a clear reason,
-    instead of growing until the machine runs out of memory.
+    On a runner that builds the plan with it, a ``2**53`` plan stops here at once with a clear
+    reason, instead of growing until the machine runs out of memory.
     """
 
     calls = [0]
@@ -122,6 +124,16 @@ def test_an_id_the_runner_never_writes_is_not_counted(fake: str) -> None:
 
 def test_an_index_past_the_plan_is_not_counted() -> None:
     assert _held({"S::identity#4", "S::identity#5"}, "S", ["identity"], 5) == 1
+
+
+def test_a_plan_whose_last_index_gains_a_digit_counts_every_stored_attempt() -> None:
+    """The widest planned index is read from ``runs - 1``; one digit off at 10, 100 or 1,000 would
+    leave the last attempt uncounted and a finished prior gated (delta audit of A-59)."""
+
+    for runs in [1, 9, 10, 11, 99, 100, 101, 1000, 1001]:
+        done = _planned("S", ["identity"], runs + 1)  # every planned attempt, and one past the plan
+
+        assert _held(done, "S", ["identity"], runs) == runs, runs
 
 
 def test_a_huge_plan_is_answered_from_what_is_stored(counted_ids: list[int]) -> None:
@@ -263,14 +275,58 @@ def test_a_stored_id_whose_index_is_no_number_is_ignored_not_fatal(fake: str) ->
     assert _held({fake, "S::identity#1"}, "S", ["identity"], 2**53) == 1
 
 
-@pytest.fixture
-def no_digit_limit() -> Iterator[None]:
+def test_a_stored_index_wider_than_the_plan_is_passed_over_unread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``int()`` of 10,000 stored indexes of 4,300 digits cost 4 s per check (delta audit of A-59).
+
+    An index wider than ``runs - 1`` is not in the plan, so it is not converted at all.
+    """
+
+    reproduce_mod = importlib.import_module("ildottore.core.reproduce")
+    converted: list[str] = []
+
+    def counting_int(text: str) -> int:
+        converted.append(text)
+        return int(text)
+
+    monkeypatch.setattr(reproduce_mod, "int", counting_int, raising=False)
+    wide = {f"S::identity#{i}" + "1" * 4290 for i in range(10)}
+
+    assert _held(wide | {"S::identity#1", "S::identity#12"}, "S", ["identity"], 5) == 1
+    assert all(len(text) <= 1 for text in converted), "a wider index was converted"
+
+
+@contextlib.contextmanager
+def _digit_limit(limit: int) -> Iterator[None]:
+    """The interpreter's limit on the digits ``int`` and ``str`` convert, set by the environment
+    (``PYTHONINTMAXSTRDIGITS``) and pinned here so a test does not depend on it."""
+
     before = sys.get_int_max_str_digits()
-    sys.set_int_max_str_digits(0)  # 0 is no limit at all
+    sys.set_int_max_str_digits(limit)
     try:
         yield
     finally:
         sys.set_int_max_str_digits(before)
+
+
+@pytest.fixture
+def no_digit_limit() -> Iterator[None]:
+    with _digit_limit(0):  # 0 is no limit at all
+        yield
+
+
+def test_a_run_count_too_long_to_write_out_still_counts_what_is_stored() -> None:
+    """``str()`` refuses such a count under the digit limit, so the limit is the widest index then:
+    a longer one is not counted, and ``attempt_id_for`` could not have written it either."""
+
+    with _digit_limit(4300):
+        runs = 10**5000
+        stored = {"S::identity#3", "S::identity#" + "1" * 4301}
+
+        assert _held(stored, "S", ["identity"], runs) == 1
+        with pytest.raises(ValueError, match="limit"):
+            attempt_id_for("S", "identity", int("1" * 4300) * 10 + 1)
 
 
 @pytest.mark.usefixtures("no_digit_limit")
@@ -318,6 +374,18 @@ async def test_a_runner_of_no_runs_still_sweeps(stores, evaluators, mutators, sc
     )
 
     assert calls
+
+
+def test_a_negative_run_count_plans_nothing_as_before(stores, evaluators, mutators, scorer) -> None:
+    """A library caller may pass ``n=-1``; the plan it built was empty, so held and scored (delta
+    audit of A-59: a product of ``-1`` held nothing and gated the prior instead)."""
+
+    runner = _runner(stores, evaluators, mutators, scorer, n=-1)
+    spec = make_spec("JB-REFUSAL-001")
+
+    assert runner._holds_plan(set(), spec.id, ["identity"]) is True
+    finding = runner._gated_prior(spec, make_target(), _prior(spec.id, []), ["identity"], "g")
+    assert "had sent" not in (finding.reasoning or "")
 
 
 def test_duplicate_mutators_hold_the_plan_once(stores, evaluators, mutators, scorer) -> None:

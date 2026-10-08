@@ -18,7 +18,7 @@ versioning: [SemVer](https://semver.org/).
   `2f6201a`). The runner now counts the planned attempts in what is stored, reading it once, and
   compares that with the plan's size (`core/reproduce.planned_attempts_held`): the same answer,
   without building the plan. A resume of a stored count of 10^6, 10^7, 10^8 or `2**53` took 0.7 to
-  0.9 s and 71 MiB. An id counts only in the exact form the runner writes, so a stored id cannot
+  1.0 s and 71 MiB. An id counts only in the exact form the runner writes, so a stored id cannot
   pass for one, and the seeding gate's message prints its counts with thousands separators ("had
   sent 1 of 18,014,398,509,481,984 attempts"), which the report redactor leaves readable: a count of
   9 digits or more came out as `«REDACTED:phone»`. OD-32 decided by the owner on 2026-10-08: the

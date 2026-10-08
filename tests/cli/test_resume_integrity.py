@@ -423,9 +423,9 @@ def test_a_resume_of_the_largest_stored_count_checks_its_priors_without_building
 ) -> None:
     """The halt path asked whether each started spec held every planned attempt by building the
     set of mutators x runs ids: with the `2**53` the store accepts, a resume grew without end
-    (3.7 GB after 4.5 minutes on `2f6201a`, OD-32). Counted, and stopped past 10,000 ids, so a
-    runner that builds the plan fails here at once instead of taking the machine with it
-    (A-59)."""
+    (3.7 GB after 4.5 minutes on `2f6201a`, OD-32). The ids `attempt_id_for` builds are counted
+    and stopped past 10,000, so a runner that builds the plan with it fails here at once instead
+    of taking the machine with it (A-59); a plan written another way is not counted here."""
 
     import importlib
 
