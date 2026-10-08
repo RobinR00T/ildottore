@@ -86,6 +86,11 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   ok: bool}`. Text + `--json` renderings; text is human-readable, JSON is machine-parseable.
 - `LintError.code` from a fixed enum (`SCHEMA`, `ID_COLLISION`, `UNKNOWN_EVALUATOR_TYPE`,
   `MISSING_TEST_ONLY`, `FIXTURE_NO_DETECT`, `FIXTURE_HARDENED_FAIL`, `MISSING_FRAMEWORK_MAP`).
+  As built (`registry/errors.py`, `LintCode`, checked 2026-10-07) it also holds
+  `UNKNOWN_MUTATOR_TYPE`, `PARSE_ERROR`, `UNKNOWN_SPEC_REF`, `ASSET_ERROR`,
+  `EVALUATOR_MISCONFIGURED`, `UNKNOWN_FRAMEWORK_CODE`, `ORACLE_MARKER_IS_ECHOABLE`,
+  `FRAMEWORK_CLAIM_CONTRADICTED` and `MUTATOR_PLUGIN_ERROR`. A regex a spec writes that does not
+  compile is `EVALUATOR_MISCONFIGURED` (A-33).
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/registry -q` green; **coverage ≥ 90%** for `src/ildottore/registry/`.
@@ -233,6 +238,52 @@ is MIT, so requirement text stays upstream. Checked by `tests/registry/test_lint
 `tests/shared/test_aisvs.py`; bucket membership is pinned per axis in
 `tests/cli/test_coverage_cmd.py` (A-26).
 
+**A-33 A regex a spec writes compiles, and lint, a run and the evaluators agree on what
+compiles, but for a few levels of nesting (added 2026-10-07).** A spec writes a regex in three
+places: the `regex_absence` and `regex_presence` `patterns`, and `tool_sequence`'s
+`step_arg_patterns`. Nothing checked that it compiled. A `regex_absence` pattern `(x` made
+`dottore lint` exit 1 with a `PatternError` traceback from the offline fixture stub, in text and
+`--json` alike (pre-commit audit of `fix/cli-legacy-workflow-commands`, reproduced on `main` at
+`77aafd5` and `0f936b6`), while a comment in `_check_oracle_markers` left "a malformed pattern"
+to `EVALUATOR_MISCONFIGURED`, a check nobody had written. A bad `step_arg_patterns` entry for a
+step no fixture calls linted clean, and the evaluator, which compiles every entry, abstained on
+every attempt. And `re.compile` refuses a pattern with more than `re.error`: `a{4294967296}`
+raises `OverflowError`, a few hundred nested groups `RecursionError`, `(?a)(?u)x` `ValueError`,
+a nested set `[[a]` under `-W error` its `FutureWarning`. The evaluators caught only `re.error`,
+so the others aborted a whole `dottore run` with exit 3 over one spec, and a `re.error` was
+scored with its oracle abstaining, the reason in no report and the spec counted as covered.
+
+Every such pattern now compiles through one function, `shared/patterns.compile_spec_pattern`,
+which turns all five into `SpecPatternError`; lint, its fixture stubs, the run's pre-flight and
+the evaluators all use it. Lint reports each pattern that does not compile as
+`EVALUATOR_MISCONFIGURED` with the spec id, the field (and the step, for a `step_arg_patterns`
+entry), the pattern and the engine's reason, each written with `ascii` and cut at 120 of its own
+characters, at most 10 per spec and then one finding that says there are more, and does not
+attempt that spec's fixture proof (the message says so). `dottore run` refuses a selected spec
+that has one before anything is sent (exit 3), a resumed run included, as it refuses a spec file
+that fails to load (F-10), naming the spec and its first such pattern; called as a library, the
+evaluators still abstain on one. `dottore coverage` compiles no pattern.
+
+Left open, by measurement rather than decision: the engine parses groups recursively, so how
+deep they may nest depends on the caller's stack. On Python 3.14 (2026-10-07, `python -m`; one
+or two more through `dottore`) lint accepts 486 nested groups and the run's pre-flight 487, and
+an evaluator that compiles a pattern itself accepts 481. An evaluator reuses what the pre-flight
+compiled while `re`'s cache (512 patterns) holds it, so in a selection of more than 512 patterns
+a pattern nested 482 to 487 deep lints clean, passes the pre-flight and makes its evaluator
+abstain: the spec ends `inconclusive` with the reason in no report, where `main` aborted the
+run. A per-process cache of answers would close it and was not added (third delta audit). The
+round-1 audits found the sharper case: the stubs compile a few frames deeper than lint's check,
+so after such an eviction a pattern a level short of the check's limit crashed lint; that is now
+a finding naming the field and the pattern, never a traceback. Compiling on a thread of its own
+made the limit one number for every caller and was taken out after the second delta audit: it
+held up Ctrl-C and SIGTERM behind a slow compile, hung after `fork`, queued every compile behind
+the slowest and lost the caller's warning filters. Checked by
+`tests/test_invalid_spec_patterns.py`: each field with each of the four exceptions, in lint text
+and `--json`, in a run (refused, under `--dry-run`, `-sn`, `--estimate` and `--resume` too, and
+run without it under `--exclude`) and in each evaluator; the `-W error` warning and `coverage`
+for one field; lint at every depth around its own limit, with `re`'s cache overrun; the fixture
+proof's refusal for each field; and the cap. The window itself is not pinned by a test.
+
 **A-44 A spec's keys are strings, and one that is not is a finding where it is (added
 2026-10-07).** A spec is a JSON document written in YAML, and JSON keys are strings, but YAML
 builds a key from whatever its scalar resolves to: `5:` is an int, a bare `on:` or `No:` a bool,
@@ -351,3 +402,11 @@ and another pins that no shipped spec holds such a value).
   record manifest in MVP-1, enforce signatures in MVP-2.
 - Whether suite/pack Pydantic models live in `shared/` (u00) or locally in `registry/` if u00
   omits them: propose local until promoted to shared by an ADR.
+- **OD-22, a spec regex that does not compile (A-33, 2026-10-07).** Built, reversible, for the
+  owner to confirm: (a) `dottore run` refuses the whole run when a selected spec has one, as it
+  refuses a spec file that fails to load (F-10); the alternative is to skip only that spec,
+  `inconclusive` with nothing sent and kept out of coverage, as `setup_not_seeded` does (OD-18 B),
+  so one bad third-party spec does not stop a battery. (b) Lint reports it as
+  `EVALUATOR_MISCONFIGURED`, which the linter's own comment had already named; the alternative
+  is a code of its own (`INVALID_PATTERN`), which `--json` consumers could filter on and which
+  §6's enum would gain.
