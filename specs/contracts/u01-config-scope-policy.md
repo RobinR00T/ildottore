@@ -299,34 +299,34 @@ starts and before anything in it is composed, with `document is nested too deepl
 first, so a collection that crosses both gets A-52's message. A single pair in a flow list (`[k:
 v]`, `[? k : v]`) is a map in flow style with no bracket of its own, and the scanner opens no level
 for it, so it does not count either; the first version counted it and refused 11 such lists
-(pre-commit audit). Only a text is looked at for brackets: read from a stream, every list or map in
-flow style counts. PyYAML's pure-Python scanner keeps one possible simple key per open flow level
-and passes over them about three times on every token, so each open flow level costs on every token
-written inside it: under A-52's limit a 198 KB list of chains of `[` 98 deep was accepted after the
-scanner walked 29.8 million keys, and the same chains holding 300 texts each after 52.0 million
-(1.65 s and 2.34 s, 2.0 and 2.8 times the 0.82 s of a flat list of as many texts, best of three at a
-load average of 4.5; audits of #84). Both are now refused at the 21st `[` in 0.01 s, the scanner
-walking 0.17 and 0.31 million keys, and chains 19 deep in the root list holding 300 texts each, the
-costliest shape the audits of #84 found, walk 11.4 million keys in 1.11 s, about 1.35 times the flat
-list. The limit bounds what each token walks, about 21 keys a pass, not what a file walks: a denser
-file, whose entries carry an anchor and a tag (four tokens each), walks 21.0 million keys in 789 KB,
-2.3 times a flat list (pre-commit audit). As for A-52, the scanner still reads ahead past the 21st
-`[`, to the end of its line, at most 1,024 characters, and one token past it. The limit counts what
-is written: an alias repeats no text for the scanner to walk. A file written as JSON is flow style
-throughout, so it too nests at most 20 levels. The YAML files the repository ships nest at most 2
-flow levels (a test reads every YAML file in it). The depth tests of A-52, u12 A-9 and A-37 that
-wrote their depth as chains of `[` now write it in block style, or in block style with 20 flow
-levels inside. The alias-depth tests of u12 A-9 wrote each anchor 101 deep, so since #84 their files
-were refused as they were written, not for their aliases, and their assertions, `nested too deeply`
-only, could not tell: they now nest 20 levels per anchor, under both written limits, and assert it
-(`written_nesting` in `tests/cli/conftest.py`). Checks: `tests/cli/test_yaml_flow_nesting.py` (flow
-lists, maps, the two mixed and flow inside block maps at 21 levels, single pairs in flow lists at 20
-and 21, a stream, with the position, the message and composition stopping before the rest of the
-collection, in both loaders; every shape at 20 levels, siblings included, loading as plain PyYAML
-loads it; the depth limit checked first; one count per document; the repository's files; and in a
-subprocess bounded at 30 s, the keys the scanner walks for `lint` and `calibrate` on chains 98 and
-320 deep, under 1 million, and for `lint` on chains at the limit holding 300 texts each, under 12
-million).
+(pre-commit audit). Only a text or bytes is looked at for brackets: read from a file object, every
+list or map in flow style counts. PyYAML's pure-Python scanner keeps one possible simple key per
+open flow level and passes over them about three times on every token, so each open flow level costs
+on every token written inside it: under A-52's limit a 198 KB list of chains of `[` 98 deep was
+accepted after the scanner walked 29.8 million keys, and the same chains holding 300 texts each
+after 52.0 million (1.65 s and 2.34 s, 2.0 and 2.8 times the 0.82 s of a flat list of as many texts,
+best of three at a load average of 4.5; audits of #84). Both are now refused at the 21st `[` in 0.01
+s, the scanner walking 0.17 and 0.31 million keys, and chains 19 deep in the root list holding 300
+texts each, the costliest shape the audits of #84 found, walk 11.4 million keys in 1.11 s, about
+1.35 times the flat list. The limit bounds what each token walks, about 21 keys a pass, not what a
+file walks: a denser file, whose entries carry an anchor and a tag (four tokens each), walks 21.0
+million keys in 789 KB, 2.3 times a flat list (pre-commit audit). As for A-52, the scanner still
+reads ahead past the 21st `[`, to the end of its line, at most 1,024 characters, and one token past
+it. The limit counts what is written: an alias repeats no text for the scanner to walk. A file
+written as JSON is flow style throughout, so it too nests at most 20 levels. The YAML files the
+repository ships nest at most 2 flow levels (a test reads every YAML file in it). The depth tests of
+A-52, u12 A-9 and A-37 that wrote their depth as chains of `[` now write it in block style, or in
+block style with 20 flow levels inside. The alias-depth tests of u12 A-9 wrote each anchor 101 deep,
+so since #84 their files were refused as they were written, not for their aliases, and their
+assertions, `nested too deeply` only, could not tell: they now nest 20 levels per anchor, under both
+written limits, and assert it (`written_nesting` in `tests/cli/conftest.py`). Checks:
+`tests/cli/test_yaml_flow_nesting.py` (flow lists, maps, the two mixed and flow inside block maps at
+21 levels, a tag or an anchor before the bracket, single pairs in flow lists at 20 and 21, a file
+object, with the position, the message and composition stopping before the rest of the collection,
+in both loaders; every shape at 20 levels, siblings included, loading as plain PyYAML loads it; the
+depth limit checked first; one count per document; the repository's files; and in a subprocess
+bounded at 30 s, the keys the scanner walks for `lint` and `calibrate` on chains 98 and 320 deep,
+under 1 million, and for `lint` on chains at the limit holding 300 texts each, under 12 million).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

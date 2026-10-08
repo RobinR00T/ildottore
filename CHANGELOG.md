@@ -25,10 +25,11 @@ versioning: [SemVer](https://semver.org/).
   list (pre-commit audit). Block nesting does not count, only toward the limit of 100, which is
   checked first, and neither does a single pair in a flow list (`[k: v]`), a map with no bracket of
   its own (the first version counted it, and refused 11 such lists). The YAML files the repository
-  ships nest at most 2 flow levels. Tests: `tests/cli/test_yaml_flow_nesting.py`, 24 tests, 18 of
-  which fail on `9b8b511` (`main` with #84): eight because composing goes on to a character no token
-  can start, lines inside the collection at flow level 21; four because the CLI accepts chains 98
-  deep (`lint`: `document root is not a mapping`; `calibrate`: an invalid labels file) or refuses
+  ships nest at most 2 flow levels. Tests: `tests/cli/test_yaml_flow_nesting.py`, 28 tests, 22 of
+  which fail on `9b8b511` (`main` with #84): twelve because composing goes on to a character no
+  token can start, lines inside the collection at flow level 21 (lists, maps, both mixed, inside
+  block maps, and with a tag or an anchor before the bracket); four because the CLI accepts chains
+  98 deep (`lint`: `document root is not a mapping`; `calibrate`: an invalid labels file) or refuses
   chains 320 deep at level 101 with A-52's message; five because 21 lists holding single pairs, or
   11 read from a stream, are accepted; one because `yaml.load_all` does not refuse. The other six
   pin what holds on both: every shape at 20 levels, the depth limit checked first, the repository's

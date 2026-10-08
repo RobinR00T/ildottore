@@ -67,6 +67,14 @@ CROSSING: dict[str, tuple[str, str, tuple[int, int]]] = {
     "lists": ("[" * (FLOW + 1) + "a", "]" * (FLOW + 1), (1, FLOW + 1)),
     "maps": ("{a: " * (FLOW + 1) + "b", "}" * (FLOW + 1), (1, 4 * FLOW + 1)),
     "lists and maps": ("[{a: " * 10 + "[a", "]" + "}]" * 10, (1, 5 * 10 + 1)),
+    # A tag or an anchor before the bracket: the collection starts at it, the bracket comes later
+    # (a check that looked for the bracket at the start would let these through: delta audit).
+    "tagged lists": ("[" + "!!seq [" * FLOW + "a", "]" * (FLOW + 1), (1, 2 + 7 * (FLOW - 1))),
+    "anchored lists": (
+        "[" + "".join(f"&a{i:02d} [" for i in range(FLOW)) + "a",
+        "]" * (FLOW + 1),
+        (1, 2 + 6 * (FLOW - 1)),
+    ),
     "inside block maps": (
         under_maps(10) + "[" * (FLOW + 1) + "a",
         "]" * (FLOW + 1) + "\n",
@@ -80,6 +88,8 @@ FURTHER = {
     "lists": "".join(f",\nz{i}" for i in range(5)) + ",\n@",
     "maps": "".join(f",\nz{i}: 1" for i in range(5)) + ",\n@: 1",
     "lists and maps": "".join(f",\nz{i}" for i in range(5)) + ",\n@",
+    "tagged lists": "".join(f",\nz{i}" for i in range(5)) + ",\n@",
+    "anchored lists": "".join(f",\nz{i}" for i in range(5)) + ",\n@",
     "inside block maps": "".join(f",\n{_PAD}z{i}" for i in range(5)) + f",\n{_PAD}@",
 }
 
@@ -140,15 +150,17 @@ def test_a_single_pair_in_a_flow_list_is_no_level_of_its_own(
 
 
 def test_read_from_a_stream_every_flow_collection_counts() -> None:
-    """A stream gives no text to look at, so a single pair counts as a level there: 11 lists that
-    each hold one are refused, at the 11th list's map, as the first version did for every input. The
-    loaders of this tool read texts; this is ``SafeValueLoader`` used with a file object."""
+    """A stream gives no text to look at, so a single pair counts as a level there: lists that each
+    hold one alternate with maps from the first list, so the 11th list opens level 21 and is refused
+    at its ``[``, as the first version did for every input (the message still says brackets or
+    braces). The loaders of this tool read texts; this is ``SafeValueLoader`` with a file object."""
 
     lists = "[k: " * 11 + "x" + "]" * 11
     with pytest.raises(yaml.YAMLError) as caught:
         yaml.load(io.StringIO(lists), Loader=safe_yaml.SafeValueLoader)  # noqa: S506 - safe loader
 
     assert caught.value.problem == FLOW_TOO_DEEP  # type: ignore[attr-defined]
+    assert caught.value.problem_mark.column == 4 * 10  # type: ignore[attr-defined]
     at_limit = io.StringIO("[" * FLOW + "]" * FLOW)
     assert yaml.load(at_limit, Loader=safe_yaml.SafeValueLoader)  # noqa: S506 - safe loader
 

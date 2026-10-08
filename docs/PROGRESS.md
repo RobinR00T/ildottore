@@ -15,7 +15,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   levels. Converting the depth tests to block style uncovered that three alias-depth tests of #61
   had, since #84, passed for the wrong reason (their anchors were written 101 deep, so they were
   refused as written): fixed, and they now assert their written nesting. Also splits two glued
-  bullets (OD-33, from #84; a `Tests:` bullet, from #77). 18 of the 24 new tests fail on `9b8b511`;
+  bullets (OD-33, from #84; a `Tests:` bullet, from #77). 22 of the 28 new tests fail on `9b8b511`;
   nine mutants killed. To merge after #76, as agreed with its session.
 
 ## State, 2026-10-07 (evening): spec values JSON cannot hold, and bounded integer flags
