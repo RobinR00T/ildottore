@@ -37,6 +37,15 @@ document: integers that differ by a multiple of ``sys.hash_info.modulus`` share 
 dict of a mapping of them is built in time that grows with the square of their count, and 36,320 of
 them, a 1 MiB spec, took the linter 24 s. Keys that are text, dates or bytes hash with a key Python
 draws at random for each process.
+
+A list or a map written inside :data:`MAX_DEPTH` others is refused where it starts, before it is
+composed, as a document too deep. PyYAML's pure-Python scanner keeps one possible simple key per
+open flow level and walks them all on every token, so the depth measured after composition came
+after a cost that grows with the levels open: a 198 KB list of chains of ``[`` 320 deep was
+composed whole, 3 to 7 times what as many flat texts take (depending on the machine's load),
+before it was refused (pre-commit audit of the construction-cost fix, 2026-10-07). A text or an
+alias opens no level and is not refused here. Under the limit the cost stays: chains of ``[``
+close to 100 deep still take a few times what flat texts do.
 """
 
 from __future__ import annotations
@@ -77,6 +86,9 @@ _TOO_LARGE = (
     f"a text as one node per {_CHARS_PER_NODE} characters)"
 )
 _CANNOT_BUILD = "cannot build this value (an invalid date, number or tag)"
+_TOO_DEEP = "document is nested too deeply"
+#: The events that open a level, in the composer and, in flow style, in the scanner.
+_OPENS_A_LEVEL = (yaml.SequenceStartEvent, yaml.MappingStartEvent)
 _NUMBER_TOO_LONG = (
     f"cannot build this value (a number written in over {MAX_NUMBER_CHARS} characters)"
 )
@@ -99,10 +111,10 @@ class SafeValueLoader(yaml.SafeLoader):
 
     It also refuses a key written twice in one mapping (``flatten_mapping``), as a
     ``ConstructorError`` with both positions and no value, and stops composing a document once
-    the nodes written in it pass :data:`MAX_NODES` or a tag passes ``_MAX_TAG_CHARS``
-    (``compose_node``). It refuses there too, before anything is built, a number written in more
-    than :data:`MAX_NUMBER_CHARS` characters and the key that takes the document past
-    :data:`MAX_NUMBER_KEYS` keys that are numbers.
+    the nodes written in it pass :data:`MAX_NODES`, a tag passes ``_MAX_TAG_CHARS`` or a list or a
+    map is written inside :data:`MAX_DEPTH` others (``compose_node``). It refuses there too,
+    before anything is built, a number written in more than :data:`MAX_NUMBER_CHARS` characters
+    and the key that takes the document past :data:`MAX_NUMBER_KEYS` keys that are numbers.
     """
 
     def construct_object(self, node: yaml.Node, deep: bool = False) -> Any:
@@ -124,6 +136,8 @@ class SafeValueLoader(yaml.SafeLoader):
         self._alias_keys: dict[tuple[yaml.Node, int], yaml.Mark] = {}
         # The weight of the nodes composed so far, each counted once where it is written.
         self._composed = 0
+        # The lists and maps open around the node being composed, as written.
+        self._open = 0
         # The keys that are numbers composed so far, and those each mapping holds, merges included.
         self._number_keys = 0
         self._numbers_held: dict[yaml.Node, int] = {}
@@ -143,8 +157,23 @@ class SafeValueLoader(yaml.SafeLoader):
             # nodes of a 100,000-character prefix held 187 MB, and PyYAML's refusal quoted the
             # whole tag (delta audit). Refused at the first one, without quoting it.
             raise _refusal(event.start_mark, _TAG_TOO_LONG)
-        # PyYAML returns a node here every time; its type stub says ``Node | None``.
-        node = cast("yaml.Node", super().compose_node(parent, index))
+        opens = isinstance(event, _OPENS_A_LEVEL)
+        if opens:
+            if self._open >= MAX_DEPTH:
+                # The scanner walks one possible key per open flow level on every token, so the
+                # nesting written was paid for before ``check_expanded`` measured it: a 198 KB
+                # list of chains 320 deep took 3 to 7 times what as many flat texts take (audit of
+                # the construction-cost fix). Written depth is at most the expanded one, so where
+                # that measure runs this refuses earlier only what it refuses, at the first list or
+                # map written past the limit (the measure names the deepest branch).
+                raise _refusal(event.start_mark, _TOO_DEEP)
+            self._open += 1
+        try:
+            # PyYAML returns a node here every time; its type stub says ``Node | None``.
+            node = cast("yaml.Node", super().compose_node(parent, index))
+        finally:
+            if opens:
+                self._open -= 1
         # The value expanded weighs at least what is written, and an alias at least what it
         # names, so the rest of a document is not composed once that passes the cap: a 3 MB list
         # of plain texts took 785 MB to compose before its measure refused it (pre-commit audit),
@@ -262,7 +291,7 @@ def check_expanded(root: yaml.Node) -> None:
         node = root
         for _ in range(MAX_DEPTH):
             node = max(_children(node), key=depth.__getitem__)
-        raise _refusal(node.start_mark, "document is nested too deeply")
+        raise _refusal(node.start_mark, _TOO_DEEP)
     if size[root] > MAX_NODES:
         # Where the size crosses the cap: down the first branch over it, to the node none of whose
         # children is, such as the anchor whose aliases double it past the cap.
@@ -311,9 +340,7 @@ def safe_load(text: str) -> Any:
             return None
         check_expanded(node)
         return loader.construct_document(node)  # type: ignore[no-untyped-call,unused-ignore]
-    except RecursionError as exc:  # hundreds of nested levels: an error, not a traceback
-        raise yaml.composer.ComposerError(
-            None, None, "document is nested too deeply", None
-        ) from exc
+    except RecursionError as exc:  # a caller with little stack left: an error, not a traceback
+        raise yaml.composer.ComposerError(None, None, _TOO_DEEP, None) from exc
     finally:
         loader.dispose()  # type: ignore[no-untyped-call,unused-ignore]
