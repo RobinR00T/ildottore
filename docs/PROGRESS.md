@@ -40,6 +40,100 @@ The carryover ledger. Every agent session updates this so context survives even 
   keeping the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without
   having claimed them, so it has to renumber.
 
+## State, 2026-10-07 (afternoon): YAML construction cost bounded under the size cap
+
+- Closes the construction costs left open just below. On `fix/yaml-construction-cost`, stacked on
+  `fix/yaml-alias-expansion-cap` (`982bfe4`): under the size cap, a base-60 integer (`1:59:59...`)
+  is built in time quadratic in its length, and integer keys that share one hash make a mapping
+  quadratic. A 1 MiB spec took `lint` 55 s and 24 s; `run --dry-run` accepted a 450 KB and a 1.3 MB
+  target after 37 s and 247 s, having parsed each four times (load average 6 to 10 on 15 cores).
+  Every loader now refuses, as it composes and before anything is built, a number written in more
+  than 1,000 characters and the key that takes a document past 1,000 keys that are numbers (a merged
+  key counted in each mapping it is merged into), in 1 to 1.5 s for each of those files; `run` and
+  `fingerprint` parse a target file once, so a piped target (`-t /dev/stdin`) works. Clauses A-41
+  (u01) and A-42 (u12). 112 of the 126 new tests fail on `982bfe4`. Twenty-seven distinct mutants of
+  the fix are all killed, among them the eight the audits found surviving. A first version counted
+  the keys only once the whole file was composed: refused, but the 1.3 MB target still took 3 to 11
+  s and its timing test was unstable on a loaded machine; counting each key as it is composed stops
+  at the 1,001st. The pre-commit audit (three auditors on a frozen copy) found no way past either
+  limit (40,000 keys sharing one hash refused in under a second in twenty forms) and no extra parse
+  on any path but a file named twice and the judge file of `fleet --run --judge`; what it found in
+  the tests and the docs is closed: shapes no test pinned (a number in a list, in flow or at the
+  root; keys in a flow mapping; a merge passed on), a resume, a judge file and a piped target no
+  test watched, and parse counts, timings and wording wider than measured. It also found a
+  pre-existing cost, left as its own task: flow nesting makes PyYAML's scanner pay per open level,
+  so 198 KB nested 95 deep costs 3 to 4 times a flat file, and one past the depth cap is refused
+  only after it is all composed. The pre-merge audit built main, #71 and this branch together:
+  conflicts only in the docs, every gate green, 2,489 tests; its four findings (tests for every
+  notation in every position, and three sentences) are closed. Left open: a file named twice is
+  parsed once per name (`-t X --judge X`), and `fleet --run --judge` parses its judge file twice; a
+  scope with a `checksum:` line is still parsed twice, by design (the second parse is the coverage
+  check); an operator file of plain text still costs its composition, 3 s for 6.3 MB under the size
+  cap; the byte cap is `fix/operator-file-read-cap`.
+
+## State, 2026-10-07 (afternoon): a spec key that is not a string
+
+- On `fix/lint-nonstring-arg-key` (clause A-44 in u02, `tests/registry/test_non_string_keys.py`):
+  YAML builds `5:` as an int, a bare `on:` as a bool, `~:` as null and `2026-10-07:` as a date,
+  and in a fixture's tool-call arguments such a key made `dottore lint` a traceback with exit 1
+  (the offline stub's `key.lower()`). Every mapping of a spec is now checked before the JSON
+  schema (not the keys of an `!!omap` or `!!pairs` entry, nor `!!set` members), and a key that is
+  not a string is a `SCHEMA` finding at its path. Swept over the 41 fixture tool calls with
+  arguments in the 75 shipped specs: on `0501752` an int key added after the others crashed lint
+  in 5 and passed unreported in 36 (6 and 35 added first); now all 41 are a finding. Keys of two
+  types in one mapping also crashed the sort of the schema errors, and a `!!binary` key passed
+  lint. `run` now refuses such a spec (exit 3, as any spec that does not load) where it used to
+  run it. Found by the session on `fix/huge-int-repr` (A-40, #81), which merged first: its check
+  runs first, this one after it, and the branch of this one for an int too long to write out was
+  dropped as unreachable. 76 of the 77 new tests fail on `0501752`. The pre-commit and delta
+  audits found no high or medium defect; the first listed pre-existing gaps between the lint stub
+  and the real `tool_call` evaluator (a confirm flag or forbidden key inside a list, an injection
+  in a nested value, `arguments` as a JSON string), left for a separate task.
+
+## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
+
+- Found by the delta audit of PR #68 and fixed on `fix/sv-probe-spend-on-stop`: on `run --resume
+  <id> -sV`, only the request ceiling wrote what the probe pass had sent to the run store. A probe
+  answered 503 three times left the store at 20 while the stub had served 23 (reproduced on main
+  `0501752`); a 401, a 200 that is not JSON, Ctrl-C, SIGTERM and a stop after a pass that
+  succeeded lost the pass too. The CLI now owns the pass's ledger and records prior spend plus the
+  pass as soon as it ends, success included (the store's per-axis maximum keeps each probe counted
+  once), and says the count on stderr when an error or a signal stops the pass. Three audit rounds
+  found signal windows: the write after a successful pass sat outside the handlers (a real SIGINT
+  a few milliseconds after the last probe lost all 17 in 2 of 16 tries; moved inside), and a
+  handler's own write has nothing after it (2 of 41 tries just after a 503 stop). Writing again on
+  that signal was built and withdrawn (on a locked store, one Ctrl-C after a pass that succeeded
+  waited 15.1 s instead of 9.8 for a record lost anyway); the window is written in the contract.
+  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not changed: a fresh
+  run's pass and a `--resume-unverified` run with no recorded spend record nothing; a signal during
+  a handler's write, a SIGKILL, or a write that fails (a warning) still leave the record low. Left open as a follow-up: the adapters
+  are built with no retries of their own, so the error that stops a probe pass, and an attack
+  attempt's evidence, say `exhausted 1 attempt(s)` after three sends. Merged in a scratch
+  repository with PR #66 and with PR #68, code, u12 and the index merge cleanly (only
+  `CHANGELOG.md` and `docs/PROGRESS.md` conflict) and the merged trees pass both PRs' tests and
+  these.
+
+## State, 2026-10-07 (afternoon): every YAML loader capped by expanded size
+
+- Closes the second item left open below. On `fix/yaml-alias-expansion-cap`, on main after #61: the
+  scope, target, fleet and labels files and the policy and signature packs had the depth limit but
+  no size cap with aliases expanded, which only the spec loader had (SEC-09). An 835-byte labels
+  file of doubling anchors ran `calibrate` past 25 s and 1.7 GB, and a `<<` merging the previous map
+  twice doubles the work inside PyYAML itself. All of them now share the spec loader's cap (100,000
+  nodes, a text one node per 64 characters) through one measure, `safe_yaml.check_expanded`: depth
+  and size in one pass over the node graph, each size saturating past the cap, too deep before too
+  large, refused at the node where the value crosses the limit, in 0.4 s and 71 MB. Two audits found
+  holes in the fix itself, all closed: unsaturated, the measure's own memory grew with the square of
+  an anchor chain; measuring only a fully composed document let a 3 MB file of plain texts cost 785
+  MB, and a list of aliases, uncounted, was still composed whole; and a `%TAG` prefix copied into
+  every node's tag held 187 MB for 1,000 nodes. Composition now stops at the cap (an alias counting
+  what it names; 1.4 s and 134 MB for that file) and a tag past 256 characters is refused. Clause
+  A-37 (u01). 34 of the 38 new tests fail on `0501752`. Twenty-three mutants of the fix are all
+  killed. Left open as their own tasks: construction costs under the cap (base-60 integers,
+  colliding integer keys, the target loaded four times per `run`; taken by the session "Bound YAML
+  construction cost under the node cap", stacked on this branch), a huge integer that crashes
+  `lint`, and no byte limit on the operator's files.
+
 ## State, 2026-10-07 (afternoon): a number too long to write out
 
 - On `fix/huge-int-repr` (`tests/cli/test_huge_numbers.py`, clause A-40 in u02): an int past
