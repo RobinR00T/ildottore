@@ -385,14 +385,14 @@ def _lint(tmp_path: Path, spec: str) -> Case:
 #: PyYAML's problem text is cut as it is, not as a repr.
 ALIAS = "found undefined alias " + repr(BIG)
 ALIAS_CUT = f"{ALIAS[:300]}... ({len(ALIAS)} characters)"
-#: Three values of 300,000 characters fit one file under the cap; three of 400,000 do not.
 #: Long values for a run store's ids and an endpoint's path. A target or scope id longer than
 #: 128 characters is refused when its file is loaded (A-57), so no file brings one this long.
 ENTRY = "c" * 300_000
 NAME = "d" * 300_000
 #: An id and an identity name of 128 characters, as A-57 allows, that repr writes as
-#: `\U000e0001` each: 1,282 characters, so a refusal that quotes them still cuts them (audit of
-#: A-57: with these cases gone, 13 of the 15 sites that quote an id survived as `repr`).
+#: `\U000e0001` and `\U000e0020` each: 1,282 characters, so a refusal that quotes them still
+#: cuts them (audits of A-57: with these cases gone, 14 of the 19 sites that quote a target id
+#: or an identity name survived as `repr`).
 TAG_ID = "\U000e0001" * 128
 TAG_NAME = "\U000e0020" * 128
 DUPLICATE_IDENTITY = (
@@ -618,10 +618,11 @@ def test_a_refusal_quotes_a_value_of_the_file_up_to_300_characters(
     assert all(str(path) in line for path in case.files), line
     assert all(cut in line for cut in case.cuts), line
     assert "REDACTED" not in line, line
-    # A cut keeps 29 of an id's 128 escapes: 30 in a row anywhere is an id quoted whole, which
-    # a second quote of the same id cut on the line would hide (audit of A-57).
-    output = result.stdout + result.stderr
-    assert all(f"{tag!r}"[1:-1] * 30 not in output for tag in (TAG_ID[0], TAG_NAME[0])), line
+    # A cut keeps the first 299 characters of an id's repr after its quote: the first 300,
+    # anywhere in the output with Rich's line folding undone, are an id quoted whole, which a
+    # second quote of the same id, cut, on the line would hide (audits of A-57).
+    flat = (result.stdout + result.stderr).replace("\n", "")
+    assert all(repr(tag)[1:301] not in flat for tag in (TAG_ID, TAG_NAME)), line
 
 
 #: A file that is not UTF-8, as each command reads it: one byte 0xff after a valid first line.
