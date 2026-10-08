@@ -45,6 +45,27 @@ The carryover ledger. Every agent session updates this so context survives even 
   order: hosted APIs (the owner's keys and models), then a deployed application, which needs
   its operator's seeding (`examples/target.app.yaml`).
 
+## State, 2026-10-07 (afternoon): a refusal that named a flag `dottore run` does not have
+
+- Found by the pre-commit audit of `fix/halt-reason-figures` and fixed on
+  `fix/resume-wall-flag-name`: the `run --resume` refusal for a campaign that already spent its
+  wall-clock ceiling told the operator to raise `--budget-wall-s`, which `dottore run` answers with
+  "No such option"; the flag is `--budget-wall`. `tests/cli/test_resume_integrity.py` follows the
+  refusal's advice through the CLI (the flags it names are read from `dottore run`'s parameters, and
+  raising them lets the resume through), and `tests/cli/test_flags.py` fails on a long option (`--`,
+  not right after a letter, a digit, `_` or `-`, then a lowercase ASCII letter, read up to the first
+  character that is not a letter, a digit, `_` or `-`, so `--budget-wall_s` is not `--budget-wall`)
+  that a string literal under `src/ildottore` (docstrings aside) or a rendered help text names and
+  no command accepts: on `0501752` that was this flag and nothing else. Contract u12 §7 says so,
+  with no new clause number. Those two tests fail on `0501752` (a third checks that the scan catches
+  a refusal like this one and leaves docstrings out), and a message that names `--budget-requests`
+  instead, or no flag, fails the first. The MANUAL, USAGE and the man page now name the flag that
+  lifts the refusal. Left open as its own task: on a resume with `-sV`, the request-ceiling refusal
+  runs before the planning-mode check, so on a campaign halted without `-sV` its advice to raise
+  `--budget-requests` leads to a second refusal (only dropping `-sV` works there). Noted: the error
+  masker can mask a `--flag=VALUE` whose value is long, such as `--budget-wall=SECONDS`, as a
+  high-entropy value (`--budget-wall=60` is printed as written); no message writes that form.
+
 ## State, 2026-10-07 (night): ids bounded at 128 characters (OD-27 decided)
 
 - On `fix/operator-id-length`, stacked on `fix/operator-file-quoted-values` (#86),
