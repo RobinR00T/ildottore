@@ -514,7 +514,11 @@ expanded to its four files first), two target files with the same id, and two re
 that would write the same file (`two report formats would write the same file: <path>`). That
 last check compares the resolved paths case-insensitively and after Unicode normalization,
 because the macOS default volume treats `R.json` and `r.json`, or `café` composed (NFC) and
-decomposed (NFD), as one name; `-oJ out/R.json -oH out/r.json` is refused.
+decomposed (NFD), as one name; `-oJ out/R.json -oH out/r.json` is refused. The spec paths are
+checked the same way: a spec file that fails to load, and a selected spec whose regex does not
+compile (a `regex_absence` or `regex_presence` pattern, a `step_arg_patterns` entry, whose
+evaluator could never decide), refuse the run (exit 3) naming them (five at most, then how many
+more) and pointing at `dottore lint`; `--exclude <id>` leaves such a spec out and runs the rest.
 
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an
@@ -692,7 +696,17 @@ check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no u
 `patterns`, and a `tool_call` allowlist (`patterns`, the tools the agent is authorized to call)
 that names a tool the setup marks `external: true`. An allowlist name the setup does not declare
 (when it declares tools) is the same code as a warning, naming the closest declared tool when
-one is close.
+one is close. A regex the spec writes (a `regex_absence` or `regex_presence` pattern, a
+`tool_sequence` `step_arg_patterns` entry) that does not compile is the same code as an error,
+whatever the engine's reason (a repetition past its limit and groups nested a few hundred deep
+included): the message names the field (and the step, for a `step_arg_patterns` entry), the
+pattern and the reason, quoted and cut at 120 of their own characters, at most 10 per spec, and
+that spec's fixtures are not proved until it compiles, and `dottore run` refuses a selected spec
+that has such a pattern before sending anything. The engine parses groups recursively, so the
+nesting limit moves a little with the stack: lint accepts about 486 nested groups on Python 3.14
+and a run's check a level or two more, and in a run of more than 512 patterns an evaluator can
+stop a few levels short, ending a spec nested 482 to 487 deep `inconclusive` with no reason in
+the report. Nothing real nests that deep.
 
 ### `dottore describe`, one spec's detail card
 
@@ -1084,7 +1098,9 @@ evaluators:
 ```
 
 Steps with no declared constraint keep matching on name alone. A malformed regex yields
-`inconclusive` rather than quietly falling back to name-only matching.
+`inconclusive` rather than quietly falling back to name-only matching, and `dottore lint`
+reports it (`EVALUATOR_MISCONFIGURED`), whatever step the entry pins, including one the chain
+does not name; `dottore run` refuses the spec before sending.
 
 **Judge hardening.** The judge is assumed to be attackable. Each judge call carries a
 per-call random tripwire token; the judge is flagged **compromised** if it echoes the
@@ -1245,6 +1261,7 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | Symptom | Cause / fix |
 |---------|-------------|
 | `target(s) not authorized by the scope` (exit 3) | The bracket says which: `endpoint '<url>' not on allowlist for '<id>'` (the target's endpoint host/path is not in that target's `endpoints`) or `target '<id>' not in scope` (the id is not among the scope's `targets`). Add it deliberately. `endpoint not allowed by scope` is the adapter's second check, met only if the first was bypassed. |
+| `selected spec(s) write a regex that does not compile` (exit 3) | A spec's `regex_absence` or `regex_presence` pattern, or a `step_arg_patterns` entry, is not a regex the engine compiles, so its evaluator could never decide. `dottore lint` lists them with the engine's reason (up to 10 per spec); fix it, or run the rest with `--exclude <id>`. |
 | Live findings all inconclusive | No `--judge`, so `semantic_judge` abstains. Pass a judge target; deterministic evaluators still fire. |
 | A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all. Selected alone they end in `nothing would be sent` (exit 3), whose message says so: "A spec blocked by policy needs a policy pack that enables it, and the CLI cannot load one today (open decision), so it cannot run from `dottore`." |
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
