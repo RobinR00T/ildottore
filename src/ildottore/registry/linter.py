@@ -54,6 +54,7 @@ from .fixtures_engine import DEFAULT_STUB_TABLE, StubEvaluator, evaluate_fixture
 from .loader import load_paths
 from .pack import FLAGGED_FAMILIES, LoadedPack
 from .registry import Registry
+from .schema import encodes_utf8
 
 # Evaluator types with no offline stub in W1. A spec relying solely on these can't be
 # fixtures-proved yet, so the linter warns (not errors) rather than false-flagging it.
@@ -724,7 +725,9 @@ def _check_suite_refs(pack: LoadedPack, registry: Registry) -> list[LintError]:
                         message=(
                             f"suite {suite.id!r} references unknown spec id {entry.spec_id!r}"
                         ),
-                        spec_id=entry.spec_id,
+                        # The header prints it; half a character made that a traceback, as
+                        # for a spec's own id (pre-merge audit of A-54). The message has its repr.
+                        spec_id=entry.spec_id if encodes_utf8(entry.spec_id) else None,
                         path=str(pack.root),
                     )
                 )

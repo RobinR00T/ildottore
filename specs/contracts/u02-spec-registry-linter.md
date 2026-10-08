@@ -55,7 +55,8 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   operator's files (u01 A-37), which had no size cap; a key written twice in one mapping is a
   `PARSE_ERROR` too, found while the document is built (since 2026-10-06; a `<<` merge can still
   be overridden); a mapping key that is not a string is a `SCHEMA` finding at its path, found
-  before the JSON schema runs (since 2026-10-07, A-44); a YAML error gives reason and position,
+  before the JSON schema runs (since 2026-10-07, A-44), as is a value JSON cannot hold
+  (A-54); a YAML error gives reason and position,
   never a quoted line; at most 20
   schema errors are listed per file, each JSON-schema message cut at 300 characters, and a
   pydantic error names field and reason, never the value.)
@@ -316,8 +317,8 @@ before; the spec id and the paths of other schema errors are printed as written,
 container YAML shares through an alias is reported once (where the walk first meets it), and the
 value under such a key is not walked. A key that is an int too long to write out never reaches this
 check: A-40 runs first and reports it in its own words. The keys of an `!!omap` or `!!pairs` entry,
-and the members of a `!!set`, are not reported: none of them exists in JSON, and in a field the
-schema types they fail it. That gap is written here and not pinned by a test.
+and the members of a `!!set`, are not this check's: the entry and the set are A-54's findings,
+once the keys are strings.
 
 `run`, `describe`, `coverage` and `registry` load through the same path, so they leave such a spec
 out as they do any spec that does not load (`run` refuses the campaign, exit 3, through the CLI's
@@ -332,6 +333,62 @@ built in code and handed to `lint_packs`, where pydantic keeps a nested key as i
 live target sends are strings (they come from JSON). Checked by
 `tests/registry/test_non_string_keys.py` (77 tests, 76 failing on `0501752`; the other checks that
 the sweep of the shipped fixture calls is not empty).
+
+**A-54 A spec's values are JSON values, and one that is not is a finding where it is (added
+2026-10-07).** A spec is a JSON document written in YAML, but YAML's safe loader builds more than
+JSON holds: an unquoted `2026-01-01` is a `datetime.date`, `2026-01-01T10:00:00Z` a `datetime`,
+`!!set` a `set`, each entry of `!!omap` and `!!pairs` a `tuple`, `!!binary` `bytes`, `.nan`, `.inf`
+and `-.inf` floats that no JSON number writes, and an escape between U+D800 and U+DFFF half a
+character (a lone surrogate) that UTF-8 cannot write; PyYAML builds even a pair of such escapes, an
+emoji, as two halves. The JSON schema leaves a tool's `returns`, the objects of `documents` and
+`memory_seed` and a fixture's tool-call arguments free-form, so `returns: 2026-01-01` in
+`PI-INDIRECT-TOOL-001` gave `lint OK`, and `dottore run --dry-run` (and `--estimate`, and the run)
+then exited 1 with `TypeError: Object of type date is not JSON serializable`, raised where the
+in-band setup turned the value into JSON (`core/setup_delivery._as_text`): a traceback, and the code
+this tool uses for "findings below the threshold". `returns: !!set {plain: null}`, a timestamp and
+`!!binary` did the same; half a character passed the dry run and stopped the run with exit 3 where
+the request was encoded, naming no file; a pair, NaN and an infinity ran, written into the scene as
+`[["a", 1]]`, `NaN` and `Infinity`, which the spec did not write. Found on 2026-10-07 by the
+pre-commit audit of `fix/huge-int-repr` (finding F6), which checked that none of the 105 shipped
+YAML files holds such a value; half a character was found by the pre-commit audit of this clause.
+
+So the loader walks every value of a spec before the JSON schema (after the A-40 check, which
+reports a number too long to write out, a key included, and the A-44 check of keys, each of which
+returns first), and keeps what JSON holds (a mapping, a list, a string that UTF-8 can write, an int,
+a finite float, a boolean, null), reporting anything else as a `SCHEMA` finding at its path that
+says what it is, what YAML builds it from and what to write instead: `setup/tools/0/returns: a date
+(YAML reads an unquoted 2026-01-01 as one), which JSON cannot hold; write it in quotes, without a
+tag`. A string key holding half a character is reported at its own path, and a spec `id`, or a
+suite's reference to one, holding one is not attached to the findings (the file names them):
+printing the finding header raised `UnicodeEncodeError`, a lint traceback (delta and pre-merge
+audits). A character outside the basic plane written as a pair of escapes, as `json.dumps` writes it
+by default, is refused too, since PyYAML builds two halves; pydantic already refused it in the
+fields it types, and joining such pairs at load, which would accept it, is not done here. A value
+built in code is named by its type (`a value of type Decimal`). The schema is not run on that file,
+and its other findings come once the values are fixed; a value in a field the schema types (`name:
+2026-01-01`) gets this message instead of the schema's `datetime.date(2026, 1, 1) is not of type
+'string'`. At most 20 are listed and the rest counted; a set or a pair is the finding and what it
+holds is not walked; a container YAML shares through an alias is entered once (where the walk first
+meets it), while a scalar aliased in two places is reported in each; the path is cut at 300
+characters, and a part of it that is not printable text is written as its `repr` (a key holding an
+escape sequence or a newline cannot forge a finding line in this check's messages, and a key that is
+not text never breaks the path; A-40's message prints the keys on its path as written, so a key
+holding half a character or a newline on the way to a number too long to write out still breaks or
+forges a line there, until A-40's own follow-up lands). The walk holds one iterator per open
+container and the ids of the containers entered: on specs of about 90,000 nodes it peaked at 3.1 MiB
+with 30,000 containers and 8.4 MiB with 89,000, and added 44 to 52 ms to the check at a load average
+of 7 (a first version that kept a link to its parent per node peaked at 10.4 and 16.4 MiB).
+
+A key that is not a string is not this clause's: it is A-44's finding, reported before this check
+runs (a date key, or keys of two types in one mapping, crashed the run: `json.dumps` takes no date
+key, and with `sort_keys=True` cannot order keys of two types). `run`, `describe`, `coverage`,
+`registry` and `render-media` load through the same path, so they leave such a spec out as they do
+any spec that does not load (`run` refuses the campaign with exit 3, one `error:` line naming the
+file). That is a change for a pair, NaN or an infinity, which ran and are refused now. None of the
+129 YAML files of the repository that load is flagged. Checked by
+`tests/registry/test_non_json_values.py` (66 tests, 65 failing on `c3e70d8`, 19 of them because the
+walk they call is not there; the one that passes checks that the shipped battery still lints clean,
+and another pins that no shipped spec holds such a value).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).

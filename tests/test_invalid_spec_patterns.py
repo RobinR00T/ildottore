@@ -136,17 +136,27 @@ def _spec(where: str, pattern: str, spec_id: str = _BAD_ID) -> dict[str, Any]:
     return spec
 
 
-def _tree(tmp_path: Path, *specs: dict[str, Any], raw: bool = False) -> Path:
+#: A JSON escape pair for a character above U+FFFF, which the YAML reader would take as two
+#: lone surrogates, and a spec may not hold one (A-54).
+_SURROGATE_PAIR = re.compile(r"\\u(d[89ab][0-9a-f]{2})\\u(d[c-f][0-9a-f]{2})")
+
+
+def _join_pair(match: re.Match[str]) -> str:
+    high, low = int(match[1], 16), int(match[2], 16)
+    return chr(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+
+
+def _tree(tmp_path: Path, *specs: dict[str, Any]) -> Path:
     """Write each spec as a loose file (JSON is YAML) and return the directory.
 
-    ``raw`` writes characters outside ASCII as themselves rather than as JSON escapes: the YAML
-    reader takes an escaped character above U+FFFF as two lone surrogates.
+    A character above U+FFFF is written as itself, not as the JSON escape pair the YAML reader
+    takes as two lone surrogates.
     """
 
     directory = tmp_path / "specs"
     directory.mkdir()
     for spec in specs:
-        text = json.dumps(spec, ensure_ascii=not raw)
+        text = _SURROGATE_PAIR.sub(_join_pair, json.dumps(spec))
         (directory / f"{spec['id']}.yaml").write_text(text, encoding="utf-8")
     return directory
 
@@ -363,7 +373,7 @@ def test_a_long_pattern_or_reason_is_cut(tmp_path: Path, step: str, pattern: str
 
     spec = _spec("step_arg_patterns", _VALID["step_arg_patterns"])
     spec["evaluators"][0]["step_arg_patterns"] = {step: pattern}
-    directory = _tree(tmp_path, spec, raw=True)
+    directory = _tree(tmp_path, spec)
 
     assert [code for code, _ in _messages(directory)] == ["EVALUATOR_MISCONFIGURED"]
     output = _lint(directory)
