@@ -272,14 +272,14 @@ with 5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058
 owner's decisions of 2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and
 a labels file through a pipe worked and still do, and a named pipe with no writer still blocks,
 as before. A target file could not be a pipe while `run` read it four times and `fingerprint`
-three; since #77 parses it once (A-42), `run -t <(...)`, `run --judge <(...)` and `fingerprint
-<(...)` read it through a pipe as well. An anchor used many times is A-37's, not this clause's:
-this read cap and the listing do not bound it (a 30,852-byte scope of aliases peaked at 1,066
-MiB in validation before A-37 was in, pre-merge audit), and A-37's node cap refuses that file.
-Not covered (OD-26): the report JSON that `dottore diff` and `calibrate` read, and the evidence
-artifacts `replay` and `run --resume` read; and an error outside the validation listing can
-still quote a value of the file whole (an unknown target `type`, a duplicate target id, an
-undefined YAML alias), now bounded by the 1 MiB read. Checks:
+three; since #77 parses it once (A-42), `run -t <(...)` and `fingerprint <(...)` read it through
+a pipe as well (a `--judge <(...)` file already could: it was read once). An anchor used many
+times is A-37's, not this clause's: this read cap and the listing do not bound it (a 30,852-byte
+scope of aliases peaked at 1,066 MiB in validation before A-37 was in, pre-merge audit), and
+A-37's node cap refuses that file. Not covered (OD-26): the report JSON that `dottore diff` and
+`calibrate` read, and the evidence artifacts `replay` and `run --resume` read; and an error
+outside the validation listing can still quote a value of the file whole (an unknown target
+`type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Checks:
 `tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after a growth, a
 pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each loader, the
 `fleet` boundary, each target and the judge measured one at a time, the listing and its cut, the
