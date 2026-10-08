@@ -370,7 +370,8 @@ line, which is meant to be copied exactly, is written whole; so is a target's en
 run that has started prints it (the plan, the reports and the run store), and a labels spec id where
 `calibrate` lists the labels the report does not cover. A target or scope id and an identity name
 are bounded at 128 characters when their file is loaded since A-57 (OD-27), so a run prints at most
-that, and the id cases of this clause's table moved to A-57's test. A stdio `command` made of YAML
+that; the id cases of this clause's table use ids of 128 characters whose `repr` is 1,282
+(`\U000e0001` for each character), which a refusal still cuts. A stdio `command` made of YAML
 aliases is joined into one text wherever the target is authorized (`wiring.request_url_for`, the
 engine's gate included) and in that advice: 20,000 aliases of one 10 KB text, a 90 KB file, make a
 line of about 200 MB, 1.09 to 1.49 GB of resident memory and about 30 s (five measures; the times
@@ -407,36 +408,47 @@ user information quoted as `repr` quotes it): a short value quoted as before, an
 `repr` raised, verdicts in any case and with spaces, a stdio target real only with a command, a date
 key written as before. Of 76 mutants, one per site and one per fix of the audits, 74 are killed; the
 two that live are equivalent (they quote a fleet id, which the fleet's model holds to 64
-characters). These counts are A-51's own; A-57 then moved the cases of a long id to its test.
+characters). These counts were measured with ids of 300,000 to 1,000,000 characters, before A-57
+bounded them; A-57 changed those cases to ids of 128 characters whose `repr` still passes 300, and
+the 15 sites that quote an id are still killed as mutants.
 
 **A-57 A target or scope id, and an identity name, is at most 128 characters (added 2026-10-07,
 OD-27).** `policy.scope.MAX_ID_CHARS` (128) bounds a scope target's `id` and an identity's `name` in
 the scope model, so a longer one is a validation problem of the scope file (`targets.0.id: String
-should have at most 128 characters`, listed as A-43 lists them), and `cli.wiring.load_target`
-refuses a target file, or a `--judge` file, whose `id` is longer (`target file <path> 'id' is
-1,000,000 characters, over the 128-character limit`, the count with thousands separators so the
-redactor does not read it as a phone number), exit 3 in `run`, `fingerprint` and `fleet --judge`.
-A-51 cut such an id where a refusal quoted it, but a run that started wrote it whole: the
-`--dry-run` plan, the progress and `-sV` lines, the reports and the run store (the plan of an id of
-a million characters ran just over 1 MB, exit 0; the file is now refused, exit 3, on one line of a
-few hundred bytes with its path). A bound when the file is loaded (OD-27, decided 2026-10-07 by the
+should have at most 128 characters`, listed as A-43 lists them), and `cli.wiring._target_from`,
+which `load_target` and `read_target_file` share, refuses a target file, or a `--judge` file, whose
+`id` is longer (`target file <path> 'id' is 1,000,000 characters, over the 128-character limit`, the
+length and never the value), exit 3 in `run`, `fingerprint` and `fleet --judge`. The length is
+counted as Python counts a text, in code points. Before, such an id loaded and a run that started
+wrote it whole: the `--dry-run` plan, the `-sV` lines, the reports and the run store (the plan of an
+id of a million characters ran just over 1 MB, exit 0; the file is now refused, exit 3, on one line
+of a few hundred bytes with its path), and so did four messages of `run` that A-51 did not reach
+(`nothing would be sent: every selected spec is unrunnable on <id>`, the `-sV` probe ceiling refusal
+and its resume notice, `run on <id> did not complete`), which now print at most 128 characters or a
+`repr` of at most 1,282. A bound when the file is loaded (OD-27, decided 2026-10-07 by the
 implementer, the owner having left the choice to them) was chosen over cutting the id everywhere it
 is printed, which would leave reports without the id the scope names, and over leaving it. The
 figure is twice the 64 a fleet's ids are held to (they name files) and about six times the longest
 id in this repository's examples (21 characters); a fleet's ids keep their 64 characters and their
 pattern, and no pattern is imposed here, so an id with spaces or other characters loads as before.
-Since then A-51's quote of an id (a duplicated id or identity, the authorization refusal of `run`
-and `fingerprint`, the `--hardened` notice, the stdio and credential refusals, a `--judge` file's
-id) never meets one past 300 characters from a file: it stays for a caller that builds a longer id,
-and `authorize_target` is tested with one; the mutants of those sites are equivalent through the
-CLI. An endpoint, an `auth_ref` reference and a labels spec id stay unbounded, cut in refusals, and
-`calibrate` still lists the labels a report does not cover whole, as its normal output. Checks:
-`tests/cli/test_operator_id_length.py` (the figure; 128 characters load and 129 are refused, for a
-scope id, an identity name and a target id; the A-51 cases of a long id refused when their file is
+A-51's quote of an id still matters: an id of 128 characters can have a `repr` of 1,282 (U+E0001 is
+written `\U000e0001`), so A-51's cases of a long id use such ids, and its test checks that no id is
+quoted whole anywhere in the output, which a second, cut quote of the same id on the line would
+otherwise hide. Not covered: a spec id has a pattern and no length bound, and a run prints it whole
+(a spec id of 500,003 characters printed about 507 KB on a mock run, exit 0); `dottore diff` prints
+a report's target id whole when two reports disagree, a report being the tool's own output (OD-26)
+and one written before A-57 able to hold a longer id; a run stored with a longer id cannot be
+resumed, its target file being refused now; and an id may hold control characters, which reach the
+terminal as they are. Endpoints, `auth_ref` references and labels spec ids stay unbounded, cut in
+refusals, and `calibrate` still lists the labels a report does not cover whole, as its normal
+output. Checks: `tests/cli/test_operator_id_length.py` (the figure; 128 characters load and 129 are
+refused, for a scope id, an identity name and a target id; a long id refused when its file is
 loaded, through `run`, `run --judge`, `fingerprint` and `fleet --judge`, on one short line that
 names the file and never the value; an id of 128 characters runs and the plan names it), 9 of its 11
-tests failing without the bound; 5 mutants (each bound removed, `>=` for `>`, a limit of 64) killed,
-the control surviving.
+tests failing without the bound, and 5 mutants (each bound removed, `>=` for `>`, a limit of 64)
+killed; and A-51's cases in `tests/cli/test_operator_file_quoted_values.py`, where each of the 15
+sites that quote an id, written as `repr`, is a mutant killed (13 of them survived the whole suite
+when those cases were removed, as the audit of A-57 found). The control mutant survives both.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
@@ -463,7 +475,7 @@ the control surviving.
   and an identity name, refused when the file is loaded, with no pattern; endpoints, `auth_ref`
   references and labels spec ids stay unbounded and are cut in refusals. The question (from A-51): a
   target id was written whole wherever a run that had started printed it, the `--dry-run` plan, the
-  progress and `-sV` lines, the reports and the run store. The options were (a) a bound at load,
+  `-sV` lines, the reports and the run store. The options were (a) a bound at load,
   refusing files that loaded; (b) cutting the id everywhere it is printed, which leaves reports
   without the id the scope names; (c) leaving it.
 - **OD-33** fleet ids that differ only by case. **Decided 2026-10-07 by the conductor and

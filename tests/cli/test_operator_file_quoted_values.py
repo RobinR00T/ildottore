@@ -385,10 +385,22 @@ def _lint(tmp_path: Path, spec: str) -> Case:
 #: PyYAML's problem text is cut as it is, not as a repr.
 ALIAS = "found undefined alias " + repr(BIG)
 ALIAS_CUT = f"{ALIAS[:300]}... ({len(ALIAS)} characters)"
+#: Three values of 300,000 characters fit one file under the cap; three of 400,000 do not.
 #: Long values for a run store's ids and an endpoint's path. A target or scope id longer than
 #: 128 characters is refused when its file is loaded (A-57), so no file brings one this long.
 ENTRY = "c" * 300_000
 NAME = "d" * 300_000
+#: An id and an identity name of 128 characters, as A-57 allows, that repr writes as
+#: `\U000e0001` each: 1,282 characters, so a refusal that quotes them still cuts them (audit of
+#: A-57: with these cases gone, 13 of the 15 sites that quote an id survived as `repr`).
+TAG_ID = "\U000e0001" * 128
+TAG_NAME = "\U000e0020" * 128
+DUPLICATE_IDENTITY = (
+    ("default", "env://MOCK_KEY", None),
+    (TAG_NAME, "env://A", None),
+    (TAG_NAME, "env://B", None),
+)
+SHARED_CANARY = (("default", "env://A", "canary-1"), (TAG_NAME, "env://B", "canary-1"))
 
 #: Every refusal that quoted a value of the file whole on the base, built by its command.
 QUOTING: dict[str, Callable[[Path], Case]] = {
@@ -404,17 +416,45 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
     "target-mock-scenario": lambda t: _with(
         _run(t, TARGET + f"mock_scenario: {BIG}\n"), 0, "has invalid mock_scenario", cut_of(BIG)
     ),
+    "scope-duplicate-target-id": lambda t: _with(
+        _run(t, scope=SCOPE_HEAD + scope_entry(TAG_ID) + scope_entry(TAG_ID)),
+        1,
+        "more than once",
+        cut_of(TAG_ID),
+    ),
+    "scope-duplicate-identity": lambda t: _with(
+        _run(t, scope=SCOPE_HEAD + scope_entry(TAG_ID, DUPLICATE_IDENTITY)),
+        1,
+        "more than once",
+        cut_of(TAG_ID),
+        cut_of(TAG_NAME),
+    ),
+    "scope-shared-canary": lambda t: _with(
+        _run(t, scope=SCOPE_HEAD + scope_entry(TAG_ID, SHARED_CANARY)),
+        1,
+        "declares the canary of another identity",
+        cut_of(TAG_ID),
+        cut_of(TAG_NAME),
+    ),
     "scope-undefined-alias": lambda t: _with(
         _run(t, scope=f"version: *{BIG}\n"), 1, "found undefined alias", ALIAS_CUT
+    ),
+    "run-two-targets-one-id": lambda t: _run_two_targets(t),
+    "run-target-not-in-scope": lambda t: _with(
+        _run(t, f'id: "{TAG_ID}"\ntype: chatbot\n'),
+        None,
+        "not authorized by the scope",
+        cut_of(TAG_ID),
     ),
     "run-auth-ref-not-authorized": lambda t: _with(
         _run(
             t,
-            live_target(auth_ref="env://" + BIG),
-            SCOPE_HEAD + scope_entry("live", (("default", "env://OTHER", None),), live=True),
+            live_target(TAG_ID, "env://" + BIG),
+            SCOPE_HEAD + scope_entry(TAG_ID, (("default", "env://OTHER", None),), live=True),
         ),
         None,
         "is not authorized by the scope",
+        cut_of(TAG_ID),
         cut_of("env://" + BIG),
     ),
     "run-endpoint-not-on-allowlist": lambda t: _run_endpoint_not_allowed(t),
@@ -431,6 +471,12 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         cut_of("vault://" + HALF),
     ),
     "run-hardened-live-target": lambda t: _run_hardened(t),
+    "fingerprint-target-not-in-scope": lambda t: _with(
+        _fingerprint(t, f'id: "{TAG_ID}"\ntype: chatbot\n'),
+        None,
+        "not authorized by the scope",
+        cut_of(TAG_ID),
+    ),
     "calibrate-undefined-alias": lambda t: _with(
         _calibrate(t, f"x: *{BIG}\n"), 0, "found undefined alias", ALIAS_CUT
     ),
@@ -448,6 +494,12 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         "has an invalid port",
         cut_of("http://localhost:x/" + BIG),
     ),
+    "fleet-judge-not-declared": lambda t: _with(
+        _fleet(t, FLEET, judge=f'id: "{TAG_ID}"\ntype: model\n'),
+        None,
+        "--judge names",
+        cut_of(TAG_ID),
+    ),
     "fleet-judge-mismatch": lambda t: _with(
         _fleet(
             t,
@@ -457,6 +509,13 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         None,
         "does not match the fleet's judge",
         cut_of(f"http://localhost:1/{BIG}"),
+    ),
+    # A judge file whose id differs from the fleet's judge: the id is the mismatch quoted.
+    "fleet-judge-mismatch-id": lambda t: _with(
+        _fleet(t, FLEET + JUDGE_BLOCK, judge=f'id: "{TAG_ID}"\ntype: model\n'),
+        None,
+        "does not match the fleet's judge",
+        cut_of(TAG_ID),
     ),
     "lint-undefined-alias": lambda t: _lint(t, f"id: *{BIG}\n"),
     "target-seeded-setup-unknown-key": lambda t: _with(
@@ -477,14 +536,32 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
 }
 
 
+def _run_two_targets(tmp_path: Path) -> Case:
+    first = _write(tmp_path, "a.yaml", f'id: "{TAG_ID}"\ntype: chatbot\n')
+    second = _write(tmp_path, "b.yaml", f'id: "{TAG_ID}"\ntype: chatbot\n')
+    scope = _write(tmp_path, "scope.yaml", SCOPE_HEAD + scope_entry())
+    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+    args = ["run", "-t", str(first), "-t", str(second), "--scope", str(scope)]
+    return Case(
+        [*args, "--spec-path", str(specs), "--dry-run"],
+        [first, second],
+        "two target files declare the id",
+        [cut_of(TAG_ID)],
+    )
+
+
 #: A live target the scope names and whose endpoint it does not allowlist (it allows another
-#: path). Its id is short: since A-57 a target or scope id is at most 128 characters.
+#: path): the id comes back in the list of what the scope authorizes too.
 NOT_ALLOWED_ENDPOINT = f"{LIVE_URL}/{NAME}"
-NOT_ALLOWED_TARGET = live_target().replace(LIVE_URL, NOT_ALLOWED_ENDPOINT)
-NOT_ALLOWED_SCOPE = SCOPE_HEAD + scope_entry("live", live=True).replace(
+NOT_ALLOWED_TARGET = live_target(TAG_ID).replace(LIVE_URL, NOT_ALLOWED_ENDPOINT)
+NOT_ALLOWED_SCOPE = SCOPE_HEAD + scope_entry(TAG_ID, live=True).replace(
     '/v1/chat/completions"]', '/x"]'
 )
-NOT_ALLOWED_CUTS = (cut_of(NOT_ALLOWED_ENDPOINT),)
+NOT_ALLOWED_CUTS = (
+    cut_of(NOT_ALLOWED_ENDPOINT),
+    cut_of(TAG_ID),
+    f"The scope authorizes: {TAG_ID}.",
+)
 
 
 def _run_endpoint_not_allowed(tmp_path: Path) -> Case:
@@ -500,13 +577,16 @@ def _fingerprint_endpoint_not_allowed(tmp_path: Path) -> Case:
 
 def _run_stdio(tmp_path: Path) -> Case:
     target = (
-        'id: mcp\ntype: api\nprovider: mcp\ntransport: stdio\ncommand: ["python", "server.py"]\n'
+        f'id: "{TAG_ID}"\ntype: api\nprovider: mcp\ntransport: stdio\n'
+        'command: ["python", "server.py"]\n'
     )
-    scope = SCOPE_HEAD + scope_entry("mcp") + '    commands: ["python other.py"]\n'
+    scope = SCOPE_HEAD + scope_entry(TAG_ID) + '    commands: ["python other.py"]\n'
     return _with(
         _run(tmp_path, target, scope),
         None,
-        "stdio command not authorized for 'mcp'",
+        "stdio command not authorized",
+        cut_of(TAG_ID),
+        f"{TAG_ID} (stdio command not authorized for",
         'commands: ["python server.py"]',
     )
 
@@ -514,11 +594,11 @@ def _run_stdio(tmp_path: Path) -> Case:
 def _run_hardened(tmp_path: Path) -> Case:
     case = _run(
         tmp_path,
-        live_target(),
-        SCOPE_HEAD + scope_entry("live", (("default", "env://LIVE_KEY", None),), live=True),
+        live_target(TAG_ID, "env://LIVE_KEY"),
+        SCOPE_HEAD + scope_entry(TAG_ID, (("default", "env://LIVE_KEY", None),), live=True),
     )
     case.args.append("--hardened")
-    return _with(case, 0, "--hardened replays")
+    return _with(case, 0, "--hardened replays", cut_of(TAG_ID))
 
 
 @pytest.mark.parametrize("name", list(QUOTING))
@@ -538,6 +618,10 @@ def test_a_refusal_quotes_a_value_of_the_file_up_to_300_characters(
     assert all(str(path) in line for path in case.files), line
     assert all(cut in line for cut in case.cuts), line
     assert "REDACTED" not in line, line
+    # A cut keeps 29 of an id's 128 escapes: 30 in a row anywhere is an id quoted whole, which
+    # a second quote of the same id cut on the line would hide (audit of A-57).
+    output = result.stdout + result.stderr
+    assert all(f"{tag!r}"[1:-1] * 30 not in output for tag in (TAG_ID[0], TAG_NAME[0])), line
 
 
 #: A file that is not UTF-8, as each command reads it: one byte 0xff after a valid first line.

@@ -1092,7 +1092,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         raise ValueError(f"target file {path} is missing a string 'id'")
     if len(target_id) > MAX_ID_CHARS:
         # As the scope bounds its ids: a longer one was printed whole by every run that started
-        # (OD-27, clause A-57). The length carries separators, or the redactor reads a phone.
+        # (OD-27, clause A-57). The value is never quoted, only its length.
         raise ValueError(
             f"target file {path} 'id' is {len(target_id):,} characters, over the "
             f"{MAX_ID_CHARS}-character limit"

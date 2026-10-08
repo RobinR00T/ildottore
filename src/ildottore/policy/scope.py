@@ -34,10 +34,10 @@ class Endpoint(BaseModel):
 
 
 #: The longest target id or identity name a scope or target file may give (OD-27, decided
-#: 2026-10-07). Unbounded, an id of a million characters was refused cut (A-51) but printed whole
-#: wherever a run that started wrote it: the `--dry-run` plan, the progress lines, the reports and
-#: the run store. A fleet's ids are held to 64, as they name files; one written by hand gets twice
-#: that. The longest id in this repository's examples is 21 characters. Clause A-57.
+#: 2026-10-07). Unbounded, an id of a million characters was printed whole wherever a run that
+#: started wrote it: the `--dry-run` plan, the `-sV` lines, the reports and the run store. A
+#: fleet's ids are held to 64, as they name files; one written by hand gets twice that. The
+#: longest id in this repository's examples is 21 characters. Clause A-57.
 MAX_ID_CHARS: Final = 128
 
 

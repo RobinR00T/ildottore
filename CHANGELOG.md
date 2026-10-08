@@ -11,13 +11,22 @@ versioning: [SemVer](https://semver.org/).
   is loaded.** A scope file's `targets.N.id` or `identities.N.name` is a validation problem (`String
   should have at most 128 characters`), and a target or `--judge` file's `id` is refused as `target
   file <path> 'id' is 1,000,000 characters, over the 128-character limit`, exit 3. Such an id loaded
-  before: refusals cut it (A-51), but a run that started wrote it whole in its `--dry-run` plan,
-  progress and `-sV` lines, reports and run store (the plan of an id of a million characters ran
-  just over 1 MB, exit 0). 128 is twice the 64 a fleet's ids are held to, as they name files, and
-  about six times the longest id in the shipped examples (21 characters); there is no pattern, so an
-  id with spaces or other characters loads as before. An endpoint, an `auth_ref` reference and a
-  labels spec id stay unbounded and are cut in refusals. OD-27, decided (a) by the implementer at
-  the owner's request; clause A-57 (u01).
+  before, and a run that started wrote it whole in its `--dry-run` plan, `-sV` lines, reports and
+  run store (the plan of an id of a million characters ran just over 1 MB, exit 0), as did four
+  messages of `run` that A-51 did not reach (`nothing would be sent: every selected spec is
+  unrunnable on <id>`, the `-sV` probe ceiling refusal and its resume notice, `run on <id> did not
+  complete`). 128 is twice the 64 a fleet's ids are held to, as they name files, and about six times
+  the longest id in the shipped examples (21 characters); there is no pattern, so an id with spaces
+  or other characters loads as before. An endpoint, an `auth_ref` reference and a labels spec id
+  stay unbounded and are cut in refusals, and so is an id whose `repr` passes 300 characters (one of
+  128 characters can have a `repr` of 1,282, `\U000e0001` for each). OD-27, decided (a) by the
+  implementer at the owner's request; clause A-57 (u01).
+- Not covered: a spec id has a pattern and no length bound, and a run prints it whole (a spec id of
+  500,003 characters printed about 507 KB on a mock run, exit 0); `dottore diff` prints a report's
+  target id whole when two reports disagree, a report being the tool's own output (OD-26) and one
+  written before A-57 able to hold a longer id; a run stored with a longer id cannot be resumed, its
+  target file being refused now; and an id may hold control characters, which reach the terminal as
+  they are. Found by the audit of A-57.
 
 ### Fixed (a refusal quoted a value of the operator's file whole; a file not UTF-8 was not named)
 

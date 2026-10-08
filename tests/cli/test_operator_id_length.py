@@ -1,8 +1,8 @@
 """A target or scope id, or an identity name, is at most 128 characters (OD-27, clause A-57).
 
-Clause A-51 cut such an id where a refusal quoted it, but a run that started wrote it whole: an
-id of a million characters made the `--dry-run` plan, the progress lines, the reports and the run
-store a megabyte each. OD-27 (decided 2026-10-07, the owner having left the choice to the
+Clause A-51 cut such an id in most refusals that quoted it, but a run that started wrote it whole:
+an id of a million characters made the `--dry-run` plan, the `-sV` lines, each report and the run
+store a megabyte or more. OD-27 (decided 2026-10-07, the owner having left the choice to the
 implementer) bounds it when the file is loaded: 128 characters, twice the 64 a fleet's ids are
 held to because they name files. The longest id in this repository's examples is 21 characters.
 """
