@@ -23,6 +23,31 @@ The carryover ledger. Every agent session updates this so context survives even 
   in A-50. Merging next to #76 conflicts on `cli/fleet.py`'s imports (keep both). PR #78; the owner
   chose option 1 (refuse both) on 2026-10-07.
 
+## State, 2026-10-07 (evening): YAML nesting refused where it is written
+
+- On `fix/yaml-flow-nesting-depth`, on `main` after #71 (`df75d3d`): a finding of the pre-commit
+  audit of the construction-cost fix, the same on `main`. PyYAML's pure-Python scanner walks one
+  possible key per open flow level on every token, and the depth limit was measured only on the
+  composed document, so a 198 KB file of chains of `[` 320 deep was composed whole before it was
+  refused (11.3 s against 2.5 s for a flat list of as many texts, at a load average of 9 to 14).
+  Every loader now refuses a list or a map written inside 100 others where it starts (0.11 s, same
+  message and position), which can only refuse earlier what the measure refused later. Clause A-52
+  (u01). 18 of the 32 new tests fail on `5fdac72`, and thirteen mutants are all killed; the
+  pre-commit audit found no defect in the code (a differential fuzz of 14,800 documents through both
+  loaders: none accepted by one tree and refused by the other), and ten claims in the docs and tests
+  that promised more than the code, and one order no test pinned (a tag too long before the depth);
+  all corrected, and the delta audit five more wording slips, also corrected. The pre-merge audit
+  (main with #77 and every open PR) found no failure due to this change and one more claim, the
+  order in which refusals made while composing are reported (the order they are made, not the order
+  written), corrected with a test; and #87 numbering its own OD-30 to OD-33 in u04, which it has to
+  renumber. OD-30, decided by the owner on 2026-10-08: option A, a lower limit for flow nesting
+  only, to be built on its own branch. Until then, under the limit the per-token cost stays (chains
+  98 deep accepted at about 2.3 times the flat list); the repository's 130 YAML files nest at most 2
+  flow levels; libyaml's scanner, whose C composer would take the per-node checks with it, was not
+  chosen. #77 (A-41 and A-42, merged first) edits the same `compose_node`: the merge kept both sides
+  of four additions (the module docstring, the constants, the class docstring, `__init__`), the
+  method itself merged cleanly, and both branches' tests pass together.
+
 ## State, 2026-10-07 (evening): fleet target ids that differ only by case
 
 - Found by the delta audit of PR #76 and fixed on `fix/fleet-casefold-ids` (PR #85):
@@ -98,7 +123,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   test watched, and parse counts, timings and wording wider than measured. It also found a
   pre-existing cost, left as its own task: flow nesting makes PyYAML's scanner pay per open level,
   so 198 KB nested 95 deep costs 3 to 4 times a flat file, and one past the depth cap is refused
-  only after it is all composed. The pre-merge audit built main, #71 and this branch together:
+  only after it is all composed (since taken on by #84, A-52). The pre-merge audit built main, #71
+  and this branch together:
   conflicts only in the docs, every gate green, 2,489 tests; its four findings (tests for every
   notation in every position, and three sentences) are closed. Left open: a file named twice is
   parsed once per name (`-t X --judge X`), and `fleet --run --judge` parses its judge file twice; a
