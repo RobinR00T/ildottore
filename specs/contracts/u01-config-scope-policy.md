@@ -311,12 +311,12 @@ KB file, under 5 million: 1.1 million now, 97.4 million before).
   them; (B) libyaml's scanner (`yaml.CSafeLoader`, in the installed PyYAML), whose composer is C, so
   the per-node checks of `safe_yaml` (the size count, the tag limit, keys written twice, A-52) would
   have to move to its events, to be measured; (C) leave it: each walk is bounded at about 100 keys.
-  Owner's call.
-- **OD-33** fleet ids that differ only by case. **Decided 2026-10-07 by the conductor and
-  confirmed by the owner the same evening, built (A-56):** refused on every file system, not only
-  where the file system folds case: it is portable and the simplest rule (`run` already compares
-  report paths case-folded everywhere), and a fleet file then means the same wherever it is
-  expanded. What it costs: a fleet with `Prod` and `prod` that expanded on Linux is now refused
-  there too, and so is a judge spelled as a target only up to case, which worked. The alternative
-  not taken: refuse only where the `--out` directory's file system folds case, found by probing
-  it.
+  **Decided 2026-10-08 by the owner: A**, to be built on its own branch, with the limit and its
+  clause there; until it lands, the cost under the limit stays. - **OD-33** fleet ids that differ
+  only by case. **Decided 2026-10-07 by the conductor and confirmed by the owner the same evening,
+  built (A-56):** refused on every file system, not only where the file system folds case: it is
+  portable and the simplest rule (`run` already compares report paths case-folded everywhere), and a
+  fleet file then means the same wherever it is expanded. What it costs: a fleet with `Prod` and
+  `prod` that expanded on Linux is now refused there too, and so is a judge spelled as a target only
+  up to case, which worked. The alternative not taken: refuse only where the `--out` directory's
+  file system folds case, found by probing it.

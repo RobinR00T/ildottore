@@ -20,12 +20,13 @@ The carryover ledger. Every agent session updates this so context survives even 
   (main with #77 and every open PR) found no failure due to this change and one more claim, the
   order in which refusals made while composing are reported (the order they are made, not the order
   written), corrected with a test; and #87 numbering its own OD-30 to OD-33 in u04, which it has to
-  renumber. Open, OD-30 (the owner's): under the limit the per-token cost stays (chains 98 deep
-  accepted at about 2.3 times the flat list); a lower limit for flow nesting only (the repository's
-  130 YAML files nest at most 2 flow levels) or libyaml's scanner (whose C composer would take the
-  per-node checks with it). #77 (A-41 and A-42, merged first) edits the same `compose_node`: the
-  merge kept both sides of four additions (the module docstring, the constants, the class docstring,
-  `__init__`), the method itself merged cleanly, and both branches' tests pass together.
+  renumber. OD-30, decided by the owner on 2026-10-08: option A, a lower limit for flow nesting
+  only, to be built on its own branch. Until then, under the limit the per-token cost stays (chains
+  98 deep accepted at about 2.3 times the flat list); the repository's 130 YAML files nest at most 2
+  flow levels; libyaml's scanner, whose C composer would take the per-node checks with it, was not
+  chosen. #77 (A-41 and A-42, merged first) edits the same `compose_node`: the merge kept both sides
+  of four additions (the module docstring, the constants, the class docstring, `__init__`), the
+  method itself merged cleanly, and both branches' tests pass together.
 
 ## State, 2026-10-07 (evening): fleet target ids that differ only by case
 

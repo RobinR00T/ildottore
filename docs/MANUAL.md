@@ -596,8 +596,8 @@ deep written first, aliases expanded, used to be named instead, and so did a key
 list, as in `k: []`), and a recursive alias written before the nesting is no longer what is
 reported. A text or an alias written at level 101 opens no level and is left to what refused it
 before. Under the limit the cost stays: the same chains 98 deep are accepted in about 2.3 times the
-time of the flat list, and up to about 3 times when they hold their texts at the bottom (an open
-decision, OD-30).
+time of the flat list, and up to about 3 times when they hold their texts at the bottom (OD-30: a
+lower limit for flow nesting only is decided, not built yet).
 A key written twice in one
 mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a
 file with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than
