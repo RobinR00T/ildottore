@@ -351,8 +351,10 @@ TIMEOUT_S = 20
 #: The CLI holds about 80 MB after its imports; without the cap the labels grew 70 MB a second.
 MAX_PEAK_BYTES = 256 * 1024 * 1024
 #: A flat list of plain texts, no alias in it: the first version of the cap composed it whole
-#: (785 MB) before refusing it, and main builds it (762 MB). Composition stops at the 100,000th.
-FLAT_ITEMS = 1_000_000
+#: (785 MB for a million) before refusing it, and main built it (762 MB). Composition stops at the
+#: 100,000th. Kept just under the 1 MiB read cap (A-43), which refuses a larger file before it is
+#: composed at all (1,047,016 bytes here; the million texts were 3,000,016 bytes).
+FLAT_ITEMS = 349_000
 
 
 def _hostile_files(tmp_path: Path, command: str) -> tuple[list[str], Path]:

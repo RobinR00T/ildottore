@@ -201,7 +201,7 @@ composed document let a 3 MB list of plain texts cost 785 MB first; a count that
 a list of aliases do the same; and a `%TAG` prefix, copied into the tag of every node that uses its
 handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Construction costs under the
 cap (a base-60 integer, integer keys sharing one hash) are A-41's; the byte size of the file read
-is its own task. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
+is A-43's. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
 position, a recursive alias's anchor, the precedence, where composition stops for texts, long texts,
 empty lists, aliases and aliases of a long text, the per-document count, the tag limit on texts,
 lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a subprocess bounded at
@@ -239,6 +239,180 @@ that is a number or a number over 20 characters. Checks: `tests/cli/test_yaml_co
 a map merged where it is written, a map that merges passing its keys on; where composition stops; a
 stream of documents; keys that are not numbers; both loaders; and in a subprocess bounded at 15 s:
 `lint` on each 1 MiB spec, and `run --dry-run` on the 450 KB and the 1.3 MB target).
+
+**A-43 An operator's file is read up to 1 MiB, and its validation errors are listed up to 20
+(added 2026-10-07).** The scope, target, fleet and labels files and the policy and signature
+packs are read through `shared.files.read_text_capped`: a regular file over 1 MiB
+(`MAX_FILE_BYTES`, the spec loader's `MAX_YAML_BYTES`, pinned equal by a test) is refused on its
+size before any of it is read, and anything else (a pipe, a device) is read up to one byte past
+the cap and refused if that byte comes, so `/dev/zero` costs one cap. The refusal is an
+`OSError` (`EFBIG`) with the path and the sizes written with thousands separators, which every
+loader already reported as a file it cannot read, exit 3 at the CLI: written bare, a size of
+nine digits or more was masked as a phone number by the CLI's redactor (found by this clause's
+own CLI test). The text is what `Path.read_text(encoding="utf-8")` gave, line endings included,
+so a scope checksum covers the same text. `dottore fleet` measures every file it would write
+before it writes any, one at a time, and refuses one over the cap: the scope repeats each
+endpoint, so an 845,022-byte fleet file wrote a 1,355,024-byte scope with exit 0 that the `run`
+it printed then refused (pre-commit audit of this clause); with entries of about 170 bytes the
+crossing is at 3,870. A target or the judge file can be the one over the cap, as non-ASCII text
+is written escaped (a 600,000-byte model name makes a 1,260,144-byte target), so the refusal
+names the file and says to split the fleet only for the scope. The judge file is measured only
+when the printed command reads it, not when `--judge` names another. Measuring every rendered
+file before writing held them all at once (29 MiB for 60 targets sharing one 500 KB anchor,
+delta audit); one is held at a time. `shared.config_errors.validation_problems` lists the first
+20 errors by default, counts the rest, and cuts a field path or a reason past 300 characters, as
+the spec loader cuts its schema messages; the scope, fleet and policy-pack loaders use that
+default, and so does the target loader for `capabilities` and `sampling_defaults` since #73
+(A-45). Both holes were found by the pre-commit audit of the alias-expansion cap (PR #71): the
+files were read whole with `Path.read_text`, so a scope or labels file padded with 100 MB of
+comments was read and parsed whole (39.5 s and 244 MB) and a sparse gigabyte of labels peaked at
+about 2 GiB (2,009 and 2,116 MiB in two measures), and a limit on the parsed document does not
+bound the text it is parsed from; and every validation error was listed whole, so a 5.5 MB scope
+with 5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058 characters from
+`dottore run --dry-run`. The figure and reading any file type, not only a regular one, are the
+owner's decisions of 2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and
+a labels file through a pipe worked and still do, and a named pipe with no writer still blocks,
+as before. A target file could not be a pipe while `run` read it four times and `fingerprint`
+three; since #77 parses it once (A-42), `run -t <(...)` and `fingerprint <(...)` read it through
+a pipe as well (a `--judge <(...)` file already could: it was read once). An anchor used many
+times is A-37's, not this clause's: this read cap and the listing do not bound it (a 30,852-byte
+scope of aliases peaked at 1,066 MiB in validation before A-37 was in, pre-merge audit), and
+A-37's node cap refuses that file. Not covered (OD-26): the report JSON that `dottore diff` and
+`calibrate` read, and the evidence artifacts `replay` and `run --resume` read. An error outside
+the validation listing quoted a value of the file whole (an unknown target `type`, a duplicate
+target id, an undefined YAML alias), bounded only by the 1 MiB read: A-51 cuts it. Checks:
+`tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after a growth, a
+pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each loader, the
+`fleet` boundary, each target and the judge measured one at a time, the listing and its cut, the
+CLI's exit 3 and its one short line, and a sparse gigabyte in a subprocess bounded at 20 s and
+256 MiB).
+
+**A-51 A refusal of an operator's file quotes a value of it up to 300 characters, and names a file
+that is not UTF-8 (added 2026-10-07).** The refusals written by hand that name a value of the scope,
+target, fleet or labels file go through `shared.config_errors.quoted`: the value's `repr` when that
+is 300 characters or fewer, exactly as before; past that, its first 300 characters and its length
+(`... (N characters)`), or for a list, mapping or set its first 300 characters and how many items it
+holds (`... (N items)`), without building the `repr` whole, because YAML aliases make it larger than
+its file (90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000 characters of `repr`,
+about 200 MB to build); an integer Python will not write out (a YAML hex or base-60 integer past
+4,300 digits, whose `repr` raises) is shown as `shared.digits` describes it (A-40, #81), `a number
+too long to write out (over N digits)`, inside a list or mapping too. They are: an invalid target
+`type`, refused before the enum looks it up, because the enum's own error built the whole `repr`
+(that 90 KB file as a `type:` took 1.28 to 1.49 GB of resident memory and 29 to 50 s in five
+measures on `a0bca70`, and printed a line of about 200 MB; it takes 72 MB and 0.6 s now: audit of
+this clause), and an invalid `mock_scenario`; a duplicated scope target id, a duplicated identity
+name and an identity that shares a canary, with the id of the target they belong to; a labels entry
+with an invalid verdict (its spec id); two target files with one id in `run`; the target id and the
+endpoint in the authorization refusal (`policy.authorize_target`, so `run`, `fingerprint` and the
+engine's gate on each attempt), the target id that `run` and `fingerprint` write in front of it, and
+the ids the scope authorizes, which they list after it (the first 20, each cut, then `and N more`:
+`shared.config_errors.listed`), since a target the scope names and refuses by endpoint or command
+came back whole there; the target id in the `--hardened`, stdio and credential refusals of `run`,
+and the references the scope declares, listed by the credential refusal (20, each as
+`shown_auth_ref` quotes it, and how many more: 3,000 references of 290 characters printed 885,131
+bytes), and the variable a reference names when its value holds a control character; an `auth_ref`
+reference wherever `shown_auth_ref` quotes one (a literal is still never shown); the target id, and
+the one the run store recorded, in the three refusals that bind `run --resume` to its target (an id
+of 900,000 characters printed 900,276 bytes); in `dottore fleet`, an endpoint with an invalid port,
+the judge id and the judge fields a `--judge` file gets wrong; and, cut as one text with
+`shared.config_errors.cut`, the unknown keys of a target's `seeded_setup` and the tools it both maps
+and grants. PyYAML's problem text (`shared.config_errors.yaml_problem`, so every YAML loader, the
+spec loader and `dottore lint` included) is cut the same way. A label's verdict, a target's
+`provider` and `transport`, and the keys of its `seeded_setup` are checked as text before anything
+turns them into text: `str()` of a list of aliases took about 675 MB of resident memory (400 to 600
+MB traced by the test on `a0bca70`), and of an integer past 4,300 digits it raised Python's own
+`Exceeds the limit (4300 digits)` error, naming no file (delta audit); a labels key or a
+`seeded_setup` key that is such an integer is refused as A-40 (#81) words it, and a `seeded_setup`
+key that is text or a date is written as `str()` writes it (a date stays `2024-01-01`). An endpoint
+or a `base_url` that urllib cannot read (a bracket, a host NFKC turns into a path, a port that is
+not a number or has thousands of digits) raised urllib's or Python's error with no file named, and
+for a host NFKC turns into a path, a bracketed host that is not an IP address or a port that is not
+a number that error quoted the netloc, the host or the port whole (about 900 KB from a
+900,000-character value: pre-merge audit). The target loader reads the endpoint stripped, as the
+gate reads it (read raw, a leading U+00A0 hid the host from it and urllib's error reached the
+terminal later with the endpoint's password: delta audit), and refuses an unreadable one naming the
+file and the field and not the value, which can hold a password; `EndpointAllowlist.is_allowed`
+denies what it cannot read, as its docstring always said, so the authorization refusal quotes the
+URL cut, and an allowlist entry pinned to a port `int()` cannot read (thousands of digits, U+00B2)
+pins a port no URL has, so it matches nothing instead of raising and denying every URL checked after
+it (read as a bare host, it matched an IPvFuture literal that repeated it: second delta audit); and
+`dottore fleet` reads an endpoint stripped too and refuses an unreadable one, or one with a port it
+cannot read, or a `--judge` endpoint that differs, quoting it as urllib reads it, its tabs and line
+breaks removed, cut and without what precedes the last `@` of its authority (the CLI masks a
+password only in the `user:password@` shape, so an empty user, a space or a second `@` printed it;
+and a tab or a line break between the two slashes, which urllib removes, hid the authority from a
+search for `//`: final audit, 0 leaks in 102,024 refused endpoints of its fuzz since). The adapter
+`run` builds still reads the target's endpoint unstripped: an endpoint with a Unicode space in front
+passes the gate and the run stops at its first send (exit 3, `EndpointNotAllowed`), its password
+masked, as on `a0bca70` for `run` and newly for `fleet --run`, which stopped at the pre-flight
+before. Before, each quoted the value whole, bounded only by A-43's 1 MiB read: a 1 MB `type:`
+printed an `error:` line of 1,000,108 bytes, a duplicated target id of 500 KB one of 500,136, and an
+undefined alias of a million characters about 1,000,100 from `run --scope`, `calibrate` and `lint`
+(pre-commit audit of A-43, in its measure, file paths included); this clause's sweep found the rest,
+up to 2,000,108 bytes from `fingerprint` for a target id of a million characters (the id in the
+message and again in the reason), and the 24 refusals of the test's table, with values of 300,000 to
+1,000,000 characters, printed lines of 400,080 to 2,000,247 characters on `c9f27cc` and `a0bca70`.
+The lengths are written bare, as the spec loader writes them; for the `repr` of a text value the
+length stays under 10,485,762, short of the nine digits the CLI's redactor masks as a phone number
+(`repr` writes at most ten characters for a character the file spends a byte or more on), and an
+item count is smaller. The redactor can still read a head that ends in digits (after a character
+that is not a letter, or a value made of digits, a 900-digit `type`), together with the `... (N`
+behind it, as one phone number, and masks both (a head ending in `:7` shows `:«REDACTED:phone»
+characters)`, the 900-digit `type` `«REDACTED:phone» characters)`): the masking errs toward hiding,
+and the length is lost. Bytes that are not UTF-8 in any of these files, or in a policy or signature
+pack, are refused by `shared.files.read_text_capped` as an `OSError` (`EILSEQ`) with the path and
+the offset of the first bad byte in the file, in the spec loader's words (`not UTF-8 text (byte
+N)`), exit 3 in `run`, `fleet`, `calibrate` and `fingerprint`: they raised `read_text`'s own
+`UnicodeDecodeError`, which named no file (`error: 'utf-8' codec can't decode byte 0xff in position
+15: invalid start byte`). The path is shown as the CLI shows every path (A-38): an existing absolute
+one as written, a relative one through the redactor, which masks a directory name that looks random.
+A valid file's text, and so a scope checksum, is unchanged. Not covered: the stdio advice's command
+line, which is meant to be copied exactly, is written whole; so is a target's endpoint wherever a
+run that has started prints it (the plan, the reports and the run store), and a labels spec id where
+`calibrate` lists the labels the report does not cover. A target or scope id and an identity name
+are bounded at 128 characters when their file is loaded since A-57 (OD-27), so a run prints at most
+that many characters, or a `repr` of at most 1,282; the id cases of this clause's table use ids of
+128 characters whose `repr` is 1,282 (`\U000e0001` or `\U000e0020` for each character), which a
+refusal still cuts. A stdio `command` made of YAML aliases is joined into one text wherever the
+target is authorized (`wiring.request_url_for`, the engine's gate included) and in that advice:
+20,000 aliases of one 10 KB text, a 90 KB file, make a line of about 200 MB, 1.09 to 1.49 GB of
+resident memory and about 30 s (five measures; the times depend on the machine), on this branch as
+on `a0bca70`. Since this branch merged #71, A-37's node cap (100,000 nodes with the aliases
+expanded) refuses that file when it is loaded (`document is too large`, exit 3, 0.3 s and 71 MB);
+under the cap a value's `repr` can still be tens of megabytes (60,004,000 characters from a 28 KB
+file of 1,000 aliases of 6,000 characters `repr` writes as ten each: audit of the merge), which
+`quoted` never builds, and the memory tests use 10 to 16 KB files of 1,000 aliases of a
+6,000-character text (a `repr` of 6,004,000 characters). The integer cases use a 600-digit hex
+number under the digit limit Python allows at its lowest (640), as #77 refuses a YAML number of more
+than 1,000 characters. Checks: `tests/cli/test_operator_file_quoted_values.py` (each refusal of the
+table through the CLI with a value past the cut: the line under 2,500 characters, the file named
+where the refusal names it, the exact cut and no mask; twenty ids or references listed and the rest
+counted, through `run`, `fingerprint` and the credential refusal; the three refusals of `--resume`;
+a `repr` of exactly 300 characters quoted whole and one of 301 cut; the head equal to the start of
+`repr` over generated values; a list and a mapping of aliases quoted, and refused as a `type`
+through `load_target`, under a memory bound; an integer Python will not write, and no other failure
+of `repr` hidden; nested aliases one level down; a verdict and a `provider` of aliases not turned
+into text; an integer labels key and `seeded_setup` key, and a date key written as before; verdicts
+in any case and with spaces; a stdio target real only with a command; a `transport` of aliases;
+twelve URLs urllib cannot read, through `run`, `fingerprint` and `fleet`, the endpoint never quoted
+by the target loader and its password never printed, by `fleet` either, a tab between the slashes
+and a second `@` included; an unreadable allowlist entry matching nothing whatever its place, an
+IPvFuture literal included; the variable name; a `--judge` file whose id differs from the fleet's
+judge; the UTF-8 refusal through each command, and its offset past one decoder chunk), and the
+reader test of `tests/cli/test_operator_file_cap.py`, changed on purpose from "the same
+`UnicodeDecodeError` as `read_text`" to "an `OSError` at the same byte, naming the file". On
+`4a572f0` (#76 with #81 merged in), with the new helpers stubbed to what the base does (`quoted` and
+fleet's `_shown_endpoint` as `repr`, `listed` as a plain join), 84 of these 107 tests (the 106 of
+the file and the changed reader test) fail, each for its reason; of the 23 that pass, 4 were fixed
+first by #81 (A-40: a labels key and a `provider` that are huge integers, a `provider` and a
+`transport` of aliases), and 19 guard what must not change (two of them, an endpoint with no user
+information quoted as `repr` quotes it): a short value quoted as before, any other failure of `repr`
+raised, verdicts in any case and with spaces, a stdio target real only with a command, a date key
+written as before. Of 76 mutants, one per site and one per fix of the audits, 74 are killed; the two
+that live are equivalent (they quote a fleet id, which the fleet's model holds to 64 characters).
+These counts were measured with ids of 300,000 to 1,000,000 characters, before A-57 bounded them;
+A-57 changed those cases to ids of 128 characters whose `repr` still passes 300, and the sites that
+quote a target id or an identity name are still killed as mutants (A-57 counts them).
 
 **A-52 A list or a map written past the depth limit is refused where it starts, as the document is
 composed (added 2026-10-07).** Every loader (the spec loader and `safe_yaml.safe_load`, so the
@@ -288,6 +462,52 @@ order checked; one count per document; a tag too long reported first, as before;
 stack left, both still refused as too deep; the scanner's work on the audit's file is A-58's, which
 refuses it first). Since A-58 its shapes reach level 101 in block style, or in block style with 20
 flow levels inside.
+
+**A-57 A target or scope id, and an identity name, is at most 128 characters (added 2026-10-07,
+OD-27).** `policy.scope.MAX_ID_CHARS` (128) bounds a scope target's `id` and an identity's `name` in
+the scope model, so a longer one is a validation problem of the scope file (`targets.0.id: String
+should have at most 128 characters`, listed as A-43 lists them), and `cli.wiring._target_from`,
+which `load_target` and `read_target_file` share, refuses a target file, or a `--judge` file, whose
+`id` is longer (`target file <path> 'id' is 1,000,000 characters, over the 128-character limit`, the
+length and never the value), exit 3 in `run`, `fingerprint` and `fleet --judge`. The length is
+counted as Python counts a text, in code points. Before, such an id loaded and a run that started
+wrote it whole: the `--dry-run` plan, the `-sV` lines, the reports and the run store (the plan of an
+id of a million characters ran just over 1 MB, exit 0; the file is now refused, exit 3, on one line
+of a few hundred bytes with its path), and so did messages of `run` that A-51 did not reach, among
+them `nothing would be sent: every selected spec is unrunnable on <id>`, the `-sV` probe ceiling
+refusal and its resume notice, `run on <id> did not complete`, the warning for a live target with no
+`--judge`, and the `--estimate` and `-sn` lines, which now print at most 128 characters or a `repr`
+of at most 1,282. A bound when the file is loaded (OD-27, decided 2026-10-07 by the implementer, the
+owner having left the choice to them) was chosen over cutting the id everywhere it is printed, which
+would leave reports without the id the scope names, and over leaving it. The figure is twice the 64
+a fleet's ids are held to (they name files) and about six times the longest id in this repository's
+examples (21 characters); a fleet's ids keep their 64 characters and their pattern, and no pattern
+is imposed here, so an id with spaces or other characters loads as before. A-51's quote of an id
+still matters: an id of 128 characters can have a `repr` of 1,282 (U+E0001 is written `\U000e0001`),
+so A-51's cases of a long id use such ids, and its test checks that no id is quoted whole anywhere
+in the output, which a second, cut quote of the same id on the line would otherwise hide: it looks
+for the 300 characters of the id's `repr` after the opening quote, one more than a cut keeps, with
+the line breaks removed first so that a message Rich folds would be caught too (none that quotes an
+id goes through Rich today, so that part is defensive). The `-sV` probe ceiling refusal and its
+resume notice write the `repr` whole, and no case of that test reaches them. Not covered: a spec id
+has a pattern and no length bound, and a run prints it whole (a spec id of 500,003 characters
+printed about 507 KB on a mock run, exit 0); `dottore diff` prints a report's target id whole when
+two reports disagree, and `dottore diff` and `calibrate` list every target id of a report with
+several targets whole, a report being the tool's own output (OD-26) and one written before A-57 able
+to hold a longer id; a run stored with a longer id cannot be resumed, its target file being refused
+now; and an id may hold control characters, which reach the terminal as they are. Endpoints,
+`auth_ref` references and labels spec ids stay unbounded, cut in refusals, and `calibrate` still
+lists the labels a report does not cover whole, as its normal output. Checks:
+`tests/cli/test_operator_id_length.py` (the figure; 128 characters load and 129 are refused, for a
+scope id, an identity name and a target id; a long id refused when its file is loaded, through
+`run`, `run --judge`, `fingerprint` and `fleet --judge`, on one short line that names the file and
+never the value; an id of 128 characters runs and the plan names it), 9 of its 11 tests failing
+without the bound, and 5 mutants (each bound removed, `>=` for `>`, a limit of 64) killed; and
+A-51's cases in `tests/cli/test_operator_file_quoted_values.py`, where each of the 19 sites that
+quote a target id or an identity name (on 18 lines; the ids of a fleet, held to 64 characters,
+aside), written as `repr`, is a mutant killed (14 of them survived the whole suite when those cases
+were removed, as the audits of A-57 found; 3 are killed only by the check of the whole output). The
+control mutant survives both.
 
 **A-58 A list or a map written in flow style inside 20 others written in flow style is refused where
 it starts (added 2026-10-08, OD-30).** Every loader (the spec loader and `safe_yaml.safe_load`, so
@@ -341,6 +561,21 @@ under 1 million, and for `lint` on chains at the limit holding 300 texts each, u
   checksum now, pluggable verifier interface so sigstore drops in without a shape change).
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
+- **OD-26** reading the operator's files. **Decided 2026-10-07 by the owner, built (A-43):** 1
+  MiB, the spec loader's figure, for the scope, target, fleet and labels files and the policy
+  and signature packs; any file type, with the read bounded at one byte past the cap. **Open:**
+  two reads of the tool's own output are still whole, the report JSON `cli/diff.load_findings`
+  reads for `dottore diff` and `calibrate`, and the evidence artifacts `store/replay.py` reads
+  for `replay` and `run --resume` (512 MiB held twice, 1,092 MiB, in the audit's measure); both
+  can pass 1 MiB legitimately, so each cap needs a figure measured on a real run.
+- **OD-27** a length bound on the ids of the operator's files. **Decided 2026-10-07: (a), chosen by
+  the implementer at the owner's request, built (A-57):** 128 characters for a scope or target id
+  and an identity name, refused when the file is loaded, with no pattern; endpoints, `auth_ref`
+  references and labels spec ids stay unbounded and are cut in refusals. The question (from A-51): a
+  target id was written whole wherever a run that had started printed it, the `--dry-run` plan, the
+  `-sV` lines, the reports and the run store. The options were (a) a bound at load,
+  refusing files that loaded; (b) cutting the id everywhere it is printed, which leaves reports
+  without the id the scope names; (c) leaving it.
 - **OD-30** (2026-10-07) Flow nesting under the depth limit still costs per token. A-52 refuses
   a list or a map written past the limit before the scanner pays for what follows, but PyYAML's
   pure-Python scanner walks one possible simple key per open flow level on every token, so a
