@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from ildottore.cli.app import app
@@ -383,7 +384,8 @@ def test_a_long_pattern_or_reason_is_cut(tmp_path: Path, step: str, pattern: str
 
 def _deep_spec(where: str, groups: int) -> dict[str, Any]:
     """A spec whose valid pattern is nested ``groups`` deep, with 600 other patterns after it
-    (``re`` caches 512) and, for a step, arguments nested 60 deep (YAML refuses past 100)."""
+    (``re`` caches 512) and, for a step, arguments nested 60 deep (YAML refuses past 100, and past
+    20 levels written in flow style, A-58: the test writes the spec in block style)."""
 
     deep = "(" * groups + _VALID[where] + ")" * groups
     spec = _spec(where, deep)
@@ -410,7 +412,8 @@ def test_lint_does_not_crash_near_the_nesting_limit(tmp_path: Path, where: str) 
     def clean(groups: int) -> bool:
         directory = tmp_path / str(groups)
         directory.mkdir(exist_ok=True)
-        (directory / "s.yaml").write_text(json.dumps(_deep_spec(where, groups)), encoding="utf-8")
+        spec = yaml.safe_dump(_deep_spec(where, groups), sort_keys=False)  # block style: A-58
+        (directory / "s.yaml").write_text(spec, encoding="utf-8")
         result = runner.invoke(app, ["lint", str(directory), "--json"])
         assert result.exception is None or isinstance(result.exception, SystemExit), (
             groups,

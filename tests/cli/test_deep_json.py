@@ -26,7 +26,14 @@ from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.registry.schema import SafeLoadError, safe_load_yaml
 
-from .conftest import deep_json, deep_yaml_anchors, make_spec, write_scope, write_spec_tree
+from .conftest import (
+    deep_json,
+    deep_yaml_anchors,
+    make_spec,
+    write_scope,
+    write_spec_tree,
+    written_nesting,
+)
 
 runner = CliRunner()
 
@@ -215,18 +222,23 @@ def test_a_yaml_value_is_bounded_at_max_depth(load: object) -> None:
         return False
 
     limit = safe_yaml.MAX_DEPTH
-    assert not refused("[" * limit + "]" * limit)
+    # In block style: flow style past 20 levels is refused by its own limit (A-58).
+    assert not refused("- " * (limit - 1) + "[]")
     # Refused where the nesting crosses the limit, not at the top of the document.
-    assert refused("[" * (limit + 1) + "]" * (limit + 1), f"line 1, column {limit + 1}")
-    # Through aliases: 160 levels once expanded, no nesting as written deeper than 20.
-    assert refused(deep_yaml_anchors(20, 8) + "value: *deep\n")
+    assert refused("- " * limit + "[]", f"line 1, column {2 * limit + 1}")
+    # Through aliases: 160 levels once expanded, no nesting as written deeper than 21.
+    through_aliases = deep_yaml_anchors(20, 8) + "value: *deep\n"
+    assert written_nesting(through_aliases) == (21, 20)
+    assert refused(through_aliases)
     # A recursive alias has no depth at all.
     assert refused("a: &loop [*loop]\n", "recursive alias")
 
 
-#: Anchors and levels for the CLI cases: 80,000 levels with no nesting as written past 100,
-#: deep enough for `repr` to overflow on 3.14 (from about 69,500) as well as on older versions.
-ANCHORS, PER_ANCHOR = 800, 100
+#: Anchors and levels for the CLI cases: 80,000 levels, deep enough for `repr` to overflow on 3.14
+#: (from about 69,500) as well as on older versions, with no nesting as written past 21 levels, 20
+#: in flow style. With 100 levels per anchor, as here until A-58, each anchor was written 101 deep,
+#: and since #84 these files were refused as they were written, not for their aliases.
+ANCHORS, PER_ANCHOR = 4_000, 20
 
 
 def test_calibrate_refuses_labels_deep_through_aliases(tmp_path: Path) -> None:
@@ -238,6 +250,7 @@ def test_calibrate_refuses_labels_deep_through_aliases(tmp_path: Path) -> None:
     labels.write_text(
         deep_yaml_anchors(PER_ANCHOR, ANCHORS) + "PI-DIRECT-001: *deep\n", encoding="utf-8"
     )
+    assert written_nesting(labels.read_text(encoding="utf-8")) == (21, 20)
 
     result = runner.invoke(app, ["calibrate", str(report), str(labels)])
 
@@ -254,6 +267,7 @@ def test_run_refuses_a_target_deep_through_aliases(tmp_path: Path) -> None:
         deep_yaml_anchors(PER_ANCHOR, ANCHORS) + "id: mock-target\ntype: *deep\n",
         encoding="utf-8",
     )
+    assert written_nesting(target.read_text(encoding="utf-8")) == (21, 20)
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
 
     result = runner.invoke(
@@ -277,11 +291,10 @@ def test_lint_reports_a_spec_deep_through_aliases(tmp_path: Path) -> None:
     specs = tmp_path / "specs"
     specs.mkdir()
     spec = json.loads(make_spec("PI-DIRECT-001").model_dump_json())
-    chain = deep_yaml_anchors(200, 8, line="    - chain: {value}")
-    (specs / "PI-DIRECT-001.yaml").write_text(
-        yaml.safe_dump(spec, sort_keys=False) + "setup:\n  documents:\n" + chain,
-        encoding="utf-8",
-    )
+    chain = deep_yaml_anchors(20, 80, line="    - chain: {value}")
+    text = yaml.safe_dump(spec, sort_keys=False) + "setup:\n  documents:\n" + chain
+    assert written_nesting(text) == (24, 20)  # 1,600 levels only through the aliases
+    (specs / "PI-DIRECT-001.yaml").write_text(text, encoding="utf-8")
 
     result = runner.invoke(app, ["lint", str(specs)])
 
