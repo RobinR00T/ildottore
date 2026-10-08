@@ -47,6 +47,31 @@ versioning: [SemVer](https://semver.org/).
   the operator wrote, and an endpoint or `auth_ref` mismatch, carry no note). Found by the delta
   audit of PR #76.
 
+### Fixed (found by the #47 pre-merge audit)
+
+- **`dottore run` names the spec file it could not load.** The refusal passed the file's path
+  through the redactor's entropy rule, which reads `attacks/DL-PII-ELICIT-001` (a lowercase
+  directory glued to an uppercase id fits neither exempt shape) as a key: it said
+  `1 spec file(s) failed to load and would silently leave the battery:
+  «REDACTED:high_entropy:21e2e946».yaml: <root>: 'severity' is a required property`, and the
+  operator could not tell which file to fix. It now says `attacks/DL-PII-ELICIT-001.yaml: <root>:
+  'severity' is a required property`. Only a name that is a relative path to an entry on disk
+  under one of the spec paths is kept (a directory or a dangling link named `*.yaml` included),
+  and only where no character the entropy rule reads as part of a token (`[\w+/=-]`) is glued
+  to it; what the loader quotes from inside the file still goes through the redactor (an
+  unexpected key `Xq9vT2mLp8RzK4wN7bYcD3` still reads `«REDACTED:high_entropy:…»`). A name that
+  holds a registered credential loses it to the value rule
+  (`attacks/ZZ-«REDACTED:credential:…»-001.yaml`), and one of 8 characters or more that is part
+  of a registered credential prints as `«REDACTED:credential»`. A spec path that does not exist
+  is no entry of the tree, and its `path not found` message still goes to the redactor.
+- **A kept token that overlaps a registered credential is masked outright in a CLI error.** An
+  evidence file name, a carried digest or an existing path that is part of a credential the run
+  read went to the entropy rule, which passes a low-entropy value: a carried digest `abab…ab`
+  (64 hex) inside a registered `sk-abab…ab` printed in clear. It prints as
+  `«REDACTED:credential»` now, as does a spec file name in the same position. A token shorter
+  than 8 characters (the floor below which no credential is registered) is not taken for part
+  of one: masking `x` would tell the reader the password holds an `x`.
+
 ### Fixed (a YAML value that costs far more to build than it weighs)
 
 - **A number written in thousands of characters took the linter most of a minute.** YAML 1.1 reads
