@@ -149,11 +149,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   the judge's reasoning, parsed from the judge's text past its adapter, can still hold one,
   measured as harmless because it is neither persisted nor printed (the aggregate verdict writes
   its own reasoning); a spec file whose YAML holds the escape is the operator's input, not a
-  reply: in a field the battery digest hashes (all but `name`, `description`, `preconditions`
-  and `aisvs`) it passes `dottore lint` and `run` refuses it with exit 3 before sending, on the
-  same codec error from `shared/digest.py`, without naming the spec; in `description` or
-  `preconditions` the run goes on as usual; in `name` or `aisvs` lint refuses it (and for `name`,
-  `run` names the file).
+  reply, and since PR #89 (u02) `dottore lint` refuses it in any field, naming the spec and the
+  field, and `run` refuses it when it loads, naming the file (exit 3, nothing sent).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).

@@ -56,11 +56,232 @@ versioning: [SemVer](https://semver.org/).
   whole: with no surrogate it costs about main's peak memory and 1 to 14 times its parse in CPU
   (under 0.3 s); a hostile one up to about 42 times its parse in CPU (under 0.7 s) and, at worst,
   3 times its peak memory (one 4 MiB string holding a half, held three times while it is
-  replaced, as in any version). A spec whose YAML holds the escape in a field the battery digest
-  hashes (all but `name`, `description`, `preconditions` and `aisvs`) passes
-  `dottore lint`, and `run` refuses it with exit 3 before sending, without naming the spec (the
-  operator's file, not a reply: its own task). The judge's reasoning, parsed from the judge's own
-  text past its adapter, can still hold one; it is neither persisted nor printed.
+  replaced, as in any version). A spec whose YAML holds the escape is the operator's file, not a
+  reply: since #89, `dottore lint` refuses it in any field, naming the spec and the field, and
+  `run` refuses it when it loads (exit 3, nothing sent). The judge's reasoning, parsed from the
+  judge's own text past its adapter, can still hold one; it is neither persisted nor printed.
+
+### Changed (a target or scope id longer than 128 characters is refused)
+
+- **A target or scope id, or an identity name, longer than 128 characters is refused when its file
+  is loaded.** A scope file's `targets.N.id` or `identities.N.name` is a validation problem (`String
+  should have at most 128 characters`), and a target or `--judge` file's `id` is refused as `target
+  file <path> 'id' is 1,000,000 characters, over the 128-character limit`, exit 3. Such an id loaded
+  before, and a run that started wrote it whole in its `--dry-run` plan, `-sV` lines, reports and
+  run store (the plan of an id of a million characters ran just over 1 MB, exit 0), as did messages
+  of `run` that A-51 did not reach, among them `nothing would be sent: every selected spec is
+  unrunnable on <id>`, the `-sV` probe ceiling refusal and its resume notice, `run on <id> did not
+  complete`, the warning for a live target with no `--judge`, and the `--estimate` and `-sn` lines.
+  128 is twice the 64 a fleet's ids are held to, as they name files, and about six times the longest
+  id in the shipped examples (21 characters); there is no pattern, so an id with spaces or other
+  characters loads as before. An endpoint, an `auth_ref` reference and a labels spec id stay
+  unbounded and are cut in refusals. A refusal that quotes an id still cuts it past 300 characters
+  of `repr` (one of 128 characters can have a `repr` of 1,282, `\U000e0001` for each), except two
+  refusals that write the `repr` whole: the `-sV` probe ceiling refusal of `run`, and `dottore
+  diff`'s refusal of two reports about different targets. OD-27, decided (a) by the implementer at
+  the owner's request; clause A-57 (u01).
+- Not covered: a spec id has a pattern and no length bound, and a run prints it whole (a spec id of
+  500,003 characters printed about 507 KB on a mock run, exit 0); `dottore diff` prints a report's
+  target id whole when two reports disagree, and `dottore diff` and `calibrate` list every target id
+  of a report with several targets whole, a report being the tool's own output (OD-26) and one
+  written before A-57 able to hold a longer id; a run stored with a longer id cannot be resumed, its
+  target file being refused now; and an id may hold control characters, which reach the terminal as
+  they are. Found by the audits of A-57.
+
+### Fixed (a refusal quoted a value of the operator's file whole; a file not UTF-8 was not named)
+
+- **A refusal quoted the value it refused, whole.** The refusals written by hand for the scope,
+  target, fleet and labels files quoted the offending value with no limit but the 1 MiB read: a 1 MB
+  `type:` in a target file printed an `error:` line of 1,000,108 bytes, a duplicated scope target id
+  of 500 KB one of 500,136, an undefined YAML alias of a million characters about 1,000,100 from
+  `run --scope`, `calibrate` and `lint`, and a target id of a million characters that the scope does
+  not authorize 2,000,108 from `fingerprint` (the id in the message and again in the reason). Such a
+  value is now quoted as before when its `repr` is 300 characters or fewer, and otherwise cut there
+  with its size: the first 300 characters of the `repr`, then `... (1000002 characters)`, or for a
+  list or a mapping `... (9000 items)`, without building the `repr` of a list whole (YAML aliases
+  make it larger than its file: 90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000
+  characters, about 200 MB). As a target's `type:`, that file took 1.28 to 1.49 GB of memory and 29
+  to 50 s and printed a line of about 200 MB, because the type's own lookup wrote the value out
+  before the refusal could cut it; it is now refused before the lookup, and since #71 a file of that
+  size is refused when it is loaded (A-37). An integer Python will not write out is described as #81
+  describes it (`a number too long to write out`) instead of raising, inside a list too; since #77
+  caps a YAML number at 1,000 characters, a file brings one only under a lowered digit limit. It
+  covers an invalid target `type` and `mock_scenario`, the scope's duplicated target ids and
+  identity names and its shared canaries, the spec id of a label with an invalid verdict, two target
+  files with one id, the target id and endpoint of an authorization refusal in `run` and
+  `fingerprint` and the ids the scope authorizes, which it lists after (now the first 20, each cut,
+  and how many more), the target id of the `--hardened`, stdio and credential refusals and the
+  references the scope declares for that credential (the first 20; 3,000 references of 290
+  characters printed 885,131 bytes) and the variable such a reference names, an `auth_ref`
+  reference, the target ids of the refusals that bind `run --resume` to its target (900,276 bytes
+  for an id of 900,000 characters), `fleet`'s invalid port and judge mismatches, the unknown keys
+  and doubly listed tools of a target's `seeded_setup`, and PyYAML's reason in every YAML error, the
+  spec loader's and `dottore lint`'s included. A label's verdict, a target's `provider` and
+  `transport` and the keys of its `seeded_setup` are checked as text before anything turns them into
+  text: `str()` of a list of aliases wrote about 675 MB, and of a YAML integer past 4,300 digits it
+  raised (Python's `Exceeds the limit (4300 digits)` error, naming no file; #81 refuses a labels key
+  that is such an integer). An endpoint or `base_url` urllib cannot read (a bracket, a host NFKC
+  turns into a path, a port that is not a number) raised urllib's error with no file named, for some
+  kinds with the netloc, host or port whole (900 KB for a long one): the target loader now reads the
+  endpoint stripped, as the gate does (a leading U+00A0 had let urllib's error through later, the
+  endpoint's password included), and names the file and the field without the value; the allowlist
+  denies what it cannot read, as it always said it would, so the authorization refusal quotes it
+  cut, and an entry pinned to a port that cannot be read matches nothing instead of denying every
+  URL after it; `fleet` quotes it as urllib reads it, cut and without what precedes the last `@` of
+  its authority, so a password the CLI's URL mask misses (an empty user, a space, a tab between the
+  slashes) is not printed. The 24 refusals of the new test printed lines of 400,080 to 2,000,247
+  characters on `c9f27cc`; now each is under 2,500.
+- **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
+  or labels file (or a policy or signature pack) printed `error: 'utf-8' codec can't decode byte
+  0xff in position 15: invalid start byte`, with no file name, where the spec loader says `not
+  UTF-8 text (byte N)` beside its path. It is now refused where the file is read, with the file
+  and the offset of the first bad byte in it (`[Errno 92] not UTF-8 text (byte 15):
+  '/path/scope.yaml'` on macOS, the scope's line also saying `cannot read scope file ...`), exit 3
+  as before, in `run`, `fleet`, `calibrate` and `fingerprint`. A valid file's text, and so a
+  scope checksum, is unchanged.
+- Not covered: a target's endpoint is still written whole wherever a run that has started prints it
+  (the `--dry-run` plan, reports, the run store), and so is a target or scope id up to the 128
+  characters A-57 allows (see above), and `calibrate` lists every label the report does not cover
+  with its id whole; the stdio advice's command line is written whole on purpose, to be copied; and
+  the adapter still reads a target's endpoint unstripped, so one with a Unicode space in front
+  passes the gate and the run stops at its first send (exit 3), its password masked. A stdio
+  `command` made of aliases is still joined into one text where the target is authorized: 20,000
+  aliases of a 10 KB text, a 90 KB file, print a line of about 200 MB in 1.09 to 1.49 GB, as before
+  this change; #71's node cap (A-37), merged in, now refuses that file when it is loaded. Found by
+  the pre-commit audit of A-43. Clause A-51 (u01).
+
+### Fixed (an operator's file read whole, and its validation errors listed whole)
+
+- **An operator's file was read whole.** The scope, target, fleet and labels files and the policy
+  and signature packs were read with `Path.read_text`, with no limit: a scope or labels file padded
+  with 100 MB of comments was read and parsed whole (39.5 s and 244 MB), and a sparse gigabyte of
+  labels peaked at about 2 GiB in `dottore calibrate` (2,009 and 2,116 MiB in two measures). A limit
+  on the parsed document does not bound the text it is parsed from. They are now read up to 1 MiB,
+  the spec loader's limit: a larger regular file is refused before any of it is read (68 MiB peak
+  for the same gigabyte, most of it the CLI's imports), and a pipe or a device is read up to one
+  byte past the limit and refused if that byte comes, so `--scope <(cat scope.yaml)` and `dottore
+  fleet <(...)` still work (and, since #77 parses a target file once, `run -t <(...)` too). Exit 3,
+  with an error that names the file and the sizes: `file is 1,073,741,824 bytes, over the
+  1,048,576-byte cap`. The sizes carry thousands separators because, written bare, a size of nine
+  digits or more was masked by the CLI's redactor as a phone number. The figure, and reading any
+  file type rather than only a regular one, are the owner's decisions (OD-26). 1 MiB holds about
+  22,000 labels, 2,000 scope targets with two identities each, or the scope written for about 3,800
+  fleet entries; the largest file shipped here that is read this way, the signature corpus, is 8.7
+  KB.
+- **`dottore fleet` wrote a scope it could not read back.** The scope it writes repeats each
+  endpoint, so a fleet file under the new limit could write a scope over it: an 845,022-byte fleet
+  wrote a 1,355,024-byte scope with exit 0, and the `dottore run` it printed was refused. `fleet`
+  now measures every file it would write, one at a time, and refuses, before writing any, one over 1
+  MiB (exit 3, `the scope.yaml this fleet would write is 1,355,024 bytes, over the 1,048,576-byte
+  cap a file is read up to; split the fleet`). A target or the judge file can be the one over, as
+  non-ASCII text is written escaped; the message then says to shorten that entry. The judge file is
+  measured only when the printed command reads it, not when `--judge` names another. Generated files
+  are written with LF line ends on every platform, as measured. Found by the pre-commit and delta
+  audits of this change.
+- **A validation error listed every problem, whole.** A scope, fleet or policy-pack file that failed
+  validation (and, since #73, a target file's `capabilities` or `sampling_defaults`) listed every
+  error, and a key the operator typed is part of an error's field path: a 5.5 MB scope with 5,500
+  extra keys of 1,000 characters made `dottore run --dry-run` print one `error:` line of 5,687,058
+  characters (exit 3). The first 20 problems are listed and the rest counted (`; and 980 more`), and
+  a field path or a reason longer than 300 characters is cut (`... (1000 characters)`), as the spec
+  loader does: a 1 MB scope of 1,000 such keys, under the read cap, printed 1,034,057 bytes and now
+  prints 7,171.
+- Not covered (OD-26): the report JSON that `dottore diff` and `calibrate` read and the evidence
+  artifacts that `replay` and `run --resume` read are still read whole; both are the tool's own
+  output and can pass 1 MiB legitimately, so each cap needs a figure measured on a real run. An
+  error outside the validation listing can still quote a value of the file whole (an unknown target
+  `type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Found by
+  the pre-commit audit of the alias-expansion cap (#71). Clause A-43 (u01).
+
+### Fixed (a spec value JSON cannot hold, and an integer flag no float holds)
+
+- **A spec value that JSON cannot hold passed `dottore lint` and crashed `dottore run`.** A spec is
+  a JSON document written in YAML, but YAML builds more than JSON holds: an unquoted `2026-01-01` is
+  a date, `2026-01-01T10:00:00Z` a timestamp, `!!set` a set, each entry of `!!omap` and `!!pairs` a
+  pair, `!!binary` bytes, `.nan` and `.inf` floats no JSON number writes, and an escape between
+  U+D800 and U+DFFF half a character that UTF-8 cannot write (PyYAML builds even a pair of them, an
+  emoji, as two halves). The JSON schema leaves a tool's `returns`, a document, a memory entry and a
+  fixture's tool-call arguments free-form, so `returns: 2026-01-01` in `PI-INDIRECT-TOOL-001` gave
+  `lint OK`, and `dottore run --dry-run` (or `--estimate`, or the run) then exited 1 with
+  `TypeError: Object of type date is not JSON serializable` where the in-band setup turned the value
+  into JSON: a traceback, and the exit code this tool uses for "findings below the threshold". A
+  `!!set`, a timestamp and `!!binary` did the same; half a character passed the dry run and stopped
+  the run with exit 3 (`'utf-8' codec can't encode character`, no file named); a pair, NaN and an
+  infinity ran, and the in-band setup wrote them as `[["a", 1]]`, `NaN` and `Infinity`, which the
+  spec did not write. Every value of a spec is now checked before the schema (after the A-40 check
+  of numbers too long to write out and the A-44 check of keys), and one JSON cannot hold is a
+  `SCHEMA` finding at its path: `setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as
+  one), which JSON cannot hold; write it in quotes, without a tag` (lint exits 1, and `run` refuses
+  the campaign with exit 3 in one `error:` line naming the file). A string key holding half a
+  character is reported too, and a spec `id` (or a suite's reference to one) holding one is not
+  attached to the finding (its header crashed lint with a traceback; the file name is printed
+  instead, and `lint --json` writes a null `spec_id`). A character outside the basic plane written
+  as a pair of escapes, as `json.dumps` writes it by default, is refused too, since PyYAML builds
+  two halves (pydantic already refused it in the fields it types); write the character itself, or
+  dump with `ensure_ascii=False`. The check keeps what JSON holds and reports anything else, so a
+  value built in code is named by its type. At most 20 are listed and the rest counted, a set or a
+  pair is the finding and what it holds is not walked, a container shared through an alias is
+  reported once, a key on this check's paths that is not printable is written as its `repr` (A-40's
+  own paths print keys as written until its follow-up lands), and a value in a field the schema
+  types (`name: 2026-01-01`) gets this message instead of the schema's `datetime.date(2026, 1, 1) is
+  not of type 'string'`. A key that is not a string is A-44's finding (below), reported before this
+  check runs. None of the 75 shipped specs holds such a value (none of the 129 YAML files of the
+  repository that load is flagged). Found on 2026-10-07 by the pre-commit audit of
+  `fix/huge-int-repr` (finding F6). Clause A-54 (u02); `tests/registry/test_non_json_values.py`.
+- **`--runs` past what a float holds exited 1 with a traceback.** `dottore run ... --dry-run --runs
+  <4,300 nines>` (and `--estimate`, and the run) gave `OverflowError: int too large to convert to
+  float` where the plan multiplied its token estimate by the budget headroom: from 305 nines with
+  `PI-DIRECT-001` alone, 303 with the shipped battery, against a mock target with every capability.
+  Every integer flag of `run` and `fleet --run` (`--runs`, `--top-tests`, `--concurrency`,
+  `--budget-tokens`, `--budget-requests`, `--budget-wall`) now takes at most 9,007,199,254,740,992
+  (`2**53`, where the run of whole numbers a float holds exactly ends; no flag needs more), refused
+  with exit 3 before anything is sent (`fleet --run` writes its scope and target files first):
+  `error: --runs must be at most 9,007,199,254,740,992 (got a number of more than 21 digits)`. A
+  value up to 21 digits is printed with thousands separators, which the CLI's redactor left readable
+  in all of 63,000 sampled values (1 to 21 digits, either sign). Values that used to run
+  (`--budget-tokens 100000000000000000000`) are refused now. A resume inherits the count its run
+  store recorded, so the store refuses a stored `--runs` past `2**53` as a corrupt record, as it
+  refuses one below 1 (a 400-digit count edited into the store was the same traceback once
+  inherited). Clause A-55 (u12); `tests/cli/test_flag_bounds.py`,
+  `tests/cli/test_resume_integrity.py`.
+- **A negative `--budget-tokens`, `--budget-requests` or `--budget-wall` passed `--dry-run` and
+  `--estimate`.** Both printed `budgets: -1 tokens` and exited 0, and the run refused the same
+  command with exit 3 (`max_tokens ceiling must be non-negative or None`). The three are now refused
+  with the other options, before anything runs: `--budget-tokens must be at least 0 (got -1)`. A
+  ceiling of 0 is still accepted, as the budget ledger accepts it (the run then halts on its first
+  request with exit 3; a live one is refused with a pace, below).
+- **A pace slower than one request per wall-clock ceiling: a traceback, or a live run that never
+  stopped.** The wall-clock ceiling is derived from the request count over the rate, and `--rate
+  1e-308` made that quotient infinite: `OverflowError: cannot convert float infinity to integer`, in
+  `--dry-run` too. A slow pace that did not overflow waited past the ceiling, which is checked when
+  a send is charged, not while the rate limiter waits for the next one: `--rate 0.001 --budget-wall
+  5` against a local stub was still running after 45 seconds, `--rate 1e-308 --budget-wall 3` after
+  25 once the quotient no longer overflowed, and `--budget-wall 0 --rate 1e-6 -sV` past 25 seconds,
+  the probe pass reading no ceiling (the pre-commit and delta audits of this fix). A live run whose
+  pace (`--rate`, or the timing template's: `-T0` is 0.5 requests per second) is under one request
+  per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap of a derived one) is now refused with
+  exit 3 before anything is sent: `--rate 1.000e-308 is less than one request per 7,200-second
+  wall-clock ceiling, so the run would wait past that ceiling between two sends; raise the rate or
+  --budget-wall`. So is a live run under `--budget-wall 0` at any pace, `--rate inf` included:
+  `--budget-wall 0 leaves a live run no time to send anything, at any pace; raise --budget-wall`.
+  The rate is printed in scientific notation: as typed, the CLI's redactor masked 2,782 of 20,000
+  sampled refused rates as phone or card numbers, and none written this way. An offline mock run is
+  not paced, so not checked. The derivation also bounds its quotient before `int()`, for any other
+  caller.
+- **Found while measuring, and not fixed here.** The wall-clock ceiling is still not a deadline: at
+  an accepted pace, each concurrent spec waits its own interval and the `-sV` probe pass reads no
+  ceiling, so `--rate 0.5 --budget-wall 2` against a local stub ran 2.6 s at `--concurrency 1`, 8.6
+  s at the default 4, 8.7 s at 6 (8.6 s on `c3e70d8`), 18.7 s at 12 and 34.8 s with `-sV` (the delta
+  audit's measurements). And `2**53` keeps the arithmetic finite without bounding the work: a resume
+  builds a set of mutators x runs attempt ids for each spec the halted run had started, so with
+  `PI-DIRECT-001` and `OUT-XSS-001` a stored count of 10^6 took 209 MiB with one spec started and
+  653 to 678 MiB with both, 10^7 with one spec took 3.5 s and 1.3 GiB, and `2**53 + 1` was still
+  growing at 3.7 GB when it was stopped after 4.5 minutes on `2f6201a`. A bound with a meaning, or a
+  runner that does not build the set, is the owner's call (OD-32). A resume is checked against the
+  whole wall-clock ceiling, not what the halted run left of it, and a live `--judge` in a run whose
+  attack targets are all mocks is neither paced nor checked, as on `c3e70d8` (pre-merge audit).
+  `--rate inf` turns pacing off, and a `-T` of 9 digits or more is refused as before but printed as
+  `«REDACTED:phone»`.
 
 ### Fixed (a YAML file nested past the depth limit, refused where it is written)
 
@@ -362,6 +583,12 @@ versioning: [SemVer](https://semver.org/).
   spec loader's positions and order, and one because the measure is new. Twenty-three mutants of the
   fix are all killed. Clause A-37 (u01), u02 §4, u12 A-9. Found by the pre-merge audit of #61.
 - **Left open, each its own task (found by the audits, not introduced here).** Under the cap, a
+  base-60 integer (`1:59:59:...`) builds in time quadratic in its length (a 1 MiB spec took `lint`
+  43 s) and integer keys that share one hash make a mapping quadratic (27 s); `run` loads the target
+  file four times; a 4,000-digit integer in a typed spec field crashed `lint` with a traceback
+  (fixed since by #81); and the operator's files are read whole with no byte limit, their validation
+  errors listed with no limit (both fixed since by #76). An undefined alias or an unknown tag is still named in the refusal,
+
   base-60 integer (`1:59:59:...`) built in time quadratic in its length and integer keys that share
   one hash made a mapping quadratic, and `run` parsed the target file four times (all three fixed in
   the section above); an integer past Python's 4,300-digit limit, written in hexadecimal, octal,

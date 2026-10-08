@@ -59,6 +59,7 @@ from ildottore.core.setup_delivery import (
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.reporting import RunStatus
+from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import Category, EvaluatorType
 from ildottore.shared.models import (
@@ -485,6 +486,13 @@ BUDGET_DERIVATION_CAP = PlanBudgets(
     max_attempts=20_000,
 )
 
+#: The largest value an integer flag of ``run`` takes: ``2**53``, the last of the run of whole
+#: numbers a float holds exactly. The plan multiplies ``--runs`` into float arithmetic, and a
+#: ``--runs`` of 306 digits was an ``OverflowError`` there with one spec, a traceback with exit
+#: 1 (pre-commit audit of ``fix/huge-int-repr``, F6, A-55). No flag needs more:
+#: ``--budget-wall`` of ``2**53`` seconds is 285 million years.
+MAX_FLAG_VALUE = 2**53
+
 
 def budgets_for(
     estimate: PlanEstimate,
@@ -522,7 +530,11 @@ def budgets_for(
     requests = int(estimate.total_requests * BUDGET_HEADROOM)
     wall_s = DEFAULT_PLAN_BUDGETS.max_wall_s or 0
     if rate_rps is not None and rate_rps > 0:
-        wall_s = max(wall_s, int(estimate.total_requests / rate_rps * BUDGET_HEADROOM) + 1)
+        # Bounded before int(): a rate near zero made the quotient infinite, and int() of it was
+        # an OverflowError, a traceback with exit 1 (`--rate 1e-308`, A-55). Anything past the
+        # bound is past the cap, which bounds the result below as it did.
+        paced = estimate.total_requests / rate_rps * BUDGET_HEADROOM
+        wall_s = max(wall_s, int(min(paced, MAX_FLAG_VALUE)) + 1)
     return PlanBudgets(
         max_tokens=_axis(
             DEFAULT_PLAN_BUDGETS.max_tokens, tokens, BUDGET_DERIVATION_CAP.max_tokens, o.max_tokens
@@ -928,6 +940,18 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
     print("  reachability is authorization-level (scope + allowlist); no request was sent.")
 
 
+def _flag_figure(value: int) -> str:
+    """``value`` with thousands separators, or its sign and size past 21 digits.
+
+    Separated, so the CLI's redactor does not mask it as a phone number, and described past 21
+    digits, so a 4,300-digit value is not printed back.
+    """
+
+    if abs(value) < 10**21:
+        return f"{value:,}"
+    return f"a {'negative ' if value < 0 else ''}number of more than 21 digits"
+
+
 def _validate_options(opts: RunOptions) -> None:
     """Refuse an option the campaign would only trip over at the end, before anything is sent.
 
@@ -939,12 +963,20 @@ def _validate_options(opts: RunOptions) -> None:
     fail_on_band(opts.fail_on)
     if opts.timeout_s is not None and not opts.timeout_s > 0:
         raise ValueError(f"--timeout must be greater than 0 seconds (got {opts.timeout_s})")
-    if opts.concurrency is not None and opts.concurrency < 1:
-        raise ValueError(f"--concurrency must be at least 1 (got {opts.concurrency})")
-    if opts.top_tests is not None and opts.top_tests < 1:
-        raise ValueError(f"--top-tests must be at least 1 (got {opts.top_tests})")
-    if opts.runs < 1:
-        raise ValueError(f"--runs must be at least 1 (got {opts.runs})")
+    # An upper bound too (A-55): a `--runs` of 306 digits was an OverflowError in the plan's
+    # float arithmetic, a traceback with exit 1, and `--budget-tokens -1` passed the dry run and
+    # the estimate with exit 0 while the run refused it.
+    for flag, value, least in (
+        ("--concurrency", opts.concurrency, 1),
+        ("--top-tests", opts.top_tests, 1),
+        ("--runs", opts.runs, 1),
+        ("--budget-tokens", opts.budget_tokens, 0),
+        ("--budget-requests", opts.budget_requests, 0),
+        ("--budget-wall", opts.budget_wall_s, 0),
+    ):
+        if value is not None and not least <= value <= MAX_FLAG_VALUE:
+            bound = f"at least {least}" if value < least else f"at most {MAX_FLAG_VALUE:,}"
+            raise ValueError(f"{flag} must be {bound} (got {_flag_figure(value)})")
     report_paths = list(_report_outputs(opts).values())
     for path in report_paths:
         parent = Path(path).parent
@@ -1053,7 +1085,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         path, target = loaded.path, loaded.target
         if target.id in seen_ids:
             raise ValueError(
-                f"two target files declare the id {target.id!r} ({seen_ids[target.id]} and "
+                f"two target files declare the id {quoted(target.id)} ({seen_ids[target.id]} and "
                 f"{path}); each target in one run needs its own id"
             )
         seen_ids[target.id] = path
@@ -1065,13 +1097,15 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         # `fleet --judge` generated), every semantic_judge verdict came back inconclusive
         # with the reason only in the JSON, and the run exited 0.
         to_authorize.append((opts.judge, judge_target))
+    # Each id cut at 300 characters, as the reason quotes it, and the scope's own ids listed up
+    # to 20, each cut (clause A-51).
     refusals = [
-        f"{target.id} ({reason})"
+        f"{cut(target.id)} ({reason})"
         for _, target in to_authorize
         if (reason := _refusal_for(scope, target)) is not None
     ]
     if refusals:
-        authorized = ", ".join(sorted(t.id for t in scope.targets)) or "<none>"
+        authorized = listed(sorted(t.id for t in scope.targets)) or "<none>"
         # A stdio MCP target is authorized by its COMMAND LINE, not by an endpoint, and the
         # generic advice ("allowlist the endpoint") pointed at the wrong field. The spelling
         # matters too: the scope's `commands` entries are matched against the joined argv, so
@@ -1081,7 +1115,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             if (target.transport or "").strip().lower() == "stdio" and target.command:
                 joined = " ".join(target.command)
                 stdio_hint = (
-                    f" {target.id!r} is a stdio MCP target, so it is authorized by its "
+                    f" {quoted(target.id)} is a stdio MCP target, so it is authorized by its "
                     f'command line, not by an endpoint: add commands: ["{joined}"] to its '
                     "scope entry (one string, exactly as shown)."
                 )
@@ -1192,6 +1226,31 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # paced (there is nobody to be polite to, and pacing CI would only slow it); the plan
     # output says so out loud instead of quietly dropping the flag.
     pacing_rate = timing.rate_rps if any_live else None
+    # Under one request per wall-clock ceiling, a run waits past the ceiling: the ledger checks
+    # it when a send is charged, not while the rate limiter sleeps, so `--rate 1e-308` ran on
+    # without end once its derived ceiling stopped overflowing, and with `--budget-wall 0 -sV`
+    # too, the probe pass reading no ceiling (pre-commit and delta audits of A-55). The pace
+    # checked is the one that applies, a template's included, before anything is sent.
+    wall = (
+        opts.budget_wall_s if opts.budget_wall_s is not None else BUDGET_DERIVATION_CAP.max_wall_s
+    )
+    # Written so a NaN refuses: `--rate inf` against a zero ceiling is `inf * 0`, which no
+    # comparison holds for (pre-merge audit of A-55).
+    if pacing_rate is not None and wall is not None and not pacing_rate * wall >= 1:
+        if wall == 0:  # no pace sends under it, so raising the rate is no advice
+            raise ValueError(
+                "--budget-wall 0 leaves a live run no time to send anything, at any pace; "
+                "raise --budget-wall"
+            )
+        pace = (
+            f"--rate {pacing_rate:.3e}"
+            if opts.rate is not None
+            else f"the -T{opts.template} pace of {pacing_rate:.3e} requests per second"
+        )
+        raise ValueError(
+            f"{pace} is less than one request per {wall:,}-second wall-clock ceiling, so the "
+            "run would wait past that ceiling between two sends; raise the rate or --budget-wall"
+        )
 
     # Resolved BEFORE the fingerprint pass, which SENDS. It used to sit after it, so
     # `-sV --resume <id-of-a-changed-battery>` put 17 probes on a real endpoint with a real
@@ -1680,9 +1739,9 @@ def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None,
         # (audit 2026-10-03, R3). A clean report about a model nobody contacted is refused.
         raise ValueError(
             f"--hardened replays the offline hardened fixtures and sends nothing, so it cannot "
-            f"be used with the live target {loaded.target.id!r} ({loaded.path}): the report would "
-            "describe a model that was never contacted. Drop --hardened, or point it at a "
-            "mock target."
+            f"be used with the live target {quoted(loaded.target.id)} ({loaded.path}): the "
+            "report would describe a model that was never contacted. Drop --hardened, or point "
+            "it at a mock target."
         )
     if opts.hardened or loaded.uses_mock:
         scenario = "hardened" if opts.hardened else loaded.mock_scenario()

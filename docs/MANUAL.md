@@ -93,6 +93,34 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   keeps it from being masked as that credential. A body that is not valid UTF-8 in any other way
   (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD) and an
   MCP stdio line (skipped, so the call times out).
+- **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
+  limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
+  from the command line). A larger regular file is refused before any of it is read; anything
+  else, such as a pipe (`--scope <(cat scope.yaml)`) or a device, is read up to one byte past
+  the limit and refused if that byte comes.  The error names the file and the sizes, written
+  with thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and
+  the command exits 3. `dottore fleet` measures every file it would write and refuses, before
+  writing any, one over the limit: the scope repeats each endpoint and is usually the largest,
+  but a target or the judge file can be larger, as non-ASCII text is written escaped. The judge
+  file is measured only when no `--judge` file replaces it, so with `--judge` a `judge.yaml`
+  over the limit is still written, and a later `run --judge` naming it is refused. 1 MiB holds
+  about 22,000 labels, 2,000 scope targets with two identities each, or the scope written for
+  about 3,800 fleet entries; the largest file shipped here that is read this way, the signature
+  corpus, is 8.7 KB.
+  A file that is not UTF-8 is refused the same way, naming the file and the offset of its first
+  bad byte (`[Errno 92] not UTF-8 text (byte 15): '/path/scope.yaml'` on macOS), exit 3. A
+  target's endpoint that cannot be read as a URL is refused naming the file and the field, not
+  the value, which can hold a password. A refusal that quotes a value of the file (an invalid
+  `type`, a duplicated id, a target the scope does not authorize, an undefined YAML alias)
+  quotes it as it is when its `repr` is 300 characters or fewer, and otherwise its first 300
+  characters and its size, `... (1000002 characters)` or, for a list or a mapping, `... (9000
+  items)`; a list of what the file declares (the ids a scope authorizes, the credentials it
+  declares for a target) shows the first 20 and counts the rest. Only the advice for a stdio
+  target prints its command line whole, to be copied; one made of YAML aliases is bounded by the
+  node cap every YAML file has (A-37). A target or scope id and an identity name are at most 128
+  characters: a longer one is refused when its file is loaded, naming the file. An endpoint has
+  no length limit, and a run that starts prints it whole in its plan and reports, as `calibrate`
+  does with the labels a report does not cover.
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -145,8 +173,11 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   to the recorded checksum`). The value typed in `checksum:` is not quoted at all: the redactor
   masked a real sha256 there only by its entropy, about 19 times in 20, so what appeared in
   clear was mostly a value that was not a digest, such as a key typed by mistake. A scope or
-  fleet file that fails validation names each field and the reason, never the value
-  (pydantic's own message echoes it), and a YAML error in a scope, target, fleet or labels file
+  fleet file, or a target file's `capabilities` or `sampling_defaults`, that fails validation
+  names each field and the reason, never the value
+  (pydantic's own message echoes it), for at most 20 problems, the rest counted (`; and 980
+  more`), and cuts a field path or a reason longer than 300 characters (`... (1000
+  characters)`); a YAML error in a scope, target, fleet or labels file
   gives the problem and where PyYAML found it: line and column, plus where the entry it was
   reading starts when PyYAML records that and it differs (a missing space after a colon is
   reported on the next line); a control character is located by its position instead
@@ -457,7 +488,13 @@ error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` 
 usage error (an unknown option, a value of the wrong type) is `3` too: the command-line library
 defaults to `2`, which here would read as "findings". Options that can only be wrong are
 refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
-`--top-tests 0`, `--runs 0`, `--rate 0`, a report path in a directory that does not exist (`-oA`
+`--top-tests 0`, `--runs 0`, `--rate 0`, a negative `--budget-tokens`, `--budget-requests` or
+`--budget-wall`, any of those six integer flags past 9,007,199,254,740,992 (`2**53`; `--runs` of
+a few hundred digits used to crash the plan's arithmetic with exit 1), a live run whose pace
+(`--rate`, or the `-T` template's) is under one request per wall-clock ceiling (`--budget-wall`,
+0 included, or the 7,200 s cap of a derived one; the ceiling is checked when a send is charged,
+so such a run waited past it; an offline mock run is not paced), a report path in a
+directory that does not exist (`-oA`
 expanded to its four files first), two target files with the same id, and two report formats
 that would write the same file (`two report formats would write the same file: <path>`). That
 last check compares the resolved paths case-insensitively and after Unicode normalization,
@@ -588,35 +625,43 @@ so do the policy and signature packs (since 2026-10-07; they had only the depth 
 and 1.7 GB). Too deep is reported before too large, and each where the value crosses its limit:
 `labels file labels.yaml is not valid YAML: document is too large (over 100000 nodes, counting
 every alias where it is used and a text as one node per 64 characters) at line 1, column 266`
-points at the anchor whose two aliases take it past the cap. Composition stops as soon as the nodes
-written in a file pass the cap, an alias counting the node it names, so a large file is refused
-without being composed whole (the first version of this cap composed a 3 MB list of a million texts,
-785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as too large before
-its depth is checked, unless composition reaches a list or a map past the depth limit before the
-count crosses (a list or a map is counted when it ends). The file itself is still read whole: these
-files have no byte limit. A tag
-longer than 256 characters is refused at the first one, without quoting it. A list or a map written
-inside 100 others is refused where it starts, before anything in it or after it is composed (the
-scanner reads ahead to the end of that line, at most 1,024 characters, and one token past it, each
-token read whole, and an error there is reported instead): PyYAML's scanner pays on every token for
-each flow level open around it, and a file nested past the limit used to be composed whole first
-(198 KB of chains of `[` 320 deep, 11 s, 4.6 times a flat list of as many texts; now 0.1 s). The
-position is where the first list or map written past the limit starts (a deeper branch, or one as
-deep written first, aliases expanded, used to be named instead, and so did a key before an empty
-list, as in `k: []`), and a recursive alias written before the nesting is no longer what is
-reported. A text or an alias written at level 101 opens no level and is left to what refused it
-before. Under the limit the cost stays: the same chains 98 deep are accepted in about 2.3 times the
-time of the flat list, and up to about 3 times when they hold their texts at the bottom (OD-30: a
-lower limit for flow nesting only is decided, not built yet).
+points at the anchor whose two aliases take it past the cap. Composition stops as soon as the
+nodes written in a file pass the cap, an alias counting the node it names, so a large file is
+refused without being composed whole (the first version of this cap composed a 3 MB list of a
+million texts, 785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as
+too large before its depth is checked, unless composition reaches a list or a map past the depth
+limit before the count crosses (a list or a map is counted when it ends). Each file is read up
+to 1 MiB (see **Bounded operator files** in §3), from any file; a scope, target, fleet or labels
+file can be a pipe. A tag longer than 256 characters is refused at the first one, without
+quoting it. A list or a map written inside 100 others is refused where it starts, before
+anything in it or after it is composed (the scanner reads ahead to the end of that line, at most
+1,024 characters, and one token past it, each token read whole, and an error there is reported
+instead): PyYAML's scanner pays on every token for each flow level open around it, and a file
+nested past the limit used to be composed whole first (198 KB of chains of `[` 320 deep, 11 s,
+4.6 times a flat list of as many texts; now 0.1 s). The position is where the first list or map
+written past the limit starts (a deeper branch, or one as deep written first, aliases expanded,
+used to be named instead, and so did a key before an empty list, as in `k: []`), and a recursive
+alias written before the nesting is no longer what is reported. A text or an alias written at
+level 101 opens no level and is left to what refused it before. Under the limit the cost stays:
+the same chains 98 deep are accepted in about 2.3 times the time of the flat list, and up to
+about 3 times when they hold their texts at the bottom (OD-30: a lower limit for flow nesting
+only is decided, not built yet).
 A key written twice in one
-mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a
-file with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than
-text (`5:`, a bare `on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its
+mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a file
+with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than text
+(`5:`, a bare `on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its
 mapping, such as `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write
 it in quotes, without a tag`: a spec is JSON, whose keys are strings, and such a key in a fixture's
-tool-call arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`).
+tool-call arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`). A
+value JSON cannot hold (an unquoted date or timestamp such as `2026-01-01`, a `!!set`, an entry of
+`!!omap` or `!!pairs`, `!!binary`, `.nan`, `.inf`, an escape between U+D800 and U+DFFF, which
+PyYAML builds as half a character even in a pair) is a `SCHEMA` finding at its path, such as
+`setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as one), which JSON cannot hold;
+write it in quotes, without a tag`: a spec is JSON, and such a value in a tool's `returns` or a
+tool call's arguments passed lint and then crashed `run`.
 A YAML error gives the line and
-the reason without quoting the line, a suite or pack error names the field without the value,
+the reason without quoting the line (a reason that names an alias or a tag is cut at 300
+characters), a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. A number too long for Python to write out (more than
 `sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
