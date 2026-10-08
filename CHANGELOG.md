@@ -47,7 +47,8 @@ versioning: [SemVer](https://semver.org/).
   URL after it; `fleet` quotes it as urllib reads it, cut and without what precedes the last `@` of
   its authority, so a password the CLI's URL mask misses (an empty user, a space, a tab between the
   slashes) is not printed. The 24 refusals of the new test printed lines of 400,080 to 2,000,247
-  characters on `c9f27cc`; now each is under 2,500.- **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
+  characters on `c9f27cc`; now each is under 2,500.
+- **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
   or labels file (or a policy or signature pack) printed `error: 'utf-8' codec can't decode byte
   0xff in position 15: invalid start byte`, with no file name, where the spec loader says `not
   UTF-8 text (byte N)` beside its path. It is now refused where the file is read, with the file
