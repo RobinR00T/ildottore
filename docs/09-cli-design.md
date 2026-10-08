@@ -126,10 +126,21 @@ not read by the runner: every mutation variant of every spec is sent `--runs` ti
 **Options are validated before the campaign.** `run` refuses, with exit 3 and before the scope
 is loaded or anything is sent: a `--rate` that is not greater than 0; an unknown `--fail-on`
 band; `--timeout` not greater than 0; `--concurrency`, `--top-tests` or `--runs` below 1; a
-report path whose directory does not exist; and two report formats that would write the same
+negative `--budget-tokens`, `--budget-requests` or `--budget-wall` (the dry run printed it and
+exited 0, the run refused it); any of those six past `2**53` (9,007,199,254,740,992, where the
+run of whole numbers a float holds exactly ends: `--runs` of a few hundred digits crashed the
+plan's float arithmetic with exit 1, A-55); a report path whose directory does not exist; and two
+report formats that would write the same
 file (paths compared after resolving, Unicode-normalized and case-folded, because a
 case-insensitive volume treats `R.json` and `r.json` as one file). These used to be accepted,
 and some failed only after the whole campaign had run.
+
+Once the scope, the targets and the specs are loaded, and before anything is sent (the resume
+block and the `-sV` probe pass included), a live run whose pace (`--rate`, or the `-T`
+template's) is under one request per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap of
+a derived one) is refused too, as is any live run under `--budget-wall 0`: the ceiling is
+checked when a send is charged, and such a run waited past it (A-55). A live `--judge` over
+attack targets that are all mocks is excepted: that run is not paced, so not checked.
 
 **Resume sends again what ended in an environment error (F11, built 2026-10-04).** `--resume
 <run-id>` skips every attempt the halted run ANSWERED and sends again, under the same attempt
