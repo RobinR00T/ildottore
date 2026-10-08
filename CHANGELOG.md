@@ -48,6 +48,48 @@ versioning: [SemVer](https://semver.org/).
   `type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Found by
   the pre-commit audit of the alias-expansion cap (#71). Clause A-43 (u01).
 
+### Fixed (two fleet target ids that differ only by case)
+
+- **`dottore fleet` wrote one target over another when their ids differed only by case.** Each
+  target is written to `target-<id>.yaml`, and on a case-insensitive file system (the macOS and
+  Windows default) `target-Prod.yaml` and `target-prod.yaml` are one file. The duplicate check
+  compared ids exactly, so a fleet declaring `Prod` and `prod` wrote `prod` over `Prod`, printed
+  two `target:` lines and exited 0, and the `dottore run` it printed (and `fleet --run`) then
+  refused with exit 3, "two target files declare the id 'prod'", an id the fleet declared once
+  (measured on `2f6201a` and `c3e70d8`, APFS). Two ids equal under `casefold()` are now refused
+  before anything is written, on every file system, on one line: `error: the fleet's
+  targets.0.id 'Prod' and targets.1.id 'prod' differ only by case, so target-Prod.yaml and
+  target-prod.yaml are one file on a case-insensitive file system (the macOS and Windows
+  default); give each target an id that differs in more than case`. Each entry is located as the
+  validation errors of the same command locate it (`targets.1.id`, counted from 0), because the
+  CLI masks what its redactor reads as high entropy: with `Meta-Llama-3-70B-Instruct` and its
+  upper-case twin, both ids and both file names come out as `REDACTED`, and the locations still
+  say which two entries to change. An exact duplicate keeps its wording and gains the two
+  locations (`duplicate target id 'prod' in fleet (targets.0.id and targets.2.id)`). A `judge:`
+  id spelled as a target's only up to case is refused too, with both locations: no file
+  collides (the judge goes to `judge.yaml`), but it got a scope entry of its own beside the
+  target's, which worked and put two ids that differ only by case in the authorization record
+  (spelled exactly the same, the judge still shares the target's entry). A `judge:` block with
+  no `id:` is `judge`, so a target `Judge` beside it is now refused; this refusal, and the
+  existing one for a judge with a target's exact id on another endpoint (now `the fleet's
+  judge.id 'judge' ... is targets.0.id, a target with a different endpoint or credential; give
+  the judge its own id`), say when the id is that default, and so does a `--judge` file that
+  names another id (`id 'local-judge' (the fleet declares 'judge', the default of a judge: block
+  that names no id)`; it said "the fleet declares 'judge'" alone). Refusing on a case-sensitive file
+  system too, where nothing collided, is decision OD-33, confirmed by the owner (the alternative
+  was refusing only where the file system folds case). Not changed: `run` and the scope loader still
+  compare ids exactly; no file of a run is named by a target id, and the run store's finding key
+  `<spec id>::<target id>` is compared case-sensitively, so two hand-written target files `Prod`
+  and `prod` run together with two run ids, both in every report format. Contract u01 A-56;
+  `tests/cli/test_fleet_case_ids.py` (19 of its 24 tests fail on `c3e70d8`, on APFS: 10 because
+  nothing is refused, 2 on exit 0, 6 on the message, with no line for `--run` and no location or
+  default note in the duplicate and judge refusals, and the enumeration on both; on a
+  case-sensitive file system the `--run` test fails on its exit code instead. The other 5 check
+  that the enumeration reaches every refusal, that a judge spelled as a target still shares its
+  entry, and that the `--judge` refusals that did not change stay as they were: an `id: judge`
+  the operator wrote, and an endpoint or `auth_ref` mismatch, carry no note). Found by the delta
+  audit of PR #76.
+
 ### Fixed (found by the #47 pre-merge audit)
 
 - **`dottore run` names the spec file it could not load.** The refusal passed the file's path

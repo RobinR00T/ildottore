@@ -152,7 +152,8 @@ special to enable: pick the `multi-turn` suite or the individual `JB-*` specs.
 ## Fleet: many targets, one file
 
 Declare every LLM / URL / MCP endpoint to validate in one `fleet.yaml`, then expand it into
-a scope plus one target file per model:
+a scope plus one target file per model (`target-<id>.yaml`, so two ids that differ only by case,
+such as `Prod` and `prod`, are refused on every file system):
 
 ```bash
 dottore fleet fleet.yaml --out .dottore/fleet      # generate scope + targets, review them

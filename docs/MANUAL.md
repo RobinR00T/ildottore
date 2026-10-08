@@ -379,7 +379,16 @@ targets:
 
 `provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
 `/messages` -> `anthropic`, otherwise `rest`. `dottore fleet` expands this into a scope plus
-one target file per model. Each entry is written as a `chatbot` target (an `mcp` one as `api`)
+one target file per model, named for its `id` (`target-<id>.yaml`). Two ids that differ only by
+case (`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
+case-insensitive one (the macOS and Windows default) they are one file, and the second entry
+used to overwrite the first. The message locates both entries as validation errors do
+(`targets.0.id`, counted from 0), since the CLI may mask an id that looks random. A `judge:` id
+spelled as a target's only up to case is refused too (the default `judge` of a block with no
+`id:` included), so the scope never holds two ids that differ only by case; spelled exactly the
+same, the judge shares that target's scope entry when its endpoint and credential match, and is
+refused otherwise.
+Each entry is written as a `chatbot` target (an `mcp` one as `api`)
 with no `seeded_setup`, so a spec that needs documents, tools or memory is `setup_not_seeded`
 on a fleet entry that declares the capability; for those, scan with a target file (§4.2). Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
 
