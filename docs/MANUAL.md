@@ -447,7 +447,13 @@ error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` 
 usage error (an unknown option, a value of the wrong type) is `3` too: the command-line library
 defaults to `2`, which here would read as "findings". Options that can only be wrong are
 refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
-`--top-tests 0`, `--runs 0`, `--rate 0`, a report path in a directory that does not exist (`-oA`
+`--top-tests 0`, `--runs 0`, `--rate 0`, a negative `--budget-tokens`, `--budget-requests` or
+`--budget-wall`, any of those six integer flags past 9,007,199,254,740,992 (`2**53`; `--runs` of
+a few hundred digits used to crash the plan's arithmetic with exit 1), a live run whose pace
+(`--rate`, or the `-T` template's) is under one request per wall-clock ceiling (`--budget-wall`,
+0 included, or the 7,200 s cap of a derived one; the ceiling is checked when a send is charged,
+so such a run waited past it; an offline mock run is not paced), a report path in a
+directory that does not exist (`-oA`
 expanded to its four files first), two target files with the same id, and two report formats
 that would write the same file (`two report formats would write the same file: <path>`). That
 last check compares the resolved paths case-insensitively and after Unicode normalization,
@@ -603,12 +609,18 @@ refused in 0.01 s). Block style counts only toward the limit of 100, and the YAM
 repository ships nest at most 2 flow levels; a file written as JSON is flow style throughout, so it
 too nests at most 20 levels.
 A key written twice in one
-mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a
-file with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than
-text (`5:`, a bare `on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its
+mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a file
+with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than text
+(`5:`, a bare `on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its
 mapping, such as `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write
 it in quotes, without a tag`: a spec is JSON, whose keys are strings, and such a key in a fixture's
-tool-call arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`).
+tool-call arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`). A
+value JSON cannot hold (an unquoted date or timestamp such as `2026-01-01`, a `!!set`, an entry of
+`!!omap` or `!!pairs`, `!!binary`, `.nan`, `.inf`, an escape between U+D800 and U+DFFF, which
+PyYAML builds as half a character even in a pair) is a `SCHEMA` finding at its path, such as
+`setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as one), which JSON cannot hold;
+write it in quotes, without a tag`: a spec is JSON, and such a value in a tool's `returns` or a
+tool call's arguments passed lint and then crashed `run`.
 A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
