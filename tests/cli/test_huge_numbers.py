@@ -279,7 +279,8 @@ def test_a_report_with_a_number_too_long_to_read_is_named(tmp_path: Path, comman
         ),
         pytest.param(
             "id: mock-target\ntype: [{n}]\n",
-            "has invalid type a value holding a number too long to write out (over 640 digits);",
+            # A-51's `quoted` writes the list and describes the number inside it.
+            "has invalid type [a number too long to write out (over 640 digits)];",
             id="type-list",
         ),
         pytest.param(

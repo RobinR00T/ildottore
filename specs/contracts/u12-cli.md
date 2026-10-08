@@ -379,9 +379,9 @@ and said so rather than pinned (pre-commit, delta and pre-merge audits):
   key is masked as any error text is (a registered credential and the known key shapes first, then
   the entropy rule), and the entropy rule leaves a low-entropy one readable (about 1 in 20 random
   64-hex keys, and the tests' repeated value);
-* every unknown key is listed on the one line, as `sampling_defaults` lists them on `2f6201a`
-  (20,000 keys gave a 789 KB line); the default of 20 listed problems that #76
-  (`fix/operator-file-read-cap`) gives `validation_problems` bounds both once it lands;
+* unknown keys are listed on the one line as `validation_problems` lists any block's problems
+  since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 keys give
+  a line of 1,040 bytes, where `sampling_defaults` on `2f6201a` printed 789 KB);
 * a run halted before this change with such a key resumes once the key is deleted (it was never
   read, so the target is the same; measured end to end, exit 0) and is refused as another target
   once the key is corrected to the one meant, which changes the capabilities; that refusal's

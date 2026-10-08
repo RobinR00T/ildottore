@@ -23,6 +23,97 @@ The carryover ledger. Every agent session updates this so context survives even 
   in A-50. Merging next to #76 conflicts on `cli/fleet.py`'s imports (keep both). PR #78; the owner
   chose option 1 (refuse both) on 2026-10-07.
 
+## State, 2026-10-08: a live fingerprint orders a live plan (run 2026-10-07)
+
+- PR #58 (OD-18 option B) squash-merged as `0f936b6`: with #50, OD-18 is complete. A live
+  `run -sV` on `PI-INDIRECT-TOOL-001` against the local `llama3.2:3b` sent `zero_width_inject`
+  before `nested_instruction`, against the declared order (`docs/16` §1). Noted by its audit,
+  not decided: the planner matches carrier names exactly, so `translate:es` (and the other
+  `translate:<lang>` variants) never moves forward when `translate` was recovered; whether one
+  language's comprehension should stand for another is a design question. Next in the owner's
+  order: hosted APIs (the owner's keys and models), then a deployed application, which needs
+  its operator's seeding (`examples/target.app.yaml`).
+
+## State, 2026-10-07 (night): ids bounded at 128 characters (OD-27 decided)
+
+- On `fix/operator-id-length`, stacked on `fix/operator-file-quoted-values` (#86),
+  `tests/cli/test_operator_id_length.py`: the owner delegated OD-27 and the choice was (a), a bound
+  when the file is loaded. A scope target's `id` and an identity's `name` are at most 128 characters
+  in the scope model (`policy.scope.MAX_ID_CHARS`), and `_target_from` (shared by `load_target` and
+  `read_target_file`) refuses a target or `--judge` file's longer `id` naming the file, so no run
+  prints a target id past 128 characters (A-51 had cut it in most refusals only). 128: twice a
+  fleet's 64, about six times the longest example id (21); no pattern. The audits of A-57
+  (2026-10-08) found that removing A-51's cases of a long id left 14 of the 19 sites that quote a
+  target id or an identity name unguarded, as an id of 128 characters can have a `repr` of 1,282
+  (`\U000e0001` each): those cases use such ids now, with a check that no id's `repr` appears whole
+  anywhere in the output (line breaks removed, in case Rich folds a message), and all 19 mutants are
+  killed. Not covered, found by those audits: spec ids (a pattern, no bound), `dottore diff` and
+  `calibrate` printing a report's target ids whole, a stored run with a longer id no longer
+  resumable, control characters in ids. 9 of the 11 new tests fail without the bound; 5 mutants of
+  the bound killed. Clause A-57 (u01).
+
+## State, 2026-10-07 (evening): a refusal quoted the operator's value whole
+
+- On `fix/operator-file-quoted-values`, stacked on `fix/operator-file-read-cap` (#76, head
+  `4a572f0`, which brings #81's A-40 from main: the huge-integer refusals of `calibrate` and
+  `seeded_setup` are A-40's, and `quoted` describes such a number in A-40's words),
+  `tests/cli/test_operator_file_quoted_values.py`: the two LOW findings of #76's pre-commit audit.
+  (1) Refusals written by hand quoted a value of the scope, target, fleet or labels file whole,
+  bounded only by the 1 MiB read (a 1 MB `type:` printed 1,000,108 bytes, an undefined alias of a
+  million characters about 1,000,100 in `run`, `calibrate` and `lint`). They now go through
+  `shared.config_errors.quoted` (the `repr` up to 300 characters, then `... (N characters)`, or `...
+  (N items)` for a list or mapping, never building a container's `repr` whole: 90 KB of aliases made
+  one of 200,080,000 characters), and `yaml_problem` cuts PyYAML's reason the same way. The sweep
+  found 24 such refusals, not the 4 reported, among them the authorization refusal of `run` and
+  `fingerprint` (2,000,108 bytes for one id) with the list of ids the scope authorizes (now 20, each
+  cut, `listed`) and two lists in `seeded_setup`. The pre-commit audit found that the enum lookup of
+  a target's `type` still built the whole `repr` (1.28 to 1.49 GB for a 90 KB file of aliases; now
+  refused before the lookup, 72 MB), the credential refusal's unbounded list of declared references
+  (885,131 bytes), the three `--resume` refusals, an integer `repr` cannot write, two surviving
+  mutants and doc figures; the delta audit, that `str()` of a verdict, `provider` or `transport` of
+  aliases still wrote about 675 MB, a labels key that is a huge integer blamed on a valid verdict
+  (in the first commit only), nested aliases untested, the credential variable's name, and doc
+  figures; the pre-merge audit, that urllib's errors quoted an endpoint or `base_url` whole (900 KB,
+  no file; the allowlist now denies what it cannot read, as documented), four branches untested and
+  a date key of `seeded_setup` written differently; the last delta audit, a leading U+00A0 that let
+  urllib's error and the endpoint's password through (the loader now reads the endpoint as the gate
+  does) and an unreadable allowlist entry that denied its neighbours; the delta audit after that, an
+  unreadable entry still matching an IPvFuture literal and `fleet` printing a password the URL mask
+  misses; the final audit, a tab or line break between the slashes still hiding that password from
+  `fleet`; all fixed. Left, written in A-51: the adapter reads the endpoint unstripped (fails closed
+  at the first send). 84 of the 107 tests (the file's 106 and #76's changed reader test) fail on
+  `4a572f0`, each for its reason; of the 23 that pass, 4 were fixed first by #81 and 19 guard
+  behaviour that must not change; 74 of 76 mutants die (the 2 that live quote a fleet id, already
+  held to 64 characters). (2) A byte that is not UTF-8 in any operator file printed the codec's
+  error with no file name; `read_text_capped` now refuses it as an `OSError` (`EILSEQ`) with the
+  path and the offset, exit 3, as it refuses a file over the cap. Clause A-51 (u01; A-48 to A-50
+  were claimed the same evening by `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
+  `fix/target-capabilities-strict`). Open, OD-27: ids have no length bound, so a started run still
+  prints a target id whole (plan, progress, reports, run store), and `calibrate` lists uncovered
+  labels whole; proposed, a bound at load like the fleet's 64 characters. Merged with #76's
+  `fd50027` (main with #71, #75, #77, #80): #71's node cap refuses the stdio `command` of aliases
+  that was left open (200 MB and 1.09 GB from a 90 KB file on `a0bca70`), and the memory and integer
+  tests now use values under #71's and #77's caps.
+
+## State, 2026-10-07 (afternoon): operator files read up to 1 MiB
+
+- On `fix/operator-file-read-cap` (`tests/cli/test_operator_file_cap.py`): the scope, target,
+  fleet and labels files and the policy and signature packs are read up to 1 MiB
+  (`shared.files.read_text_capped`), a regular file refused on its size before the read, a pipe
+  or device read up to one byte past the cap; `dottore fleet` refuses to write a file over the
+  cap; and `validation_problems` lists 20 errors by default and cuts a path or reason past 300
+  characters. From the pre-commit audit of the alias-expansion cap: 100 MB of comments cost 39.5
+  s and 244 MB, a sparse gigabyte peaked at about 2 GiB (now 68 MiB), and a scope's error line
+  ran to 5,687,058 characters. The owner decided on 2026-10-07: 1 MiB, the spec loader's figure,
+  and any file type with a bounded read, so `--scope <(...)` keeps working (OD-26). The CLI test
+  found that the redactor masks a bare size of nine digits or more as a phone number (sizes now
+  carry thousands separators); this change's own pre-commit audit found the `fleet` scope over
+  the cap (it repeats each endpoint), and its delta audit a child memory measure that Linux
+  carries across `execve` (CI read 315 MiB; now `VmHWM`) and `fleet` holding every rendered file
+  at once. Since #73 a target file's `capabilities` and `sampling_defaults` errors get the same
+  20 and 300. Open (OD-26): the report JSON of `diff` and `calibrate` and the evidence artifacts
+  of `replay` and `--resume` are still read whole. Clause A-43 (u01).
+
 ## State, 2026-10-07 (evening): spec values JSON cannot hold, and bounded integer flags
 
 - On `fix/spec-non-json-values` (finding F6 of the pre-commit audit of `fix/huge-int-repr`): a spec
