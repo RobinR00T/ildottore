@@ -137,6 +137,96 @@ versioning: [SemVer](https://semver.org/).
   `type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Found by
   the pre-commit audit of the alias-expansion cap (#71). Clause A-43 (u01).
 
+### Fixed (a spec value JSON cannot hold, and an integer flag no float holds)
+
+- **A spec value that JSON cannot hold passed `dottore lint` and crashed `dottore run`.** A spec is
+  a JSON document written in YAML, but YAML builds more than JSON holds: an unquoted `2026-01-01` is
+  a date, `2026-01-01T10:00:00Z` a timestamp, `!!set` a set, each entry of `!!omap` and `!!pairs` a
+  pair, `!!binary` bytes, `.nan` and `.inf` floats no JSON number writes, and an escape between
+  U+D800 and U+DFFF half a character that UTF-8 cannot write (PyYAML builds even a pair of them, an
+  emoji, as two halves). The JSON schema leaves a tool's `returns`, a document, a memory entry and a
+  fixture's tool-call arguments free-form, so `returns: 2026-01-01` in `PI-INDIRECT-TOOL-001` gave
+  `lint OK`, and `dottore run --dry-run` (or `--estimate`, or the run) then exited 1 with
+  `TypeError: Object of type date is not JSON serializable` where the in-band setup turned the value
+  into JSON: a traceback, and the exit code this tool uses for "findings below the threshold". A
+  `!!set`, a timestamp and `!!binary` did the same; half a character passed the dry run and stopped
+  the run with exit 3 (`'utf-8' codec can't encode character`, no file named); a pair, NaN and an
+  infinity ran, and the in-band setup wrote them as `[["a", 1]]`, `NaN` and `Infinity`, which the
+  spec did not write. Every value of a spec is now checked before the schema (after the A-40 check
+  of numbers too long to write out and the A-44 check of keys), and one JSON cannot hold is a
+  `SCHEMA` finding at its path: `setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as
+  one), which JSON cannot hold; write it in quotes, without a tag` (lint exits 1, and `run` refuses
+  the campaign with exit 3 in one `error:` line naming the file). A string key holding half a
+  character is reported too, and a spec `id` (or a suite's reference to one) holding one is not
+  attached to the finding (its header crashed lint with a traceback; the file name is printed
+  instead, and `lint --json` writes a null `spec_id`). A character outside the basic plane written
+  as a pair of escapes, as `json.dumps` writes it by default, is refused too, since PyYAML builds
+  two halves (pydantic already refused it in the fields it types); write the character itself, or
+  dump with `ensure_ascii=False`. The check keeps what JSON holds and reports anything else, so a
+  value built in code is named by its type. At most 20 are listed and the rest counted, a set or a
+  pair is the finding and what it holds is not walked, a container shared through an alias is
+  reported once, a key on this check's paths that is not printable is written as its `repr` (A-40's
+  own paths print keys as written until its follow-up lands), and a value in a field the schema
+  types (`name: 2026-01-01`) gets this message instead of the schema's `datetime.date(2026, 1, 1) is
+  not of type 'string'`. A key that is not a string is A-44's finding (below), reported before this
+  check runs. None of the 75 shipped specs holds such a value (none of the 129 YAML files of the
+  repository that load is flagged). Found on 2026-10-07 by the pre-commit audit of
+  `fix/huge-int-repr` (finding F6). Clause A-54 (u02); `tests/registry/test_non_json_values.py`.
+- **`--runs` past what a float holds exited 1 with a traceback.** `dottore run ... --dry-run --runs
+  <4,300 nines>` (and `--estimate`, and the run) gave `OverflowError: int too large to convert to
+  float` where the plan multiplied its token estimate by the budget headroom: from 305 nines with
+  `PI-DIRECT-001` alone, 303 with the shipped battery, against a mock target with every capability.
+  Every integer flag of `run` and `fleet --run` (`--runs`, `--top-tests`, `--concurrency`,
+  `--budget-tokens`, `--budget-requests`, `--budget-wall`) now takes at most 9,007,199,254,740,992
+  (`2**53`, where the run of whole numbers a float holds exactly ends; no flag needs more), refused
+  with exit 3 before anything is sent (`fleet --run` writes its scope and target files first):
+  `error: --runs must be at most 9,007,199,254,740,992 (got a number of more than 21 digits)`. A
+  value up to 21 digits is printed with thousands separators, which the CLI's redactor left readable
+  in all of 63,000 sampled values (1 to 21 digits, either sign). Values that used to run
+  (`--budget-tokens 100000000000000000000`) are refused now. A resume inherits the count its run
+  store recorded, so the store refuses a stored `--runs` past `2**53` as a corrupt record, as it
+  refuses one below 1 (a 400-digit count edited into the store was the same traceback once
+  inherited). Clause A-55 (u12); `tests/cli/test_flag_bounds.py`,
+  `tests/cli/test_resume_integrity.py`.
+- **A negative `--budget-tokens`, `--budget-requests` or `--budget-wall` passed `--dry-run` and
+  `--estimate`.** Both printed `budgets: -1 tokens` and exited 0, and the run refused the same
+  command with exit 3 (`max_tokens ceiling must be non-negative or None`). The three are now refused
+  with the other options, before anything runs: `--budget-tokens must be at least 0 (got -1)`. A
+  ceiling of 0 is still accepted, as the budget ledger accepts it (the run then halts on its first
+  request with exit 3; a live one is refused with a pace, below).
+- **A pace slower than one request per wall-clock ceiling: a traceback, or a live run that never
+  stopped.** The wall-clock ceiling is derived from the request count over the rate, and `--rate
+  1e-308` made that quotient infinite: `OverflowError: cannot convert float infinity to integer`, in
+  `--dry-run` too. A slow pace that did not overflow waited past the ceiling, which is checked when
+  a send is charged, not while the rate limiter waits for the next one: `--rate 0.001 --budget-wall
+  5` against a local stub was still running after 45 seconds, `--rate 1e-308 --budget-wall 3` after
+  25 once the quotient no longer overflowed, and `--budget-wall 0 --rate 1e-6 -sV` past 25 seconds,
+  the probe pass reading no ceiling (the pre-commit and delta audits of this fix). A live run whose
+  pace (`--rate`, or the timing template's: `-T0` is 0.5 requests per second) is under one request
+  per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap of a derived one) is now refused with
+  exit 3 before anything is sent: `--rate 1.000e-308 is less than one request per 7,200-second
+  wall-clock ceiling, so the run would wait past that ceiling between two sends; raise the rate or
+  --budget-wall`. So is a live run under `--budget-wall 0` at any pace, `--rate inf` included:
+  `--budget-wall 0 leaves a live run no time to send anything, at any pace; raise --budget-wall`.
+  The rate is printed in scientific notation: as typed, the CLI's redactor masked 2,782 of 20,000
+  sampled refused rates as phone or card numbers, and none written this way. An offline mock run is
+  not paced, so not checked. The derivation also bounds its quotient before `int()`, for any other
+  caller.
+- **Found while measuring, and not fixed here.** The wall-clock ceiling is still not a deadline: at
+  an accepted pace, each concurrent spec waits its own interval and the `-sV` probe pass reads no
+  ceiling, so `--rate 0.5 --budget-wall 2` against a local stub ran 2.6 s at `--concurrency 1`, 8.6
+  s at the default 4, 8.7 s at 6 (8.6 s on `c3e70d8`), 18.7 s at 12 and 34.8 s with `-sV` (the delta
+  audit's measurements). And `2**53` keeps the arithmetic finite without bounding the work: a resume
+  builds a set of mutators x runs attempt ids for each spec the halted run had started, so with
+  `PI-DIRECT-001` and `OUT-XSS-001` a stored count of 10^6 took 209 MiB with one spec started and
+  653 to 678 MiB with both, 10^7 with one spec took 3.5 s and 1.3 GiB, and `2**53 + 1` was still
+  growing at 3.7 GB when it was stopped after 4.5 minutes on `2f6201a`. A bound with a meaning, or a
+  runner that does not build the set, is the owner's call (OD-32). A resume is checked against the
+  whole wall-clock ceiling, not what the halted run left of it, and a live `--judge` in a run whose
+  attack targets are all mocks is neither paced nor checked, as on `c3e70d8` (pre-merge audit).
+  `--rate inf` turns pacing off, and a `-T` of 9 digits or more is refused as before but printed as
+  `«REDACTED:phone»`.
+
 ### Fixed (a YAML file nested past the depth limit, refused where it is written)
 
 - **A file nested past the depth limit was composed whole before it was refused.** PyYAML's
