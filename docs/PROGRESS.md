@@ -28,15 +28,43 @@ The carryover ledger. Every agent session updates this so context survives even 
   stdio target; one long string with a half costs 3 times the parse's peak). Merge notes, in PR #79:
   with open PR #57 a credential split by a half is masked only once U+FFFD is in #57's
   `_INVISIBLE_RANGES` (adding it to its splitter lists alone fails #57's own consistency test); PR
-  #65 rewrites all five parse sites (keep `well_formed_json` around `bounded_loads`, `import json`
-  where it is still used, and the stdio line's `decode("utf-8", "surrogatepass")`, which #65 decodes
-  strictly); PR #74's A-39 and its PROGRESS entry call this open; MANUAL conflicts with #65 and #68
-  (keeping both hunks repeats a line) and #76 (two new bullets). A spec file whose YAML holds the
-  escape is refused by lint and run since #89. Left as their own tasks: six older ways one reply
-  stops a campaign that the audit found on main (an MCP session id that is not ASCII, an SSE charset
-  or line separator, one invalid UTF-8 byte, a non-finite number sent back, JSON nested inside a
-  tool call's or the judge's text). `tests/cli/test_lone_surrogate.py` (29 of 36 fail on `0501752`),
+  #65, merged 2026-10-08, meets this branch at all five parse sites, merged here as
+  `well_formed_json(bounded_loads(...))` with its `NestedTooDeeply` branch first and the stdio line
+  still decoded with `surrogatepass`, so a reply nested past 100 levels is refused before it is
+  walked; PR #74's A-39 and its PROGRESS entry call this open; MANUAL conflicts with #68 (keeping
+  both hunks repeats a line) and #76 (two new bullets). A spec file whose YAML holds the escape is
+  refused by lint and run since #89. Left as their own tasks: six older ways one reply stops a
+  campaign that the audit found on main (an MCP session id that is not ASCII, an SSE charset or line
+  separator, one invalid UTF-8 byte, a non-finite number sent back, JSON nested inside a tool call's
+  or the judge's text). `tests/cli/test_lone_surrogate.py` (29 of 36 fail on `0501752`),
   `tests/adapters/test_lone_surrogate_replies.py` (9 of 9), `tests/shared/test_wellformed.py`.
+
+## State, 2026-10-08: a hostile reply nested too deeply fails one attempt (PR #65, open)
+
+- On `fix/target-deep-json` (PR #65): a target reply whose brackets balance and nest past 100
+  levels (`shared.nesting.MAX_DEPTH`), however deep, is `ResponseTooDeep`, an environment failure
+  that is not retried:
+  that attempt is inconclusive and the scan goes on. Before, `json.loads` raised
+  `RecursionError` past the parser's stack (400 KB of `[`) and pydantic overflowed past about
+  255 levels when writing evidence (600 bytes), and either aborted the campaign at the first
+  request (exit 3). Covers the OpenAI, Anthropic and REST bodies, the MCP JSON body, SSE event
+  and stdio line, a tool call's JSON-string arguments and the judge's reply. The depth is read
+  from the text before parsing, so it does not depend on the Python version; brackets that do
+  not balance are "not JSON". Also: an MCP stdio line may be 4 MiB (64 KiB stopped the campaign
+  on a server with 300 tools), with 4 MiB in all per request. Four audits (before the commit,
+  a delta round on its fixes, before the merge, and a delta round on those follow-ups) found,
+  among others, a quadratic string pattern, a lost detection on unbalanced tool arguments and
+  carriage-return lines past the stdio total; all fixed, and the last round found only wording.
+  Found while fixing
+  the operator-file case on `fix/cli-deep-json` (PR #61, merged first as `0501752`).
+- **Left for separate fixes** (pre-commit audit, both also on `main`): with `-sV` or `-A`, one
+  refused reply in the probe pass stops the run before the attack; and a 400-digit token count in
+  `usage` crashes `dottore run` with a traceback (exit 1, no report). The first is in progress on
+  `fix/sv-probe-env-error` (OD-23).
+- **For the owner (OD-21, open):** a 200 whose body is not JSON still stops the whole campaign
+  (`AdapterProductError`, runner `aborted`, exit 3, one request sent): measured, not as the
+  finding assumed. Whether it should fail only its attempt, as a reply too deep now does, is a
+  decision, not a fix; the trade-off is a misconfigured endpoint caught at the first request.
 
 ## State, 2026-10-08 (morning): a regex that does not compile is a lint finding (PR #63)
 

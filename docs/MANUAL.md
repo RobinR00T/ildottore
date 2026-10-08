@@ -82,7 +82,20 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   capped too. The adapters ask only for those two (`Accept-Encoding: gzip, deflate`); any other
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
-  classified by the status (a `401` stays a `401`).
+  classified by the status (a `401` stays a `401`). A reply whose brackets balance (as many
+  close as open) and nest more than 100 levels deep (objects and arrays, outside strings, read
+  from the text before it is
+  parsed, whether or not the rest is valid JSON; a provider's reply nests about 10), or a tool
+  call whose JSON-string arguments do, is refused the same way: inconclusive, not retried, and
+  the rest of the scan goes on. Tool-call arguments whose brackets do not balance read as no
+  arguments, as before; arguments whose brackets balance and nest past 100 are refused even when
+  they are not JSON, so that reply is inconclusive instead of judged by the tool's name. During a
+  `-sV` or `-A` probe pass a reply refused on any of these grounds still stops the run before the
+  attack. A success reply that is not JSON (brackets that do not balance included), or holds an
+  integer of more than 4,300 digits (which Python refuses to read), still stops the run (exit 3);
+  over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
+  times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
+  stray lines and its reply together.
 - **Half a character in a reply.** JSON can escape a lone surrogate (half of a UTF-16 pair),
   which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
   call's arguments are, each one is read as U+FFFD, the replacement character, and the attempt
@@ -523,9 +536,9 @@ more) and pointing at `dottore lint`; `--exclude <id>` leaves such a spec out an
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an
 environment error (a timeout, a 5xx after retries) are sent again under the same attempt id
-(except an error a retry would repeat, such as a reply over the size cap, recorded with
-`[not retryable]` and kept), and a resumed spec is scored over its full `--runs`, one attempt per
-id.
+(except an error a retry would repeat, such as a reply over the size cap or nested too deeply,
+recorded with `[not retryable]` and kept), and a resumed spec is scored over its full `--runs`,
+one attempt per id.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
 authorized but answered nothing at all (every attempt failed on transport). That code is

@@ -50,6 +50,28 @@ reads as U+FFFD, since httpx decodes the stream as text.
   body, is `ResponseUndecodable` on a 2xx; an error status keeps its status classification
   with an empty body. Both errors are environment failures with `retryable = False`. The MCP
   adapter's `notifications/initialized` reply is streamed and never read.
+- KEEP (as built, 2026-10-07): every reply is parsed through `shared.nesting.bounded_loads`
+  (the base adapter's body, the MCP adapter's JSON body, SSE `data:` event and stdio line),
+  which refuses a text whose brackets nest deeper than 100 levels (`MAX_DEPTH`, objects and
+  arrays outside strings; a provider's reply nests about 10). The depth is read from the text
+  before it is parsed, so the parser never recurses past it and the verdict does not depend on
+  the Python version (20,000 unclosed `[` were "not JSON" on 3.14 and a stack overflow on 3.12):
+  brackets that balance and nest past the limit are too deep whether or not the rest is valid
+  JSON, brackets that do not balance are not JSON (refused unparsed). The measure is linear: its
+  string pattern cannot fail once it has seen a quote (one that could took 38 s for 160 KB). An
+  MCP stdio reply line may be 4 MiB (`MAX_RESPONSE_BYTES`, asyncio's default was 64 KiB), and so
+  may all one request reads, its stray lines and its reply together (each line's ending newline
+  not counted); past either it is `ResponseTooLarge`. A tool call's
+  arguments carried as a JSON string are measured too, unless they do not balance (they read as
+  no arguments, as before)
+  (`shared.toolcalls.check_argument_nesting`), since the reply's parse never opens them. The
+  refusal is `ResponseTooDeep`, an environment failure with `retryable = False`: the attempt is
+  inconclusive and the campaign goes on. Found 2026-10-07: `json.loads` raises
+  `RecursionError`, not a `ValueError`, so one 400 KB reply of `[` escaped the malformed-body
+  handler and the runner aborted the campaign; and a reply the parser accepts aborted it too,
+  300 levels (about 600 bytes) overflowing pydantic's serializer when the evidence was written.
+  A body that is not JSON keeps the product-defect rule of §7 (open decision OD-21). A refused
+  reply during the `-sV`/`-A` probe pass (u09) still stops the run before the attack.
 - KEEP: capabilities are **static per adapter+config** (declared), not inferred by probing at send
   time; live capability probing belongs to u09 fingerprint, not here.
 - DECIDE (OD-1, ADR-0005 Accepted): OpenAI `logprobs.content[].logprob`+`top_logprobs` vs Anthropic
@@ -86,7 +108,14 @@ reads as U+FFFD, since httpx decodes the stream as text.
   golden JSON in `tests/adapters/golden/logprobs/`; a no-logprob cassette ⇒ `logprobs is None`.
 - **Capabilities:** each adapter reports every bool flag (nine as built); parametrized snapshot per provider.
 - **Error classification:** 429/503/timeout cassettes ⇒ retry-then-skip (env); a malformed-schema
-  200 ⇒ raise (product defect). No defect masked as flake.
+  200 ⇒ raise (product defect). No defect masked as flake. A 200 whose brackets balance and nest
+  deeper than `MAX_DEPTH` (past the parser's stack included), in the body or in a tool call's
+  string arguments, ⇒ `ResponseTooDeep` (env, sent once), for every adapter and the MCP transports
+  (a body whose brackets do not balance follows the product-defect rule, OD-21, except over MCP
+  stdio, where the line is skipped as stray output; tool-call arguments that do not balance read
+  as no arguments)
+  (`tests/adapters/test_deep_replies.py`); through the CLI, one such reply fails its attempt
+  and every other spec runs (`tests/cli/test_hostile_nesting.py`).
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/adapters` clean; `lint-imports` green
   (adapters import only `shared` + u01 interfaces + httpx: never evaluators/core, `docs/01 §2`).
 - **A-47 A reply that holds half a character is kept and judged, and nothing that is written
@@ -139,13 +168,15 @@ reads as U+FFFD, since httpx decodes the stream as text.
   base adapter and the MCP JSON body, while over an MCP SSE stream it reads as U+FFFD and on an
   MCP stdio line the line is skipped and the call times out; the walks visit the whole parsed
   reply: on 4 MiB bodies, one with no surrogate costs about main's peak memory (1.00 to 1.02
-  times; 1.25 times nested 116,000 levels) and 1 to 14 times its parse in CPU, under 0.3 s, and a
-  hostile one up to about 42 times its parse in CPU, under 0.7 s, and most shapes no more peak
-  memory than main; the worst is one 4 MiB string holding a half, about 3 times the parse's peak
-  (held three times while it is replaced, as in any version), then about 2.1 times for a reply
-  nested 116,000 levels with a half at the bottom or one object of some 250,000 keys that collide
-  once replaced, and up to 1.8 times for many distinct long keys holding a half (each original
-  kept for the walk, so a repeated one is renamed once);
+  times) and 1 to 14 times its parse in CPU, under 0.3 s, and a hostile one up to about 42 times
+  its parse in CPU, under 0.7 s, and most shapes no more peak memory than main; the worst is one
+  4 MiB string holding a half, about 3 times the parse's peak (held three times while it is
+  replaced, as in any version), then about 2.1 times for one object of some 250,000 keys that
+  collide once replaced, and up to 1.8 times for many distinct long keys holding a half (each
+  original kept for the walk, so a repeated one is renamed once); a reply nested past 100 levels
+  never reaches the walk, since `bounded_loads` refuses it first (`ResponseTooDeep`, above), and
+  the walk's cost at depth (1.25 times a clean value nested 116,000 levels, about 2.1 times with
+  a half at the bottom) holds only for a value built otherwise;
   the judge's reasoning, parsed from the judge's text past its adapter, can still hold one,
   measured as harmless because it is neither persisted nor printed (the aggregate verdict writes
   its own reasoning); a spec file whose YAML holds the escape is the operator's input, not a
@@ -166,6 +197,15 @@ reads as U+FFFD, since httpx decodes the stream as text.
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default
   in MVP-1 to shrink the secret-leak surface: needs sign-off.
+- **OD-21** (open, 2026-10-07): a 200 whose body is not JSON (brackets that do not balance
+  included; or not the provider's shape; or JSON with an integer of more than 4,300 digits,
+  which Python refuses to read) is
+  `AdapterProductError`, and the runner aborts the campaign on it (F5), so one hostile reply of
+  `<html>` still stops a scan, where a reply nested too deeply now fails only its attempt.
+  Measured with `dottore run` against a local stub: exit 3, "aborted on AdapterProductError", 1
+  request sent. Decide whether a malformed success body fails its attempt (inconclusive, as
+  `ResponseTooDeep`) or keeps stopping the campaign (a misconfigured endpoint is then caught at
+  the first request instead of after the whole battery). A non-retryable 4xx is not in question.
 - **OD-28** (decided 2026-10-07, A-47): what a reply that holds a lone surrogate becomes. The
   owner left the choice to the build ("haz lo mejor"), and it is U+FFFD where the reply is parsed,
   the attempt evaluated as usual, as built. Why: it is what the target's consumers see (WebIDL's
