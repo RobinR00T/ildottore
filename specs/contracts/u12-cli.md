@@ -361,10 +361,10 @@ capabilities, every known key, the values that were already refused, what `fleet
 the redactor leaves each test value readable, and one loads every target and fleet file under
 `examples/`, `specs/` and `tests/` and every such YAML block of the docs through the real loaders.
 Refusing both is the owner's decision (OD-29), as the smallest reversible change: the filter and the
-`or {}` in `_target_from` (`load_target`'s body since #77), and `dict[str, bool]` in `FleetTarget`
-with `**entry.capabilities` in `_target_doc` (the `Capabilities` import in `cli/fleet.py` then goes,
-or ruff fails), undo it, with this test file removed. Outside the clause, and said so rather than
-pinned (pre-commit, delta and pre-merge audits):
+`or {}` in `_target_from` (called by `load_target` and `read_target_file` since #77), and `dict[str,
+bool]` in `FleetTarget` with `**entry.capabilities` in `_target_doc` (the `Capabilities` import in
+`cli/fleet.py` then goes, or ruff fails), undo it, with this test file removed. Outside the clause,
+and said so rather than pinned (pre-commit, delta and pre-merge audits):
 * a top-level key a target file does not know (`endpont:`, or `tools: true` under a
   `capabilities:` left empty by a lost indent) is still dropped without a word, and so is a `name`,
   `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text;
@@ -415,7 +415,7 @@ pinned (pre-commit, delta and pre-merge audits):
   unknown key and keep `false` as none (the one shape an operator may write on purpose to mean
   "none", though `{}` or leaving the key out says it too). A file that loads on main and is refused
   now holds a key `Capabilities` does not know or a `capabilities` of `false`, `0`, `[]` or `""`; no
-  file of the repository does. Reversal: the filter and the `or {}` in `_target_from`
-  (`load_target`'s body since #77), `dict[str, bool]` in `FleetTarget` and `**entry.capabilities` in
-  `_target_doc` (dropping the `Capabilities` import in `cli/fleet.py`), and
-  `tests/cli/test_target_capabilities_strict.py` removed.
+  file of the repository does. Reversal: the filter and the `or {}` in `_target_from` (called by
+  `load_target` and `read_target_file` since #77), `dict[str, bool]` in `FleetTarget` and
+  `**entry.capabilities` in `_target_doc` (dropping the `Capabilities` import in `cli/fleet.py`),
+  and `tests/cli/test_target_capabilities_strict.py` removed.
