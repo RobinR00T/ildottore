@@ -23,6 +23,95 @@ versioning: [SemVer](https://semver.org/).
   `man/man1/dottore.1` now say that a resume past its wall-clock ceiling is refused and which flag
   raises it. Found by the pre-commit audit of `fix/halt-reason-figures`.
 
+### Changed (a target or scope id longer than 128 characters is refused)
+
+- **A target or scope id, or an identity name, longer than 128 characters is refused when its file
+  is loaded.** A scope file's `targets.N.id` or `identities.N.name` is a validation problem (`String
+  should have at most 128 characters`), and a target or `--judge` file's `id` is refused as `target
+  file <path> 'id' is 1,000,000 characters, over the 128-character limit`, exit 3. Such an id loaded
+  before, and a run that started wrote it whole in its `--dry-run` plan, `-sV` lines, reports and
+  run store (the plan of an id of a million characters ran just over 1 MB, exit 0), as did messages
+  of `run` that A-51 did not reach, among them `nothing would be sent: every selected spec is
+  unrunnable on <id>`, the `-sV` probe ceiling refusal and its resume notice, `run on <id> did not
+  complete`, the warning for a live target with no `--judge`, and the `--estimate` and `-sn` lines.
+  128 is twice the 64 a fleet's ids are held to, as they name files, and about six times the longest
+  id in the shipped examples (21 characters); there is no pattern, so an id with spaces or other
+  characters loads as before. An endpoint, an `auth_ref` reference and a labels spec id stay
+  unbounded and are cut in refusals. A refusal that quotes an id still cuts it past 300 characters
+  of `repr` (one of 128 characters can have a `repr` of 1,282, `\U000e0001` for each), except two
+  refusals that write the `repr` whole: the `-sV` probe ceiling refusal of `run`, and `dottore
+  diff`'s refusal of two reports about different targets. OD-27, decided (a) by the implementer at
+  the owner's request; clause A-57 (u01).
+- Not covered: a spec id has a pattern and no length bound, and a run prints it whole (a spec id of
+  500,003 characters printed about 507 KB on a mock run, exit 0); `dottore diff` prints a report's
+  target id whole when two reports disagree, and `dottore diff` and `calibrate` list every target id
+  of a report with several targets whole, a report being the tool's own output (OD-26) and one
+  written before A-57 able to hold a longer id; a run stored with a longer id cannot be resumed, its
+  target file being refused now; and an id may hold control characters, which reach the terminal as
+  they are. Found by the audits of A-57.
+
+### Fixed (a refusal quoted a value of the operator's file whole; a file not UTF-8 was not named)
+
+- **A refusal quoted the value it refused, whole.** The refusals written by hand for the scope,
+  target, fleet and labels files quoted the offending value with no limit but the 1 MiB read: a 1 MB
+  `type:` in a target file printed an `error:` line of 1,000,108 bytes, a duplicated scope target id
+  of 500 KB one of 500,136, an undefined YAML alias of a million characters about 1,000,100 from
+  `run --scope`, `calibrate` and `lint`, and a target id of a million characters that the scope does
+  not authorize 2,000,108 from `fingerprint` (the id in the message and again in the reason). Such a
+  value is now quoted as before when its `repr` is 300 characters or fewer, and otherwise cut there
+  with its size: the first 300 characters of the `repr`, then `... (1000002 characters)`, or for a
+  list or a mapping `... (9000 items)`, without building the `repr` of a list whole (YAML aliases
+  make it larger than its file: 90 KB of a list of 20,000 aliases of one 10 KB text is 200,080,000
+  characters, about 200 MB). As a target's `type:`, that file took 1.28 to 1.49 GB of memory and 29
+  to 50 s and printed a line of about 200 MB, because the type's own lookup wrote the value out
+  before the refusal could cut it; it is now refused before the lookup, and since #71 a file of that
+  size is refused when it is loaded (A-37). An integer Python will not write out is described as #81
+  describes it (`a number too long to write out`) instead of raising, inside a list too; since #77
+  caps a YAML number at 1,000 characters, a file brings one only under a lowered digit limit. It
+  covers an invalid target `type` and `mock_scenario`, the scope's duplicated target ids and
+  identity names and its shared canaries, the spec id of a label with an invalid verdict, two target
+  files with one id, the target id and endpoint of an authorization refusal in `run` and
+  `fingerprint` and the ids the scope authorizes, which it lists after (now the first 20, each cut,
+  and how many more), the target id of the `--hardened`, stdio and credential refusals and the
+  references the scope declares for that credential (the first 20; 3,000 references of 290
+  characters printed 885,131 bytes) and the variable such a reference names, an `auth_ref`
+  reference, the target ids of the refusals that bind `run --resume` to its target (900,276 bytes
+  for an id of 900,000 characters), `fleet`'s invalid port and judge mismatches, the unknown keys
+  and doubly listed tools of a target's `seeded_setup`, and PyYAML's reason in every YAML error, the
+  spec loader's and `dottore lint`'s included. A label's verdict, a target's `provider` and
+  `transport` and the keys of its `seeded_setup` are checked as text before anything turns them into
+  text: `str()` of a list of aliases wrote about 675 MB, and of a YAML integer past 4,300 digits it
+  raised (Python's `Exceeds the limit (4300 digits)` error, naming no file; #81 refuses a labels key
+  that is such an integer). An endpoint or `base_url` urllib cannot read (a bracket, a host NFKC
+  turns into a path, a port that is not a number) raised urllib's error with no file named, for some
+  kinds with the netloc, host or port whole (900 KB for a long one): the target loader now reads the
+  endpoint stripped, as the gate does (a leading U+00A0 had let urllib's error through later, the
+  endpoint's password included), and names the file and the field without the value; the allowlist
+  denies what it cannot read, as it always said it would, so the authorization refusal quotes it
+  cut, and an entry pinned to a port that cannot be read matches nothing instead of denying every
+  URL after it; `fleet` quotes it as urllib reads it, cut and without what precedes the last `@` of
+  its authority, so a password the CLI's URL mask misses (an empty user, a space, a tab between the
+  slashes) is not printed. The 24 refusals of the new test printed lines of 400,080 to 2,000,247
+  characters on `c9f27cc`; now each is under 2,500.
+- **A file that was not UTF-8 was not named.** A byte that is not UTF-8 in a scope, target, fleet
+  or labels file (or a policy or signature pack) printed `error: 'utf-8' codec can't decode byte
+  0xff in position 15: invalid start byte`, with no file name, where the spec loader says `not
+  UTF-8 text (byte N)` beside its path. It is now refused where the file is read, with the file
+  and the offset of the first bad byte in it (`[Errno 92] not UTF-8 text (byte 15):
+  '/path/scope.yaml'` on macOS, the scope's line also saying `cannot read scope file ...`), exit 3
+  as before, in `run`, `fleet`, `calibrate` and `fingerprint`. A valid file's text, and so a
+  scope checksum, is unchanged.
+- Not covered: a target's endpoint is still written whole wherever a run that has started prints it
+  (the `--dry-run` plan, reports, the run store), and so is a target or scope id up to the 128
+  characters A-57 allows (see above), and `calibrate` lists every label the report does not cover
+  with its id whole; the stdio advice's command line is written whole on purpose, to be copied; and
+  the adapter still reads a target's endpoint unstripped, so one with a Unicode space in front
+  passes the gate and the run stops at its first send (exit 3), its password masked. A stdio
+  `command` made of aliases is still joined into one text where the target is authorized: 20,000
+  aliases of a 10 KB text, a 90 KB file, print a line of about 200 MB in 1.09 to 1.49 GB, as before
+  this change; #71's node cap (A-37), merged in, now refuses that file when it is loaded. Found by
+  the pre-commit audit of A-43. Clause A-51 (u01).
+
 ### Fixed (an operator's file read whole, and its validation errors listed whole)
 
 - **An operator's file was read whole.** The scope, target, fleet and labels files and the policy

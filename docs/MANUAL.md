@@ -97,6 +97,20 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   about 22,000 labels, 2,000 scope targets with two identities each, or the scope written for
   about 3,800 fleet entries; the largest file shipped here that is read this way, the signature
   corpus, is 8.7 KB.
+  A file that is not UTF-8 is refused the same way, naming the file and the offset of its first
+  bad byte (`[Errno 92] not UTF-8 text (byte 15): '/path/scope.yaml'` on macOS), exit 3. A
+  target's endpoint that cannot be read as a URL is refused naming the file and the field, not
+  the value, which can hold a password. A refusal that quotes a value of the file (an invalid
+  `type`, a duplicated id, a target the scope does not authorize, an undefined YAML alias)
+  quotes it as it is when its `repr` is 300 characters or fewer, and otherwise its first 300
+  characters and its size, `... (1000002 characters)` or, for a list or a mapping, `... (9000
+  items)`; a list of what the file declares (the ids a scope authorizes, the credentials it
+  declares for a target) shows the first 20 and counts the rest. Only the advice for a stdio
+  target prints its command line whole, to be copied; one made of YAML aliases is bounded by the
+  node cap every YAML file has (A-37). A target or scope id and an identity name are at most 128
+  characters: a longer one is refused when its file is loaded, naming the file. An endpoint has
+  no length limit, and a run that starts prints it whole in its plan and reports, as `calibrate`
+  does with the labels a report does not cover.
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -636,7 +650,8 @@ PyYAML builds as half a character even in a pair) is a `SCHEMA` finding at its p
 write it in quotes, without a tag`: a spec is JSON, and such a value in a tool's `returns` or a
 tool call's arguments passed lint and then crashed `run`.
 A YAML error gives the line and
-the reason without quoting the line, a suite or pack error names the field without the value,
+the reason without quoting the line (a reason that names an alias or a tag is cut at 300
+characters), a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
 schema errors are listed per file. A number too long for Python to write out (more than
 `sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000

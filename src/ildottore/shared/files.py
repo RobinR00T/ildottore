@@ -39,6 +39,11 @@ def read_text_capped(path: str | Path, *, cap: int = MAX_FILE_BYTES) -> str:
     as a phone number by the CLI's redactor. The bytes are decoded and their line endings
     translated exactly as ``read_text`` does, so a scope's checksum covers the same text as
     before.
+
+    Bytes that are not UTF-8 are refused the same way, an ``OSError`` (``EILSEQ``) with the path
+    and the offset of the first bad byte in the file, as the spec loader words it. They raised
+    ``read_text``'s own ``UnicodeDecodeError``, which names no file and reached the terminal as
+    ``'utf-8' codec can't decode byte 0xff in position 15`` (clause A-51).
     """
 
     with open(path, "rb") as handle:
@@ -52,4 +57,8 @@ def read_text_capped(path: str | Path, *, cap: int = MAX_FILE_BYTES) -> str:
     if len(raw) > cap:
         raise OSError(errno.EFBIG, f"file is over the {cap:,}-byte cap", str(path))
     with io.TextIOWrapper(io.BytesIO(raw), encoding="utf-8") as text:
-        return text.read()
+        try:
+            # One read decodes the whole buffer in one call, so the offset is the file's.
+            return text.read()
+        except UnicodeDecodeError as exc:
+            raise OSError(errno.EILSEQ, f"not UTF-8 text (byte {exc.start})", str(path)) from exc

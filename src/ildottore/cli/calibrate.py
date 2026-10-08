@@ -23,7 +23,7 @@ import yaml
 
 from ildottore import safe_yaml
 from ildottore.cli.diff import load_findings
-from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.config_errors import quoted, yaml_problem
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.files import read_text_capped
@@ -53,15 +53,29 @@ def load_labels(path: Path) -> dict[str, VerdictStatus]:
             # `str(spec_id)` raised in the `try` and the message below raised again: exit 3 with
             # `error: Exceeds the limit`, naming no file (A-40).
             raise ValueError(f"labels file {path}: the spec id of entry {entry} is {described()}")
-        try:
-            labels[str(spec_id)] = VerdictStatus(str(verdict).strip().lower())
-        except ValueError as exc:
-            # The spec id is the location; the value is not quoted (the other loaders' rule).
+        # Only a text can be a verdict, and it is checked before anything is turned into text:
+        # `str()` of a list of aliases wrote hundreds of megabytes (audits of A-51).
+        status = _verdict(verdict)
+        if status is None:
+            # The spec id is the location, quoted up to 300 characters (A-51); the value is not
+            # quoted (the other loaders' rule).
             raise ValueError(
-                f"labels file {path}: spec {spec_id!r} has an invalid verdict; "
+                f"labels file {path}: spec {quoted(spec_id)} has an invalid verdict; "
                 f"expected one of {', '.join(v.value for v in VerdictStatus)}"
-            ) from exc
+            )
+        labels[str(spec_id)] = status
     return labels
+
+
+def _verdict(value: object) -> VerdictStatus | None:
+    """The verdict a label's value names, or ``None`` when it names none."""
+
+    if not isinstance(value, str):
+        return None
+    try:
+        return VerdictStatus(value.strip().lower())
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)
