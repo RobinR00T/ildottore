@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -33,6 +33,14 @@ class Endpoint(BaseModel):
     path_prefixes: list[str] = Field(default_factory=lambda: ["/"])
 
 
+#: The longest target id or identity name a scope or target file may give (OD-27, decided
+#: 2026-10-07). Unbounded, an id of a million characters was printed whole wherever a run that
+#: started wrote it: the `--dry-run` plan, the `-sV` lines, the reports and the run store. A
+#: fleet's ids are held to 64, as they name files; one written by hand gets twice that. The
+#: longest id in this repository's examples is 21 characters. Clause A-57.
+MAX_ID_CHARS: Final = 128
+
+
 class Identity(BaseModel):
     """A named auth identity **reference** - ``auth_ref`` resolves to a secret elsewhere.
 
@@ -41,7 +49,7 @@ class Identity(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    name: str
+    name: str = Field(max_length=MAX_ID_CHARS)
     auth_ref: str
     # The tenant-scoped canary this identity legitimately owns (audit M14, multi_identity).
     # A `{{run_id}}` placeholder is substituted per run. If this canary reaches ANOTHER
@@ -54,7 +62,7 @@ class ScopeTarget(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    id: str
+    id: str = Field(max_length=MAX_ID_CHARS)
     base_url: str
     endpoints: list[Endpoint] = Field(default_factory=list)
     identities: list[Identity] = Field(min_length=1)

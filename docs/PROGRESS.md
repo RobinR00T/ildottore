@@ -3,6 +3,24 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (night): ids bounded at 128 characters (OD-27 decided)
+
+- On `fix/operator-id-length`, stacked on `fix/operator-file-quoted-values` (#86),
+  `tests/cli/test_operator_id_length.py`: the owner delegated OD-27 and the choice was (a), a bound
+  when the file is loaded. A scope target's `id` and an identity's `name` are at most 128 characters
+  in the scope model (`policy.scope.MAX_ID_CHARS`), and `_target_from` (shared by `load_target` and
+  `read_target_file`) refuses a target or `--judge` file's longer `id` naming the file, so no run
+  prints a target id past 128 characters (A-51 had cut it in most refusals only). 128: twice a
+  fleet's 64, about six times the longest example id (21); no pattern. The audits of A-57
+  (2026-10-08) found that removing A-51's cases of a long id left 14 of the 19 sites that quote a
+  target id or an identity name unguarded, as an id of 128 characters can have a `repr` of 1,282
+  (`\U000e0001` each): those cases use such ids now, with a check that no id's `repr` appears whole
+  anywhere in the output (line breaks removed, in case Rich folds a message), and all 19 mutants are
+  killed. Not covered, found by those audits: spec ids (a pattern, no bound), `dottore diff` and
+  `calibrate` printing a report's target ids whole, a stored run with a longer id no longer
+  resumable, control characters in ids. 9 of the 11 new tests fail without the bound; 5 mutants of
+  the bound killed. Clause A-57 (u01).
+
 ## State, 2026-10-07 (evening): a refusal quoted the operator's value whole
 
 - On `fix/operator-file-quoted-values`, stacked on `fix/operator-file-read-cap` (#76, head

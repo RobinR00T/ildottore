@@ -32,6 +32,7 @@ from ildottore.cli.fleet import _shown_endpoint
 from ildottore.cli.main import app
 from ildottore.cli.resume import _assert_same_target
 from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, target_uses_mock
+from ildottore.policy import authorize_target, load_scope
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.scope import Endpoint
 from ildottore.redactor import Redactor
@@ -384,15 +385,22 @@ def _lint(tmp_path: Path, spec: str) -> Case:
 #: PyYAML's problem text is cut as it is, not as a repr.
 ALIAS = "found undefined alias " + repr(BIG)
 ALIAS_CUT = f"{ALIAS[:300]}... ({len(ALIAS)} characters)"
-#: Three values of 300,000 characters fit one file under the cap; three of 400,000 do not.
+#: Long values for a run store's ids and an endpoint's path. A target or scope id longer than
+#: 128 characters is refused when its file is loaded (A-57), so no file brings one this long.
 ENTRY = "c" * 300_000
 NAME = "d" * 300_000
+#: An id and an identity name of 128 characters, as A-57 allows, that repr writes as
+#: `\U000e0001` and `\U000e0020` each: 1,282 characters, so a refusal that quotes them still
+#: cuts them (audits of A-57: with these cases gone, 14 of the 19 sites that quote a target id
+#: or an identity name survived as `repr`).
+TAG_ID = "\U000e0001" * 128
+TAG_NAME = "\U000e0020" * 128
 DUPLICATE_IDENTITY = (
     ("default", "env://MOCK_KEY", None),
-    (NAME, "env://A", None),
-    (NAME, "env://B", None),
+    (TAG_NAME, "env://A", None),
+    (TAG_NAME, "env://B", None),
 )
-SHARED_CANARY = (("default", "env://A", "canary-1"), (NAME, "env://B", "canary-1"))
+SHARED_CANARY = (("default", "env://A", "canary-1"), (TAG_NAME, "env://B", "canary-1"))
 
 #: Every refusal that quoted a value of the file whole on the base, built by its command.
 QUOTING: dict[str, Callable[[Path], Case]] = {
@@ -409,42 +417,45 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         _run(t, TARGET + f"mock_scenario: {BIG}\n"), 0, "has invalid mock_scenario", cut_of(BIG)
     ),
     "scope-duplicate-target-id": lambda t: _with(
-        _run(t, scope=SCOPE_HEAD + scope_entry(HALF) + scope_entry(HALF)),
+        _run(t, scope=SCOPE_HEAD + scope_entry(TAG_ID) + scope_entry(TAG_ID)),
         1,
         "more than once",
-        cut_of(HALF),
+        cut_of(TAG_ID),
     ),
     "scope-duplicate-identity": lambda t: _with(
-        _run(t, scope=SCOPE_HEAD + scope_entry(ENTRY, DUPLICATE_IDENTITY)),
+        _run(t, scope=SCOPE_HEAD + scope_entry(TAG_ID, DUPLICATE_IDENTITY)),
         1,
         "more than once",
-        cut_of(ENTRY),
-        cut_of(NAME),
+        cut_of(TAG_ID),
+        cut_of(TAG_NAME),
     ),
     "scope-shared-canary": lambda t: _with(
-        _run(t, scope=SCOPE_HEAD + scope_entry(ENTRY, SHARED_CANARY)),
+        _run(t, scope=SCOPE_HEAD + scope_entry(TAG_ID, SHARED_CANARY)),
         1,
         "declares the canary of another identity",
-        cut_of(ENTRY),
-        cut_of(NAME),
+        cut_of(TAG_ID),
+        cut_of(TAG_NAME),
     ),
     "scope-undefined-alias": lambda t: _with(
         _run(t, scope=f"version: *{BIG}\n"), 1, "found undefined alias", ALIAS_CUT
     ),
     "run-two-targets-one-id": lambda t: _run_two_targets(t),
     "run-target-not-in-scope": lambda t: _with(
-        _run(t, f"id: {BIG}\ntype: chatbot\n"), None, "not authorized by the scope", cut_of(BIG)
+        _run(t, f'id: "{TAG_ID}"\ntype: chatbot\n'),
+        None,
+        "not authorized by the scope",
+        cut_of(TAG_ID),
     ),
     "run-auth-ref-not-authorized": lambda t: _with(
         _run(
             t,
-            live_target(ENTRY, "env://" + NAME),
-            SCOPE_HEAD + scope_entry(ENTRY, (("default", "env://OTHER", None),), live=True),
+            live_target(TAG_ID, "env://" + BIG),
+            SCOPE_HEAD + scope_entry(TAG_ID, (("default", "env://OTHER", None),), live=True),
         ),
         None,
         "is not authorized by the scope",
-        cut_of(ENTRY),
-        cut_of("env://" + NAME),
+        cut_of(TAG_ID),
+        cut_of("env://" + BIG),
     ),
     "run-endpoint-not-on-allowlist": lambda t: _run_endpoint_not_allowed(t),
     "fingerprint-endpoint-not-on-allowlist": lambda t: _fingerprint_endpoint_not_allowed(t),
@@ -461,10 +472,10 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
     ),
     "run-hardened-live-target": lambda t: _run_hardened(t),
     "fingerprint-target-not-in-scope": lambda t: _with(
-        _fingerprint(t, f"id: {BIG}\ntype: chatbot\n"),
+        _fingerprint(t, f'id: "{TAG_ID}"\ntype: chatbot\n'),
         None,
         "not authorized by the scope",
-        cut_of(BIG),
+        cut_of(TAG_ID),
     ),
     "calibrate-undefined-alias": lambda t: _with(
         _calibrate(t, f"x: *{BIG}\n"), 0, "found undefined alias", ALIAS_CUT
@@ -484,7 +495,10 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         cut_of("http://localhost:x/" + BIG),
     ),
     "fleet-judge-not-declared": lambda t: _with(
-        _fleet(t, FLEET, judge=f"id: {BIG}\ntype: model\n"), None, "--judge names", cut_of(BIG)
+        _fleet(t, FLEET, judge=f'id: "{TAG_ID}"\ntype: model\n'),
+        None,
+        "--judge names",
+        cut_of(TAG_ID),
     ),
     "fleet-judge-mismatch": lambda t: _with(
         _fleet(
@@ -498,10 +512,10 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
     ),
     # A judge file whose id differs from the fleet's judge: the id is the mismatch quoted.
     "fleet-judge-mismatch-id": lambda t: _with(
-        _fleet(t, FLEET + JUDGE_BLOCK, judge=f"id: {BIG}\ntype: model\n"),
+        _fleet(t, FLEET + JUDGE_BLOCK, judge=f'id: "{TAG_ID}"\ntype: model\n'),
         None,
         "does not match the fleet's judge",
-        cut_of(BIG),
+        cut_of(TAG_ID),
     ),
     "lint-undefined-alias": lambda t: _lint(t, f"id: *{BIG}\n"),
     "target-seeded-setup-unknown-key": lambda t: _with(
@@ -523,8 +537,8 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
 
 
 def _run_two_targets(tmp_path: Path) -> Case:
-    first = _write(tmp_path, "a.yaml", f"id: {HALF}\ntype: chatbot\n")
-    second = _write(tmp_path, "b.yaml", f"id: {HALF}\ntype: chatbot\n")
+    first = _write(tmp_path, "a.yaml", f'id: "{TAG_ID}"\ntype: chatbot\n')
+    second = _write(tmp_path, "b.yaml", f'id: "{TAG_ID}"\ntype: chatbot\n')
     scope = _write(tmp_path, "scope.yaml", SCOPE_HEAD + scope_entry())
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
     args = ["run", "-t", str(first), "-t", str(second), "--scope", str(scope)]
@@ -532,21 +546,21 @@ def _run_two_targets(tmp_path: Path) -> Case:
         [*args, "--spec-path", str(specs), "--dry-run"],
         [first, second],
         "two target files declare the id",
-        [cut_of(HALF)],
+        [cut_of(TAG_ID)],
     )
 
 
 #: A live target the scope names and whose endpoint it does not allowlist (it allows another
 #: path): the id comes back in the list of what the scope authorizes too.
 NOT_ALLOWED_ENDPOINT = f"{LIVE_URL}/{NAME}"
-NOT_ALLOWED_TARGET = live_target(ENTRY).replace(LIVE_URL, NOT_ALLOWED_ENDPOINT)
-NOT_ALLOWED_SCOPE = SCOPE_HEAD + scope_entry(ENTRY, live=True).replace(
+NOT_ALLOWED_TARGET = live_target(TAG_ID).replace(LIVE_URL, NOT_ALLOWED_ENDPOINT)
+NOT_ALLOWED_SCOPE = SCOPE_HEAD + scope_entry(TAG_ID, live=True).replace(
     '/v1/chat/completions"]', '/x"]'
 )
 NOT_ALLOWED_CUTS = (
     cut_of(NOT_ALLOWED_ENDPOINT),
-    cut_of(ENTRY),
-    f"The scope authorizes: {ENTRY[:300]}... ({len(ENTRY)} characters).",
+    cut_of(TAG_ID),
+    f"The scope authorizes: {TAG_ID}.",
 )
 
 
@@ -563,16 +577,16 @@ def _fingerprint_endpoint_not_allowed(tmp_path: Path) -> Case:
 
 def _run_stdio(tmp_path: Path) -> Case:
     target = (
-        f'id: "{ENTRY}"\ntype: api\nprovider: mcp\ntransport: stdio\n'
+        f'id: "{TAG_ID}"\ntype: api\nprovider: mcp\ntransport: stdio\n'
         'command: ["python", "server.py"]\n'
     )
-    scope = SCOPE_HEAD + scope_entry(ENTRY) + '    commands: ["python other.py"]\n'
+    scope = SCOPE_HEAD + scope_entry(TAG_ID) + '    commands: ["python other.py"]\n'
     return _with(
         _run(tmp_path, target, scope),
         None,
         "stdio command not authorized",
-        cut_of(ENTRY),
-        f"{ENTRY[:300]}... ({len(ENTRY)} characters) (stdio command not authorized for",
+        cut_of(TAG_ID),
+        f"{TAG_ID} (stdio command not authorized for",
         'commands: ["python server.py"]',
     )
 
@@ -580,11 +594,11 @@ def _run_stdio(tmp_path: Path) -> Case:
 def _run_hardened(tmp_path: Path) -> Case:
     case = _run(
         tmp_path,
-        live_target(BIG, "env://LIVE_KEY"),
-        SCOPE_HEAD + scope_entry(BIG, (("default", "env://LIVE_KEY", None),), live=True),
+        live_target(TAG_ID, "env://LIVE_KEY"),
+        SCOPE_HEAD + scope_entry(TAG_ID, (("default", "env://LIVE_KEY", None),), live=True),
     )
     case.args.append("--hardened")
-    return _with(case, 0, "--hardened replays", cut_of(BIG))
+    return _with(case, 0, "--hardened replays", cut_of(TAG_ID))
 
 
 @pytest.mark.parametrize("name", list(QUOTING))
@@ -604,6 +618,11 @@ def test_a_refusal_quotes_a_value_of_the_file_up_to_300_characters(
     assert all(str(path) in line for path in case.files), line
     assert all(cut in line for cut in case.cuts), line
     assert "REDACTED" not in line, line
+    # A cut keeps the first 299 characters of an id's repr after its quote: the first 300,
+    # anywhere in the output with Rich's line folding undone, are an id quoted whole, which a
+    # second quote of the same id, cut, on the line would hide (audits of A-57).
+    flat = (result.stdout + result.stderr).replace("\n", "")
+    assert all(repr(tag)[1:301] not in flat for tag in (TAG_ID, TAG_NAME)), line
 
 
 #: A file that is not UTF-8, as each command reads it: one byte 0xff after a valid first line.
@@ -1050,3 +1069,13 @@ def test_a_password_in_an_endpoint_read_stripped_is_masked_by_value(tmp_path: Pa
     load_target(path)
 
     assert "sunflowertwo" not in Redactor().redact_text("the model replied sunflowertwo today")
+
+
+def test_an_authorization_refusal_cuts_a_long_id_a_caller_passes(tmp_path: Path) -> None:
+    # No file brings an id past 128 characters since A-57; a caller that builds one still gets
+    # it cut in the reason, as A-51 had it for a file.
+    scope = load_scope(_write(tmp_path, "scope.yaml", SCOPE_HEAD + scope_entry()))
+
+    decision = authorize_target(scope, BIG, "mock://mock-target/")
+
+    assert not decision.allowed and decision.reason == f"target {cut_of(BIG)} not in scope"
