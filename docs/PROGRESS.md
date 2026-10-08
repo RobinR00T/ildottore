@@ -27,6 +27,58 @@ The carryover ledger. Every agent session updates this so context survives even 
   merge kept both sides of four additions (the module docstring, the constants, the class docstring,
   `__init__`), the method itself merged cleanly, and both branches' tests pass together.
 
+## State, 2026-10-07 (evening): fleet target ids that differ only by case
+
+- Found by the delta audit of PR #76 and fixed on `fix/fleet-casefold-ids` (PR #85):
+  `materialize_fleet` refused a duplicate id only by exact equality, and each target is written to
+  `target-<id>.yaml`, so on APFS a fleet with `Prod` and `prod` wrote `prod` over `Prod`, listed
+  two target files and exited 0. The brief said the printed `dottore run` then scanned `prod`
+  twice; measured on `2f6201a`, it refuses instead (exit 3, "two target files declare the id
+  'prod'"), and so does `fleet --run`, a message about an id the fleet declared once. Ids equal
+  under `casefold()` are now refused on every file system before anything is written, and so is a
+  judge id spelled as a target's only up to case (it worked, with two scope entries that differ
+  only by case). Every refusal of the fleet's ids locates its entries as the validator does
+  (`targets.1.id`, from 0), because the CLI masks a high-entropy id such as
+  `Meta-Llama-3-70B-Instruct`, and the two judge refusals say when the id is the default `judge`.
+  Contract u01 A-56; the "everywhere" choice is OD-33, decided by the conductor and confirmed by
+  the owner the same evening. Checked and left exact: `run`'s duplicate check and `load_scope`'s
+  (A-20); no file of a run is named by a target id, the run store compares `<spec id>::<target
+  id>` case-sensitively, and two hand-written targets `Prod` and `prod` ran together with two run
+  ids, both in every report format. Two audit rounds so far, none high or medium: the pre-commit
+  one found masked ids, the default judge id, three surviving mutants, the judge's reason
+  misstated in FAQ and man page, and "no store key" being literally false; the delta one found my
+  first entry numbers counted from 1 where the validator of the same command counts from 0, "never
+  two ids a reader cannot tell apart" in MANUAL and man5 (`Ilama`, `llama`, `lIama` pass), three
+  more survivors (the default note for an explicit `id: judge`, ids swapped against their numbers,
+  a later twin reported as a duplicate) and the sibling judge message without the default note.
+  All fixed. The pre-merge round (combined trees with #76, #78 and #86, both merge orders) found
+  no failure of this PR's own; its conflicts are the expected ones (doc appends, a man5 paragraph
+  with #78, the two fleet messages with #86). Four lows, fixed: the agreed `quoted()` resolution
+  with #86 would have left one line at 101 columns (each id is now formatted once, in a variable,
+  so the switch is four assignments), the credential half of A-30 untested, MANUAL's "shares its
+  entry" without the condition, and the `--judge` file mismatch naming the default id with no
+  note. A fourth round on that fix compared 96,120 fleets and 3,024 CLI runs against the previous
+  head (the only difference was the intended note) and found two test gaps, closed: the note could
+  have spread to the endpoint or `auth_ref` row of the `--judge` refusal, and A-30's credential
+  half was tested with the key on one side only. Numbering: A-56 and OD-33 came from the session
+  keeping the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without
+  having claimed them, so it has to renumber.
+
+## State, 2026-10-07 (night): a load refusal names its spec file
+
+- On `fix/spec-load-error-names` (PR #49, opened on `d54097c` on 2026-10-06, merged with main at
+  `5fdac72`; `tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
+  that fails to load printed its path as `«REDACTED:high_entropy:…».yaml` (found by the #47
+  pre-merge audit); it names `attacks/DL-PII-ELICIT-001.yaml` now, kept only when it is an entry
+  on disk under a spec path, nothing the entropy rule reads as a token is glued to it, and it
+  does not overlap a registered credential. A kept token in a CLI error that is part of a
+  registered credential (from 8 characters) prints as `«REDACTED:credential»` instead of going
+  to the entropy rule. The pre-commit audit (3,996 cases main against branch, no secret exposed)
+  found two test gaps and four low items, all fixed; `no_known_secrets` moved to
+  `tests/conftest.py`. The pre-merge audit (73,812 cases of `_masked`, main against branch) found
+  no reason to block; its two wording items are fixed. `make gates` green: 2,702 tests (2,688 on
+  `5fdac72`), coverage 96.58%, `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+
 ## State, 2026-10-07 (afternoon): YAML construction cost bounded under the size cap
 
 - Closes the construction costs left open just below. On `fix/yaml-construction-cost`, stacked on
