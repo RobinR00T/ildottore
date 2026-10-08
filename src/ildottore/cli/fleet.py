@@ -45,16 +45,18 @@ Point the ``mcp`` suite at such a target for the metadata-poisoning checks.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ildottore import safe_yaml
 from ildottore.cli.wiring import shown_auth_ref
-from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
+from ildottore.shared.files import MAX_FILE_BYTES, read_text_capped
 from ildottore.shared.models import Target
 
 __all__ = [
@@ -124,6 +126,48 @@ class MaterializedFleet(BaseModel):
     skipped: list[tuple[str, str]] = Field(default_factory=list)  # (target id, reason)
 
 
+def _split(endpoint: str) -> SplitResult:
+    """``urlsplit`` of the endpoint as a run reads it (stripped), refused quoted up to 300
+    characters.
+
+    urllib refuses a host it cannot read (a bracket, a host NFKC turns into a path) with no
+    file named, and quoted the whole endpoint for some (pre-merge audit of A-51). Read raw, a
+    leading U+00A0 hid the host here and the generated target failed later (delta audit).
+    """
+
+    try:
+        return urlsplit(endpoint.strip())
+    except ValueError as exc:
+        raise ValueError(
+            f"endpoint {_shown_endpoint(endpoint)} is not a URL that can be read"
+        ) from exc
+
+
+#: What urllib removes from a URL anywhere in it before reading it (the WHATWG rule).
+_URL_IGNORED = str.maketrans("", "", "\t\r\n")
+
+
+def _shown_endpoint(endpoint: str) -> str:
+    """The endpoint as an error may quote it: as urllib reads it, without what precedes the last
+    ``@`` of its authority, cut.
+
+    The CLI masks a URL's password only in the ``user:password@`` shape, so an empty user, a
+    space in the password or a second ``@`` printed it (delta audit of A-51). It is read as
+    urllib reads it, its tabs and line breaks removed: urllib found an authority in
+    ``http:/<TAB>/user:password@host`` that a search for ``//`` missed (final audit). Found by
+    position, not by a pattern, so a long hostile endpoint costs one pass.
+    """
+
+    text = endpoint.translate(_URL_IGNORED)
+    start = text.find("//")  # a scheme-relative `//user:password@host` too
+    if start < 0:
+        return quoted(text)
+    start += 2
+    ends = [i for i in (text.find(c, start) for c in "/?#") if i >= 0]
+    at = text.rfind("@", start, min(ends, default=len(text)))
+    return quoted(text if at < 0 else text[:start] + text[at + 1 :])
+
+
 def infer_provider(endpoint: str) -> str:
     """Infer the provider (openai | anthropic | rest) from the endpoint.
 
@@ -132,7 +176,7 @@ def infer_provider(endpoint: str) -> str:
     Anthropic Messages API. Host names are the fallback. Anything else is the generic REST
     adapter (whose template the operator tunes for a bespoke endpoint)."""
 
-    parts = urlsplit(endpoint)
+    parts = _split(endpoint)
     host = (parts.hostname or "").lower()
     path = (parts.path or "").lower()
     if path.endswith("/chat/completions"):
@@ -151,7 +195,7 @@ def load_fleet(path: str | Path) -> FleetConfig:
     # was echoed back by pydantic, and a YAML error escaped as a traceback with exit 1, the code
     # for "findings below the threshold" (fifth audit of the residuals).
     try:
-        raw = safe_yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        raw = safe_yaml.safe_load(read_text_capped(path))
     except yaml.YAMLError as exc:
         raise ValueError(f"fleet file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
@@ -177,7 +221,7 @@ def _scope_endpoint(endpoint: str) -> tuple[str, str]:
     port (the offline ``mock://``) keep the bare host.
     """
 
-    parts = urlsplit(endpoint)
+    parts = _split(endpoint)
     path = parts.path or "/"
     host = parts.hostname
     if not host:
@@ -185,7 +229,7 @@ def _scope_endpoint(endpoint: str) -> tuple[str, str]:
     try:
         port = parts.port or _DEFAULT_PORTS.get(parts.scheme.lower())
     except ValueError as exc:
-        raise ValueError(f"endpoint {endpoint!r} has an invalid port") from exc
+        raise ValueError(f"endpoint {_shown_endpoint(endpoint)} has an invalid port") from exc
     shown = f"[{host}]" if ":" in host else host
     return (f"{shown}:{port}" if port else shown), path
 
@@ -271,9 +315,9 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
     unnamed = declared is not None and "id" not in declared.model_fields_set
     note = "the default of a judge: block that names no id" if unnamed else ""
     if declared is not None:
-        judge_id = repr(declared.id) + (f" ({note})" if note else "")
+        judge_id = quoted(declared.id) + (f" ({note})" if note else "")
         for index, target in enumerate(config.targets):
-            target_id = repr(target.id)
+            target_id = quoted(target.id)
             # The generated scope holds the judge beside the targets, and an id spelled as a
             # target's only up to case got an entry of its own: two ids that differ only by
             # case, in the record that authorizes both (A-56, OD-33).
@@ -294,7 +338,7 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
         return
     if declared is None:
         raise ValueError(
-            f"--judge names {judge.id!r}, which the fleet file does not declare. Add a "
+            f"--judge names {quoted(judge.id)}, which the fleet file does not declare. Add a "
             "`judge:` block to the fleet file with its id, endpoint and api_key_env: the fleet "
             "file is the authorization record, and a judge file cannot authorize itself"
         )
@@ -313,11 +357,23 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
 
 
 def _shown(field: str, value: str | None) -> str:
-    """A judge field as an error may quote it: an ``auth_ref`` literal never (it is a key)."""
+    """A judge field as an error may quote it: an ``auth_ref`` literal never (it is a key).
+
+    Anything else is quoted up to 300 characters, an endpoint without what precedes its last
+    ``@`` (clause A-51).
+    """
 
     if field == "auth_ref" and value is not None:
         return shown_auth_ref(value)
-    return repr(value)
+    if field == "endpoint" and value is not None:
+        return _shown_endpoint(value)
+    return quoted(value)
+
+
+def _rendered(doc: dict[str, object]) -> bytes:
+    """A generated file's bytes, measured and written as they are (LF line ends everywhere)."""
+
+    return yaml.safe_dump(doc, sort_keys=False).encode("utf-8")
 
 
 def _scope_doc(config: FleetConfig) -> dict[str, object]:
@@ -328,6 +384,16 @@ def _scope_doc(config: FleetConfig) -> dict[str, object]:
     if judge is not None and judge.id not in {e.id for e in config.targets}:
         targets.append(_scope_entry(judge.id, judge.endpoint, judge.api_key_env))
     return {"version": "1.0", "targets": targets}
+
+
+def _documents(config: FleetConfig) -> Iterator[tuple[str, dict[str, object]]]:
+    """Each file :func:`materialize_fleet` writes, by name, built only when it is reached."""
+
+    yield "scope.yaml", _scope_doc(config)
+    for entry in config.targets:  # the id is charset-validated (a safe file name)
+        yield f"target-{entry.id}.yaml", _target_doc(entry)
+    if config.judge is not None:
+        yield "judge.yaml", _judge_doc(config.judge)
 
 
 def materialize_fleet(
@@ -363,7 +429,7 @@ def materialize_fleet(
             seen[target.id.casefold()] = (index, target.id)
             continue
         first_index, first_id = first
-        shown_first, shown = repr(first_id), repr(target.id)
+        shown_first, shown = quoted(first_id), quoted(target.id)
         if first_id == target.id:
             raise ValueError(
                 f"duplicate target id {shown} in fleet "
@@ -384,28 +450,33 @@ def materialize_fleet(
     if not scannable:  # pragma: no cover - FleetConfig.targets already enforces min_length=1
         raise ValueError("fleet has no targets to scan")
 
-    # Everything that can refuse runs before anything touches the disk: a refused judge used
-    # to leave an empty --out directory, or an older scope.yaml in an existing one (review of
-    # PR #32).
-    scope_doc = _scope_doc(config)
+    # Every refusal of this function runs before it writes anything: a refused judge used to
+    # leave an empty --out directory, or an older scope.yaml in an existing one (review of PR
+    # #32). That includes the size of each file it writes: the scope repeats every endpoint, so
+    # a fleet file of 845,022 bytes wrote a scope of 1,355,024 that `run`, `fleet --run` and the
+    # printed command then refused at the read cap (pre-commit audit of A-43). Each is measured
+    # and dropped before the next, so one rendered file is held at a time: holding them all took
+    # 29 MiB for 60 targets sharing one 500 KB anchor and, computed from those sizes, about 3
+    # GiB for a fleet file just under the cap (delta audit). The judge file is measured only
+    # when it is the judge the printed command reads, not when ``judge`` (a ``--judge`` file)
+    # replaces it. An OS error while writing can still leave the directory part written.
+    for name, doc in _documents(config):
+        if name == "judge.yaml" and judge is not None:
+            continue
+        size = len(_rendered(doc))
+        if size > MAX_FILE_BYTES:
+            advice = "split the fleet" if name == "scope.yaml" else "shorten that entry"
+            raise ValueError(
+                f"the {name} this fleet would write is {size:,} bytes, over the "
+                f"{MAX_FILE_BYTES:,}-byte cap a file is read up to; {advice}"
+            )
+
     out.mkdir(parents=True, exist_ok=True)
+    for name, doc in _documents(config):
+        (out / name).write_bytes(_rendered(doc))
     scope_path = out / "scope.yaml"
-    scope_path.write_text(yaml.safe_dump(scope_doc, sort_keys=False), encoding="utf-8")
-
-    target_paths: list[Path] = []
-    for entry in scannable:
-        target_path = out / f"target-{entry.id}.yaml"  # id is charset-validated (safe filename)
-        target_path.write_text(
-            yaml.safe_dump(_target_doc(entry), sort_keys=False), encoding="utf-8"
-        )
-        target_paths.append(target_path)
-
-    judge_path: Path | None = None
-    if config.judge is not None:
-        judge_path = out / "judge.yaml"
-        judge_path.write_text(
-            yaml.safe_dump(_judge_doc(config.judge), sort_keys=False), encoding="utf-8"
-        )
+    target_paths = [out / f"target-{entry.id}.yaml" for entry in scannable]
+    judge_path = out / "judge.yaml" if config.judge is not None else None
 
     return MaterializedFleet(
         scope_path=scope_path, target_paths=target_paths, skipped=skipped, judge_path=judge_path
