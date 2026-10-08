@@ -25,6 +25,14 @@ versioning: [SemVer](https://semver.org/).
   runner counts, and `--runs` keeps its bound. Clause A-59 (u08);
   `tests/core/test_planned_attempts.py`, `tests/cli/test_resume_integrity.py`.
 
+### Documentation (a live fingerprint ordering a live plan)
+
+- `docs/16` §1 records `dottore run -sV --spec PI-INDIRECT-TOOL-001 --runs 1` against the local
+  `llama3.2:3b` (2026-10-07): 22 requests, all at temperature 0, and the variants sent as
+  `identity`, `zero_width_inject`, `nested_instruction` (the profile recovered
+  `zero_width_inject`), where the same command without `-sV` keeps the declared order. It leaves
+  the "Not verified" list; `docs/10` §3 points at it.
+
 ### Changed (a target or scope id longer than 128 characters is refused)
 
 - **A target or scope id, or an identity name, longer than 128 characters is refused when its file

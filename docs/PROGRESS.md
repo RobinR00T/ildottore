@@ -14,6 +14,17 @@ The carryover ledger. Every agent session updates this so context survives even 
   change the same lines (the halt path, the seeding gate, the sweep): whoever merges second keeps
   the count, not the set.
 
+## State, 2026-10-08: a live fingerprint orders a live plan (run 2026-10-07)
+
+- PR #58 (OD-18 option B) squash-merged as `0f936b6`: with #50, OD-18 is complete. A live
+  `run -sV` on `PI-INDIRECT-TOOL-001` against the local `llama3.2:3b` sent `zero_width_inject`
+  before `nested_instruction`, against the declared order (`docs/16` §1). Noted by its audit,
+  not decided: the planner matches carrier names exactly, so `translate:es` (and the other
+  `translate:<lang>` variants) never moves forward when `translate` was recovered; whether one
+  language's comprehension should stand for another is a design question. Next in the owner's
+  order: hosted APIs (the owner's keys and models), then a deployed application, which needs
+  its operator's seeding (`examples/target.app.yaml`).
+
 ## State, 2026-10-07 (night): ids bounded at 128 characters (OD-27 decided)
 
 - On `fix/operator-id-length`, stacked on `fix/operator-file-quoted-values` (#86),
