@@ -9,6 +9,9 @@
 # API keys are NEVER written here: each entry names an environment variable
 # (api_key_env), resolved only at send time. `provider` is inferred from the endpoint
 # host when omitted (api.openai.com -> openai, api.anthropic.com -> anthropic, else rest).
+#
+# Each id names a generated file (target-<id>.yaml), so ids must differ in more than case:
+# `Prod` and `prod` are one file on macOS and Windows, and `dottore fleet` refuses the pair.
 version: "1"
 targets:
   # A hosted OpenAI model (key from $OPENAI_API_KEY).

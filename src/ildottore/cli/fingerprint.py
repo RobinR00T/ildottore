@@ -53,7 +53,8 @@ def fingerprint_target(
         )
     # Load + integrity-check the scope (raises on tamper); the adapter honours it.
     scope = wiring.build_scope(scope_path)
-    target = wiring.load_target(target_path)
+    loaded = wiring.read_target_file(target_path)  # parsed once (u12 A-42)
+    target = loaded.target
 
     # ...and then actually USE it. This command loaded the scope and threw it away: no
     # target-id check, no endpoint check. Today that leaks nothing only because the probe
@@ -70,19 +71,15 @@ def fingerprint_target(
             f"{decision.reason}. The scope authorizes: {authorized}."
         )
 
-    real_target = (
-        None
-        if (offline or scenario is not None or wiring.target_uses_mock(target_path))
-        else target
-    )
+    real_target = None if (offline or scenario is not None or loaded.uses_mock) else target
     if real_target is not None:
         wiring.check_target_credential(scope, real_target)
     # The target's own mock_scenario steers the offline mock, as it does under `run -sV`: the
     # comprehending scenario printed 0.0 for every carrier here because it was not passed on
     # (audit 2026-10-03, D-09).
     mock_scenario = (
-        wiring.load_mock_scenario(target_path)
-        if real_target is None and scenario is None and wiring.target_uses_mock(target_path)
+        loaded.mock_scenario()
+        if real_target is None and scenario is None and loaded.uses_mock
         else None
     )
     adapter = wiring.build_probe_adapter(

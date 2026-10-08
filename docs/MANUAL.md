@@ -159,7 +159,17 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   mapping, first at line 5, column 5 and again at line 11, column 5`. Keys pulled in by a `<<`
   merge can still be overridden; a map merged in is checked too, and two `<<` in one mapping are
   refused (merge several maps with one list, `<<: [*a, *b]`). A key written as an alias
-  (`*k :`) is reported where the alias is written. An error quotes an `auth_ref` only when it
+  (`*k :`) is reported where the alias is written.
+  Two values that cost far more to build than they weigh are refused the same way, in every file
+  and in specs, where they are written and before the rest of the file is parsed: a number written
+  in more than 1,000 characters (`cannot build this value (a number written in over 1000
+  characters)`; YAML 1.1 reads `1:59:59` as a base-60 integer, which PyYAML builds in time that
+  grows with the square of its length, so one such value in a 1 MiB spec took `lint` 55 s), and
+  the key that takes a file past 1,000 keys that are numbers, a key merged in by `<<` counted in
+  every mapping it is merged into (integers that differ by a multiple of `2 ** 61 - 1` share one
+  hash, and the mapping that holds them is built in time that grows with the square of their
+  count). Keys that are text, as in every file this tool reads, are not counted.
+  An error quotes an `auth_ref` only when it
   is a reference (it contains `://`, such as `env://NAME` or `vault://x`); a literal value
   pasted where a reference belongs is printed as `a literal value (not shown)`, for example
   `target 'live' auth_ref a literal value (not shown) is not authorized by the scope (declared:
@@ -223,9 +233,24 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
+A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
+`max_tokens` outside 1 to its cap or a key `sampling_defaults` does not know is refused before
+anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
+problems found in that block (the `capabilities` block alone if both are wrong), never the value
+written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
+valid boolean, unable to interpret input`. The field is printed from the key you wrote, so a control
+character in a key reaches the terminal as written (a line break splits the line). What can be read
+is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
+`top_p` have no range check. A key `capabilities` does not know is ignored, and so is a
+`capabilities` that is empty or `false`.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.
+
+`run` and `fingerprint` parse a target file once: the target the scope authorizes, its route and
+the target a live adapter sends to all come from that one parse, even if the file changes while the
+command starts, and a target can come from a pipe (`-t /dev/stdin`). A file named twice
+(`-t X --judge X`) is parsed once per name.
 
 `type: model` means a bare model API, and changes what a spec with setup sends: its memory seed
 goes as saved memory from earlier sessions after the system prompt, its documents as retrieved
@@ -350,7 +375,16 @@ targets:
 
 `provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
 `/messages` -> `anthropic`, otherwise `rest`. `dottore fleet` expands this into a scope plus
-one target file per model. Each entry is written as a `chatbot` target (an `mcp` one as `api`)
+one target file per model, named for its `id` (`target-<id>.yaml`). Two ids that differ only by
+case (`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
+case-insensitive one (the macOS and Windows default) they are one file, and the second entry
+used to overwrite the first. The message locates both entries as validation errors do
+(`targets.0.id`, counted from 0), since the CLI may mask an id that looks random. A `judge:` id
+spelled as a target's only up to case is refused too (the default `judge` of a block with no
+`id:` included), so the scope never holds two ids that differ only by case; spelled exactly the
+same, the judge shares that target's scope entry when its endpoint and credential match, and is
+refused otherwise.
+Each entry is written as a `chatbot` target (an `mcp` one as `api`)
 with no `seeded_setup`, so a spec that needs documents, tools or memory is `setup_not_seeded`
 on a fleet entry that declares the capability; for those, scan with a target file (§4.2). Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
 
@@ -448,6 +482,21 @@ know nothing about. The findings are still written to every report. If your pipe
 `3` as "infrastructure, retry", read `summary.status.reason` before retrying: it names the
 breached axis and how many specs never ran.
 
+A resume with `-sV` records what its probe pass sent as soon as the pass ends, whether it
+finished, reached the request ceiling, stopped on an error (a probe with no answer after its
+retries, a 401, a reply that is not JSON) or was stopped by Ctrl-C or SIGTERM, so the next
+resume's ceiling counts those requests too. They are counted as the request ceiling counts them,
+every send attempted, retries included, a send to a target that refused the connection too. When
+an error or a signal stops the pass, stderr gives that count even under `-q`: `resume: the -sV
+probe pass on 'api' stopped after 3 request(s), retries included; run-<id> now records 23
+request(s) spent`, or `they could not be added to the spend of run-<id>` after a warning when the
+run store could not be written. The error line after it can say `exhausted 1 attempt(s)` for
+those three sends (see Troubleshooting); a refusal at the request ceiling gives its own count. A
+Ctrl-C landing during the few milliseconds of that write can lose the record, as a SIGKILL does,
+and cuts the line; after a Ctrl-C, or a pass that finished, it takes a second one in that window.
+Nothing is recorded for a fresh run stopped by its probe pass (it has no run row and nothing to
+resume) or for a `--resume-unverified` run whose spend was never recorded.
+
 ### `dottore fingerprint`, identify the model + guardrails
 
 ```
@@ -536,12 +585,50 @@ expands, counting every alias where it is used, past 100,000 nodes (a long text 
 per 64 characters), that nests deeper than 100 levels once its aliases are expanded, or that
 holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases used to turn a
 4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
-linter overflowed on. The scope, target, fleet and labels files have the same depth limit.
+linter overflowed on. The scope, target, fleet and labels files have the same three limits, and
+so do the policy and signature packs (since 2026-10-07; they had only the depth limit, and an
+835-byte labels file of anchors that each list the previous one twice ran `calibrate` past 25 s
+and 1.7 GB). Too deep is reported before too large, and each where the value crosses its limit:
+`labels file labels.yaml is not valid YAML: document is too large (over 100000 nodes, counting
+every alias where it is used and a text as one node per 64 characters) at line 1, column 266`
+points at the anchor whose two aliases take it past the cap. Composition stops as soon as the nodes
+written in a file pass the cap, an alias counting the node it names, so a large file is refused
+without being composed whole (the first version of this cap composed a 3 MB list of a million texts,
+785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as too large before
+its depth is checked, unless composition reaches a list or a map past the depth limit before the
+count crosses (a list or a map is counted when it ends). The file itself is still read whole: these
+files have no byte limit. A tag
+longer than 256 characters is refused at the first one, without quoting it. A list or a map written
+inside 100 others is refused where it starts, before anything in it or after it is composed (the
+scanner reads ahead to the end of that line, at most 1,024 characters, and one token past it, each
+token read whole, and an error there is reported instead): PyYAML's scanner pays on every token for
+each flow level open around it, and a file nested past the limit used to be composed whole first
+(198 KB of chains of `[` 320 deep, 11 s, 4.6 times a flat list of as many texts; now 0.1 s). The
+position is where the first list or map written past the limit starts (a deeper branch, or one as
+deep written first, aliases expanded, used to be named instead, and so did a key before an empty
+list, as in `k: []`), and a recursive alias written before the nesting is no longer what is
+reported. A text or an alias written at level 101 opens no level and is left to what refused it
+before. Under the limit the cost stays: the same chains 98 deep are accepted in about 2.3 times the
+time of the flat list, and up to about 3 times when they hold their texts at the bottom (OD-30: a
+lower limit for flow nesting only is decided, not built yet).
 A key written twice in one
-mapping is a `PARSE_ERROR` too. A YAML error gives the line and
+mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a
+file with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than
+text (`5:`, a bare `on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its
+mapping, such as `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write
+it in quotes, without a tag`: a spec is JSON, whose keys are strings, and such a key in a fixture's
+tool-call arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`).
+A YAML error gives the line and
 the reason without quoting the line, a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
-schema errors are listed per file. An oracle marker that an echo of the
+schema errors are listed per file. A number too long for Python to write out (more than
+`sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
+`f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included), and
+nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
+as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
+`mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An
+oracle marker that an echo of the
 request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered
 into the spec's images (see `CONTRIBUTING.md`). An evaluator config that would silently not
 check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no usable
@@ -1108,3 +1195,4 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. |
 | `authz_leak` is `capability_unavailable` | A cross-tenant spec needs the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
+| `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |
