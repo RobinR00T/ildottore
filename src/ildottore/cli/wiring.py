@@ -1132,14 +1132,19 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
             f"expected one of {', '.join(t.value for t in TargetType)}"
         )
     target_type = TargetType(type_raw)
-    caps_raw = raw.get("capabilities") or {}
+    # Absent or null is no capabilities, as an absent `sampling_defaults` is no sampling; anything
+    # else is a mapping of the keys `Capabilities` knows. `false`, `0`, `[]` and `""` read as none
+    # and an unknown key was dropped, so `tool: true` (for `tools`) ran the target with tools off
+    # and took the tool specs out of the plan without a word (A-50, OD-29).
+    caps_raw = raw.get("capabilities")
+    if caps_raw is None:
+        caps_raw = {}
     if not isinstance(caps_raw, dict):
         raise ValueError(f"target file {path} 'capabilities' must be a mapping")
-    known = set(Capabilities.model_fields)
     # Field and reason only, as the scope, fleet and pack loaders give them: pydantic's own text
     # ran to four lines, quoted the value written and did not name the file (A-45).
     try:
-        caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
+        caps = Capabilities.model_validate(caps_raw)
     except ValidationError as exc:
         raise ValueError(
             f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"

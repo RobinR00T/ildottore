@@ -338,9 +338,66 @@ pinned:
 * only what pydantic cannot read as the field's type is refused: `tools: 'off'` reads as false,
   `temperature: '0.5'` as 0.5, `temperature: true` as 1.0, and `temperature` and `top_p` have no
   range (`.nan`, `-3`, `top_p: 7.5` are kept);
-* `capabilities` that is not a mapping but is empty or false (`false`, `0`, `[]`, `""`) is read
-  as no capabilities, and a key it does not know is dropped without a word (`sampling_defaults`
-  refuses both).
+* `capabilities` that is not a mapping but is empty or false (`false`, `0`, `[]`, `""`) was read
+  as no capabilities, and a key it does not know was dropped without a word (`sampling_defaults`
+  refuses both): both are refused since A-50.
+
+**A-50 A target file's `capabilities` is a mapping of the keys `Capabilities` knows, or nothing;
+anything else is refused before anything is sent, and `dottore fleet` refuses it before it writes
+(added 2026-10-07; OD-29 decided).** `load_target` validated only the keys of `capabilities` that
+`Capabilities` knows and dropped the rest without a word, so `tool: true` written for `tools` ran
+the target with tools off and took the tool specs out of the plan: on `2f6201a`, a chatbot with
+`rag` and `memory` on planned 40 specs with 33 skipped for a capability, against 59 and 8 with
+`tools`, and the dry run counted the skipped specs but named no key. A `capabilities` that was not a
+mapping but read as false (`false`, `0`, `0.0`, `[]`, `""`, `no`) was taken as no capabilities,
+while `true`, `1` or `[tools]` was refused as "must be a mapping"; `sampling_defaults` refuses both.
+`dottore fleet` typed an entry's map as `dict[str, bool]` and copied any text key into the target
+file it wrote, with exit 0, where the loader then dropped it. Now:
+* a key `Capabilities` does not know is refused on the one A-45 line, `target file <path>
+  'capabilities' failed validation: tool: Extra inputs are not permitted` (a key that is not text:
+  `1: Keys should be strings`), beside the block's other problems, never the value;
+* only an absent or null `capabilities` (the key with nothing after it, `null`, `~`) or an empty
+  mapping is no capabilities; any other value that is not a mapping is refused as `target file
+  <path> 'capabilities' must be a mapping`, without quoting it;
+* a fleet entry's `capabilities` is the target file's own `Capabilities` model, so `fleet` refuses
+  an unknown key (`fleet file <path> failed validation: targets.0.capabilities.tool: Extra inputs
+  are not permitted`, exit 3) and writes nothing, and the target file it writes holds `tools` (true
+  for `kind: mcp`) and `rag` overridden by exactly the keys the entry wrote, as before, though in
+  the model's field order rather than the order written (same values, same loaded target).
+
+`tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`, each on the
+old behavior (the file loads, or the command exits 0); the other 21 guard what stays (a file with no
+capabilities, every known key, the values that were already refused, what `fleet` writes) and that
+the redactor leaves each test value readable, and one loads every target and fleet file under
+`examples/`, `specs/` and `tests/` and every such YAML block of the docs through the real loaders.
+Refusing both is the owner's decision (OD-29), as the smallest reversible change: the filter and the
+`or {}` in `_target_from` (called by `load_target` and `read_target_file` since #77), and `dict[str,
+bool]` in `FleetTarget` with `**entry.capabilities` in `_target_doc` (the `Capabilities` import in
+`cli/fleet.py` then goes, or ruff fails), undo it, with this test file removed. Outside the clause,
+and said so rather than pinned (pre-commit, delta and pre-merge audits):
+* a top-level key a target file does not know (`endpont:`, or `tools: true` under a
+  `capabilities:` left empty by a lost indent) is still dropped without a word, and so is a `name`,
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text;
+* a fleet entry's `capabilities` that is not a mapping, `null` included, was refused and still is,
+  now in pydantic's words for a model (`Input should be a valid dictionary or instance of
+  Capabilities`), where a target file reads `null` as none;
+* what pydantic can read as a boolean is taken as read (`tools: 'off'` is false), as in A-45;
+* an unknown key is printed as the location, as A-45 says of any key: one that is not text as
+  pydantic renders it (`on:` as `1`, `off:` as `0`, `~:` as `None`), an empty key or one holding
+  half a character (a lone surrogate) as `<root>` (the latter with `Input should be a valid
+  string`), and control characters as written until #51 writes them out; a credential pasted as a
+  key is masked as any error text is (a registered credential and the known key shapes first, then
+  the entropy rule), and the entropy rule leaves a low-entropy one readable (about 1 in 20 random
+  64-hex keys, and the tests' repeated value);
+* unknown keys are listed on the one line as `validation_problems` lists any block's problems
+  since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 keys give
+  a line of 1,040 bytes, where `sampling_defaults` on `2f6201a` printed 789 KB);
+* a run halted before this change with such a key resumes once the key is deleted (it was never
+  read, so the target is the same; measured end to end, exit 0) and is refused as another target
+  once the key is corrected to the one meant, which changes the capabilities; that refusal's
+  advice to restore the target as it was is followed by deleting the key, since the file as
+  written no longer loads. A `capabilities: false` resumes the same way once deleted or written
+  as `{}`.
 
 **A-55 Every integer flag of `run` is bounded above as well as below, and so is a live run's pace
 against the wall-clock ceiling (added 2026-10-07).** `--runs` had a lower bound only, and the plan
@@ -432,6 +489,19 @@ Outside the clause, and said so rather than pinned:
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
+  file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
+  as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in
+  `dottore fleet` before anything is written. Alternatives: keep dropping them in silence (main
+  until A-50: a typo of `tools` takes the tool specs out of the plan); warn and go on (the warning
+  goes where the run's output goes, and a CI log nobody reads loses the same specs); refuse the
+  unknown key and keep `false` as none (the one shape an operator may write on purpose to mean
+  "none", though `{}` or leaving the key out says it too). A file that loads on main and is refused
+  now holds a key `Capabilities` does not know or a `capabilities` of `false`, `0`, `[]` or `""`; no
+  file of the repository does. Reversal: the filter and the `or {}` in `_target_from` (called by
+  `load_target` and `read_target_file` since #77), `dict[str, bool]` in `FleetTarget` and
+  `**entry.capabilities` in `_target_doc` (dropping the `Capabilities` import in `cli/fleet.py`),
+  and `tests/cli/test_target_capabilities_strict.py` removed.
 - **OD-32** how far `--runs` may go (2026-10-07). **Decided 2026-10-08 by the owner: the runner
   counts what is stored instead of building the plan (A-59, u08), and `--runs` keeps its `2**53`
   bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The

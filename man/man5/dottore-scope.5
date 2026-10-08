@@ -94,6 +94,12 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 and
 .B type
 are required; the rest are needed only for a live scan.
+.B capabilities
+takes tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal and audio, each
+false unless set; any other key, or a capabilities that is neither a mapping nor null (false and
+[] included), is refused before anything is sent. To declare none, leave it out or write {}. A
+capabilities line with nothing under it is null, so keys below it that lost their indent are
+top-level keys, which are still ignored.
 .B sampling_defaults
 is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
 their own sampling.
@@ -161,7 +167,11 @@ setup_not_seeded there; scan those with a target file. Each target is written to
 target-<id>.yaml, so two ids that differ only by case (Prod and prod) are refused on every file
 system. A judge id spelled as a target's only up to case is refused too (judge, the id of a
 judge block that names none, included), so that the generated scope never holds two ids that
-differ only by case.
+differ only by case. An entry's
+.B capabilities
+takes the target file's keys; its target file gets tools false (true for an mcp entry) and rag
+false unless the entry sets them, plus every key it sets, and a key capabilities does not know is
+refused before anything is written.
 .SH "SEE ALSO"
 .BR dottore (1)
 .PP
