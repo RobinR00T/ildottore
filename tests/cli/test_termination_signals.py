@@ -4,7 +4,7 @@
 `signal.default_int_handler`, which raises wherever the main thread is. Inside a weakref
 callback Python prints "Exception ignored" and drops it, so the run went on: in CI a SIGTERM
 sent with a probe on the wire left the resume sending (41 requests served where 25 were
-expected, `tests/cli/test_probe_pass_spend.py` on PR #72, twice). A Ctrl-C there was never lost:
+expected, `tests/cli/test_probe_pass_spend.py` on PRs #72 and #82). A Ctrl-C there was never lost:
 inside `asyncio.run` it goes to asyncio's own handler, which cancels the run instead of raising.
 SIGTERM and SIGHUP now do what Ctrl-C would do at that moment.
 
@@ -39,7 +39,7 @@ def _signal_inside_a_weakref_callback(signum: int) -> None:
 
 @pytest.fixture
 def ctrl_c() -> Iterator[None]:
-    """Ctrl-C as an interactive shell leaves it; pytest started with `&` inherits it ignored."""
+    """Ctrl-C as an interactive shell leaves it; pytest a script starts with `&` has it ignored."""
 
     previous = signal.signal(signal.SIGINT, signal.default_int_handler)
     try:
@@ -68,7 +68,7 @@ def test_a_signal_inside_a_callback_stops_the_event_loop(name: str) -> None:
 @pytest.mark.parametrize("sigint", ["default", "ignored"])
 @pytest.mark.parametrize("name", ["SIGTERM", "SIGHUP"])
 def test_a_termination_signal_outside_a_loop_still_interrupts(name: str, sigint: str) -> None:
-    """Outside an event loop, and when SIGINT is ignored (a job started with `&`), as before."""
+    """Outside an event loop, and when SIGINT is ignored (a job a script starts with `&`)."""
 
     previous = signal.signal(
         signal.SIGINT, signal.default_int_handler if sigint == "default" else signal.SIG_IGN

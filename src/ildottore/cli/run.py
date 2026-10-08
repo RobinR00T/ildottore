@@ -1002,12 +1002,12 @@ def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
     ``signal.default_int_handler`` raised KeyboardInterrupt wherever the main thread was, and
     inside a weakref callback Python prints "Exception ignored" and drops it: a SIGTERM sent
     with a probe on the wire left a resume sending (41 requests where 25 were expected, CI on
-    PR #72, twice). Inside ``asyncio.run`` the SIGINT handler is asyncio's, which cancels the
+    PRs #72 and #82). Inside ``asyncio.run`` the SIGINT handler is asyncio's, which cancels the
     run on the first signal instead of raising, so that one cannot be dropped (a second, or one
     after the run's task has finished, raises in place as before). With no Python handler for
-    SIGINT (ignored, as for a job started with ``&``, where asyncio installs none) it raises, as
-    before, and can still be dropped in a callback. A program that embeds ``execute_run`` and
-    gives Ctrl-C a handler that does nothing, or installs one through
+    SIGINT (ignored, as for a job a script starts with ``&``, where asyncio installs none) it
+    raises, as before, and can still be dropped in a callback. A program that embeds
+    ``execute_run`` and gives Ctrl-C a handler that does nothing, or installs one through
     ``loop.add_signal_handler``, makes SIGTERM and SIGHUP do nothing either; ``dottore`` does
     neither (pre-commit audit).
     """

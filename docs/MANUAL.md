@@ -518,7 +518,7 @@ a SIGKILL stops it without recording what the unfinished part spent. Until 2026-
 or SIGHUP that arrived while requests were being sent could be dropped if Python was running a
 cleanup callback at that instant, and the run went on. That can still happen when Ctrl-C is
 ignored, as for a job a script starts with `&`: if such a job keeps running after a SIGTERM, send
-it again (a SIGKILL would stop it without recording the spend).
+it again (a SIGKILL would stop it without recording what the unfinished part spent).
 
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an

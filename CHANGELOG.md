@@ -11,7 +11,8 @@ versioning: [SemVer](https://semver.org/).
   `signal.default_int_handler`, which raises KeyboardInterrupt wherever the main thread is; raised
   inside a weakref callback, Python prints "Exception ignored" and drops it. In CI a resume kept
   sending after its SIGTERM (41 requests served where 25 were expected, `WeakSet._remove` in the
-  child's stderr, twice on Linux with Python 3.11), which made the `[sigterm]` case of
+  child's stderr, three times on two PRs, #72 and #82, on Linux with Python 3.11), which made the
+  `[sigterm]` case of
   `tests/cli/test_probe_pass_spend.py` fail now and then on unrelated PRs. Ctrl-C was never
   dropped there, because inside `asyncio.run` asyncio's own handler cancels the run instead of
   raising. SIGTERM and SIGHUP now call the SIGINT handler in place at that moment, so they cancel

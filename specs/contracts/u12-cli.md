@@ -281,10 +281,10 @@ not recorded, each comparing the store with what the stub served.
 which raises KeyboardInterrupt wherever the main thread is. Raised inside a weakref callback,
 Python prints "Exception ignored" and drops it, and the run goes on: in CI the `[sigterm]` case of
 `tests/cli/test_probe_pass_spend.py` saw a resume keep sending after its SIGTERM (41 requests
-served where 25 were expected, `WeakSet._remove` in the child's stderr; PR #72's runs 37755261302
-and 37758633140, first attempts, Linux, Python 3.11.17 and 3.11.16), and on main `e4d6c83` a SIGTERM
-or SIGHUP raised inside a
-weakref callback under `asyncio.run` is dropped every time. Ctrl-C was never dropped there:
+served where 25 were expected, `WeakSet._remove` in the child's stderr; three first attempts on
+two PRs: #72's runs 37755261302 and 37758633140 and #82's run 37689645382, Linux, Python 3.11.16
+and 3.11.17), and on main `e4d6c83` a SIGTERM or SIGHUP raised inside a weakref callback under
+`asyncio.run` is dropped every time. Ctrl-C was never dropped there:
 inside `asyncio.run` the SIGINT handler is asyncio's, which cancels the run instead of raising.
 SIGTERM and SIGHUP now call whatever SIGINT handler is in place at that moment, so inside the
 event loop the first of them cancels the run as Ctrl-C does (a second, or one after the run's task
