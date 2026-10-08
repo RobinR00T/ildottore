@@ -3,6 +3,18 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (night): ids bounded at 128 characters (OD-27 decided)
+
+- On `fix/operator-id-length`, stacked on `fix/operator-file-quoted-values` (#86),
+  `tests/cli/test_operator_id_length.py`: the owner delegated OD-27 and the choice was (a), a bound
+  when the file is loaded. A scope target's `id` and an identity's `name` are at most 128 characters
+  in the scope model (`policy.scope.MAX_ID_CHARS`), and `load_target` refuses a target or `--judge`
+  file's longer `id` naming the file, so no run prints an id past 128 (A-51 had cut it in refusals
+  only). 128: twice a fleet's 64, about six times the longest example id (21); no pattern. The A-51
+  test cases of a long id moved to this test as load refusals; A-51's quote of an id stays for
+  callers that build one. 9 of the 11 new tests fail without the bound; 5 mutants killed. Clause
+  A-57 (u01).
+
 ## State, 2026-10-07 (evening): a refusal quoted the operator's value whole
 
 - On `fix/operator-file-quoted-values`, stacked on `fix/operator-file-read-cap` (#76, head

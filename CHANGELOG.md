@@ -5,6 +5,20 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (a target or scope id longer than 128 characters is refused)
+
+- **A target or scope id, or an identity name, longer than 128 characters is refused when its file
+  is loaded.** A scope file's `targets.N.id` or `identities.N.name` is a validation problem (`String
+  should have at most 128 characters`), and a target or `--judge` file's `id` is refused as `target
+  file <path> 'id' is 1,000,000 characters, over the 128-character limit`, exit 3. Such an id loaded
+  before: refusals cut it (A-51), but a run that started wrote it whole in its `--dry-run` plan,
+  progress and `-sV` lines, reports and run store (the plan of an id of a million characters ran
+  just over 1 MB, exit 0). 128 is twice the 64 a fleet's ids are held to, as they name files, and
+  about six times the longest id in the shipped examples (21 characters); there is no pattern, so an
+  id with spaces or other characters loads as before. An endpoint, an `auth_ref` reference and a
+  labels spec id stay unbounded and are cut in refusals. OD-27, decided (a) by the implementer at
+  the owner's request; clause A-57 (u01).
+
 ### Fixed (a refusal quoted a value of the operator's file whole; a file not UTF-8 was not named)
 
 - **A refusal quoted the value it refused, whole.** The refusals written by hand for the scope,
@@ -55,16 +69,16 @@ versioning: [SemVer](https://semver.org/).
   '/path/scope.yaml'` on macOS, the scope's line also saying `cannot read scope file ...`), exit 3
   as before, in `run`, `fleet`, `calibrate` and `fingerprint`. A valid file's text, and so a
   scope checksum, is unchanged.
-- Not covered (OD-27): a scope or target id has no length limit (a fleet's ids have 64 characters),
-  and a target id and its endpoint are still written whole wherever a run that has started prints
-  them (the `--dry-run` plan, progress and `-sV` lines, reports, the run store), and `calibrate`
-  lists every label the report does not cover with its id whole; the stdio advice's command line is
-  written whole on purpose, to be copied; and the adapter still reads a target's endpoint
-  unstripped, so one with a Unicode space in front passes the gate and the run stops at its first
-  send (exit 3), its password masked. A stdio `command` made of aliases is still joined into one
-  text where the target is authorized: 20,000 aliases of a 10 KB text, a 90 KB file, print a line of
-  about 200 MB in 1.09 to 1.49 GB, as before this change; #71's node cap (A-37), merged in, now
-  refuses that file when it is loaded. Found by the pre-commit audit of A-43. Clause A-51 (u01).
+- Not covered: a target's endpoint is still written whole wherever a run that has started prints it
+  (the `--dry-run` plan, reports, the run store), and so is a target or scope id up to the 128
+  characters A-57 allows (see above), and `calibrate` lists every label the report does not cover
+  with its id whole; the stdio advice's command line is written whole on purpose, to be copied; and
+  the adapter still reads a target's endpoint unstripped, so one with a Unicode space in front
+  passes the gate and the run stops at its first send (exit 3), its password masked. A stdio
+  `command` made of aliases is still joined into one text where the target is authorized: 20,000
+  aliases of a 10 KB text, a 90 KB file, print a line of about 200 MB in 1.09 to 1.49 GB, as before
+  this change; #71's node cap (A-37), merged in, now refuses that file when it is loaded. Found by
+  the pre-commit audit of A-43. Clause A-51 (u01).
 
 ### Fixed (an operator's file read whole, and its validation errors listed whole)
 

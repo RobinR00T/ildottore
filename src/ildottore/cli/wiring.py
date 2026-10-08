@@ -58,6 +58,7 @@ from ildottore.policy import (
     load_scope,
     load_scope_with_digest,
 )
+from ildottore.policy.scope import MAX_ID_CHARS
 from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
@@ -1089,6 +1090,13 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
     target_id = raw.get("id")
     if not isinstance(target_id, str) or not target_id:
         raise ValueError(f"target file {path} is missing a string 'id'")
+    if len(target_id) > MAX_ID_CHARS:
+        # As the scope bounds its ids: a longer one was printed whole by every run that started
+        # (OD-27, clause A-57). The length carries separators, or the redactor reads a phone.
+        raise ValueError(
+            f"target file {path} 'id' is {len(target_id):,} characters, over the "
+            f"{MAX_ID_CHARS}-character limit"
+        )
     endpoint_raw = raw.get("endpoint")
     if isinstance(endpoint_raw, str):
         # Read as the gate reads it (`request_url_for` strips it): read raw, a leading U+00A0

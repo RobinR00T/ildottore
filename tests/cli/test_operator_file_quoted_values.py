@@ -32,6 +32,7 @@ from ildottore.cli.fleet import _shown_endpoint
 from ildottore.cli.main import app
 from ildottore.cli.resume import _assert_same_target
 from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, target_uses_mock
+from ildottore.policy import authorize_target, load_scope
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.scope import Endpoint
 from ildottore.redactor import Redactor
@@ -384,15 +385,10 @@ def _lint(tmp_path: Path, spec: str) -> Case:
 #: PyYAML's problem text is cut as it is, not as a repr.
 ALIAS = "found undefined alias " + repr(BIG)
 ALIAS_CUT = f"{ALIAS[:300]}... ({len(ALIAS)} characters)"
-#: Three values of 300,000 characters fit one file under the cap; three of 400,000 do not.
+#: Long values for a run store's ids and an endpoint's path. A target or scope id longer than
+#: 128 characters is refused when its file is loaded (A-57), so no file brings one this long.
 ENTRY = "c" * 300_000
 NAME = "d" * 300_000
-DUPLICATE_IDENTITY = (
-    ("default", "env://MOCK_KEY", None),
-    (NAME, "env://A", None),
-    (NAME, "env://B", None),
-)
-SHARED_CANARY = (("default", "env://A", "canary-1"), (NAME, "env://B", "canary-1"))
 
 #: Every refusal that quoted a value of the file whole on the base, built by its command.
 QUOTING: dict[str, Callable[[Path], Case]] = {
@@ -408,43 +404,18 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
     "target-mock-scenario": lambda t: _with(
         _run(t, TARGET + f"mock_scenario: {BIG}\n"), 0, "has invalid mock_scenario", cut_of(BIG)
     ),
-    "scope-duplicate-target-id": lambda t: _with(
-        _run(t, scope=SCOPE_HEAD + scope_entry(HALF) + scope_entry(HALF)),
-        1,
-        "more than once",
-        cut_of(HALF),
-    ),
-    "scope-duplicate-identity": lambda t: _with(
-        _run(t, scope=SCOPE_HEAD + scope_entry(ENTRY, DUPLICATE_IDENTITY)),
-        1,
-        "more than once",
-        cut_of(ENTRY),
-        cut_of(NAME),
-    ),
-    "scope-shared-canary": lambda t: _with(
-        _run(t, scope=SCOPE_HEAD + scope_entry(ENTRY, SHARED_CANARY)),
-        1,
-        "declares the canary of another identity",
-        cut_of(ENTRY),
-        cut_of(NAME),
-    ),
     "scope-undefined-alias": lambda t: _with(
         _run(t, scope=f"version: *{BIG}\n"), 1, "found undefined alias", ALIAS_CUT
-    ),
-    "run-two-targets-one-id": lambda t: _run_two_targets(t),
-    "run-target-not-in-scope": lambda t: _with(
-        _run(t, f"id: {BIG}\ntype: chatbot\n"), None, "not authorized by the scope", cut_of(BIG)
     ),
     "run-auth-ref-not-authorized": lambda t: _with(
         _run(
             t,
-            live_target(ENTRY, "env://" + NAME),
-            SCOPE_HEAD + scope_entry(ENTRY, (("default", "env://OTHER", None),), live=True),
+            live_target(auth_ref="env://" + BIG),
+            SCOPE_HEAD + scope_entry("live", (("default", "env://OTHER", None),), live=True),
         ),
         None,
         "is not authorized by the scope",
-        cut_of(ENTRY),
-        cut_of("env://" + NAME),
+        cut_of("env://" + BIG),
     ),
     "run-endpoint-not-on-allowlist": lambda t: _run_endpoint_not_allowed(t),
     "fingerprint-endpoint-not-on-allowlist": lambda t: _fingerprint_endpoint_not_allowed(t),
@@ -460,12 +431,6 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         cut_of("vault://" + HALF),
     ),
     "run-hardened-live-target": lambda t: _run_hardened(t),
-    "fingerprint-target-not-in-scope": lambda t: _with(
-        _fingerprint(t, f"id: {BIG}\ntype: chatbot\n"),
-        None,
-        "not authorized by the scope",
-        cut_of(BIG),
-    ),
     "calibrate-undefined-alias": lambda t: _with(
         _calibrate(t, f"x: *{BIG}\n"), 0, "found undefined alias", ALIAS_CUT
     ),
@@ -483,9 +448,6 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         "has an invalid port",
         cut_of("http://localhost:x/" + BIG),
     ),
-    "fleet-judge-not-declared": lambda t: _with(
-        _fleet(t, FLEET, judge=f"id: {BIG}\ntype: model\n"), None, "--judge names", cut_of(BIG)
-    ),
     "fleet-judge-mismatch": lambda t: _with(
         _fleet(
             t,
@@ -495,13 +457,6 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
         None,
         "does not match the fleet's judge",
         cut_of(f"http://localhost:1/{BIG}"),
-    ),
-    # A judge file whose id differs from the fleet's judge: the id is the mismatch quoted.
-    "fleet-judge-mismatch-id": lambda t: _with(
-        _fleet(t, FLEET + JUDGE_BLOCK, judge=f"id: {BIG}\ntype: model\n"),
-        None,
-        "does not match the fleet's judge",
-        cut_of(BIG),
     ),
     "lint-undefined-alias": lambda t: _lint(t, f"id: *{BIG}\n"),
     "target-seeded-setup-unknown-key": lambda t: _with(
@@ -522,32 +477,14 @@ QUOTING: dict[str, Callable[[Path], Case]] = {
 }
 
 
-def _run_two_targets(tmp_path: Path) -> Case:
-    first = _write(tmp_path, "a.yaml", f"id: {HALF}\ntype: chatbot\n")
-    second = _write(tmp_path, "b.yaml", f"id: {HALF}\ntype: chatbot\n")
-    scope = _write(tmp_path, "scope.yaml", SCOPE_HEAD + scope_entry())
-    specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
-    args = ["run", "-t", str(first), "-t", str(second), "--scope", str(scope)]
-    return Case(
-        [*args, "--spec-path", str(specs), "--dry-run"],
-        [first, second],
-        "two target files declare the id",
-        [cut_of(HALF)],
-    )
-
-
 #: A live target the scope names and whose endpoint it does not allowlist (it allows another
-#: path): the id comes back in the list of what the scope authorizes too.
+#: path). Its id is short: since A-57 a target or scope id is at most 128 characters.
 NOT_ALLOWED_ENDPOINT = f"{LIVE_URL}/{NAME}"
-NOT_ALLOWED_TARGET = live_target(ENTRY).replace(LIVE_URL, NOT_ALLOWED_ENDPOINT)
-NOT_ALLOWED_SCOPE = SCOPE_HEAD + scope_entry(ENTRY, live=True).replace(
+NOT_ALLOWED_TARGET = live_target().replace(LIVE_URL, NOT_ALLOWED_ENDPOINT)
+NOT_ALLOWED_SCOPE = SCOPE_HEAD + scope_entry("live", live=True).replace(
     '/v1/chat/completions"]', '/x"]'
 )
-NOT_ALLOWED_CUTS = (
-    cut_of(NOT_ALLOWED_ENDPOINT),
-    cut_of(ENTRY),
-    f"The scope authorizes: {ENTRY[:300]}... ({len(ENTRY)} characters).",
-)
+NOT_ALLOWED_CUTS = (cut_of(NOT_ALLOWED_ENDPOINT),)
 
 
 def _run_endpoint_not_allowed(tmp_path: Path) -> Case:
@@ -563,16 +500,13 @@ def _fingerprint_endpoint_not_allowed(tmp_path: Path) -> Case:
 
 def _run_stdio(tmp_path: Path) -> Case:
     target = (
-        f'id: "{ENTRY}"\ntype: api\nprovider: mcp\ntransport: stdio\n'
-        'command: ["python", "server.py"]\n'
+        'id: mcp\ntype: api\nprovider: mcp\ntransport: stdio\ncommand: ["python", "server.py"]\n'
     )
-    scope = SCOPE_HEAD + scope_entry(ENTRY) + '    commands: ["python other.py"]\n'
+    scope = SCOPE_HEAD + scope_entry("mcp") + '    commands: ["python other.py"]\n'
     return _with(
         _run(tmp_path, target, scope),
         None,
-        "stdio command not authorized",
-        cut_of(ENTRY),
-        f"{ENTRY[:300]}... ({len(ENTRY)} characters) (stdio command not authorized for",
+        "stdio command not authorized for 'mcp'",
         'commands: ["python server.py"]',
     )
 
@@ -580,11 +514,11 @@ def _run_stdio(tmp_path: Path) -> Case:
 def _run_hardened(tmp_path: Path) -> Case:
     case = _run(
         tmp_path,
-        live_target(BIG, "env://LIVE_KEY"),
-        SCOPE_HEAD + scope_entry(BIG, (("default", "env://LIVE_KEY", None),), live=True),
+        live_target(),
+        SCOPE_HEAD + scope_entry("live", (("default", "env://LIVE_KEY", None),), live=True),
     )
     case.args.append("--hardened")
-    return _with(case, 0, "--hardened replays", cut_of(BIG))
+    return _with(case, 0, "--hardened replays")
 
 
 @pytest.mark.parametrize("name", list(QUOTING))
@@ -1050,3 +984,13 @@ def test_a_password_in_an_endpoint_read_stripped_is_masked_by_value(tmp_path: Pa
     load_target(path)
 
     assert "sunflowertwo" not in Redactor().redact_text("the model replied sunflowertwo today")
+
+
+def test_an_authorization_refusal_cuts_a_long_id_a_caller_passes(tmp_path: Path) -> None:
+    # No file brings an id past 128 characters since A-57; a caller that builds one still gets
+    # it cut in the reason, as A-51 had it for a file.
+    scope = load_scope(_write(tmp_path, "scope.yaml", SCOPE_HEAD + scope_entry()))
+
+    decision = authorize_target(scope, BIG, "mock://mock-target/")
+
+    assert not decision.allowed and decision.reason == f"target {cut_of(BIG)} not in scope"
