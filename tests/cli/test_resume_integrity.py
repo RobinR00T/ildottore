@@ -361,7 +361,16 @@ def test_a_spend_record_that_is_not_an_amount_is_corrupt(tmp_path: Path, spend: 
         '"runs":null,',
         "",
     ],
-    ids=["list", "infinity", "text", "bool", "fraction", "zero", "null", "missing"],
+    ids=[
+        "list",
+        "infinity",
+        "text",
+        "bool",
+        "fraction",
+        "zero",
+        "null",
+        "missing",
+    ],
 )
 def test_a_stored_runs_value_that_is_not_a_count_is_corrupt(tmp_path: Path, runs: str) -> None:
     """`int()` of a list or an infinity was a traceback and exit 1, a string was quoted in the
@@ -387,6 +396,33 @@ def test_a_stored_runs_value_that_is_not_a_count_is_corrupt(tmp_path: Path, runs
         with pytest.raises(ValueError, match="context_json holds no runs value") as caught:
             execute_run(opts, [spec_dir])
         assert "sk-quoted" not in str(caught.value)
+
+
+@pytest.mark.parametrize(("runs", "corrupt"), [(2**53, False), (2**53 + 1, True), (10**400, True)])
+def test_a_stored_runs_count_is_read_up_to_the_flag_bound(
+    tmp_path: Path, runs: int, corrupt: bool
+) -> None:
+    """Checked in the store, not through a resume: on ``2f6201a`` a resume of ``2**53 + 1``
+    built a set of that many attempt ids per spec and was still growing at 3.7 GB when it was
+    stopped after 4.5 minutes (A-55, OD-32), and one of 400 digits was an OverflowError in the
+    plan, a traceback and exit 1. Through a resume, a regression could hang the suite."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        raw = store._conn.execute(
+            "SELECT context_json FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        assert '"runs":3,' in raw, "precondition: the stored form the replacement edits"
+        edited = raw.replace('"runs":3,', f'"runs":{runs},')
+        store._conn.execute(_SET_COLUMN["context_json"], (edited, run_id))
+        store._conn.commit()
+        if corrupt:
+            with pytest.raises(ValueError, match="context_json holds no runs value"):
+                store.get_run_context(run_id)
+        else:
+            context = store.get_run_context(run_id)
+            assert context is not None and context["runs"] == runs
 
 
 def test_the_offline_scenario_cannot_be_flipped_under_a_resume(tmp_path: Path) -> None:
