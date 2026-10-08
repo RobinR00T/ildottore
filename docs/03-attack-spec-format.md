@@ -18,6 +18,12 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
   optional two-axis `iopc:` block, `techniques` + `impacts`, see `docs/15`, plus an optional
   `aisvs:` list of the OWASP AISVS controls a failure is evidence against) so findings roll up
   to the frameworks operators report against.
+- **JSON, written in YAML.** Every value is one JSON holds: a mapping, a list, a string, a
+  finite number that can be written out (A-40), a boolean or null. YAML builds more (an
+  unquoted `2026-01-01` is a date, `!!set` a set, an `!!omap` or `!!pairs` entry a pair,
+  `!!binary` bytes, `.nan` and `.inf` floats JSON does not write, an escape between U+D800 and
+  U+DFFF half a character), and such a value is a `SCHEMA` finding at its path, so quote a date
+  in a tool's `returns` and write a character outside the basic plane as itself (A-54).
 
 ## 2. Field reference
 
