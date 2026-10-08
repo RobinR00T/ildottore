@@ -38,6 +38,17 @@ The carryover ledger. Every agent session updates this so context survives even 
   tool call's or the judge's text). `tests/cli/test_lone_surrogate.py` (29 of 36 fail on `0501752`),
   `tests/adapters/test_lone_surrogate_replies.py` (9 of 9), `tests/shared/test_wellformed.py`.
 
+## State, 2026-10-08 (afternoon): OD-32 decided, a resume counts what is stored
+
+- On `fix/resume-planned-attempts` (u08 A-59): the owner decided OD-32 on 2026-10-08 as proposed,
+  the runner counts what is stored instead of building the plan, and `--runs` keeps its `2**53`
+  bound (A-55). The three places that built the set of `mutators x --runs` attempt ids (the halt
+  path of a resume, the seeding gate, the multi-identity sweep) now compare
+  `core/reproduce.planned_attempts_held` with the plan's size; a resume of a stored count of `2**53`
+  takes about a second and 71 MiB, where 10^7 took up to 16.3 s and 3.7 GiB. Open PRs #66 and #60
+  change the same lines (the halt path, the seeding gate, the sweep): whoever merges second keeps
+  the count, not the set.
+
 ## State, 2026-10-08: a live fingerprint orders a live plan (run 2026-10-07)
 
 - PR #58 (OD-18 option B) squash-merged as `0f936b6`: with #50, OD-18 is complete. A live
