@@ -201,7 +201,7 @@ composed document let a 3 MB list of plain texts cost 785 MB first; a count that
 a list of aliases do the same; and a `%TAG` prefix, copied into the tag of every node that uses its
 handle, held 187 MB for 1,000 nodes, quoted whole in PyYAML's refusal. Construction costs under the
 cap (a base-60 integer, integer keys sharing one hash) are A-41's; the byte size of the file read
-is its own task. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
+is A-43's. Checks: `tests/cli/test_yaml_expansion.py` (the cap exactly, the
 position, a recursive alias's anchor, the precedence, where composition stops for texts, long texts,
 empty lists, aliases and aliases of a long text, the per-document count, the tag limit on texts,
 lists and maps, linear memory on a 20,000-anchor chain, each loader, and in a subprocess bounded at
@@ -239,6 +239,53 @@ that is a number or a number over 20 characters. Checks: `tests/cli/test_yaml_co
 a map merged where it is written, a map that merges passing its keys on; where composition stops; a
 stream of documents; keys that are not numbers; both loaders; and in a subprocess bounded at 15 s:
 `lint` on each 1 MiB spec, and `run --dry-run` on the 450 KB and the 1.3 MB target).
+
+**A-43 An operator's file is read up to 1 MiB, and its validation errors are listed up to 20
+(added 2026-10-07).** The scope, target, fleet and labels files and the policy and signature
+packs are read through `shared.files.read_text_capped`: a regular file over 1 MiB
+(`MAX_FILE_BYTES`, the spec loader's `MAX_YAML_BYTES`, pinned equal by a test) is refused on its
+size before any of it is read, and anything else (a pipe, a device) is read up to one byte past
+the cap and refused if that byte comes, so `/dev/zero` costs one cap. The refusal is an
+`OSError` (`EFBIG`) with the path and the sizes written with thousands separators, which every
+loader already reported as a file it cannot read, exit 3 at the CLI: written bare, a size of
+nine digits or more was masked as a phone number by the CLI's redactor (found by this clause's
+own CLI test). The text is what `Path.read_text(encoding="utf-8")` gave, line endings included,
+so a scope checksum covers the same text. `dottore fleet` measures every file it would write
+before it writes any, one at a time, and refuses one over the cap: the scope repeats each
+endpoint, so an 845,022-byte fleet file wrote a 1,355,024-byte scope with exit 0 that the `run`
+it printed then refused (pre-commit audit of this clause); with entries of about 170 bytes the
+crossing is at 3,870. A target or the judge file can be the one over the cap, as non-ASCII text
+is written escaped (a 600,000-byte model name makes a 1,260,144-byte target), so the refusal
+names the file and says to split the fleet only for the scope. The judge file is measured only
+when the printed command reads it, not when `--judge` names another. Measuring every rendered
+file before writing held them all at once (29 MiB for 60 targets sharing one 500 KB anchor,
+delta audit); one is held at a time. `shared.config_errors.validation_problems` lists the first
+20 errors by default, counts the rest, and cuts a field path or a reason past 300 characters, as
+the spec loader cuts its schema messages; the scope, fleet and policy-pack loaders use that
+default, and so does the target loader for `capabilities` and `sampling_defaults` since #73
+(A-45). Both holes were found by the pre-commit audit of the alias-expansion cap (PR #71): the
+files were read whole with `Path.read_text`, so a scope or labels file padded with 100 MB of
+comments was read and parsed whole (39.5 s and 244 MB) and a sparse gigabyte of labels peaked at
+about 2 GiB (2,009 and 2,116 MiB in two measures), and a limit on the parsed document does not
+bound the text it is parsed from; and every validation error was listed whole, so a 5.5 MB scope
+with 5,500 extra keys of 1,000 characters printed one `error:` line of 5,687,058 characters from
+`dottore run --dry-run`. The figure and reading any file type, not only a regular one, are the
+owner's decisions of 2026-10-07 (OD-26): `--scope <(cat scope.yaml)`, `dottore fleet <(...)` and
+a labels file through a pipe worked and still do, and a named pipe with no writer still blocks,
+as before. A target file could not be a pipe while `run` read it four times and `fingerprint`
+three; since #77 parses it once (A-42), `run -t <(...)` and `fingerprint <(...)` read it through
+a pipe as well (a `--judge <(...)` file already could: it was read once). An anchor used many
+times is A-37's, not this clause's: this read cap and the listing do not bound it (a 30,852-byte
+scope of aliases peaked at 1,066 MiB in validation before A-37 was in, pre-merge audit), and
+A-37's node cap refuses that file. Not covered (OD-26): the report JSON that `dottore diff` and
+`calibrate` read, and the evidence artifacts `replay` and `run --resume` read; and an error
+outside the validation listing can still quote a value of the file whole (an unknown target
+`type`, a duplicate target id, an undefined YAML alias), now bounded by the 1 MiB read. Checks:
+`tests/cli/test_operator_file_cap.py` (the cap exactly, before the read and after a growth, a
+pipe and `/dev/zero` under a time and memory limit, the text `read_text` gave, each loader, the
+`fleet` boundary, each target and the judge measured one at a time, the listing and its cut, the
+CLI's exit 3 and its one short line, and a sparse gigabyte in a subprocess bounded at 20 s and
+256 MiB).
 
 **A-52 A list or a map written past the depth limit is refused where it starts, as the document is
 composed (added 2026-10-07).** Every loader (the spec loader and `safe_yaml.safe_load`, so the
@@ -301,22 +348,31 @@ KB file, under 5 million: 1.1 million now, 97.4 million before).
   checksum now, pluggable verifier interface so sigstore drops in without a shape change).
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
-- **OD-30** (2026-10-07) Flow nesting under the depth limit still costs per token. A-52 refuses a
-  list or a map written past the limit before the scanner pays for what follows, but PyYAML's
+- **OD-26** reading the operator's files. **Decided 2026-10-07 by the owner, built (A-43):** 1
+  MiB, the spec loader's figure, for the scope, target, fleet and labels files and the policy
+  and signature packs; any file type, with the read bounded at one byte past the cap. **Open:**
+  two reads of the tool's own output are still whole, the report JSON `cli/diff.load_findings`
+  reads for `dottore diff` and `calibrate`, and the evidence artifacts `store/replay.py` reads
+  for `replay` and `run --resume` (512 MiB held twice, 1,092 MiB, in the audit's measure); both
+  can pass 1 MiB legitimately, so each cap needs a figure measured on a real run.
+- **OD-30** (2026-10-07) Flow nesting under the depth limit still costs per token. A-52 refuses
+  a list or a map written past the limit before the scanner pays for what follows, but PyYAML's
   pure-Python scanner walks one possible simple key per open flow level on every token, so a
-  document nested close to the limit is accepted at a few times what a flat one costs (A-52 gives
-  the measure). Options: (A) a lower limit for flow nesting only: the repository's 130 YAML files
-  nest at most 2 flow levels (6 of any style), so a limit of, say, 20 would bound each walk of the
-  scanner at about 20 keys (it passes over them about three times per token) without refusing any of
-  them; (B) libyaml's scanner (`yaml.CSafeLoader`, in the installed PyYAML), whose composer is C, so
-  the per-node checks of `safe_yaml` (the size count, the tag limit, keys written twice, A-52) would
-  have to move to its events, to be measured; (C) leave it: each walk is bounded at about 100 keys.
-  **Decided 2026-10-08 by the owner: A**, to be built on its own branch, with the limit and its
-  clause there; until it lands, the cost under the limit stays. - **OD-33** fleet ids that differ
-  only by case. **Decided 2026-10-07 by the conductor and confirmed by the owner the same evening,
-  built (A-56):** refused on every file system, not only where the file system folds case: it is
-  portable and the simplest rule (`run` already compares report paths case-folded everywhere), and a
-  fleet file then means the same wherever it is expanded. What it costs: a fleet with `Prod` and
-  `prod` that expanded on Linux is now refused there too, and so is a judge spelled as a target only
-  up to case, which worked. The alternative not taken: refuse only where the `--out` directory's
-  file system folds case, found by probing it.
+  document nested close to the limit is accepted at a few times what a flat one costs (A-52
+  gives the measure). Options: (A) a lower limit for flow nesting only: the repository's 130
+  YAML files nest at most 2 flow levels (6 of any style), so a limit of, say, 20 would bound
+  each walk of the scanner at about 20 keys (it passes over them about three times per token)
+  without refusing any of them; (B) libyaml's scanner (`yaml.CSafeLoader`, in the installed
+  PyYAML), whose composer is C, so the per-node checks of `safe_yaml` (the size count, the tag
+  limit, keys written twice, A-52) would have to move to its events, to be measured; (C) leave
+  it: each walk is bounded at about 100 keys. **Decided 2026-10-08 by the owner: A**, to be
+  built on its own branch, with the limit and its clause there; until it lands, the cost under
+  the limit stays.
+- **OD-33** fleet ids that differ only by case. **Decided 2026-10-07 by the conductor and
+  confirmed by the owner the same evening, built (A-56):** refused on every file system, not
+  only where the file system folds case: it is portable and the simplest rule (`run` already
+  compares report paths case-folded everywhere), and a fleet file then means the same wherever
+  it is expanded. What it costs: a fleet with `Prod` and `prod` that expanded on Linux is now
+  refused there too, and so is a judge spelled as a target only up to case, which worked. The
+  alternative not taken: refuse only where the `--out` directory's file system folds case, found
+  by probing it.
