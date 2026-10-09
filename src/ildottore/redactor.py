@@ -35,6 +35,7 @@ Verifier / pattern set is extensible via :meth:`Redactor.register`.
 
 from __future__ import annotations
 
+import bisect
 import functools
 import hashlib
 import heapq
@@ -45,6 +46,7 @@ import os
 import re
 import secrets
 import threading
+from array import array
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Protocol
@@ -421,6 +423,121 @@ _STASHED: Final = r"\x00\d++\x01"
 _URL_USERINFO: Final = re.compile(
     rf"(://(?:[^/\s:@\x00\x01]++|{_STASHED})*+:)((?:[^/\s@\x00\x01]++|{_STASHED})++)(@)"
 )
+
+# --- a URL whose separator a registered credential holds (#96) -----------------------------
+#: Where a labelled value ends: the first character its pattern does not take.
+_LABELLED_VALUE_END: Final = re.compile(r"[\s\"'`,;)\x00\x01]")
+#: A URL mask's stash token, its `@` and what follows of a labelled value it took the head of.
+_URL_MASK_TAIL: Final = re.compile(r"\x00(\d++)\x01@((?:[^\s\"'`,;):\x00\x01]++|:(?!//))++)")
+#: The URL rule over the text as written (``Redactor._url_passwords_as_written``): every
+#: registered credential written out, every other mask one :data:`_NEUTRAL` character.
+_URL_AS_WRITTEN: Final = re.compile(r"://[^/\s:@]*+:([^/\s@]++)@")
+_NEUTRAL: Final = "\x02"
+#: A stash token, or a mask written in the text this pass (a pattern's own, kept as one piece).
+_TOKEN_OR_MASK: Final = re.compile(r"\x00(\d++)\x01|«REDACTED:([A-Za-z0-9_]+)(?::[0-9a-f]{8})?»")
+#: What a registered credential must hold for the URL rule to read a URL differently as written.
+_URL_PARTS: Final = frozenset(":/@")
+
+
+def _labelled_value_across(url: re.Match[str]) -> str | None:
+    """The labelled value whose label the password of ``url`` takes and that runs on past its
+    ``@``, or None.
+
+    ``url`` is a match of :data:`_URL_USERINFO` whose password holds a registered credential
+    holding an `@`. As written, the URL ends at that `@`; the URL rule reads on to a later one,
+    and when that `@` is a labelled value's (`redis://ops:Adm1n@2026-db:6379,password=Secr3t@
+    Value99xyz` with `Adm1n@2026` registered) the URL mask took the label and the value's head,
+    and the tail was readable, where the redactor before A-31, whose URL rule refused a mask in
+    the password, masked the value whole (#96). The label and its value come after the last mask
+    in the password, since neither holds one, so only that stretch is searched, and the value is
+    read up to 6 characters past the `@` (its pattern takes 6 or more), which keeps the search
+    linear; the value's end is searched for only when one is found.
+    """
+
+    text, at = url.string, url.end(2)
+    start = url.start(2) + url.group(2).rindex(_STASH_CLOSE) + 1
+    # No match starts past the `@`: one takes 12 characters or more (a label, a separator and 6).
+    for found in _LABELED_SECRET.finditer(text, start, min(len(text), at + 6)):
+        if found.start(1) <= at < found.end(1):
+            end = _LABELLED_VALUE_END.search(text, at)
+            return text[found.start(1) : len(text) if end is None else end.start()]
+    return None
+
+
+class _AsWritten:
+    """A text read as written: every registered credential's mask written out, every other mask
+    one :data:`_NEUTRAL` character (``Redactor._url_passwords_as_written``, #96).
+
+    Holds the text it reads (``view``) and, for each mask, where it is there and in the text,
+    in four arrays of 8-byte integers: one entry a mask, and nothing for the text between masks,
+    which is the same in both. A list of tuples for every piece took the process to 270 MB on
+    4 MB of a reply echoing a registered credential that holds an `@`, where main's redactor
+    took 122 MB (182 MB now).
+    """
+
+    def __init__(self, text: str, shown: Callable[[re.Match[str]], str | None]) -> None:
+        self.starts, self.ends = array("q"), array("q")  # each mask, in the view
+        self.text_starts, self.text_ends = array("q"), array("q")  # each mask, in the text
+        shift = 0  # how much longer the view is than the text up to here
+
+        def _read(m: re.Match[str]) -> str:
+            nonlocal shift
+            written = shown(m)
+            if written is None:  # read as text
+                return m.group(0)
+            self.starts.append(m.start() + shift)
+            shift += len(written) - (m.end() - m.start())
+            self.ends.append(m.end() + shift)
+            self.text_starts.append(m.start())
+            self.text_ends.append(m.end())
+            return written
+
+        self.view = _TOKEN_OR_MASK.sub(_read, text)
+
+    def _before(self, index: int) -> int:
+        """How far the text between masks ``index - 1`` and ``index`` is shifted in the view."""
+
+        return self.ends[index - 1] - self.text_ends[index - 1] if index else 0
+
+    def in_text(self, first: int, after: int) -> int | None:
+        """Where ``view[first:after]`` is in the text, if no mask is in it; else None."""
+
+        index = bisect.bisect_right(self.starts, after - 1)  # the masks starting before `after`
+        if index and self.ends[index - 1] > first:
+            return None
+        return first - self._before(index)
+
+    def readable(self, first: int, after: int) -> tuple[int, int] | None:
+        """Where, in the text, the password at ``view[first:after]`` is masked.
+
+        From its first readable character to its last, with the masks between them, and without
+        a mask it shares with what lies outside it (a credential across the password's `:` or
+        `@`), which stays as it is; None when nothing of it is readable.
+        """
+
+        begin = end = -1
+        readable = False
+        index = bisect.bisect_right(self.starts, first) - 1  # the last mask starting by `first`
+        if index < 0 or self.ends[index] <= first:
+            index += 1  # `first` is in the text between masks
+        at = first
+        while at < after:
+            if index < len(self.starts) and self.starts[index] <= at:  # a mask, at `at` or cut
+                if self.starts[index] < first or self.ends[index] > after:  # cut by an edge
+                    at = self.ends[index]
+                else:
+                    begin = self.text_starts[index] if begin < 0 else begin
+                    end = self.text_ends[index]
+                    at = self.ends[index]
+                index += 1
+                continue
+            stop = min(after, self.starts[index] if index < len(self.starts) else after)
+            shift = self._before(index)
+            begin = at - shift if begin < 0 else begin
+            end = stop - shift
+            readable = True
+            at = stop
+        return (begin, end) if readable else None
 
 
 def overlaps_known_secret(value: str) -> bool:
@@ -898,6 +1015,7 @@ class Redactor:
         # with such a character inside it.
         registered = _known_secrets()
         split = bool(registered) and _SPLITTER_RUN.search(working) is not None
+        first_credential = len(preserved)  # the tokens from here to the URL rule are credentials
         runs = [] if split else _credential_runs(working, registered)
         if runs:
             # One token for every run of the same text, as one `replace` per credential gave:
@@ -917,12 +1035,22 @@ class Redactor:
                 cursor = end
             working = "".join(pieces) + working[cursor:]
         working = self._redact_split_credentials(working, _keep, registered, split=split)
+        credentials = range(first_credential, len(preserved))
+        # The URL masks that took the head of a labelled value, and the value as written (#96).
+        heads: dict[int, str] = {}
 
         def _url_password(m: re.Match[str]) -> str:
             password = m.group(2)
             if _STASH_TOKEN.fullmatch(password):  # a mask already (a registered password)
                 return m.group(0)
             mask = _keep(_MASK_TEMPLATE.format(type="url_password"), _as_written(password))
+            # Read on past an `@` a registered credential holds: as written, the URL ended there.
+            if _STASH_OPEN in password and any(
+                "@" in written[int(token.group(1))] for token in _STASH_TOKEN.finditer(password)
+            ):
+                value = _labelled_value_across(m)
+                if value is not None:
+                    heads[len(preserved) - 1] = value
             return m.group(1) + mask + m.group(3)
 
         working = _URL_USERINFO.sub(_url_password, working)
@@ -943,6 +1071,13 @@ class Redactor:
 
         working = self._redact_labeled(working)
         working = self._redact_high_entropy(working)
+        if heads:
+            working = self._redact_labelled_tails(working, heads)
+        held = set("".join(written[index] for index in credentials))
+        if held & _URL_PARTS and all(part in held or part in working for part in _URL_PARTS):
+            working = self._url_passwords_as_written(
+                working, _keep, _as_written, written, credentials
+            )
 
         # One pass: a `str.replace` per kept mask was quadratic with thousands of them.
         return _STASH_TOKEN.sub(lambda m: preserved[int(m.group(1))], working)
@@ -1132,6 +1267,86 @@ class Redactor:
             return whole[:start] + masked + whole[end:]
 
         return _LABELED_SECRET.sub(_sub, text)
+
+    def _redact_labelled_tails(self, text: str, heads: Mapping[int, str]) -> str:
+        """Mask the rest of a labelled value whose head a URL mask took (``heads``, #96).
+
+        ``heads`` maps the stash token of each such URL mask to the value as written, and what
+        follows the mask's `@` up to where the value ends is masked as that value is, with its
+        digest: ``redis://ops:«REDACTED:url_password»@«REDACTED:labeled_secret:<digest>»``, the
+        digest the redactor before A-31 gave the value. It runs after every other rule of the
+        pass and stops before a `://`, so it takes nothing another rule reads: run before the
+        labelled rule it took a label written after the value (`...@BT8Ibd/&TOKEN: <secret>`)
+        and that secret was readable, and running on through a `://` it took the next URL's
+        scheme, which the URL rule reads in the next pass (pre-commit differential fuzz). What
+        the patterns masked in the tail (a phone number, a private key) is taken into this mask.
+        """
+
+        def _sub(m: re.Match[str]) -> str:
+            value = heads.get(int(m.group(1)))
+            if value is None:
+                return m.group(0)
+            digest = self._digest(value)
+            return m.group(0)[: m.start(2) - m.start(0)] + _MASK_TEMPLATE_HASHED.format(
+                type="labeled_secret", digest=digest
+            )
+
+        return _URL_MASK_TAIL.sub(_sub, text)
+
+    def _url_passwords_as_written(
+        self,
+        text: str,
+        keep: Callable[[str, str], str],
+        as_written: Callable[[str], str],
+        written: Sequence[str],
+        credentials: range,
+    ) -> str:
+        """Mask the password of a URL the URL rule could not read because a registered credential
+        holds one of its separators (#96).
+
+        The URL rule runs on the text with every registered credential set aside as a stash
+        token, so a credential holding the URL's `://` or its `:` stops it, and one across the
+        password's `@` with no later `@` does too: the password, or its part outside the
+        credential, stayed readable. Two overlapping credentials masked as one run made it
+        reachable where the one-at-a-time replacement before A-31 had left the `://` showing
+        (`key-ABCD1234` and `1234://bob` registered: ``x key-ABCD1234://bob:<password>@localhost``).
+
+        This reads the URL in the text as written, every registered credential written out and
+        every other mask one neutral character, and masks what of the password is still
+        readable. A URL the URL rule read, at a `://` that is in the text as it reads, is left
+        as that rule masked it. It runs last in the pass, after every rule, so it only adds to
+        what they masked: a mask laid before them could take a label, or the start of a match,
+        from another rule (the pass PR #56 backed out joined the password to the credential
+        before the other rules ran, and swallowed a labelled secret after the URL). A
+        credential cut by the password's edges stays its own mask, and what of the password
+        lies between masks becomes one ``url_password`` mask. Linear: one pass to read the
+        text, one search, and the URL rule tried once at each `://` in the text as it reads.
+        """
+
+        def _shown(m: re.Match[str]) -> str | None:
+            index, kind = m.group(1), m.group(2)
+            if index is None:  # a mask a pattern wrote, or text in that shape (`_keep_mask`)
+                return _NEUTRAL if kind in self._mask_types else None
+            return written[int(index)] if int(index) in credentials else _NEUTRAL
+
+        read = _AsWritten(text, _shown)
+        out: list[str] = []
+        done = 0
+        for url in _URL_AS_WRITTEN.finditer(read.view):
+            at = read.in_text(url.start(), url.start() + 3)
+            if at is not None and _URL_USERINFO.match(text, at):  # the URL rule read this one
+                continue
+            stretch = read.readable(*url.span(1))
+            if stretch is None:
+                continue
+            first, after = stretch
+            mask = keep(_MASK_TEMPLATE.format(type="url_password"), as_written(text[first:after]))
+            out += (text[done:first], mask)
+            done = after
+        if not out:
+            return text
+        out.append(text[done:])
+        return "".join(out)
 
     def _redact_labelled_number(
         self, pattern: Pattern, labelled: re.Pattern[str], text: str

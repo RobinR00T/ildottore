@@ -196,15 +196,25 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   the value as written (a private key's too, whatever is registered inside it, when the key
   pattern takes it whole: its 16 KB bound counts each mask inside the key as a stash token), so
   with the salt pinned one value reads the same in every run. A password in a URL is masked
-  behind a registered, masked or empty user too (not yet behind a user holding a raw `@`, nor
-  behind a registered credential that runs across the URL's `://`, `:` or `@`), and registered
-  credentials that overlap in the text are masked as one. Two cases are masked less well than
-  before PR #56, a trade-off the owner accepted for its merge (issue #96 tracks them):
-  a registered credential holding an `@` across a URL's `@` lets the URL rule read on to a later
-  `@`, so a labelled value written after the URL (`,password=<value>`) keeps its tail readable
-  and the host is reported wrong; and two overlapping registered credentials, masked as one run,
-  can cover a URL's separator, so its password stays readable (`key-ABCD1234` and `1234://bob`
-  registered). Both need a target that writes a registered credential holding a URL separator.
+  behind a registered, masked or empty user too (not yet behind a user holding a raw `@`), and
+  registered credentials that overlap in the text are masked as one. Since issue #96 a password
+  is masked behind a registered credential that holds one of the URL's separators as well: one
+  holding its `://` (two overlapping ones masked as one run included: `key-ABCD1234` and
+  `1234://bob` registered, `x key-ABCD1234://bob:<password>@localhost` printed the password
+  until #96), its `:`, or the password's `@` with no later `@`; the URL is read as it is
+  written, and what of the password is still readable is masked as `url_password`. A registered
+  credential holding an `@` across the URL's `@` still lets the URL rule read on to a later `@`
+  (the host is reported wrong), but a labelled value written after the URL keeps its mask:
+  `redis://ops:Adm1n@2026-db:6379,password=Secr3t@Value99xyz` reads
+  `redis://ops:«REDACTED:url_password»@«REDACTED:labeled_secret:<digest>»`, where PR #56 left
+  `Value99xyz` readable. Left open: where the URL rule did read a URL, its reading stands, so
+  after a registered credential holding the user's `:` the rest of the user is shown
+  (`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which
+  urllib reads as the password's head). Each case needs a target that writes a registered
+  credential holding a URL separator. An error quotes an endpoint, and an `auth_ref` holding an
+  `@`, without what precedes the last `@` of its authority, before cutting it at 300
+  characters: cut first, the policy gate's refusal printed 287 characters of a 308-character
+  password whose `@` fell past the cut (#96).
   What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
   id) is left readable in every report, in both copies of a finding the JSON report carries, so
   a custom spec id reads the same in every run and `dottore diff` can match it. Error messages

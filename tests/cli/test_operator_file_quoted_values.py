@@ -26,9 +26,9 @@ from hypothesis import strategies as st
 from typer.testing import CliRunner
 
 from ildottore import safe_yaml
+from ildottore.cli.app import _masked
 from ildottore.cli.calibrate import load_labels
 from ildottore.cli.exit_codes import ExitCode
-from ildottore.cli.fleet import _shown_endpoint
 from ildottore.cli.main import app
 from ildottore.cli.resume import _assert_same_target
 from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, target_uses_mock
@@ -41,6 +41,7 @@ from ildottore.shared.config_errors import (
     _repr_head,
     listed,
     quoted,
+    shown_endpoint,
     yaml_problem,
 )
 from ildottore.shared.digits import described
@@ -1080,7 +1081,7 @@ def test_a_date_key_of_seeded_setup_is_written_as_before(tmp_path: Path) -> None
 def test_an_endpoint_is_quoted_without_what_precedes_the_last_at_of_its_authority(
     endpoint: str, shown: str
 ) -> None:
-    assert _shown_endpoint(endpoint) == shown
+    assert shown_endpoint(endpoint) == shown
 
 
 def test_a_password_in_an_endpoint_read_stripped_is_masked_by_value(tmp_path: Path) -> None:
@@ -1093,6 +1094,48 @@ def test_a_password_in_an_endpoint_read_stripped_is_masked_by_value(tmp_path: Pa
     load_target(path)
 
     assert "sunflowertwo" not in Redactor().redact_text("the model replied sunflowertwo today")
+
+
+#: A password the entropy rule leaves alone (lowercase words and hyphens), of 308 characters:
+#: quoted whole and cut at 300, its `@` fell past the cut (#96).
+LONG_PASSWORD = ("sunflower-two-" * 22)[:308]
+
+
+def _runs_of(secret: str, text: str, length: int = 8) -> list[str]:
+    """Every stretch of ``length`` characters of ``secret`` that ``text`` holds."""
+
+    return [
+        secret[i : i + length]
+        for i in range(len(secret) - length + 1)
+        if secret[i : i + length] in text
+    ]
+
+
+def test_an_authorization_refusal_quotes_the_endpoint_without_its_userinfo(tmp_path: Path) -> None:
+    # Quoted whole and cut at 300 characters, the `@` after the password was past the cut, so
+    # the CLI's redactor did not read a URL password there: 287 of its 308 characters were
+    # printed (#96, found by the pre-merge audit of #56).
+    scope = load_scope(_write(tmp_path, "scope.yaml", SCOPE_HEAD + scope_entry()))
+    endpoint = f"https://ops:{LONG_PASSWORD}@db.internal/v1"
+
+    decision = authorize_target(scope, "mock-target", endpoint)
+
+    assert not decision.allowed
+    assert decision.reason == "endpoint 'https://db.internal/v1' not on allowlist for 'mock-target'"
+    assert not _runs_of(LONG_PASSWORD, _masked(ValueError(decision.reason)))
+
+
+def test_an_auth_ref_holding_an_at_is_quoted_without_its_userinfo() -> None:
+    # A URL pasted with its password where a reference belongs was cut before the redactor read
+    # it, as the endpoint above was (#96).
+    assert (
+        shown_auth_ref(f"https://ops:{LONG_PASSWORD}@db.internal/v1") == "'https://db.internal/v1'"
+    )
+    assert not _runs_of(LONG_PASSWORD, shown_auth_ref(f"https://ops:{LONG_PASSWORD}@db/v1"))
+    # A reference without one is quoted exactly as before, a control character included.
+    assert shown_auth_ref("env://LIVE_KEY") == "'env://LIVE_KEY'"
+    assert shown_auth_ref("env://A\nB") == "'env://A\\nB'"
+    assert shown_auth_ref("sk-raw-key") == "a literal value (not shown)"
 
 
 def test_an_authorization_refusal_cuts_a_long_id_a_caller_passes(tmp_path: Path) -> None:

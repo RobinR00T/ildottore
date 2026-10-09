@@ -32,7 +32,12 @@ from ildottore.config import SafetyFlags
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.errors import PolicyPackError
 from ildottore.policy.scope import Scope
-from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
+from ildottore.shared.config_errors import (
+    quoted,
+    shown_endpoint,
+    validation_problems,
+    yaml_problem,
+)
 from ildottore.shared.enums import FLAGGED_FAMILIES, Category
 from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import AttackSpec
@@ -174,7 +179,10 @@ def authorize_target(scope: Scope, target_id: str, endpoint: str) -> CheckResult
 
     The id and the endpoint are quoted up to 300 characters (``quoted``): a target id of a
     million characters printed the refusal of ``run`` and of ``fingerprint`` at 2 MB, the id
-    once in the message and once in this reason (clause A-51).
+    once in the message and once in this reason (clause A-51). The endpoint is quoted without
+    its userinfo (``shown_endpoint``): cut first, a password whose ``@`` fell past the cut was
+    not read as a URL's by the CLI's redactor, and 287 characters of a 308-character one were
+    printed (#96).
     """
 
     target = scope.target(target_id)
@@ -187,7 +195,9 @@ def authorize_target(scope: Scope, target_id: str, endpoint: str) -> CheckResult
         return _ALLOW
     allowlist = EndpointAllowlist.from_target(target)
     if not allowlist.is_allowed(endpoint):
-        return _blocked(f"endpoint {quoted(endpoint)} not on allowlist for {quoted(target_id)}")
+        return _blocked(
+            f"endpoint {shown_endpoint(endpoint)} not on allowlist for {quoted(target_id)}"
+        )
     return _ALLOW
 
 

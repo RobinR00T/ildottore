@@ -3,6 +3,39 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09 (evening): URL passwords behind a credential holding a URL separator (#96)
+
+- On `fix/redactor-issue-96`, from `origin/main` at `f12ba83`: the two regressions accepted with
+  #56 and the endpoint cut the #56 pre-merge audit found, issue #96. (1) A registered credential
+  holding an `@` across a URL's `@` let the URL rule read on to a labelled value's `@` and its
+  tail stayed readable (`redis://ops:«REDACTED:url_password»@Value99xyz`): the URL mask stays and
+  the rest of the value after its `@` is masked as the value, with its digest, last in the pass
+  and up to a `://`. (2) A registered credential holding the URL's `://` (two overlapping ones as
+  one run: `key-ABCD1234` and `1234://bob`), its `:` or the password's `@` with no later `@`
+  stopped the URL rule: the URL is now read in the text as written, last in the pass, and what of
+  its password is still readable is masked. (3) The policy gate's refusal and `shown_auth_ref`
+  quote an endpoint without its userinfo before cutting it (`shared.config_errors.shown_endpoint`,
+  moved from `cli/fleet`): cut first, 287 characters of a 308-character password were printed.
+  u01 A-31 and A-51 amended (no new clause).
+- The audit's narrow fix for (1) was measured and not taken: it left readable a character main
+  masks in 18,444 of 300,000 differential texts. The fix, on a fresh 300,000: 0 texts leak
+  anything main masks, 0 errors, 0 fixed-point failures, 104,893 texts with a secret character
+  main leaves readable masked; a first 300,000 found two holes in a version that masked the
+  labelled tail before the labelled rule and through a `://`, both fixed and pinned by tests.
+  Against the redactor before #56 (100,000): main is not a superset of it in 22,077 texts, the
+  fix in 16,698 (none main is a superset in), the rest from #56's and #57's intended changes or
+  the URL's `@` shown where the old labelled rule took it. Linear on 2 MB of hostile echoes,
+  1.3 to 1.5 times main's memory and about twice its time there; no extra step on text whose
+  registered credentials hold no `:`, `/` or `@`. 14 mutants, 12 caught, 2 equivalent.
+  `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 4,650 tests (4,618 on
+  `f12ba83`), coverage 97.62%, 75 specs lint OK, four import contracts kept, self-scan, bandit
+  and pip-audit clean.
+- Left open: where the URL rule did read a URL, its reading stands (after a credential holding
+  the user's `:` the rest of the user is shown: `XYZ` in `redis://ops:svc-keyXYZ:<password>@host`
+  with `ops:svc-key` registered); a `://` split by an invisible character is read by no URL rule;
+  a host the old email rule masked as an address's domain stays readable after a URL mask, as
+  since #56.
+
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
 - On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of the
