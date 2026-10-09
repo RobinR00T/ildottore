@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger
 from ildottore.core.pacing import RateLimiter
+from ildottore.shared.amounts import is_count
 from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
 
@@ -272,20 +273,24 @@ def _reconcile_tokens(ledger: BudgetLedger, response: ModelResponse, reserved: i
     more adds the overage, so the ledger never under-counts (a breach raises
     :class:`BudgetExhausted` after recording it); one that used less releases the rest, now
     that every send reserves a default estimate. Without a reported usage the reservation
-    stands: the conservative figure is the only one there is.
+    stands: the conservative figure is the only one there is. A pair summed beside an
+    unreadable prompt-cache figure is a floor: the reservation is trued up to it, never down
+    (and a floor past ``2**53`` is no usage, like any sum past it).
     """
 
-    total = _reported_total(response.usage)
-    if total is None:
+    reported = _reported_total(response.usage)
+    if reported is None:
         return
+    total, whole = reported
     if total > reserved:
         ledger.add_tokens(total - reserved)
-    elif total < reserved:
+    elif total < reserved and whole:
         ledger.refund_tokens(reserved - total)
 
 
-def _reported_total(usage: object) -> int | None:
-    """The total tokens a reply reports, in either provider's shape, or ``None``.
+def _reported_total(usage: object) -> tuple[int, bool] | None:
+    """The total tokens a reply reports, in either provider's shape, and whether it is all of
+    them; or ``None``.
 
     OpenAI reports ``total_tokens``; Anthropic reports only ``input_tokens`` and
     ``output_tokens``, so its replies were never trued up (1034 tokens billed, the 513 reserved
@@ -293,6 +298,17 @@ def _reported_total(usage: object) -> int | None:
     the OpenAI shape without the total, and ``tokens`` a single-figure key of the mapping a
     REST template's ``usage_path`` points at (the adapter keeps only a mapping there; a REST
     target from ``target.yaml`` sets no ``usage_path`` and reports no usage).
+
+    A figure is read only when it is a JSON integer from 0 to ``2**53`` (:func:`is_count`). The
+    reply is the target's, so its figures have no bound: a 400-digit one was trued into the
+    ledger and the run exited 1 on ``OverflowError`` when its spend was persisted, with no
+    report, and one past ``2**53`` was believed and halted the campaign on the token ceiling
+    after one reply (2026-10-07). An unreadable figure is skipped like an absent one, so the
+    next shape is read, and a sum past ``2**53`` is ``None``. A prompt-cache figure that is
+    there and unreadable makes the sum of a pair a part, not the whole (``False``). Before, one
+    that was not a non-negative integer was read as 0, which trued the reservation down past
+    tokens the reply says it billed, and read as no usage (the first version of this fix) it
+    kept the reservation below a larger pair.
     """
 
     if not isinstance(usage, dict):
@@ -300,26 +316,25 @@ def _reported_total(usage: object) -> int | None:
 
     def count(key: str) -> int | None:
         value = usage.get(key)
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            return value
-        return None
+        return value if is_count(value) else None
 
     total = count("total_tokens")
     if total is None:
         total = count("tokens")  # a key of the mapping at a REST template's `usage_path`
     if total is not None:
-        return total
+        return total, True
+    # Anthropic bills prompt-cache reads and writes as input too. A null one is not reported.
+    keys = ("cache_creation_input_tokens", "cache_read_input_tokens")
+    cache = [usage[key] for key in keys if usage.get(key) is not None]
     for first, second in (
         ("input_tokens", "output_tokens"),
         ("prompt_tokens", "completion_tokens"),
     ):
         a, b = count(first), count(second)
         if a is not None and b is not None:
-            # Anthropic bills prompt-cache reads and writes as input too.
-            cached = (count("cache_creation_input_tokens") or 0) + (
-                count("cache_read_input_tokens") or 0
-            )
-            return a + b + cached
+            read = [value for value in cache if is_count(value)]
+            summed = a + b + sum(read)
+            return (summed, len(read) == len(cache)) if is_count(summed) else None
     return None
 
 

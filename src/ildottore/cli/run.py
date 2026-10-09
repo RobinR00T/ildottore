@@ -34,7 +34,7 @@ import stat
 import sys
 import unicodedata
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,7 +48,13 @@ from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
-from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
+from ildottore.core.reproduce import planned_attempts_held
+from ildottore.core.runner import (
+    CampaignResult,
+    answered_attempt_ids,
+    resume_progress,
+    sweeps_identities,
+)
 from ildottore.core.setup_delivery import (
     MAX_TOOL_ROUNDS,
     delivers_in_band,
@@ -355,6 +361,8 @@ class TargetPlan:
     # OD-18 B: specs that need the deployment's scene and that its target file does not declare
     # seeded. The runner reports them (`setup_not_seeded`) and sends nothing for them.
     not_seeded: list[tuple[str, str]] = field(default_factory=list)  # (spec id, reason)
+    # The scope identities a live run sends each sweeping spec as (fewer than two: no sweep).
+    identities: int = 0
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -386,6 +394,7 @@ def estimate_plan(
     judge: bool = False,
     target: Target | None = None,
     fixtures_hold_scene: bool = False,
+    identities: int = 0,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -396,6 +405,9 @@ def estimate_plan(
     A spec that needs a deployment's scene (OD-18 B) and is not declared seeded sends nothing,
     so it costs nothing, unless ``fixtures_hold_scene`` (the offline mock, whose fixtures are
     written for the scene).
+    ``identities`` is how many scope identities a live run sends the attack as, once each, for
+    every spec that :func:`~ildottore.core.runner.sweeps_identities` (fewer than two sends
+    nothing, as the runner's sweep does); those sends were never priced.
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
@@ -440,6 +452,8 @@ def estimate_plan(
                 + (json.dumps(scene.tools) if scene.tools else "")
             )
         requests = len(mutators) * runs * n_turns * sends_per_turn
+        if identities >= 2 and target is not None and sweeps_identities(spec, target):
+            requests += identities  # one plain send per identity: no scene, no rounds
         in_tokens = max(1, len(prompt) // 4)
         out_tokens = (
             spec.sampling.max_tokens
@@ -628,6 +642,13 @@ def resolve_target_plans(
         ]
         unseeded = {spec_id for spec_id, _ in not_seeded}
         runnable = [spec for spec in runnable if spec.id not in unseeded]
+        # The identity sweep is a live route's (the offline mock wires none, ``build_runner``).
+        scope_target = scope.target(target.id)
+        identities = (
+            len(scope_target.identities)
+            if scope_target is not None and not fixtures_hold_scene
+            else 0
+        )
         estimate = estimate_plan(
             runnable,
             runs,
@@ -635,6 +656,7 @@ def resolve_target_plans(
             judge=judge,
             target=target,
             fixtures_hold_scene=fixtures_hold_scene,
+            identities=identities,
         )
         plans.append(
             TargetPlan(
@@ -649,6 +671,7 @@ def resolve_target_plans(
                 budgets=budgets_for(estimate, rate_rps=rate_rps, overrides=budget_overrides),
                 mutators_by_spec=mutators_by_spec,
                 not_seeded=not_seeded,
+                identities=identities,
             )
         )
     return plans
@@ -696,13 +719,23 @@ def _probe_pass_remedy(adaptive_campaign: bool, *, attack_room: bool) -> str:
     return "Raise --budget-requests, or drop -sV"
 
 
-def _fits_without_probes(plans: list[TargetPlan], ceiling: int, *, spent: int, done: int) -> bool:
+def _fits_without_probes(
+    plans: list[TargetPlan],
+    ceiling: int,
+    *,
+    spent: int,
+    resume_from: TestRun | None,
+    specs: list[AttackSpec],
+    runs: int,
+) -> bool:
     """Whether the rest of every target's campaign fits ``ceiling`` with no probe pass.
 
-    ``spent`` is the spend the campaign has on record, ``done`` the requests a resume does not
-    send again (:func:`_answered_requests`); the rest is priced as ``--estimate`` prices it.
+    ``spent`` is the spend the campaign has on record; what the resume does not send again is
+    :func:`_answered_requests` over these ``plans``, the identity sweep of a spec it will not
+    sweep again included (A-34), so the rest is priced as ``--estimate --resume`` prices it.
     """
 
+    done = _answered_requests(resume_from, specs, plans=plans, runs=runs)
     return all(spent + max(0, plan.estimate.total_requests - done) <= ceiling for plan in plans)
 
 
@@ -1412,7 +1445,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                         provisional,
                         ceiling,
                         spent=prior_spend.requests,
-                        done=_answered_requests(resume_from, selected),
+                        resume_from=resume_from,
+                        specs=selected,
+                        runs=opts.runs,
                     ),
                 )
                 raise ValueError(
@@ -1460,7 +1495,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     provisional or provisional_plans(),
                     opts.budget_requests,
                     spent=0,
-                    done=_answered_requests(resume_from, selected),
+                    resume_from=resume_from,
+                    specs=selected,
+                    runs=opts.runs,
                 ),
             )
             raise ValueError(
@@ -1535,7 +1572,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     provisional or provisional_plans(),
                     opts.budget_requests or 0,
                     spent=0,
-                    done=_answered_requests(resume_from, selected),
+                    resume_from=resume_from,
+                    specs=selected,
+                    runs=opts.runs,
                 ),
             )
 
@@ -1693,7 +1732,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             runs=opts.runs,
             quiet=opts.quiet,
             fingerprint_probes=(fingerprint_probe_count() if opts.fingerprint_first else 0),
-            already_done=_answered_requests(resume_from, selected),
+            already_done=_answered_requests(resume_from, selected, plans=plans, runs=opts.runs),
         )
         return RunOutcome(
             exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True, estimated=True
@@ -2050,12 +2089,20 @@ def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) 
     return prior
 
 
-def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> int:
+def _answered_requests(
+    resume_from: TestRun | None,
+    specs: list[AttackSpec],
+    *,
+    plans: Sequence[TargetPlan] = (),
+    runs: int = 0,
+) -> int:
     """The requests a resume will not send again: one per turn of every answered attempt.
 
     `--estimate --resume` subtracted an attempt count from a request count, so a multi-turn spec
     was priced at 15 still to send when 12 went out (pre-commit audit of F11). An in-band
-    attempt (OD-18) adds the tool rounds it played, which its request records.
+    attempt (OD-18) adds the tool rounds it played, which its request records. A spec whose
+    every planned attempt is answered also skips its identity sweep (the runner's F6), so the
+    sweep a plan priced for it is not sent again either.
     """
 
     if resume_from is None:
@@ -2077,6 +2124,21 @@ def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> 
                 total += turns_by_spec.get(finding.spec_id, 1) + (
                     rounds if isinstance(rounds, int) and not isinstance(rounds, bool) else 0
                 )
+    for plan in plans:
+        if plan.identities < 2:
+            continue
+        for spec in plan.selected:
+            mutators = plan.mutators_by_spec.get(spec.id) or _effective_mutators(spec)
+            # Counted from what is stored, as the runner counts it, never by building the plan:
+            # a set of mutators x runs ids grew without end at the 2**53 a run accepts (A-59).
+            planned = len(set(mutators)) * max(runs, 0)
+            if (
+                planned
+                and sweeps_identities(spec, plan.target)
+                and len(answered) >= planned
+                and planned_attempts_held(answered, spec.id, mutators, runs) == planned
+            ):
+                total += plan.identities
     return total
 
 

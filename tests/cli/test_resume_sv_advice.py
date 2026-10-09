@@ -16,7 +16,7 @@ advice is read off the message with the grammar below, and each test pins the pi
 a flag named in the sentence of the advice that the grammar does not turn into an invocation
 fails the test. Not read: a piece written as a sentence of its own ahead of the advice (third
 audit round). "Goes through" is measured on the offline mock, where the plan prices every
-request; the identity sweep and retries are not priced (u12 A-48).
+request; retries are not priced (u12 A-48); the identity sweep is, since A-34 (u08).
 """
 
 from __future__ import annotations

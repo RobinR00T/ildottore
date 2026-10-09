@@ -209,6 +209,13 @@ against a pass with evidence in every layer) and `tests/cli/test_probe_env_error
 stub through the real CLI). Out of this clause: a 200 that is not JSON (`AdapterProductError`)
 still stops the pass, as it stops the campaign; that is OD-21.
 
+**A-36 (owned by u08) covers the guardrail layer's latency too (2026-10-07).**
+`moderation_latency_ms` is the target's own figure, so it is read through
+`shared.amounts.is_amount` (a finite, non-negative number a float can hold): a 400-digit
+integer, an infinity, a NaN or a negative figure is `null`. The 400-digit one made `float()`
+raise and `fingerprint` and `run -sV` exit 1; the others were recorded as latencies.
+`tests/fingerprint/test_latency_figure.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`); MUST NOT send any jailbreak /
   `test_only` payload: benign probes only. **This binds the carrier as well as the payload**
