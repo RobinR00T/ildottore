@@ -3,7 +3,7 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
-## State, 2026-10-07 (night): a registered credential split by characters that do not show
+## State, 2026-10-09: a registered credential split by characters that do not show (PR #57, begun 2026-10-07)
 
 - On `fix/redactor-split-credentials` (`tests/test_redactor_split_credentials.py`): the redactor
   masks a registered credential split by control characters or by format characters (Unicode
@@ -36,6 +36,21 @@ The carryover ledger. Every agent session updates this so context survives even 
   the threat-model row, the CHANGELOG, u04 A-47 and OD-28) now say it is. The clause is u01
   A-32, not A-31: PR #56, which lands just before this one, defines its own A-31 (main has
   neither number). `make gates` on the merge: 3,529 tests, coverage 97.15%.
+- Stacked on `2250b30` (main `fb9a8a8` with #88, #60, #68, #66 and #56, the tree main holds
+  before this squash). `redactor.py` conflicted in four places, resolved as #56's notes asked:
+  #56's `_credential_runs` (tokens keyed by the stretch) runs in a text without a splitter, the
+  split match runs after it and alone in a text with one, `_mask_matches` passes each stretch as
+  written to `_keep` and keys its tokens by it (so a private key holding a split credential keeps
+  the digest A-31 gives it), one delimiter guard in `register_known_secret`, and one naming rule
+  for a run (`_longest`, the length as it shows) in both matches. #56's overlap case for a key
+  read with a trailing CR expected the CR form's own digest, which this branch's
+  `test_a_key_read_with_a_trailing_cr_is_masked_as_its_plain_form` rules out (A-32): that case
+  now checks a contained credential without a control character. Differential fuzz of the
+  merge against `2250b30`, 20,000 generated texts: 0 differences in the 9,635 without a
+  splitter, and in the 10,365 with one, a registered credential readable once the splitters are
+  dropped in 6,380 outputs of `2250b30` and in none of the merge's. The index row is
+  A-29..A-32, and the CHANGELOG's open case of two credentials overlapping in plain text is
+  closed by #56. `make gates` green there: 4,095 tests, coverage 97.35%.
 
 ## State, 2026-10-09: a URL password behind a registered user; masks that depended on the process (PR #56, begun 2026-10-07)
 
@@ -80,9 +95,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   credential of any text holding a control character, and every PEM holds a newline, so on the
   terminal a key's digest is computed over the credential's mask while the reports compute it
   over the credential: the two digests differ (nothing leaks). Masking only the runs that hold a
-  control character fixes it. PR #57 (split credentials) rewrites the same loop and also numbers
-  its clause A-31: the second to merge renumbers to A-32 and passes the stretch as written to
-  `_keep`.
+  control character fixes it. PR #57 (split credentials), which lands right after this one,
+  rewrites the same loop: its clause is A-32, and it passes the stretch as written to `_keep`.
 - Stacked on `08ac9f8` (main `fb9a8a8` with #88, #60, #68 and #66, the tree main holds before
   this squash): only CHANGELOG and PROGRESS conflicted. The pre-merge audit's LOWs are applied
   here: the playbook no longer counts the clauses, A-31 and S6 compare with the redactor before
