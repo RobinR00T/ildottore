@@ -151,8 +151,11 @@ equals); message.send with {{prompt}} (or {{messages}} for the whole history); r
 text_path, final_path and final_value, type_path and ignore_types, error_path, usage_path,
 tool_calls_path, model_path and timeout_seconds (per turn); session.start with an optional
 expect; reconnect.max_attempts (0 to 5); headers (on the upgrade) and vars (plain values the
-templates use as {{name}}, never secrets). One connection per conversation; every frame is kept
-in the evidence with the credential as its placeholder. Worked file:
+templates use as {{name}}, never secrets). A value JSON cannot hold anywhere in the block (an
+unquoted date, a set, binary data, NaN, half a character) is refused when the file is loaded, and
+so is a ws:// or wss:// endpoint on any other provider. One connection per conversation; every
+frame is kept in the evidence with the credential as its placeholder. Under dottore run a socket
+that fails to open is retried by the runner, each dial a debited request. Worked file:
 examples/target.websocket.yaml; reference in docs/MANUAL.md section 4.2.
 .SH "FLEET FILE"
 .nf

@@ -38,5 +38,6 @@ websocket:
     usage_path: "usage"              # optional: a mapping with total_tokens trues up the ledger
     # tool_calls_path: "tool_calls"  # declare it only when the server sends its tool calls
     timeout_seconds: 30              # per turn, from the query to the final frame
-  reconnect:
-    max_attempts: 1                  # more tries when the socket fails to open (0 to 5)
+  reconnect:                         # a socket that fails to open: under `dottore run` the runner
+    max_attempts: 1                  # retries it, each dial a debited request; this (0 to 5) caps
+                                     # the adapter's own re-dials where it has retries of its own

@@ -56,9 +56,11 @@ reads as U+FFFD, since httpx decodes the stream as text.
   with an empty body. Both errors are environment failures with `retryable = False`. The MCP
   adapter's `notifications/initialized` reply is streamed and never read.
 - KEEP (as built, 2026-10-07): every reply is parsed through `shared.nesting.bounded_loads`
-  (the base adapter's body, the MCP adapter's JSON body, SSE `data:` event and stdio line),
-  which refuses a text whose brackets nest deeper than 100 levels (`MAX_DEPTH`, objects and
-  arrays outside strings; a provider's reply nests about 10). The depth is read from the text
+  (the base adapter's body, the MCP adapter's JSON body, SSE `data:` event and stdio line, and
+  each WebSocket frame since the pre-merge audit of PR #87, 2026-10-09, where a plain
+  `json.loads` parsed it), which refuses a text whose brackets nest deeper than 100 levels
+  (`MAX_DEPTH`, objects and arrays outside strings; a provider's reply nests about 10). The
+  depth is read from the text
   before it is parsed, so the parser never recurses past it and the verdict does not depend on
   the Python version (20,000 unclosed `[` were "not JSON" on 3.14 and a stack overflow on 3.12):
   brackets that balance and nest past the limit are too deep whether or not the rest is valid
@@ -69,10 +71,16 @@ reads as U+FFFD, since httpx decodes the stream as text.
   not counted); past either it is `ResponseTooLarge`. A tool call's
   arguments carried as a JSON string are measured too, unless they do not balance (they read as
   no arguments, as before)
-  (`shared.toolcalls.check_argument_nesting`), since the reply's parse never opens them. The
-  refusal is `ResponseTooDeep`, an environment failure with `retryable = False`: the attempt is
-  inconclusive and the campaign goes on. Found 2026-10-07: `json.loads` raises
-  `RecursionError`, not a `ValueError`, so one 400 KB reply of `[` escaped the malformed-body
+  (`shared.toolcalls.check_argument_nesting`), since the reply's parse never opens them; so are
+  a WebSocket frame's tool calls when its block declares `tool_calls_path`. The refusal is
+  `ResponseTooDeep`, an environment failure with `retryable = False`: the attempt is
+  inconclusive and the campaign goes on. A WebSocket frame has a tighter bound of its own, 64
+  levels on the parsed frame (`MAX_FRAME_DEPTH`: the frame is filed whole in `raw_ids`), refused
+  as `WebSocketFrameTooDeep`, a `ResponseTooDeep`; a text frame that is not UTF-8, which the
+  library refuses by closing the connection with 1007, is `WebSocketFrameUndecodable`, a
+  `ResponseUndecodable`, not retried either (it was retried three times). Found 2026-10-07:
+  `json.loads` raises `RecursionError`, not a `ValueError`, so one 400 KB reply of `[` escaped
+  the malformed-body
   handler and the runner aborted the campaign; and a reply the parser accepts aborted it too,
   300 levels (about 600 bytes) overflowing pydantic's serializer when the evidence was written.
   A body that is not JSON keeps the product-defect rule of §7 (open decision OD-21). A refused
@@ -115,7 +123,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
 - **Error classification:** 429/503/timeout cassettes ⇒ retry-then-skip (env); a malformed-schema
   200 ⇒ raise (product defect). No defect masked as flake. A 200 whose brackets balance and nest
   deeper than `MAX_DEPTH` (past the parser's stack included), in the body or in a tool call's
-  string arguments, ⇒ `ResponseTooDeep` (env, sent once), for every adapter and the MCP transports
+  string arguments, ⇒ `ResponseTooDeep` (env, sent once), for every adapter, the MCP transports
+  and a WebSocket frame (`WebSocketFrameTooDeep`, a `ResponseTooDeep`, from 64 levels on the
+  parsed frame; `tests/adapters/test_websocket_premerge.py`)
   (a body whose brackets do not balance follows the product-defect rule, OD-21, except over MCP
   stdio, where the line is skipped as stray output; tool-call arguments that do not balance read
   as no arguments)
@@ -140,8 +150,12 @@ reads as U+FFFD, since httpx decodes the stream as text.
   adapter's body, so OpenAI, Anthropic and the REST template, and the MCP adapter's JSON body, SSE
   `data:` event and stdio line, the last now decoded with `surrogatepass`, the handler `json.loads`
   decodes bytes with: strict decoding skipped a line with the raw bytes as stray output and the call
-  timed out), and so are a tool call's arguments carried as JSON text, which the reply's parse never
-  opens (`shared.toolcalls.call_arguments`, read by the evaluators and the in-band tool loop): a
+  timed out; and each WebSocket frame, since the pre-merge audit of PR #87, where one frame with an
+  escaped half made `run` exit 3 with "aborted on UnicodeEncodeError ... 2 of 2 specs never ran";
+  a text frame carrying the raw bytes is not UTF-8, which the library refuses, so that attempt is
+  inconclusive and not retried), and so are a tool call's arguments carried as JSON text, which
+  the reply's parse never opens (`shared.toolcalls.call_arguments`, read by the evaluators and
+  the in-band tool loop): a
   lone surrogate reads as U+FFFD, a high half followed by a low half is the character the pair
   encodes, every other character is kept, and keys are treated like values; two keys that read the
   same once replaced keep both values (the replaced one takes the next `, #n`; a key the target
@@ -201,22 +215,6 @@ reads as U+FFFD, since httpx decodes the stream as text.
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default
   in MVP-1 to shrink the secret-leak surface: needs sign-off.
-- **OD-30** (WebSocket, 2026-10-07): the frame transcript lives in `ModelResponse.raw_ids["websocket"]`
-  rather than in a dedicated field. A `transcript` field on the frozen u00 `ModelResponse` would be
-  the honest shape, but it changes every stored attempt's dump and the report snapshots; the
-  nested value is skipped by the fingerprint's envelope layer. Decide whether to add the field.
-- **OD-31** (WebSocket): `session.one_query_in_flight: false` is refused. Several concurrent queries
-  on one socket need a correlation id in the templates and in the reply frames; whether that is
-  wanted, and how a target declares it, is the owner's call.
-- **OD-32** (WebSocket): a reconnect is attempted only before a query is on the wire. A connection
-  closed mid-turn is an environment error the runner retries and debits; the adapter never resends a
-  query on its own, so no send escapes the ledger. A later turn of a multi-turn attempt whose
-  connection is gone is inconclusive, never a silent new session. Whether a stateless server
-  (`{{messages}}` in the template) should be allowed to reconnect mid-conversation is open.
-- **OD-33** (WebSocket): `dottore fleet` infers `rest` from a `wss://` endpoint and writes no
-  `websocket:` block, so a WebSocket target is declared by hand today. Whether a fleet entry should
-  carry the block is open.
-
 - **OD-21** (open, 2026-10-07): a 200 whose body is not JSON (brackets that do not balance
   included; or not the provider's shape; or JSON with an integer of more than 4,300 digits,
   which Python refuses to read) is
@@ -226,6 +224,11 @@ reads as U+FFFD, since httpx decodes the stream as text.
   request sent. Decide whether a malformed success body fails its attempt (inconclusive, as
   `ResponseTooDeep`) or keeps stopping the campaign (a misconfigured endpoint is then caught at
   the first request instead of after the whole battery). A non-retryable 4xx is not in question.
+  The same rule covers a WebSocket frame that is not JSON, is not an object, or is binary (as
+  built in PR #87: `run` exits 3 with "aborted on AdapterProductError: ... a frame was not valid
+  JSON", measured against the loopback chat server on 2026-10-09), so the decision covers both;
+  a text frame that is not UTF-8 is not in it, since the library refuses that one before the
+  adapter reads it (`WebSocketFrameUndecodable`, inconclusive and not retried, §4).
 - **OD-28** (decided 2026-10-07, A-47): what a reply that holds a lone surrogate becomes. The owner
   left the choice to the build on 2026-10-07, and it is U+FFFD where the reply is parsed, the
   attempt evaluated as usual, as built. Why: it is what most of the target's consumers end up with
@@ -248,3 +251,26 @@ reads as U+FFFD, since httpx decodes the stream as text.
   credential split that way is masked once PR #57 (open on 2026-10-09) reads U+FFFD as a splitter,
   which the owner approved for whichever of the two lands second. Not built: an evidence field
   saying a reply was altered (an additive `ModelResponse` field, u00); U+FFFD is the mark.
+- **OD-34** (open, 2026-10-07, PR #87; it numbered these four OD-30 to OD-33, which `main` and
+  PR #88 had taken, and they were renumbered on 2026-10-09): a WebSocket target's frame
+  transcript lives in `ModelResponse.raw_ids["websocket"]` rather than in a dedicated field. A
+  `transcript` field on the frozen u00 `ModelResponse` would be the honest shape, but it changes
+  every stored attempt's dump and the report snapshots; the nested value is skipped by the
+  fingerprint's envelope layer. Decide whether to add the field.
+- **OD-35** (open, 2026-10-07, PR #87): a WebSocket target's `session.one_query_in_flight: false`
+  is refused. Several concurrent queries on one socket need a correlation id in the templates and
+  in the reply frames; whether that is wanted, and how a target declares it, is the owner's call.
+- **OD-36** (open, 2026-10-07, PR #87): a WebSocket reconnect is attempted only before a query is
+  on the wire, and never more often than the adapter's own retry allowance: under `run` (and
+  `-sV`, the identity sweep and a metered judge) every live adapter retries nothing itself, so a
+  socket that fails to open is retried by the runner, one debited and paced send per dial (since
+  the pre-merge audit of 2026-10-09: `max_attempts: 1` made 8 dials for 4 debits). A connection
+  closed mid-turn is an environment error the runner retries and debits; the adapter never
+  resends a query on its own, so no send escapes the ledger. A later turn of a multi-turn attempt
+  whose connection is gone is inconclusive, never a silent new session. Whether a stateless
+  server (`{{messages}}` in the template) should be allowed to reconnect mid-conversation is open.
+- **OD-37** (open, 2026-10-07, PR #87): `dottore fleet` infers `rest` from a `wss://` endpoint and
+  writes no `websocket:` block, and `run` refuses the file it writes (a `ws://` or `wss://`
+  endpoint is dialled only by `provider: websocket`), so a WebSocket target is declared by hand
+  today; the scope `fleet` writes pins the port (443 for `wss`, 80 for `ws`). Whether a fleet
+  entry should carry the block is open.

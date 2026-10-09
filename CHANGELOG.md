@@ -42,22 +42,31 @@ versioning: [SemVer](https://semver.org/).
   and left out when absent, as `seeded_setup` is. `provider_returns_tool_calls` is true for a
   WebSocket target only with `tool_calls_path` (OD-18 B); it carries no tool definitions, and a
   memory seed needs `{{system_prompt}}` in a template. `-sV` probes it like any live target,
-  one connection per probe; the envelope layer skips a nested `raw_ids` value, so a reply's
-  text in the transcript is not a metadata tell, and reads a model name only from `model_path`.
+  one connection per probe, at the deployment's own sampling (no template carries a
+  temperature, as through a REST template); the envelope layer skips a nested `raw_ids` value,
+  so a reply's text in the transcript is not a metadata tell, and reads a model name only from
+  `model_path`.
 - **Docs and examples:** `examples/target.websocket.yaml` and `examples/scope.websocket.yaml`
   with Scenario H in `examples/README.md` (its output is the command's real output, and a test
   pins it); the MANUAL (§3, §4.2 "A chat endpoint over a WebSocket", §13), `USAGE.md`, the
   FAQ, `dottore(1)` and `dottore-scope(5)`, `SUPPLY-CHAIN.md` (the closure re-checked:
-  `websockets` 17.2 has no dependencies), contracts u01 (A-19) and u04 (§1 and OD-30 to
-  OD-33), `docs/12`, the scope and target templates. `tests/ws_chat_server.py` is a loopback
-  JSON-over-WebSocket server with thirteen behaviours; `tests/adapters/test_websocket.py` and
-  `tests/cli/test_websocket_target.py` hold 102 tests with `tests/adapters/test_websocket_audit.py` (the gate with zero connections, the
-  redirect, streaming, the final frame, timeouts, errors, reconnects, one connection per
-  conversation, the evidence on disk, a real campaign, its replay, a real `-sV` pass).
-  `make gates` after merging `main` at `c3e70d8`: 2535 tests, 96.68% coverage. Not built, open for the owner: a dedicated
-  transcript field on `ModelResponse` (OD-30), several queries multiplexed on one socket
-  (OD-31), a reconnect mid-conversation for a stateless server (OD-32), a `websocket:` block in
-  a fleet entry (OD-33: `dottore fleet` infers `rest` from a `wss://` endpoint).
+  `websockets` 17.2 has no dependencies), contracts u01 (A-19), u02 (A-54), u04 (§1, §4, §7
+  A-47 and OD-34 to OD-37) and u09, the ledger, `docs/10`, `docs/12`, the scope and target
+  templates.
+  `tests/ws_chat_server.py` is a loopback JSON-over-WebSocket server with seventeen behaviours;
+  `tests/adapters/test_websocket.py` (42 tests), `tests/adapters/test_websocket_audit.py` (31),
+  `tests/adapters/test_websocket_premerge.py` (40) and `tests/cli/test_websocket_target.py` (29)
+  hold 142 tests (the gate with zero connections, the redirect, streaming, the final frame,
+  timeouts, errors, reconnects, one connection per conversation, the evidence on disk, a real
+  campaign, its replay, a real `-sV` pass, and the audits' regressions). `make gates` (with
+  `PYTHONPATH` set to the worktree's `src`) after merging `main` at `6401ee2` and the pre-merge
+  fixes: 3588 tests, 97.24% coverage, 75 specs lint OK, bandit and pip-audit clean. Not built,
+  open for the owner: a dedicated transcript field on `ModelResponse` (OD-34), several queries
+  multiplexed on one socket (OD-35), a reconnect mid-conversation for a stateless server
+  (OD-36), a `websocket:` block in a fleet entry (OD-37: `dottore fleet` infers `rest` from a
+  `wss://` endpoint, and `run` refuses the file it writes). The four were numbered OD-30 to
+  OD-33 in the PR, which `main` (OD-30, OD-32, OD-33) and PR #88 (OD-31) had taken; renumbered
+  on 2026-10-09.
 - **The pre-commit audit** (a detached worktree at the code commit, 33 mutants, every finding
   reproduced by execution) found twelve things, all closed before the PR: a frame nested past
   what the evidence store serializes aborted the campaign (now `inconclusive`, not retried,
@@ -77,6 +86,33 @@ versioning: [SemVer](https://semver.org/).
   library's headers are refused). Five surviving mutants got a test each (compression never
   offered, in-memory redaction, a bounded close, the transcript not a metadata tell, an absent
   block out of the digest). `tests/adapters/test_websocket_audit.py` holds the regressions.
+- **The pre-merge audit** (2026-10-09, on the PR merged with `main` at `6401ee2`) found it not
+  ready to merge, and these are fixed, each with a test in
+  `tests/adapters/test_websocket_premerge.py` (36 of its 40 tests fail on the PR head, the other
+  4 pin what held): a frame was parsed with a plain `json.loads`, so one frame with half a
+  character escaped in it made `run` exit 3 ("aborted on UnicodeEncodeError ... 2 of 2 specs
+  never ran"), and frames now go through `bounded_loads` and `well_formed_json` as every reply
+  does (A-47, the WebSocket adapter added to its list), its nesting refusal a `ResponseTooDeep`
+  (#65's one-attempt failure); a tool call's JSON-text arguments were not measured
+  (`check_argument_nesting`, as on the base adapter); a text frame that is not UTF-8, which the
+  library refuses with close code 1007, was retried three times, and is now inconclusive and
+  sent once, as a frame over the cap (1009) is; a socket that failed to open was dialled again
+  inside each debited send, 8 dials for 4 debits under the runner's retries with
+  `max_attempts: 1`, and the adapter now re-dials only within its own retry allowance, which a
+  campaign sets to none, so every dial is a debited, paced send; the loader accepted values
+  JSON cannot hold in the block (an unquoted date stopped the run when the frame was written, NaN
+  went on the wire as `NaN`, half a character in `vars` raised `UnicodeEncodeError` out of `run`
+  from the target digest), and now runs the spec loader's A-54 walk over it; a `ws://` or
+  `wss://` endpoint on another provider passed the gate and the REST adapter posted HTTP to the
+  socket, credential included, four times per attempt (`run` exit 3), and it is refused when the
+  file is loaded; the loader's refusals listed the names the operator wrote whole (cut
+  at 300 characters and at most 20 now, A-51); the docs said every `-sV` probe goes out at
+  temperature 0, which only the OpenAI and Anthropic adapters send (corrected in the MANUAL,
+  `docs/10` and u09 rather than adding a sampling field the target file would have to declare);
+  a comment said `json.loads` overflows near 1,000 levels (about 116,000 on 3.14); the MANUAL
+  said `Sec-WebSocket-*` is refused where five named headers are; and the four open decisions
+  are renumbered (above). Found while fixing: `dottore fleet` wrote a bare host for a `wss://`
+  entry, which authorizes every port, and now pins 443 (80 for `ws://`).
 
 ### Fixed (a reply that holds half a character)
 

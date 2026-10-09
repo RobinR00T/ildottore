@@ -92,10 +92,13 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   call whose JSON-string arguments do, is refused the same way: inconclusive, not retried, and
   the rest of the scan goes on. Tool-call arguments whose brackets do not balance read as no
   arguments, as before; arguments whose brackets balance and nest past 100 are refused even when
-  they are not JSON, so that reply is inconclusive instead of judged by the tool's name. During a
+  they are not JSON, so that reply is inconclusive instead of judged by the tool's name. A
+  WebSocket target's frames are parsed the same way, with a bound of 64 levels of their own, and
+  a text frame that is not UTF-8 is refused as undecodable (§4.2). During a
   `-sV` or `-A` probe pass a reply refused on any of these grounds still stops the run before the
   attack. A success reply that is not JSON (brackets that do not balance included), or holds an
-  integer of more than 4,300 digits (which Python refuses to read), still stops the run (exit 3);
+  integer of more than 4,300 digits (which Python refuses to read), still stops the run (exit 3),
+  and so does a WebSocket frame that is not a JSON object;
   over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
   times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
   stray lines and its reply together.
@@ -302,7 +305,9 @@ since it was never read; correcting a key to the one you meant changes the targe
 is refused.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
-judge and the `-sV` probes. Whether to apply it or drop it is open.
+judge and the `-sV` probes, and the OpenAI and Anthropic adapters send it; a REST template and a
+WebSocket target have no field for it, so theirs is the deployment's own. Whether to apply it or
+drop it is open.
 
 `run` and `fingerprint` parse a target file once: the target the scope authorizes, its route and
 the target a live adapter sends to all come from that one parse, even if the file changes while the
@@ -445,7 +450,7 @@ websocket:
     tool_calls_path: null                          # declare it only if the server sends calls
     model_path: null                               # optional: feeds the fingerprint's envelope layer
     timeout_seconds: 30                            # per turn, query to final frame
-  reconnect: {max_attempts: 1}                     # 0 to 5 more dials when the socket fails to open
+  reconnect: {max_attempts: 1}                     # 0 to 5 more dials in one send (see Reconnects)
   headers: {}                                      # on the HTTP upgrade; {{token}} allowed here too
 ```
 
@@ -463,11 +468,17 @@ is sent: a block missing or on another provider; an endpoint that is not `ws://`
 or that carries a query, a fragment or a user:password; a placeholder that is neither reserved
 nor in `vars`; `{{token}}` without an `auth_ref`, or inside `vars`; a request placeholder in a
 connection template; a `message.send` with neither `{{prompt}}` nor `{{messages}}`; an upgrade
-header the library writes itself (`Host`, `Connection`, `Upgrade`, `Sec-WebSocket-*`);
-`one_query_in_flight: false`; a `timeout_seconds` outside (0, 600]; a `reconnect.max_attempts`
-outside 0 to 5. The error names the field and never quotes the value. At send time, before any
-dial, a resolved credential shorter than 8 characters is refused too: the redactor masks a
-credential by value only from that length.
+header the library writes itself (`Host`, `Connection`, `Upgrade`, and `Sec-WebSocket-Key`,
+`-Version`, `-Extensions`, `-Protocol` and `-Accept`); `one_query_in_flight: false`; a
+`timeout_seconds` outside (0, 600]; a `reconnect.max_attempts` outside 0 to 5; a value JSON
+cannot hold anywhere in the block (an unquoted date, a `!!set`, `!!binary` data, `.nan` or
+`.inf`, half a character), named by its path as `dottore lint` names one in a spec (a date in a
+template stopped the run when the frame was written, NaN went on the wire as `NaN`, and half a
+character in `vars` raised out of `run`). A `ws://` or `wss://` endpoint on any other provider is
+refused too: only this adapter dials it. The error names the field and never quotes the value; a
+name it lists (a header, a placeholder) is cut at 300 characters, and at most 20 are listed. At
+send time, before any dial, a resolved credential shorter than 8 characters is refused too: the
+redactor masks a credential by value only from that length.
 
 **One connection per conversation.** A single-turn attempt dials, sends the handshake and the
 session start, sends its query, reads the turn and closes. A multi-turn attempt keeps one
@@ -481,6 +492,17 @@ query turn; the handshake and session frames ride on it. Cleartext `ws://` never
 proxy; `wss://` honours the proxy environment (`https_proxy`, `wss_proxy`) as the HTTP adapters
 do, TLS end to end.
 
+**Reconnects.** A socket that fails to open (refused, a `503` at the upgrade, closed or silent
+during the handshake) is dialled again only before the query is on the wire, so the adapter never
+resends a query. Under `run` (the battery, `-sV`, the identity sweep) every live adapter retries
+nothing itself: the adapter dials once per send, and the runner retries the failure as it retries
+any environment error, up to three more sends in a campaign and two in a `-sV` pass, each one a
+request against `--budget-requests` and the rate. `reconnect.max_attempts` is how many more times
+the adapter dials inside one send where it has retries of its own, never more than those
+(`dottore fingerprint` has two). Until the pre-merge audit of 2026-10-09 a socket that failed to
+open was dialled again inside each send, uncounted: `max_attempts: 1` made 8 dials for 4 debited
+requests.
+
 **Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a product
 defect, as a malformed HTTP reply is). A frame whose `type_path` value is in `ignore_types` is
 discarded; one with `error_path` present ends the attempt as `inconclusive` (an environment
@@ -493,14 +515,21 @@ mid-turn, is an environment error: inconclusive, and the runner's `--timeout` st
 whole send. The handshake and session phase runs under the same timeout and caps. A turn over
 4 MiB, over 4096 frames, a single frame over 4 MiB, or a frame nested deeper than 64 levels is
 refused unread and not retried (inconclusive): a deeper frame would have overflowed the
-evidence store's serializer and aborted the campaign. Compression is not negotiated.
-`sampling_defaults` do not apply: the templates carry no sampling fields.
+evidence store's serializer and aborted the campaign. Each frame is parsed as every reply is:
+its nesting is measured before it is parsed (past 100 levels it is refused unparsed), and half a
+character escaped in a string (a lone surrogate, `\ud800`) reads as U+FFFD, so one such frame no
+longer aborts the campaign (A-47). A text frame that is not UTF-8, the raw bytes of half a
+character included, is refused by the library, which closes the connection (close code 1007):
+inconclusive and not retried. Compression is not negotiated. `sampling_defaults` do not apply:
+the templates carry no sampling fields, so neither a spec's sampling nor the `-sV` probes'
+temperature 0 reaches the target (as through a REST template).
 
 **Tool calls.** The adapter reads tool calls only when `tool_calls_path` is declared (each
 frame's list at that path, accumulated); without it, a seeded spec judged on its tool trace is
-`inconclusive: setup_not_delivered`, as through a REST template. It carries no tool
-definitions, so a `type: model` target with tools in its scene is `setup_not_delivered` too;
-a memory seed needs `{{system_prompt}}` in a template.
+`inconclusive: setup_not_delivered`, as through a REST template. A call whose arguments are
+JSON text nested more than 100 levels deep makes the attempt inconclusive, not retried, as on the
+HTTP adapters. It carries no tool definitions, so a `type: model` target with tools in its scene
+is `setup_not_delivered` too; a memory seed needs `{{system_prompt}}` in a template.
 
 **Evidence and the credential.** Every frame sent and received is kept on the attempt
 (`response.raw_ids.websocket.frames`, in order, with its direction) and filed by the evidence
@@ -512,12 +541,14 @@ echoes it back, in a frame, an error frame or a close reason, has it scrubbed by
 the record and from the error message, which is redacted too. `-sV` probes a WebSocket target
 like any other live one: the text layers read the replies, and the envelope layer reads a
 model name only when `model_path` is declared (there is no HTTP envelope to read; the
-transcript is never read as a tell).
+transcript is never read as a tell). The probes go out at the deployment's own sampling, since
+no template carries a temperature, so a fingerprint is as repeatable as the deployment is.
 
 **Not covered.** A connection shared by several concurrent queries (a correlation id); an
 HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (`dottore fleet`
-infers `rest` from a `wss://` endpoint and writes no `websocket:` block); a session that must
-survive a reconnect.
+infers `rest` from a `wss://` endpoint and writes no `websocket:` block, so `run` refuses the
+target file it writes until you set `provider: websocket` and add the block; its scope pins the
+port, 443 for `wss`); a session that must survive a reconnect.
 
 ### 4.3 `fleet.yaml`, many targets in one file
 
@@ -1409,7 +1440,7 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. The same for `ws://`: use `wss://` off loopback. |
-| WebSocket run stops with `the handshake reply did not satisfy expect` | The first non-ignored frame after `handshake.send` did not match `handshake.expect`: usually a wrong or unset credential (`auth_ref`), or a reply frame your deployment sends before the acknowledgement that is not in `ignore_types`. A refused upgrade (`HTTP 401`, a redirect) stops the run the same way; a `503` is retried up to `reconnect.max_attempts`. |
+| WebSocket run stops with `the handshake reply did not satisfy expect` | The first non-ignored frame after `handshake.send` did not match `handshake.expect`: usually a wrong or unset credential (`auth_ref`), or a reply frame your deployment sends before the acknowledgement that is not in `ignore_types`. A refused upgrade (`HTTP 401`, a redirect) stops the run the same way; a `503` is retried by the runner, each retry a request against the ceiling (see "Reconnects" in §4.2). |
 | WebSocket attempts all `inconclusive` with `WebSocketTurnTimeout` | No frame matched `final_path`/`final_value` within `timeout_seconds`: check the final frame's shape against what your deployment really sends (an acknowledgement frame your server sends after `session.start` is read as part of the first turn unless `session.expect` or `ignore_types` names it). |
 | `authz_leak` is `capability_unavailable` | A cross-tenant spec needs the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
 | `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |

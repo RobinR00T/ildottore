@@ -20,13 +20,29 @@ The carryover ledger. Every agent session updates this so context survives even 
   query send is under the turn timeout, a lost conversation is debited once, the loader
   refuses request placeholders in connection templates, placeholders in `vars` and the
   library's own upgrade headers, `equals`/`final_value` compare by type, cleartext `ws://`
-  never goes through a proxy (`tests/adapters/test_websocket_audit.py`). `make gates` green after merging
-  `main` at `c3e70d8`: 2535 tests, 96.68% coverage, bandit
-  and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no dependencies). Open for the
-  owner: OD-30 (a transcript field on `ModelResponse` instead of `raw_ids["websocket"]`),
-  OD-31 (several queries on one socket), OD-32 (a reconnect mid-conversation for a stateless
-  server), OD-33 (a `websocket:` block in a fleet entry). Not built: binary frames, SSE or
-  polled streams (declare them as `rest`), a session that survives a reconnect.
+  never goes through a proxy (`tests/adapters/test_websocket_audit.py`). Open for the owner:
+  OD-34 (a transcript field on `ModelResponse` instead of `raw_ids["websocket"]`), OD-35
+  (several queries on one socket), OD-36 (a reconnect mid-conversation for a stateless server),
+  OD-37 (a `websocket:` block in a fleet entry). The PR numbered them OD-30 to OD-33, which
+  `main` (OD-30, OD-32, OD-33) and PR #88 (OD-31) had taken; renumbered on 2026-10-09, after
+  checking that no open PR claims OD-34 to OD-37 (the PR defines no A-clause; it amends A-19).
+  Not built: binary frames, SSE or polled streams (declare them as `rest`), a session that
+  survives a reconnect.
+- Pre-merge audit (2026-10-09, the PR merged with `main` at `6401ee2`, which brought #65, #79,
+  #92 and #93 among others): not merge-ready, now fixed. Frames are parsed with `bounded_loads` and
+  `well_formed_json` (a frame with half a character escaped made `run` exit 3; the adapter is
+  now on A-47's list) and `WebSocketFrameTooDeep` is a `ResponseTooDeep`; a tool call's
+  JSON-text arguments are measured; close code 1007 (a text frame that is not UTF-8) is not
+  retried, as 1009 is not; the adapter re-dials a socket that failed to open only within its
+  own retry allowance, so under `run` every dial is a debited send (it was 8 dials for 4
+  debits); the loader runs A-54's walk over the block (a date, NaN, half a character), refuses
+  a `ws://` or `wss://` endpoint on any other provider, and cuts the names its refusals list;
+  the docs no longer say a WebSocket (or REST) probe goes out at temperature 0, and the frame
+  case is written into OD-21. Found while fixing: a fleet's `wss://` entry got a bare host in
+  its scope (every port); it is pinned to 443 now. `tests/adapters/test_websocket_premerge.py`:
+  36 of its 40 tests fail on the PR head. `make gates` green (with `PYTHONPATH` set to the
+  worktree's `src`): 3588 tests, 97.24% coverage, 75 specs lint OK, four import contracts kept,
+  self-scan, bandit and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no dependencies).
 
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 
