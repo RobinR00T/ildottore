@@ -6,6 +6,8 @@ needs-review (inconclusive), never confirmed - plus DL2 masking (no raw value su
 
 from __future__ import annotations
 
+import pytest
+
 from ildottore.evaluators.authz_leak import AuthzLeakEvaluator
 from ildottore.evaluators.logprob_membership import (
     DEFAULT_NLL_THRESHOLD,
@@ -226,6 +228,43 @@ async def test_logprob_custom_threshold_via_weight() -> None:
     )
     assert v.status is VerdictStatus.FAIL
     assert DEFAULT_NLL_THRESHOLD < 5.0  # sanity: default would have passed
+
+
+@pytest.mark.parametrize("where", [0, 4, 9], ids=["first", "middle", "last"])
+@pytest.mark.parametrize(
+    "figure", [0.5, 1e300, float("inf"), float("-inf"), float("nan")], ids=repr
+)
+async def test_logprob_impossible_figure_is_not_scored(figure: float, where: int) -> None:
+    """An adapter that builds its own ``TokenLogprob`` (a plugin, the mock) can hand over a
+    figure no model produces. Scored, a positive one read as "likely memorized" (A-39). In any
+    position: a guard that looked at the last token only passed with it last (delta audit)."""
+
+    cfg = EvaluatorConfig(type=EvaluatorType.LOGPROB_MEMBERSHIP)
+    lps = [TokenLogprob(token=f"t{i}", logprob=-0.01) for i in range(10)]
+    lps[where] = TokenLogprob(token=f"t{where}", logprob=figure)
+    v = await LogprobMembershipEvaluator().evaluate(
+        make_ctx(response_text="x", config=cfg, logprobs=lps)
+    )
+    assert v.status is VerdictStatus.INCONCLUSIVE
+    assert v.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+
+
+@pytest.mark.parametrize("zero", [0.0, -0.0], ids=repr)
+async def test_logprob_certainty_is_scored(zero: float) -> None:
+    """Zero is ``log 1``, a figure a model produces: it is the boundary, and it is scored. With
+    it the mean NLL of ``[0, -0.5]`` is 0.25, below the 0.35 threshold; left out, ``-0.5`` alone
+    passes, so a guard that dropped the zero would show."""
+
+    cfg = EvaluatorConfig(type=EvaluatorType.LOGPROB_MEMBERSHIP)
+    lps = [TokenLogprob(token="t", logprob=zero), TokenLogprob(token="u", logprob=-0.5)]
+    with_zero = await LogprobMembershipEvaluator().evaluate(
+        make_ctx(response_text="x", config=cfg, logprobs=lps)
+    )
+    without = await LogprobMembershipEvaluator().evaluate(
+        make_ctx(response_text="x", config=cfg, logprobs=lps[1:])
+    )
+    assert with_zero.status is VerdictStatus.FAIL
+    assert without.status is VerdictStatus.PASS
 
 
 # --- authz_leak --------------------------------------------------------------------------

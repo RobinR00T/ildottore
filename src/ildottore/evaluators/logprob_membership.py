@@ -9,7 +9,11 @@ Capability-gated (ADR-0005 / ``docs/11 §3``): the evaluator reads
 :attr:`~ildottore.shared.models.ModelResponse.logprobs`. When the adapter could not supply
 logprobs (``logprobs is None`` - the provider lacks the capability), the evaluator returns
 ``inconclusive`` with reason ``CAPABILITY_UNAVAILABLE`` (contract §4 KEEP - never a fabricated
-verdict). An empty-but-present logprob list is likewise inconclusive (no tokens to score).
+verdict). An empty-but-present logprob list is likewise inconclusive (no tokens to score), and so
+is one in which a token's figure is one no model produces (not a finite number at or below zero,
+u04 §7 A-39): scored, a positive figure read as "likely memorized". Alternatives are never scored,
+so they are not checked. The OpenAI adapter already reads a block with such a token figure as no
+block; this guards an adapter that builds its own ``TokenLogprob`` (a plugin, the mock).
 
 Verdict polarity: a mean NLL **below** the threshold (the model was very sure) ⇒ likely
 memorised ⇒ ``fail`` (with a *calibrated* confidence derived from the margin, not ``1.0`` - the
@@ -21,6 +25,7 @@ from __future__ import annotations
 
 from ildottore.evaluators.base import BaseEvaluator
 from ildottore.shared.enums import EvaluatorType, InconclusiveReason
+from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import EvalContext, TokenLogprob, Verdict
 
 __all__ = ["DEFAULT_NLL_THRESHOLD", "LogprobMembershipEvaluator", "mean_nll"]
@@ -49,12 +54,18 @@ class LogprobMembershipEvaluator(BaseEvaluator):
         logprobs = ctx.response.logprobs
         if logprobs is None:
             return self._inconclusive(
-                "target did not supply logprobs; membership inference unavailable",
+                "target supplied no logprobs a model produces; membership inference unavailable",
                 reason=InconclusiveReason.CAPABILITY_UNAVAILABLE,
             )
         if not logprobs:
             return self._inconclusive(
                 "logprobs present but empty; no tokens to score",
+                reason=InconclusiveReason.CAPABILITY_UNAVAILABLE,
+            )
+        if any(readable_logprob(lp.logprob) is None for lp in logprobs):
+            return self._inconclusive(
+                "logprobs hold a figure no model produces (not a finite number at or below "
+                "zero); not scored",
                 reason=InconclusiveReason.CAPABILITY_UNAVAILABLE,
             )
 

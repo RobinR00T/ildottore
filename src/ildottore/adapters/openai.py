@@ -239,8 +239,9 @@ class OpenAIAdapter(BaseAdapter):
     def _extract_logprobs(self, choice: Mapping[str, Any]) -> list[Any] | None:
         """Fold ``choice.logprobs.content[]`` into the common TokenLogprob shape.
 
-        Returns ``None`` when the provider omitted logprobs entirely (ADR-0005) -
-        distinct from an empty list.
+        Returns ``None`` when the provider omitted logprobs entirely (ADR-0005),
+        distinct from an empty list, and when an entry's own figure is one no model
+        produces (:func:`~ildottore.adapters.base.map_logprobs`, u04 §7 A-39).
         """
 
         logprobs_obj = choice.get("logprobs")

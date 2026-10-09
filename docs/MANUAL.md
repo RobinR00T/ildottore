@@ -301,6 +301,17 @@ is refused.
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.
 
+`logprobs: true` under `capabilities` lets the spec that scores token logprobs run
+(`DL-MEMORIZE-DIVERGENCE-001`, through `logprob_membership`); without it that spec is skipped
+for capabilities. The OpenAI adapter asks for logprobs on every request whatever the file says,
+and reads a figure only when it is a JSON number that converts to a finite float at or below
+zero, as a `log p` is. A reply in which a token's figure is anything else (a string, a bool, a
+positive number, NaN, an infinity, or an integer no float holds) is read as carrying no logprob
+block: the membership spec is inconclusive and every spec is still judged on the reply's text.
+Such a figure among a token's alternatives drops only that token's alternatives, which are never
+scored. In older versions a 400-digit figure, a list or an object there made `fingerprint` and
+`run -sV` exit 1 with no report, and a positive token figure was scored as "likely memorized".
+
 `run` and `fingerprint` parse a target file once: the target the scope authorizes, its route and
 the target a live adapter sends to all come from that one parse, even if the file changes while the
 command starts, and a target can come from a pipe (`-t /dev/stdin`). A file named twice

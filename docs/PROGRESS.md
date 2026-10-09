@@ -3,6 +3,24 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): a logprob figure no model produces
+
+- On `fix/hostile-logprob`: a reply whose logprob (or one of its `top_logprobs`) was a 400-digit
+  integer, a list or an object made `dottore fingerprint` and `run -sV` exit 1 with a traceback
+  and no report, and `run` abort with exit 3; a positive token figure scored
+  `DL-MEMORIZE-DIVERGENCE-001` "likely memorized"; NaN and infinities reached the report as
+  non-JSON tokens. A figure is now read only when it is a finite JSON number at or below zero; an
+  entry's own figure that is not (named token or not) makes the block read as no block, so the
+  attempt and its text evaluators go on and the membership spec is inconclusive, and an
+  alternative that is not costs only its token's alternatives (u04 §7 A-39,
+  `tests/cli/test_logprob_figures.py`). Open for the owner (OD-24): the whole block versus only
+  the bad entry, a positive figure counted as impossible, and whether the evidence should say the
+  block was unreadable rather than absent. Found by the audits, both since closed on main: a
+  lone surrogate in a token or the reply's text, which aborted `run` (exit 3,
+  `UnicodeEncodeError`), now reads as U+FFFD (A-47, PR #79), and a token nested about 100,000
+  levels deep, which overflowed `str()`, is refused with its reply as nested too deeply, so it
+  fails one attempt, not the campaign (PR #65).
+
 ## State, 2026-10-07 (afternoon): the figure that stopped a run, masked as a phone number
 
 - Found by the audit of `fix/usage-figure-overflow`; fixed on `fix/halt-reason-figures`. A
@@ -44,7 +62,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   resume under a ceiling above 1.8e308, as on `main`; closed by #89, see the merge note below).
   Clause A-36 (u08, pointer in u09). Left open, unchanged: a figure up to 2^53 is
   believed, so a target can still end a campaign early on the token ceiling. Found by the audit
-  and left as its own task: a `logprob` no float holds still makes `-sV` exit 1 (adapter, u04).
+  and fixed by #74 (u04 A-39): a `logprob` no float holds made `-sV` exit 1 (adapter).
   `make gates` green: 2,452 tests, coverage 96.51%, lint 0 errors on 75 specs; 52 of the 101
   new tests fail on `0501752`, and 24 of 24 mutants of the fix are killed.
 - Merge note (2026-10-09, `origin/main` merged in, with #89, A-55 in u12): `run` now refuses a
