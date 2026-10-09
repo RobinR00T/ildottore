@@ -38,6 +38,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
 from ildottore.cli import resume as resume_mod
@@ -1030,9 +1031,32 @@ def _validate_options(opts: RunOptions) -> None:
         raise ValueError(f"two report formats would write the same file: {', '.join(duplicates)}")
 
 
+def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
+    """Handle SIGTERM or SIGHUP as Ctrl-C would be handled at this moment (u12 A-60).
+
+    ``signal.default_int_handler`` raised KeyboardInterrupt wherever the main thread was, and
+    inside a weakref callback Python prints "Exception ignored" and drops it: a SIGTERM sent
+    with a probe on the wire left a resume sending (41 requests where 25 were expected, CI on
+    PRs #72 and #82). Inside ``asyncio.run`` the SIGINT handler is asyncio's, which cancels the
+    run on the first signal instead of raising, so that one cannot be dropped (a second, or one
+    after the run's task has finished, raises in place as before). With no Python handler for
+    SIGINT (ignored, as for a job a script starts with ``&``, where asyncio installs none) it
+    raises, as before, and can still be dropped in a callback. A program that embeds
+    ``execute_run`` and gives Ctrl-C a handler that does nothing, or installs one through
+    ``loop.add_signal_handler``, makes SIGTERM and SIGHUP do nothing either; ``dottore`` does
+    neither (pre-commit audit).
+    """
+
+    handler = signal.getsignal(signal.SIGINT)
+    if callable(handler):
+        handler(signal.SIGINT, frame)
+    else:
+        signal.default_int_handler(signum, frame)
+
+
 @contextmanager
 def _termination_as_interrupt() -> Iterator[None]:
-    """Turn SIGTERM and SIGHUP into the KeyboardInterrupt Ctrl-C raises, for one campaign.
+    """Turn SIGTERM and SIGHUP into Ctrl-C, for one campaign.
 
     The runner records its spend however it stops, but a SIGTERM (what `timeout`, `docker
     stop`, systemd, Kubernetes and CI timeouts send) or a SIGHUP killed the process outright,
@@ -1048,7 +1072,7 @@ def _termination_as_interrupt() -> Iterator[None]:
         if sig is None or signal.getsignal(sig) is signal.SIG_IGN:
             continue
         try:
-            previous[sig] = signal.signal(sig, signal.default_int_handler)
+            previous[sig] = signal.signal(sig, _interrupt_as_ctrl_c)
         except ValueError:
             break
     try:
