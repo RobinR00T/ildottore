@@ -48,6 +48,7 @@ build must satisfy it.
 | Malicious target reply built to crash or exhaust the scanner (oversized, a compression bomb, JSON nested past the parser's stack) | Every reply is read through a 4 MiB cap, decoded inside it, and parsed with its nesting bounded at 100 levels (`docs/MANUAL.md`, bounded replies; contract u04 §4): a refused reply is an inconclusive attempt, not retried, and the campaign goes on. (Status, 2026-10-07: a 200 whose body is not JSON still stops the campaign, open decision OD-21; and a refused reply during a `-sV` or `-A` probe pass stops the run before the attack.) |
 | Operator scans out of scope | S3/S4 default-deny gate. |
 | Cost blow-up (recursive/expensive specs) | S8 budgets, enforced in the runner, not the spec. |
+| Malicious target reply holding half a character (a lone surrogate) that no UTF-8 writer accepts | Read as U+FFFD where the reply is parsed (contract u04 §7, A-47), so the evidence store, the run store and the next request can hold it, and the attempt is still judged: refusing the reply would let six characters hide a leak. (Status, 2026-10-09: decided as built, OD-28; not deleted, which UTR #36 advises against. Half a character inside a word splits it as a zero-width space does: `regex_absence` misses a leak split that way (inconclusive, exit 0), `secret_leakage` misses a split canary, and the spec passes when a judge says secure, its own task.) |
 
 ## 5. Out of scope (v1)
 
