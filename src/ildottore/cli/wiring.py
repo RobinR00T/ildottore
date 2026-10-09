@@ -832,11 +832,12 @@ class _DeclaredCapabilities:
 class _RecordingAdapter:
     """Wraps a probe adapter so every recognition exchange lands in the evidence store.
 
-    A fingerprint pass is 17 requests per target and it left **no trace**: the evidence tree
-    could not answer "what did this tool send my endpoint", which is the question the whole
-    product is built to answer, and it is exactly what kept a day's worth of probes carrying
-    attack framing invisible. Probes are filed under ``probes/``, not ``attempts/``: a probe is
-    not an attack attempt, and counting it as one would inflate every attempt-derived number.
+    A fingerprint pass was 17 requests per target (18 since u09 A-67) and left **no trace**:
+    the evidence tree could not answer "what did this tool send my endpoint", which is the
+    question the whole product is built to answer, and it is exactly what kept a day's worth of
+    probes carrying attack framing invisible. Probes are filed under ``probes/``, not
+    ``attempts/``: a probe is not an attack attempt, and counting it as one would inflate every
+    attempt-derived number.
 
     A failed send is recorded too, with its error: "we sent this and got nothing back" is
     evidence, and dropping it would make the tree quietly incomplete.

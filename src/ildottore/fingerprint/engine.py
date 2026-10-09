@@ -26,7 +26,7 @@ from ildottore.fingerprint.layers import default_layers
 from ildottore.fingerprint.layers.behavioral import SELF_REPORT_DETAIL
 from ildottore.fingerprint.layers.capability import capability_guess
 from ildottore.fingerprint.layers.carrier import CARRIER_PROBE_DETAIL, effective_mutators
-from ildottore.fingerprint.layers.guardrail import GUARDRAIL_PROFILE_DETAIL
+from ildottore.fingerprint.layers.guardrail import GUARDRAIL_PROFILE_DETAIL, PROFILE_ONLY_PROBES
 from ildottore.fingerprint.signatures import SignaturePack, load_pack
 from ildottore.shared.models import (
     Capabilities,
@@ -104,7 +104,9 @@ class FingerprintEngine:
         isolated = _ProbeIsolation(adapter, self._is_env_error)
         # The carrier layer's probes are left out of the check: a target can answer carriers
         # differently (that is what comprehension measures) and every attributing probe alike.
-        recorder = _RecordingAdapter(isolated)
+        # So is the guardrail layer's benign request, whose reply no layer attributes from
+        # (§7 A-67): a filter blanking it would have made a constant target look varied.
+        recorder = _RecordingAdapter(isolated, skip=PROFILE_ONLY_PROBES)
         evidence: list[FingerprintEvidence] = []
         for layer in self._layers:
             target_for_layer = isolated if layer.layer == _CARRIER_LAYER else recorder
@@ -113,9 +115,10 @@ class FingerprintEngine:
                 evidence.extend(await layer.probe(target_for_layer, ctx))
             except ProbeFailed:
                 # A layer that lets a failed probe through loses its own evidence, not the pass:
-                # the one-probe layers (metadata, tokenizer, guardrail) and any third-party one.
-                # So an unanswered guardrail nudge leaves the guardrails unknown, never "no
-                # filter". The failure is already on record.
+                # the one-probe layers (metadata, tokenizer) and any third-party one. (The
+                # guardrail layer has two probes since §7 A-67 and catches it itself: with both
+                # unanswered the guardrails stay unknown, never "no filter".) The failure is
+                # already on record.
                 continue
 
         fused = combine(evidence)
@@ -338,15 +341,20 @@ class _RecordingAdapter:
     """Passes every probe through and keeps the reply texts, to see whether they ever differ.
 
     It also counts the probes whose reply came back refused, the ones the check could not read.
+    The probes named in ``skip`` (read for a profile only, never attributed from) pass through
+    unrecorded and uncounted, as a carrier does.
     """
 
-    def __init__(self, inner: TargetAdapter) -> None:
+    def __init__(self, inner: TargetAdapter, *, skip: frozenset[str] = frozenset()) -> None:
         self._inner = inner
+        self._skip = skip
         self.id = inner.id
         self.texts: list[str] = []
         self.refused = 0
 
     async def send(self, request: ModelRequest) -> ModelResponse:
+        if str((request.metadata or {}).get("probe", "")) in self._skip:
+            return await self._inner.send(request)
         try:
             response = await self._inner.send(request)
         except ProbeFailed:

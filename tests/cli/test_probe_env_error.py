@@ -204,7 +204,8 @@ def test_a_pass_where_every_probe_is_refused_still_runs_the_attack(
     assert result.exit_code == 0, result.output
     assert (
         f"{probes} of {probes} probe(s) got no usable reply (metadata/self_id: ResponseTooLarge, "
-        "behavioral/self_id: ResponseTooLarge, behavioral/cutoff: ResponseTooLarge, and 14 more); "
+        "behavioral/self_id: ResponseTooLarge, behavioral/cutoff: ResponseTooLarge, and "
+        f"{probes - 3} more); "
         "none did, so the fingerprint is empty. The exchanges are in "
     ) in result.stderr
     assert "fingerprint: hostile family=unknown (confidence 0.00)" in result.stdout
@@ -224,7 +225,7 @@ def test_the_warning_is_not_silenced_by_quiet(
     result = CliRunner().invoke(app, _run_argv(tmp_path, port, "-sV", "-q"))
 
     assert result.exit_code == 0, result.output
-    assert "1 of 17 probe(s) got no usable reply" in result.stderr
+    assert f"1 of {fingerprint_probe_count()} probe(s) got no usable reply" in result.stderr
 
 
 def test_the_fingerprint_command_reports_a_refused_probe_and_finishes(
@@ -240,7 +241,8 @@ def test_the_fingerprint_command_reports_a_refused_probe_and_finishes(
     assert failed_probes(fp) == ["metadata/self_id: ResponseTooLarge"]
     assert PROBES_FAILED_FLAG in fp.spoofing_flags
     assert result.stderr.startswith(
-        "warning: hostile: 1 of 17 probe(s) got no usable reply (metadata/self_id: "
+        f"warning: hostile: 1 of {fingerprint_probe_count()} probe(s) got no usable reply "
+        "(metadata/self_id: "
         "ResponseTooLarge)"
     )
     assert state["served"] == fingerprint_probe_count()

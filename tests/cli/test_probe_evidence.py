@@ -63,7 +63,7 @@ def test_a_fingerprint_pass_leaves_evidence(tmp_path: Path) -> None:
 def test_probes_never_touch_the_attempt_counts(tmp_path: Path) -> None:
     """The reproducibility ratio is over attack attempts, and must stay that way.
 
-    Filing a probe as an attempt would put 17 extra "runs" into the denominator of every
+    Filing a probe as an attempt would put 18 extra "runs" into the denominator of every
     spec's reproducibility, which is a scored, published number.
     """
 

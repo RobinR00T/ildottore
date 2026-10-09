@@ -3,6 +3,31 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09 (evening): a refusal the guardrail probe asked for is not a filter (OD-40)
+
+- On `fix/guardrail-layer-requested-refusal`, from `main` at `f12ba83`: the guardrail layer read
+  any refusal as evidence of an output filter (and a canned one of an input filter), although its
+  only probe asks the model to refuse, so a model that followed the instruction was reported
+  filtered (every corpus case, the golden fingerprint; `docs/16` §1 named it). The owner decided
+  at 20:36 that a refusal the probe requested no longer counts as a filter (OD-40, u09 A-67).
+  Built: `probes.GUARDRAIL_BATTERY`, two probes that each declare the reply they expect. The
+  request to refuse (`guardrail_nudge`, same name, prompt and seed) gives `refusal_style` and the
+  family tells only; a benign request worded near a boundary (`guardrail_benign`) gives the new
+  key `benign_refused` (filter or alignment, not split); `output_filter` comes only from the
+  provider's own filter stop (`content_filter`, `refusal`), never from `length`; `input_filter` is
+  `null`. `-sV` is 18 requests. The benign reply attributes nothing and the engine leaves it out
+  of the constant-target check, so the A-35 measurement was re-run on the new pass and holds
+  (12,276 passes, 2,344 of 10,752 differ, none names more); the planner reads no profile key, so
+  the ordering is unchanged and pinned. Golden: only `guardrails` changed. Tests:
+  `tests/fingerprint/test_guardrail_requested_refusal.py` (18, 14 fail on `f12ba83`), three new
+  cases in `test_probe_failures.py`, and the CLI tests that pinned 17 probes now derive the count.
+  `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 4639 tests, 97.60%
+  coverage, 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+  Left open: dropping `input_filter` from the shape (OD-40), and the
+  refusal phrase list, which still lacks "decline" (the live `llama3.2:3b` refused the nudge with
+  it), so such a refusal reads as an answer: a missed `benign_refused`, never a false filter. Not
+  re-run against a live model.
+
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
 - On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of the

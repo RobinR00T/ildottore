@@ -142,6 +142,19 @@ loopback), a redirect at the upgrade is never followed, every frame is kept in t
 with the credential as its placeholder, and `-sV` works (one connection per probe). Start from
 [`../examples/target.websocket.yaml`](../examples/target.websocket.yaml) and `--dry-run`.
 
+### Does `dottore fingerprint` tell me whether my endpoint has an output filter?
+
+Only when the provider says so. `guardrails.output_filter` is `true` when a probe's reply came
+back marked as cut or replaced by the provider's own filter (`content_filter`, or Anthropic's
+`refusal`). A refusal does not count: one probe asks the model to refuse, and refusing is doing
+as asked, so it only gives the refusal's style (`refusal_style`). The other asks a benign
+question near a boundary; if that is refused, `benign_refused` is `true`, which means a filter
+or the model's own alignment, and a benign probe cannot tell which. `input_filter` is always
+`null`. A `false` is what two benign probes saw, not proof that there is no filter: a filter that
+acts only on harmful content never acts on them. Until 2026-10-09 any refusal of the first probe
+was reported as an output filter, so a model that followed the instruction looked filtered
+([`10-fingerprint.md`](10-fingerprint.md) §1, OD-40).
+
 ### If my system passes Il Dottore, does it meet OWASP AISVS?
 
 No, and the tool never says so. AISVS lists *controls* ("verify that a classifier screens every
