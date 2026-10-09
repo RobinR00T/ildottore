@@ -141,19 +141,28 @@ included; mappings, lists, tuples and sets, since YAML builds a list of tuples f
 link to its parent until a path is yielded; a container shared through an alias entered once) and,
 when it holds such a number, reports each one as a `SCHEMA` finding at its path and checks nothing
 else: `name: a number too long to write out (over 4300 digits)`, or `a key that is a number ...` at
-the mapping that holds the key, a path cut at 300 characters, at most 20 and the rest counted. The
-interpreter's own conversion decides, so no number the check passes, in a document YAML or JSON can
-build, fails to print later, and the number is never quoted. `run` refuses the file before anything
-is sent, in the dry run too, as any spec that fails to load (F-10), naming it; `registry ls`,
-`describe` and `coverage` leave it out with their load warning (they printed a traceback, or exited
-3 naming nothing). The other inputs of the CLI that formatted such a number follow the same rule: a
-labels key in `calibrate` (`str(spec_id)` raised, and the message formatting the id raised again:
-exit 3 naming no file), a report read by `diff` or `calibrate` (`json.loads` raises a plain
-`ValueError` past the limit, not a `JSONDecodeError`: same exit, same silence), a target file's
-`type`, `mock_scenario` and `seeded_setup` keys (u12), and the signature pack's `pack_version`
-(u09). A target file's `provider` and `transport` are read only as text, as the target loader always
-read them (the mock routing called `str` on them first), so such a number there is no provider, as
-`5` is.
+the mapping that holds the key, a path cut at 300 characters, at most 20 and the rest counted. A
+part of the path whose text is not printable is written as `repr`, as #80 writes one, and so is
+every other schema error's location: the first merge printed the key as written, so a newline in it
+forged a finding line (pre-merge audit of #81) and a lone surrogate made `dottore lint` and
+`coverage` exit 1 with a `UnicodeEncodeError` traceback, which main before it did not do on these
+paths (pre-merge audit of #80, delta audit of `fix/spec-non-json-values`). Under `step_arg_patterns`
+a lone surrogate was that traceback before #81 too; on main A-54 closes that route, reporting the
+key before the schema runs, so what this does for the JSON-schema locations is stop control
+characters: a newline in a key there made `dottore lint` print a forged second finding line, and an
+escape sequence went out raw (pre-merge audit of #90). A printable key, in any script, reads as
+written. The interpreter's own conversion decides, so no number the check passes, in a document YAML
+or JSON can build, fails to print later, and the number is never quoted. `run` refuses the file
+before anything is sent, in the dry run too, as any spec that fails to load (F-10), naming it;
+`registry ls`, `describe` and `coverage` leave it out with their load warning (they printed a
+traceback, or exited 3 naming nothing). The other inputs of the CLI that formatted such a number
+follow the same rule: a labels key in `calibrate` (`str(spec_id)` raised, and the message formatting
+the id raised again: exit 3 naming no file), a report read by `diff` or `calibrate` (`json.loads`
+raises a plain `ValueError` past the limit, not a `JSONDecodeError`: same exit, same silence), a
+target file's `type`, `mock_scenario` and `seeded_setup` keys (u12), and the signature pack's
+`pack_version` (u09). A target file's `provider` and `transport` are read only as text, as the
+target loader always read them (the mock routing called `str` on them first), so such a number there
+is no provider, as `5` is.
 
 The first version walked mappings and lists only, and its pre-commit audit planted the number inside
 a `!!set` or an `!!omap` at every value of the 75 specs: 3,539 of 3,751 placements of each were
@@ -313,12 +322,12 @@ on that file, and its other findings come once the keys are fixed. At most 20 ar
 rest counted, the path is cut at 300 characters, a key on the path that holds a character that is
 not printable (an escape sequence, a newline that would start a forged finding line, a bidi control)
 is written as its `repr` (this check prints keys of free-form objects that no message printed
-before; the spec id and the paths of other schema errors are printed as written, as on `0501752`), a
-container YAML shares through an alias is reported once (where the walk first meets it), and the
-value under such a key is not walked. A key that is an int too long to write out never reaches this
-check: A-40 runs first and reports it in its own words. The keys of an `!!omap` or `!!pairs` entry,
-and the members of a `!!set`, are not this check's: the entry and the set are A-54's findings,
-once the keys are strings.
+before; A-40's paths and the locations of JSON-schema errors write such a key as `repr` too since
+#90, while a spec id UTF-8 can encode is still printed as written), a container YAML shares through
+an alias is reported once (where the walk first meets it), and the value under such a key is not
+walked. A key that is an int too long to write out never reaches this check: A-40 runs first and
+reports it in its own words. The keys of an `!!omap` or `!!pairs` entry, and the members of a
+`!!set`, are not this check's: the entry and the set are A-54's findings, once the keys are strings.
 
 `run`, `describe`, `coverage` and `registry` load through the same path, so they leave such a spec
 out as they do any spec that does not load (`run` refuses the campaign, exit 3, through the CLI's
@@ -372,12 +381,12 @@ holds is not walked; a container YAML shares through an alias is entered once (w
 meets it), while a scalar aliased in two places is reported in each; the path is cut at 300
 characters, and a part of it that is not printable text is written as its `repr` (a key holding an
 escape sequence or a newline cannot forge a finding line in this check's messages, and a key that is
-not text never breaks the path; A-40's message prints the keys on its path as written, so a key
-holding half a character or a newline on the way to a number too long to write out still breaks or
-forges a line there, until A-40's own follow-up lands). The walk holds one iterator per open
-container and the ids of the containers entered: on specs of about 90,000 nodes it peaked at 3.1 MiB
-with 30,000 containers and 8.4 MiB with 89,000, and added 44 to 52 ms to the check at a load average
-of 7 (a first version that kept a link to its parent per node peaked at 10.4 and 16.4 MiB).
+not text never breaks the path; A-40's paths and the locations of JSON-schema errors write such a
+key as `repr` too since #90, while a spec id UTF-8 can encode is still printed as written). The walk
+holds one iterator per open container and the ids of the containers entered: on specs of about
+90,000 nodes it peaked at 3.1 MiB with 30,000 containers and 8.4 MiB with 89,000, and added 44 to 52
+ms to the check at a load average of 7 (a first version that kept a link to its parent per node
+peaked at 10.4 and 16.4 MiB).
 
 A key that is not a string is not this clause's: it is A-44's finding, reported before this check
 runs (a date key, or keys of two types in one mapping, crashed the run: `json.dumps` takes no date

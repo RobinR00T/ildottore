@@ -714,7 +714,8 @@ a JSON-schema message can quote the offending value (cut at 300 characters), and
 schema errors are listed per file. A number too long for Python to write out (more than
 `sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
 `f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
-digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included), and
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included; a key on
+its path, or on any JSON-schema error's, that is not printable is written as `repr`), and
 nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
 as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
 `mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An

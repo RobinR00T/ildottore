@@ -3,6 +3,21 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): A-40's path printed a key as written
+
+- PR #81 (A-40) squash-merged as `c3e70d8` after three audits. Its finding printed the keys on
+  the path as written: a newline forged a finding line (its pre-merge audit, left for later) and,
+  found by two audits of sibling branches, a lone surrogate made `dottore lint` and `coverage`
+  exit 1 with a `UnicodeEncodeError` traceback (on these paths main before #81 did not). On
+  `fix/huge-int-followups`: a path part that is not printable is written as `repr`, as #80 does,
+  and so is every schema error's location. A surrogate key under `step_arg_patterns`, which crashed
+  lint before #81 too, is closed on main by A-54 (#89) before the schema runs; there it still stops
+  control characters (a newline in such a key forged a second finding line; pre-merge audit of #90).
+  Left for the owner: a too-long number under a target file's `sampling_defaults` (pre-existing: the
+  live run exits 3 unnamed in `target_digest`); a newline or another control character in a key that
+  pydantic names, or in the spec `id`, still forges a finding line (#89 handles only an `id` UTF-8
+  cannot encode).
+
 ## State, 2026-10-07 (evening): a report finding's validation error (A-49)
 
 - On `fix/diff-report-validation` (`tests/cli/test_diff_report_validation.py`): `dottore diff` and
@@ -378,12 +393,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   refused before the dry run, a live run whose pace (a `-T` template's too) is under one request per
   wall-clock ceiling (`--budget-wall 0` included) is refused (`--rate 1e-308` was a traceback, and
   once that was bounded, a live run that never stopped), and the run store refuses a stored `--runs`
-  past `2**53`, which a resume inherits (u12 A-55; `--runs` of 305 nines used to exit 1). Until
-  A-40's follow-up (#90) lands, its own paths print keys as written. Left open: the wall-clock
-  ceiling is not a deadline at an accepted pace (each concurrent spec waits its interval, the `-sV`
-  probe pass reads no ceiling); a resume builds a set of mutators x runs attempt ids for each
-  started spec, so how far `--runs` may go is the owner's call (OD-32); `--rate inf` turns pacing
-  off.
+  past `2**53`, which a resume inherits (u12 A-55; `--runs` of 305 nines used to exit 1). A-40's
+  paths and the locations of JSON-schema errors write a key that is not printable as `repr` since
+  #90; a spec id UTF-8 can encode is still printed as written. Left open: the wall-clock ceiling is
+  not a deadline at an accepted pace (each concurrent spec waits its interval, the `-sV` probe pass
+  reads no ceiling); a resume builds a set of mutators x runs attempt ids for each started spec, so
+  how far `--runs` may go is the owner's call (OD-32); `--rate inf` turns pacing off.
 
 ## State, 2026-10-07 (evening): YAML nesting refused where it is written
 
