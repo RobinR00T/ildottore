@@ -71,7 +71,8 @@ Yes, since 2026-10-03. The judge sends two requests per evaluated attempt, and t
 outside both the request ceiling and the rate gate, so `--budget-requests 5` with a judge sent
 15. They are now paced and debited like the target's, `--estimate` and `--dry-run` show them on
 their own line, and the derived ceilings make room for them. The multi-identity sweep counts
-too.
+too, and since PR #60 (merged 2026-10-09) `--estimate` and `--dry-run` price it: one request per
+scope identity for each spec that sweeps them.
 
 ### Can the judge itself be fooled by a prompt injection?
 

@@ -53,7 +53,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `Accept-Encoding: gzip, deflate` (`base.ACCEPT_ENCODING`), so httpx never offers `br` or
   `zstd` it cannot hand to the cap. Any other `Content-Encoding`, or a corrupt or truncated
   body, is `ResponseUndecodable` on a 2xx; an error status keeps its status classification
-  with an empty body. Both errors are environment failures with `retryable = False`. The MCP
+  with an empty body, and so does an error status whose body is over the cap (before PR #68, a
+  `401` with a 5 MB body was `ResponseTooLarge`, an inconclusive attempt, where a short one
+  stops the run; delta audit of OD-23). Both errors are environment failures with
+  `retryable = False`. The MCP
   adapter's `notifications/initialized` reply is streamed and never read.
 - KEEP (as built, 2026-10-07): every reply is parsed through `shared.nesting.bounded_loads`
   (the base adapter's body, the MCP adapter's JSON body, SSE `data:` event and stdio line, and each
@@ -85,7 +88,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   handler and the runner aborted the campaign; and a reply the parser accepts aborted it too,
   300 levels (about 600 bytes) overflowing pydantic's serializer when the evidence was written.
   A body that is not JSON keeps the product-defect rule of §7 (open decision OD-21). A refused
-  reply during the `-sV`/`-A` probe pass (u09) still stops the run before the attack.
+  reply during the `-sV`/`-A` probe pass fails only that probe and the run goes on (u09 §7
+  A-35, OD-23).
 - KEEP: capabilities are **static per adapter+config** (declared), not inferred by probing at send
   time; live capability probing belongs to u09 fingerprint, not here.
 - DECIDE (OD-1, ADR-0005 Accepted): OpenAI `logprobs.content[].logprob`+`top_logprobs` vs Anthropic
@@ -120,6 +124,52 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `EndpointNotAllowed` **before** any httpx request is issued (respx registers 0 calls on refusal).
 - **Logprob mapping (golden):** OpenAI + Anthropic cassettes → assert exact `TokenLogprob` lists vs
   golden JSON in `tests/adapters/golden/logprobs/`; a no-logprob cassette ⇒ `logprobs is None`.
+- **A-39 A reply's logprob figure is read only when a model could produce it (added 2026-10-07).**
+  A logprob is `log p` of a probability in (0, 1]: a finite number at or below zero. A JSON number
+  has no bound, and `map_logprobs` passed every figure to `float()`: a 400-digit integer raised
+  `OverflowError` and a list or an object `TypeError`, neither of which the CLI catches, so
+  `dottore fingerprint` and `run -sV` exited 1 (the code CI reads as findings below `--fail-on`)
+  with a traceback and no report, and plain `run` and `fleet --run` aborted the campaign with exit
+  3; a string that is not a number raised `ValueError` (exit 3), and a `top_logprobs` that was a
+  number or a bool, or a null alternative in the map shape, `TypeError`. The OpenAI adapter asks
+  for logprobs on every request, the `--judge` model's included, so every spec was exposed, though
+  the `-sV` probes read no logprob at all. A positive token figure (0.5, 1e300, or `true`, read as
+  1.0) scored `DL-MEMORIZE-DIVERGENCE-001` as "likely memorized" (exit 1), and a NaN or an
+  infinity went into the report and the evidence as a bare `NaN` or `Infinity` token, which is not
+  JSON (code audit of `fix/usage-figure-overflow`, F1, F2, F4, F5). A figure is now read through
+  `shared.logprobs.readable_logprob`: a JSON number that converts to a finite float at or below
+  zero, `0` included; a bool is not one, nor is a string that spells one (`float()` read those
+  before: `"-0.5"` was believed, `"1"` scored "likely memorized" and `"nan"` wrote a bare `NaN`).
+  A block in which any entry's own figure is not readable, whether or not the entry names its
+  token, is `None`, read as no block: the attempt and every evaluator of its text go on, and
+  `logprob_membership` is `inconclusive: capability_unavailable` (the whole block, not only the
+  entry: OD-24; an entry with no token is still skipped, but after its figure is read, or a
+  positive one beside four confident tokens let the rest be scored: delta audit). An alternative
+  whose figure is not readable costs its token the alternatives (`top` is `None`) and nothing
+  else, since no alternative is ever scored (the first version voided the whole block, and
+  confident tokens with one bad alternative lost their "likely memorized": pre-commit audit). A
+  null figure is still skipped as absent, a token's and an alternative's in both `top_logprobs`
+  shapes, and a `top_logprobs` of neither shape is no alternatives. `logprob_membership` checks
+  the figures it scores with the same predicate, so an adapter that builds its own `TokenLogprob`
+  (a plugin, the mock) cannot get an impossible one scored either. Not claimed: the evidence does
+  not say a block was unreadable rather than absent (`logprobs: null` both ways, OD-24); such an
+  adapter's own figures still reach the evidence as it built them (a NaN there is still written as
+  a bare token); a run halted before this change and resumed after it keeps what its stored
+  attempts carry (a positive figure's "likely memorized", a NaN that makes the report not JSON),
+  since a resume adopts stored verdicts; a figure a model can produce is believed, so a target can
+  still send confident logprobs and be scored "likely memorized", as before, and absurd but finite
+  ones (two of `-1.7e308`) make the mean NLL infinite, read as "no memorization signal"; a token
+  is read with `str()`, unchecked (a lone surrogate there, or in the reply's text, reads as U+FFFD
+  where the reply is parsed and the attempt is judged, A-47; a token, or an alternative's token,
+  nested past 100 levels never reaches `str()`, since its reply is refused where it is parsed as
+  `ResponseTooDeep` (§4): that attempt fails and `run` goes on, and in `fingerprint` and `run -sV`
+  that probe fails and the pass goes on, as on any reply nested too deeply (u09 A-35; before PR #68
+  they stopped with exit 3 and a one-line error); before PR #65 one nested
+  about 100,000 levels overflowed `str()` with `RecursionError`, and before PR #79 a lone surrogate
+  aborted `run` with exit 3: pre-merge audit). `tests/cli/test_logprob_figures.py` (through the
+  CLI: `fingerprint`, `run`, `run -sV` and the membership spec, both directions, the text still
+  judged), `tests/adapters/test_base.py`, `tests/evaluators/test_data_leak.py`,
+  `tests/shared/test_logprobs.py`.
 - **Capabilities:** each adapter reports every bool flag (nine as built); parametrized snapshot per provider.
 - **Error classification:** 429/503/timeout cassettes ⇒ retry-then-skip (env); a malformed-schema
   200 ⇒ raise (product defect). No defect masked as flake. A 200 whose brackets balance and nest
@@ -145,7 +195,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
   evidence); a multi-turn spec sends the reply on in its next request and the `--judge` request
   quotes it, and httpx raised the same error encoding either (the judge received nothing); sqlite
   refuses it too, and pydantic's JSON serializer with `PydanticSerializationError` (first noted on
-  main by PR #57, open on 2026-10-09; reproduced end to end by the pre-commit audit of
+  main by PR #57 (split credentials); reproduced end to end by the pre-commit audit of
   `fix/hostile-logprob`, 2026-10-07; `dottore fingerprint`, which writes nothing, exited 0). Every
   reply is now made well formed where it is parsed (`shared.wellformed.well_formed_json`: the base
   adapter's body, so OpenAI, Anthropic and the REST template, and the MCP adapter's JSON body, SSE
@@ -179,10 +229,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   way (`PI-DIRECT-001` is inconclusive and `run` exits 0, where the leak written plainly fails it
   and exits 2), `secret_leakage` misses a split canary and passes, and the spec falls to its other
   evaluators (`SP-LEAK-001` is inconclusive without `--judge` and passes when the judge says
-  secure), and a registered credential split that way is not masked as the credential (each half
-  stays readable unless the entropy rule takes it) until the fix for split credentials (PR #57, open
-  on 2026-10-09) reads U+FFFD as a splitter, which the owner approved on 2026-10-07 for whichever of
-  the two lands second (OD-28); invalid UTF-8 that is not an encoded surrogate (one `FF` byte, a
+  secure), while a registered credential split that way is masked whole since the fix for split
+  credentials (PR #57, merged after this clause) reads U+FFFD as a splitter (u01 A-32), as the owner
+  approved on 2026-10-07 for whichever of the two landed second (OD-28); invalid UTF-8 that is not
+  an encoded surrogate (one `FF` byte, a
   multibyte character cut short) is still a body that is not JSON and stops the campaign on the base
   adapter and the MCP JSON body, while over an MCP SSE stream it reads as U+FFFD and on an MCP stdio
   line the line is skipped and the call times out; the walks visit the whole parsed reply: on 4 MiB
@@ -213,6 +263,22 @@ reads as U+FFFD, since httpx decodes the stream as text.
 - **OD-1** (ADR-0005 Accepted): Anthropic logprob availability/shape: if the provider exposes no
   usable per-token logprobs in MVP-1, `anthropic.py` reports `logprobs=False` and returns `None`;
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
+- **OD-24** (open, built reversibly 2026-10-07, A-39): what a logprob block with one figure no
+  model produces reads as. Built: when the figure is a token's own, the whole block is `None`, as
+  if the reply carried none, so nothing is scored from it; when it is an alternative's, only that
+  token's alternatives are dropped (no alternative is scored). The other choice for a token
+  figure, dropping only the bad entries as a null one is dropped, scores the rest as if it were
+  the reply: four confident tokens with one positive figure among them then read "likely
+  memorized". Also decided here, and the owner's to confirm: a positive figure counts as
+  impossible (`log p` is never above 0, and a gateway that writes probabilities into the field
+  is caught). Not measured: whether a provider sends rounding-level positive figures (`2e-07`);
+  if one does in a token's own figure, its membership spec is inconclusive, with nothing in the
+  evidence saying why (in an alternative it costs only that token's alternatives). Also the
+  owner's: an entry that is not an object (a list such as `["a", 0.9]`, a string, a number) or
+  that carries no figure is skipped and the rest is scored, as before this change, though the
+  whole-block reasoning applies to it too (pre-merge audit). Open: whether the evidence should
+  say a block was unreadable rather than absent, which needs an additive field on
+  `ModelResponse` (u00).
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default
   in MVP-1 to shrink the secret-leak surface: needs sign-off.
 - **OD-21** (open, 2026-10-07): a 200 whose body is not JSON (brackets that do not balance
@@ -248,8 +314,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   space does today, so a leak split that way is missed by `regex_absence` (inconclusive, exit 0) and
   a canary by `secret_leakage` (`SP-LEAK-001` passes when a judge says secure, where refusing the
   reply would have left it inconclusive), left as its own task for the evaluators; a registered
-  credential split that way is masked once PR #57 (open on 2026-10-09) reads U+FFFD as a splitter,
-  which the owner approved for whichever of the two lands second. Not built: an evidence field
+  credential split that way is masked whole, since PR #57 reads U+FFFD as a splitter (u01 A-32), as
+  the owner approved for whichever of the two landed second. Not built: an evidence field
   saying a reply was altered (an additive `ModelResponse` field, u00); U+FFFD is the mark.
 - **OD-34** (open, 2026-10-07, PR #87; it numbered these four OD-30 to OD-33, which `main` and
   PR #88 had taken, and they were renumbered on 2026-10-09): a WebSocket target's frame

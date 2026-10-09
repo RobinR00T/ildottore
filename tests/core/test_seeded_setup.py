@@ -541,6 +541,37 @@ async def test_a_resumed_spec_keeps_what_the_stored_run_sent(fixtures) -> None:
     assert resumed.findings[0].attempts == first.findings[0].attempts
 
 
+async def test_a_gated_prior_whose_reply_was_not_judged_is_not_scored(fixtures) -> None:
+    """A reply stored without a verdict (a ceiling stopped its evaluation) is not a finished
+    attempt: the gate keeps it as evidence instead of scoring the spec over no verdict."""
+
+    adapter = Recording()
+    first = await _run("PI-INDIRECT-TOOL-001", adapter, _target(SeededSetup(specs=["*"])), fixtures)
+    stored = first.findings[0]
+    unjudged = stored.model_copy(
+        update={"attempts": [a.model_copy(update={"verdict": None}) for a in stored.attempts]}
+    )
+    evaluators, mutators, scorer, (evidence, runs) = fixtures
+    runner = CampaignRunner(
+        policy=AllowAllPolicy(),
+        mutators=mutators,
+        evaluators=evaluators,
+        scorer=scorer,
+        evidence_store=evidence,
+        run_store=runs,
+        adapter_factory=lambda _t, _s: adapter,
+        endpoint_for=lambda _t, _s: "https://app.example.test/v1/chat",
+        n=1,
+        sleep=no_sleep,
+        now=lambda: 0.0,
+    )
+    spec = _spec("PI-INDIRECT-TOOL-001").model_copy(update={"mutations": ["identity"]})
+    prior = first.run.model_copy(update={"findings": [unjudged]})
+    resumed = await runner.run(run_id="r1", target=_target(), specs=[spec], resume_from=prior)
+    reasoning = resumed.findings[0].reasoning or ""
+    assert "had sent 1 of 1 attempts" in reasoning and "not scored" in reasoning
+
+
 def test_the_discovery_plan_counts_what_is_not_seeded(tmp_path: Path) -> None:
     result = _cli(
         "run",

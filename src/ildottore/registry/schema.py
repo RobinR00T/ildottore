@@ -225,7 +225,11 @@ def _format_error(err: ValidationError) -> str:
     reason are what an author needs, and a large value repeated per error was the amplifier.
     """
 
-    location = "/".join(str(p) for p in err.absolute_path) or "<root>"
+    # A key that is not printable is written as `repr`: a newline in one under
+    # `step_arg_patterns` forged a second finding line and an escape sequence went out raw. A lone
+    # surrogate there, a traceback before A-40 too, is closed on main by A-54 (#89), which reports
+    # it before the schema runs (pre-merge audit of #90).
+    location = path_text(tuple(err.absolute_path))
     return f"{location}: {_cut(err.message)}"
 
 
@@ -293,8 +297,9 @@ def _key_message(path: tuple[object, ...], key: object) -> str:
     A key on the path is a string from the spec, and this check prints keys of free-form objects
     that no message printed before, so one holding a character that is not printable (an escape
     sequence, a newline that would start a line of its own, a bidi control) is written as its
-    ``repr`` (pre-commit audit of A-44). The spec id and the JSON-schema paths of
-    :func:`_format_error` are printed as written, as before.
+    ``repr`` (pre-commit audit of A-44). A-40's paths and the JSON-schema locations of
+    :func:`_format_error` now write such a key as its ``repr`` too (#90); a spec id UTF-8 can
+    encode is still printed as written.
     """
 
     location = _cut(

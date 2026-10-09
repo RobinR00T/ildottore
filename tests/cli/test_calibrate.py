@@ -56,14 +56,14 @@ def test_calibrate_reports_from_disk(tmp_path: Path) -> None:
     report = tmp_path / "report.json"
     report.write_text(
         '{"findings": ['
-        '{"spec_id": "A", "target_id": "t", "status": "fail",'
+        '{"spec_id": "PI-A-001", "target_id": "t", "status": "fail",'
         ' "risk": {"impact": 3, "exploitability": 3, "reproducibility": 1.0, "risk": 9.0,'
         ' "confidence": 0.9, "band": "high"}, "confirmed": true, "attempts": [], "evidence": [],'
         ' "reasoning": "x"}]}',
         encoding="utf-8",
     )
     labels = tmp_path / "labels.yaml"
-    labels.write_text("A: fail\n", encoding="utf-8")
+    labels.write_text("PI-A-001: fail\n", encoding="utf-8")
     r = calibrate_reports(report, labels)
     assert r.tp == 1 and r.scored == 1
     assert "agreement 100%" in render_calibration(r)

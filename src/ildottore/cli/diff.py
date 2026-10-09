@@ -15,14 +15,18 @@ small pure helper (dict-in, dataclass-out, no I/O) so it is unit-testable withou
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ValidationError
+
+from ildottore.shared.config_errors import validation_problems
 from ildottore.shared.digits import described
 from ildottore.shared.enums import VerdictStatus
-from ildottore.shared.models import Finding
+from ildottore.shared.models import SPEC_ID_PATTERN, Finding
 
 __all__ = [
     "DriftClass",
@@ -90,11 +94,10 @@ def _read_report(path: Path) -> Any:
     two files it was about either.
     """
 
-    # Absolute and never followed by a colon: the CLI keeps an existing absolute path readable,
-    # and a relative path, or one with a colon after it, is not one, so a report named after a
-    # commit SHA had its name masked as a high-entropy value (pre-commit and delta audits). Not
-    # escaped here: an escaped name is no longer a path on disk, so the CLI masked it too.
-    # Control characters are escaped for every message on the terminal once #51 is in.
+    # Absolute, so the line says which file whatever the working directory (since A-38 the CLI
+    # keeps an existing path readable, a relative one only as a whole word). Not escaped here: an
+    # escaped name is no longer a path on disk, so the CLI masked it as a high-entropy value.
+    # Control characters are written out for every message on the terminal (`_masked`, #51).
     shown = path.absolute()
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -134,6 +137,32 @@ def incomplete_reason(path: Path) -> str | None:
     return f"{state}: {reason}" if isinstance(reason, str) and reason else state
 
 
+_SPEC_ID = re.compile(SPEC_ID_PATTERN)
+
+
+class _LocatedFinding(BaseModel):
+    """One finding keyed by its index in the report, so an error reads ``findings.<index>...``."""
+
+    findings: dict[int, Finding]
+
+
+def _validate_finding(path: Path, index: int, raw: object) -> Finding:
+    """The report's finding at ``index``, or a one-line refusal that never quotes its value.
+
+    pydantic's own text spread over several lines, quoted the report's value and did not say which
+    of the two files it was in (A-49). One finding at a time, as before, stopping at the first that
+    fails: validating them all together built every error of every finding to list 20 (1,116 MiB
+    against 135 MiB on a 12 MB report, pre-commit audit). The path is written as `_read_report`
+    writes it: absolute, with no colon after it.
+    """
+
+    try:
+        return _LocatedFinding.model_validate({"findings": {index: raw}}).findings[index]
+    except ValidationError as exc:
+        problems = validation_problems(exc, limit=20)  # the spec loader's figure
+        raise ValueError(f"the report {path.absolute()} failed validation: {problems}") from exc
+
+
 def load_findings(path: Path) -> dict[str, Finding]:
     """Load a JSON run report and index its findings by spec id, for ONE target.
 
@@ -151,7 +180,17 @@ def load_findings(path: Path) -> dict[str, Finding]:
     raw_findings = data["findings"] if isinstance(data, dict) else data
     if not isinstance(raw_findings, list):
         raise ValueError(f"{path}: expected a JSON run report or a list of findings")
-    findings = [Finding.model_validate(raw) for raw in raw_findings]
+    findings = [_validate_finding(path, index, raw) for index, raw in enumerate(raw_findings)]
+    # Every row of `dottore diff` starts with a spec id, so a report holding `::error ...` there
+    # printed a line a CI runner reads as a workflow command, control characters or not
+    # (pre-commit audit of the control-characters block). A report this tool wrote holds spec
+    # ids only, which the spec schema shapes.
+    for finding in findings:
+        if not _SPEC_ID.fullmatch(finding.spec_id):
+            raise ValueError(
+                f"the report {path.absolute()} holds {finding.spec_id!r}, which is not a spec id; "
+                "is this a run report?"
+            )
     targets = sorted({f.target_id for f in findings})
     if len(targets) > 1:
         raise ValueError(

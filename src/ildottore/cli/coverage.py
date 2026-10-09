@@ -32,6 +32,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ildottore.cli import wiring
+from ildottore.redactor import visible_controls
 from ildottore.reporting.summary import (
     AxisCoverage,
     BatteryCoverage,
@@ -153,8 +154,11 @@ def _off_universe_lines(coverage: BatteryCoverage) -> list[str]:
         "pinned universe or contradicting its classification (run `dottore lint` to refuse "
         "them):",
     ]
+    # `repr` writes a control character out, not a log command: a tactic `##[warning]x` raised
+    # an annotation on a GitHub runner (`visible_controls`).
     lines.extend(
-        f"    {spec_id}  {field} = {value!r}" for spec_id, field, value in coverage.off_universe
+        f"    {spec_id}  {field} = {visible_controls(repr(value))}"
+        for spec_id, field, value in coverage.off_universe
     )
     return lines
 
@@ -169,7 +173,13 @@ def _unloaded_lines(coverage: BatteryCoverage) -> list[str]:
         f"  WARNING: {len(coverage.unloaded)} spec file(s) failed to load and are NOT counted "
         "(run `dottore lint` for the full reason):",
     ]
-    lines.extend(f"    {path}  {message[:100]}" for path, message in coverage.unloaded)
+    # One bullet per file, its name and message written out: a line began with the file name,
+    # so one named `::error ...` (no control character needed) or `x\n::error ...` started a
+    # line a GitHub Actions runner reads as a workflow command (pre-merge audit of PR #49).
+    lines.extend(
+        f"    - {visible_controls(path)}  {visible_controls(message[:100])}"
+        for path, message in coverage.unloaded
+    )
     return lines
 
 

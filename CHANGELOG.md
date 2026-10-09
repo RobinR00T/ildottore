@@ -134,6 +134,890 @@ versioning: [SemVer](https://semver.org/).
   four debited sends, no query): one helper now classifies a close on both paths, with 6 more
   tests, 4 of which fail on `dceb587` (the other 2 pin that 1011 and 1001 are still retried).
 
+### Fixed (a CLI error names the operator's file, and `diff` masks a report's reason)
+
+- **An existing file in a CLI error keeps its name wherever the message writes it.** `_masked`
+  (cli/app.py) kept out of the entropy rule only the part of an absolute path that exists, read up
+  to the first whitespace, a quote, a bracket, a comma or a semicolon. A report named after a commit
+  SHA (`report-9f86d081...e2.json`) read `«REDACTED:high_entropy:...».json` when the message wrote
+  it before a colon (`invalid YAML in scope file <path>: ...`, the signature pack loader, `labels
+  file <path>: ...`, `<path>: expected a JSON run report ...`), when it was relative, and when a
+  directory on the way held a space or one of `()[],;'"`. A path that exists, written whole, is now
+  kept as well: read directory by directory, so a directory with a space or a bracket is read whole;
+  its last name the longest that exists and followed by no character the entropy rule joins into a
+  token, so a `:` or `.` after it is the message's; absolute, or relative to the working directory
+  as one word.
+- **The rest of the message is read as on main, by construction.** A whole path starts and ends
+  between characters the entropy rule does not join into a token, so every other token is judged
+  exactly as on main. Main's rule makes main's calls (`Path.exists`, which on Python 3.11 and 3.12
+  raises on a name too long or a directory that cannot be read, and main then kept nothing;
+  `os.path.exists` went on to the parent and printed a key) and has no cost cap (stopped past 1,024
+  lookups, it kept nothing where main kept `/usr`, and the rest of the token, judged with it,
+  printed a value main masked). Four versions of this fix kept more or stopped earlier (the existing
+  directories of a missing path through a space, a `//` or a `/./`, the name an `OSError` quotes
+  when it looked like a file's, main's rule past a cap) and each printed keys that main masked: an
+  `sk-ant-` key given as `<key>.json`, an Azure connection string, a key after `<dir with space>/`
+  or `/./` (pre-commit, delta, pre-merge and two later audits). A differential fuzz of 120,000
+  messages against main finds no key printed that main masked (on 3.14; the audit of the previous
+  commit ran it on 3.12 too, and the later audits found none in 47,000 more messages with other
+  shapes); the earlier versions printed about 120 in every 20,000.
+- **A kept text holding 8 consecutive characters of a registered credential prints as
+  `«REDACTED:credential»`** (`redactor.known_secret_parts`, `holds_known_secret_part`), as main
+  masks a kept token since the spec file names (#49): judged on its own when main's rule kept it
+  (main asked only whether it was inside the key or held it whole, and printed `<dir>/<16
+  characters of the key>.json` followed by a space), and not kept at all when only the whole-path
+  rule would have. Two kept parts that only touch stay two parts, as on main: merged, a
+  digest glued to a long kept path was diluted below the threshold. The `/` before a masked name is
+  printed (`<dir>/«REDACTED...».json`): the mask used to take it, which read as a sibling of the
+  directory.
+- **A file that does not exist keeps no name** (OD-25, open): main's rule still prints the existing
+  directories of an absolute path, up to the first whitespace, a quote, a bracket, a comma or a
+  semicolon. Keeping the name an `OSError` carries when it looked like a file's (an extension, a
+  directory that exists) printed an `sk-ant-` key given as `<key>.json`, an `sk-proj-` key as
+  `<key>.yaml` and an Azure connection string, which ends in `.windows.net`, all of which main
+  masked, and was withdrawn before commit.
+- **The cost is main's or less, and what this adds is capped.** Main's rule makes main's lookups and
+  holds nothing between tokens (holding every path it asked took 1.3 GiB for a 1 MiB message where
+  main took 21 MiB, final audit); a token written again is walked once and its parents are built as
+  they are reached. 256 copies of a token of `/a` written 2,047 times (a target's transport error
+  quoted in a halted report's reason, which `calibrate` prints) cost 2,048 lookups, 0.4 s of CPU and
+  4 MiB where main made 524,032 and took 4.7 s and 23 MiB; 255 distinct tokens of 2,046 directories
+  cost main's lookups (and 255 of the whole-path walk), 3.7 s and 2 MiB where main took 4.7 s and 21
+  MiB (3.14, on a quiet machine). The whole-path walk adds at most 1,024 lookups and 65,536 checks
+  (a cached answer is a check, and a walk in progress refuses at most one name's 255 candidates
+  more); past either it keeps nothing more, which costs readability only. One start tries at most
+  255 candidates for a name (NAME_MAX), no walk starts inside what another already read
+  (`/./././...//` cost the square of its length), and the registered credentials are checked through
+  one set built per error (a check per kept path and per part cost 55 s on a 1 MiB error with a
+  2,000-character credential). A relative word with no run of 16 characters the entropy rule could
+  mask is not looked up.
+- **`dottore diff` masks an incomplete report's reason, as `calibrate` does.** The refusal printed
+  `summary.status.reason`, which quotes a target's transport error, without the redactor: a key or a
+  high-entropy token in it printed in clear while `calibrate` masked the same text. It is now a
+  `ValueError` printed through `_masked`, with the same text and exit 3. A newline in the reason
+  printed two lines until PR #51, which landed just before this one and writes control characters
+  out inside `_masked` (a newline as `␊`).
+- Not covered, as on main: a missing file under a directory whose name holds a space or one of
+  `()[],;'"` keeps its directories only up to that character, what follows the existing part of a
+  missing path is judged from its `/` on, a key glued before an existing absolute path by `+`, `=`
+  or `-` is judged alone, main's rule makes main's lookups for many distinct deep tokens, and a
+  failure inside the masking itself (out of memory) prints the original error unmasked in the
+  traceback. Also not covered: a whole path right after `]`, `:`, `@`, `=`, `+` or `-`, a relative
+  path with a space, a name holding a newline, the name of a file that does not exist. The `diff`
+  table prints a report's spec ids as they are (on main too; PR #51 refuses one that is not a spec
+  id).
+- Tests: `tests/cli/test_masked_paths.py` (CliRunner; SHA-named files, absolute and relative,
+  existing and missing, in directories named with a space, parentheses, brackets, a comma, a
+  semicolon and quotes, and every key and credential part the audits printed). Each guard was
+  removed in turn and a test failed every time (26 mutants), a cache across tokens included (by peak
+  memory); the lazy parents of main's rule save CPU that no count shows, and are measured, not
+  tested.
+
+### Fixed (CI log commands in the middle of a line)
+
+- **Left open by PR #51, pre-existing on main (`d19b221`, and `4aa6cef`), and confirmed with the
+  runners' own code:** a GitHub Actions runner reads the legacy `##[<command>]` form anywhere in a
+  line of a step's output, not only at its start, so a third-party pack still reached the log with
+  a command after PR #51. A spec file named `x ##[error file=a.py,line=1]pwned.yaml` reached the
+  error of `dottore run` (stderr) and the unloaded list of `dottore coverage` (stdout); a spec named
+  `Direct ##[add-mask]FAIL` the end of a line of `registry ls` and `describe`; a framework value
+  `##[warning]x` the off-universe warning of `coverage` and of the run's summary.
+- **How it was verified (2026-10-07, not on a hosted runner):** what `dottore` printed, from main,
+  from PR #51 and from this branch (17 outputs each), was fed line by line to the runner's own
+  `OutputManager` with its real `ActionCommandManager` (actions/runner `67f01c2`, v2.338.0, as a
+  scratch L0 test in its test project, .NET SDK 8.0.425). Every line with `##[` in it was taken
+  as a command, on main and on PR #51: `error` and `warning` annotations, with the `file` the
+  name gave; `add-mask`, after which the log printed `... FAIL (high)` as `... *** (high)`; and
+  `set-output`, which set the step output `verdict=clean`. On main `rich` read the `[warning]`
+  of the summary line as markup and dropped it; PR #51 prints that line plain, so on its branch
+  that line reached the log too. From this branch, no line was taken as a command. Captured
+  again after PR #51 was reworked (`796c07c`, on `4aa6cef`): 11 of its 18 outputs, the `-vv`
+  plan included, still carried a command for the GitHub runner and 5 for the Azure parser; this
+  branch on top of it, none.
+- **`visible_controls` writes the second `#` of `##<letters>[` as `\x23`:** `##[error]` prints
+  as `#\x23[error]`, `##vso[task.setvariable ...]` as `#\x23vso[task.setvariable ...]`. Every
+  terminal path that writes control characters out (errors through `_masked`,
+  `Redactor.for_terminal`, the text output of `lint`, `coverage`, `registry ls`, `describe`,
+  `diff`, `calibrate` and `replay`) does it too, after the redactor, and so do the two lines that
+  printed a pack's value as its `repr` (the off-universe values of `coverage` and of the run's
+  summary), which escapes control characters and not this, the reasons the `-vv` plan of
+  `dottore run` gives for a refused spec, which quote a pack's `requires_policy` values the same
+  way (and, defensively, those for a skipped one, which are fixed text today, and since
+  the merge with main those for a spec not seeded, OD-18 B), and the scope digests the
+  resume note quotes from the run store, which keeps any string there (an edited
+  or restored store printed `##[error]...`, or a newline and `::error`, found by the delta
+  audit). The result is its own fixed point; text without `##<letters>[` is written
+  out exactly as PR #51 wrote it.
+- **The `-vv` plan was found by the pre-commit audit**, after the first capture: from a spec
+  whose `requires_policy` held `x ##[error file=src/app.py,line=1,title=Il Dottore]...`,
+  `##[set-output name=verdict]clean` or `##[add-mask]FAIL`, the runner raised the annotation (its
+  `file`, `line` and `title` as written), set the output and added the mask, and the Azure parser
+  took `##vso[task.setvariable variable=DOTTORE_GATE]pass`; the command's data ends with the rest
+  of the line (`'] not enabled by pack 'cli-default'`). The default policy pack enables no
+  capability, so any such spec is refused and listed. From this branch, nothing.
+- **Azure Pipelines' `##vso[`: written out too.** The agent's parser (`Command.TryParse`,
+  microsoft/azure-pipelines-agent `59c86a8`) looks for `##vso[` with an ordinal `IndexOf`
+  anywhere in a line; its own test parses `>>>   ##vso[area.event k1=v1;]msg`. Run the same way
+  (a scratch L0 test in its test project, on net8.0, through `Command.TryParse` alone, not the
+  agent's command manager): the lines of main and of PR #51 gave `task.logissue type=error` and
+  `task.setvariable variable=DOTTORE_GATE` with the data `pass`; this branch's gave none.
+- The GitHub runner's prefix match is culture-sensitive, and ICU ignores a zero-width character:
+  `"#\u200B#[".IndexOf("##[")` is 0 (ordinal: -1). The runner then reads the command name 3
+  characters after the match start, the first `#`, which lands on `[`: with one of 18 such
+  characters between the two `#` or between `#` and `[`, nothing parsed, in 3 cultures. Placed
+  before `##[` it parsed, because the prefix is raw (the rule writes that one out); right after
+  it, the name matched no command; `#\x23[` parsed in no case. Only a raw `##[` is a
+  command, which is what the rule writes out.
+- Not changed, and not covered:
+  - the JSON outputs keep every value as it is (`lint --json`, `coverage --json`,
+    `fingerprint`, the reports). Printed to a CI log, a line such as
+    `"path": "attacks/x ##[error ...]pwned.yaml",` is still a command (run through the runner
+    the same way: 2 lines each from `lint --json` and `coverage --json`). Whether to escape the
+    `[` there as `\u005b`, which leaves every parsed value identical, is OD-20;
+  - other log syntaxes of the same shape (TeamCity's `##teamcity[`) are written out by the same
+    rule, and were not checked against their readers;
+  - what PR #51 left open besides this (see its entry below) is unchanged.
+- Test: `tests/test_terminal_log_commands.py` (40 cases: the rule on its own, a property test
+  over `#`, `[`, letters, backslashes, controls and U+200B, any other text (lone surrogates
+  included) written out as before, `run`, `coverage`, `lint`, `registry ls`, `describe`, the
+  run's summary, the `-vv` plan, the resume note, `_masked` and the "did not complete" line, and
+  the JSON outputs left as they are). Against PR #51's code 26 of them fail;
+  the 14 that pass are the texts the rule must leave alone, a control between the two `#`, the
+  property on text without a prefix, and the JSON pins.
+
+### Fixed (control characters on the terminal)
+
+- **Pre-existing on main (`d54097c`, and `d19b221`), found by the pre-merge audit of PR #49 and
+  reproduced:** every CLI error goes through `cli/app._masked`, which redacted secrets and left
+  control characters as they were. A spec file whose name holds a newline (a third-party pack
+  author chooses file names, `docs/02` §4) made `dottore run` print on stderr
+  `... failed to load ...: attacks/x` and, on a line of its own,
+  `::error title=pwned::injected.yaml: ...`, which a GitHub Actions runner reads as a workflow
+  command. `_masked` now writes every control character out, after the redactor
+  (`visible_controls`): a C0 control and DEL as their control pictures (a newline as `␊`, ESC as
+  `␛`, DEL as `␡`, as the redactor already wrote `␀` and `␁`), and a C1 control, U+2028, U+2029
+  and a lone surrogate, which have no picture, as the escape Python writes (`\x85`, `\u2028`,
+  `\udc9b`). A lone surrogate is how an undecodable byte of a Linux file name arrives: a
+  `surrogateescape` stream wrote it back raw (a C1 control for 0x80 to 0x9f), a strict one could
+  not encode it.
+- **A registered credential split by control characters is masked whole on the terminal.** The
+  redactor finds one by value, so split by a newline it was printed in two readable halves (split
+  by `\x00` or `\x01` it was masked, because the redactor drops its stash delimiters first).
+  This branch first masked it in a match of its own for the terminal
+  (`Redactor.mask_split_credentials`); PR #57, which lands just before it, moved the match into
+  `redact_text` (u01 A-32), so the merge dropped this branch's copy and the terminal masks such a
+  credential as the reports do: the stretch it covers gets the mask the credential gets in one
+  piece, digest included, every occurrence, overlapping credentials as one. The credential is
+  matched before the key patterns, so a key pattern cannot take a split key's head and leave its
+  tail, and the escaping runs after the redactor, so a key right after a C1 control keeps the word
+  boundary its pattern needs. Split by printable characters (a space, or the `[0m` of an escape
+  sequence) a credential is still kept, as before.
+- **Format characters are written out too (decided by the owner on 2026-10-07).** A terminal
+  shows almost no character of Unicode category Cf (13 prepended concatenation marks, such as
+  U+0600, have a glyph): a bidi control (U+202A to U+202E, U+2066 to U+2069)
+  reorders what is read (Trojan Source, CVE-2021-42574), a zero-width space, a joiner or a soft
+  hyphen is invisible, and the tag characters (U+E0001, U+E0020 to U+E007F) carry invisible
+  ASCII. `visible_controls` writes every one of them (the 170 of Unicode 16.0, pinned so the
+  output does not depend on the Python's Unicode version) as the escape Python writes (`\u200b`,
+  `\xad`, `\U000e0041`), and the redactor ignores them as it ignores the controls when it
+  matches a registered credential (A-32): written out, a credential split by one would print as
+  two halves around the escape. U+FFFD, which the redactor's match also ignores, shows, so it is
+  printed as it is. The cost:
+  an emoji written with a zero-width joiner, a right-to-left mark in Arabic or Hebrew text or a
+  soft hyphen shows its escape in every line this fix writes out (errors, warnings, `describe`,
+  `registry ls`, `lint`, `coverage`), and an existing path holding one, which `_masked` keeps
+  unredacted, no longer reads as the file's name.
+- **A lone surrogate in a labelled value or a PEM body no longer crashes the masking** (on main
+  too). The mask's digest encoded the value strictly, so `token=AAAAAAAA` followed by an
+  undecodable byte raised `UnicodeEncodeError` inside `_masked`, and the CLI printed the error it
+  was masking as a traceback, `::error` line and credential included. The digest now encodes with
+  `surrogatepass`, which leaves every other value's digest as it was.
+- The same text reached the terminal raw on paths that bypass `_masked`, now written out the same
+  way (`visible_controls`, or `Redactor.for_terminal` where the text is redacted): the text output
+  of `dottore lint` (a pack's file names and the values its messages quote) and of
+  `dottore coverage` (the files that failed to load and why), a spec's name in `registry ls` (the
+  tabs between columns stay tabs) and every field of `describe`, a missing `--spec-path` in the
+  registry warning, a halted report's reason in `dottore diff`, a labels file's
+  spec ids in `dottore calibrate`, the attempt and probe lines of `dottore replay` (a probe's
+  stored transport error) and its warning, the spend warning and the "run on <target> did not
+  complete" line, which quotes a target's error; and, since this branch merged main, the canaries
+  `run --dry-run -vv` lists to seed (`seed:` lines, OD-18 B, #58), a spec's text.
+- **Merged with main (`a40e596`).** Every error main added since `4aa6cef` goes through `_masked`,
+  and its new `-sV` resume notice quotes the target id with `repr`, so none prints a raw control
+  character. A refusal that names an operator's id whole (A-51: the id in front of the authorization
+  refusal and the ids the scope authorizes, at most 128 characters since A-57) now writes a format
+  character in it out, up to ten characters each: `tests/cli/test_operator_file_quoted_values.py`
+  expects the id written out, bounds the line at 5,000 characters (2,500 before; two ids of 128 tag
+  characters take 1,280 each) and looks for an id quoted whole by its `repr` with the opening quote.
+- **`dottore diff` and `dottore calibrate` refuse a report whose `spec_id` is not a spec id** (the
+  schema's `^[A-Z]+(-[A-Z0-9]+)+$`, exit 3). Every row of `diff` starts with one, so a crafted
+  report holding `::error ...` there printed a workflow command with no control character at all;
+  a report this tool wrote holds no other.
+- **`describe` prints each field on one line.** A description with a paragraph break printed its
+  next paragraph at the start of a line, which a pack author controls; three shipped specs have
+  one (AG-CODEEXEC-UNEXPECTED-001, DOS-RESOURCE-HIJACK-001, RECON-MODEL-IDENTITY-001) and now
+  show it as `␊`.
+- **`dottore coverage` lists each file that failed to load as a bullet**
+  (`    - <path>  <message>`). The line began with the file name, so a file named `::error ...`
+  started a line a runner trims and reads as a command, with no control character at all.
+- **The run's error lines and its coverage block are printed as plain, unwrapped text.** `rich`
+  wrapped them at 80 columns in a CI log, where a target's error could place `::error` at the start
+  of the wrapped line, read `[/]` in it as markup (`MarkupError` on the "did not complete" line,
+  which comes before the reports are written) and `:warning:` as an emoji. The "no --judge"
+  warning goes through the same printer, so it is on one line now on every live run, dry run or
+  estimate without `--judge`, and it writes the target id it names out.
+- **`--compare` prints a target id as text** (on main too): `[/]` in one raised `MarkupError` in
+  the comparison table and the run wrote no report; `:warning:` became an emoji.
+- **stdout and stderr write a character their encoding lacks as its escape** (`backslashreplace`)
+  instead of failing. A control picture is not in cp1252 (a Windows pipe), so `registry ls` and
+  `describe` would exit 1 with nothing printed; main failed the same way on any character cp1252
+  lacks (a CJK spec name), and on an ASCII stdout a full run exited 3 on the `·` of its coverage
+  line. stderr did this already. Each stream gets its own setting back when the command ends, for
+  a caller that runs the app in-process.
+- **`fingerprint` prints its JSON in ASCII.** pydantic left DEL, a C1 control, U+2028 and U+2029
+  raw in a string of the fingerprint (the operator's target id, a signature pack's names), and on a
+  cp1252 stdout the stream's own escapes (`\x81`) made the output invalid JSON with exit 0. DEL and
+  every character outside ASCII are now JSON escapes inside pydantic's own output (`json.dumps`
+  would have written `1e-07` for its `1e-7` and `NaN` for its `null`), so an ASCII fingerprint is
+  byte-identical to before; a lone surrogate, which pydantic cannot write as JSON, falls back to
+  `json.dumps` instead of a traceback. Every JSON output now escapes every control character
+  (`lint --json`, `coverage --json` and `schema export` already did).
+- **A run id or an evidence digest with a trailing newline is refused**
+  (`store/paths.validate_run_id` and `validate_sha256` used `match`, whose `$` let it through, so
+  `replay` printed such a run id on two lines).
+- Not changed, and not covered by this fix:
+  - a GitHub Actions runner also reads the legacy `##[error]...` form **anywhere in a line**
+    (`ActionCommand.TryParse` in the runner's source, read and not run on a runner), so a pack
+    file named `x ##[error]...` still reaches a log line; neither the CLI nor this fix
+    neutralises it (written out since, see the entry above);
+  - the operator's own values in the run's plan lines (target ids and model names under
+    `--dry-run`, `--estimate` and `-sn`);
+  - invisible characters outside Cf: the variation selectors (U+FE00 to U+FE0F, U+E0100 to
+    U+E01EF), U+034F and U+3164 print raw, so a credential split by one still reads whole;
+  - the text glued to a split credential: masked whole, the key no longer forms one high-entropy
+    token with what is glued to its first half, so that text prints where main masked it together
+    with the first half (and printed the second half); main prints the same for the key in one
+    piece;
+  - a `replay` line starts with an attempt id or a probe id read from the evidence tree, so a
+    forged tree can still start one.
+- Test: `tests/test_terminal_control_chars.py` (229 cases: every control character and a format
+  character of each kind through `_masked` and `visible_controls`, every format character of the
+  running Python, a credential split by each class, every occurrence, overlapping and periodic
+  credentials, a lone surrogate after a label, `run`, `lint`, `coverage`, `registry ls`,
+  `describe`, `diff`, `calibrate`, `replay` and `fingerprint` (a lone surrogate included) through
+  the CLI, a cp1252 stdout, the `rich` lines, the "no --judge" warning, the `--compare` table and,
+  since the merge with main, the `seed:` line of `--dry-run -vv`).
+  Against main's code 224 of them fail; the 5 that pass are the two stash delimiters, which the
+  redactor already wrote out, a credential split by either, which it already masked, and the
+  streams keeping their setting, which main never changes. `tests/cli/test_calibrate.py` gives its
+  report a spec id (`A` was none).
+
+### Fixed (a registered credential split by characters that do not show)
+
+- **A credential the tool registered is masked whole when a control or a format character splits
+  it, wherever text is kept or printed.** The redactor finds a registered credential by its value,
+  so one split by a newline, a tab, a carriage return or another control character (C0, DEL, C1,
+  U+2028, U+2029, a lone surrogate), or by a format character (Unicode category Cf: the zero-width
+  space U+200B, the soft hyphen U+00AD, the word joiner U+2060, the byte order mark U+FEFF, the
+  bidi controls, the tag characters U+E0020 to U+E007F), was kept in two readable halves by
+  `redact_text`, which every report, the evidence store, the run store and the CLI's error masking
+  use: a target replying `echo <first half>\n<second half>` put both halves in the JSON report and
+  in the evidence. Split by `\x00` or `\x01` (the redactor's own stash delimiters, dropped first)
+  it was already masked. Found by the audit of PR #51; on main.
+- **How it matches:** in a text holding one of those characters, the match by value runs on the
+  text with them dropped, and the stretch from a credential's first character to its last, the
+  characters inside included, becomes the mask an unsplit occurrence gets, same digest; what lies
+  outside the stretch stays where it is. Overlapping occurrences, of one credential or of two, are
+  masked as one, named by the longest as it shows (its invisible characters and the whitespace at
+  its ends not counted), the first to start on a tie (the first to end if they start together), as
+  PR #51 and PR #56 name them (taking an unsplit short one first left 8 of a split long one's 12
+  characters readable). A credential registered with such a character inside it matches written
+  without it too, under the registered form's digest; whitespace or such a character at its ends
+  stays outside the mask and does not count toward the 8-character minimum, as at registration; one
+  shorter than that without them is matched only as written (every occurrence, overlapping ones
+  included, unless nothing of it shows), and masked together with any longer match it overlaps
+  (masked apart, either one left part of the other readable). A stretch written exactly as a
+  registered form gets that form's digest, as before; any other is named by the credential it
+  matched (the longest of its registered forms, the first by value among forms of one length,
+  whatever the hash seed). Two occurrences of a credential whose end repeats its start
+  (`hunter2hunter2`) written in a row are one mask: the second half of one and the first half of
+  the next, split by what lies between, are an occurrence too. One that repeats a piece more than
+  twice over (`ab12ab12ab12`, `aaaa...`) is matched without overlaps, as by value: following every
+  overlap cost a search of the whole credential per character (11 s on 4 MB for `a` written 1,000
+  times). The format characters are pinned to Unicode 16.0, so a mask does not depend on the
+  Python's Unicode version.
+- **U+FFFD splits a credential too** (u01 A-32). Since PR #79 (u04 A-47) half a character in a
+  reply (a lone surrogate) is read as U+FFFD where the reply is parsed, before the redactor sees
+  it, so the match drops U+FFFD as it drops a zero-width space: a credential split by half a
+  character, escaped or as raw bytes (a run of U+FFFD over an MCP SSE stream), or by a U+FFFD the
+  target wrote itself, is masked whole. Added in the merge with main once #79 was in: on the two
+  together without it, both halves were readable in the evidence and the JSON report, as #79's
+  merge notes reproduced.
+- **Visible changes in such text:** the stretch excludes those characters and whitespace at its
+  ends, so a stretch is named by the form it reads as once they are dropped when that form is
+  registered, and otherwise by the longest registered form that reduces to it. A key read with a
+  trailing CR (registered with and without it) is named by its stripped form, with the CR left
+  after the mask: written `KEY\r` it used to get a digest of its own, so one key carried two
+  digests. A key read from a file saved with a byte order mark is named by its form with the
+  mark, whether the text writes the mark or not, and the mark stays outside the mask.
+- **Text without such a character is redacted byte for byte as before**, unless a registered
+  credential itself holds one (then it is also found written without it: a key registered with a
+  leading byte order mark, which `strip()` keeps, was readable on main when echoed without it).
+  Differential fuzz against main, with ordinary credentials registered: 1,000,000 generated texts
+  without those characters and 1,000,000 with the stash delimiters, 0 differences; every text file
+  tracked at `d19b221`, whole and line by line (546 files, 79,091 texts, few holding a registered
+  credential, so this run shows mostly that other text is left alone), 0 differences. Over 150,000
+  generated texts with them (1,666 differences), every difference is a credential masked that main
+  kept readable, the trailing-CR key named by its stripped form, a repeating credential masked
+  once, or a crash of main (below); a registered credential readable once its invisible
+  characters are dropped in 46 of main's outputs and in none of this branch's. The cost is linear
+  in the text: on 1 MB of hostile text the extra memory is the copy without those characters (1
+  byte a character, more when the text holds wider characters), and with fifty thousand split
+  credentials masked, about what main spends masking as many unsplit ones (10 bytes a character);
+  the first, terminal-only version of this match (PR #51) took about 140 MB a megabyte before it
+  was fixed.
+- **A lone surrogate in a value the redactor hashes no longer crashes it** (`_digest` encodes
+  with `surrogatepass`, the change PR #51 makes, byte for byte): 1,118 of those 150,000 texts
+  raised `UnicodeEncodeError` on main, through a labelled value or a PEM body holding one. Text
+  without one is hashed exactly as before. A reply that holds one made the evidence store abort
+  the campaign (`store/paths.content_hash` encodes strictly), filed apart from this branch and
+  fixed on main by PR #79: the reply reads as U+FFFD where it is parsed (u04 A-47).
+- **A registered value holding `\x00` or `\x01` no longer breaks a stash token** (on main): the
+  text loses those characters before any rule runs, so a form keeping one matched only across a
+  stash token, which left a raw delimiter in the output, made a second pass differ and had the
+  evidence store refuse the reply. A form holding one is not registered (its escaped forms still
+  are), as PR #56 does: registered without them, a form crossed a URL's `@` and left the start of
+  the password readable.
+- **Known cases left open:** a credential split by a printable character (a space, a no-break
+  space, `␀`) or around a mask (as listed on 2026-10-06); a key the tool did not register
+  and only a shape rule recognises (`sk-...`, `AKIA...`, a JWT) split by such a character (each
+  half is masked only if the entropy rule takes it); invisible characters outside Cf (variation
+  selectors, the combining grapheme joiner U+034F, the Hangul fillers); a credential that repeats
+  a piece more than twice over, written overlapping itself, can leave its tail readable, as on
+  main. (Two registered credentials overlapping in text without such a character, or
+  one overlapping itself there, left a head or a tail readable on main; PR #56, which
+  lands just before this one, masks them as one run, u01 A-31.) A value registered
+  with such a character inside that matches only once it is dropped can take a URL's
+  `@` and leave the start of the URL password readable, as a value registered plainly
+  as `abc@host` does on main (handling that is the URL rule's, not this match's:
+  PR #56 tried and withdrew it). A value holding `\x00` or `\x01` is matched only through its
+  escaped forms, so written as it is, or without that character, it is read as any other text, as
+  on main. On the terminal the format characters themselves are written out like the control
+  characters (`visible_controls`), as the owner decided on 2026-10-07, since PR #51, which lands
+  right after this one, where the function lives.
+- **Found on the way, on main, filed apart:** the JSON report keeps a dict key a target wrote (a
+  tool-call argument name) raw, so a registered credential or an email written as one is
+  readable there; the HTML, SARIF and JUnit reports and the evidence store mask it.
+
+### Fixed (a URL password behind a registered user; masks that depended on the process)
+
+- **A URL password is masked behind a registered, masked or empty user.** A registered
+  credential as the user of a URL (`https://<it>:<password>@localhost:8080/v1`) was set aside
+  as a stash token before the URL rule ran, and the URL rule refused a user holding one, so the
+  password stayed readable in the reports, the evidence and on the terminal. A dotted host hid
+  it only because the email rule then took `<password>@<host>` as an address, host included. A
+  user the target wrote as a mask (`«REDACTED:email»`) left it readable the same way, and so did
+  no user at all (`redis://:<password>@localhost:6379/0`, the form Redis documents; found on
+  main by the pre-commit audit of this fix). The rule now reads a mask in the user or the
+  password and takes an empty user: a password that is one registered credential keeps its
+  `credential` mask, and any other is masked whole as `url_password`, so the rest of a password
+  holding a registered credential (`pre<it>post`) is no longer readable either. A credential is
+  one piece of the user or of the password whatever it holds (`ops:svc-key` as the user,
+  `P@ssw0rd!` in the password). The empty user widens an over-mask main already made with a
+  one-character user: `http://:8080?email=bob@example.com` read `?email=«REDACTED:email»` and now
+  reads `http://:«REDACTED:url_password»@example.com`, the email's domain readable.
+- **A mask no longer depends on the process or on the text before it.** The digest of a
+  `pem_private_key` mask was computed over the key with the stash tokens of the masks inside it,
+  whose numbers count the masks set aside before them and follow the order the registered
+  credentials were tried in. For two of one length that order was a set's, which changes with
+  `PYTHONHASHSEED`: with the salt pinned, six hash seeds of twelve gave one digest and six
+  another, and in one process the same key had another digest after a mask. A hashed mask now
+  digests what was written there, so a key's digest is the HMAC of the key as it appears in the
+  text, whatever is registered inside it, and a pinned `ILDOTTORE_REDACTION_SALT` correlates it
+  across runs as the manual says. The same holds for a hashed pattern the operator registers.
+  The key pattern bounds a key at 16 KB of the text as one pass reads it, where each mask inside
+  the key is a stash token whose length grows with the masks before it. So a key near the bound
+  may be masked as a key or not depending on the text before it, and one that a single pass
+  cannot take whole may be masked as a key on a later pass (digested over its text with the masks
+  inside it, not as written) or never, its contents then left to the other rules; on main too.
+  A real key is far under the bound (a 26 KB one of random base64 lines is still masked whole).
+- **Overlapping registered credentials are masked as one.** The same set order decided which of
+  two overlapping credentials was masked (`12345678ab87654321` with `12345678ab` and
+  `ab87654321` registered: seven seeds of twelve masked one, five the other), and the other's
+  tail stayed readable; a credential overlapping itself (`abababab` in `ababababab`) left its
+  last characters. Every occurrence is found now, overlapping ones make one run named after its
+  longest credential (the first of two of one length), and the credentials are tried longest
+  first, then by value.
+- **A registered credential holding a stash delimiter cannot break a stash token.** The
+  redactor drops `\x00` and `\x01` from the text before it reads it, but a credential kept them,
+  so one with `\x01` after a digit (or `\x00` before one) matched across a token's edge: a mask
+  was lost, a raw delimiter reached the output and the text was no fixed point, which the
+  evidence store refuses. A form holding one is not registered now (main registered it, but it
+  never matched the text as read, only across a stash token); its `repr` and JSON forms, as a
+  library quotes it, hold none and are. Such a credential written raw in a reply is not masked by
+  value, as on main (an `env://` key holding one is refused before any request). Found
+  on main by the pre-commit audit of this fix. Registering it without the delimiters instead,
+  as this fix first did, let it cross a URL's `@` (`pass\x01word@db` read as `password@db`) and
+  leave the first part of a password readable that main masked (pre-merge audit).
+- **Backed out before the merge:** a pass that joined a URL's password to a registered
+  credential crossing `://`, the `:` or the `@`. Each of its two versions opened holes the next
+  audit found (a password tail behind credentials holding `:` and `@`; then a labelled secret
+  after the URL swallowed into the mask, the host misreported and a quadratic shape), all from
+  reading the URL before knowing where the credentials are. That class stays open.
+- Cost, measured on a megabyte, best of three: clean text and URLs as on main (0.16 s where main
+  took 0.17 s, and 0.30 s where main took 0.28 s; URLs whose user is registered 0.29 s where main
+  took 0.25 s and left every password readable); a reply repeating a registered credential
+  55,000 times takes 0.26 s where main took 0.25 s (every occurrence is found, not only the ones
+  `str.replace` reached), and one credential overlapping itself all the way 0.05 s where main
+  took 0.28 s. Credentials that overlap themselves are found one occurrence at a time: sixteen
+  registered (`a` repeated 8 to 23 times) over a megabyte of `a` take 2.0 s where main took
+  0.10 s (leaving the last six characters readable), a case that needs a target knowing them.
+  Memory, on a 4 MiB reply repeating an 8-character registered credential: bare, the process
+  grows by 163 MB where main grew by 138 MB; inside key blocks, by 134 MB where main grew by
+  3 MB, since every occurrence is a run where `str.replace` made one token. The URL rule is
+  possessive: its first version here, an alternation without it, kept a frame per character and
+  grew the process by about 640 MB on a 4 MB reply; it grows by nothing now.
+- Found by the pre-commit audit of `fix/cli-control-chars` (PR #51), with differential fuzzing
+  against main `d19b221`. Tests: `tests/test_redactor_url_password_and_digests.py` (twelve hash
+  seeds in subprocesses, digests checked against an HMAC computed in the test, the evidence
+  store's leak guard, a Hypothesis property over URL shapes, the URL rule's memory measured in a
+  subprocess); 24 mutants of the fix, each caught. Docs: `docs/02` (S6), the u01 contract (A-31)
+  and the contract index, the manual, the playbook. Left open: a registered credential across a
+  URL's `://`, `:` or `@` breaks the URL rule. It stops it and leaves the rest of the password
+  readable, as on main (`password@db` registered, in `redis://u:<password>password@db`); or,
+  across the `@`, it lets the rule read on to a later `@`, so a labelled value after the URL
+  loses its tail where main masked it (`Adm1n@2026` registered, in
+  `redis://ops:Adm1n@2026-db.internal:6379,password=Secr3t@Value99xyz`); and two overlapping
+  credentials, masked as one run, can cover a separator that main's one-at-a-time replacement
+  left, so a password main masked stays readable while main left part of the second credential
+  readable instead (`key-ABCD1234` and `1234://bob`). Each needs a target writing a registered
+  credential that holds a URL separator. The last two are regressions against the
+  redactor before this change, which the owner accepted for the merge (2026-10-09);
+  a follow-up issue tracks them. Also open, on main too: a raw `@` in the user or
+  in an unregistered password of a URL leaves the password, or its part after the
+  `@`, readable (`myadmin@srv:<password>@localhost`, an Azure-style login); the
+  labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its
+  tail readable, and a registered credential that is a label word (`password`) hides the label
+  from it; repeated `BEGIN PRIVATE KEY` markers before one `END` cost 3.4 s a megabyte.
+
+### Fixed (a halted run keeps the replies it paid for, and a run that spent can be resumed)
+
+- **A run halted inside an identity sweep, or between two attempts of one batch, stored nothing
+  for that spec and could not be resumed.** Found by the delta audit of
+  `fix/authz-leak-identity-sweep`, reproduced on main `0f936b6`: `DL-XTENANT-001` against a
+  loopback stub with two scope identities, `--runs 2 --budget-requests 3`, sent three requests
+  (the sweep and one answered attempt), stored no evidence, and `--resume` was refused with "a
+  run that sent nothing has nothing to continue" while the run store recorded the three. A plain
+  spec did the same (`PI-DIRECT-001 --runs 3 --budget-requests 2`: two replies sent and lost).
+  The runner evaluated and stored a batch only after the whole batch returned, so a refused debit
+  dropped the replies already received, and the resume, had it been allowed, would have sent
+  them and paid for them again.
+- **What a halted run keeps now.** `reproduce` and `reproduce_conversation` fill the runner's
+  list as each attempt completes, and the runner evaluates and stores what the batch received
+  before the halt goes on, whatever stopped it: a refused debit, a product error, or a reply
+  whose own reported usage crossed the token ceiling (`BudgetExhaustedAfterReply` carries that
+  reply with the halt, through a conversation too when it was the conversation's last; it is
+  still a `BudgetExhausted`, so a caller that does not look for it halts all the same). When the
+  same ceiling refuses the judge's request, which is where a `--judge` run usually stops, a reply
+  a deterministic check already failed keeps that fail (OD-19: it decides without the judge, and
+  its reasoning says the judge was not consulted), and any other is stored without a verdict; a
+  resume counts that one as not answered, sends it again and judges it, and the first reply stays
+  cited (`replay` lists it with `?`). Of one attempt id's artifacts, the one scored is answered and
+  judged, else any with a verdict, so a re-send that ends in an environment error is scored as the
+  inconclusive it is. A conversation the halt stops mid-way is not stored (it has no final reply),
+  and neither are an identity sweep's replies, as in a finished run: their sends are in the spend. A
+  Ctrl-C still drops the batch in flight. With `--judge`, a reply stored without a verdict is paid
+  for twice: the resume sends it again rather than judging the stored one (a design choice;
+  re-judging is a possible follow-up). A run halted by this version is not for an older one to
+  resume: it would keep that reply and score the spec without it.
+- **A product error stops new specs at once, and an evaluator's error is not hidden.** Evaluating
+  a failed batch's replies (a slow judge) used to run before the campaign's abort was set, so a
+  waiting spec started in the meantime; the abort is set first now. An evaluator that raises
+  while a halt is being handled is quoted in the halt's reason (`also raised KeyError: ...`).
+- **A run that spent requests and stored no reply is resumable.** `--resume` accepts it when the
+  run store records a request spent, sends every spec from the start, carries the spend, and
+  says so (`stored no answered attempt before it stopped, after N request(s) that left none`,
+  for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request
+  that failed, or a Ctrl-C). Still refused: a run that spent none (with the old message, which is
+  then true, now worded as what it checks: `a run whose run store records no request spent has
+  nothing to continue`); an `--evidence-root` holding none of the artifacts the run store
+  journals for the run (`not the tree the run wrote`, or, for writes begun and never confirmed,
+  which may also have failed on this tree, `never confirmed`), since from the tree alone that looks
+  like a sweep halt and resuming would send everything again; and an empty tree for a run that does
+  not record the scope it went out under, which may predate the journal (`predates the artifact
+  journal`).
+- **`--estimate --resume` prices the judge for what the resume sends.** It subtracted the target
+  requests already done and kept the whole battery's judge requests: 12 judge requests for a
+  resume that sent 8. It now takes off two per attempt the resume keeps, of a spec the judge
+  reads. With PR #60, which prices the identity sweep, the estimate is exact after a halt in or
+  after a sweep too: the three sweeping shapes, a strict `xfail` until both had landed, pass, and
+  the marker is gone. The room check behind the `-sV` refusals' "drop -sV" advice (u12 A-48),
+  which prices the rest as `--estimate --resume` does, takes off the same judge share: it priced
+  every judge request of the battery, so with `--judge` that advice was not offered where the
+  rest fitted (pre-merge audit; two `--judge` cases in `tests/cli/test_resume_sv_advice.py`, one
+  of them failing without the fix).
+- **Contracts and docs:** u12 A-24 (a halt keeps what it paid for; what a resume keeps and what
+  a finished spec is, which A-11's sweep skip reads), u12 A-48 (the judge's share in the room
+  check), u08's budget-gate and resume criteria and its A-59 (the stored attempts a halted resume
+  and the seeding gate count are the ones with a verdict); the
+  MANUAL (`--resume`, `--estimate`, the resume paragraph, `replay`), USAGE, `dottore(1)`, the
+  `--resume` help text, `docs/09`. Left open: the attempts axis counts an attempt whose first
+  request the ceiling refused (one per halted batch, conservative), and a Ctrl-C drops the batch
+  in flight (so do SIGTERM and SIGHUP, which stop a run as Ctrl-C does, A-60).
+- **Tests:** `tests/cli/test_resume_halted_mid_batch.py` (15, through the real CLI against a
+  loopback stub: a halt inside the sweep at two points, inside a batch, inside a sweeping spec's
+  batch, at the judge, on the token ceiling, the refusals that stay, and the judge's share
+  attempt by attempt; every halt-then-resume test asserts the halted spend, the final spend and
+  the resume's sends as the stub counted them, and the estimate wherever it is exact),
+  `tests/core/test_halt_keeps_answers.py` (19) and one in `tests/core/test_seeded_setup.py`.
+  Against main's code before #60, ten of the CLI tests fail and five do not: the three that price
+  the sweep (strict `xfail`s then), and two that pin refusals main already made with the message
+  it prints (three more pin refusals main also made and fail there on a message that is new). Each
+  of 30 mutants of the fix, one piece removed at a time, is caught by a new test that fails for that
+  piece. The pre-commit audit (two auditors) found a resume that published a PASS over a missing
+  verdict, a deterministic fail lost at the judge, a conversation's last reply dropped on the token
+  ceiling, the abort delayed by the judge, an evaluator error swallowed, two empty-tree acceptances,
+  a negative spend accepted, and four doc overclaims; the delta audit after them found a run whose
+  first evidence write failed refused as "not the tree the run wrote", a judge not consulted that no
+  stored verdict mentioned, notes repeated once per reply, two untested guards and three doc rows
+  still overclaiming. All fixed here. The pre-merge audit (verdict: merge) found the resume message
+  naming two of its causes, the MANUAL describing the old `replay` ranking, the judge's double cost
+  and the downgrade risk unstated, and one abort untested; fixed in a second commit. Four existing
+  tests changed: three fixtures that built a stored reply without a verdict (a shape no run wrote
+  before this change; one of them the priors of `tests/core/test_planned_attempts.py`, A-59's) and
+  one F11 test whose second ceiling relied on the first run losing a reply.
+
+### Fixed (one refused reply during the `-sV` probe pass stopped the whole run)
+
+- **`dottore run -sV` (and `-A`) exited 3 before any attack on one probe reply.** A reply the
+  adapters refuse as an environment failure that a retry would not change (`ResponseTooLarge`,
+  over 4 MiB; `ResponseUndecodable`, an encoding they do not decode) stopped the run after one
+  request, while without `-sV` the same reply failed one attempt and every spec ran (pre-commit
+  audit of `fix/target-deep-json`, reproduced on `main` against a local stub). A single 503 at
+  the same point was retried and the run went on, so a refused reply was handled worse than a
+  503. `dottore fingerprint` exited 3 the same way. The fingerprint layers called the adapter
+  with nothing between one probe and the pass.
+- **A probe whose reply comes back refused is now a failed probe.** The engine classifies a
+  probe's error with the predicate the attack phase uses for an attempt
+  (`core.execute.default_is_env_error`, injected by `cli.wiring.build_fingerprint_engine`) and
+  the `retryable = False` marker the attack phase reads: the target answered, and a retry would
+  get the same reply (so `ResponseTooDeep`, a reply nested past 100 levels, is covered too).
+  That probe's layer gives no evidence from it and never reads it as an empty reply: a missing
+  guardrail nudge leaves `guardrails` empty (unknown, not "no filter"), a missing carrier is left
+  out of `carrier_comprehension` (unmeasured, not 0.0), and one missing statistical reply drops
+  the statistical layer (explicitly: a signature pack's centroid only has to be non-empty, so
+  two replies' vector could otherwise match a shorter one). When refused replies leave fewer
+  than three attributing replies, too few for the constant-target check, the text layers'
+  evidence is not counted (a constant "I am Llama" target with 8 of 10 replies refused was
+  named meta-llama at 0.41). Every other probe is still sent, once. The fingerprint records the
+  failures as `layer/probe: ErrorClass` in an `engine` evidence entry `probe_errors=[...]` with
+  the flag `probes_failed` (never the error's text, which can quote the reply); `run -sV` prints
+  `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` on stderr, not silenced
+  by `-q` and on one line (not through `rich`, which cut the evidence path at 80 columns), ends
+  the fingerprint line with `[N of 17 probes got no usable reply]`, and goes on to the attack;
+  `dottore fingerprint` warns on stderr and exits 0. When every probe is refused the line says the
+  fingerprint is empty, and `dottore fingerprint` prints it as an `error:` and exits 3: an empty
+  fingerprint printed with exit 0 read as a result to a script (delta audit). The line promises
+  nothing about what follows, since with several targets the next one's probe pass can still stop
+  the run. Refusals cannot get past the constant-target check, and a pass with an attributing
+  reply refused is never called constant: with fewer than three attributing replies left, or the
+  ones left all alike, the text evidence is not counted and the flag is not set (a refused carrier
+  does not count: the check never reads the carriers). Measured against the same probes answered
+  with an empty reply (12,276 passes over every subset of the attributing sends of the 12 corpus
+  targets), a partial pass never names more: identical when no statistical probe is refused,
+  otherwise `unknown` or lower confidence (2,344 of 10,752 differ, none the other way). Against a
+  full pass it can still break a tie the full pass leaves unknown, as a bland reply would; the
+  confidence is renormalized, not discounted.
+- **An error status whose body is over 4 MiB is classified by its status.** `read_capped`
+  returned an empty body for an error status it could not decode ("a `401` stays a `401`") but
+  raised `ResponseTooLarge` for one over the cap, so a `401` with a 5 MB body was an
+  inconclusive attempt where a short `401` stops the run, and with the probe-pass change
+  `dottore fingerprint` exited 0 on it (delta audit, reproduced). Now it is the `401`: one
+  request, exit 3, "non-retryable HTTP 401", in the probe pass and the attack phase alike
+  (`tests/adapters/test_response_cap.py`).
+- **A probe that gets no answer at all still stops the pass, as before:** a 503, a 429, a
+  timeout or a refused connection still failing after the retries ends the run with exit 3 and
+  its cause, because the target is not answering. The first version of this fix isolated those
+  too, and the pre-commit audit measured what that cost: a target that accepts the connection
+  and never replies took 25.5 minutes of probing (17 probes, three 30 s timeouts each: `dottore
+  fingerprint` ran 1,534 s; neither `--budget-wall` nor `--timeout` bounds the probe pass) and
+  38 minutes for a 2-spec `run -sV` ending in the same exit 3, against 92 s before; and `dottore
+  fingerprint` exited 0 on a closed port with the cause reduced to a class name. A refusal by
+  the scope, a 200 that is not JSON (OD-21) and the request ceiling still stop the pass too, as
+  does any interrupt. Open for the owner as OD-23 (u09 §9). Clause A-35 in u09;
+  `tests/fingerprint/test_probe_failures.py` (each of the 17 probes refused in turn) and
+  `tests/cli/test_probe_env_error.py` (a local stub through the real CLI).
+
+### Fixed (`authz_leak` in `EMB-XTENANT-RETRIEVAL-001` never ran, and kept the spec from passing)
+
+- **`EMB-XTENANT-RETRIEVAL-001` could not pass anywhere.** It requires `rag` and declares
+  `authz_leak` "for cross-identity corroboration when >=2 identities are scoped", but the runner
+  sent the attack as each scope identity only for a spec that required `multi_identity`. So
+  that `authz_leak` never had two identities to compare, returned `capability_unavailable`, and
+  that inconclusive decided the aggregate unless a deterministic check failed: with a judge and
+  a secure reply, every attempt came out `inconclusive`. In the 2026-10-06 local pass the spec
+  was one of the 30 inconclusive, held there on one of its two attempts by `authz_leak` alone
+  (the other attempt had a compromised judge, so the spec would still be inconclusive in that
+  pass). Lint never showed it, because the golden harness drives only a spec's first evaluator.
+  Found by the pre-commit audit of OD-18 option B; it predates that change.
+- **The sweep now runs where the evaluator is declared** (`core.runner.sweeps_identities`): for
+  a spec that requires `multi_identity`, as before, and, on a target that declares
+  `multi_identity`, for one that declares `authz_leak`. Never over an in-band scene (OD-18 A):
+  every identity would carry the same scene, the other tenant's document included, and a model
+  echoing it read as "A received B-only data". The spec keeps `requires: [rag]`, so it still
+  runs on single-identity RAG targets. With no sweep behind it, an `authz_leak` on a spec that
+  does not require two identities is set aside and the verdict says so (`authz_leak set aside:
+  no identity sweep ran`, whatever kept it from running); after a sweep where fewer than two
+  identities answered it is kept (`authz_leak kept: fewer than two identities answered the
+  identity sweep`), since the one that answered may have shown a leak. Both notes sit in each
+  attempt's verdict, which only the JSON report carries. `DL-XTENANT-001`, which requires
+  `multi_identity`, a spec whose only evaluator is `authz_leak`, and a compared `authz_leak`
+  that only finds a shared line (needs-review) are unchanged. Two scope identities on a target
+  that does not declare `multi_identity` are not taken for tenants: no sweep there, as for
+  `DL-XTENANT-001`.
+- **`--estimate` and `--dry-run` price the sweep**, one request per scope identity (two or more)
+  for each spec that sweeps, on a live route only (the offline mock wires none), and
+  `--estimate --resume` leaves it out for a spec whose every attempt is answered (the runner
+  does not sweep it again). They never priced it, for `DL-XTENANT-001` either: with two
+  identities, the fully capable deployment with a `run_token` priced 780 for a run that would
+  send 782; it now prices 784, what this change sends. With one identity every figure in
+  `docs/16` §3 is unchanged (re-measured).
+- **Offline:** the mock `hardened` scenario with every capability declared moves one spec from
+  `inconclusive` to `pass` (`rag` target 64 pass and 11 inconclusive to 65 and 10, `model` 63 and
+  12 to 64 and 11); `bare` and `vulnerable` are unchanged (measured on both trees).
+- **Docs:** clause A-34 in `specs/contracts/u08-execution-engine.md` (A-11 of u12 amended; the
+  index header no longer carries a clause range, which every new clause had to edit),
+  `docs/04` (the `authz_leak` row and the combination rule), `docs/11` §3, `docs/16` §3, the
+  manual's `--estimate` and troubleshooting rows, the FAQ, `dottore-scope(5)`, `AGENTS.md` and the
+  spec's own comment. Tests: `tests/core/test_authz_leak_corroboration.py` (18, one of them
+  through the real command line against a loopback stub; run against main's code with an import
+  shim, 15 fail and 3 are controls that hold on both).
+- **Merged with main after A-48 and A-59:** the `--estimate --resume` figure asks whether a spec
+  is finished by counting its stored attempts with `planned_attempts_held`, as the runner does
+  (A-59), instead of building `mutators x runs` attempt ids, which grows without end at the
+  `2**53` a run accepts; and the room check behind the `-sV` refusals' "drop -sV" advice (A-48),
+  which prices the rest as `--estimate --resume` does, subtracts a finished spec's sweep as that
+  figure does. With the sweep priced, retries are what that advice still cannot see (entry below).
+  One more test in the same file pins both (19 there).
+
+### Changed (a target file refuses a key no reader reads and a field that is not text; OD-31)
+
+- **A misspelled key at a target file's top level was dropped without a word, and a misspelled
+  endpoint ran a live target on the offline mock.** `load_target`, `target_uses_mock` and
+  `load_mock_scenario` each took the keys they knew and never looked at the rest, and a `name`,
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text was read as absent.
+  On `2f6201a`, `run` of a live target with `endpont:` (or an endpoint written as a list) had no
+  endpoint, so it went to the offline `bare` mock, which sent it nothing: one spec came back
+  inconclusive with exit 0, and the full battery scored a FAIL (`DOS-TOKEN-AMP-001`) and a PASS
+  (`MCP-TOOLPOISON-001`) with exit 1 (on `c3e70d8` too); the dry run said `authorized at` the
+  scope's base URL with no word about the endpoint. A `capabilities:` whose `tools`, `rag` and
+  `memory` lost their indent left them at the top level, ignored: a `type: model` target planned 34
+  specs with 39 skipped for a capability, against 59 and 8. And `model: 20240613`, which YAML reads
+  as a number, was no model. All three readers now check the top level and refuse, before anything
+  is sent (exit 3), on the A-45 line: `error: target file target.yaml failed validation: endpont:
+  Extra inputs are not permitted` (`model: Input should be a valid string`), never the value. The
+  keys are `Target`'s fields and `mock_scenario`; one of the six text fields with nothing after it,
+  `null` or `~` is still absent. **A behavior change:** a target file that loads today with such a
+  key or value is refused, a key that only holds an anchor for a `<<` merge (`x-defaults: &d`)
+  included (a map merged inline still loads); no file of the repository has one (a new test loads
+  every target file and every target block of the docs and man pages through the three readers, and
+  every target file `dottore fleet` writes). A run halted before this change with such a key resumes
+  once the key is deleted (still on the mock, for a lost endpoint) and is refused as another target
+  once the key is corrected. Refusing is the owner's decision, OD-31 (2026-10-08), built as the
+  smallest reversible change. Still read as written, and said so in the clause: `provider: opnai`
+  with an endpoint routes to the REST adapter, and a stdio MCP target with `transport: stido` or
+  `provider: mpc` runs on the offline mock, where its `mcp` suite scores a PASS with exit 0; a key
+  inside `capabilities` is A-50's (#78); the line lists the first 20 problems, then `and N more`,
+  as #76 has `validation_problems` do (20,000 unknown keys gave a 788,937-byte line before it, and
+  790 bytes since, for a file named `t.yaml`). A number as `provider` or `transport`, which A-40
+  (below) read as no provider, is refused as not text, and A-40's two tests of it, and two of
+  A-51's (#86, an integer `provider` and a `transport` of aliases), now expect the refusal, as a
+  third (a `provider` of aliases, which measured only the memory) does. Contract u12 A-53;
+  `tests/cli/test_target_top_level_keys.py` (43 of its 90 tests fail on `9b8b511`, this branch's
+  base).
+
+### Fixed (a reply's logprob figure that no model produces stops nothing and decides nothing)
+
+- **A logprob that no float holds, or that is not a number, crashed the command.** The OpenAI
+  adapter asks for token logprobs on every request (the `--judge` model's too) and passed each
+  figure of `choices[0].logprobs` to `float()`. A 400-digit integer there, or in one of
+  `top_logprobs` (list or map shape), raised `OverflowError`, and a list or an object
+  `TypeError`: neither is caught by the CLI, so `dottore fingerprint` and `dottore run -sV`
+  exited 1, the code CI reads as findings below `--fail-on`, with a traceback and no report, and
+  plain `run` and `fleet --run` aborted the campaign with exit 3 and a partial report. A string
+  that is not a number exited 3 (one that is was read: `"1"` scored "likely memorized" and
+  `"nan"` wrote a bare `NaN`), and a `top_logprobs` that was a number or a bool, or a null
+  alternative in the map shape, raised `TypeError` too. The `-sV` probes read no logprob at all.
+- **An impossible figure was scored.** A logprob is `log p`, never above zero, and a positive
+  token figure (0.5, 1e300, or `true`, read as 1.0) made `DL-MEMORIZE-DIVERGENCE-001` fail as
+  "likely memorized" (exit 1). A NaN or an infinity was written into the report and the evidence
+  as a bare `NaN` or `Infinity` token, which a strict JSON reader refuses.
+- **Now** a figure is read only when it is a JSON number that converts to a finite float at or
+  below zero (`shared.logprobs.readable_logprob`); a bool is not one, nor a string that spells
+  one (`"-0.5"` was read before). A block in which any entry's own figure is not readable,
+  whether or not the entry names its token, reads as no block (`logprobs: null`): the attempt
+  and every evaluator of its text go on, and the membership evaluator is inconclusive
+  (`capability_unavailable`). The whole block, not only the bad entry, because the rest scored
+  alone would read as the reply's; whether that is the right call is open decision OD-24. An
+  alternative that is not readable costs only its token's alternatives, which are never scored.
+  A null figure is still skipped, in both `top_logprobs` shapes now, and a `top_logprobs` of
+  neither shape is no alternatives. `logprob_membership` checks what it scores with the same
+  predicate, so an adapter that builds its own logprobs cannot have an impossible one scored.
+  Known: the evidence does not say a block was unreadable rather than absent, such an adapter's
+  own figures still reach the evidence as it built them, and a run halted before this change
+  keeps, when resumed, the verdicts and figures its stored attempts carry (u04 §7 A-39, OD-24).
+  A token nested past 100 levels never reaches `str()`: its reply is refused as nested too
+  deeply, which fails that attempt and not the campaign (PR #65), and a lone surrogate in a
+  token reads as U+FFFD (A-47, PR #79). Found by the code audit of `fix/usage-figure-overflow`
+  (F1, F2, F4, F5).
+
+### Fixed (the figure that stopped a run was masked as a phone number)
+
+- **A halted run hid the figure that halted it.** The halt reason (`budget ceiling reached on
+  '<axis>' (limit L, attempted A)`) is masked before the terminal and every report see it, and
+  the redactor reads a bare figure of nine characters or more as a phone number (a Luhn-valid one
+  of 13 to 19 digits as a card). So `dottore run` and its JSON, HTML, SARIF and JUnit reports
+  printed `attempted «REDACTED:phone»` for exactly the number the operator needed: on every stop
+  at the default 1,800 s wall ceiling (`1800.123456`), for any token figure past 99,999,999 (a
+  target reporting `usage.total_tokens` of 2**53), and for the limit itself under
+  `--budget-tokens 1000000000`. The figures are now written in digit groups
+  (`(limit 500,000, attempted 9,007,199,254,740,992)`, from a stub run), seconds with three
+  decimals (`1,800.124`: with six, `800.123456` after the group separator is a phone number
+  again), and a count from 10**18 up as a magnitude (`1.000e+300`), so a hostile figure cannot
+  fill the line. A shortened figure is rounded away from the ceiling (the figure that crossed it
+  up, the ceiling down), so a crossed ceiling never reads as an equal one: rounded to the
+  nearest, 1,800.0004 s printed `attempted 1,800.000 would exceed limit 1,800`, and the ledger no
+  longer rounds the elapsed time to six decimals before the halt figure is written. A figure
+  past Python's 4,300-digit `str` limit (a run whose second spec is told 4,300 nines) no longer
+  raises `ValueError` from inside the exception meant to halt the run; that run still exits 1
+  later, while storing its spend, which PR #67 fixes. The `-sV` probe
+  pass's ceiling error (exit 3) carries the same figures. The reason is not exempted from the
+  redactor: a key in an aborted run's reason is still masked on the terminal and in every report
+  (a test now covers the terminal line, which nothing did). The one thing the grouping lets
+  through is the figure itself: a target that reports a card-shaped usage figure
+  (4,111,111,111,111,111) sees it printed, grouped, where it was `«REDACTED:card»`, because
+  showing that figure is the point. A pipeline that parses `summary.status.reason` reads grouped
+  figures from now on. Contract u08, clause A-6 amended.
+
+### Fixed (a figure in a reply's usage that no float holds)
+
+- **A 400-digit token count in a reply stopped `dottore run` with exit 1.** The ledger trued its
+  reservation up to whatever integer the reply reported, so a `usage.prompt_tokens` (or
+  `total_tokens`, `tokens`, `input_tokens`, `output_tokens`, `completion_tokens` or a prompt-cache
+  figure) of about 400 digits went into the spend, and persisting it through `float()` raised
+  `OverflowError`: a traceback and exit 1, the code CI reads as "findings below `--fail-on`", and no
+  report. A smaller figure past 2^53 was believed and halted the campaign on the token ceiling after
+  the first reply, so every other spec never ran. A figure is now read only when it is a JSON integer
+  from 0 to 2^53, past which a float no longer holds every integer (the spend is persisted as a
+  float), far
+  beyond any one bill (a number written with a fraction or an exponent, such as `12.0`, is not one,
+  as before). One that is not is skipped like an absent one and the next shape is read
+  (`total_tokens`, `tokens`, input plus output, prompt plus completion), as a negative figure always
+  was; a sum past 2^53 is no usage; and with no readable shape the send keeps its reservation. A
+  prompt-cache figure is summed only into a pair. One that is there and unreadable now makes that
+  pair a floor: the reservation is trued up to it, never down. Before, one that was not a
+  non-negative integer (a negative, a float such as `12.0`, a NaN or an infinity, a bool, a string)
+  was read as 0, which trued the reservation down past cache tokens the reply says it billed, and an
+  integer past 2^53 was believed or crashed. Up to 2^53 a figure is still believed, as a bill
+  is, so a target can report more than it used and halt the campaign on the token ceiling, or report
+  less and free its reservation. A campaign's total can pass 2^53; the store then rounds it (by 2
+  tokens in 5.4e16, measured before #89), it does not fail. Merge note (#89, A-55): every token
+  ceiling is now at most 2^53, so the total passes it only by what replies sent together add once
+  it is crossed (two replies of 2^53 - 1 at `--concurrency 6`, measured after the merge), not after
+  many replies, and one reply of 2^53 fills the largest ceiling. Reproduced on Python 3.14
+  against a local OpenAI-compatible stub, on `main` (`0f936b6`) and on #61; found by the pre-commit
+  audit of `fix/target-deep-json`. An integer longer than 4,300 digits is refused earlier by the JSON
+  parser itself, a separate question left open on that branch.
+- **The same reply crashed `-sV`.** The guardrail probe reads `usage.moderation_latency_ms`, and
+  `float()` of a 400-digit integer made `dottore fingerprint` and `run -sV` exit 1 the same way; an
+  infinity (`1e400` parses as one), a NaN or a negative figure was recorded as a latency, and the
+  first two went into the evidence signal as the bare tokens `Infinity` and `NaN`, which are not
+  JSON. It is now read only when it is a finite, non-negative number a float can hold, and is `null`
+  otherwise.
+- **One predicate, not two.** The check #61 wrote for the stored spend (`_is_amount` in the run
+  store) moved to `ildottore.shared.amounts` as `is_amount`, next to `is_count`, so the store and the
+  `-sV` layer read figures with the same rule. The ledger has no check of its own: nothing a reply or
+  this tool hands it can grow past what `float()` converts (clause A-36 in
+  `specs/contracts/u08-execution-engine.md`). A run store edited by hand to an integer just under
+  2^1024 could, on a resume under a token ceiling above 1.8e308 (exit 1, as on `main`). Merge
+  note (#89, A-55): `run` now refuses such a ceiling, and a resume from that store under 2^53
+  halts on the ceiling with exit 3 and sends nothing (measured after the merge), so it is no
+  longer open. Found by its audit and fixed by PR #74 (u04 A-39): a `logprob` in a reply that no
+  float holds made `fingerprint` and `run -sV` exit 1 (it is read in the adapter). Tests: `tests/cli/test_usage_figures.py` (through the CLI, both
+  directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
+  `tests/shared/test_amounts.py`.
+
+### Fixed (a key on a finding's path, printed as written)
+
+- **`dottore lint` and `dottore coverage` exited 1 with a `UnicodeEncodeError` traceback** when the
+  path to a number too long to write out (A-40, #81) went through a key holding a lone surrogate
+  (`"a\ud800b"` in YAML): the finding printed the key as written, and stdout's strict UTF-8 encoder
+  refuses it (on a terminal or a pipe alike). On these paths main before #81 did not crash. A
+  newline in such a key forged a second finding line and an escape sequence reached the terminal raw
+  (reported by the pre-merge audit of #81, left for this follow-up). A part of the path that is not
+  printable is now written as `repr` (`setup/'a\ud800b': a number too long ...`), as #80 writes a
+  key that is not printable. A key Python counts as printable reads as written (Spanish, Chinese);
+  one holding a zero-width or bidi mark, an ideographic space or a no-break space is written as
+  `repr` too. The location of every other JSON-schema error follows the same rule. A lone surrogate
+  in a key under `step_arg_patterns`, the same traceback before #81 too, is closed on main by A-54
+  (#89), which reports the key before the schema runs; what this change still does there is stop
+  control characters: a key `a\n[ERROR] SCHEMA (FAKE-001): forged` under `step_arg_patterns` made
+  `dottore lint` print a forged second finding line, and it now prints as `'a\n[ERROR]...'`
+  (pre-merge audit of #90). Found by the pre-merge audit of #80 and the delta audit of
+  `fix/spec-non-json-values`. Still open: a newline or another control character in a key that
+  pydantic names, or in the spec `id`, still forges a finding line or reaches the terminal raw (#89
+  handles only an `id` UTF-8 cannot encode).
+
+### Fixed (a report finding that failed validation printed pydantic's error, value included)
+
+- **A finding in a JSON run report that pydantic could not read printed pydantic's own error.** A
+  finding with `"status": "maybe-later"` made `dottore diff bad.json empty.json` and `dottore
+  calibrate bad.json labels.yaml` print four lines (`error: 1 validation error for Finding`, the
+  field, `input_value='maybe-later'` and a pydantic docs URL): the report's value quoted and no file
+  named, so the operator could not tell which of the two reports it was. Exit 3 was already right.
+  Both commands now give one line of the kind the scope, fleet, policy-pack and target loaders give:
+  `error: the report /abs/bad.json failed validation: findings.0.status: Input should be 'pass',
+  'fail' or 'inconclusive'`: the first finding that fails, by its index (a bare list of findings is
+  addressed as `findings` too), with its problems (the model's fields first, then the keys it does
+  not have), at most 20 and the rest counted, the value never. Not changed, and written in the
+  clause: the report's other refusals keep their form (an object without `findings` prints `error:
+  'findings'`, a `summary` that is not an object, unless empty or zero, `error: 'int' object has no
+  attribute 'get'` or the like, both without the file; the refusals of several targets or of two
+  findings for one spec quote the ids the report holds); a key a finding does not know is part of
+  the place and goes through the redactor (what it recognises there, such as an email, is masked),
+  and is otherwise printed as pydantic renders it, control characters included until #51 wrote them
+  out; and
+  what pydantic can read is taken as read (`confirmed: "yes"` is true). A first version validated
+  every finding together to list them all and peaked at 1,116 MiB instead of 135 MiB on a 12 MB
+  report (pre-commit audit); the findings are validated one at a time, as before, at about 6% more
+  CPU on a valid report. Contract u12 A-49; `tests/cli/test_diff_report_validation.py` (24 of its 31
+  tests fail on `de392e1`, 23 on the defect and one because the helper it counts is not there; of
+  the 7 that pass, 6 check that the CLI's redactor leaves each test value readable, so that the CLI
+  tests can fail on any mask in the output, and one checks memory, which the base also keeps low).
+  Found by the pre-commit audit of A-45 (`fix/target-file-validation`).
+
+### Fixed (a SARIF fixture under `tests/` would have been ignored)
+
+- **`.gitignore` re-included no SARIF file under `tests/`.** The rule `!tests/**/*.sarif` had
+  its comment after it on the same line, and git reads no trailing comments, so the pattern was
+  the rule and the comment together and re-included nothing: `git check-ignore -v --no-index
+  tests/fx/a.sarif` named `.gitignore:29:*.sarif`. The comment now has a line of its own above
+  the rule; a `.sarif` file under `tests/` is no longer ignored (unless a directory rule such as
+  `build/` or `__pycache__/` excludes its folder), while a root `x.sarif`, `src/x.sarif` and
+  `reports/x.sarif` still are. No SARIF file is tracked under `tests/` (the reporting snapshot
+  is `golden.sarif.json`, which `*.sarif` never matched), so nothing was lost, and no tracked
+  file becomes ignored. It was the only line of the file with a comment after a pattern.
+
+### Fixed (a worktree's `.venv` link showed as untracked)
+
+- **`.gitignore` ignored `.venv` only as a directory** (`.venv/`), and a git worktree that reuses
+  the main checkout's venv through a symlink has a file there, as git sees it: `git status`
+  listed `?? .venv` and a `git add -A` would have committed the link. The rule is now `.venv`,
+  which matches the directory and everything under it, and the link; no tracked file is newly
+  ignored. `AGENTS.md` §4 records the worktree setup: the link, `PYTHONPATH` pointing at the
+  worktree's `src` (without it the steps that import the package run the main checkout's code,
+  and the coverage gate reads 0%), and no `make venv` or `make install` there.
+
 ### Fixed (a reply that holds half a character)
 
 - **One reply with a lone surrogate aborted the whole campaign.** JSON lets a string escape any
@@ -150,7 +1034,7 @@ versioning: [SemVer](https://semver.org/).
   of the transcript aborted the run the same way. Over MCP stdio, the raw bytes made the strict
   decode of the reply line fail, the line was skipped as stray output and the call timed out
   (inconclusive). `dottore fingerprint`, which writes nothing, finished. First noted on main by
-  PR #57 (open on 2026-10-09); reproduced end to end by the pre-commit audit of
+  PR #57 (split credentials); reproduced end to end by the pre-commit audit of
   `fix/hostile-logprob`.
 - **Every reply is now made well formed where it is parsed**: the base adapter (OpenAI,
   Anthropic, the REST template) and the MCP adapter's JSON body, SSE event and stdio line (now
@@ -183,9 +1067,8 @@ versioning: [SemVer](https://semver.org/).
   plainly fails it and exits 2. A canary split that way is missed by `secret_leakage`, and the
   spec falls to its other evaluators (`SP-LEAK-001` is inconclusive without `--judge` and passes
   when the judge says secure; refusing the reply would have left it inconclusive). A registered
-  credential split that way is not masked as the credential (each half stays readable unless the
-  entropy rule takes it; PR #57, open on 2026-10-09, masks one split by a lone surrogate, and once
-  both are in it has to read U+FFFD as a splitter too). One invalid UTF-8
+  credential split that way is masked whole, since PR #57 reads U+FFFD as a splitter (u01 A-32);
+  without #57 each half stayed readable unless the entropy rule took it. One invalid UTF-8
   byte that is not a surrogate (`FF`) still makes a body that is not JSON and stops the campaign
   on the base adapter and the MCP JSON body (over MCP SSE it reads as U+FFFD; on an MCP stdio
   line the line is skipped and the call times out). Over an MCP SSE stream each raw byte of a
@@ -380,10 +1263,11 @@ versioning: [SemVer](https://semver.org/).
   target's text, and are unchanged.
 - **The "Not exercised" line** of the summary and of the HTML report names a reply nested too
   deeply among the environment errors.
-- **Not changed:** with `-sV` or `-A`, such a reply during the fingerprint probe pass still stops
-  the run before any attack (exit 3 after one request), as a reply over the size cap already did,
-  while a 503 there is retried (pre-commit audit; a separate fix). A 200 whose body is not JSON
-  (brackets that do not balance included), or is JSON with an integer of more than 4,300 digits
+- **Not changed here:** with `-sV` or `-A`, such a reply during the fingerprint probe pass stopped
+  the run before any attack (exit 3 after one request), as a reply over the size cap did, while a
+  503 there is retried (pre-commit audit). The separate fix (PR #68) now makes it fail only that
+  probe (see "one refused reply during the `-sV` probe pass" above). A 200 whose body is not
+  JSON (brackets that do not balance included), or is JSON with an integer of more than 4,300 digits
   (which Python refuses to read), is still a product defect and still stops the campaign (exit 3,
   "aborted on AdapterProductError", one request sent, measured against the same stub); whether
   it should fail only its attempt is open decision OD-21. The finding behind this fix took that
@@ -469,7 +1353,8 @@ versioning: [SemVer](https://semver.org/).
   and fleet blocks of the docs and man pages, through the real loaders). Refusing both is the
   owner's decision (OD-29), built as the smallest reversible change. Still dropped without a
   word, and written in the clause: a top-level key a target file does not know, and a `name`,
-  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text. Contract u12 A-50;
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text (since A-53, above,
+  both are refused). Contract u12 A-50;
   `tests/cli/test_target_capabilities_strict.py` (19 of its 40 tests fail on `2f6201a`).
 
 ### Fixed (a refusal that named a flag `dottore run` does not have)
@@ -679,12 +1564,13 @@ versioning: [SemVer](https://semver.org/).
   value built in code is named by its type. At most 20 are listed and the rest counted, a set or a
   pair is the finding and what it holds is not walked, a container shared through an alias is
   reported once, a key on this check's paths that is not printable is written as its `repr` (A-40's
-  own paths print keys as written until its follow-up lands), and a value in a field the schema
-  types (`name: 2026-01-01`) gets this message instead of the schema's `datetime.date(2026, 1, 1) is
-  not of type 'string'`. A key that is not a string is A-44's finding (below), reported before this
-  check runs. None of the 75 shipped specs holds such a value (none of the 129 YAML files of the
-  repository that load is flagged). Found on 2026-10-07 by the pre-commit audit of
-  `fix/huge-int-repr` (finding F6). Clause A-54 (u02); `tests/registry/test_non_json_values.py`.
+  paths and the locations of JSON-schema errors do too since #90, while a spec id UTF-8 can encode
+  is still printed as written), and a value in a field the schema types (`name: 2026-01-01`) gets
+  this message instead of the schema's `datetime.date(2026, 1, 1) is not of type 'string'`. A key
+  that is not a string is A-44's finding (below), reported before this check runs. None of the 75
+  shipped specs holds such a value (none of the 129 YAML files of the repository that load is
+  flagged). Found on 2026-10-07 by the pre-commit audit of `fix/huge-int-repr` (finding F6). Clause
+  A-54 (u02); `tests/registry/test_non_json_values.py`.
 - **`--runs` past what a float holds exited 1 with a traceback.** `dottore run ... --dry-run --runs
   <4,300 nines>` (and `--estimate`, and the run) gave `OverflowError: int too large to convert to
   float` where the plan multiplied its token estimate by the budget headroom: from 305 nines with
@@ -933,9 +1819,9 @@ versioning: [SemVer](https://semver.org/).
   a string; write it in quotes, without a tag`. At most 20 are listed and the rest counted, a key
   that is a number too long to write out is reported first by the check of the section below, and a
   key on the path that is not printable (an escape sequence, a newline, a bidi control) is written
-  as its `repr`, so it cannot forge a finding line (the spec id and the paths of other schema errors
-  print as written, as before). Found on 2026-10-07 by the session on `fix/huge-int-repr`. Clause
-  A-44 (u02).
+  as its `repr`, so it cannot forge a finding line (A-40's paths and the locations of JSON-schema
+  errors do too since #90, while a spec id UTF-8 can encode is still printed as written). Found on
+  2026-10-07 by the session on `fix/huge-int-repr`. Clause A-44 (u02).
 - **Keys of two types in one mapping crashed the schema check itself.** `step_arg_patterns: {5: 1,
   a: 2}` gave two schema errors whose paths were sorted, an int against a str: `TypeError` and
   exit 1. The key check runs first, so the schema never sees such a mapping.
@@ -1086,7 +1972,8 @@ versioning: [SemVer](https://semver.org/).
   exited 3 with the same unnamed message; the refusal now names the target file and says what the
   value is instead of quoting it. As `provider` or `transport` it exited 3 too, because the mock
   routing called `str` on them before the target loader, which reads them only as text, ignored
-  it; they are read only as text there as well, so the number is no provider, as `5` always was.
+  it; they are read only as text there as well, and since A-53 (above) a value there that is not
+  text, the number and `5` alike, is refused naming the file.
   The signature pack's `pack_version` is refused the same way (a library path; the CLI loads the
   built-in pack).
 - Each check stands on its own: a cap on a literal's length in the YAML loader does not cover a
@@ -1107,8 +1994,8 @@ versioning: [SemVer](https://semver.org/).
   the value never. The same through `run -t`, `run --judge`, `fingerprint` and `fleet --judge`. Not
   changed, and written in the clause: other refusals of a target file still quote what it says
   (`type`, `mock_scenario`, a `seeded_setup` tool name, the `id`); a key is printed as pydantic
-  renders it, control characters included, so one with a line break still splits the line until #51
-  is in; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true` is
+  renders it, control characters included, so one with a line break split the line until #51 wrote
+  them out; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true` is
   1.0, no range on `temperature` or `top_p`); and a key `capabilities` does not know, or a
   `capabilities` that is empty or `false`, was still ignored without a word (since A-50, above, the
   key is refused, and so is a `capabilities` of `false`, `0`, `[]` or `""`). Contract u12 A-45;
@@ -1117,7 +2004,7 @@ versioning: [SemVer](https://semver.org/).
   in the output, because a first `987654321` was masked as a phone number and the check proved
   nothing). Found on `fix/huge-int-repr`. The same shape remains in `dottore diff` and `dottore
   calibrate` on a report whose finding does not validate (pre-commit audit); left for its own
-  change.
+  change (A-49).
 
 ### Fixed (a file nested past what the CLI can hold)
 
@@ -1130,11 +2017,10 @@ versioning: [SemVer](https://semver.org/).
   now refuse it with exit 3 and one `error:` line that names the file and quotes none of it. A
   report that is not UTF-8 or not JSON names its file too: `Expecting value: line 1 column 1 (char
   0)` did not say which of the two files it was. These messages name the report by its absolute
-  path, never followed by a colon: the CLI keeps an existing absolute path readable, and a relative
-  path, or `<path>:`, is not one, so a report named after a commit SHA had its name masked as a
-  high-entropy value. As in every message of the CLI, a directory whose name holds a space or one of
-  `()[],;'"` still cuts the path short, and a control character in a name reaches the terminal as
-  written until #51, which escapes them there, is in. Found by the pre-merge audit of #51.
+  path, never followed by a colon: the CLI then kept only an existing absolute path readable, so a
+  report named after a commit SHA had its name masked as a high-entropy value when it was relative
+  or written `<path>:` (since fixed, see the entry above). A control character in a name reached
+  the terminal as written until #51 wrote them out there. Found by the pre-merge audit of #51.
 - **A value that parses and overflows later.** On 3.14 the parser holds about 116,000 levels and
   `repr` overflows from about 69,500, so a report whose run status carried a reason nested 70,000
   levels deep was read and then overflowed when the refusal of an incomplete run formatted it (exit

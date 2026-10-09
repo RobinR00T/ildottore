@@ -26,7 +26,7 @@ from ildottore.core.budgets import BudgetLedger
 from ildottore.core.reproduce import attempt_id_for
 from ildottore.core.runner import CampaignRunner
 from ildottore.shared.enums import RequiresCapability, VerdictStatus
-from ildottore.shared.models import Attempt, Finding, ModelRequest, ModelResponse
+from ildottore.shared.models import Attempt, Finding, ModelRequest, ModelResponse, Verdict
 
 from .conftest import (
     make_policy_engine,
@@ -161,8 +161,14 @@ def _runner(stores, evaluators, mutators, scorer, *, n: int) -> CampaignRunner:
     )
 
 
-def _prior(spec_id: str, ids: list[str]) -> Finding:
+def _prior(spec_id: str, ids: list[str], *, unjudged: frozenset[str] = frozenset()) -> Finding:
+    """A stored prior, each reply with its verdict as the runner stores it, except ``unjudged``
+    (a reply a ceiling stored before the judge could see it, which is no finished attempt)."""
+
     spec = make_spec(spec_id)
+    judged = Verdict(
+        status=VerdictStatus.PASS, confidence=1.0, reasoning="ok", evaluator_type="refusal"
+    )
     return Finding(
         spec_id=spec.id,
         target_id="t1",
@@ -175,6 +181,7 @@ def _prior(spec_id: str, ids: list[str]) -> Finding:
                 spec_id=spec.id,
                 request=ModelRequest(prompt="p"),
                 response=ModelResponse(text="r"),
+                verdict=None if attempt_id in unjudged else judged,
             )
             for attempt_id in ids
         ],
@@ -210,6 +217,30 @@ def test_a_gated_prior_that_holds_its_plan_is_scored_as_before(
     )
 
     assert "had sent" not in (finding.reasoning or "")
+
+
+def test_a_gated_prior_holding_its_plan_with_a_reply_not_judged_is_not_scored(
+    stores, evaluators, mutators, scorer, counted_ids: list[int]
+) -> None:
+    """Every planned id stored, one without a verdict: not a finished spec, so it is kept unscored,
+    and the message counts what was sent, both from what is stored (A-59 and the halt rule)."""
+
+    runner = _runner(stores, evaluators, mutators, scorer, n=2)
+    spec = make_spec("JB-REFUSAL-001")
+    ids = [attempt_id_for(spec.id, m, i) for m in ("identity", "b64") for i in range(2)]
+
+    finding = runner._gated_prior(
+        spec,
+        make_target(),
+        _prior(spec.id, ids, unjudged=frozenset({ids[3]})),
+        ["identity", "b64"],
+        "g",
+    )
+
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    assert "had sent 4 of 4 attempts" in (finding.reasoning or "")
+    assert "not scored" in (finding.reasoning or "")
+    assert counted_ids[0] == 0
 
 
 async def test_the_identity_sweep_of_a_huge_plan_builds_no_plan(

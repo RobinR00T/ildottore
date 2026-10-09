@@ -31,8 +31,14 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 
-from ildottore.core.budgets import BudgetLedger
-from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error, execute_attempt
+from ildottore.core.budgets import BudgetExhausted, BudgetLedger
+from ildottore.core.execute import (
+    AttemptResult,
+    BudgetExhaustedAfterReply,
+    RetryPolicy,
+    default_is_env_error,
+    execute_attempt,
+)
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.reproduce import DEFAULT_N, attempt_id_for
 from ildottore.core.setup_delivery import (
@@ -185,6 +191,11 @@ async def execute_conversation(
     total_latency = 0.0
     saw_latency = False
     tool_rounds = 0
+    # A reply whose usage crossed the token ceiling is in hand and billed. If it is the
+    # conversation's last, the conversation is finished and travels with the halt; if another
+    # send would follow, the conversation stops there unfinished (pre-commit audit: a one-send
+    # in-band scene, or a final turn, crossing the ceiling was dropped and paid for twice).
+    crossed: BudgetExhaustedAfterReply | None = None
 
     def aborted(result: AttemptResult) -> AttemptResult:
         attempt = _aggregate_attempt(
@@ -205,6 +216,11 @@ async def execute_conversation(
         )
 
     async def send(turn_index: int, suffix: str) -> AttemptResult:
+        nonlocal crossed
+        if crossed is not None:
+            # Plain, not the reply-carrying subclass: that reply belongs to one turn, and this
+            # conversation has none to store.
+            raise BudgetExhausted(crossed.axis, crossed.limit, crossed.attempted) from crossed
         request = _turn_request(
             messages,
             system_prompt=system_prompt,
@@ -214,21 +230,25 @@ async def execute_conversation(
             tools=tools,
             turns_total=len(turns),
         )
-        return await execute_attempt(
-            adapter,
-            request,
-            attempt_id=f"{attempt_id}@t{turn_index}{suffix}",
-            spec_id=spec_id,
-            mutation=mutation,
-            sampling=sampling,
-            ledger=ledger,
-            retry=retry,
-            timeout_s=timeout_s,
-            is_env_error=is_env_error,
-            sleep=sleep,
-            now=now,
-            pacer=pacer,
-        )
+        try:
+            return await execute_attempt(
+                adapter,
+                request,
+                attempt_id=f"{attempt_id}@t{turn_index}{suffix}",
+                spec_id=spec_id,
+                mutation=mutation,
+                sampling=sampling,
+                ledger=ledger,
+                retry=retry,
+                timeout_s=timeout_s,
+                is_env_error=is_env_error,
+                sleep=sleep,
+                now=now,
+                pacer=pacer,
+            )
+        except BudgetExhaustedAfterReply as halt:
+            crossed = halt
+            return halt.result
 
     for turn_index, raw_turn in enumerate(turns):
         user_text = mutate_turn(raw_turn) if mutate_turn is not None else raw_turn
@@ -313,7 +333,10 @@ async def execute_conversation(
         setup=setup,
         tool_rounds=tool_rounds,
     )
-    return AttemptResult(attempt=final, env_error=False, retries=0, errors=[])
+    finished = AttemptResult(attempt=final, env_error=False, retries=0, errors=[])
+    if crossed is not None:
+        raise BudgetExhaustedAfterReply(crossed, finished) from crossed
+    return finished
 
 
 def _fallback_id(turn_index: int, round_index: int, position: int) -> str:
@@ -382,6 +405,7 @@ async def reproduce_conversation(
     completed: set[str] | None = None,
     pacer: RateLimiter | None = None,
     setup: InBandSetup | None = None,
+    into: list[AttemptResult] | None = None,
 ) -> list[AttemptResult]:
     """Execute the pinned conversation ``n`` times (repro), one aggregate attempt each.
 
@@ -390,37 +414,47 @@ async def reproduce_conversation(
     :func:`execute_attempt`), stable ``attempt_id`` per run so resume skips completed
     conversations, and results returned in order. Against the deterministic mock all ``n``
     conversations are byte-identical; against a real target they measure repro honestly.
+
+    ``into`` is filled as each conversation completes, as in ``reproduce``, so a halt keeps the
+    conversations already finished, including one whose last reply crossed a token ceiling
+    (``execute_conversation`` raises ``BudgetExhaustedAfterReply`` with it). One the halt stopped
+    mid-way is not stored: it has no final reply to score (its turns are in the spend, and a
+    resume sends it again from its first turn).
     """
 
     if n < 1:
         raise ValueError("n must be >= 1")
-    results: list[AttemptResult] = []
+    results: list[AttemptResult] = into if into is not None else []
     for run_index in range(n):
         attempt_id = attempt_id_for(spec_id, mutation, run_index)
         if completed is not None and attempt_id in completed:
             continue
         ledger.debit_attempt()
-        result = await execute_conversation(
-            adapter,
-            turns,
-            attempt_id=attempt_id,
-            spec_id=spec_id,
-            mutation=mutation,
-            sampling=sampling,
-            ledger=ledger,
-            system_prompt=system_prompt,
-            mutate_turn=mutate_turn,
-            retry=retry,
-            timeout_s=timeout_s,
-            is_env_error=is_env_error,
-            sleep=sleep,
-            now=now,
-            # Forwarded, which it was not: this function took a ``pacer`` and dropped it one
-            # hop short, so every multi-turn spec ran UNPACED while the single-turn path
-            # obeyed the ceiling. 11 of 75 shipped specs are multi-turn, but 42% of a full
-            # battery's requests, and the measured breach was 19x the authorized rate.
-            pacer=pacer,
-            setup=setup,
-        )
+        try:
+            result = await execute_conversation(
+                adapter,
+                turns,
+                attempt_id=attempt_id,
+                spec_id=spec_id,
+                mutation=mutation,
+                sampling=sampling,
+                ledger=ledger,
+                system_prompt=system_prompt,
+                mutate_turn=mutate_turn,
+                retry=retry,
+                timeout_s=timeout_s,
+                is_env_error=is_env_error,
+                sleep=sleep,
+                now=now,
+                # Forwarded, which it was not: this function took a ``pacer`` and dropped it one
+                # hop short, so every multi-turn spec ran UNPACED while the single-turn path
+                # obeyed the ceiling. 11 of 75 shipped specs are multi-turn, but 42% of a full
+                # battery's requests, and the measured breach was 19x the authorized rate.
+                pacer=pacer,
+                setup=setup,
+            )
+        except BudgetExhaustedAfterReply as halt:
+            results.append(halt.result)
+            raise
         results.append(result)
     return results
