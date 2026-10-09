@@ -30,6 +30,20 @@ The carryover ledger. Every agent session updates this so context survives even 
   both insert at the top of CHANGELOG `[Unreleased]` and of this ledger, so whichever merges
   second rebases and keeps both entries.
 
+## State, 2026-10-08 (evening): a SIGTERM or SIGHUP dropped inside a callback
+
+- Found in CI on PR #72 (the `[sigterm]` case of `tests/cli/test_probe_pass_spend.py`, 41 requests
+  served where 25 were expected; three times on two PRs, #72 and #82, on Linux with Python 3.11)
+  and fixed on
+  `fix/sigterm-lost-in-callback`: `execute_run` mapped SIGTERM and SIGHUP to
+  `signal.default_int_handler`, whose KeyboardInterrupt raised inside a weakref callback is printed
+  and dropped, so the run went on. Ctrl-C never was, because inside `asyncio.run` it goes to
+  asyncio's handler, which cancels. Now SIGTERM and SIGHUP call the SIGINT handler in place at that
+  moment, and raise as before only when SIGINT has none (ignored, a job a script starts with `&`). Left as
+  it is: with Ctrl-C ignored, and outside the event loop (where no request is sent), a signal in a
+  callback can still be dropped, as Ctrl-C can in any Python program. Contract u12 A-60;
+  `tests/cli/test_termination_signals.py`, 2 of its 8 tests fail on `e4d6c83`.
+
 ## State, 2026-10-07 (afternoon): a refused `--resume -sV` whose advice was refused in turn
 
 - Found by the pre-commit audit of `fix/resume-wall-flag-name` and fixed on
