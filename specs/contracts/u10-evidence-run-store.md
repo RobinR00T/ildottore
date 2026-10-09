@@ -102,7 +102,7 @@ tree's attempts as this run's. Content-addressing still verified them; what did 
 that they belonged to the run being read.
 
 **A-23 Recognition traffic is evidence, stored apart from the attempts (added 2026-09-22).**
-A fingerprint pass sends 17 requests per target, and for as long as none of them was written
+A fingerprint pass sends 18 requests per target, and for as long as none of them was written
 down the evidence tree could not answer "what did this tool send my endpoint": the question the
 product exists to answer, and the reason a day's worth of probes carrying attack framing stayed
 invisible. Probes go to `<run>/probes/` through the same redact-hash-write path as attempts, so

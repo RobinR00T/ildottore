@@ -26,6 +26,7 @@ time - contract §4 KEEP; live probing is u09 fingerprint).
 from __future__ import annotations
 
 import asyncio
+import functools
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -52,6 +53,7 @@ __all__ = [
     "AdapterEnvError",
     "AdapterError",
     "AdapterProductError",
+    "AdapterStatusError",
     "BaseAdapter",
     "EndpointNotAllowed",
     "ResponseTooDeep",
@@ -142,6 +144,28 @@ class AdapterProductError(AdapterError):
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
+
+
+class AdapterStatusError(AdapterProductError):
+    """A non-retryable HTTP status (a 4xx, or a status the retries do not cover): a product error.
+
+    It is still one everywhere it was (the attack phase stops on it, as before). The subclass
+    only carries the status, so the composition root can tell a request the endpoint refused
+    from the rest: the fingerprint's profile-only probe treats a 4xx to it as a failed probe
+    (u09 §7 A-67), since Azure OpenAI's prompt filter answers a blocked prompt with HTTP 400 and
+    the error code ``content_filter``, and stopped ``-sV`` on the guardrail layer's benign
+    request (pre-merge audit of ``cd413c0``).
+    """
+
+    def __init__(self, message: str, *, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Rebuild with the status: the default reduction passed the message alone, and
+        ``copy.copy`` and ``pickle.loads`` raised ``TypeError`` on the keyword it lacked."""
+
+        return (functools.partial(type(self), status_code=self.status_code), self.args)
 
 
 #: The ``Content-Encoding`` values :func:`read_capped` decodes itself, with the ``wbits`` zlib
@@ -273,8 +297,13 @@ class RetryConfig:
         return min(self.backoff_base_s * (2.0**attempt), self.backoff_cap_s)
 
 
-class _ImpossibleFigure(Exception):
-    """A logprob figure no model produces (u04 §7, A-39): what holds it is not read."""
+class _UnreadableLogprob(Exception):
+    """A logprob figure ``readable_logprob`` refuses (u04 §7, A-39): what holds it is not read.
+
+    Not only a number no model produces: a string that spells one, a bool, anything that is not a
+    JSON number. Caught where it is raised, so no message names it; it is named so the redactor
+    would keep the name if one did (``_ImpossibleFigure`` read as a high-entropy mask, u01 A-63).
+    """
 
 
 def _figure(value: object) -> float:
@@ -282,7 +311,7 @@ def _figure(value: object) -> float:
 
     figure = readable_logprob(value)
     if figure is None:
-        raise _ImpossibleFigure
+        raise _UnreadableLogprob
     return figure
 
 
@@ -315,7 +344,7 @@ def _coerce_top(raw_top: object) -> list[tuple[str, float]] | None:
                     figure = _figure(logprob)  # before the token, as in `map_logprobs`
                     if token is not None:
                         pairs.append((str(token), figure))
-    except _ImpossibleFigure:
+    except _UnreadableLogprob:
         return None
     return pairs or None
 
@@ -361,7 +390,7 @@ def map_logprobs(
                     top=_coerce_top(entry.get("top_logprobs")),
                 )
             )
-    except _ImpossibleFigure:
+    except _UnreadableLogprob:
         # The whole block, not the entry (OD-24): the readable rest scored alone is not the
         # reply's figure, and confident tokens around one positive figure read as "likely
         # memorized". Before, ``float()`` raised here and stopped the command (exit 1 or 3).
@@ -579,6 +608,7 @@ class BaseAdapter(ABC):
 
         # A non-retryable 4xx (auth, bad request) is a product/config defect -
         # not something a retry will fix, and not to be masked as a flake.
-        raise AdapterProductError(
-            f"{self.id}: non-retryable HTTP {response.status_code} from {self._request_path}"
+        raise AdapterStatusError(
+            f"{self.id}: non-retryable HTTP {response.status_code} from {self._request_path}",
+            status_code=response.status_code,
         )

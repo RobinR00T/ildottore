@@ -1,9 +1,9 @@
 """``tool_sequence`` evaluator - orchestration abuse over a tool-call trace (``docs/04 §1``).
 
 Deterministic over the trace (confidence ``1.0``). Where ``tool_call`` judges each call **on its
-own** (is this tool authorized? is this destructive call confirmed? is an argument injected?),
-this evaluator judges the **order**: the exploit is a chain in which *every individual call is
-legitimate* and only the composition is harmful.
+own** (is this tool authorized? is it destructive? is an argument injected?), this evaluator
+judges the **order**: the exploit is a chain in which *every individual call is legitimate* and
+only the composition is harmful.
 
 The canonical shape is read-then-egress: an assistant may read a customer record, and it may send
 mail; doing both, in that order, is the data breach. A per-call allowlist cannot express that, so

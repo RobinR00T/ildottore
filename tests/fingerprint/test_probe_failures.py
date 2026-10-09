@@ -40,6 +40,7 @@ from ildottore.fingerprint import PROBES_FAILED_FLAG, FingerprintEngine, failed_
 from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, ProbeFailed
 from ildottore.fingerprint.layers.behavioral import SELF_REPORT_DETAIL
 from ildottore.fingerprint.layers.carrier import CARRIER_PROBE_DETAIL
+from ildottore.fingerprint.layers.guardrail import PROFILE_ONLY_PROBES
 from ildottore.fingerprint.layers.statistical import StatisticalLayer, response_vector
 from ildottore.fingerprint.probes import STATISTICAL_BATTERY
 from ildottore.fingerprint.signatures import (
@@ -102,6 +103,13 @@ _LAYER_OF = [
     for layer in build_fingerprint_engine().layers
     for _ in range(getattr(layer, "probe_count", 1))
 ]
+#: The sends the constant-target check reads: every probe but the carriers and the guardrail
+#: layer's benign request, whose reply is read for the profile only (§7 A-67). Ten of 18.
+_ATTRIBUTING = [
+    i
+    for i, (layer, probe) in enumerate(zip(_LAYER_OF, _ORDER, strict=True))
+    if layer != "carrier" and probe not in PROFILE_ONLY_PROBES
+]
 
 
 def _evidence(fp: ModelFingerprint, *, without: set[str]) -> list[FingerprintEvidence]:
@@ -118,18 +126,21 @@ def _comprehension(fp: ModelFingerprint) -> dict[str, float]:
 def test_the_baseline_has_something_to_lose_in_every_layer() -> None:
     """Not vacuous: with no failure, every probing layer gives evidence."""
 
-    assert len(_ORDER) == len(_LAYER_OF) == 17
+    assert len(_ORDER) == len(_LAYER_OF) == 18
+    assert len(_ATTRIBUTING) == 10
     weighted = {e.layer for e in _BASELINE.evidence if e.weight > 0}
     assert {"metadata", "behavioral", "tokenizer", "guardrail", "statistical"} <= weighted
     assert any(SELF_REPORT_DETAIL in e.signal for e in _BASELINE.evidence)
-    assert _BASELINE.guardrails["output_filter"] is True
+    # Both guardrail probes measured: the refusal asked for, and the benign request answered.
+    assert _BASELINE.guardrails["refusal_style"] == "polite-explain"
+    assert _BASELINE.guardrails["benign_refused"] is False
     scores = _comprehension(_BASELINE)
     assert len(scores) == 7 and 0.0 in scores.values() and 1.0 in scores.values()
     assert failed_probes(_BASELINE) == []
     assert PROBES_FAILED_FLAG not in _BASELINE.spoofing_flags
 
 
-@pytest.mark.parametrize("index", range(17))
+@pytest.mark.parametrize("index", range(len(_ORDER)))
 def test_a_refused_probe_costs_its_own_reply_and_nothing_else(index: int) -> None:
     target = _Target({index: ResponseTooLarge("hostile: response exceeded 4194304 bytes")})
     fp = _run(target)
@@ -170,12 +181,32 @@ def test_a_refused_tokenizer_probe_gives_no_tokenizer_evidence() -> None:
     assert not [e for e in fp.evidence if e.layer == "tokenizer"]
 
 
-def test_a_refused_guardrail_probe_leaves_the_guardrails_unknown_not_absent() -> None:
+def test_two_refused_guardrail_probes_leave_the_guardrails_unknown_not_absent() -> None:
     """No reply is not "no filter": the profile is left out, not written as all false."""
 
-    fp = _run(_Target({_ORDER.index("guardrail_nudge"): ResponseTooLarge("x")}))
+    both = {_ORDER.index("guardrail_nudge"), _ORDER.index("guardrail_benign")}
+    fp = _run(_Target(dict.fromkeys(both, ResponseTooLarge("x"))))
     assert fp.guardrails == {}
     assert not [e for e in fp.evidence if e.layer == "guardrail"]
+
+
+def test_a_refused_requested_refusal_leaves_its_style_unknown_and_attributes_nothing() -> None:
+    """The benign request is still sent and read; the style and the pack tells, which come from
+    the requested refusal only, are missing, never read from an empty reply."""
+
+    fp = _run(_Target({_ORDER.index("guardrail_nudge"): ResponseTooLarge("x")}))
+    assert fp.guardrails["refusal_style"] is None
+    assert fp.guardrails["benign_refused"] is False
+    assert fp.guardrails["output_filter"] is False
+    assert not [e for e in fp.evidence if e.layer == "guardrail" and e.weight > 0]
+
+
+def test_a_refused_benign_request_leaves_benign_refused_unknown() -> None:
+    fp = _run(_Target({_ORDER.index("guardrail_benign"): ResponseTooLarge("x")}))
+    assert fp.guardrails["benign_refused"] is None
+    assert fp.guardrails["refusal_style"] == "polite-explain"
+    guardrail = [e for e in fp.evidence if e.layer == "guardrail" and e.weight > 0]
+    assert guardrail == [e for e in _BASELINE.evidence if e.layer == "guardrail" and e.weight > 0]
 
 
 @pytest.mark.parametrize("probe", ["stat_greeting", "stat_list", "stat_explain"])
@@ -197,7 +228,7 @@ def test_a_refused_carrier_is_left_unmeasured_not_scored_zero(probe: str) -> Non
 
 
 def test_every_probe_refused_gives_an_empty_fingerprint_and_says_so() -> None:
-    target = _Target({i: ResponseUndecodable("x") for i in range(17)})
+    target = _Target({i: ResponseUndecodable("x") for i in range(len(_ORDER))})
     fp = _run(target)
 
     assert target.sent == _ORDER
@@ -262,9 +293,9 @@ def test_a_refused_probe_still_went_out_at_the_probe_sampling() -> None:
 def test_a_probe_that_gets_no_answer_at_all_stops_the_pass(error: BaseException) -> None:
     """The target is not answering: the run stops at once with the cause, as before the fix.
 
-    Isolated like a refused reply, a target that never answered cost 17 probes of three 30 s
-    timeouts, 25.5 minutes, before an attack that failed the same way, and ``dottore
-    fingerprint`` exited 0 on a closed port with the cause reduced to a class name.
+    Isolated like a refused reply, a target that never answered cost 17 probes (the pass of
+    then) of three 30 s timeouts, 25.5 minutes, before an attack that failed the same way, and
+    ``dottore fingerprint`` exited 0 on a closed port with the cause reduced to a class name.
     """
 
     index = _ORDER.index("tokenizer_glitch")
@@ -331,7 +362,7 @@ def test_a_layer_that_does_not_handle_a_failed_probe_loses_only_its_own_evidence
         layers=[*build_fingerprint_engine().layers, _CarelessLayer()],
         is_env_error=default_is_env_error,
     )
-    target = _Target({17: ResponseTooLarge("x")})
+    target = _Target({len(_ORDER): ResponseTooLarge("x")})
     fp = _run(target, engine)
 
     assert target.sent == [*_ORDER, "careless_one"]
@@ -373,7 +404,7 @@ def test_too_few_replies_to_check_for_a_constant_target_name_nothing_from_text()
     assert full.family.guess == "unknown"
     assert "non_discriminating_target" in full.spoofing_flags
 
-    attributing = [i for i, layer in enumerate(_LAYER_OF) if layer != "carrier"]
+    attributing = _ATTRIBUTING
     refused = set(attributing) - {attributing[1]}  # only behavioral's self_id answers
     partial = _run_constant(_Constant(refused))
     assert len(failed_probes(partial)) == len(attributing) - 1
@@ -442,7 +473,7 @@ def test_three_answered_replies_are_enough_for_the_constant_check() -> None:
     run the check and the text evidence counts (the envelope probe is refused, so without text
     the family would be unknown)."""
 
-    attributing = [i for i, layer in enumerate(_LAYER_OF) if layer != "carrier"]
+    attributing = _ATTRIBUTING
     kept = {_ORDER.index("tokenizer_glitch"), _ORDER.index("guardrail_nudge"), 1}
     fp = _run(_Target({i: ResponseTooLarge("x") for i in attributing if i not in kept}))
     assert len(failed_probes(fp)) == len(attributing) - 3
@@ -450,7 +481,7 @@ def test_three_answered_replies_are_enough_for_the_constant_check() -> None:
     assert fp.family.confidence > 0.4
 
 
-@pytest.mark.parametrize(("failed", "empty"), [(16, False), (17, True)])
+@pytest.mark.parametrize(("failed", "empty"), [(len(_ORDER) - 1, False), (len(_ORDER), True)])
 def test_the_warning_calls_the_fingerprint_empty_only_when_nothing_came_back(
     failed: int, empty: bool
 ) -> None:
@@ -468,9 +499,9 @@ def test_the_warning_calls_the_fingerprint_empty_only_when_nothing_came_back(
             )
         ],
     )
-    line = probe_failure_warning("t", fp, probes=17)
+    line = probe_failure_warning("t", fp, probes=len(_ORDER))
     assert line is not None
-    assert line.startswith(f"warning: t: {failed} of 17 probe(s) got no usable reply")
+    assert line.startswith(f"warning: t: {failed} of 18 probe(s) got no usable reply")
     assert ("none did, so the fingerprint is empty" in line) is empty
     assert ("built from the replies that came back" in line) is not empty
 
@@ -482,8 +513,7 @@ def test_alike_replies_with_refusals_are_not_called_constant(refused: int) -> No
     With attributing replies refused, one is enough, the check cannot be completed, so the text
     evidence is not counted and the flag is not set."""
 
-    attributing = [i for i, layer in enumerate(_LAYER_OF) if layer != "carrier"]
-    fp = _run_constant(_Constant(set(attributing[:refused])))
+    fp = _run_constant(_Constant(set(_ATTRIBUTING[:refused])))
     assert len(failed_probes(fp)) == refused
     assert fp.family.guess == "unknown"
     assert "non_discriminating_target" not in fp.spoofing_flags
@@ -511,15 +541,17 @@ def _names_more(partial: ModelFingerprint, bland: ModelFingerprint) -> bool:
 
 
 def test_a_partial_pass_never_names_more_than_the_same_probes_answered_blandly() -> None:
-    """The domain of A-35, measured. Exhaustively once (2026-10-07: 12 corpus cases, every subset
-    of the 10 attributing sends, 12,276 passes): identical when no statistical probe is refused,
-    otherwise less or the same family with lower confidence, never more. Pinned here on every
-    single and paired refusal and on every pass with two replies or fewer left."""
+    """The domain of A-35, measured. Exhaustively twice (2026-10-07, and 2026-10-09 with the
+    guardrail layer's benign request in the pass, A-67: 12 corpus cases, every subset of the 10
+    attributing sends, 12,276 passes, the same figures): identical when no statistical probe is
+    refused, otherwise less or the same family with lower confidence (2,344 of 10,752), never
+    more. Pinned here on every single and paired refusal and on every pass with two replies or
+    fewer left."""
 
     from itertools import combinations
 
     engine = build_fingerprint_engine()
-    attributing = [i for i, layer in enumerate(_LAYER_OF) if layer != "carrier"]
+    attributing = _ATTRIBUTING
     subsets = [
         set(sub)
         for size in (1, 2, len(attributing) - 2, len(attributing) - 1, len(attributing))

@@ -755,7 +755,7 @@ def test_a_resume_with_an_exhausted_ceiling_refuses_before_probing(tmp_path: Pat
 
     from ildottore.cli.run import fingerprint_probe_count
 
-    # Halted WITH -sV, as in the test above: 17 probes, then 6 requests of attack traffic.
+    # Halted WITH -sV, as in the test above: the probe pass, then 6 requests of attack traffic.
     spent = fingerprint_probe_count() + _BUDGET
     spec_dir = _specs(tmp_path)
     run_id = _halted_run(tmp_path, spec_dir, fingerprint_first=True, budget_requests=spent)

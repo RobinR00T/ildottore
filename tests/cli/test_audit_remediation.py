@@ -24,6 +24,7 @@ from ildottore.cli.run import (
     budgets_for,
     estimate_plan,
     execute_run,
+    fingerprint_probe_count,
 )
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS
 from ildottore.policy.errors import ScopeError
@@ -430,7 +431,7 @@ def test_a_real_run_does_fingerprint_when_asked(
             target_id="mock-target",
             family=FingerprintGuess(guess="llama", confidence=0.5),
         )
-        return wiring.ProbePass(fingerprint=fingerprint, requests=17)
+        return wiring.ProbePass(fingerprint=fingerprint, requests=fingerprint_probe_count())
 
     monkeypatch.setattr(wiring, "fingerprint_probe", _probe)
     target = write_target(tmp_path, mock_scenario="hardened")

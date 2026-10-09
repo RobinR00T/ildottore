@@ -16,8 +16,13 @@ class ScopeError(PolicyError):
     """The ``scope.yaml`` authorization record is malformed or invalid."""
 
 
-class ChecksumMismatchError(ScopeError):
-    """The recorded scope checksum does not match the scope body (S4, tamper)."""
+class ScopeChecksumError(ScopeError):
+    """The recorded scope checksum does not match the scope body (S4, tamper).
+
+    Its 0.1.0 name, ``ChecksumMismatchError``, is one the redactor masks as high entropy, so an
+    error line that wrote the class, as an attempt's error and a halt reason do, would read
+    ``«REDACTED:high_entropy:...»`` (u01 A-63).
+    """
 
     def __init__(self, expected: str, actual: str) -> None:
         self.expected = expected
@@ -32,6 +37,11 @@ class ChecksumMismatchError(ScopeError):
             f"scope checksum mismatch: the scope body hashes to {actual!r}, not to the "
             "recorded checksum"
         )
+
+
+#: The 0.1.0 name, kept because ``ildottore.policy`` exported it: the same class, so code that
+#: imports it or catches it still works. An error line writes the class's own name.
+ChecksumMismatchError = ScopeChecksumError
 
 
 class IdentityError(PolicyError):

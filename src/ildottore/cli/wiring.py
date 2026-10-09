@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 from pydantic import ConfigDict, StrictStr, ValidationError, create_model
 
 from ildottore.adapters import (
+    AdapterStatusError,
     AnthropicAdapter,
     MCPAdapter,
     OpenAIAdapter,
@@ -98,7 +99,7 @@ __all__ = [
     "MOCK_SCENARIOS",
     "PROBE_SPEC_ID",
     "BuiltRunner",
-    "ProbeCeilingReached",
+    "ProbeCeilingHit",
     "ProbePass",
     "TargetFile",
     "bare_adapter_factory",
@@ -316,14 +317,31 @@ def build_fingerprint_engine() -> FingerprintEngine:
 
     A probe whose reply comes back refused (an environment failure the attack phase would not
     retry, by its own predicate) is a failed probe (u09 §7 A-35, OD-23): one such reply used to
-    stop ``run -sV`` before any attack while it only failed an attempt without it.
+    stop ``run -sV`` before any attack while it only failed an attempt without it. So is a 4xx
+    to the guardrail layer's benign request (:func:`refused_request`, u09 §7 A-67).
     """
 
     registry = build_mutator_registry()
     carriers = [registry.get(name) for name in registry.names() if name != IDENTITY_MUTATOR]
     return FingerprintEngine(
-        layers=[*default_layers(), CarrierLayer(carriers)], is_env_error=default_is_env_error
+        layers=[*default_layers(), CarrierLayer(carriers)],
+        is_env_error=default_is_env_error,
+        is_request_refused=refused_request,
     )
+
+
+def refused_request(exc: BaseException) -> bool:
+    """A request the endpoint refused with a 4xx (u09 §7 A-67).
+
+    The engine asks only about a profile-only probe (the guardrail layer's benign request), which
+    goes out after seven probes the same credential and route got answers to, so a 4xx to it is
+    about its prompt: Azure OpenAI's prompt filter answers a blocked prompt with HTTP 400 and the
+    error code ``content_filter``, and stopped ``-sV`` on it (pre-merge audit of ``cd413c0``).
+    It is the one input-filter signal the pass can see, and the profile reads it as unknown, not
+    as an input filter (OD-40). A 3xx or a 5xx the retries do not cover is not one.
+    """
+
+    return isinstance(exc, AdapterStatusError) and 400 <= exc.status_code < 500
 
 
 def build_probe_adapter(
@@ -946,11 +964,12 @@ def with_sent_sampling(
 class _RecordingAdapter:
     """Wraps a probe adapter so every recognition exchange lands in the evidence store.
 
-    A fingerprint pass is 17 requests per target and it left **no trace**: the evidence tree
-    could not answer "what did this tool send my endpoint", which is the question the whole
-    product is built to answer, and it is exactly what kept a day's worth of probes carrying
-    attack framing invisible. Probes are filed under ``probes/``, not ``attempts/``: a probe is
-    not an attack attempt, and counting it as one would inflate every attempt-derived number.
+    A fingerprint pass was 17 requests per target (18 since u09 A-67) and left **no trace**:
+    the evidence tree could not answer "what did this tool send my endpoint", which is the
+    question the whole product is built to answer, and it is exactly what kept a day's worth of
+    probes carrying attack framing invisible. Probes are filed under ``probes/``, not
+    ``attempts/``: a probe is not an attack attempt, and counting it as one would inflate every
+    attempt-derived number.
 
     A failed send is recorded too, with its error: "we sent this and got nothing back" is
     evidence, and dropping it would make the tree quietly incomplete.
@@ -998,8 +1017,12 @@ class _RecordingAdapter:
         return response
 
 
-class ProbeCeilingReached(Exception):
-    """A ``-sV`` probe pass reached ``--budget-requests``; ``requests`` is what it really sent."""
+class ProbeCeilingHit(Exception):
+    """A ``-sV`` probe pass reached ``--budget-requests``; ``requests`` is what it really sent.
+
+    Named so the redactor keeps the name: it masks ``ProbeCeilingReached`` as high entropy, so
+    an error line that wrote the class would read ``«REDACTED:high_entropy:...»`` (u01 A-63).
+    """
 
     def __init__(self, requests: int, reason: str) -> None:
         super().__init__(reason)
@@ -1039,7 +1062,7 @@ def fingerprint_probe(
     answering 429 to every first send, 17 nominal probes were 34 requests, half of them 53 ms
     after the last, and the ledger was charged 17 (leftovers of the 2026-10-03 audit). Same
     shape as the judge: no adapter retries, a :class:`MeteredAdapter` owns them. A breach of
-    the ledger's request ceiling raises :class:`ProbeCeilingReached`, carrying the requests
+    the ledger's request ceiling raises :class:`ProbeCeilingHit`, carrying the requests
     really sent.
 
     The caller owns ``ledger`` so it can read what was sent however the pass ends: an
@@ -1073,7 +1096,7 @@ def fingerprint_probe(
         with meter.bound(ledger, RateLimiter(rate_rps)):
             fingerprint = asyncio.run(build_fingerprint_engine().run(metered))
     except BudgetExhausted as exc:
-        raise ProbeCeilingReached(ledger.spend().requests, str(exc)) from exc
+        raise ProbeCeilingHit(ledger.spend().requests, str(exc)) from exc
     return ProbePass(fingerprint=fingerprint, requests=ledger.spend().requests)
 
 
