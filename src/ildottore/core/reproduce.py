@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable, Iterable, Sequence
 from ildottore.core.budgets import BudgetLedger
 from ildottore.core.execute import (
     AttemptResult,
-    BudgetExhaustedAfterReply,
+    ReplyOverBudget,
     RetryPolicy,
     default_is_env_error,
     execute_attempt,
@@ -180,7 +180,7 @@ async def reproduce(
                 now=now,
                 pacer=pacer,
             )
-        except BudgetExhaustedAfterReply as halt:
+        except ReplyOverBudget as halt:
             results.append(halt.result)
             raise
         results.append(result)

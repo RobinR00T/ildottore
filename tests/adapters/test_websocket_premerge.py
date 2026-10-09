@@ -19,7 +19,6 @@ from typing import Any
 import pytest
 from websockets.asyncio.server import ServerConnection
 
-import ildottore.adapters.websocket as websocket_module
 from ildottore.adapters import RetryConfig
 from ildottore.adapters.base import ResponseTooDeep, ResponseUndecodable
 from ildottore.adapters.websocket import (
@@ -39,7 +38,6 @@ from ildottore.core.execute import (
     execute_attempt,
 )
 from ildottore.policy import Endpoint, EndpointAllowlist
-from ildottore.redactor import Redactor
 from ildottore.shared.config_errors import MAX_PROBLEM_CHARS
 from ildottore.shared.models import ModelRequest
 from ildottore.shared.nesting import MAX_DEPTH
@@ -417,30 +415,9 @@ def test_a_fleet_wss_entry_writes_a_target_run_refuses(tmp_path: Path) -> None:
 
 # --- second pre-merge audit, MEDIUM 1: no error class name reads as a credential --------------
 
-_ERRORS = sorted(
-    name
-    for name in websocket_module.__all__
-    if isinstance(getattr(websocket_module, name), type)
-    and issubclass(getattr(websocket_module, name), Exception)
-)
-
-
-def test_every_exported_websocket_error_is_listed() -> None:
-    assert len(_ERRORS) == 8 and all(name.startswith("WebSocket") for name in _ERRORS)
-
-
-@pytest.mark.parametrize("name", _ERRORS)
-def test_an_error_class_name_survives_the_redactor(name: str) -> None:
-    """The CLI's error line and the stored evidence are redacted; the class name must read.
-
-    ``WebSocketFrameUndecodable``, ``WebSocketTurnOverflow``, ``WebSocketConversationLost`` and
-    ``WebSocketTooManyConversations`` came out as ``«REDACTED:high_entropy:...»``.
-    """
-
-    redactor = Redactor()
-    assert redactor.redact_text(name) == name
-    line = f"{name}: ws-live: a text frame was not UTF-8 and the connection was closed (1007)"
-    assert redactor.redact_text(line) == line
+# Every error class of the package, these included, is checked against the redactor by
+# tests/test_redactor_error_class_names.py (u01 A-63); this campaign test pins one name end to
+# end, through the reason and the stored evidence.
 
 
 def test_the_campaign_names_an_undecodable_frame_in_its_error(

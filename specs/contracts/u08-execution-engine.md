@@ -140,13 +140,14 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
   raised-away. `tests/core/test_budgets.py`. (Amended 2026-10-07: the partial includes every
   reply the target gave. `reproduce` and `reproduce_conversation` fill the caller's list as each
   attempt completes, so the answers a batch had when a debit was refused, a product error was
-  raised, or a reply's own usage crossed the token ceiling (`BudgetExhaustedAfterReply`, which
-  carries it, through a conversation too when that reply was its last) are evaluated and stored
-  before the halt goes on. They were dropped with the exception, and the resume sent them and
-  paid for them again. An evaluator whose request the ceiling refuses (the judge) is recorded as
-  not consulted: a deterministic fail decides without it (OD-19) and is stored, its reasoning
-  naming the evaluator not consulted (only the aggregate is stored, and it was silent: delta
-  audit); otherwise the reply is stored without a verdict. If that was the campaign's last
+  raised, or a reply's own usage crossed the token ceiling (`ReplyOverBudget`, which carries it,
+  through a conversation too when that reply was its last; named so the redactor keeps it, u01
+  A-63) are evaluated and stored before the halt goes on. They were dropped with the exception,
+  and the resume sent them and paid for them again. An evaluator whose request the ceiling
+  refuses (the judge) is recorded as not consulted: a deterministic fail decides without it
+  (OD-19) and is stored, its reasoning naming the evaluator not consulted (only the aggregate is
+  stored, and it was silent: delta audit); otherwise the reply is stored without a verdict. If
+  that was the campaign's last
   attempt, the campaign is complete: every verdict is decided and nothing more is sent. A product error sets the campaign's abort before the
   batch's replies are evaluated, so no spec starts while they are judged, and an evaluator's own
   error during that evaluation is quoted in the halt's reason, not swallowed by it. A conversation

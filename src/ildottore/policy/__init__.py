@@ -16,6 +16,7 @@ from ildottore.policy.errors import (
     NetworkAccessError,
     PolicyError,
     PolicyPackError,
+    ScopeChecksumError,
     ScopeError,
 )
 from ildottore.policy.identities import IdentityResolver
@@ -54,6 +55,7 @@ __all__ = [
     "PolicyPack",
     "PolicyPackError",
     "Scope",
+    "ScopeChecksumError",
     "ScopeError",
     "ScopeTarget",
     "Sha256Verifier",

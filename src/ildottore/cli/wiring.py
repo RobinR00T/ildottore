@@ -97,7 +97,7 @@ __all__ = [
     "MOCK_SCENARIOS",
     "PROBE_SPEC_ID",
     "BuiltRunner",
-    "ProbeCeilingReached",
+    "ProbeCeilingHit",
     "ProbePass",
     "TargetFile",
     "bare_adapter_factory",
@@ -884,8 +884,12 @@ class _RecordingAdapter:
         return response
 
 
-class ProbeCeilingReached(Exception):
-    """A ``-sV`` probe pass reached ``--budget-requests``; ``requests`` is what it really sent."""
+class ProbeCeilingHit(Exception):
+    """A ``-sV`` probe pass reached ``--budget-requests``; ``requests`` is what it really sent.
+
+    Named so the redactor keeps the name: it masks ``ProbeCeilingReached`` as high entropy, so
+    an error line that wrote the class would read ``«REDACTED:high_entropy:...»`` (u01 A-63).
+    """
 
     def __init__(self, requests: int, reason: str) -> None:
         super().__init__(reason)
@@ -924,7 +928,7 @@ def fingerprint_probe(
     answering 429 to every first send, 17 nominal probes were 34 requests, half of them 53 ms
     after the last, and the ledger was charged 17 (leftovers of the 2026-10-03 audit). Same
     shape as the judge: no adapter retries, a :class:`MeteredAdapter` owns them. A breach of
-    the ledger's request ceiling raises :class:`ProbeCeilingReached`, carrying the requests
+    the ledger's request ceiling raises :class:`ProbeCeilingHit`, carrying the requests
     really sent.
 
     The caller owns ``ledger`` so it can read what was sent however the pass ends: an
@@ -949,7 +953,7 @@ def fingerprint_probe(
         with meter.bound(ledger, RateLimiter(rate_rps)):
             fingerprint = asyncio.run(build_fingerprint_engine().run(metered))
     except BudgetExhausted as exc:
-        raise ProbeCeilingReached(ledger.spend().requests, str(exc)) from exc
+        raise ProbeCeilingHit(ledger.spend().requests, str(exc)) from exc
     return ProbePass(fingerprint=fingerprint, requests=ledger.spend().requests)
 
 

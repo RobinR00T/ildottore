@@ -3,6 +3,32 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09 (evening): four exception class names the redactor masked
+
+- On `fix/error-names-survive-redactor`: the redactor's high-entropy rule masked four of the
+  package's 45 exception class names, alone and in the lines that write an error with its class
+  (`<class>: <message>`, `aborted on <class>: ...`), as #87 found for four of the WebSocket
+  adapter's: `ChecksumMismatchError` and `ProbeCeilingReached` (listed by an audit of main),
+  `BudgetExhaustedAfterReply` and `_ImpossibleFigure` (found by walking every class). No message on
+  `f12ba83` wrote any of them with its class, so nothing a run prints or stores changes. Checked
+  end to end on that tree: a `-sV` pass into `--budget-requests 30` against a loopback server
+  answering 503 to every other request, a scope with a wrong checksum, and a reply whose usage
+  crossed `--budget-tokens 100000`, with no class named and no mask; a mock target's adapter made
+  to raise the first one read `aborted on «REDACTED:high_entropy:2559426b»` on the terminal and in
+  `summary.status.reason`. Renamed to `ScopeChecksumError` (`ChecksumMismatchError` kept as an
+  alias of the same class, since `ildottore.policy` exported it in 0.1.0), `ProbeCeilingHit`,
+  `ReplyOverBudget` and `_ImpossibleLogprob`; the rule is unchanged.
+  `tests/test_redactor_error_class_names.py` (2 tests, both fail on `f12ba83`) walks every
+  exception class of the package and replaces #87's WebSocket-only test (9 test items). u01 A-63
+  and its index row, u08, the MANUAL's redaction paragraph and the CHANGELOG, whose unreleased
+  entries now use the new names. `make gates` green (with `PYTHONPATH` set to the worktree's
+  `src`, one run from the start, 21:03 to 21:10): 4611 tests, 97.60% coverage, 75 specs lint OK,
+  mypy clean on 155 files, four import contracts kept, self-scan (0 high or critical), bandit and
+  pip-audit clean. Left open: other packages' exception names, which cannot be renamed (the rule
+  masks 12 of 216 in Python's builtins, the standard-library modules the adapters use and the ten
+  dependencies; httpx's `TooManyRedirects` is never raised and websockets' two proxy errors are
+  reworded without their class), and a plugin's own class names.
+
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
 - On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of the

@@ -146,6 +146,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-41 | u01 | a YAML value that costs far more to build than it weighs (a number past 1,000 characters, past 1,000 keys that are numbers) is refused before it is built |
 | A-43 | u01 | an operator's file is read up to 1 MiB, its validation errors are listed up to 20 and cut at 300 characters, and `fleet` writes no file it could not read back |
 | A-56 | u01 | no two of a fleet's ids differ only by case, on every file system, so no generated target file overwrites another; each refusal locates its entries |
+| A-63 | u01 | every exception class the package defines has a name the redactor keeps, alone and in each line that writes an error with its class, so no error reads as a masked secret; the rule itself is unchanged |
 | A-21..A-22 | u14 | a test asserts the claim against the real collaborator, and is deterministic |
 | A-39 | u04 (and u06) | a reply's logprob figure is read only when a model could produce it (a finite number at or below zero); a token figure that is not makes the block read as no block, an alternative only its token's alternatives, so nothing crashes on it and nothing is scored from it |
 | A-36 | u08 (and u09) | a figure the target reports (token usage, moderation latency) is checked where it is read, and nothing the tool writes takes the ledger past what a float converts |
