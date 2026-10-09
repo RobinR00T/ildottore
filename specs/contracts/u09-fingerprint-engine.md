@@ -259,10 +259,13 @@ The pre-merge audit of `cd413c0` (2026-10-09) found one high and six lesser defe
 first build, each reproduced, and added to the criterion:
 - **an input filter on the benign request costs that probe, not the pass.** Azure OpenAI's
   prompt filter answers a blocked prompt with HTTP 400 and the error code `content_filter`; the
-  adapters read every non-retryable 4xx as a product error, so `dottore fingerprint` and `run
-  -sV` stopped with exit 3 after 8 requests on such an endpoint, where `main` exited 0. The
-  adapters raise `AdapterStatusError` (an `AdapterProductError` that carries the status, so the
-  attack phase is unchanged), the composition root injects `cli.wiring.refused_request` (a 4xx),
+  HTTP adapters (openai, anthropic, rest, mcp) read every non-retryable 4xx as a product error, so
+  `dottore fingerprint` and `run -sV` stopped with exit 3 after 8 requests on such an endpoint,
+  where `main` exited 0. The HTTP adapters (openai, anthropic, rest, mcp) raise
+  `AdapterStatusError` (an `AdapterProductError` that carries the status and survives copy and
+  pickle, so the attack phase is unchanged; a WebSocket target's refused upgrade is not one, it
+  refuses the connection before any prompt), the composition root injects
+  `cli.wiring.refused_request` (a 4xx),
   and the engine makes it a failed probe for the profile-only probes alone: `benign_refused`
   `null`, `probes_failed` with `guardrail/guardrail_benign: AdapterStatusError`, the pass and the
   run go on. On any other probe it stops the pass, as before;
@@ -279,11 +282,15 @@ first build, each reproduced, and added to the criterion:
   says. Refusal phrases are first-person and whole words ("as an aid" is not "as an ai"); the
   decline and "unable to" phrases are added, which moves no golden, attribution or A-35 figure;
 - on a `non_discriminating_target`, `refusal_style` and `benign_refused` are `null`;
-- a nudge reply the provider's filter stopped has no `refusal_style`.
+- a nudge reply the provider's filter stopped has no `refusal_style`;
+- (verification of `abc6ffe`) a benign reply with neither an answer marker nor a listed refusal
+  phrase is unclear, `benign_refused: null`, not an answer.
 Checked by `tests/fingerprint/test_guardrail_requested_refusal.py` (stub targets for (a), (b) and
 (c), and the audit's cases: 53 tests, of which 31 fail on `cd413c0` and 14 of the first 18 on
 `f12ba83`; the ones that pass on both pin what did not change: attribution, the plan, the two
-stops already read, the nudge's markers), `tests/cli/test_input_filter_probe.py` (the Azure 400
+stops already read, the nudge's markers; four more since the verification of `abc6ffe`),
+`tests/adapters/test_status_error.py` (the four HTTP adapters, and a copy and pickle round trip),
+`tests/cli/test_input_filter_probe.py` (the Azure 400
 through the real CLI, `fingerprint` and `run -sV`, both failing on `cd413c0`; the same 400 on the
 nudge still stops the pass) and `tests/fingerprint/test_probe_failures.py` (a refused nudge, a refused benign request,
 both).

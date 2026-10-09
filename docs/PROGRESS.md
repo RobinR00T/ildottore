@@ -34,9 +34,15 @@ The carryover ledger. Every agent session updates this so context survives even 
   `benign_refused` on a constant target; the remaining present-tense 17s. A-35 measured again,
   unchanged; golden unchanged. Left open: dropping `input_filter`, or setting it from that 4xx
   (OD-40), and the attack phase, which still stops a campaign on such a 4xx (a product error, as
-  on `main`). `make --no-print-directory gates` green on the fix: 4683 tests, 97.61% coverage, 75
-  specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean. Not re-run
-  against a live model.
+  on `main`). `make --no-print-directory gates` green on the fix (`abc6ffe`): 4683 tests, 97.61%
+  coverage, 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+  Its verification found it merge-ready, with three lows closed on top: a benign reply with
+  neither an answer marker nor a listed refusal phrase is unclear (`benign_refused: null`, it read
+  `false`), `AdapterStatusError` copies and pickles with its status, and the docs name the HTTP
+  adapters (openai, anthropic, rest, mcp), with a comment on why a WebSocket target's refused
+  upgrade still stops the pass and an adapter-level test of the four. `make --no-print-directory
+  gates` green on them: 4700 tests, 97.61% coverage, the same static, lint, self-scan, bandit and
+  pip-audit results. Not re-run against a live model.
 
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 

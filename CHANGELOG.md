@@ -44,12 +44,13 @@ versioning: [SemVer](https://semver.org/).
 
 - **Pre-merge audit of `cd413c0`: an input filter on the new benign request stopped `-sV`.**
   Azure OpenAI's prompt filter answers a blocked prompt with HTTP 400 and the error code
-  `content_filter`, the adapters read any non-retryable 4xx as a product error, and the pass let
-  it through: against such an endpoint `dottore fingerprint` and `run -sV` exited 3 after 8
-  requests, where `main` exited 0. The adapters now raise `AdapterStatusError`, an
-  `AdapterProductError` that carries the status (so the attack phase stops on it as before; its
-  halt reason now reads "aborted on AdapterStatusError: ... non-retryable HTTP 400"), and a 4xx
-  to the benign request alone is a failed probe:
+  `content_filter`, the HTTP adapters (openai, anthropic, rest, mcp) read any non-retryable 4xx
+  as a product error, and the pass let it through: against such an endpoint `dottore
+  fingerprint` and `run -sV` exited 3 after 8 requests, where `main` exited 0. The HTTP adapters
+  (openai, anthropic, rest, mcp) now raise `AdapterStatusError`, an `AdapterProductError` that
+  carries the status (so the attack phase stops on it as before; its halt reason now reads
+  "aborted on AdapterStatusError: ... non-retryable HTTP 400", and so does the `error` field of a
+  probe's evidence under `probes/`), and a 4xx to the benign request alone is a failed probe:
   `benign_refused: null`, `probe_errors` lists `guardrail/guardrail_benign: AdapterStatusError`,
   stderr warns, and the pass and the run go on. On any other probe it still stops the pass. It
   is the one input-filter signal a pass sees; `input_filter` stays `null` (OD-40, open).
@@ -81,6 +82,17 @@ versioning: [SemVer](https://semver.org/).
 - `tests/fingerprint/test_guardrail_requested_refusal.py` has 53 tests now, 31 of them failing on
   `cd413c0`; u09 A-67 lists the audit's additions, OD-40 its open part; `docs/10`, MANUAL, FAQ
   and `docs/16` say what changed.
+
+- **Verification of `abc6ffe`, three lows.** A benign reply with neither an answer marker nor a
+  listed refusal phrase ("I'm not comfortable helping with that.", "Unable to help with this.")
+  read `benign_refused: false`; it is unclear now, `null` (the nudge, which has no markers, is
+  unchanged). `AdapterStatusError` copies and pickles with its status (`status_code` is a
+  required keyword, and the default reduction raised `TypeError`). A WebSocket target's refused
+  upgrade stays a plain product error, since it refuses the connection before any prompt, so it
+  still stops `-sV` (a comment says so where it is raised). `tests/adapters/test_status_error.py`:
+  the four HTTP adapters raise `AdapterStatusError` with the status on a 400, 403 and 422, and a
+  copy and pickle round trip (which fails on `abc6ffe`); four cases in
+  `test_guardrail_requested_refusal.py`, two failing on `abc6ffe`.
 
 ### Fixed (a run id of twelve decimal digits, masked as a phone number)
 

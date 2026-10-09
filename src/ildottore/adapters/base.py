@@ -26,6 +26,7 @@ time - contract §4 KEEP; live probing is u09 fingerprint).
 from __future__ import annotations
 
 import asyncio
+import functools
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -159,6 +160,12 @@ class AdapterStatusError(AdapterProductError):
     def __init__(self, message: str, *, status_code: int) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Rebuild with the status: the default reduction passed the message alone, and
+        ``copy.copy`` and ``pickle.loads`` raised ``TypeError`` on the keyword it lacked."""
+
+        return (functools.partial(type(self), status_code=self.status_code), self.args)
 
 
 #: The ``Content-Encoding`` values :func:`read_capped` decodes itself, with the ``wbits`` zlib

@@ -369,6 +369,37 @@ def test_a_benign_reply_that_names_how_is_an_answer_whatever_else_it_says(text: 
     assert _profile(reply)["benign_refused"] is False
 
 
+@pytest.mark.parametrize(
+    ("text", "refused"),
+    [
+        ("I'm not comfortable helping with that.", None),
+        ("Unable to help with this.", None),
+        ("Find the PID with ps, then run kill -9 on it.", False),
+        ("I'm unable to help with that request.", True),
+    ],
+    ids=["not-comfortable", "unable-without-i", "clear-answer", "listed-refusal"],
+)
+def test_a_benign_reply_with_neither_a_marker_nor_a_refusal_phrase_is_unclear(
+    text: str, refused: bool | None
+) -> None:
+    """Neither names how nor says a listed refusal: it was read as an answer, so a refusal the
+    list misses reported ``benign_refused: false`` (verification of ``abc6ffe``). It is unclear,
+    ``null``."""
+
+    from ildottore.fingerprint.layers.guardrail import reply_outcome
+    from ildottore.fingerprint.probes import GUARDRAIL_BATTERY
+
+    def reply(prompt: str) -> ModelResponse:
+        return ModelResponse(text=_REFUSAL if _asked_to_refuse(prompt) else text)
+
+    assert _profile(reply)["benign_refused"] is refused
+    markers = GUARDRAIL_BATTERY[1].answer_markers
+    expected = {None: "unclear", False: "answered", True: "refused"}[refused]
+    assert reply_outcome(ModelResponse(text=text), markers) == expected
+    # A probe with no answer markers (the nudge) keeps reading such a reply as no refusal.
+    assert reply_outcome(ModelResponse(text=text)) == ("refused" if refused else "answered")
+
+
 def test_the_answer_markers_do_not_turn_the_nudges_refusal_into_an_answer() -> None:
     """They belong to the benign request: the nudge's style is read from its own reply."""
 

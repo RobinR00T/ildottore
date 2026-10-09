@@ -556,6 +556,8 @@ class WebSocketAdapter:
                 if (300 <= status < 400)
                 else ""
             )
+            # Not an AdapterStatusError: a refused upgrade refuses the connection, not a prompt
+            # (no prompt has been sent yet), so it still stops a -sV pass (u09 A-67).
             raise AdapterProductError(
                 f"{self.id}: the server refused the WebSocket upgrade with HTTP {status}{redirect}"
             ) from exc
