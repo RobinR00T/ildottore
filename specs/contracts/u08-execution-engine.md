@@ -200,13 +200,17 @@ reservation below a pair of 100,005: pre-commit audit.) The
 ledger takes no guard of its own: nothing a reply or this tool hands it can grow past what
 `float()` converts (a reservation is bounded by `MAX_SAMPLING_TOKENS` and the request's own text,
 a clamp by the ceiling, a reply's figure by `is_count`, and a resume from the largest float, the
-most this tool writes, goes past it by a few replies' worth, which `float()` rounds). A run store
-edited by hand is the exception, not closed here: the store's `is_amount` accepts an integer up to
+most this tool wrote before #89, goes past it by a few replies' worth, which `float()` rounds). A
+run store edited by hand was the exception: the store's `is_amount` accepts an integer up to
 `2**1024 - 2**970 - 1`, past the largest float, and a resume from it under a token ceiling above
-1.8e308 adds tokens until `float()` raises (exit 1, the same on the base). The bound is
-per figure: a campaign's
-total can pass `2**53` after many large replies, and the store then rounds it (by 2 tokens in
-5.4e16, measured), it does not fail. The `-sV` guardrail layer reads `moderation_latency_ms`
+1.8e308 added tokens until `float()` raised (exit 1, the same on the base). The bound is per
+figure: a campaign's total can pass `2**53`, and the store then rounds it (by 2 tokens in 5.4e16,
+measured before #89), it does not fail. Merge note (#89, A-55 in u12): every token ceiling is now
+at most `2**53`, so a total passes it only by what replies sent together add once it is crossed
+(two replies of `2**53 - 1` at `--concurrency 6`, measured after the merge), and the hand-edited
+store, resumed under `2**53`, halts on the ceiling with exit 3 and sends nothing (measured after
+the merge): that exception is closed. One reply of `2**53` fills the largest ceiling, which is how
+the CLI test below believes it. The `-sV` guardrail layer reads `moderation_latency_ms`
 through `is_amount` for the same reason (`fingerprint` and `run -sV` exited 1 the same way; u09).
 Not claimed: a figure up to `2**53` is believed, as a provider's bill is, so a target can still
 report more than it used and halt the campaign on the token ceiling, or less and free its

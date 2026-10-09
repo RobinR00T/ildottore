@@ -183,15 +183,23 @@ def test_a_figure_a_float_holds_exactly_is_still_believed(
     tmp_path: Path, stub: tuple[int, dict[str, Any]]
 ) -> None:
     """The other direction, so the guard cannot pass by ignoring every figure: ``2**53`` itself
-    is recorded for every reply (under a ceiling that leaves room for it)."""
+    is recorded, not the reservation.
+
+    Under the largest ceiling ``run`` takes, ``2**53`` too since #89 (A-55, u12), so one such
+    reply fills it exactly: the figure is trued in without crossing it, and the next send's
+    reservation is refused before it goes out. Ignored, the figure would leave every send its
+    reservation and the run would finish, as for ``2**53 + 1`` above. (This test passed
+    ``--budget-tokens 2**60`` and believed every reply before #89 bounded the flag.)
+    """
 
     port, state = stub
     state["usage"] = f'{{"total_tokens":{2**53}}}'
-    result = CliRunner().invoke(app, _run(tmp_path, port, "--budget-tokens", str(2**60)))
+    result = CliRunner().invoke(app, _run(tmp_path, port, "--budget-tokens", str(2**53)))
 
-    assert result.exit_code == 0, result.output
-    assert state["served"] > 1
-    assert _spent_tokens(tmp_path) == state["served"] * 2**53
+    assert result.exit_code == 3, result.output
+    assert "budget ceiling reached on 'max_tokens'" in result.output
+    assert state["served"] == 1
+    assert _spent_tokens(tmp_path) == 2**53
 
 
 @pytest.mark.parametrize(

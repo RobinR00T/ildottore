@@ -26,8 +26,11 @@ versioning: [SemVer](https://semver.org/).
   was read as 0, which trued the reservation down past cache tokens the reply says it billed, and an
   integer past 2^53 was believed or crashed. Up to 2^53 a figure is still believed, as a bill
   is, so a target can report more than it used and halt the campaign on the token ceiling, or report
-  less and free its reservation. A campaign's total can pass 2^53 after many such replies; the store
-  then rounds it (by 2 tokens in 5.4e16, measured), it does not fail. Reproduced on Python 3.14
+  less and free its reservation. A campaign's total can pass 2^53; the store then rounds it (by 2
+  tokens in 5.4e16, measured before #89), it does not fail. Merge note (#89, A-55): every token
+  ceiling is now at most 2^53, so the total passes it only by what replies sent together add once
+  it is crossed (two replies of 2^53 - 1 at `--concurrency 6`, measured after the merge), not after
+  many replies, and one reply of 2^53 fills the largest ceiling. Reproduced on Python 3.14
   against a local OpenAI-compatible stub, on `main` (`0f936b6`) and on #61; found by the pre-commit
   audit of `fix/target-deep-json`. An integer longer than 4,300 digits is refused earlier by the JSON
   parser itself, a separate question left open on that branch.
@@ -42,8 +45,10 @@ versioning: [SemVer](https://semver.org/).
   `-sV` layer read figures with the same rule. The ledger has no check of its own: nothing a reply or
   this tool hands it can grow past what `float()` converts (clause A-36 in
   `specs/contracts/u08-execution-engine.md`). A run store edited by hand to an integer just under
-  2^1024 still can, on a resume under a token ceiling above 1.8e308 (exit 1, as on `main`); left
-  open. Not in this change, found by its audit and present on
+  2^1024 could, on a resume under a token ceiling above 1.8e308 (exit 1, as on `main`). Merge
+  note (#89, A-55): `run` now refuses such a ceiling, and a resume from that store under 2^53
+  halts on the ceiling with exit 3 and sends nothing (measured after the merge), so it is no
+  longer open. Not in this change, found by its audit and present on
   `main`: a `logprob` in a reply that no float holds still makes `fingerprint` and `run -sV` exit 1
   (it is read in the adapter, u04). Tests: `tests/cli/test_usage_figures.py` (through the CLI, both
   directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
