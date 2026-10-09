@@ -470,6 +470,60 @@ async def test_a_resume_prices_no_sweep_for_a_finished_spec(
     assert _answered_requests(run, specs, plans=[alone], runs=2) == estimate.requests - 2
 
 
+async def test_the_resume_figure_builds_no_plan_and_the_sv_room_check_reads_it(
+    tmp_path, evaluators, mutators, scorer, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """Merged with main's A-59 (u08) and A-48 (u12).
+
+    The figure built every planned attempt id, mutators x runs of them, which grows without end
+    at the ``2**53`` a run accepts (A-59); and the room check of the ``-sV`` refusals, which
+    prices the rest as ``--estimate --resume`` does (A-48), priced a finished spec's sweep again.
+    """
+
+    import importlib
+
+    from ildottore.cli import run as run_mod
+
+    reproduce = importlib.import_module("ildottore.core.reproduce")
+
+    def no_plan(*_args: object) -> str:
+        raise AssertionError("the planned attempt ids were built")
+
+    battery = _battery()
+    spec, plain = battery["EMB-XTENANT-RETRIEVAL-001"], battery["PI-DIRECT-001"]
+    target = _deployment()
+    probes, _ = _probes("Reset it in Settings > Security.")
+    runner = _runner(
+        tmp_path, evaluators, mutators, scorer, _SECURE, probes=probes, adapter=_Counting("t1", "")
+    )
+    specs = [spec, plain]
+    run = (await runner.run(run_id=_RUN, target=target, specs=specs)).run
+    estimate = estimate_plan(specs, 2, target=target, identities=2)
+    plan = TargetPlan(
+        target=target,
+        path=tmp_path / "target.yaml",
+        endpoint="https://api.example.test/v1/chat",
+        authorized=None,
+        selected=specs,
+        skipped_capability=[],
+        blocked_by_policy=[],
+        estimate=estimate,
+        budgets=budgets_for(estimate),
+        mutators_by_spec={spec.id: ["identity", "payload_splitting"]},
+        identities=2,
+    )
+    monkeypatch.setattr(run_mod, "attempt_id_for", no_plan, raising=False)
+    monkeypatch.setattr(reproduce, "attempt_id_for", no_plan)
+
+    # Finished at --runs 2, the sweep included; at 2**53 nothing is, so no sweep is subtracted.
+    assert _answered_requests(run, specs, plans=[plan], runs=2) == estimate.requests
+    assert _answered_requests(run, specs, plans=[plan], runs=2**53) == estimate.requests - 2
+    # Nothing left to send, so a ceiling at the spend holds the rest without the probes.
+    fits = run_mod._fits_without_probes
+    assert fits([plan], 5, spent=5, resume_from=run, specs=specs, runs=2)
+    assert not fits([plan], 5, spent=5, resume_from=run, specs=specs, runs=2**53)
+
+
 def test_the_dry_run_prices_the_sweep(tmp_path: Path) -> None:
     """Two scope identities on a live target that declares multi_identity: two more sends."""
 

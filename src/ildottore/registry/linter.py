@@ -13,6 +13,9 @@ Runs over a loaded pack set + the merged registry and emits a :class:`LintReport
 * **ORACLE_MARKER_IS_ECHOABLE** - a text oracle's pattern matches the spec's own
   planted prompt, so an echo satisfies it; or the spec puts in front of the target a phrase
   the ``refusal`` evaluator reads as compliance, so a refusal that names it fails.
+* **EVALUATOR_MISCONFIGURED** - an evaluator config that would silently not check what it
+  declares, or a regex the spec writes that the engine cannot compile (A-33), whose spec is
+  then not fixtures-proved.
 
 The linter runs **no code and opens no socket**: it consumes already-parsed models and the
 offline stub evaluator table.
@@ -43,6 +46,7 @@ from ildottore.shared.frameworks import (
 )
 from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
+from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 from ildottore.shared.refusal_tells import STRONG_COMPLIANCE
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
@@ -50,6 +54,7 @@ from .fixtures_engine import DEFAULT_STUB_TABLE, StubEvaluator, evaluate_fixture
 from .loader import load_paths
 from .pack import FLAGGED_FAMILIES, LoadedPack
 from .registry import Registry
+from .schema import encodes_utf8
 
 # Evaluator types with no offline stub in W1. A spec relying solely on these can't be
 # fixtures-proved yet, so the linter warns (not errors) rather than false-flagging it.
@@ -197,23 +202,25 @@ def _check_oracle_markers(spec: AttackSpec) -> list[LintError]:
             continue
         for pattern in config.patterns or []:
             try:
-                match = re.search(pattern, haystack, re.IGNORECASE)
-            except re.error:
-                continue  # a malformed pattern is EVALUATOR_MISCONFIGURED's business
+                compiled = compile_spec_pattern(pattern)
+            except SpecPatternError:
+                continue  # reported by check_spec_patterns as EVALUATOR_MISCONFIGURED
+            match = compiled.search(haystack)
             if match is None:
                 continue
             errors.append(
                 LintError(
                     code=LintCode.ORACLE_MARKER_IS_ECHOABLE,
                     message=(
-                        f"{config.type.value} pattern {pattern!r} (a {polarity} marker) matches "
+                        f"{config.type.value} pattern {quote(pattern)} (a {polarity} marker) "
+                        "matches "
                         + (
                             "text this spec itself plants"
                             if secure_marker
                             else "the request this spec sends"
                         )
-                        + f", at {match.group(0)!r}. A target that echoes it back, or quotes it "
-                        "while refusing, satisfies the oracle without doing anything the spec "
+                        + f", at {quote(match.group(0))}. A target that echoes it back, or quotes "
+                        "it while refusing, satisfies the oracle without doing anything the spec "
                         f"is testing for. Key the marker on what only a {polarity} target "
                         "produces."
                     ),
@@ -288,7 +295,35 @@ def _check_fixtures(spec: AttackSpec, table: dict[EvaluatorType, StubEvaluator])
         )
         return errors
 
-    vuln_verdict, _ = evaluate_fixture(spec, spec.fixtures.vulnerable, table)
+    try:
+        vuln_verdict, _ = evaluate_fixture(spec, spec.fixtures.vulnerable, table)
+        hard_verdict, _ = evaluate_fixture(spec, spec.fixtures.hardened, table)
+    except SpecPatternError as exc:
+        # check_spec_patterns compiled every pattern near the top of the stack and the stubs
+        # compile them again a few frames deeper once ``re``'s cache has dropped them, so groups
+        # nested a level or two short of the engine's limit pass the first and not the second.
+        # That crashed lint with a traceback (audits of A-33).
+        field, step = next(
+            (
+                (field, step)
+                for field, pattern, step in _spec_patterns(spec)
+                if pattern == exc.pattern
+            ),
+            ("regex pattern", None),
+        )
+        pins = "" if step is None else f" for step {quote(step)}"
+        return [
+            LintError(
+                code=LintCode.EVALUATOR_MISCONFIGURED,
+                message=(
+                    f"{field} {quote(exc.pattern)}{pins} compiled when lint checked it but not a "
+                    f"few frames deeper, in the fixture proof ({quote(str(exc))}): its groups are "
+                    "nested a level or two short of the engine's limit, so nest them less; the "
+                    "fixtures are not proved until it compiles there"
+                ),
+                spec_id=spec.id,
+            )
+        ]
     if vuln_verdict is not VerdictStatus.FAIL:
         errors.append(
             LintError(
@@ -301,7 +336,6 @@ def _check_fixtures(spec: AttackSpec, table: dict[EvaluatorType, StubEvaluator])
             )
         )
 
-    hard_verdict, _ = evaluate_fixture(spec, spec.fixtures.hardened, table)
     if hard_verdict is not VerdictStatus.PASS:
         errors.append(
             LintError(
@@ -543,6 +577,93 @@ def _check_tool_allowlist(spec: AttackSpec, allowlist: list[str]) -> list[LintEr
     return errors
 
 
+#: Uncompilable patterns reported per spec; one more finding says when there are others.
+MAX_PATTERN_FINDINGS = 10
+
+
+def _spec_patterns(spec: AttackSpec) -> list[tuple[str, str, str | None]]:
+    """Every regex the spec's evaluators compile, as ``(field, pattern, the step it pins)``.
+
+    The step is ``None`` for a ``regex_*`` pattern, which pins none.
+    """
+
+    found: list[tuple[str, str, str | None]] = []
+    for config in spec.evaluators:
+        if config.type in (EvaluatorType.REGEX_ABSENCE, EvaluatorType.REGEX_PRESENCE):
+            field = f"{config.type.value} pattern"
+            found.extend((field, pattern, None) for pattern in config.patterns or [])
+        elif config.type is EvaluatorType.TOOL_SEQUENCE:
+            # Every entry, not only the steps a fixture calls: the evaluator compiles them all.
+            field = "tool_sequence step_arg_patterns pattern"
+            steps = (config.step_arg_patterns or {}).items()
+            found.extend((field, pattern, step) for step, pattern in steps)
+    return found
+
+
+def uncompilable_patterns(spec: AttackSpec) -> list[str]:
+    """Each regex the spec writes that the engine cannot compile, described (A-33).
+
+    One description per pattern and field, naming the field, the pattern, the step it pins and
+    the engine's reason, each through :func:`quote`. It stops one past
+    :data:`MAX_PATTERN_FINDINGS`, so a caller can tell there were more than it lists without the
+    whole spec being compiled. Lint reports these (:func:`check_spec_patterns`) and ``dottore
+    run`` refuses a selected spec that has any.
+    """
+
+    found: list[str] = []
+    seen: set[tuple[str, str, str | None]] = set()
+    for field, pattern, step in _spec_patterns(spec):
+        if (field, pattern, step) in seen:
+            continue
+        seen.add((field, pattern, step))
+        try:
+            compile_spec_pattern(pattern)
+        except SpecPatternError as exc:
+            pins = "" if step is None else f" for step {quote(step)}"
+            found.append(f"{field} {quote(pattern)}{pins} does not compile ({quote(str(exc))})")
+            if len(found) > MAX_PATTERN_FINDINGS:
+                break
+    return found
+
+
+def check_spec_patterns(spec: AttackSpec) -> list[LintError]:
+    """Refuse a regex the spec writes that the engine cannot compile (A-33).
+
+    The offline stubs compiled it in the middle of the fixture proof, so ``(x`` in a
+    ``regex_absence`` crashed ``dottore lint`` with a ``PatternError`` traceback (pre-commit audit
+    of ``fix/cli-legacy-workflow-commands``, 2026-10-07), and a bad ``step_arg_patterns`` entry
+    for a step no fixture calls linted clean. Its evaluator would abstain on every attempt, so
+    ``dottore run`` refuses the spec first. At most :data:`MAX_PATTERN_FINDINGS` findings and then
+    one that says there are more, so a hostile spec cannot fill a CI log (25 MB of text from
+    97,000 patterns before the cap, output audit).
+    """
+
+    problems = uncompilable_patterns(spec)
+    errors = [
+        LintError(
+            code=LintCode.EVALUATOR_MISCONFIGURED,
+            message=(
+                f"{problem}: its evaluator would abstain on every attempt, so `dottore run` "
+                "refuses this spec, and the fixtures are not proved until it compiles"
+            ),
+            spec_id=spec.id,
+        )
+        for problem in problems[:MAX_PATTERN_FINDINGS]
+    ]
+    if len(problems) > MAX_PATTERN_FINDINGS:
+        errors.append(
+            LintError(
+                code=LintCode.EVALUATOR_MISCONFIGURED,
+                message=(
+                    "more regex patterns of this spec do not compile than the "
+                    f"{MAX_PATTERN_FINDINGS} reported; lint stopped looking"
+                ),
+                spec_id=spec.id,
+            )
+        )
+    return errors
+
+
 _MEDIA_KIND_CAP = {"image": RequiresCapability.MULTIMODAL, "audio": RequiresCapability.AUDIO}
 
 
@@ -604,7 +725,9 @@ def _check_suite_refs(pack: LoadedPack, registry: Registry) -> list[LintError]:
                         message=(
                             f"suite {suite.id!r} references unknown spec id {entry.spec_id!r}"
                         ),
-                        spec_id=entry.spec_id,
+                        # The header prints it; half a character made that a traceback, as
+                        # for a spec's own id (pre-merge audit of A-54). The message has its repr.
+                        spec_id=entry.spec_id if encodes_utf8(entry.spec_id) else None,
                         path=str(pack.root),
                     )
                 )
@@ -684,11 +807,16 @@ def lint_packs(
         findings.extend(_check_framework_map(spec))
         findings.extend(_check_media(spec))
         findings.extend(_check_evaluator_config(spec))
+        uncompilable = check_spec_patterns(spec)
+        findings.extend(uncompilable)
         findings.extend(_check_oracle_markers(spec))
         findings.extend(_check_iopc(spec))
         findings.extend(_check_aisvs(spec))
         findings.extend(_check_frameworks(spec))
-        findings.extend(_check_fixtures(spec, table))
+        # The stubs compile the same patterns: a spec whose pattern does not compile is not
+        # proved (its finding says so) instead of crashing the whole lint.
+        if not uncompilable:
+            findings.extend(_check_fixtures(spec, table))
 
     for pack in packs:
         findings.extend(_check_suite_refs(pack, registry))

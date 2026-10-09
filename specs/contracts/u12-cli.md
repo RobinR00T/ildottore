@@ -82,8 +82,15 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   `digests` attribute: on a scope checksum mismatch the digest computed from the body; the
   `checksum:` value the operator typed is not quoted at all; on a tamper refusal the hash the
   artifact's content has now). A scope validation error names fields and reasons, never the
-  input value. A kept token that overlaps a credential the process
-  registered is masked anyway, and every other 64-hex value goes through the redactor. An error
+  input value, and so does a target file's `capabilities` or `sampling_defaults` refusal (A-45).
+  A spec file a load refusal names is kept readable when it is a relative path to
+  an entry on disk under a spec path (the `spec_files` attribute of `SpecLoadError`) and no
+  token character of the entropy rule (`[\w+/=-]`) is glued to it where it matched; what the
+  loader quotes from inside the file goes through the redactor (the name is the spec tree
+  author's choice, the operator's or an installed pack's, not a value of the run). A kept token
+  that is part of a credential the process registered, from 8 characters, prints as
+  `«REDACTED:credential»` (one that contains a registered credential loses it to the value rule
+  first), and every other 64-hex value goes through the redactor. An error
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
   redactor alone caught such a value only by its entropy; the `fleet --judge` mismatch follows
@@ -115,6 +122,16 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   under `--dry-run` on 2026-10-04 (the first as written, the others against offline mock target
   and scope files) and each exited 0. The `eu:ai-act` preset line was removed from `docs/09 §3`
   because it exits 3 (the preset is not built).
+- **Every long option the tool names is one it accepts** (`tests/cli/test_flags.py`, added
+  2026-10-07). A string literal under `src/ildottore` (docstrings aside) or a help text the command
+  tree renders that names a `--option` no command or group accepts fails the test (an option is
+  `--`, not right after a letter, a digit, `_` or `-`, then a lowercase ASCII letter, read up to the
+  first character that is not a letter, a digit, `_` or `-`, so `--budget-wall_s` is not taken for
+  `--budget-wall`). The resume refusal for a spent wall-clock ceiling told the operator to raise
+  `--budget-wall-s`, which `dottore run` answers with "No such option"; the flag is `--budget-wall`.
+  That refusal is also followed through the CLI as an operator would follow it: the flags it names
+  are read from `dottore run`'s parameters, and raising them lets the resume through
+  (`tests/cli/test_resume_integrity.py`).
 - **Composition smoke** (`tests/cli/test_wiring.py`): `wiring.build()` returns an engine whose
   injected components satisfy each `shared.protocols` type; no concrete leaks past the root.
 - `--dry-run` sends nothing (fake adapter send-count == 0); `-oA` writes exactly 4 report files.
@@ -136,6 +153,16 @@ requests where the run sent 499, and understated a multi-target run by half.
 command: a malformed YAML, an adapter refusal, a tampered artifact, an unreadable scope. Each
 one shipped as a 1 or a 2 at some point, because the handler tuple was written by listing the
 classes somebody remembered. A test drives each failure through the CLI and asserts the code.
+A file nested past the JSON parser's stack is one of them (2026-10-07): `json.loads` raises
+`RecursionError`, which is not a `ValueError`, and `diff`, `calibrate`, `replay` and
+`run --resume` exited 1 on it. The fix is where the file or column is parsed, into a
+`ValueError` that names the file or the column. So is a value that parsed and overflowed later,
+when it was formatted, walked or written back: a report's run status is formatted only as
+text, a run store column is refused past 100 levels, and a YAML file (spec, scope, target,
+fleet, labels, pack) is refused past 100 levels with its aliases expanded, which chained anchors
+reach from 4 KB of text (`tests/cli/test_deep_json.py`, `test_replay.py`,
+`test_resume_integrity.py`), and past 100,000 nodes with them expanded, which 15 doubling
+anchors reach from 265 bytes (u01 A-37, `tests/cli/test_yaml_expansion.py`).
 
 **A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
 belongs to a different target, and refuses when no run store is available to check. Unbound, it
@@ -155,7 +182,9 @@ judge is wrapped in `core.metering.MeteredAdapter`, bound to the campaign's ledg
 and the estimate and the derived ceilings count it. Amended 2026-10-07 (A-34): the estimate
 and the derived ceilings count the identity sweep too, one send per scope identity for each
 spec that sweeps, which they had never done; `--estimate --resume` subtracts it for a spec whose
-every planned attempt is answered, as the runner then skips the sweep.
+every planned attempt is answered, as the runner then skips the sweep, counted from what is stored
+as the runner counts it (A-59, u08), and the room check of the `-sV` refusals (A-48) reads the
+same figure.
 
 **A-24 A resume is bound to its campaign: the battery, the target, the route, the sample size
 and the money (added 2026-09-22, widened the same night after audit).** Every one of these was
@@ -176,7 +205,8 @@ a claim about a whole campaign checked only against the invocation in front of i
 * **The money.** The hard budget reset on every command. The cumulative spend is persisted and
   the ledger opens there, **including the `-sV` probe pass**, which runs outside the runner's
   ledger by design and was therefore pre-checked against the ceiling and then never billed: 17
-  requests per target per resume, unrecorded. It binds **sequential** invocations: two concurrent
+  requests per target per resume, unrecorded (and recorded only at the ceiling when the pass
+  stopped, until A-46). It binds **sequential** invocations: two concurrent
   resumes of one run id are not serialised (no lease), so they can each spend the remainder. The
   write is monotonic per axis, so a refused write can no longer discard a higher token or wall
   figure along with the request count, and the record cannot under-report what was spent.
@@ -202,9 +232,54 @@ on disk and no row, and its resume was refused outright because the target could
 verified: the resume you most want after a crash was the one you could not have. Everything in
 the integrity half is known before the first request. The spend is not; since 2026-10-04 the
 runner hands it to the store however the campaign stops (a ceiling, an abort, Ctrl-C, and SIGTERM
-or SIGHUP, which `execute_run` turns into Ctrl-C). A SIGKILL still loses the dead half's spend,
-and so does a Ctrl-C during a resumed run's `-sV` probe pass; the resume then opens at whatever
-was last recorded: the trade against a database write per request.
+or SIGHUP, which `execute_run` turns into Ctrl-C), and a resumed run's `-sV` probe pass is
+recorded however it ends (A-46). A SIGKILL still loses the dead half's spend; the resume then
+opens at whatever was last recorded: the trade against a database write per request.
+
+**A-46 A resumed run records what its `-sV` probe pass sent, however the pass ends (added
+2026-10-07).** The pass runs outside the runner's ledger, and only the request ceiling recorded
+what it had sent before stopping. Every other stop lost it: a probe answered 503 three times (the
+meter retries it twice, then the adapter's environment error stops the pass) left the run store
+at 20 requests while the target had served 23, and a 401, a 200 that is not JSON, Ctrl-C, SIGTERM,
+or anything stopping the run between a pass that succeeded and the runner's ledger opening lost
+the pass the same way; the next resume then probed again against a ceiling that had never seen
+those requests (delta audit of PR #68, reproduced on main `0501752`). The CLI now owns the pass's
+ledger and, on a resume whose spend is recorded, writes the prior spend plus every request the
+pass sent, retries included, as soon as the pass ends, success included. Requests are counted as
+the ledger counts them, every send attempted: one that never reached the target (a refused
+connection) counts, as it does for the attack traffic, and so does a send in flight when a signal
+arrives. Each probe is counted once: the store keeps the highest figure per axis, so the runner's
+later record of the same probes plus the attack does not add them again.
+
+Signals were the hard part, found by three audit rounds. The write after a pass that succeeded
+sits inside the handlers: placed after them, a real SIGINT a few milliseconds after the last probe
+lost all 17 in 2 of 16 tries (pre-commit audit). A handler's own write has nothing after it: one
+SIGINT landing there just after a 503 stop lost the pass in 2 of 41 tries (delta audit). Writing
+again on that signal closed it, and on a locked store made Ctrl-C wait one more busy timeout per
+interrupted write (9.9 s instead of 4.7 after a 503, 15.1 instead of 9.8 after a pass that
+succeeded) for a record lost anyway (pre-merge audit); it was withdrawn rather than given a further
+rule. So the record can fall below what was sent in three cases: a signal landing while a handler
+writes it (a few milliseconds; after an error or the ceiling stopped the pass one signal is
+enough, after a signal or a pass that succeeded it takes a second), a SIGKILL, and a write that
+fails, which is a warning and never replaces the error or the Ctrl-C that stopped the pass. The
+first two are written here and not pinned by a test.
+
+When an error or a signal ends the pass before its record is complete, stderr says how many
+requests it sent and what the run now records, or that they could not be added, even under `-q`:
+the error's own text says `exhausted 1 attempt(s)` after three sends, because the meter, not the
+adapter, owns the retries (the ceiling's refusal gives its own count). A signal landing during that
+write also cuts the line. Not recorded, as on the ceiling path before: a fresh run's pass
+(its run row is written after the pass, so there is nothing to resume) and a `--resume-unverified`
+run whose spend was never recorded (it was told its ceiling covers that invocation alone). Such a
+resume that completes still records its own invocation's spend as the run's, which predates this
+clause and is not changed by it.
+
+Checked through the real CLI against a counting stub by `tests/cli/test_probe_pass_spend.py`: a
+503, a 401 and a 200 that is not JSON on the first and on the sixth probe; SIGINT and SIGTERM sent
+to a subprocess with a probe on the wire (its Ctrl-C handler restored, since a shell that starts
+pytest with `&` passes SIGINT on ignored); an interruption at the write after a pass that
+succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases
+not recorded, each comparing the store with what the stub served.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
@@ -215,6 +290,241 @@ that the ceiling then covers one invocation. A **corrupt** integrity record is n
 absent one and raises rather than continuing. All of it is checked before the fingerprint pass,
 which sends: `-sV --resume` used to put 17 probes on a live endpoint and then exit 3 having done
 no work. Checked by `tests/cli/test_resume_integrity.py`.
+A **corrupt** record includes, since 2026-10-07, a column nested past the JSON parser's stack, a
+spend figure that is not a finite, non-negative number and a stored `--runs` that is missing
+beside the target digest or not a positive whole number (an infinity or a list was a traceback
+and exit 1, a negative spend was taken as spent, `true` resumed at one run, a missing count at
+the invocation's default).
+
+**A-42 A run parses each target file once (added 2026-10-07).** `dottore run` and `dottore
+fingerprint` parse a target file once per time it is named (`wiring.read_target_file`), and the
+target the scope authorizes, its route (mock or live), its `mock_scenario`, the target handed to the
+live adapter, the plans and a resume's binding all come from that one parse. `run --dry-run` parsed
+a mock target four times (to load it, to ask whether it is a mock, to read its scenario, and for the
+plan) and a live one five (the target loaded again for the adapter, and a second plan), three times
+under `--hardened`, and `fingerprint` up to four, so a file costly to build cost that many times
+over (a 450 KB target with a base-60 value was accepted after 37 s, found by the pre-commit audit of
+A-37), the live target sent to came from a later read of the file than the one the scope authorized,
+and a target that can be read once (`-t /dev/stdin`) was refused on its second read. Not covered: a
+file named twice is parsed once per name (`-t X -t X`, refused as a repeated id, and `-t X --judge
+X`), and `fleet --run --judge` parses its judge file once to generate the scope and once to run. A
+scope with a `checksum:` line is still parsed twice, by design: the second parse is the check that
+the line is part of no other value (u01). Checks: `tests/cli/test_yaml_construction_cost.py`,
+counting parses where the YAML is parsed: a mock run under `--dry-run`, `--estimate`, both with
+`-sV`, a full run, `-sV` and `--hardened`; a live dry run and estimate; `--hardened` on a live
+target; two targets; a resumed run; a judge file; a target piped in on `/dev/stdin`; and
+`fingerprint` offline and on a mock target, each target file parsed exactly once.
+
+**A-45 A target file's `capabilities` or `sampling_defaults` refusal names the file, the field and
+the reason, on one line, never the value (added 2026-10-07).** `load_target` handed a target file's
+`capabilities` and `sampling_defaults` blocks to pydantic without catching its `ValidationError`.
+That error is a `ValueError`, so every command's handler caught it and printed pydantic's own text:
+four lines (`error: 1 validation error for Capabilities`, the field, `input_value='maybe-later'` and
+a docs URL) that quoted the operator's value and named no file, while the scope and fleet loaders
+already gave `scope file <path> failed validation: <field>: <reason>` (`fleet file ...`, and `policy
+pack <path> ...` for a pack), through `shared/config_errors.validation_problems`, which keeps the
+input value and the URL out. Both blocks now raise a plain `ValueError` of that kind, `target file
+<path> 'capabilities' failed validation: tools: Input should be a valid boolean, ...`, with the
+block's problems on the one line as `validation_problems` lists them, and exit 3 through `run -t`,
+`run --judge`, `fingerprint` and `fleet --judge` (`tests/cli/test_target_file_validation.py`: 19 of
+its 24 tests fail on `0501752`; the other 5 check that the redactor leaves each test value readable,
+and the CLI tests fail on any mask in the output, since a first value was masked as a phone number
+and proved nothing; and they look for every 8-character piece of a value, since pydantic printed the
+first 24 and the last 23 characters of a long one). Outside the clause, and said so rather than
+pinned:
+* other refusals of a target file still quote what it says: the `type` and `mock_scenario`
+  values (whatever was written there, a map included), the tool name a `seeded_setup` both maps
+  and grants, and the target's `id`, which several refusals name (two files with one id,
+  `--hardened` on a live target, a target the scope does not authorize);
+* a key the operator typed is part of the location and is printed as pydantic renders it (a
+  `true:` key as `1`), control characters included, so a key holding a line break still splits
+  the message until the terminal writes them out (#51);
+* a file with both blocks wrong is refused on its `capabilities` block alone;
+* only what pydantic cannot read as the field's type is refused: `tools: 'off'` reads as false,
+  `temperature: '0.5'` as 0.5, `temperature: true` as 1.0, and `temperature` and `top_p` have no
+  range (`.nan`, `-3`, `top_p: 7.5` are kept);
+* `capabilities` that is not a mapping but is empty or false (`false`, `0`, `[]`, `""`) was read
+  as no capabilities, and a key it does not know was dropped without a word (`sampling_defaults`
+  refuses both): both are refused since A-50.
+
+**A-50 A target file's `capabilities` is a mapping of the keys `Capabilities` knows, or nothing;
+anything else is refused before anything is sent, and `dottore fleet` refuses it before it writes
+(added 2026-10-07; OD-29 decided).** `load_target` validated only the keys of `capabilities` that
+`Capabilities` knows and dropped the rest without a word, so `tool: true` written for `tools` ran
+the target with tools off and took the tool specs out of the plan: on `2f6201a`, a chatbot with
+`rag` and `memory` on planned 40 specs with 33 skipped for a capability, against 59 and 8 with
+`tools`, and the dry run counted the skipped specs but named no key. A `capabilities` that was not a
+mapping but read as false (`false`, `0`, `0.0`, `[]`, `""`, `no`) was taken as no capabilities,
+while `true`, `1` or `[tools]` was refused as "must be a mapping"; `sampling_defaults` refuses both.
+`dottore fleet` typed an entry's map as `dict[str, bool]` and copied any text key into the target
+file it wrote, with exit 0, where the loader then dropped it. Now:
+* a key `Capabilities` does not know is refused on the one A-45 line, `target file <path>
+  'capabilities' failed validation: tool: Extra inputs are not permitted` (a key that is not text:
+  `1: Keys should be strings`), beside the block's other problems, never the value;
+* only an absent or null `capabilities` (the key with nothing after it, `null`, `~`) or an empty
+  mapping is no capabilities; any other value that is not a mapping is refused as `target file
+  <path> 'capabilities' must be a mapping`, without quoting it;
+* a fleet entry's `capabilities` is the target file's own `Capabilities` model, so `fleet` refuses
+  an unknown key (`fleet file <path> failed validation: targets.0.capabilities.tool: Extra inputs
+  are not permitted`, exit 3) and writes nothing, and the target file it writes holds `tools` (true
+  for `kind: mcp`) and `rag` overridden by exactly the keys the entry wrote, as before, though in
+  the model's field order rather than the order written (same values, same loaded target).
+
+`tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`, each on the
+old behavior (the file loads, or the command exits 0); the other 21 guard what stays (a file with no
+capabilities, every known key, the values that were already refused, what `fleet` writes) and that
+the redactor leaves each test value readable, and one loads every target and fleet file under
+`examples/`, `specs/` and `tests/` and every such YAML block of the docs through the real loaders.
+Refusing both is the owner's decision (OD-29), as the smallest reversible change: the filter and the
+`or {}` in `_target_from` (called by `load_target` and `read_target_file` since #77), and `dict[str,
+bool]` in `FleetTarget` with `**entry.capabilities` in `_target_doc` (the `Capabilities` import in
+`cli/fleet.py` then goes, or ruff fails), undo it, with this test file removed. Outside the clause,
+and said so rather than pinned (pre-commit, delta and pre-merge audits):
+* a top-level key a target file does not know (`endpont:`, or `tools: true` under a
+  `capabilities:` left empty by a lost indent) is still dropped without a word, and so is a `name`,
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text;
+* a fleet entry's `capabilities` that is not a mapping, `null` included, was refused and still is,
+  now in pydantic's words for a model (`Input should be a valid dictionary or instance of
+  Capabilities`), where a target file reads `null` as none;
+* what pydantic can read as a boolean is taken as read (`tools: 'off'` is false), as in A-45;
+* an unknown key is printed as the location, as A-45 says of any key: one that is not text as
+  pydantic renders it (`on:` as `1`, `off:` as `0`, `~:` as `None`), an empty key or one holding
+  half a character (a lone surrogate) as `<root>` (the latter with `Input should be a valid
+  string`), and control characters as written until #51 writes them out; a credential pasted as a
+  key is masked as any error text is (a registered credential and the known key shapes first, then
+  the entropy rule), and the entropy rule leaves a low-entropy one readable (about 1 in 20 random
+  64-hex keys, and the tests' repeated value);
+* unknown keys are listed on the one line as `validation_problems` lists any block's problems
+  since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 keys give
+  a line of 1,040 bytes, where `sampling_defaults` on `2f6201a` printed 789 KB);
+* a run halted before this change with such a key resumes once the key is deleted (it was never
+  read, so the target is the same; measured end to end, exit 0) and is refused as another target
+  once the key is corrected to the one meant, which changes the capabilities; that refusal's
+  advice to restore the target as it was is followed by deleting the key, since the file as
+  written no longer loads. A `capabilities: false` resumes the same way once deleted or written
+  as `{}`.
+
+**A-48 The advice of a refusal is advice the tool would accept, and a resume is checked for being
+the same campaign before it is checked for money (added 2026-10-07).** `run --resume -sV` with a
+request ceiling that could not hold the probe pass was refused with "Raise --budget-requests, or
+drop -sV", before the check of the planning mode (A-24). Each half was right for one kind of
+campaign only, measured through the CLI on `0501752` (pre-commit audit of
+`fix/resume-wall-flag-name`): on a campaign halted without `-sV`, raising the ceiling was refused
+again ("halted with adaptive planning off and this invocation asks for on"); on one halted with
+`-sV` or `--deep`, dropping `-sV` was ("on" and "off" the other way). Now:
+
+* the checks that the resume continues the same campaign (target, route, judge, planning mode,
+  `--runs`, battery and evidence) run before the wall-clock and request-ceiling refusals, and the
+  resume inherits the campaign's `--runs` before the provisional plan those ceilings are derived
+  from (at the invocation's default of 5, a campaign run at `--runs 20` was refused against a
+  derived 2,000 requests where its own was 3,300). The checks only read: the evidence is adopted
+  into the artifact journal after the last refusal before any traffic, so a resume refused before
+  it sends writes nothing (on `0501752` the `--budget-requests` pre-flight refused a resume with no
+  recorded spend after adopting);
+* the planning-mode refusal names the flags that set the mode, `-sV`, `-A` and `--deep`, to leave
+  out or to put back (it named none);
+* the three refusals of a probe pass that does not fit the request ceiling (the resume's
+  pre-check, the `--budget-requests` pre-flight and the pass that reaches the ceiling) offer
+  dropping `-sV` only when the ceiling would hold the rest of the campaign without the probes,
+  priced as `--estimate --resume` prices it, and never to a campaign that recorded adaptive
+  planning (a resume whose spend left one request of room halted after it, exit 3, keeping
+  nothing; after a pass that reached the ceiling on a resume with a spend on record, its sends are
+  recorded and fill the ceiling). Otherwise they say to raise `--budget-requests`, and every one
+  names that flag (two said "the ceiling").
+
+`tests/cli/test_resume_sv_advice.py` follows every piece of advice each of these refusals gives,
+through the CLI, and asserts that each is an invocation that goes through, not a second refusal;
+each test pins the advice it expects, and a flag the advice names that its grammar cannot turn into
+an invocation fails it. 20 of its 24 tests fail on `0501752`; the other four guard what did not
+change (a campaign that recorded no planning mode may still drop `-sV` when the ceiling holds the
+rest, and a resume refused for the wall-clock or the request ceiling leaves the journal as it found
+it). Limits, written here rather than fixed in a test: the advice answers the check that refused, so
+following "Resume with -sV" adds the probe pass, which a tight ceiling then refuses on its own (with
+advice that goes through), and following "Resume without -sV, -A or --deep" under a ceiling that
+does not hold the rest of the campaign halts (measured with 6 spent and 3 to send: at ceilings 6, 7
+and 8), as any resume did on `0501752`; "whichever it ran with" asks the operator for what the run
+store does not keep (one flag for the three); the advice reads the request axis only, so a campaign
+halted on `--budget-tokens` is still told about requests, as on `0501752`; the estimate leaves out
+retries (the multi-identity sweep was the other omission until A-34, u08, priced it; the check
+subtracts a finished spec's sweep as `--estimate --resume` does), so a followed "drop -sV" at an
+exact fit can still halt, and it over-prices a resume's rest with `--judge` (the safe direction);
+the test grammar does not read a piece written as a sentence of its own ahead of
+the advice; the advice names `-sV` where the invocation said `-A`, which implies it; and the stored
+mode is read by truthiness, as the planning-mode check reads it, so the advice and the check agree
+on a value that is not a boolean.
+
+**A-55 Every integer flag of `run` is bounded above as well as below, and so is a live run's pace
+against the wall-clock ceiling (added 2026-10-07).** `--runs` had a lower bound only, and the plan
+multiplies its token estimate by the budget headroom, a float: `dottore run ... --dry-run --runs
+<4,300 nines>` (and `--estimate`, and the run) exited 1 with `OverflowError: int too large to
+convert to float`, a traceback and the code this tool uses for "findings below the threshold" (from
+305 nines with `PI-DIRECT-001` alone, 303 with the shipped battery, against a mock target with every
+capability). Found on 2026-10-07 by the pre-commit audit of `fix/huge-int-repr` (finding F6). A
+sweep of every numeric flag of `run` (the seven integer ones and `--rate` and `--timeout`) with
+hostile values, 168 dry-run and estimate cases and 48 runs against the mock, found two more: `--rate
+1e-308` (or `5e-324`) on a live target was the same traceback in `budgets_for` (`cannot convert
+float infinity to integer`, from the request count over the rate), `--dry-run` included; and
+`--budget-tokens`, `--budget-requests` or `--budget-wall` of `-1` passed `--dry-run` and
+`--estimate` with exit 0 while the run refused it with exit 3. The pre-commit audit of this clause
+found that bounding the quotient alone turned `--rate 1e-308` into a live run that never stopped
+(still running after 25 s with `--budget-wall 3`): the ceiling is checked when a send is charged
+(`core/budgets.py`), not while the rate limiter waits for the next one (`core/pacing.py`), and the
+same held for any pace slow enough (`--rate 0.001 --budget-wall 5` was still running after 45 s
+against a local stub). Its delta audit found the first answer exempting a zero ceiling, where
+`--budget-wall 0 --rate 1e-6 -sV` ran past 25 s because the probe pass reads no ceiling, and reading
+`--rate` only, so `-T0 --budget-wall 1` passed where `--rate 0.5 --budget-wall 1` was refused.
+
+So `_validate_options` refuses, with exit 3 and before anything is sent (`fleet --run` writes its
+scope and target files first), a `--runs`, `--top-tests` or `--concurrency` below 1, a
+`--budget-tokens`, `--budget-requests` or `--budget-wall` below 0, and any of the six above
+`MAX_FLAG_VALUE`, `2**53` (9,007,199,254,740,992, where the run of whole numbers a float holds
+exactly ends; `--budget-wall` of that many seconds is 285 million years): `error: --runs must be at
+most 9,007,199,254,740,992 (got a number of more than 21 digits)`. Through `run` and `fleet --run`,
+which builds its options in code. Once the timing is resolved, and before the resume block and the
+probe pass, which send, a live run whose pace (`--rate`, or the timing template's) is under one
+request per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap a derived ceiling cannot pass)
+is refused, the product compared so that a NaN refuses too (`--rate inf` against a zero ceiling is
+`inf * 0`, which the pre-merge audit got past a `< 1` test): `--rate 1.000e-308 is less than one
+request per 7,200-second wall-clock ceiling, so the run would wait past that ceiling between two
+sends; raise the rate or --budget-wall` (`the -T0 pace of 5.000e-01 requests per second ...` for a
+template). Under `--budget-wall 0` no pace sends, so the advice names the one flag that helps:
+`--budget-wall 0 leaves a live run no time to send anything, at any pace; raise --budget-wall`. An
+offline mock run is not paced, so not checked. A resume inherits the count its run store recorded,
+after these checks, so the store refuses a stored `--runs` past `2**53` as a corrupt record, as it
+refuses one below 1 (a 400-digit count edited into the store was the same traceback once inherited).
+A figure is printed with thousands separators, which the CLI's redactor left readable in all of
+63,000 sampled values (1 to 21 digits, either sign), and described past 21 digits; a rate in
+scientific notation, which it left readable in all of 20,000 sampled refused rates, where 2,782
+written as typed were masked as phone or card numbers. The wall-clock derivation also bounds its
+quotient at `MAX_FLAG_VALUE` before `int()`, for any caller of `budgets_for`; the cap it is clamped
+to afterwards makes the result identical for every finite quotient. The flag sweep, repeated on the
+code before the delta audit: 0 tracebacks in 216 cases (8 on `2f6201a`). Checked by
+`tests/cli/test_flag_bounds.py` (105 tests, 87 failing on `c3e70d8`; the 18 that pass are the bound
+itself accepted for each flag, a zero budget still passing the dry run of a mock run, the three
+lower bounds that already existed keeping their message, four paces of one request per ceiling or
+more, a mock run not paced so not checked, and a paced wall under the cap derived as before; the
+refused paces are tried in dry runs, so a regression cannot hang the suite), and by three cases in
+`tests/cli/test_resume_integrity.py` that read a stored count in the store, not through a resume (it
+reads `2**53` and refuses `2**53 + 1` and a 400-digit count; the last two fail on `c3e70d8`).
+
+Outside the clause, and said so rather than pinned:
+* the wall-clock ceiling is not a deadline at an accepted pace either: each concurrent spec waits
+  its own interval and the `-sV` probe pass reads no ceiling, so `--rate 0.5 --budget-wall 2`
+  against a local stub ran 2.6 s at `--concurrency 1`, 8.6 s at the default 4, 18.7 s at 12 and 34.8
+  s with `-sV` (delta audit); a deadline in the rate limiter, or the probe pass under the campaign's
+  ceiling, would close it and is u08's and u09's;
+* `2**53` is not a bound with a meaning. It did not bound the work either: a resume built a set of
+  mutators x runs attempt ids for each spec the halted run had started (10^7 runs, 1.3 to 3.7 GiB;
+  `2**53 + 1` still growing at 3.7 GB after 4.5 minutes), until A-59 (u08) had the runner count what
+  is stored instead (OD-32, decided 2026-10-08);
+* `-T` was already refused outside 0 to 5, but a value of 9 digits or more is printed as
+  `«REDACTED:phone»`;
+* a resume is checked against the whole wall-clock ceiling, not what the halted run left of it (a
+  run halted at 12 s of 16 s resumed at 0.07 requests per second and stopped at 26.3 s, pre-merge
+  audit), and a live `--judge` in a run whose attack targets are all mocks is neither paced nor
+  checked, as on `c3e70d8`;
+* `--rate inf` turns pacing off (the limiter reads its interval as 0) and the dry run prints `inf
+  req/s ceiling`; `--timeout inf` and `--timeout 1e308` are accepted.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
@@ -233,3 +543,26 @@ no work. Checked by `tests/cli/test_resume_integrity.py`.
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
+  file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
+  as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in
+  `dottore fleet` before anything is written. Alternatives: keep dropping them in silence (main
+  until A-50: a typo of `tools` takes the tool specs out of the plan); warn and go on (the warning
+  goes where the run's output goes, and a CI log nobody reads loses the same specs); refuse the
+  unknown key and keep `false` as none (the one shape an operator may write on purpose to mean
+  "none", though `{}` or leaving the key out says it too). A file that loads on main and is refused
+  now holds a key `Capabilities` does not know or a `capabilities` of `false`, `0`, `[]` or `""`; no
+  file of the repository does. Reversal: the filter and the `or {}` in `_target_from` (called by
+  `load_target` and `read_target_file` since #77), `dict[str, bool]` in `FleetTarget` and
+  `**entry.capabilities` in `_target_doc` (dropping the `Capabilities` import in `cli/fleet.py`),
+  and `tests/cli/test_target_capabilities_strict.py` removed.
+- **OD-32** how far `--runs` may go (2026-10-07). **Decided 2026-10-08 by the owner: the runner
+  counts what is stored instead of building the plan (A-59, u08), and `--runs` keeps its `2**53`
+  bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The
+  runner built a set of mutators x runs attempt ids per spec on a resume and in the multi-identity
+  sweep, for each spec the halted run had started: with `PI-DIRECT-001` and `OUT-XSS-001`, a stored
+  count of 10^6 took 209 MiB with one spec started and 593 to 679 MiB with both (three
+  measurements; 653 to 678 on 2026-10-07), 10^7 took 3.5 s and 1.3 GiB with one and 16.3 s and
+  3.7 GiB with both, and `2**53 + 1` was still growing at 3.7 GB when it was stopped after 4.5
+  minutes on `2f6201a`. A bound with a meaning (the schema caps a
+  spec's own unread `runs:` at 50) would have refused values that run today; counting does not.
