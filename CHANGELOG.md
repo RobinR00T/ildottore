@@ -56,6 +56,16 @@ versioning: [SemVer](https://semver.org/).
   for every test of the file.
 - "Until 2026-10-08" (MANUAL) and "on main `e4d6c83`" (u12 A-60) read "In older versions" now; the
   commit stays where it names what a test fails on.
+- **Four lows of the re-audit of #66, on the stack with #60.** The `-sV` room check clamps the
+  target's share and the judge's at zero each on its own, and a test now holds it: a plan that
+  prices fewer target requests than the resume keeps lent the surplus to the judge's share with the
+  clamp removed, and 5 spent plus 4 judge requests left fitted a ceiling of 8
+  (`tests/core/test_authz_leak_corroboration.py`). A sweeping spec whose only reply was stored
+  without a verdict (`DL-XTENANT-001`, `--runs 1 --judge`, ceilings 3 and 4) is resumed with the
+  sweep, the attempt and its two judge requests, `(3, 2)`, and `--estimate --resume` prices exactly
+  that (`tests/cli/test_resume_halted_mid_batch.py`). u12 A-48 and the MANUAL's `--estimate` row say
+  the judge's share is for a spec that uses `semantic_judge`, and the row says "kept" for what a
+  resume does not send again, in one sentence; the `--resume` entry of `dottore(1)` is reflowed.
 
 ### Fixed (a halted run keeps the replies it paid for, and a run that spent can be resumed)
 

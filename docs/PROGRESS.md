@@ -5,26 +5,30 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
-- On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of
-  the draws or about one run in 281, was masked as a phone number in every report and CLI error,
-  so `dottore replay` and `--resume` refused the id read back from the JSON report, and
+- On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of the
+  draws or about one run in 281, was masked as a phone number in every report and CLI error, so
+  `dottore replay` and `--resume` refused the id read back from the JSON report, and
   `tests/cli/test_hostile_nesting.py::test_arguments_at_the_limit_go_through_the_deepest_path_a_reply_reaches`,
   which replays it, flaked as often. `new_run_id` draws again; the redactor's phone rule is
   unchanged, and old ids of any shape replay by their directory name (u12 A-61,
-  `tests/cli/test_run_id_digits.py`, 3 of 15 fail on `6401ee2`). Also: the `--resume -sV`
-  pre-check writes its spend and ceiling with `budgets.budget_figure`, the helper #69 wrote for
-  the halt reason (u08 A-6), made public (u12 A-48); the MANUAL and the live-validation runbook
-  no longer say a halt message names the run id (it does not; the reports and the evidence
-  directory do); and from the #94 pre-merge audit, with Ctrl-C ignored a SIGTERM in one of
-  asyncio's callbacks can leave the run waiting for a second signal as it closes (the docs said
-  only that it goes on; documented in u12 A-60 and the MANUAL and pinned by a test that no clock
-  decides, not changed), the SIGHUP tests get a handler of their own so they pass under `nohup`,
-  and "Until 2026-10-08" and "on main `e4d6c83`" read "In older versions". Merged `main` at
-  `fb9a8a8` (#69, #74 and the others of the day). Left open: the hang itself (a fix would change
-  how every stop works: raising from a loop callback of its own loses a signal that arrives as the
-  last loop stops, and cancelling the run's task as asyncio does for Ctrl-C needs a handle on the
-  task `asyncio.run` creates), and an old all-digit run's reports, and those of its resumes, which
-  keep the mask.
+  `tests/cli/test_run_id_digits.py`, 3 of 15 fail on `6401ee2`). Also: the `--resume -sV` pre-check
+  writes its spend and ceiling with `budgets.budget_figure`, the helper #69 wrote for the halt
+  reason (u08 A-6), made public (u12 A-48); the MANUAL and the live-validation runbook no longer say
+  a halt message names the run id (it does not; the reports and the evidence directory do); and from
+  the #94 pre-merge audit, with Ctrl-C ignored a SIGTERM in one of asyncio's callbacks can leave the
+  run waiting for a second signal as it closes (the docs said only that it goes on; documented in
+  u12 A-60 and the MANUAL and pinned by a test that no clock decides, not changed), the SIGHUP tests
+  get a handler of their own so they pass under `nohup`, and "Until 2026-10-08" and "on main
+  `e4d6c83`" read "In older versions". Merged `main` at `fb9a8a8` (#69, #74 and the others of the
+  day), then the stack of #88, #60, #68 and #66 (`4475b6e`, the tree main holds once #66 lands), and
+  added four lows of the #66 re-audit: a test of the room check's clamp on the target share (it
+  fails with the clamp removed), the resume of a sweeping spec whose only reply went unjudged (`(3,
+  2)`, priced exactly), "of a spec that uses `semantic_judge`" in A-48, and the MANUAL's
+  `--estimate` row and `dottore(1)` reworded. Left open: the hang itself (a fix would change how
+  every stop works: raising from a loop callback of its own loses a signal that arrives as the last
+  loop stops, and cancelling the run's task as asyncio does for Ctrl-C needs a handle on the task
+  `asyncio.run` creates), and an old all-digit run's reports, and those of its resumes, which keep
+  the mask.
 
 ## State, 2026-10-09: a halted run keeps what it paid for, and resumes (PR #66, begun 2026-10-07)
 

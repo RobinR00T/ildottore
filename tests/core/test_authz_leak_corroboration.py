@@ -524,6 +524,53 @@ async def test_the_resume_figure_builds_no_plan_and_the_sv_room_check_reads_it(
     assert not fits([plan], 5, spent=5, resume_from=run, specs=specs, runs=2**53)
 
 
+async def test_the_sv_room_check_clamps_the_target_share_on_its_own(
+    tmp_path, evaluators, mutators, scorer
+) -> None:  # type: ignore[no-untyped-def]
+    """Each share of the rest is clamped at zero on its own (A-48): a plan that prices fewer
+    target requests than the resume keeps answered must not lend the surplus to the judge's
+    share, or a ceiling one short of the judge's rest is taken as room for it and "drop -sV" is
+    offered to a resume that then halts (re-audit of #66)."""
+
+    from ildottore.cli import run as run_mod
+
+    battery = _battery()
+    specs = [battery["EMB-XTENANT-RETRIEVAL-001"], battery["PI-DIRECT-001"]]
+    target = _deployment()
+    probes, _ = _probes("Reset it in Settings > Security.")
+    runner = _runner(
+        tmp_path, evaluators, mutators, scorer, _SECURE, probes=probes, adapter=_Counting("t1", "")
+    )
+    run = (await runner.run(run_id=_RUN, target=target, specs=specs)).run
+    estimate = estimate_plan(specs, 2, target=target, identities=2)
+    plan = TargetPlan(
+        target=target,
+        path=tmp_path / "target.yaml",
+        endpoint="https://api.example.test/v1/chat",
+        authorized=None,
+        selected=specs,
+        skipped_capability=[],
+        blocked_by_policy=[],
+        estimate=estimate,
+        budgets=budgets_for(estimate),
+        mutators_by_spec={specs[0].id: ["identity", "payload_splitting"]},
+        identities=2,
+    )
+    done = _answered_requests(run, specs, plans=[plan], runs=2)
+    judge_done = run_mod._judge_requests_kept(run, specs)
+    assert done >= 1 and judge_done >= 2  # something kept on both sides
+    # One target request fewer than the resume keeps, and four judge requests still to make.
+    short = replace(
+        plan, estimate=replace(estimate, requests=done - 1, judge_requests=judge_done + 4)
+    )
+    assert _answered_requests(run, specs, plans=[short], runs=2) == done
+
+    fits = run_mod._fits_without_probes
+    # The rest is the judge's 4: unclamped, the target's -1 made 5 + 3 fit a ceiling of 8.
+    assert not fits([short], 8, spent=5, resume_from=run, specs=specs, runs=2)
+    assert fits([short], 9, spent=5, resume_from=run, specs=specs, runs=2)
+
+
 def test_the_dry_run_prices_the_sweep(tmp_path: Path) -> None:
     """Two scope identities on a live target that declares multi_identity: two more sends."""
 

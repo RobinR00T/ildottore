@@ -543,12 +543,14 @@ halted on `--budget-tokens` is still told about requests, as on `0501752`; the e
 retries (the multi-identity sweep was the other omission until A-34, u08, priced it; the check
 subtracts a finished spec's sweep as `--estimate --resume` does), so a followed "drop -sV" at an
 exact fit can still halt; with `--judge` the check takes off the judge's two requests for each
-attempt the resume keeps, as `--estimate --resume` does since #66 (it priced the battery's whole
-judge share, so a "drop -sV" that fitted was not offered: pre-merge audit of #66); the test
-grammar does not read a piece written as a sentence of its own ahead of the advice; the advice names
-`-sV` where the invocation said `-A`, which implies it; and the stored mode is read by truthiness,
-as the planning-mode check reads it, so the advice and the check agree on a value that is not a
-boolean.
+attempt the resume keeps of a spec that uses `semantic_judge`, as `--estimate --resume` does since
+#66 (it priced the battery's whole judge share, so a "drop -sV" that fitted was not offered:
+pre-merge audit of #66), and clamps the target's share and the judge's at zero each on its own, so
+that one's surplus does not pay for the other's rest (`tests/core/test_authz_leak_corroboration.py`,
+re-audit of #66); the test grammar does not read a piece written as a sentence of its own ahead of
+the advice; the advice names `-sV` where the invocation said `-A`, which implies it; and the stored
+mode is read by truthiness, as the planning-mode check reads it, so the advice and the check agree
+on a value that is not a boolean.
 
 The resume's pre-check writes its figures as the halt reason writes the figure that stopped a run
 (#69, u08 A-6), with the same helper, `budgets.budget_figure`: grouped (`has already spent

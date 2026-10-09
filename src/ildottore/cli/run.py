@@ -1500,13 +1500,14 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 # digits or more reached the operator as «REDACTED:phone», through the redactor
                 # every error goes through, and a stored spend has no bound but a float's. Rounded
                 # away from the ceiling where a magnitude shortens it, as the halt reason does.
-                spent = budget_figure(prior_spend.requests, up=True)
-                limit = budget_figure(ceiling, up=False)
+                spent_figure = budget_figure(prior_spend.requests, up=True)
+                limit_figure = budget_figure(ceiling, up=False)
                 raise ValueError(
-                    f"run {opts.resume!r} has already spent {spent} of its {limit}-request "
-                    f"ceiling, and -sV would send {budget_figure(probes, up=True)} more before any "
-                    "attack traffic. Three sequential resumes used to run a whole probe pass "
-                    f"each, past an exhausted ceiling. {remedy}."
+                    f"run {opts.resume!r} has already spent {spent_figure} of its "
+                    f"{limit_figure}-request ceiling, and -sV would send "
+                    f"{budget_figure(probes, up=True)} more before any attack traffic. Three "
+                    "sequential resumes used to run a whole probe pass each, past an exhausted "
+                    f"ceiling. {remedy}."
                 )
         if not opts.quiet and not resume_from.findings:
             # The run spent requests and stored no reply: an identity sweep, a -sV probe pass, a

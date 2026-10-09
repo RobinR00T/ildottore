@@ -188,11 +188,10 @@ marked [not retryable]), as is a reply the halt stored before the judge could ev
 (one a deterministic check already failed keeps that fail and is not re-sent).
 A run halted before it stored any reply (for example an identity sweep, a -sV probe pass, a
 conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start,
-its spend
-carried; refused are one that spent
-no request, one whose run store journals evidence the tree does not hold, and one that
-predates that journal. A campaign that already spent its wall-clock ceiling is
-refused before anything is sent: raise --budget-wall, or start a fresh run.
+its spend carried; refused are one that spent no request, one whose run store journals
+evidence the tree does not hold, and one that predates that journal. A campaign that already
+spent its wall-clock ceiling is refused before anything is sent: raise --budget-wall, or start
+a fresh run.
 It must keep the campaign's planning mode (adaptive with -sV, -A or --deep), which is
 checked before any ceiling; with -sV, a request ceiling too small for the probe pass is
 refused: raise --budget-requests, or drop -sV only if the campaign did not plan adaptively
