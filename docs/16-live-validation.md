@@ -203,9 +203,11 @@ dottore run --deep -sV --rate 1 --budget-tokens 600000 \
   -t target.yaml --scope scope.yaml --judge judge.yaml -oA run-full
 ```
 
-If a step halts on its ceiling it exits 3 and prints the run id: `--resume <id>` finishes it,
-under the **campaign's** ceiling rather than a fresh one, and refuses if the specs changed in
-between (clause A-24).
+If a step halts on its ceiling it exits 3. The halt message does not name the run: its id is the
+`run.run_id` of the step's JSON report (`first-contact.json`, `run-owasp.json`, `run-full.json`) and
+the name of its directory under the evidence root. `--resume <id>` finishes it, under the
+**campaign's** ceiling rather than a fresh one, and refuses if the specs changed in between (clause
+A-24).
 
 ## 5. Before any of it
 

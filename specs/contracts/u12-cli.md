@@ -301,15 +301,19 @@ other tasks as it closes, so the run stops sending, but the process waits for th
 second signal, and the stuck part's spend is recorded only when Python collects the task
 (pre-merge audit of #94; measured through `execute_run` with SIGINT ignored and the first SIGTERM
 raised inside the runner's gather: it waited for the second, sent 3 s later, and the spend was
-written as the process exited). Raising from a loop callback of its own would avoid both, but
-one that arrives as the last loop stops would then be queued on a loop that does not run again,
-and lost; so this stays open, and the MANUAL says to send the signal again. The requests are sent
-inside the loop. Checked by `tests/cli/test_termination_signals.py`: SIGTERM, SIGHUP and, as a
-control, SIGINT raised inside a real weakref callback under `asyncio.run` (the first two fail on
-`e4d6c83`); SIGTERM and SIGHUP outside a loop with SIGINT at its default and ignored; SIGTERM
-inside a loop with SIGINT ignored; and a SIGTERM raised inside gather's callback, which takes a
-second one with SIGINT ignored and not with SIGINT at its default. The SIGHUP cases give SIGHUP a
-handler of its own first, so they hold when the suite runs under `nohup`.
+written as the process exited). It is documented and not fixed, because each fix in view changes how
+every stop works and is not a follow-up's to make: raising from a loop callback of its own would
+avoid both, but one that arrives as the last loop stops would then be queued on a loop that does not
+run again, and lost; cancelling the run's task without raising, as asyncio does for Ctrl-C, needs a
+handle on the task `asyncio.run` creates and its own review. The MANUAL says to send the signal
+again. The requests are sent inside the loop. Checked by `tests/cli/test_termination_signals.py`:
+SIGTERM, SIGHUP and, as a control, SIGINT raised inside a real weakref callback under `asyncio.run`
+(the first two fail on `e4d6c83`); SIGTERM and SIGHUP outside a loop with SIGINT at its default and
+ignored; SIGTERM inside a loop with SIGINT ignored; and a SIGTERM raised inside gather's callback,
+which takes a second one with SIGINT ignored (ten turns of the closing loop later the task is still
+cancelled and not done) and not with SIGINT at its default; the second is queued from inside the
+first, so no clock decides it, and the stuck task is collected inside the test. The SIGHUP cases
+give SIGHUP a handler of its own first, so they hold when the suite runs under `nohup`.
 
 **A-61 A run id is never masked as a phone number (added 2026-10-09).** A run id was `run-` and the
 first 12 hexadecimal digits of a UUID4. When all twelve came out decimal, (10/16) ** 12 of the draws
@@ -321,12 +325,13 @@ redactor keeps its rule: excusing `run-` would let a target hide a 12-digit numb
 letters, and with one letter among the twelve none of its default rules matches (a phone's digits
 have to fill a word from edge to edge, a card needs 13 digits). The id keeps its shape, so a run
 minted before, all digits or not, resumes and replays by the name of its evidence directory; the
-reports it wrote keep the mask. Checked by `tests/cli/test_run_id_digits.py`: the UUID source made
-to draw twelve decimal digits first, through `run -oJ` and a `replay` of the id read back from the
-report; an all-digit id of an older version, masked in its report and replayed by its directory
-name; 2,000 ids minted from draws weighted towards decimal digits (693 drawn again), each left as it
-is by the redactor, alone, quoted in a message and in a path; and one letter in each of the twelve
-places. 3 of its 15 tests fail on `6401ee2`.
+reports it wrote keep the mask, and so do the reports of its resumes, which keep its id. Checked by
+`tests/cli/test_run_id_digits.py`: the UUID source made to draw twelve decimal digits first, through
+`run -oJ` and a `replay` of the id read back from the report; an all-digit id of an older version,
+masked in its report and replayed by its directory name; 2,000 ids minted from draws weighted
+towards decimal digits (693 drawn again), each left as it is by the redactor, alone, quoted in a
+message and in a path; and one letter in each of the twelve places. 3 of its 15 tests fail on
+`6401ee2`.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
@@ -482,28 +487,31 @@ again ("halted with adaptive planning off and this invocation asks for on"); on 
 `tests/cli/test_resume_sv_advice.py` follows every piece of advice each of these refusals gives,
 through the CLI, and asserts that each is an invocation that goes through, not a second refusal;
 each test pins the advice it expects, and a flag the advice names that its grammar cannot turn into
-an invocation fails it. 20 of its 24 tests fail on `0501752`; the other four guard what did not
-change (a campaign that recorded no planning mode may still drop `-sV` when the ceiling holds the
-rest, and a resume refused for the wall-clock or the request ceiling leaves the journal as it found
-it). Limits, written here rather than fixed in a test: the advice answers the check that refused, so
-following "Resume with -sV" adds the probe pass, which a tight ceiling then refuses on its own (with
-advice that goes through), and following "Resume without -sV, -A or --deep" under a ceiling that
-does not hold the rest of the campaign halts (measured with 6 spent and 3 to send: at ceilings 6, 7
-and 8), as any resume did on `0501752`; "whichever it ran with" asks the operator for what the run
-store does not keep (one flag for the three); the advice reads the request axis only, so a campaign
-halted on `--budget-tokens` is still told about requests, as on `0501752`; the estimate leaves out
-the multi-identity sweep of a live target with two or more identities and retries, so a followed
-"drop -sV" at an exact fit can still halt, and it over-prices a resume's rest with `--judge` (the
-safe direction); the test grammar does not read a piece written as a sentence of its own ahead of
-the advice; the advice names `-sV` where the invocation said `-A`, which implies it; and the stored
-mode is read by truthiness, as the planning-mode check reads it, so the advice and the check agree
-on a value that is not a boolean.
+an invocation fails it. 20 of the 24 it had then fail on `0501752`; the other four guard what did
+not change (a campaign that recorded no planning mode may still drop `-sV` when the ceiling holds
+the rest, and a resume refused for the wall-clock or the request ceiling leaves the journal as it
+found it). Limits, written here rather than fixed in a test: the advice answers the check that
+refused, so following "Resume with -sV" adds the probe pass, which a tight ceiling then refuses on
+its own (with advice that goes through), and following "Resume without -sV, -A or --deep" under a
+ceiling that does not hold the rest of the campaign halts (measured with 6 spent and 3 to send: at
+ceilings 6, 7 and 8), as any resume did on `0501752`; "whichever it ran with" asks the operator for
+what the run store does not keep (one flag for the three); the advice reads the request axis only,
+so a campaign halted on `--budget-tokens` is still told about requests, as on `0501752`; the
+estimate leaves out the multi-identity sweep of a live target with two or more identities and
+retries, so a followed "drop -sV" at an exact fit can still halt, and it over-prices a resume's rest
+with `--judge` (the safe direction); the test grammar does not read a piece written as a sentence of
+its own ahead of the advice; the advice names `-sV` where the invocation said `-A`, which implies
+it; and the stored mode is read by truthiness, as the planning-mode check reads it, so the advice
+and the check agree on a value that is not a boolean.
 
-The resume's pre-check writes its figures grouped (`has already spent 123,456,789 of its
-123,456,805-request ceiling, and -sV would send 17 more`), as the halt reason in PR #69 (open)
-writes the figure that stopped a run: bare, from nine digits the redactor every CLI error goes
-through read each as a phone number, and the operator got `«REDACTED:phone»` for both figures to
-compare (2026-10-09; the last test of the file, which fails on `6401ee2`).
+The resume's pre-check writes its figures as the halt reason writes the figure that stopped a run
+(#69, u08 A-6), with the same helper, `budgets.budget_figure`: grouped (`has already spent
+123,456,789 of its 123,456,805-request ceiling, and -sV would send 17 more`), and from 10**18 as a
+magnitude rounded away from the ceiling (a stored spend of 2**1000 reads `1.072e+301`, where grouped
+it was 402 characters: a stored spend is bounded only by what a float holds). Bare, from nine digits
+the redactor every CLI error goes through read each as a phone number, and the operator got
+`«REDACTED:phone»` for both figures to compare (2026-10-09; the last test of the file, whose three
+cases fail on `6401ee2`).
 
 **A-55 Every integer flag of `run` is bounded above as well as below, and so is a live run's pace
 against the wall-clock ceiling (added 2026-10-07).** `--runs` had a lower bound only, and the plan

@@ -46,7 +46,12 @@ from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
-from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger, Spend
+from ildottore.core.budgets import (
+    DEFAULT_COMPLETION_TOKENS,
+    BudgetLedger,
+    Spend,
+    budget_figure,
+)
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
 from ildottore.core.setup_delivery import (
@@ -680,7 +685,8 @@ def new_run_id() -> str:
     read back from it. Such a draw is drawn again. The redactor keeps its rule, since excusing
     ``run-`` would let a target hide a 12-digit number behind four letters, and the id keeps its
     shape, so an id minted before, all digits or not, still resumes and replays by the name of
-    its evidence directory.
+    its evidence directory; the reports it wrote keep the mask, and so do the reports of its
+    resumes, which keep its id.
     """
 
     while True:
@@ -1433,11 +1439,15 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                         done=_answered_requests(resume_from, selected),
                     ),
                 )
-                # Grouped: bare, a figure of nine digits or more reached the operator as
-                # «REDACTED:phone», through the redactor every error goes through.
+                # Written as the halt reason writes its figures (u08 A-6): bare, a figure of nine
+                # digits or more reached the operator as «REDACTED:phone», through the redactor
+                # every error goes through, and a stored spend has no bound but a float's. Rounded
+                # away from the ceiling where a magnitude shortens it, as the halt reason does.
+                spent = budget_figure(prior_spend.requests, up=True)
+                limit = budget_figure(ceiling, up=False)
                 raise ValueError(
-                    f"run {opts.resume!r} has already spent {prior_spend.requests:,} of its "
-                    f"{ceiling:,}-request ceiling, and -sV would send {probes:,} more before any "
+                    f"run {opts.resume!r} has already spent {spent} of its {limit}-request "
+                    f"ceiling, and -sV would send {budget_figure(probes, up=True)} more before any "
                     "attack traffic. Three sequential resumes used to run a whole probe pass "
                     f"each, past an exhausted ceiling. {remedy}."
                 )

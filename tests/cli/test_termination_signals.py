@@ -19,9 +19,12 @@ test` (pre-merge audit of #94).
 from __future__ import annotations
 
 import asyncio
+import gc
+import logging
 import signal
 import weakref
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -130,28 +133,51 @@ def test_with_ctrl_c_ignored_a_sigterm_in_an_asyncio_callback_waits_for_a_second
     """What is left open (u12 A-60, the MANUAL): with Ctrl-C ignored a SIGTERM raises where the
     main thread is, and raised inside one of asyncio's own callbacks (here gather's, reading a
     result) it leaves the gather unfinished and the task awaiting it with nothing to wake it.
-    `asyncio.run` cancels every other task as it closes, then waits for that one until a second
-    signal (scheduled here 0.2 s on). With Ctrl-C at its default, asyncio's handler cancels the
-    run instead of raising, and the first signal is enough. If this fails because the first is
-    enough with Ctrl-C ignored too, the docs that say to send the signal again are out of date."""
+    `asyncio.run` cancels that task as it closes and then waits for it: ten turns of the closing
+    loop later it is still cancelled and not done, and only the second signal ends the wait. With
+    Ctrl-C at its default asyncio's handler cancels the run instead of raising, and the first
+    signal is enough. If this fails because the first is enough with Ctrl-C ignored too, the docs
+    that say to send the signal again are out of date.
+
+    No clock decides it: the second signal is queued from inside the first's callback, so it runs
+    on the loop `asyncio.run` drives as it closes, however slow the machine (a timer set before the
+    first signal made 3 of 4 cases fail after a 0.25 s stall, pre-merge audit). With Ctrl-C at its
+    default it is a timer 5 s on, which the closed loop never runs; it fails the test if it does.
+    """
 
     signals: list[str] = []
     finished: list[bool] = []
+    stuck: list[tuple[bool, int]] = []
+    tasks: list[asyncio.Task[Any]] = []
+    turns = 0
+
+    def second() -> None:
+        nonlocal turns
+        if turns < 10:  # let the closing loop go round: nothing wakes the task
+            turns += 1
+            asyncio.get_running_loop().call_soon(second)
+            return
+        stuck.append((tasks[0].done(), tasks[0].cancelling()))
+        signals.append("second")
+        signal.raise_signal(signal.SIGTERM)
 
     class _SignalOnResult(asyncio.Future[None]):
         def result(self) -> None:
             if not signals:
                 signals.append("first")
+                loop = asyncio.get_running_loop()
+                if sigint == "ignored":
+                    loop.call_soon(second)  # behind the first, on the loop that closes the run
+                else:
+                    loop.call_later(5.0, second)  # a safety net: the first is enough here
                 signal.raise_signal(signal.SIGTERM)
             return super().result()
 
-    def second() -> None:
-        signals.append("second")
-        signal.raise_signal(signal.SIGTERM)
-
     async def campaign() -> None:
         loop = asyncio.get_running_loop()
-        loop.call_later(0.2, second)  # runs only if the loop is still running then
+        task = asyncio.current_task()
+        assert task is not None
+        tasks.append(task)
         child = _SignalOnResult(loop=loop)
         loop.call_soon(child.set_result, None)
         await asyncio.gather(child)
@@ -166,4 +192,19 @@ def test_with_ctrl_c_ignored_a_sigterm_in_an_asyncio_callback_waits_for_a_second
     finally:
         signal.signal(signal.SIGINT, previous)
     assert not finished
-    assert signals == (["first"] if sigint == "default" else ["first", "second"])
+    if sigint == "default":
+        assert signals == ["first"] and not stuck
+        return
+    assert signals == ["first", "second"]
+    assert stuck == [(False, 1)]  # cancelled once as asyncio.run closed, and never woken
+    # The stuck task is still pending: collect it here, with asyncio's "Task was destroyed but
+    # it is pending!" muted, rather than in whichever test the collector next runs in.
+    task_ref = weakref.ref(tasks.pop())
+    logger = logging.getLogger("asyncio")
+    muted = logger.disabled
+    logger.disabled = True
+    try:
+        gc.collect()
+    finally:
+        logger.disabled = muted
+    assert task_ref() is None

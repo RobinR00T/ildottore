@@ -149,7 +149,7 @@ def test_a_wall_ceiling_crossed_by_a_fraction_of_a_microsecond_reads_as_crossed(
     check: str,
 ) -> None:
     """The ledger passed ``round(elapsed, 6)``, which put 1,800.0000004 s back ON the 1,800 s
-    ceiling before ``_figure`` could round it up: "attempted 1,800.000 would exceed limit
+    ceiling before ``budget_figure`` could round it up: "attempted 1,800.000 would exceed limit
     1,800" (delta audit of this fix, G1). Both wall checks, through the ledger itself."""
 
     reads = itertools.chain([0.0], itertools.repeat(1800.0000004))
