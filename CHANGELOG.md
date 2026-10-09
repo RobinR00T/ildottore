@@ -5,6 +5,42 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (a target file refuses a key no reader reads and a field that is not text; OD-31)
+
+- **A misspelled key at a target file's top level was dropped without a word, and a misspelled
+  endpoint ran a live target on the offline mock.** `load_target`, `target_uses_mock` and
+  `load_mock_scenario` each took the keys they knew and never looked at the rest, and a `name`,
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text was read as absent.
+  On `2f6201a`, `run` of a live target with `endpont:` (or an endpoint written as a list) had no
+  endpoint, so it went to the offline `bare` mock, which sent it nothing: one spec came back
+  inconclusive with exit 0, and the full battery scored a FAIL (`DOS-TOKEN-AMP-001`) and a PASS
+  (`MCP-TOOLPOISON-001`) with exit 1 (on `c3e70d8` too); the dry run said `authorized at` the
+  scope's base URL with no word about the endpoint. A `capabilities:` whose `tools`, `rag` and
+  `memory` lost their indent left them at the top level, ignored: a `type: model` target planned 34
+  specs with 39 skipped for a capability, against 59 and 8. And `model: 20240613`, which YAML reads
+  as a number, was no model. All three readers now check the top level and refuse, before anything
+  is sent (exit 3), on the A-45 line: `error: target file target.yaml failed validation: endpont:
+  Extra inputs are not permitted` (`model: Input should be a valid string`), never the value. The
+  keys are `Target`'s fields and `mock_scenario`; one of the six text fields with nothing after it,
+  `null` or `~` is still absent. **A behavior change:** a target file that loads today with such a
+  key or value is refused, a key that only holds an anchor for a `<<` merge (`x-defaults: &d`)
+  included (a map merged inline still loads); no file of the repository has one (a new test loads
+  every target file and every target block of the docs and man pages through the three readers, and
+  every target file `dottore fleet` writes). A run halted before this change with such a key resumes
+  once the key is deleted (still on the mock, for a lost endpoint) and is refused as another target
+  once the key is corrected. Refusing is the owner's decision, OD-31 (2026-10-08), built as the
+  smallest reversible change. Still read as written, and said so in the clause: `provider: opnai`
+  with an endpoint routes to the REST adapter, and a stdio MCP target with `transport: stido` or
+  `provider: mpc` runs on the offline mock, where its `mcp` suite scores a PASS with exit 0; a key
+  inside `capabilities` is A-50's (#78); the line lists the first 20 problems, then `and N more`,
+  as #76 has `validation_problems` do (20,000 unknown keys gave a 788,937-byte line before it, and
+  790 bytes since, for a file named `t.yaml`). A number as `provider` or `transport`, which A-40
+  (below) read as no provider, is refused as not text, and A-40's two tests of it, and two of
+  A-51's (#86, an integer `provider` and a `transport` of aliases), now expect the refusal, as a
+  third (a `provider` of aliases, which measured only the memory) does. Contract u12 A-53;
+  `tests/cli/test_target_top_level_keys.py` (43 of its 90 tests fail on `9b8b511`, this branch's
+  base).
+
 ### Fixed (a reply's logprob figure that no model produces stops nothing and decides nothing)
 
 - **A logprob that no float holds, or that is not a number, crashed the command.** The OpenAI
@@ -521,7 +557,8 @@ versioning: [SemVer](https://semver.org/).
   and fleet blocks of the docs and man pages, through the real loaders). Refusing both is the
   owner's decision (OD-29), built as the smallest reversible change. Still dropped without a
   word, and written in the clause: a top-level key a target file does not know, and a `name`,
-  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text. Contract u12 A-50;
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text (since A-53, above,
+  both are refused). Contract u12 A-50;
   `tests/cli/test_target_capabilities_strict.py` (19 of its 40 tests fail on `2f6201a`).
 
 ### Fixed (a refusal that named a flag `dottore run` does not have)
@@ -1139,7 +1176,8 @@ versioning: [SemVer](https://semver.org/).
   exited 3 with the same unnamed message; the refusal now names the target file and says what the
   value is instead of quoting it. As `provider` or `transport` it exited 3 too, because the mock
   routing called `str` on them before the target loader, which reads them only as text, ignored
-  it; they are read only as text there as well, so the number is no provider, as `5` always was.
+  it; they are read only as text there as well, and since A-53 (above) a value there that is not
+  text, the number and `5` alike, is refused naming the file.
   The signature pack's `pack_version` is refused the same way (a library path; the CLI loads the
   built-in pack).
 - Each check stands on its own: a cap on a literal's length in the YAML loader does not cover a

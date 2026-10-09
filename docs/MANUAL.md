@@ -277,6 +277,21 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
+The file holds these keys and no others: `id`, `type`, `name`, `provider`, `endpoint`, `model`,
+`auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup` and
+`mock_scenario` (below). Any other key is refused before anything is sent (exit 3), and so is a
+`name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text, on one line
+that names the file and the key, never the value: `error: target file target.yaml failed validation:
+endpont: Extra inputs are not permitted`. Until 2026-10-07 both were read as absent, so `endpont:`
+left a live target with no endpoint and the run went to the offline mock, which sent it nothing and
+scored the mock's replies, and keys of `capabilities` that lost their indent were ignored at the top
+level (owner's decision OD-31). Quote a model id YAML reads as a number, a date or a boolean
+(`model: "20240613"`). One of the six text fields with nothing after it, `null` or `~` is still
+absent. A key that only holds an anchor for a `<<` merge (`x-defaults: &d`) is refused like any
+other: write the merged map inline. The key is printed as the location, as pydantic renders it
+(`on:` as `1`, a `!!binary` key decoded), so a control character in it reaches the terminal as
+written, as below. A run halted before then with such a key resumes once you delete the key;
+correcting it to the key you meant changes the target, and the resume is refused.
 A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
 `max_tokens` outside 1 to its cap or a key either block does not know is refused before
 anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
@@ -293,10 +308,10 @@ the target ran with tools off and without the specs that need them. A `capabilit
 not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
 included, unless it is null: to declare none, leave the key out or write `capabilities: {}` (owner's
 decision OD-29). A `capabilities:` with nothing under it is null too, so if the keys below it lost
-their indent they are top-level keys, which are still ignored without a word. A run an older
-version halted with such a key or value resumes once you delete it (or write `{}` for `false`),
-since it was never read; correcting a key to the one you meant changes the target, and the resume
-is refused.
+their indent they are top-level keys, which are refused as any other unknown key is (above). A run
+an older version halted with such a key or value resumes once you delete it (or write `{}` for
+`false`), since it was never read; correcting a key to the one you meant changes the target, and the
+resume is refused.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.

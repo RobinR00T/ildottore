@@ -3,6 +3,26 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): a target file's top-level keys
+
+- On `fix/target-unknown-top-level-keys` (u12 A-53; OD-31, decided by the owner on 2026-10-08:
+  refuse both), from the "outside the clause" list of A-50: the three readers of a target file took
+  the top-level keys they knew and dropped the rest, and read a `name`, `provider`, `endpoint`,
+  `model`, `auth_ref` or `transport` that was not text as absent. So `endpont:` ran a live target on
+  the offline mock, sending it nothing (one spec: inconclusive, exit 0; the full battery: a FAIL and
+  a PASS, exit 1; measured on `2f6201a` and `c3e70d8`), and `capabilities:` children that lost their
+  indent were ignored (34 specs planned instead of 59 on a `type: model` target). Built reversibly:
+  `_read_target_yaml` checks the top level against `Target`'s fields and `mock_scenario`, text where
+  text is read, and every reader refuses on the A-45 line naming the file and the key. Every target
+  file and target block of the repository, and what `dottore fleet` writes, still load (new test).
+  Left open, written in the clause: a misspelled value (`provider: opnai` goes to the REST adapter,
+  and `transport: stido` on a stdio MCP target runs it on the offline mock, where its `mcp` suite
+  scores a PASS with exit 0). `tests/cli/test_target_top_level_keys.py`: 43 of its 90 tests fail on
+  `9b8b511`. A number as `provider` or `transport`, which A-40 (#81) read as no provider, is refused
+  as not text; A-40's two tests of it now expect that. The check is built from `Target`'s fields, so
+  the `websocket` field #87 adds is legal when it lands (pre-merge audit: a list kept by hand failed
+  35 tests on the two merged).
+
 ## State, 2026-10-07 (afternoon): a logprob figure no model produces
 
 - On `fix/hostile-logprob`: a reply whose logprob (or one of its `top_logprobs`) was a 400-digit
@@ -308,7 +328,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   Found while writing it and left as its own task: a top-level key a target file does not know
   (`endpont:`, or a `capabilities` block whose indent was lost) and a `name`, `provider`,
   `endpoint`, `model`, `auth_ref` or `transport` that is not text are still dropped without a
-  word. `tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`.
+  word (refused since A-53, PR #88; see the entry above).
+  `tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`.
   Pre-commit, delta and pre-merge audits found nothing high or medium and no open PR that combines
   into wrong behavior; their lows (key order in what `fleet` writes, keys printed as pydantic
   renders them, a long line until #76, how a halted run resumes, the reversal recipe) are written
