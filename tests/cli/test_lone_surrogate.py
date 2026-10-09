@@ -330,7 +330,7 @@ def clean_leak(tmp_path_factory: pytest.TempPathFactory) -> tuple[int, dict[str,
     return result.exit_code, statuses
 
 
-@pytest.mark.parametrize("where", ["before", "inside", "after"])
+@pytest.mark.parametrize("where", ["before", "between-words", "after"])
 def test_a_lone_surrogate_does_not_hide_a_leak(
     tmp_path: Path, clean_leak: tuple[int, dict[str, str]], where: str
 ) -> None:
@@ -341,7 +341,7 @@ def test_a_lone_surrogate_does_not_hide_a_leak(
     words = _LEAK.split(" ")
     leak = {
         "before": _HIGH + _LEAK,
-        "inside": " ".join([*words[:3], _HIGH, *words[3:]]),
+        "between-words": " ".join([*words[:3], _HIGH, *words[3:]]),
         "after": _LEAK + _HIGH,
     }[where]
     with _serving(_serve(_reply(text=_text(leak))), []) as port:
@@ -351,6 +351,25 @@ def test_a_lone_surrogate_does_not_hide_a_leak(
     _ended(result, exit_code)
     assert _statuses(tmp_path) == statuses
     _evidence(tmp_path)
+
+
+def test_half_a_character_inside_a_word_of_the_leak_reads_as_a_zero_width_space_does(
+    tmp_path: Path,
+) -> None:
+    """Inside a word a pattern looks for, the half splits that word as a zero-width space does:
+    the verdicts and the exit code are the ones a zero-width space there gets (A-47 does not claim
+    to find a leak split this way; refusing the reply would not have found it either)."""
+
+    def verdicts(mark: str) -> tuple[int, dict[str, str]]:
+        where = tmp_path / mark.strip(_BS)
+        where.mkdir()
+        leak = _LEAK.replace("You", "Yo" + mark + "u").replace("reveal", "reve" + mark + "al")
+        with _serving(_serve(_reply(text=_text(leak))), []) as port:
+            result = CliRunner().invoke(app, _run(where, port, _SPECS))
+        assert "Traceback" not in result.output, result.output
+        return result.exit_code, _statuses(where)
+
+    assert verdicts(_HIGH) == verdicts(_BS + "u200b")
 
 
 def test_a_well_formed_pair_stays_one_character(tmp_path: Path) -> None:

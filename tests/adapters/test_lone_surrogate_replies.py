@@ -3,9 +3,10 @@
 A reply body can escape half a character in any JSON string, or carry it as the raw bytes
 ``ED A0 80``. Each adapter used to hand it on as a lone surrogate, and the first UTF-8 writer
 downstream (the evidence store, httpx, sqlite) raised and aborted the campaign. The CLI tests
-(``tests/cli/test_lone_surrogate.py``) show it end to end for the OpenAI shape; these check the
-other ways in: Anthropic, the REST template, MCP over HTTP (JSON and SSE) and over stdio, and a
-tool call's arguments read by ``call_arguments``.
+(``tests/cli/test_lone_surrogate.py``) show it end to end for the OpenAI shape; these check
+OpenAI's adapter on its own (an escape and the raw bytes) and the other ways in: Anthropic, the
+REST template, MCP over HTTP (JSON and SSE) and over stdio, and a tool call's arguments read by
+``call_arguments``.
 """
 
 from __future__ import annotations

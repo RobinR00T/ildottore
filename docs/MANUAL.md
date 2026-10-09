@@ -100,10 +100,13 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
   call's arguments are, each one is read as U+FFFD, the replacement character, and the attempt
   is evaluated on that text as usual. The evidence shows U+FFFD and does not keep which code
-  unit it was. Over an MCP SSE stream, which is decoded as text first, each raw byte of one
-  reads as U+FFFD, as any other invalid UTF-8 there does. Like a zero-width space, half a
-  character inside a canary hides it from `secret_leakage`, and inside a registered credential
-  keeps it from being masked as that credential. A body that is not valid UTF-8 in any other way
+  unit it was, except in a tool call's arguments sent as JSON text: those are stored as the
+  target sent them, the escape included, and read as U+FFFD once parsed. Over an MCP SSE stream,
+  which is decoded as text first, each raw byte of one reads as U+FFFD, as any other invalid
+  UTF-8 there does. Like a zero-width space, half a character inside a word splits it: a leak
+  split that way is not matched by `regex_absence`, a canary split that way is not found by
+  `secret_leakage`, and a registered credential split that way is not masked as that
+  credential. A body that is not valid UTF-8 in any other way
   (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD) and an
   MCP stdio line (skipped, so the call times out).
 - **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the

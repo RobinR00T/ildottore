@@ -15,8 +15,9 @@ half is the character the pair encodes (so a CESU-8 pair parsed from bytes joins
 other character is kept. The reply is still evaluated: refusing it instead would let a target
 turn any failure into "not evaluated" by adding six characters. Which code unit stood there is
 not kept. Deleting the half instead is what Unicode's security report advises against (UTR #36
-rev. 15, 3.5 and 3.6.2): it would show the evaluators text no consumer of the reply sees, a
-``<scr`` and ``ipt>`` around a half read as ``<script>`` (OD-28, decided 2026-10-07).
+rev. 15, 3.5 on deleting code points, 3.6.2 on ill-formed input): it would show the evaluators
+text no consumer of the reply sees, a ``<scr`` and ``ipt>`` around a half read as ``<script>``
+(OD-28, decided 2026-10-07).
 """
 
 from __future__ import annotations
@@ -54,11 +55,11 @@ def well_formed_json(value: Any) -> Any:
     first walk only looks: a reply with no surrogate, the usual case, is returned as it is and
     costs that scan. Otherwise its strings are replaced inside their lists and dicts, and a dict
     whose keys hold a surrogate is refilled in its order with the keys renamed, one renamed key
-    shared by every dict that has it, as ``json.loads`` shares a repeated key. Copying every
-    reply tripled the peak memory of a 4 MiB body of small containers, and copying only one
-    that held a surrogate gave a target 2.8 times the peak for three bytes; a generator per
-    level of the fix made a reply nested 115,000 levels cost four times main's peak with no
-    surrogate at all (audits of A-47). A clean reply now costs about main's peak memory, and
+    shared by every dict that has it, as ``json.loads`` shares a repeated key. Copying only a
+    reply that held a surrogate (``95a7a24``) gave a target 2.8 times the peak memory of a
+    4 MiB body for three bytes, and a generator per level of the fix (``dcefb7f``) made a reply
+    nested 115,000 levels cost four times main's peak with no surrogate at all (audits of
+    A-47). A clean reply now costs about main's peak memory, and
     most hostile shapes no more; the worst is one long string holding a surrogate, about three
     times the parse's peak, since it is held three times while it is replaced (the string, its
     UTF-16 bytes and the new one), as in any version. Both walks keep a plain
@@ -146,7 +147,8 @@ def _rename_keys(mapping: dict[Any, Any], renamed: dict[str, str]) -> None:
     its name; a replaced one that lands on a name in use takes the next ``, #n`` suffix, the
     form the evidence store gives two keys that mask to one. ``renamed`` holds each key's well
     formed text for the whole walk, and each suffixed name, so a key repeated in many dicts
-    stays one string (rebuilding a suffixed name per dict cost four times the parse's peak).
+    stays one string (rebuilding a suffixed name per dict, as ``11a5397`` did, cost 4.5 times
+    the parse's peak).
     """
 
     if not any(isinstance(key, str) and _SURROGATE.search(key) for key in mapping):

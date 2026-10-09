@@ -36,6 +36,8 @@ def test_the_replacement_is_u_fffd() -> None:
         ("x" + _HALVES + _HIGH, "x" + _EMOJI + _R),
         (_HIGH + _EMOJI, _R + _EMOJI),
         (_HIGH + _HALVES, _R + _EMOJI),
+        ("a" + chr(0xDBFF) + "b", "a" + _R + "b"),
+        ("a" + chr(0xDFFF) + "b", "a" + _R + "b"),
     ],
     ids=[
         "lone-high",
@@ -48,6 +50,8 @@ def test_the_replacement_is_u_fffd() -> None:
         "halves-then-lone",
         "lone-before-astral",
         "lone-before-halves",
+        "last-high",
+        "last-low",
     ],
 )
 def test_a_lone_surrogate_reads_as_the_replacement(text: str, expected: str) -> None:
@@ -100,6 +104,12 @@ def test_a_parsed_reply_keeps_its_order() -> None:
 @pytest.mark.parametrize("scalar", ["s", 1, 1.0, True, None])
 def test_a_scalar_at_the_top_is_returned(scalar: object) -> None:
     assert well_formed_json(scalar) == scalar
+
+
+def test_a_string_at_the_top_is_made_well_formed() -> None:
+    """A reply that is one JSON string has no list or dict to set it in: it is returned fixed."""
+
+    assert well_formed_json("a" + _HIGH) == "a" + _R
 
 
 def test_two_keys_that_read_the_same_keep_both_values() -> None:

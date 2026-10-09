@@ -458,9 +458,10 @@ class MCPAdapter:
                     "bytes; not read further"
                 )
             try:
-                # `surrogatepass`, the error handler `json.loads` decodes an HTTP reply's bytes
-                # with: strict decoding skipped a line holding the raw bytes of half a character
-                # as stray output, and the call timed out (pre-commit audit, A-47).
+                # `surrogatepass`, the error handler `json.loads` decodes bytes with, so an HTTP
+                # body and this line read alike: strict decoding skipped a line holding the raw
+                # bytes of half a character as stray output, and the call timed out (pre-commit
+                # audit, A-47).
                 msg = well_formed_json(bounded_loads(raw.decode("utf-8", "surrogatepass").strip()))
             except NestedTooDeeply as exc:
                 # Refused at once, before the `except ValueError` below would skip it as a stray
