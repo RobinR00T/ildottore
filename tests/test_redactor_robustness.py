@@ -44,13 +44,6 @@ def test_echoed_masks_are_kept_as_they_are_and_redaction_is_idempotent(text: str
     assert once == expected, "nothing in the input needed masking"
 
 
-@pytest.fixture
-def no_known_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Registered credentials are process-wide: a test's own do not outlive it."""
-
-    monkeypatch.setattr(redactor_mod, "_KNOWN_SECRETS", set())
-
-
 @pytest.mark.usefixtures("no_known_secrets")
 def test_a_registered_credential_next_to_echoed_masks_keeps_every_mask() -> None:
     register_known_secret("KK0Kk1234567890")

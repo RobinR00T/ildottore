@@ -70,6 +70,9 @@ _SPLITTERS = {
     "zero-width joiner": chr(0x200D),
     "Mongolian vowel separator": chr(0x180E),
     "tag letter A": chr(0xE0041),
+    # Half a character in a reply reads as U+FFFD where it is parsed (u04 A-47), one or a run.
+    "replacement character": chr(0xFFFD),
+    "three replacement characters": chr(0xFFFD) * 3,
     "a run of several": "\n" + chr(0x200B) + "\t" + chr(0xE0020) + "\x7f",
 }
 
@@ -609,7 +612,7 @@ def test_text_without_invisible_characters_never_enters_the_split_match(text: st
     """A guard: the split match changes nothing in text without such characters.
 
     It compares the redactor with itself with the match stubbed out; the evidence that the output
-    is byte for byte main's is the differential fuzz against main, run before a merge (A-31).
+    is byte for byte main's is the differential fuzz against main, run before a merge (A-32).
     """
 
     saved = set(redactor_mod._KNOWN_SECRETS)
@@ -647,6 +650,7 @@ _HOSTILE_PIECES = st.sampled_from(
         chr(0xE0041),
         chr(0x2028),
         chr(0xDC80),
+        chr(0xFFFD),
         " ",
         "«REDACTED:credential:0123abcd»",
         "«REDACTED:x»",

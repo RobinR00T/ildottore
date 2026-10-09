@@ -124,7 +124,13 @@ _FORMAT_RANGES: Final = (
     *((0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A), (0xE0001, 0xE0001)),
     (0xE0020, 0xE007F),
 )
-_INVISIBLE_RANGES: Final = (*_CONTROL_RANGES, *_FORMAT_RANGES)
+#: U+FFFD, the replacement character: half a character in a target's reply (a lone surrogate) is
+#: read as one where the reply is parsed (u04 A-47), before the redactor sees it, so a credential
+#: split by half a character arrives split by U+FFFD, or by a run of them (an MCP SSE stream reads
+#: each raw byte of the half as one). Unlike the others it shows: it stands where half a character
+#: was, or where the target wrote one itself, which splits a credential the same way.
+_REPLACEMENT_RANGES: Final = ((0xFFFD, 0xFFFD),)
+_INVISIBLE_RANGES: Final = (*_CONTROL_RANGES, *_FORMAT_RANGES, *_REPLACEMENT_RANGES)
 #: Every one of them, for ``str.translate`` to drop from a credential (a regex ``sub`` took 9 MB
 #: a megabyte, ``translate`` allocates only what it returns).
 _DROP_INVISIBLE: Final = dict.fromkeys(
@@ -347,10 +353,23 @@ _URL_USERINFO: Final = re.compile(r"(://[^/\s:@\x00\x01]+:)([^/\s@\x00\x01]+)(@)
 
 
 def overlaps_known_secret(value: str) -> bool:
-    """True if ``value`` is, contains, or is part of a credential this process registered."""
+    """True if ``value`` is, contains, or is part of a credential this process registered.
+
+    Part of one only from ``_KNOWN_MIN_LEN`` characters, the floor below which nothing is
+    registered either: a caller masking `x` because a password holds an `x` would tell the
+    reader so (pre-commit audit of the spec file names).
+    """
 
     with _KNOWN_LOCK:
-        return any(value in secret or secret in value for secret in _KNOWN_SECRETS)
+        return any(
+            secret in value or (len(value) >= _KNOWN_MIN_LEN and value in secret)
+            for secret in _KNOWN_SECRETS
+        )
+
+
+#: The mask for a value a caller keeps out of the redactor that is part of a registered
+#: credential. Written outright: the entropy rule passes an id-shaped name such as a spec file's.
+CREDENTIAL_MASK: Final = _MASK_TEMPLATE.format(type="credential")
 
 
 def mask_url_passwords(text: str) -> str:
@@ -710,8 +729,9 @@ class Redactor:
 
         # Credentials the tool read, by value, before the URL rule: a password containing a
         # raw ``@`` is matched whole here, where the URL rule would stop at the first ``@``.
-        # In a text holding a control or a format character the whole match runs on the text with
-        # them dropped (`_redact_split_credentials`); in any other it is exactly what it was.
+        # In a text holding a control or a format character, or U+FFFD, the whole match runs on the
+        # text with them dropped (`_redact_split_credentials`); in any other it is exactly what it
+        # was.
         registered = _known_secrets()
         split = bool(registered) and _SPLITTER_RUN.search(working) is not None
         if not split:
@@ -749,7 +769,7 @@ class Redactor:
     def _redact_split_credentials(
         self, text: str, keep: Callable[[str], str], registered: Sequence[str], *, split: bool
     ) -> str:
-        """Mask every registered credential, split by control or format characters or not.
+        """Mask every registered credential, split by control, format or U+FFFD characters or not.
 
         In a text holding one of those characters (``split``) this is the whole match by value:
         a credential split by a newline, a tab or a zero-width space was kept in two readable

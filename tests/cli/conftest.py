@@ -8,10 +8,12 @@ send-counting fake adapter used to prove the scope gate performs **zero** sends.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
+import yaml
 
 from ildottore.shared.enums import (
     Category,
@@ -149,6 +151,71 @@ class CountingAdapter:
         from ildottore.shared.models import Capabilities
 
         return Capabilities()
+
+
+# --- hostile JSON ------------------------------------------------------------------
+
+#: Past every supported interpreter's JSON parser. Measured on macOS: Python 3.12 stops near
+#: 10,000 levels and 3.14 near 116,000 (it measures the stack); 3.11 counts the levels against
+#: its recursion limit of 1,000 (not measured: no 3.11 here; CI runs 3.11).
+DEEP_JSON_DEPTH = 200_000
+
+
+def deep_json(shape: str = "array") -> str:
+    """A JSON document nested ``DEEP_JSON_DEPTH`` levels, as an array or as an object."""
+
+    if shape == "array":
+        return "[" * DEEP_JSON_DEPTH + "]" * DEEP_JSON_DEPTH
+    return '{"a":' * DEEP_JSON_DEPTH + "1" + "}" * DEEP_JSON_DEPTH
+
+
+def deep_yaml_anchors(per_anchor: int, anchors: int, line: str = "_{name}: {value}") -> str:
+    """YAML lines whose last anchor, ``*deep``, is ``per_anchor * anchors`` levels deep.
+
+    Each anchor nests the previous one ``per_anchor`` levels further, in flow style, so the nesting
+    as written is ``per_anchor`` plus the levels of ``line``: with ``per_anchor`` at most 20 neither
+    written limit sees it (A-52, A-58, checked with :func:`written_nesting`), and only the depth
+    with the aliases expanded refuses it. ``line`` places each anchored value (a mapping key by
+    default, or a list item where the schema allows one).
+    """
+
+    lines = []
+    for index in range(anchors):
+        name = "deep" if index == anchors - 1 else f"n{index}"
+        inner = f"*n{index - 1}" if index else ""
+        value = f"&{name} " + "[" * per_anchor + inner + "]" * per_anchor
+        lines.append(line.format(name=name, value=value))
+    return "\n".join(lines) + "\n"
+
+
+def written_nesting(text: str) -> tuple[int, int]:
+    """The deepest lists and maps written in ``text``, of any style and in flow style only.
+
+    A test whose depth must come from aliases asserts both are under the written limits (100 and
+    20): above them the document is refused as it is written, and such a test passes for that
+    reason instead (it did, unseen, from #84 to A-58).
+    """
+
+    open_styles: list[bool] = []
+    deepest = deepest_flow = 0
+    for event in yaml.parse(text):
+        if isinstance(event, (yaml.SequenceStartEvent, yaml.MappingStartEvent)):
+            open_styles.append(bool(event.flow_style))
+            deepest = max(deepest, len(open_styles))
+            deepest_flow = max(deepest_flow, sum(open_styles))
+        elif isinstance(event, (yaml.SequenceEndEvent, yaml.MappingEndEvent)):
+            open_styles.pop()
+    return deepest, deepest_flow
+
+
+# --- flag names ----------------------------------------------------------------------
+
+# A long option as an operator would copy it out of a message: two dashes that do not follow a
+# letter, a digit, `_` or `-`, then a lowercase ASCII letter, read up to the first character that
+# is not a letter, a digit, `_` or `-`. So `--budget-wall_s`, `--budget-wall-S` and
+# `--budget-wall-` are not taken for the `--budget-wall` they start with (audits of
+# `fix/resume-wall-flag-name`); `--budget-wall.s` is, as a period ends a sentence.
+LONG_OPTION = re.compile(r"(?<![\w-])--[a-z][\w-]*")
 
 
 # --- on-disk scope + target fixtures -----------------------------------------------
