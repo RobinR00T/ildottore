@@ -29,7 +29,9 @@ htmlcov/
 /evidence/
 /runs/
 *.sarif
-!tests/**/*.sarif          # keep committed SARIF snapshot fixtures
+# Re-include SARIF fixtures under tests/. This comment has a line of its own because git reads
+# no trailing comments: after a pattern, it would become part of the pattern.
+!tests/**/*.sarif
 /scope.yaml
 !specs/scope.example.yaml
 
