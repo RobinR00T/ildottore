@@ -740,8 +740,8 @@ validations, and one checks that loading 2,000 bad findings peaks no higher in `
 reading their JSON, which caught two checks of every finding by another route that got past the
 count (delta audit). A check by another route that keeps pydantic's exceptions without listing their
 errors is seen by neither (457 and 375 MiB on the same report, pre-merge audit); that gap is written
-here, not tested. The path is absolute with no colon after it, so the CLI keeps it readable, except
-where it cuts every message's path short (a path holding a space or one of `()[],;'"`, until #70)
+here, not tested. The path is absolute with no colon after it, so the CLI keeps it readable, a path
+holding a space or one of `()[],;'"` too since #70 (A-38), which before cut it short
 (`tests/cli/test_diff_report_validation.py`: 24 of its 31 tests fail on `de392e1`, 23 on the defect
 and the one that counts the validations because the helper it counts is not there; of the 7 that
 pass, 6 check that the redactor leaves each test value readable, so that the CLI tests can fail on

@@ -66,7 +66,8 @@ versioning: [SemVer](https://semver.org/).
   `summary.status.reason`, which quotes a target's transport error, without the redactor: a key or a
   high-entropy token in it printed in clear while `calibrate` masked the same text. It is now a
   `ValueError` printed through `_masked`, with the same text and exit 3. A newline in the reason
-  still prints two lines until PR #51, which writes control characters out inside `_masked`.
+  printed two lines until PR #51, which landed just before this one and writes control characters
+  out inside `_masked` (a newline as `␊`).
 - Not covered, as on main: a missing file under a directory whose name holds a space or one of
   `()[],;'"` keeps its directories only up to that character, what follows the existing part of a
   missing path is judged from its `/` on, a key glued before an existing absolute path by `+`, `=`
