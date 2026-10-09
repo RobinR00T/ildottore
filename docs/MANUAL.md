@@ -359,8 +359,8 @@ level (owner's decision OD-31). Quote a model id YAML reads as a number, a date 
 (`model: "20240613"`). One of the six text fields with nothing after it, `null` or `~` is still
 absent. A key that only holds an anchor for a `<<` merge (`x-defaults: &d`) is refused like any
 other: write the merged map inline. The key is printed as the location, as pydantic renders it
-(`on:` as `1`, a `!!binary` key decoded), so a control character in it reaches the terminal as
-written, as below. A run halted before then with such a key resumes once you delete the key;
+(`on:` as `1`, a `!!binary` key decoded), its control and format characters written out (a line
+break as `␊`), as below. A run halted before then with such a key resumes once you delete the key;
 correcting it to the key you meant changes the target, and the resume is refused.
 A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
 `max_tokens` outside 1 to its cap or a key either block does not know is refused before
