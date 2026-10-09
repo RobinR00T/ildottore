@@ -25,8 +25,8 @@ from ildottore.adapters.websocket import (
     MAX_FRAMES_PER_TURN,
     WebSocketClosed,
     WebSocketFrameTooDeep,
-    WebSocketTooManyConversations,
-    WebSocketTurnOverflow,
+    WebSocketOverflow,
+    WebSocketTooMany,
     WebSocketTurnTimeout,
     _close,
     _satisfies,
@@ -190,7 +190,7 @@ async def test_the_handshake_phase_has_the_turn_byte_cap() -> None:
 
     with (
         HandlerServer(handler) as server,
-        pytest.raises(WebSocketTurnOverflow, match="before the handshake"),
+        pytest.raises(WebSocketOverflow, match="before the handshake"),
     ):
         await _adapter(server, _spec(reconnect={"max_attempts": 0}), max_frame_bytes=2 * MIB).send(
             ModelRequest(prompt="hi")
@@ -208,7 +208,7 @@ async def test_the_handshake_phase_has_the_turn_frame_cap() -> None:
 
     with (
         HandlerServer(handler) as server,
-        pytest.raises(WebSocketTurnOverflow, match="frames before the handshake"),
+        pytest.raises(WebSocketOverflow, match="frames before the handshake"),
     ):
         await _adapter(server, _spec(reconnect={"max_attempts": 0})).send(ModelRequest(prompt="hi"))
 
@@ -288,7 +288,7 @@ async def test_an_in_flight_turn_is_not_closed_by_a_new_conversation(
             )
         )
         await asyncio.sleep(0.1)
-        with pytest.raises(WebSocketTooManyConversations):
+        with pytest.raises(WebSocketTooMany):
             await adapter.send(
                 ModelRequest(
                     messages=[{"role": "user", "content": "c1"}],
@@ -382,7 +382,7 @@ async def test_a_lost_conversation_is_not_retried_and_is_debited_once() -> None:
             sleep=_noop,
         )
     assert result.env_error is True and result.retries == 0
-    assert result.errors[0].startswith("WebSocketConversationLost") and result.errors[0].endswith(
+    assert result.errors[0].startswith("WebSocketLost") and result.errors[0].endswith(
         NOT_RETRYABLE_MARK
     )
     assert ledger.spend().requests == 1

@@ -95,13 +95,13 @@ __all__ = [
     "TOKEN",
     "WebSocketAdapter",
     "WebSocketClosed",
-    "WebSocketConversationLost",
     "WebSocketFrameTooDeep",
-    "WebSocketFrameUndecodable",
+    "WebSocketLost",
+    "WebSocketOverflow",
     "WebSocketServerError",
-    "WebSocketTooManyConversations",
-    "WebSocketTurnOverflow",
+    "WebSocketTooMany",
     "WebSocketTurnTimeout",
+    "WebSocketUndecodable",
     "placeholders",
     "render",
 ]
@@ -166,10 +166,21 @@ _MESSAGE_TOO_BIG: Final = 1009
 _INVALID_PAYLOAD: Final = 1007
 
 
+# The class names below reach the CLI's error line and the stored evidence, which the redactor
+# reads: a name its high-entropy rule masks is unreadable there, as four were until the second
+# pre-merge audit of PR #87 (`WebSocketFrameUndecodable` printed as a high_entropy mask).
+# `tests/adapters/test_websocket_premerge.py` checks every exported one survives `redact_text`.
+
+
 class WebSocketClosed(AdapterEnvError):
-    """The connection could not be opened, or closed before the turn ended (env, retried)."""
+    """The connection could not be opened, or closed before the turn ended (env, retried).
+
+    Not retried when the server closed it with 1007 or 1009, saying what was sent was invalid
+    or too large: it would refuse the same query again.
+    """
 
     is_env_error = True
+    retryable = True
 
 
 class WebSocketTurnTimeout(AdapterEnvError):
@@ -184,7 +195,7 @@ class WebSocketServerError(AdapterEnvError):
     is_env_error = True
 
 
-class WebSocketTurnOverflow(ResponseTooLarge):
+class WebSocketOverflow(ResponseTooLarge):
     """A turn over the byte cap or the frame cap: inconclusive and not retried."""
 
 
@@ -194,13 +205,13 @@ class WebSocketFrameTooDeep(ResponseTooDeep):
     retried, as a reply nested too deeply is on every other adapter."""
 
 
-class WebSocketFrameUndecodable(ResponseUndecodable):
+class WebSocketUndecodable(ResponseUndecodable):
     """A text frame that is not UTF-8, which the library refuses by closing the connection
     (1007): inconclusive and not retried. Retried, the same frame came back three more times,
     each one debited (pre-merge audit of PR #87)."""
 
 
-class WebSocketConversationLost(WebSocketClosed):
+class WebSocketLost(WebSocketClosed):
     """A later turn whose connection is gone: inconclusive, and not retried.
 
     Retried, it was sent again three times and debited each time for a query that could never
@@ -210,7 +221,7 @@ class WebSocketConversationLost(WebSocketClosed):
     retryable = False
 
 
-class WebSocketTooManyConversations(WebSocketClosed):
+class WebSocketTooMany(WebSocketClosed):
     """More than :data:`MAX_OPEN_CONVERSATIONS` held at once: this one is refused, not retried."""
 
     retryable = False
@@ -418,12 +429,12 @@ class WebSocketAdapter:
         held = self._conversations.get(key)
         if held is None:
             if turn_index > 0:
-                raise WebSocketConversationLost(
+                raise WebSocketLost(
                     f"{self.id}: turn {turn_index} of conversation {key!r} has no open "
                     "connection, so the earlier turns' context is gone; nothing was sent"
                 )
             if len(self._conversations) >= MAX_OPEN_CONVERSATIONS:
-                raise WebSocketTooManyConversations(
+                raise WebSocketTooMany(
                     f"{self.id}: {MAX_OPEN_CONVERSATIONS} conversations are open already; "
                     f"conversation {key!r} was not started"
                 )
@@ -594,7 +605,7 @@ class WebSocketAdapter:
             frame, size = await self._recv_frame(connection, frames)
             total += size
             if total > MAX_RESPONSE_BYTES:
-                raise WebSocketTurnOverflow(
+                raise WebSocketOverflow(
                     f"{self.id}: more than {MAX_RESPONSE_BYTES} bytes before the {what} reply; "
                     "not read further"
                 )
@@ -606,7 +617,7 @@ class WebSocketAdapter:
                     f"({quoted(expect.path)} == {quoted(expect.equals)})"
                 )
             return
-        raise WebSocketTurnOverflow(
+        raise WebSocketOverflow(
             f"{self.id}: more than {MAX_FRAMES_PER_TURN} frames before the {what} reply"
         )
 
@@ -638,7 +649,7 @@ class WebSocketAdapter:
                     frame, size = await self._recv_frame(connection, frames)
                     total += size
                     if total > MAX_RESPONSE_BYTES:
-                        raise WebSocketTurnOverflow(
+                        raise WebSocketOverflow(
                             f"{self.id}: the turn exceeded {MAX_RESPONSE_BYTES} bytes; "
                             "not read further"
                         )
@@ -676,7 +687,7 @@ class WebSocketAdapter:
                         final = frame
                         break
                 else:
-                    raise WebSocketTurnOverflow(
+                    raise WebSocketOverflow(
                         f"{self.id}: more than {MAX_FRAMES_PER_TURN} frames in one turn"
                     )
         except TimeoutError as exc:
@@ -733,21 +744,32 @@ class WebSocketAdapter:
         try:
             raw = await connection.recv()
         except ConnectionClosed as exc:
-            sent = exc.sent
-            if sent is not None and sent.code == _MESSAGE_TOO_BIG:
-                raise WebSocketTurnOverflow(
+            sent, received = exc.sent, exc.rcvd
+            # The library echoes a close it receives, so a sent 1009 or 1007 is this side's
+            # refusal only when it was not an echo of the server's (second pre-merge audit of
+            # PR #87: a server's 1009 read as "a frame exceeded ...", its reason dropped).
+            ours = sent is not None and not exc.rcvd_then_sent
+            if ours and sent is not None and sent.code == _MESSAGE_TOO_BIG:
+                raise WebSocketOverflow(
                     f"{self.id}: a frame exceeded {self.max_frame_bytes} bytes; not read further"
                 ) from exc
-            if sent is not None and sent.code == _INVALID_PAYLOAD:
-                raise WebSocketFrameUndecodable(
+            if ours and sent is not None and sent.code == _INVALID_PAYLOAD:
+                raise WebSocketUndecodable(
                     f"{self.id}: a text frame was not UTF-8 and the connection was closed (1007); "
                     "not evaluated"
                 ) from exc
             # The close reason is the server's text: scrubbed and redacted before it is
             # quoted (a credential in it reached attempt.error: pre-commit audit, F5).
-            raise WebSocketClosed(
+            closed = WebSocketClosed(
                 f"{self.id}: the connection closed mid-turn: {self._safe(str(exc))}"
-            ) from exc
+            )
+            if (
+                received is not None
+                and exc.rcvd_then_sent
+                and received.code in (_MESSAGE_TOO_BIG, _INVALID_PAYLOAD)
+            ):
+                closed.retryable = False  # the server refused what was sent; it would again
+            raise closed from exc
         if isinstance(raw, bytes):
             raise AdapterProductError(
                 f"{self.id}: received a binary frame; this adapter reads JSON text frames"

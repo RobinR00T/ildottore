@@ -70,7 +70,7 @@ from ildottore.policy import (
 )
 from ildottore.policy.scope import MAX_ID_CHARS
 from ildottore.redactor import register_known_secret
-from ildottore.registry import LintError, Registry, load_paths, non_json_values
+from ildottore.registry import LintError, Registry, load_paths, non_json_values, non_string_keys
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.config_errors import cut, listed, quoted, validation_problems, yaml_problem
@@ -1330,11 +1330,12 @@ def _websocket_spec(
     ``{{token}}`` without an ``auth_ref``, a query template that carries neither ``{{prompt}}``
     nor ``{{messages}}``, an upgrade header the library writes itself (``Host``,
     ``Connection``, ``Upgrade`` and :data:`~ildottore.adapters.websocket.RESERVED_HEADERS`' five
-    ``Sec-WebSocket-`` headers), ``one_query_in_flight: false``, a value JSON cannot hold
-    anywhere in the block (a date, a set, bytes, NaN, half a character: the walk a spec gets,
-    A-54), and a ``ws://`` or ``wss://`` endpoint on any other provider (an HTTP adapter cannot
-    dial it). Each refusal names the field; a name the operator wrote (a
-    header, a placeholder) is cut as every refusal of the operator's files cuts it (A-51).
+    ``Sec-WebSocket-`` headers), ``one_query_in_flight: false``, a key that is not text (A-44)
+    or a value JSON cannot hold (a date, a set, bytes, NaN, half a character: A-54) anywhere in
+    the block, the walks a spec gets, and a ``ws://`` or ``wss://`` endpoint on any other
+    provider (an HTTP adapter cannot dial it). Each refusal names the field; a name the operator
+    wrote (a header, a placeholder) is cut as every refusal of the operator's files cuts it
+    (A-51).
     """
 
     is_websocket = (provider or "").strip().lower() == "websocket"
@@ -1360,9 +1361,16 @@ def _websocket_spec(
         )
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} 'websocket' must be a mapping")
-    # Before the model reads it: the templates are free-form JSON, so a date stopped the run when
-    # the frame was written, NaN went on the wire, and half a character raised out of `run` from
-    # the target's digest (pre-merge audit of PR #87).
+    # Before the model reads it: the templates are free-form JSON below their top level, so a key
+    # YAML built from `on` or `~` went on the wire as "True" or "None" (A-44's walk; second
+    # pre-merge audit), and a date stopped the run when the frame was written, NaN went on the
+    # wire, and half a character raised out of `run` from the target's digest (A-54's walk;
+    # pre-merge audit of PR #87). Keys first, as the spec loader checks them.
+    not_text = non_string_keys({"websocket": raw})
+    if not_text:
+        raise ValueError(
+            f"target file {path} 'websocket' has a key that is not text: {'; '.join(not_text)}"
+        )
     not_json = non_json_values({"websocket": raw})
     if not_json:
         raise ValueError(

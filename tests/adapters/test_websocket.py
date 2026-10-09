@@ -22,9 +22,9 @@ from ildottore.adapters import (
 from ildottore.adapters.websocket import (
     MAX_FRAMES_PER_TURN,
     WebSocketClosed,
+    WebSocketOverflow,
     WebSocketServerError,
-    WebSocketTooManyConversations,
-    WebSocketTurnOverflow,
+    WebSocketTooMany,
     WebSocketTurnTimeout,
     placeholders,
     render,
@@ -369,7 +369,7 @@ async def test_close_mid_turn_is_an_environment_error_and_the_adapter_resends_no
 async def test_a_flood_of_frames_is_bounded_and_not_retried() -> None:
     with (
         FakeChatServer("flood") as server,
-        pytest.raises(WebSocketTurnOverflow, match=f"{MAX_FRAMES_PER_TURN} frames") as info,
+        pytest.raises(WebSocketOverflow, match=f"{MAX_FRAMES_PER_TURN} frames") as info,
     ):
         await _adapter(server).send(ModelRequest(prompt="hi"))
     assert default_is_env_error(info.value) is True
@@ -377,7 +377,7 @@ async def test_a_flood_of_frames_is_bounded_and_not_retried() -> None:
 
 
 async def test_a_turn_over_the_byte_cap_is_refused_unread_and_not_retried() -> None:
-    with FakeChatServer("long_turn") as server, pytest.raises(WebSocketTurnOverflow) as info:
+    with FakeChatServer("long_turn") as server, pytest.raises(WebSocketOverflow) as info:
         await _adapter(server).send(ModelRequest(prompt="hi"))
     assert "exceeded" in str(info.value) and info.value.retryable is False
 
@@ -415,7 +415,7 @@ async def test_an_endpoint_that_is_not_a_websocket_is_a_product_defect() -> None
 async def test_an_oversized_frame_is_refused_unread_and_not_retried() -> None:
     with FakeChatServer("huge") as server:
         adapter = _adapter(server, max_frame_bytes=64 * 1024)
-        with pytest.raises(WebSocketTurnOverflow, match="frame exceeded") as info:
+        with pytest.raises(WebSocketOverflow, match="frame exceeded") as info:
             await adapter.send(ModelRequest(prompt="hi"))
     assert info.value.retryable is False
 
@@ -571,7 +571,7 @@ async def test_open_conversations_are_capped_and_a_live_one_is_never_evicted(
                     metadata={"conversation": f"c{index}", "turn_index": 0, "turns_total": 2},
                 )
             )
-        with pytest.raises(WebSocketTooManyConversations) as info:
+        with pytest.raises(WebSocketTooMany) as info:
             await adapter.send(
                 ModelRequest(
                     messages=[{"role": "user", "content": "c2"}],

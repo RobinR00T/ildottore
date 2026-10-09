@@ -40,8 +40,15 @@ The carryover ledger. Every agent session updates this so context survives even 
   the docs no longer say a WebSocket (or REST) probe goes out at temperature 0, and the frame
   case is written into OD-21. Found while fixing: a fleet's `wss://` entry got a bare host in
   its scope (every port); it is pinned to 443 now. `tests/adapters/test_websocket_premerge.py`:
-  36 of its 40 tests fail on the PR head. `make gates` green (with `PYTHONPATH` set to the
-  worktree's `src`): 3588 tests, 97.24% coverage, 75 specs lint OK, four import contracts kept,
+  36 of its first 40 tests fail on the PR head.
+- Second pre-merge audit (2026-10-09, on `abcf7d4`): merge-ready once four error class names the
+  redactor's high-entropy rule masked in the CLI error and the evidence are renamed
+  (`WebSocketOverflow`, `WebSocketUndecodable`, `WebSocketLost`, `WebSocketTooMany`, each checked
+  against `redact_text` by a test); also fixed: a 1007 or 1009 close the server starts is its own
+  (`WebSocketClosed` with its reason, not retried), a key that is not text in the block is
+  refused (A-44's walk), and the scope man page, the MANUAL and u04 match the code. 9 of the 16
+  new tests fail on `abcf7d4`. `make gates` green (with `PYTHONPATH` set to the worktree's
+  `src`): 3604 tests, 97.24% coverage, 75 specs lint OK, four import contracts kept,
   self-scan, bandit and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no dependencies).
 
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
@@ -421,7 +428,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   have spread to the endpoint or `auth_ref` row of the `--judge` refusal, and A-30's credential
   half was tested with the key on one side only. Numbering: A-56 and OD-33 came from the session
   keeping the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without
-  having claimed them, so it has to renumber.
+  having claimed them, so it has to renumber (renumbered to OD-34 to OD-37, 2026-10-09).
 
 ## State, 2026-10-07 (night): a load refusal names its spec file
 

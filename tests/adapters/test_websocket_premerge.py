@@ -1,12 +1,13 @@
-"""Regressions from the pre-merge audit of the WebSocket adapter (PR #87, 2026-10-09).
+"""Regressions from the two pre-merge audits of the WebSocket adapter (PR #87, 2026-10-09).
 
 Each test pins a finding of that audit: a frame parsed with a plain ``json.loads`` (half a
 character in it aborted the campaign, A-47), a tool call's JSON-text arguments never measured,
 a text frame that is not UTF-8 retried, a socket that failed to open dialled again inside one
 debited send, values JSON cannot hold accepted in the ``websocket:`` block, a ``ws://`` or
 ``wss://`` endpoint accepted on another provider, names quoted whole in the loader's refusals,
-and a fleet's ``wss://`` entry authorizing every port. The servers are loopback; nothing leaves
-the host.
+and a fleet's ``wss://`` entry authorizing every port. The second audit: error class names the
+redactor masked, a close the server started with 1007 or 1009 read as this side's, and keys
+that are not text sent as Python's ``str``. The servers are loopback; nothing leaves the host.
 """
 
 from __future__ import annotations
@@ -18,12 +19,13 @@ from typing import Any
 import pytest
 from websockets.asyncio.server import ServerConnection
 
+import ildottore.adapters.websocket as websocket_module
 from ildottore.adapters import RetryConfig
 from ildottore.adapters.base import ResponseTooDeep, ResponseUndecodable
 from ildottore.adapters.websocket import (
     WebSocketClosed,
     WebSocketFrameTooDeep,
-    WebSocketFrameUndecodable,
+    WebSocketUndecodable,
 )
 from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode
@@ -37,6 +39,7 @@ from ildottore.core.execute import (
     execute_attempt,
 )
 from ildottore.policy import Endpoint, EndpointAllowlist
+from ildottore.redactor import Redactor
 from ildottore.shared.config_errors import MAX_PROBLEM_CHARS
 from ildottore.shared.models import ModelRequest
 from ildottore.shared.nesting import MAX_DEPTH
@@ -181,11 +184,11 @@ async def test_a_text_frame_that_is_not_utf8_is_inconclusive_and_sent_once() -> 
     with _query_server(on_query) as server:
         result = await _attempt(_adapter(server), ledger)
     assert result.env_error is True and result.retries == 0
-    assert result.errors[0].startswith("WebSocketFrameUndecodable")
+    assert result.errors[0].startswith("WebSocketUndecodable")
     assert result.errors[0].endswith(NOT_RETRYABLE_MARK)
     assert ledger.spend().requests == 1
     assert server.log.queries == 1  # retried, the same frame came back three more times
-    assert issubclass(WebSocketFrameUndecodable, ResponseUndecodable)
+    assert issubclass(WebSocketUndecodable, ResponseUndecodable)
 
 
 # --- MEDIUM 4: a tool call's JSON-text arguments are measured ---------------------------------
@@ -410,3 +413,135 @@ def test_a_fleet_wss_entry_writes_a_target_run_refuses(tmp_path: Path) -> None:
     path.write_text(yaml.safe_dump(doc), encoding="utf-8")
     with pytest.raises(ValueError, match="dialled only by provider websocket"):
         wiring.load_target(path)
+
+
+# --- second pre-merge audit, MEDIUM 1: no error class name reads as a credential --------------
+
+_ERRORS = sorted(
+    name
+    for name in websocket_module.__all__
+    if isinstance(getattr(websocket_module, name), type)
+    and issubclass(getattr(websocket_module, name), Exception)
+)
+
+
+def test_every_exported_websocket_error_is_listed() -> None:
+    assert len(_ERRORS) == 8 and all(name.startswith("WebSocket") for name in _ERRORS)
+
+
+@pytest.mark.parametrize("name", _ERRORS)
+def test_an_error_class_name_survives_the_redactor(name: str) -> None:
+    """The CLI's error line and the stored evidence are redacted; the class name must read.
+
+    ``WebSocketFrameUndecodable``, ``WebSocketTurnOverflow``, ``WebSocketConversationLost`` and
+    ``WebSocketTooManyConversations`` came out as ``«REDACTED:high_entropy:...»``.
+    """
+
+    redactor = Redactor()
+    assert redactor.redact_text(name) == name
+    line = f"{name}: ws-live: a text frame was not UTF-8 and the connection was closed (1007)"
+    assert redactor.redact_text(line) == line
+
+
+def test_the_campaign_names_an_undecodable_frame_in_its_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TEST_WS_TOKEN", TOKEN)
+
+    async def on_query(connection: ServerConnection, _message: dict[str, Any]) -> None:
+        await connection.send(b'{"type":"delta","delta":{"text":"\xed\xa0\x80"}}', text=True)
+
+    with _query_server(on_query) as server:
+        target = _write_target(tmp_path, endpoint=server.url)
+        scope = _write_scope(tmp_path, server)  # type: ignore[arg-type]
+        specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+        opts = RunOptions(
+            targets=[target],
+            scope=scope,
+            runs=1,
+            evidence_root=tmp_path / "ev",
+            run_db=tmp_path / "runs.sqlite",
+        )
+        outcome = execute_run(opts, [specs])
+    reason = outcome.incomplete["ws-live"]
+    assert "WebSocketUndecodable: ws-live: a text frame was not UTF-8" in reason
+    assert "REDACTED" not in reason
+    stored = "".join(p.read_text(encoding="utf-8") for p in (tmp_path / "ev").rglob("*.json"))
+    assert "WebSocketUndecodable" in stored and "high_entropy" not in stored
+    assert server.log.queries == 1  # not retried
+
+
+# --- second pre-merge audit, LOW 2: a close the server starts is the server's -----------------
+
+
+@pytest.mark.parametrize("code", [1007, 1009])
+async def test_a_close_the_server_starts_with_1007_or_1009_is_not_this_sides(code: int) -> None:
+    """The library echoes the server's close: it is not "a frame exceeded" nor "not UTF-8"."""
+
+    async def on_query(connection: ServerConnection, _message: dict[str, Any]) -> None:
+        await connection.close(code, f"refused by the server, token {TOKEN}")
+
+    ledger = BudgetLedger(max_requests=100)
+    with _query_server(on_query) as server:
+        result = await _attempt(_adapter(server), ledger)
+    error = result.errors[0]
+    assert error.startswith("WebSocketClosed: ws-test: the connection closed mid-turn: received")
+    assert "refused by the server" in error and TOKEN not in error  # its reason, scrubbed
+    assert "exceeded" not in error and "not UTF-8" not in error
+    assert error.endswith(NOT_RETRYABLE_MARK) and result.retries == 0
+    assert ledger.spend().requests == 1 and server.log.queries == 1
+
+
+async def test_a_close_the_server_starts_with_another_code_is_still_retried() -> None:
+    async def on_query(connection: ServerConnection, _message: dict[str, Any]) -> None:
+        await connection.close(1011, "internal error")
+
+    ledger = BudgetLedger(max_requests=100)
+    with _query_server(on_query) as server:
+        result = await _attempt(_adapter(server), ledger)
+    assert result.errors[0].startswith("WebSocketClosed") and result.retries == 3
+    assert not result.errors[0].endswith(NOT_RETRYABLE_MARK)
+    assert server.log.queries == 4
+
+
+async def test_a_frame_over_the_cap_is_still_this_sides_overflow() -> None:
+    """This side starts the 1009 close: the overflow, as before (the other direction)."""
+
+    from ildottore.adapters.websocket import WebSocketOverflow
+
+    with FakeChatServer("huge") as server, pytest.raises(WebSocketOverflow, match="exceeded 1024"):
+        await _adapter(server, max_frame_bytes=1024).send(ModelRequest(prompt="hi"))
+
+
+# --- second pre-merge audit, LOW 3: keys in the block are text (A-44's walk) ------------------
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "where", "kind"),
+    [
+        (
+            'text: "{{prompt}}"}',
+            'text: "{{prompt}}", opts: {on: true, ~: 1}}',
+            "websocket/message/send/opts",
+            "a boolean",
+        ),
+        (
+            'type: "new_conversation"}',
+            'type: "new_conversation", 5: x}',
+            "websocket/session/start",
+            "an integer",
+        ),
+    ],
+)
+def test_the_loader_refuses_a_key_that_is_not_text(
+    tmp_path: Path, old: str, new: str, where: str, kind: str
+) -> None:
+    """``opts: {on: true, ~: 1}`` went on the wire as ``{"True": true, "None": 1}``."""
+
+    assert old in _BLOCK
+    path = _write_target(tmp_path, endpoint=_ENDPOINT, block=_BLOCK.replace(old, new, 1))
+    with pytest.raises(ValueError, match="has a key that is not text") as info:
+        wiring.load_target(path)
+    assert f"{where}: key " in str(info.value) and kind in str(info.value)
+    assert "not a string" in str(info.value)
+    assert "\n" not in str(info.value)

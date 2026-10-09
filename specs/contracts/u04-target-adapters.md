@@ -56,11 +56,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   with an empty body. Both errors are environment failures with `retryable = False`. The MCP
   adapter's `notifications/initialized` reply is streamed and never read.
 - KEEP (as built, 2026-10-07): every reply is parsed through `shared.nesting.bounded_loads`
-  (the base adapter's body, the MCP adapter's JSON body, SSE `data:` event and stdio line, and
-  each WebSocket frame since the pre-merge audit of PR #87, 2026-10-09, where a plain
-  `json.loads` parsed it), which refuses a text whose brackets nest deeper than 100 levels
-  (`MAX_DEPTH`, objects and arrays outside strings; a provider's reply nests about 10). The
-  depth is read from the text
+  (the base adapter's body, the MCP adapter's JSON body, SSE `data:` event and stdio line, and each
+  WebSocket frame since the pre-merge audit of PR #87, 2026-10-09, where a plain `json.loads` parsed
+  it), which refuses a text whose brackets nest deeper than 100 levels (`MAX_DEPTH`, objects and
+  arrays outside strings; a provider's reply nests about 10). The depth is read from the text
   before it is parsed, so the parser never recurses past it and the verdict does not depend on
   the Python version (20,000 unclosed `[` were "not JSON" on 3.14 and a stack overflow on 3.12):
   brackets that balance and nest past the limit are too deep whether or not the rest is valid
@@ -71,16 +70,18 @@ reads as U+FFFD, since httpx decodes the stream as text.
   not counted); past either it is `ResponseTooLarge`. A tool call's
   arguments carried as a JSON string are measured too, unless they do not balance (they read as
   no arguments, as before)
-  (`shared.toolcalls.check_argument_nesting`), since the reply's parse never opens them; so are
-  a WebSocket frame's tool calls when its block declares `tool_calls_path`. The refusal is
-  `ResponseTooDeep`, an environment failure with `retryable = False`: the attempt is
-  inconclusive and the campaign goes on. A WebSocket frame has a tighter bound of its own, 64
-  levels on the parsed frame (`MAX_FRAME_DEPTH`: the frame is filed whole in `raw_ids`), refused
-  as `WebSocketFrameTooDeep`, a `ResponseTooDeep`; a text frame that is not UTF-8, which the
-  library refuses by closing the connection with 1007, is `WebSocketFrameUndecodable`, a
-  `ResponseUndecodable`, not retried either (it was retried three times). Found 2026-10-07:
-  `json.loads` raises `RecursionError`, not a `ValueError`, so one 400 KB reply of `[` escaped
-  the malformed-body
+  (`shared.toolcalls.check_argument_nesting`), since the reply's parse never opens them; so are a
+  WebSocket frame's tool calls when its block declares `tool_calls_path`. The refusal is
+  `ResponseTooDeep`, an environment failure with `retryable = False`: the attempt is inconclusive
+  and the campaign goes on. A WebSocket frame has a tighter bound of its own, 64 levels on the
+  parsed frame (`MAX_FRAME_DEPTH`: the frame is filed whole in `raw_ids`), refused as
+  `WebSocketFrameTooDeep`, a `ResponseTooDeep`; a text frame that is not UTF-8, which the library
+  refuses by closing the connection with 1007, is `WebSocketUndecodable`, a `ResponseUndecodable`,
+  not retried either (it was retried three times). A close the server starts with 1007 or 1009 says
+  the query frame was invalid or too large: it is `WebSocketClosed` with `retryable = False`,
+  quoting the server's reason scrubbed and redacted (second pre-merge audit: the library echoes the
+  close, which read as this side's overflow, the reason dropped). Found 2026-10-07: `json.loads`
+  raises `RecursionError`, not a `ValueError`, so one 400 KB reply of `[` escaped the malformed-body
   handler and the runner aborted the campaign; and a reply the parser accepts aborted it too,
   300 levels (about 600 bytes) overflowing pydantic's serializer when the evidence was written.
   A body that is not JSON keeps the product-defect rule of §7 (open decision OD-21). A refused
@@ -150,12 +151,11 @@ reads as U+FFFD, since httpx decodes the stream as text.
   adapter's body, so OpenAI, Anthropic and the REST template, and the MCP adapter's JSON body, SSE
   `data:` event and stdio line, the last now decoded with `surrogatepass`, the handler `json.loads`
   decodes bytes with: strict decoding skipped a line with the raw bytes as stray output and the call
-  timed out; and each WebSocket frame, since the pre-merge audit of PR #87, where one frame with an
-  escaped half made `run` exit 3 with "aborted on UnicodeEncodeError ... 2 of 2 specs never ran";
-  a text frame carrying the raw bytes is not UTF-8, which the library refuses, so that attempt is
-  inconclusive and not retried), and so are a tool call's arguments carried as JSON text, which
-  the reply's parse never opens (`shared.toolcalls.call_arguments`, read by the evaluators and
-  the in-band tool loop): a
+  timed out; and each WebSocket frame since the pre-merge audit of PR #87, where one frame with an
+  escaped half made `run` exit 3 ("aborted on UnicodeEncodeError"), while a text frame holding the
+  raw bytes is not UTF-8 and the library refuses it, so that attempt is inconclusive and is not
+  retried), and so are a tool call's arguments carried as JSON text, which the reply's parse never
+  opens (`shared.toolcalls.call_arguments`, read by the evaluators and the in-band tool loop): a
   lone surrogate reads as U+FFFD, a high half followed by a low half is the character the pair
   encodes, every other character is kept, and keys are treated like values; two keys that read the
   same once replaced keep both values (the replaced one takes the next `, #n`; a key the target
@@ -228,7 +228,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
   built in PR #87: `run` exits 3 with "aborted on AdapterProductError: ... a frame was not valid
   JSON", measured against the loopback chat server on 2026-10-09), so the decision covers both;
   a text frame that is not UTF-8 is not in it, since the library refuses that one before the
-  adapter reads it (`WebSocketFrameUndecodable`, inconclusive and not retried, §4).
+  adapter reads it (`WebSocketUndecodable`, inconclusive and not retried, §4).
 - **OD-28** (decided 2026-10-07, A-47): what a reply that holds a lone surrogate becomes. The owner
   left the choice to the build on 2026-10-07, and it is U+FFFD where the reply is parsed, the
   attempt evaluated as usual, as built. Why: it is what most of the target's consumers end up with

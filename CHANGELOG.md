@@ -55,12 +55,12 @@ versioning: [SemVer](https://semver.org/).
   templates.
   `tests/ws_chat_server.py` is a loopback JSON-over-WebSocket server with seventeen behaviours;
   `tests/adapters/test_websocket.py` (42 tests), `tests/adapters/test_websocket_audit.py` (31),
-  `tests/adapters/test_websocket_premerge.py` (40) and `tests/cli/test_websocket_target.py` (29)
-  hold 142 tests (the gate with zero connections, the redirect, streaming, the final frame,
+  `tests/adapters/test_websocket_premerge.py` (56) and `tests/cli/test_websocket_target.py` (29)
+  hold 158 tests (the gate with zero connections, the redirect, streaming, the final frame,
   timeouts, errors, reconnects, one connection per conversation, the evidence on disk, a real
   campaign, its replay, a real `-sV` pass, and the audits' regressions). `make gates` (with
   `PYTHONPATH` set to the worktree's `src`) after merging `main` at `6401ee2` and the pre-merge
-  fixes: 3588 tests, 97.24% coverage, 75 specs lint OK, bandit and pip-audit clean. Not built,
+  fixes: 3604 tests, 97.24% coverage, 75 specs lint OK, bandit and pip-audit clean. Not built,
   open for the owner: a dedicated transcript field on `ModelResponse` (OD-34), several queries
   multiplexed on one socket (OD-35), a reconnect mid-conversation for a stateless server
   (OD-36), a `websocket:` block in a fleet entry (OD-37: `dottore fleet` infers `rest` from a
@@ -88,8 +88,8 @@ versioning: [SemVer](https://semver.org/).
   block out of the digest). `tests/adapters/test_websocket_audit.py` holds the regressions.
 - **The pre-merge audit** (2026-10-09, on the PR merged with `main` at `6401ee2`) found it not
   ready to merge, and these are fixed, each with a test in
-  `tests/adapters/test_websocket_premerge.py` (36 of its 40 tests fail on the PR head, the other
-  4 pin what held): a frame was parsed with a plain `json.loads`, so one frame with half a
+  `tests/adapters/test_websocket_premerge.py` (36 of its first 40 tests fail on the PR head, the
+  other 4 pin what held): a frame was parsed with a plain `json.loads`, so one frame with half a
   character escaped in it made `run` exit 3 ("aborted on UnicodeEncodeError ... 2 of 2 specs
   never ran"), and frames now go through `bounded_loads` and `well_formed_json` as every reply
   does (A-47, the WebSocket adapter added to its list), its nesting refusal a `ResponseTooDeep`
@@ -113,6 +113,22 @@ versioning: [SemVer](https://semver.org/).
   said `Sec-WebSocket-*` is refused where five named headers are; and the four open decisions
   are renumbered (above). Found while fixing: `dottore fleet` wrote a bare host for a `wss://`
   entry, which authorizes every port, and now pins 443 (80 for `ws://`).
+- **The second pre-merge audit** (2026-10-09, on `abcf7d4`) found it merge-ready but for these,
+  fixed with 16 more tests in the same file (9 of them fail on `abcf7d4`, the other 7 pin what
+  held): the redactor's high-entropy rule masked four of the adapter's error class names in the
+  CLI's error line and the stored evidence ("failed on transport, so nothing was evaluated:
+  «REDACTED:high_entropy:bcc67449»: ws-live: a text frame was not UTF-8"), so
+  `WebSocketTurnOverflow`, `WebSocketFrameUndecodable`, `WebSocketConversationLost` and
+  `WebSocketTooManyConversations` are now `WebSocketOverflow`, `WebSocketUndecodable`,
+  `WebSocketLost` and `WebSocketTooMany`, and a test checks that every exported error name
+  survives `redact_text`; a close the server starts with 1007 or 1009, which the library echoes,
+  read as this side's overflow or undecodable frame with the server's reason dropped, and is now
+  `WebSocketClosed` with the reason (scrubbed and redacted) and not retried, while a close this
+  side starts keeps its two classes; a key that is not text in a template below its top level
+  (`opts: {on: true, ~: 1}`) went on the wire as `{"True": true, "None": 1}`, and the loader now
+  runs A-44's walk over the block before A-54's (`registry.non_string_keys`); and the scope man
+  page, the MANUAL and u04 say what the code does (the provider list, `reconnect.max_attempts`
+  unused by `run`, the WebSocket exception to "not UTF-8 stops the campaign").
 
 ### Fixed (a reply that holds half a character)
 

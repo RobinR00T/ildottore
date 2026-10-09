@@ -113,8 +113,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   split that way is not matched by `regex_absence`, a canary split that way is not found by
   `secret_leakage`, and a registered credential split that way is not masked as that
   credential. A body that is not valid UTF-8 in any other way
-  (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD) and an
-  MCP stdio line (skipped, so the call times out).
+  (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD), an
+  MCP stdio line (skipped, so the call times out) and a WebSocket text frame that is not UTF-8,
+  the raw bytes of half a character included (inconclusive and not retried, §4.2).
 - **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
   limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
   from the command line). A larger regular file is refused before any of it is read; anything
@@ -450,7 +451,7 @@ websocket:
     tool_calls_path: null                          # declare it only if the server sends calls
     model_path: null                               # optional: feeds the fingerprint's envelope layer
     timeout_seconds: 30                            # per turn, query to final frame
-  reconnect: {max_attempts: 1}                     # 0 to 5 more dials in one send (see Reconnects)
+  reconnect: {max_attempts: 1}                     # 0 to 5; under `run` the runner retries instead (see Reconnects)
   headers: {}                                      # on the HTTP upgrade; {{token}} allowed here too
 ```
 
@@ -470,11 +471,13 @@ nor in `vars`; `{{token}}` without an `auth_ref`, or inside `vars`; a request pl
 connection template; a `message.send` with neither `{{prompt}}` nor `{{messages}}`; an upgrade
 header the library writes itself (`Host`, `Connection`, `Upgrade`, and `Sec-WebSocket-Key`,
 `-Version`, `-Extensions`, `-Protocol` and `-Accept`); `one_query_in_flight: false`; a
-`timeout_seconds` outside (0, 600]; a `reconnect.max_attempts` outside 0 to 5; a value JSON
-cannot hold anywhere in the block (an unquoted date, a `!!set`, `!!binary` data, `.nan` or
-`.inf`, half a character), named by its path as `dottore lint` names one in a spec (a date in a
-template stopped the run when the frame was written, NaN went on the wire as `NaN`, and half a
-character in `vars` raised out of `run`). A `ws://` or `wss://` endpoint on any other provider is
+`timeout_seconds` outside (0, 600]; a `reconnect.max_attempts` outside 0 to 5; a key that is
+not text anywhere in the block (YAML reads `on:`, `~:` and `5:` as a boolean, null and a number;
+`opts: {on: true}` went on the wire as `{"True": true}`) and a value JSON cannot hold (an
+unquoted date, a `!!set`, `!!binary` data, `.nan` or `.inf`, half a character), each named by
+its path as `dottore lint` names one in a spec (a date in a template stopped the run when the
+frame was written, NaN went on the wire as `NaN`, and half a character in `vars` raised out of
+`run`). A `ws://` or `wss://` endpoint on any other provider is
 refused too: only this adapter dials it. The error names the field and never quotes the value; a
 name it lists (a header, a placeholder) is cut at 300 characters, and at most 20 are listed. At
 send time, before any dial, a resolved credential shorter than 8 characters is refused too: the
@@ -520,7 +523,9 @@ its nesting is measured before it is parsed (past 100 levels it is refused unpar
 character escaped in a string (a lone surrogate, `\ud800`) reads as U+FFFD, so one such frame no
 longer aborts the campaign (A-47). A text frame that is not UTF-8, the raw bytes of half a
 character included, is refused by the library, which closes the connection (close code 1007):
-inconclusive and not retried. Compression is not negotiated. `sampling_defaults` do not apply:
+inconclusive and not retried. A close the server starts with 1007 or 1009 (it says the query
+frame was invalid or too large) is not retried either, and the error quotes its reason,
+scrubbed and redacted; any other close mid-turn is retried by the runner. Compression is not negotiated. `sampling_defaults` do not apply:
 the templates carry no sampling fields, so neither a spec's sampling nor the `-sV` probes'
 temperature 0 reaches the target (as through a REST template).
 
