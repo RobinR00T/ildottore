@@ -281,6 +281,30 @@ pytest with `&` passes SIGINT on ignored); an interruption at the write after a 
 succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases
 not recorded, each comparing the store with what the stub served.
 
+**A-60 SIGTERM and SIGHUP stop a run as Ctrl-C does, inside a callback too (added
+2026-10-08).** `execute_run` turned them into Ctrl-C by installing `signal.default_int_handler`,
+which raises KeyboardInterrupt wherever the main thread is. Raised inside a weakref callback,
+Python prints "Exception ignored" and drops it, and the run goes on: in CI the `[sigterm]` case of
+`tests/cli/test_probe_pass_spend.py` saw a resume keep sending after its SIGTERM (41 requests
+served where 25 were expected, `WeakSet._remove` in the child's stderr; three first attempts on
+two PRs: #72's runs 37755261302 and 37758633140 and #82's run 37689645382, Linux, Python 3.11.16
+and 3.11.17), and on main `e4d6c83` a SIGTERM or SIGHUP raised inside a weakref callback under
+`asyncio.run` is dropped every time. Ctrl-C was never dropped there:
+inside `asyncio.run` the SIGINT handler is asyncio's, which cancels the run instead of raising.
+SIGTERM and SIGHUP now call whatever SIGINT handler is in place at that moment, so inside the
+event loop the first of them cancels the run as Ctrl-C does (a second, or one after the run's task
+has finished, raises in place as before), and they raise as before only when SIGINT has no Python
+handler (ignored, as for a job a script starts with `&`, where asyncio installs none). A program
+that embeds `execute_run` and gives Ctrl-C a handler that does nothing, or one installed through
+`loop.add_signal_handler`, makes them do nothing either; `dottore` does neither. An
+ignored SIGHUP still stays ignored (`nohup`). Outside the event loop (planning, the store writes,
+the reports) a signal still raises where the main thread is, so one landing in a callback there
+is dropped, as Ctrl-C is in any Python program; with SIGINT ignored that holds inside the loop
+too. The requests are sent inside the loop. Checked by `tests/cli/test_termination_signals.py`:
+SIGTERM, SIGHUP and, as a control, SIGINT raised inside a real weakref callback under
+`asyncio.run` (the first two fail on `e4d6c83`); SIGTERM and SIGHUP outside a loop with SIGINT at
+its default and ignored; and SIGTERM inside a loop with SIGINT ignored.
+
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
 spend column, so the same resume that could not verify the battery was handed a brand-new budget
