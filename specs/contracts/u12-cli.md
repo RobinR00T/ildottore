@@ -179,7 +179,12 @@ Amended 2026-10-03 (audit F6 / F-7): the multi-identity sweep and the `--judge` 
 two remaining exceptions (ten identities under a ceiling of two; `--budget-requests 5` sent 15
 with a judge). The sweep debits the ledger and is skipped on a resume of a finished spec; the
 judge is wrapped in `core.metering.MeteredAdapter`, bound to the campaign's ledger and pacer,
-and the estimate and the derived ceilings count it.
+and the estimate and the derived ceilings count it. Amended 2026-10-07 (A-34): the estimate
+and the derived ceilings count the identity sweep too, one send per scope identity for each
+spec that sweeps, which they had never done; `--estimate --resume` subtracts it for a spec whose
+every planned attempt is answered, as the runner then skips the sweep, counted from what is stored
+as the runner counts it (A-59, u08), and the room check of the `-sV` refusals (A-48) reads the
+same figure.
 
 **A-24 A resume is bound to its campaign: the battery, the target, the route, the sample size
 and the money (added 2026-09-22, widened the same night after audit).** Every one of these was
@@ -465,9 +470,10 @@ does not hold the rest of the campaign halts (measured with 6 spent and 3 to sen
 and 8), as any resume did on `0501752`; "whichever it ran with" asks the operator for what the run
 store does not keep (one flag for the three); the advice reads the request axis only, so a campaign
 halted on `--budget-tokens` is still told about requests, as on `0501752`; the estimate leaves out
-the multi-identity sweep of a live target with two or more identities and retries, so a followed
-"drop -sV" at an exact fit can still halt, and it over-prices a resume's rest with `--judge` (the
-safe direction); the test grammar does not read a piece written as a sentence of its own ahead of
+retries (the multi-identity sweep was the other omission until A-34, u08, priced it; the check
+subtracts a finished spec's sweep as `--estimate --resume` does), so a followed "drop -sV" at an
+exact fit can still halt, and it over-prices a resume's rest with `--judge` (the safe direction);
+the test grammar does not read a piece written as a sentence of its own ahead of
 the advice; the advice names `-sV` where the invocation said `-A`, which implies it; and the stored
 mode is read by truthiness, as the planning-mode check reads it, so the advice and the check agree
 on a value that is not a boolean.

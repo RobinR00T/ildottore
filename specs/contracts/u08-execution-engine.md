@@ -235,13 +235,40 @@ reads: u04 A-39 does (found by this clause's audit, fixed by PR #74).
 `tests/core/test_usage_figures.py` (each shape at the boundary, the reading order, the floor),
 `tests/shared/test_amounts.py`.
 
+**A-34 An evaluator a spec declares is fed where the target can feed it, and one that only
+corroborates cannot decide by its absence (added 2026-10-07).** `EMB-XTENANT-RETRIEVAL-001`
+requires `rag` and declares `authz_leak` "for cross-identity corroboration when >=2 identities
+are scoped". The identity sweep ran only for a spec that required `multi_identity`, so that
+`authz_leak` never had two identities to compare, and its `capability_unavailable` held the spec
+`inconclusive` on every target unless a deterministic check failed, a secure reply included. The
+golden harness drives only `evaluators[0]`, so lint never saw it. Now `sweeps_identities` sends
+the attack as each scope identity for a spec that requires `multi_identity` and, when the target
+declares `multi_identity`, for one that declares `authz_leak`; never over an in-band scene
+(OD-18 A), which hands every identity the same scene, another tenant's document included. With
+no sweep behind it, an `authz_leak` on a spec that does not require two identities is set aside
+and named in the verdict; after a sweep that got fewer than two answers it is kept (the identity
+that answered may have shown a leak), and alone it still decides. The estimate prices the
+sweep, one send per scope identity (two or more) on a live route, from the same predicate,
+which it had never done for `DL-XTENANT-001` either, and `--estimate --resume` does not count it
+for a spec the runner will not sweep again. Two pre-commit audit findings shaped the last three
+rules: a half-failed sweep set the check aside and passed a leak it had seen, and an in-band
+sweep read the scanner's own context as a cross-tenant leak.
+`tests/core/test_authz_leak_corroboration.py` asserts each rule against the real specs, the
+sends counted at the identities' adapters, the resume figure and the dry run's printed figure.
+Merged after A-59: that resume figure is a fourth place asking whether a spec's stored attempts
+hold its plan, and it counts them with `planned_attempts_held` as the runner does (it built the
+`mutators x runs` ids, which grows without end at the `2**53` a run accepts); the room check of the
+`-sV` refusals (u12 A-48), which prices the rest as `--estimate --resume` does, reads the same
+figure, so it no longer prices a finished spec's sweep again. A test pins both.
+
 **A-59 A prior's attempts are checked against the plan without building the plan (added
-2026-10-08).** Three places ask whether a started spec's stored attempts hold every planned attempt
-(each mutation, `n` times): the halt path of a resume, which publishes a finished spec's prior
-finding; the seeding gate, which scores a prior that holds its plan and says how much of it was sent
-otherwise; and the multi-identity sweep, skipped when every attempt is stored. Each built the set of
-`mutators x n` attempt ids and tested inclusion, so the work grew with `--runs`, not with what was
-stored. With the `2**53` that `run` and the run store accept (A-55, u12), a resume of a run whose
+2026-10-08).** Three places (a fourth, the `--estimate --resume` figure, A-34) ask whether a
+started spec's stored attempts hold every planned attempt (each mutation, `n` times): the halt path
+of a resume, which publishes a finished spec's prior finding; the seeding gate, which scores a prior
+that holds its plan and says how much of it was sent otherwise; and the multi-identity sweep,
+skipped when every attempt is stored. Each built the set of `mutators x n` attempt ids and tested
+inclusion, so the work grew with `--runs`, not with what was stored. With the `2**53` that `run`
+and the run store accept (A-55, u12), a resume of a run whose
 count was edited to 10^7 took 3.5 s and 1.3 GiB with one spec started, 16.3 s and 3.7 GiB with two,
 and one of `2**53 + 1` was still growing at 3.7 GB after 4.5 minutes on `2f6201a` (OD-32, decided by
 the owner on 2026-10-08: the runner counts what is stored, and `--runs` keeps its bound). So

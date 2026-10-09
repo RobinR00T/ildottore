@@ -5,6 +5,58 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (`authz_leak` in `EMB-XTENANT-RETRIEVAL-001` never ran, and kept the spec from passing)
+
+- **`EMB-XTENANT-RETRIEVAL-001` could not pass anywhere.** It requires `rag` and declares
+  `authz_leak` "for cross-identity corroboration when >=2 identities are scoped", but the runner
+  sent the attack as each scope identity only for a spec that required `multi_identity`. So
+  that `authz_leak` never had two identities to compare, returned `capability_unavailable`, and
+  that inconclusive decided the aggregate unless a deterministic check failed: with a judge and
+  a secure reply, every attempt came out `inconclusive`. In the 2026-10-06 local pass the spec
+  was one of the 30 inconclusive, held there on one of its two attempts by `authz_leak` alone
+  (the other attempt had a compromised judge, so the spec would still be inconclusive in that
+  pass). Lint never showed it, because the golden harness drives only a spec's first evaluator.
+  Found by the pre-commit audit of OD-18 option B; it predates that change.
+- **The sweep now runs where the evaluator is declared** (`core.runner.sweeps_identities`): for
+  a spec that requires `multi_identity`, as before, and, on a target that declares
+  `multi_identity`, for one that declares `authz_leak`. Never over an in-band scene (OD-18 A):
+  every identity would carry the same scene, the other tenant's document included, and a model
+  echoing it read as "A received B-only data". The spec keeps `requires: [rag]`, so it still
+  runs on single-identity RAG targets. With no sweep behind it, an `authz_leak` on a spec that
+  does not require two identities is set aside and the verdict says so (`authz_leak set aside:
+  no identity sweep ran`, whatever kept it from running); after a sweep where fewer than two
+  identities answered it is kept (`authz_leak kept: fewer than two identities answered the
+  identity sweep`), since the one that answered may have shown a leak. Both notes sit in each
+  attempt's verdict, which only the JSON report carries. `DL-XTENANT-001`, which requires
+  `multi_identity`, a spec whose only evaluator is `authz_leak`, and a compared `authz_leak`
+  that only finds a shared line (needs-review) are unchanged. Two scope identities on a target
+  that does not declare `multi_identity` are not taken for tenants: no sweep there, as for
+  `DL-XTENANT-001`.
+- **`--estimate` and `--dry-run` price the sweep**, one request per scope identity (two or more)
+  for each spec that sweeps, on a live route only (the offline mock wires none), and
+  `--estimate --resume` leaves it out for a spec whose every attempt is answered (the runner
+  does not sweep it again). They never priced it, for `DL-XTENANT-001` either: with two
+  identities, the fully capable deployment with a `run_token` priced 780 for a run that would
+  send 782; it now prices 784, what this change sends. With one identity every figure in
+  `docs/16` §3 is unchanged (re-measured).
+- **Offline:** the mock `hardened` scenario with every capability declared moves one spec from
+  `inconclusive` to `pass` (`rag` target 64 pass and 11 inconclusive to 65 and 10, `model` 63 and
+  12 to 64 and 11); `bare` and `vulnerable` are unchanged (measured on both trees).
+- **Docs:** clause A-34 in `specs/contracts/u08-execution-engine.md` (A-11 of u12 amended; the
+  index header no longer carries a clause range, which every new clause had to edit),
+  `docs/04` (the `authz_leak` row and the combination rule), `docs/11` §3, `docs/16` §3, the
+  manual's `--estimate` and troubleshooting rows, the FAQ, `dottore-scope(5)`, `AGENTS.md` and the
+  spec's own comment. Tests: `tests/core/test_authz_leak_corroboration.py` (18, one of them
+  through the real command line against a loopback stub; run against main's code with an import
+  shim, 15 fail and 3 are controls that hold on both).
+- **Merged with main after A-48 and A-59:** the `--estimate --resume` figure asks whether a spec
+  is finished by counting its stored attempts with `planned_attempts_held`, as the runner does
+  (A-59), instead of building `mutators x runs` attempt ids, which grows without end at the
+  `2**53` a run accepts; and the room check behind the `-sV` refusals' "drop -sV" advice (A-48),
+  which prices the rest as `--estimate --resume` does, subtracts a finished spec's sweep as that
+  figure does. With the sweep priced, retries are what that advice still cannot see (entry below).
+  One more test in the same file pins both (19 there).
+
 ### Changed (a target file refuses a key no reader reads and a field that is not text; OD-31)
 
 - **A misspelled key at a target file's top level was dropped without a word, and a misspelled

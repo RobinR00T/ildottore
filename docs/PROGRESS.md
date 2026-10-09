@@ -3,6 +3,39 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09: `authz_leak` fed where it is declared (PR #60, begun 2026-10-07)
+
+- `EMB-XTENANT-RETRIEVAL-001` (requires `rag`) declares `authz_leak` to corroborate across
+  identities, but the identity sweep ran only for a spec that required `multi_identity`, so the
+  evaluator never had two identities and its `capability_unavailable` held the spec
+  `inconclusive` unless a deterministic check failed, a secure reply included. In the
+  2026-10-06 local pass it was one of the 30 inconclusive (one attempt held by `authz_leak`
+  alone, the other by a compromised judge). Found by the pre-commit audit of OD-18 B; it
+  predates it. Option chosen: keep `requires: [rag]` (the spec still runs on single-identity RAG
+  targets) and sweep for a spec that declares `authz_leak` when the target declares
+  `multi_identity` (`sweeps_identities`), never over an in-band scene; with no sweep that check
+  is set aside and named in the verdict, after a sweep short of two answers it is kept.
+  `DL-XTENANT-001` (requires `multi_identity`) is unchanged. The estimate now prices the sweep,
+  one request per scope identity on a live route, which it never did for `DL-XTENANT-001`
+  either, and `--estimate --resume` leaves it out for a finished spec: with one identity every
+  `docs/16` §3 figure is unchanged (re-measured), with two the last row is 784. Clause A-34
+  (u08). The pre-commit audit found the half-failed sweep that passed a seen leak and the
+  in-band sweep that read the scanner's own context as a leak; both fixed before the commit.
+  `make gates` green: 2,320 tests, coverage 96.46%.
+  Open, not decided here: the sweep is one observation per spec, scored on every attempt, so a
+  cross-identity fail counts as reproduced on all of them, and its replies are not stored as
+  evidence (a confirmed critical can cite no reply that shows the leak); and a scope identity's
+  `canary` binds `{{run_id}}`, which a seeded deployment cannot hold (it would need the
+  `run_token`).
+  Merged with main at `a40e596` (#93's A-59 and #83's A-48 among what landed since its base,
+  #58): the runner merged cleanly (the sweep's skip uses `_holds_plan`, its predicate
+  `sweeps_identities`); the `--estimate --resume` figure now counts a finished spec with
+  `planned_attempts_held` instead of building `mutators x runs` ids (A-59), and the room check of
+  the `-sV` refusals reads that figure, so it no longer prices a finished spec's sweep again
+  (A-48's limit now names retries only). One test pins both. Stacked on `9d7e7a7` (main `6401ee2`
+  with #62, #64, #82, #90, #67, #69, #74 and #88, the tree main holds before this squash): only the
+  ledgers conflicted. `make gates` green there: 3,842 tests, coverage 97.23%.
+
 ## State, 2026-10-07 (evening): a target file's top-level keys
 
 - On `fix/target-unknown-top-level-keys` (u12 A-53; OD-31, decided by the owner on 2026-10-08:
@@ -258,7 +291,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   advice and miscounted figures; its delta round (no regression, 2,367 tests green) a ceiling one
   request past the spend, a ceiling of 0 and advice written ahead of the words the test reads; its
   third round (no regression, 2,374 tests green) one untested refusal case; all fixed here. What
-  `--estimate` does not price (the multi-identity sweep, which the open #60 adds to the estimate,
+  `--estimate` does not price (the multi-identity sweep, which #60 added to the estimate,
   and retries) can still halt a followed "drop -sV" at an exact fit; written in A-48. Left open, a
   question for the owner: the recorded planning mode is one flag for `-sV`, `-A` and `--deep`, so a
   campaign run with `-sV` resumes with `--deep` in its place (measured: it goes through), and its

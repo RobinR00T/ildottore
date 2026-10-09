@@ -67,6 +67,9 @@ Named auth references (auth_ref, e.g. env://NAME); the scope never carries a sec
 a multi_identity (cross-tenant) scan, list >=2 identities and set each one's optional
 .B canary
 to the tenant-scoped marker it owns; authz_leak flags that canary reaching another identity.
+The runner sends the attack once as each identity for a spec that requires multi_identity and,
+when the target declares multi_identity, for one that declares authz_leak (never over a scene
+sent in-band to a type: model target); the estimate counts those sends.
 Two identities of one target with the same name, or the same canary, are refused.
 .TP
 .B commands
