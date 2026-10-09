@@ -48,7 +48,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `Accept-Encoding: gzip, deflate` (`base.ACCEPT_ENCODING`), so httpx never offers `br` or
   `zstd` it cannot hand to the cap. Any other `Content-Encoding`, or a corrupt or truncated
   body, is `ResponseUndecodable` on a 2xx; an error status keeps its status classification
-  with an empty body. Both errors are environment failures with `retryable = False`. The MCP
+  with an empty body, and so does an error status whose body is over the cap (before PR #68, a
+  `401` with a 5 MB body was `ResponseTooLarge`, an inconclusive attempt, where a short one
+  stops the run; delta audit of OD-23). Both errors are environment failures with
+  `retryable = False`. The MCP
   adapter's `notifications/initialized` reply is streamed and never read.
 - KEEP (as built, 2026-10-07): every reply is parsed through `shared.nesting.bounded_loads`
   (the base adapter's body, the MCP adapter's JSON body, SSE `data:` event and stdio line),
@@ -71,7 +74,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   handler and the runner aborted the campaign; and a reply the parser accepts aborted it too,
   300 levels (about 600 bytes) overflowing pydantic's serializer when the evidence was written.
   A body that is not JSON keeps the product-defect rule of §7 (open decision OD-21). A refused
-  reply during the `-sV`/`-A` probe pass (u09) still stops the run before the attack.
+  reply during the `-sV`/`-A` probe pass fails only that probe and the run goes on (u09 §7
+  A-35, OD-23).
 - KEEP: capabilities are **static per adapter+config** (declared), not inferred by probing at send
   time; live capability probing belongs to u09 fingerprint, not here.
 - DECIDE (OD-1, ADR-0005 Accepted): OpenAI `logprobs.content[].logprob`+`top_logprobs` vs Anthropic
@@ -144,8 +148,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
   is read with `str()`, unchecked (a lone surrogate there, or in the reply's text, reads as U+FFFD
   where the reply is parsed and the attempt is judged, A-47; a token, or an alternative's token,
   nested past 100 levels never reaches `str()`, since its reply is refused where it is parsed as
-  `ResponseTooDeep` (§4): that attempt fails and `run` goes on, while `fingerprint` and `run -sV`
-  stop with exit 3 and a one-line error, as on any reply nested too deeply; before PR #65 one nested
+  `ResponseTooDeep` (§4): that attempt fails and `run` goes on, and in `fingerprint` and `run -sV`
+  that probe fails and the pass goes on, as on any reply nested too deeply (u09 A-35; before PR #68
+  they stopped with exit 3 and a one-line error); before PR #65 one nested
   about 100,000 levels overflowed `str()` with `RecursionError`, and before PR #79 a lone surrogate
   aborted `run` with exit 3: pre-merge audit). `tests/cli/test_logprob_figures.py` (through the
   CLI: `fingerprint`, `run`, `run -sV` and the membership spec, both directions, the text still

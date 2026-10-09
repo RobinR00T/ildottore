@@ -3,6 +3,36 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (midday): one refused `-sV` probe reply no longer stops the run
+
+- On `fix/sv-probe-env-error` (`tests/fingerprint/test_probe_failures.py`,
+  `tests/cli/test_probe_env_error.py`, clause A-35 in `u09`): with `-sV` or `-A`, a probe reply
+  the adapters refuse as an environment failure (over 4 MiB, undecodable) stopped the run with
+  exit 3 before any attack, while without `-sV` it failed one attempt (pre-commit audit of
+  `fix/target-deep-json`). Now a reply that comes back refused (`retryable = False`, by the
+  attack phase's own predicate) is a failed probe: its layer gives no evidence from it, the
+  fingerprint is built from the rest (`probes_failed`, `probe_errors=[...]`), stderr says so,
+  and the run goes on. A probe that gets no answer at all (503, timeout, refused connection)
+  still stops the pass with its cause, as before: the first version isolated those too and its
+  pre-commit audit measured 25.5 minutes of probing on a target that never replies (92 s
+  before) and `dottore fingerprint` exiting 0 on a closed port; it also found refused replies
+  letting a constant target skip the constant check (closed). The delta audit found a 401 with
+  a body over 4 MiB read as a refused reply (now classified by its status in `read_capped`,
+  which also stops the attack phase treating it as inconclusive), `dottore fingerprint` exiting
+  0 when every probe is refused (now 3), and A-35 promising more than it holds: a partial pass
+  can still break a tie a full one leaves unknown. Its real domain, measured over 12,276
+  passes: it never names more than the same probes answered with an empty reply. The pre-merge
+  audit (PR #68; no high or medium) found refusals of varied replies getting a target flagged
+  constant (now never claimed once an attributing reply is refused; a refused carrier does not
+  count, the delta audit's last catch), an unreproducible figure (replaced by the
+  measurement above), and three untested behaviours (tested). A 200 that is not JSON still
+  stops the pass (OD-21). Mutation passes (17 mutants, then 6 and 6 for the first two audits'
+  findings, every one caught but an equivalent one) found the one-probe layers' own handling
+  redundant with the engine's, so it is not there. Open for the owner as OD-23.
+  `fix/target-deep-json` documents this gap as open in four places (CHANGELOG, MANUAL "Bounded
+  replies", `docs/02`, `u04` §4) that flip when the second of the two merges: flipped in the
+  merge with `main`, where PR #65 landed first, and `ResponseTooDeep` is now a failed probe too.
+
 ## State, 2026-10-09: `authz_leak` fed where it is declared (PR #60, begun 2026-10-07)
 
 - `EMB-XTENANT-RETRIEVAL-001` (requires `rag`) declares `authz_leak` to corroborate across

@@ -5,6 +5,67 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (one refused reply during the `-sV` probe pass stopped the whole run)
+
+- **`dottore run -sV` (and `-A`) exited 3 before any attack on one probe reply.** A reply the
+  adapters refuse as an environment failure that a retry would not change (`ResponseTooLarge`,
+  over 4 MiB; `ResponseUndecodable`, an encoding they do not decode) stopped the run after one
+  request, while without `-sV` the same reply failed one attempt and every spec ran (pre-commit
+  audit of `fix/target-deep-json`, reproduced on `main` against a local stub). A single 503 at
+  the same point was retried and the run went on, so a refused reply was handled worse than a
+  503. `dottore fingerprint` exited 3 the same way. The fingerprint layers called the adapter
+  with nothing between one probe and the pass.
+- **A probe whose reply comes back refused is now a failed probe.** The engine classifies a
+  probe's error with the predicate the attack phase uses for an attempt
+  (`core.execute.default_is_env_error`, injected by `cli.wiring.build_fingerprint_engine`) and
+  the `retryable = False` marker the attack phase reads: the target answered, and a retry would
+  get the same reply (so `ResponseTooDeep`, a reply nested past 100 levels, is covered too).
+  That probe's layer gives no evidence from it and never reads it as an empty reply: a missing
+  guardrail nudge leaves `guardrails` empty (unknown, not "no filter"), a missing carrier is left
+  out of `carrier_comprehension` (unmeasured, not 0.0), and one missing statistical reply drops
+  the statistical layer (explicitly: a signature pack's centroid only has to be non-empty, so
+  two replies' vector could otherwise match a shorter one). When refused replies leave fewer
+  than three attributing replies, too few for the constant-target check, the text layers'
+  evidence is not counted (a constant "I am Llama" target with 8 of 10 replies refused was
+  named meta-llama at 0.41). Every other probe is still sent, once. The fingerprint records the
+  failures as `layer/probe: ErrorClass` in an `engine` evidence entry `probe_errors=[...]` with
+  the flag `probes_failed` (never the error's text, which can quote the reply); `run -sV` prints
+  `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` on stderr, not silenced
+  by `-q` and on one line (not through `rich`, which cut the evidence path at 80 columns), ends
+  the fingerprint line with `[N of 17 probes got no usable reply]`, and goes on to the attack;
+  `dottore fingerprint` warns on stderr and exits 0. When every probe is refused the line says the
+  fingerprint is empty, and `dottore fingerprint` prints it as an `error:` and exits 3: an empty
+  fingerprint printed with exit 0 read as a result to a script (delta audit). The line promises
+  nothing about what follows, since with several targets the next one's probe pass can still stop
+  the run. Refusals cannot get past the constant-target check, and a pass with an attributing
+  reply refused is never called constant: with fewer than three attributing replies left, or the
+  ones left all alike, the text evidence is not counted and the flag is not set (a refused carrier
+  does not count: the check never reads the carriers). Measured against the same probes answered
+  with an empty reply (12,276 passes over every subset of the attributing sends of the 12 corpus
+  targets), a partial pass never names more: identical when no statistical probe is refused,
+  otherwise `unknown` or lower confidence (2,344 of 10,752 differ, none the other way). Against a
+  full pass it can still break a tie the full pass leaves unknown, as a bland reply would; the
+  confidence is renormalized, not discounted.
+- **An error status whose body is over 4 MiB is classified by its status.** `read_capped`
+  returned an empty body for an error status it could not decode ("a `401` stays a `401`") but
+  raised `ResponseTooLarge` for one over the cap, so a `401` with a 5 MB body was an
+  inconclusive attempt where a short `401` stops the run, and with the probe-pass change
+  `dottore fingerprint` exited 0 on it (delta audit, reproduced). Now it is the `401`: one
+  request, exit 3, "non-retryable HTTP 401", in the probe pass and the attack phase alike
+  (`tests/adapters/test_response_cap.py`).
+- **A probe that gets no answer at all still stops the pass, as before:** a 503, a 429, a
+  timeout or a refused connection still failing after the retries ends the run with exit 3 and
+  its cause, because the target is not answering. The first version of this fix isolated those
+  too, and the pre-commit audit measured what that cost: a target that accepts the connection
+  and never replies took 25.5 minutes of probing (17 probes, three 30 s timeouts each: `dottore
+  fingerprint` ran 1,534 s; neither `--budget-wall` nor `--timeout` bounds the probe pass) and
+  38 minutes for a 2-spec `run -sV` ending in the same exit 3, against 92 s before; and `dottore
+  fingerprint` exited 0 on a closed port with the cause reduced to a class name. A refusal by
+  the scope, a 200 that is not JSON (OD-21) and the request ceiling still stop the pass too, as
+  does any interrupt. Open for the owner as OD-23 (u09 §9). Clause A-35 in u09;
+  `tests/fingerprint/test_probe_failures.py` (each of the 17 probes refused in turn) and
+  `tests/cli/test_probe_env_error.py` (a local stub through the real CLI).
+
 ### Fixed (`authz_leak` in `EMB-XTENANT-RETRIEVAL-001` never ran, and kept the spec from passing)
 
 - **`EMB-XTENANT-RETRIEVAL-001` could not pass anywhere.** It requires `rag` and declares
@@ -520,10 +581,11 @@ versioning: [SemVer](https://semver.org/).
   target's text, and are unchanged.
 - **The "Not exercised" line** of the summary and of the HTML report names a reply nested too
   deeply among the environment errors.
-- **Not changed:** with `-sV` or `-A`, such a reply during the fingerprint probe pass still stops
-  the run before any attack (exit 3 after one request), as a reply over the size cap already did,
-  while a 503 there is retried (pre-commit audit; a separate fix). A 200 whose body is not JSON
-  (brackets that do not balance included), or is JSON with an integer of more than 4,300 digits
+- **Not changed here:** with `-sV` or `-A`, such a reply during the fingerprint probe pass stopped
+  the run before any attack (exit 3 after one request), as a reply over the size cap did, while a
+  503 there is retried (pre-commit audit). The separate fix (PR #68) now makes it fail only that
+  probe (see "one refused reply during the `-sV` probe pass" above). A 200 whose body is not
+  JSON (brackets that do not balance included), or is JSON with an integer of more than 4,300 digits
   (which Python refuses to read), is still a product defect and still stops the campaign (exit 3,
   "aborted on AdapterProductError", one request sent, measured against the same stub); whether
   it should fail only its attempt is open decision OD-21. The finding behind this fix took that

@@ -42,6 +42,7 @@ from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
+from ildottore.core.execute import default_is_env_error
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
@@ -297,11 +298,17 @@ def build_fingerprint_engine() -> FingerprintEngine:
     import them. It is what makes ``-sV`` change the battery rather than only name the model:
     the planner orders each spec's mutators by what this target demonstrably still
     understands (``fingerprint.layers.carrier``).
+
+    A probe whose reply comes back refused (an environment failure the attack phase would not
+    retry, by its own predicate) is a failed probe (u09 §7 A-35, OD-23): one such reply used to
+    stop ``run -sV`` before any attack while it only failed an attempt without it.
     """
 
     registry = build_mutator_registry()
     carriers = [registry.get(name) for name in registry.names() if name != IDENTITY_MUTATOR]
-    return FingerprintEngine(layers=[*default_layers(), CarrierLayer(carriers)])
+    return FingerprintEngine(
+        layers=[*default_layers(), CarrierLayer(carriers)], is_env_error=default_is_env_error
+    )
 
 
 def build_probe_adapter(

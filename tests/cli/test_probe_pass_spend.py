@@ -28,6 +28,7 @@ from typer.testing import CliRunner
 
 from ildottore.cli.app import app
 from ildottore.cli.run import fingerprint_probe_count
+from ildottore.shared.nesting import MAX_DEPTH
 
 _Reply = tuple[int, bytes]
 
@@ -63,6 +64,13 @@ def _unauthorized() -> _Reply:
 
 def _not_json() -> _Reply:
     return 200, b"<html>not an API</html>"
+
+
+def _too_deep() -> _Reply:
+    """Brackets nested past ``MAX_DEPTH``: ``ResponseTooDeep``, refused and not retried (#65)."""
+
+    deep = b"[" * (MAX_DEPTH + 1) + b"]" * (MAX_DEPTH + 1)
+    return 200, _ANSWER[:-1] + b', "x": ' + deep + b"}"
 
 
 @pytest.fixture
@@ -371,6 +379,31 @@ def test_a_resume_whose_probe_pass_succeeds_counts_each_probe_once(
 
     assert resumed.exit_code in {0, 1, 2}, resumed.output
     assert "probe pass" not in resumed.stderr
+    assert state["served"] > _HALT_AT + fingerprint_probe_count(), "the attack went out"
+    assert _recorded(tmp_path, run_id) == state["served"]
+
+
+@pytest.mark.usefixtures("no_delay")
+def test_a_resumed_probe_pass_with_a_refused_reply_goes_on_and_records_it(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """A refused probe reply fails only that probe (u09 A-35), so the pass ends as one that
+    succeeded and the send it cost is recorded with the others, each once (u12 A-46)."""
+
+    port, state = stub
+    run_id = _halted_run(tmp_path, port, state)
+    state["script"] = {_HALT_AT + 1: _too_deep}
+
+    resumed = CliRunner().invoke(
+        app, _argv(tmp_path, port, "--budget-requests", "200", "--resume", run_id)
+    )
+
+    assert resumed.exit_code in {0, 1, 2}, resumed.output
+    assert (
+        f"1 of {fingerprint_probe_count()} probe(s) got no usable reply "
+        "(metadata/self_id: ResponseTooDeep)"
+    ) in resumed.stderr
+    assert "resume: the -sV probe pass" not in resumed.stderr
     assert state["served"] > _HALT_AT + fingerprint_probe_count(), "the attack went out"
     assert _recorded(tmp_path, run_id) == state["served"]
 

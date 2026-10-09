@@ -703,6 +703,14 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-23** (shared with u09, 2026-10-07): what `run -sV` / `-A` and `dottore fingerprint` do
+  when one probe's reply comes back refused. Built reversibly as option A: the probe fails, a
+  `warning:` line on stderr names it (never silenced by `-q`), the fingerprint line ends
+  `[N of 17 probes got no usable reply]`, the run goes on and its exit is the attack's
+  (`dottore fingerprint` exits 0 with the flag in its JSON, or 3 with an `error:` line when
+  every probe was refused); before, exit 3 before any attack. A probe that gets no answer at
+  all still exits 3 with its cause. Options, and why isolating every environment failure was
+  withdrawn: u09 §9 and `00-INDEX.md`.
 - **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
   file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
   as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in

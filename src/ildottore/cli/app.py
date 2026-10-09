@@ -577,6 +577,19 @@ def fingerprint(
     except (PolicyError, AdapterError, ValueError, OSError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    # A probe whose reply came back refused is recorded in the fingerprint and said here, and
+    # the command still prints what came back (OD-23); it used to exit 3 on one such reply. When
+    # every probe was refused there is nothing to print, and a script must not read an empty
+    # fingerprint as a result: exit 3 (delta audit).
+    probes = run_mod.fingerprint_probe_count()
+    empty = run_mod.every_probe_failed(fp, probes)
+    warning = run_mod.probe_failure_warning(
+        fp.target_id, fp, probes=probes, severity="error" if empty else "warning"
+    )
+    if warning is not None:
+        typer.echo(warning, err=True)
+    if empty:
+        raise typer.Exit(ExitCode.ERROR)
     typer.echo(fp.model_dump_json(indent=2))
     raise typer.Exit(ExitCode.CLEAN)
 

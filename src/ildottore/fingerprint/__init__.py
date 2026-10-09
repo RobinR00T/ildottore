@@ -14,9 +14,14 @@ through the injected :class:`~ildottore.shared.protocols.TargetAdapter`.
 
 from __future__ import annotations
 
-from ildottore.fingerprint.base import FingerprintLayer, ProbeContext, seed_for
+from ildottore.fingerprint.base import FingerprintLayer, ProbeContext, ProbeFailed, seed_for
 from ildottore.fingerprint.combine import CombinedFingerprint, combine
-from ildottore.fingerprint.engine import FingerprintEngine, fingerprint
+from ildottore.fingerprint.engine import (
+    PROBES_FAILED_FLAG,
+    FingerprintEngine,
+    failed_probes,
+    fingerprint,
+)
 from ildottore.fingerprint.layers import default_layers
 from ildottore.fingerprint.probes import (
     BEHAVIORAL_BATTERY,
@@ -36,6 +41,7 @@ from ildottore.fingerprint.signatures import (
 
 __all__ = [
     "BEHAVIORAL_BATTERY",
+    "PROBES_FAILED_FLAG",
     "STATISTICAL_BATTERY",
     "CombinedFingerprint",
     "CorpusCase",
@@ -43,6 +49,7 @@ __all__ = [
     "FingerprintLayer",
     "Probe",
     "ProbeContext",
+    "ProbeFailed",
     "SignatureEntry",
     "SignaturePack",
     "SignaturePackError",
@@ -50,6 +57,7 @@ __all__ = [
     "build_request",
     "combine",
     "default_layers",
+    "failed_probes",
     "fingerprint",
     "load_corpus",
     "load_pack",
