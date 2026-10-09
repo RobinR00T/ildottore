@@ -3,6 +3,65 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (evening): a chat endpoint over a WebSocket (provider websocket)
+
+- On `feat/websocket-adapter`: a template-driven JSON-over-WebSocket adapter, so an assistant
+  whose only chat surface is a socket is declared in a target file (`websocket:` block:
+  handshake with `{{token}}`, query with `{{prompt}}`, how the streamed reply is read, session
+  start, bounded reconnect) with no code. Same charter as the HTTP adapters: the gate before the
+  dial (`wss` as `https`, `ws` loopback-only), no redirect followed, the credential recorded as
+  its placeholder and scrubbed by value, every frame in the evidence, a turn bounded in time
+  (inconclusive), bytes and frames (not retried), one connection per conversation, no query
+  resent by the adapter. Worked example `examples/target.websocket.yaml` (Scenario H, dry run
+  pinned: 10 specs, 125 requests). The pre-commit audit (33 mutants, twelve findings, all
+  reproduced) is closed in the same PR: a nested frame no longer aborts the campaign, the
+  handshake phase is capped, the transcript is recorded once, no live conversation is evicted,
+  the credential is scrubbed from every error message and refused under 8 characters, the
+  query send is under the turn timeout, a lost conversation is debited once, the loader
+  refuses request placeholders in connection templates, placeholders in `vars` and the
+  library's own upgrade headers, `equals`/`final_value` compare by type, cleartext `ws://`
+  never goes through a proxy (`tests/adapters/test_websocket_audit.py`). Open for the owner:
+  OD-34 (a transcript field on `ModelResponse` instead of `raw_ids["websocket"]`), OD-35
+  (several queries on one socket), OD-36 (a reconnect mid-conversation for a stateless server),
+  OD-37 (a `websocket:` block in a fleet entry). The PR numbered them OD-30 to OD-33, which
+  `main` (OD-30, OD-32, OD-33) and PR #88 (OD-31) had taken; renumbered on 2026-10-09, after
+  checking that no open PR claims OD-34 to OD-37 (the PR defines no A-clause; it amends A-19).
+  Not built: binary frames, SSE or polled streams (declare them as `rest`), a session that
+  survives a reconnect.
+- Pre-merge audit (2026-10-09, the PR merged with `main` at `6401ee2`, which brought #65, #79,
+  #92 and #93 among others): not merge-ready, now fixed. Frames are parsed with `bounded_loads` and
+  `well_formed_json` (a frame with half a character escaped made `run` exit 3; the adapter is
+  now on A-47's list) and `WebSocketFrameTooDeep` is a `ResponseTooDeep`; a tool call's
+  JSON-text arguments are measured; close code 1007 (a text frame that is not UTF-8) is not
+  retried, as 1009 is not; the adapter re-dials a socket that failed to open only within its
+  own retry allowance, so under `run` every dial is a debited send (it was 8 dials for 4
+  debits); the loader runs A-54's walk over the block (a date, NaN, half a character), refuses
+  a `ws://` or `wss://` endpoint on any other provider, and cuts the names its refusals list;
+  the docs no longer say a WebSocket (or REST) probe goes out at temperature 0, and the frame
+  case is written into OD-21. Found while fixing: a fleet's `wss://` entry got a bare host in
+  its scope (every port); it is pinned to 443 now. `tests/adapters/test_websocket_premerge.py`:
+  36 of its first 40 tests fail on the PR head.
+- Second pre-merge audit (2026-10-09, on `abcf7d4`): merge-ready once four error class names the
+  redactor's high-entropy rule masked in the CLI error and the evidence are renamed
+  (`WebSocketOverflow`, `WebSocketUndecodable`, `WebSocketLost`, `WebSocketTooMany`, each checked
+  against `redact_text` by a test); also fixed: a 1007 or 1009 close the server starts is its own
+  (`WebSocketClosed` with its reason, not retried), a key that is not text in the block is
+  refused (A-44's walk), and the scope man page, the MANUAL and u04 match the code. 9 of the 16
+  new tests fail on `abcf7d4`. Its verification (on `dceb587`): the same server close was still
+  retried when it met a send rather than a receive (three retries, four debited sends, no
+  query); one helper classifies both now (6 more tests, 4 fail on `dceb587`).
+- Stacked on `1c5d1e2` (2026-10-09: `main` at `be2a762` with #56, #57, #51, #54 and #70, the
+  tree main holds before this squash): the MANUAL's "Bounded replies" (two hunks, #68's one-probe
+  rule and #57's credential sentence kept beside the WebSocket text) and §13 (the WebSocket rows
+  and #60's `authz_leak` row) conflicted, each resolved keeping both sides; the index held
+  OD-21 twice (main's copy dropped, the PR's, which adds the frame case, kept in main's place).
+  Follow-ups of the earlier PRs: `websocket` in the A-53 key lists (#88), the WebSocket
+  refusals named where #68's rule is stated, with 4 tests of the `-sV` pass, and a test that a
+  close reason reaches the terminal written out (#51). `make gates` green (with `PYTHONPATH` set
+  to the worktree's `src`): 4595 tests, 97.59% coverage, 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no
+  dependencies).
+
 ## State, 2026-10-09: CLI errors keep the operator's file names (PR #70, begun 2026-10-07)
 
 - PR #70 (`fix/cli-masked-paths`, `tests/cli/test_masked_paths.py`, clause A-38): besides main's
@@ -859,7 +918,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   have spread to the endpoint or `auth_ref` row of the `--judge` refusal, and A-30's credential
   half was tested with the key on one side only. Numbering: A-56 and OD-33 came from the session
   keeping the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without
-  having claimed them, so it has to renumber.
+  having claimed them, so it has to renumber (renumbered to OD-34 to OD-37, 2026-10-09).
 
 ## State, 2026-10-07 (night): a load refusal names its spec file
 

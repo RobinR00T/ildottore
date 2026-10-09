@@ -97,10 +97,12 @@ allowlist, which then denied every attempt: the false green the gate exists to p
 typo away. A differential test enumerates scope/target shapes and asserts the two answers never
 diverge.
 
-**A-19 Schemes are allowlisted.** `https`, loopback `http` and the offline `mock` scheme; every
-other scheme is denied. Refusing `http` off-loopback and letting the rest through to the host
-check meant `ws://`, `ftp://`, `file:///etc/passwd` and a scheme-relative `//host/path` all
-passed, with the invariant resting on adapter implementation rather than on the gate.
+**A-19 Schemes are allowlisted.** `https`, loopback `http`, the offline `mock` scheme and, since
+the WebSocket adapter (2026-10-07), `wss` (as `https`, default port 443) and loopback `ws` (as
+`http`); every other scheme is denied. Refusing `http` off-loopback and letting the rest
+through to the host check meant `ws://`, `ftp://`, `file:///etc/passwd` and a scheme-relative
+`//host/path` all passed, with the invariant resting on adapter implementation rather than on
+the gate. `tests/policy/test_allowlist.py` pins both halves.
 
 **A-20 One answer per target.** A scope declaring an id twice is refused: `Scope.target()`
 returns the first match, so a permissive entry silently shadowed a narrowing one, including its

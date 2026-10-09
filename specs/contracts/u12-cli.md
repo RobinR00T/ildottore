@@ -653,12 +653,13 @@ model. Now `_read_target_yaml`, which every reader goes through, checks the top 
 validation: endpont: Extra inputs are not permitted` (`model: Input should be a valid string`; a key
 that is not text: `1: Keys should be strings`), never the value:
 * the keys are the fields of `Target` (`id`, `type`, `name`, `provider`, `endpoint`, `model`,
-  `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`) and
-  `mock_scenario`; the model is built from `Target`, and `_TEXT_FIELDS` is its `str | None` fields,
-  so a field added there is a key the file may hold, as text when it is text, and a test checks that
+  `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup` and,
+  since #87 landed, `websocket`) and `mock_scenario`; the model is built from `Target`, and
+  `_TEXT_FIELDS` is its `str | None` fields, so a field added there is a key the file may hold,
+  as text when it is text, and a test checks that
   `load_target` hands every field of `Target` to it (a field it did not read would be accepted and
   dropped); another test passes each key through the check. The pre-merge audit found that a list
-  kept by hand refused the `websocket` field #87 adds: 35 tests failed on the two merged, none once
+  kept by hand refused the `websocket` field #87 added: 35 tests failed on the two merged, none once
   the model was built from `Target`;
 * `name`, `provider`, `endpoint`, `model`, `auth_ref` and `transport` are text (`StrictStr`, so
   `!!binary` bytes are refused too) or absent: the key with nothing after it, `null` or `~`,

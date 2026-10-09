@@ -258,7 +258,9 @@ version is `null`.
 
 - Every fingerprint run is **reproducible offline** (fixed seeded probe battery: a replay of
   the same replies gives the same fingerprint). Live, it is as deterministic as the target is
-  at temperature 0, which every probe pins (`PROBE_SAMPLING`); the seed is metadata and is not
+  at temperature 0, which every probe pins (`PROBE_SAMPLING`) and the OpenAI and Anthropic
+  adapters send; a REST template and a WebSocket target have no field for it, so there the
+  probes go out at the deployment's own sampling. The seed is metadata and is not
   sent. `run -sV` stores its probes as evidence (`probes/`); a standalone `dottore fingerprint`
   stores none.
 - **Signature DB** is a versioned data pack, not code: it ships in-repo under
@@ -314,7 +316,9 @@ dottore run --suite owasp:llm ...                        # no -sV ⇒ no tailori
 - Signature DB ships a labeled corpus; CI measures **family precision/recall** and
   **version top-1/top-3 accuracy**, gated so a signature-pack update can't regress recognition.
 - Determinism: every probe goes out at temperature 0 with a reply capped at 512 tokens
-  (`PROBE_SAMPLING`), so a target that is deterministic at temperature 0 gives the same verdict
-  twice. The seed is folded into each request's metadata and is not sent. Three layers used to
-  send their probes with no temperature, and a live server sampled them at its default (1.0 on
-  Ollama); the first live pass found it (`docs/16` §1, 2026-10-07).
+  (`PROBE_SAMPLING`) through the OpenAI and Anthropic adapters, so a target that is
+  deterministic at temperature 0 gives the same verdict twice; a REST template and a WebSocket
+  target carry no sampling field (the target file declares their wire shape), so theirs is the
+  deployment's own. The seed is folded into each request's metadata and is not sent. Three
+  layers used to send their probes with no temperature, and a live server sampled them at its
+  default (1.0 on Ollama); the first live pass found it (`docs/16` §1, 2026-10-07).

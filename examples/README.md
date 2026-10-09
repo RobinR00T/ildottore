@@ -15,6 +15,7 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`target.app.yaml`](target.app.yaml) / [`scope.app.yaml`](scope.app.yaml) | A deployed application, with the specs whose scene its operator seeded (`seeded_setup`). |
 | [`fleet.yaml`](fleet.yaml) | Declare several targets in one file and scan them all. |
 | [`target.mcp.yaml`](target.mcp.yaml) / [`scope.mcp.yaml`](scope.mcp.yaml) | A Model Context Protocol server target (read-only discovery). |
+| [`target.websocket.yaml`](target.websocket.yaml) / [`scope.websocket.yaml`](scope.websocket.yaml) | A chat endpoint over a WebSocket, its wire shape declared in the file (`provider: websocket`). |
 | [`ci-github-actions.yml`](ci-github-actions.yml) | Gate a pipeline on new high/critical findings. |
 
 Authorization is not optional: a run refuses any target that is not covered by a
@@ -206,6 +207,52 @@ your deployment (none of these two) would carry `eng-2026-q4-<spec id>` in its p
 `-vv` would print it on a `seed:` line. The host is `example.test`, so a run without `--dry-run` has nowhere to go: point
 both files at your deployment first. What a seeded spec tests is only as good as what you
 seeded, which the tool cannot check.
+
+## Scenario H, scan a chat endpoint that only speaks WebSocket
+
+An assistant whose chat surface is a WebSocket streaming JSON frames has no standard wire shape,
+so `target.websocket.yaml` declares it: the handshake frame (`{{token}}` is the credential the
+`auth_ref` resolves to), the query frame (`{{prompt}}`), how the streamed reply is read back
+(`text_path`, the `final_path`/`final_value` that ends a turn, the `ignore_types` to discard,
+`error_path`, `timeout_seconds`), a session-start frame and the reconnect cap. The adapter
+knows nothing else. `scope.websocket.yaml` authorizes `wss://` as it would `https://`
+(cleartext `ws://` only to loopback), and a redirect at the upgrade is never followed:
+
+```bash
+dottore run --dry-run --quick \
+  -t examples/target.websocket.yaml \
+  --scope examples/scope.websocket.yaml
+```
+
+Real output of that exact command (the `--judge` warning on stderr left out):
+
+```
+dry-run: plan resolved, sent nothing.
+  scope:   examples/scope.websocket.yaml
+  target:  ws-assistant-staging (chatbot) authorized at wss://assistant.example.test/ws/chat
+  battery: quick, 10 specs selected
+    jailbreak: 3
+    output_security: 3
+    data_leakage: 2
+    availability_cost: 1
+    prompt_injection: 1
+  skipped: 6 spec(s) on ws-assistant-staging, capability not declared by the target
+  blocked: 1 spec(s) on ws-assistant-staging, refused by the policy pack
+  not seeded: 1 spec(s) on ws-assistant-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
+  would send: 125 requests over 10 specs at runs=5
+  pacing:  0.5 req/s ceiling (S8)
+  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+```
+
+The target declares `rag: true` and no tools, so six specs are skipped for capability and the
+one RAG spec of the quick battery is "not seeded" (a deployed application holds a spec's scene
+only when its operator declares it, as in Scenario G). Each request is one query turn: the
+handshake and session frames ride on the connection it opens. Every frame sent and received
+lands in the evidence with the credential recorded as `{{token}}`, and `dottore replay`
+re-derives the verdicts from them. The host is `example.test`, so a run without `--dry-run`
+has nowhere to go: point both files at your deployment first, and read
+[`../docs/MANUAL.md`](../docs/MANUAL.md) §4.2 for what each key means and what the loader
+refuses.
 
 ## Add your own attack (no core code)
 

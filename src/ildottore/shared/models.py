@@ -297,6 +297,94 @@ class SeededSetup(_Frozen):
     run_token: str | None = None
 
 
+class WebSocketExpect(_Frozen):
+    """A predicate over one received frame: the value at ``path`` equals ``equals``.
+
+    With ``equals`` left out, the frame satisfies it when ``path`` is present (not null).
+    """
+
+    path: Annotated[str, Field(min_length=1)]
+    equals: str | int | float | bool | None = None
+
+
+class WebSocketHandshake(_Frozen):
+    """The first frame sent after the socket opens, and what its reply must say.
+
+    ``send`` is a JSON template: static fields plus ``{{token}}`` (the credential ``auth_ref``
+    resolves to, inserted in memory at send time and recorded as the placeholder) and any
+    ``{{name}}`` declared under ``websocket.vars``.
+    """
+
+    send: JsonDict
+    expect: WebSocketExpect | None = None
+
+
+class WebSocketMessage(_Frozen):
+    """The frame that carries one query: a JSON template with ``{{prompt}}`` in it."""
+
+    send: JsonDict
+
+
+class WebSocketResponse(_Frozen):
+    """How a streamed reply is read: where the text is, what ends the turn, what to ignore.
+
+    ``final_value`` left out means the turn ends on the first frame where ``final_path`` is
+    present. ``ignore_types`` names the values of ``type_path`` that are discarded (pings,
+    typing indicators). ``error_path`` present in a frame makes the attempt inconclusive.
+    ``tool_calls_path`` is read only when declared: without it the adapter reads no tool calls,
+    and a seeded spec judged on its tool trace is not sent (OD-18 B).
+    """
+
+    text_path: Annotated[str, Field(min_length=1)]
+    final_path: Annotated[str, Field(min_length=1)]
+    final_value: str | int | float | bool | None = None
+    type_path: Annotated[str, Field(min_length=1)] = "type"
+    ignore_types: list[str] = Field(default_factory=list)
+    error_path: Annotated[str, Field(min_length=1)] | None = None
+    tool_calls_path: Annotated[str, Field(min_length=1)] | None = None
+    usage_path: Annotated[str, Field(min_length=1)] | None = None
+    model_path: Annotated[str, Field(min_length=1)] | None = None
+    id_path: Annotated[str, Field(min_length=1)] | None = None
+    timeout_seconds: Annotated[float, Field(gt=0.0, le=600.0)] = 30.0
+
+
+class WebSocketSession(_Frozen):
+    """A conversation's start: a frame sent once per connection, after the handshake.
+
+    ``one_query_in_flight`` is the only policy built: one query at a time per connection, one
+    connection per conversation. ``false`` (several queries multiplexed on one socket, which
+    needs a correlation id) is refused by the loader.
+    """
+
+    start: JsonDict | None = None
+    expect: WebSocketExpect | None = None
+    one_query_in_flight: bool = True
+
+
+class WebSocketReconnect(_Frozen):
+    """How many more times a connection that fails to open is tried (bounded)."""
+
+    max_attempts: Annotated[int, Field(ge=0, le=5)] = 1
+
+
+class WebSocketSpec(_Frozen):
+    """The ``websocket:`` block of a ``provider: websocket`` target (``docs/MANUAL.md`` §4.2).
+
+    A JSON-over-WebSocket chat endpoint has no standard wire shape, so the operator declares
+    it: the handshake, the query frame, how the streamed reply is read, the session start and
+    the reconnect cap. ``headers`` go on the HTTP upgrade request (``{{token}}`` allowed);
+    ``vars`` are plain values the templates may reference as ``{{name}}``, never secrets.
+    """
+
+    message: WebSocketMessage
+    response: WebSocketResponse
+    handshake: WebSocketHandshake | None = None
+    session: WebSocketSession = Field(default_factory=WebSocketSession)
+    reconnect: WebSocketReconnect = Field(default_factory=WebSocketReconnect)
+    headers: dict[str, str] = Field(default_factory=dict)
+    vars: dict[str, str] = Field(default_factory=dict)
+
+
 class Target(_Frozen):
     """A target under test (id + type + declared capabilities).
 
@@ -326,6 +414,8 @@ class Target(_Frozen):
     command: list[str] | None = None
     # OD-18 option B: what a deployed application's operator has seeded (``None``: nothing).
     seeded_setup: SeededSetup | None = None
+    # The wire shape of a ``provider: websocket`` target (``None`` for every other provider).
+    websocket: WebSocketSpec | None = None
 
 
 class TokenLogprob(_Frozen):

@@ -5,6 +5,150 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (a chat endpoint that only speaks WebSocket: `provider: websocket`)
+
+- **A template-driven WebSocket adapter** (`adapters/websocket.py`, on `websockets>=14.0`,
+  BSD-3-Clause). Many deployed assistants expose their chat only over a WebSocket that streams
+  the answer in JSON frames, and no two share a wire shape, so the target file declares it in a
+  `websocket:` block: the handshake frame (`{{token}}` is the credential `auth_ref` resolves to)
+  with an optional `expect` on its reply, the query frame (`{{prompt}}`, or `{{messages}}` for a
+  server that keeps no state, `{{system_prompt}}` where a memory seed goes), how the streamed
+  reply is read (`text_path`, `final_path` and `final_value`, `type_path` and `ignore_types`,
+  `error_path`, `usage_path`, an optional `tool_calls_path`, `model_path`, `id_path`,
+  `timeout_seconds` per turn), a session-start frame with an optional `expect`, a bounded
+  `reconnect.max_attempts` (0 to 5), `headers` on the upgrade and plain `vars`. The adapter adds
+  no product knowledge of its own.
+- **The charter holds as for the HTTP adapters.** The scope gate runs before the socket is
+  dialled (`wss://` is authorized like `https://`, cleartext `ws://` only to loopback: A-19
+  amended); an HTTP redirect at the upgrade is never followed (the library follows ten, to
+  another origin included); the credential is inserted in memory at send time and recorded as
+  `{{token}}`, and a server that echoes it has it scrubbed by value from the recorded frame and
+  from an error message; every frame sent and received is kept on the attempt
+  (`response.raw_ids.websocket.frames`) so the evidence store files it redacted at rest and
+  `dottore replay` re-derives the verdict from it; a turn is bounded in time (no final frame
+  within `timeout_seconds` is an environment error, inconclusive, retried and debited by the
+  runner), in bytes (4 MiB) and in frames (4096), the last two not retried; compression is not
+  negotiated. One connection per conversation: a single-turn attempt opens, queries and closes,
+  a multi-turn attempt keeps its connection across turns and closes it after the last
+  (`turns_total` in the per-turn metadata), and a later turn whose connection is gone is
+  inconclusive, never a silent new session. A reconnect is attempted only before a query is on
+  the wire, so the adapter never resends a query the ledger did not see.
+- **The loader refuses before anything is sent**: a block missing or on another provider, an
+  endpoint that is not `ws://` or `wss://` or that carries a query, a fragment or a
+  user:password, a placeholder neither reserved nor declared under `vars`, `{{token}}` without
+  an `auth_ref` or inside `vars`, a query template with neither `{{prompt}}` nor `{{messages}}`,
+  and `one_query_in_flight: false`; a validation error names the field and never quotes the
+  value. The block is part of the target digest when present (a changed block refuses a resume)
+  and left out when absent, as `seeded_setup` is. `provider_returns_tool_calls` is true for a
+  WebSocket target only with `tool_calls_path` (OD-18 B); it carries no tool definitions, and a
+  memory seed needs `{{system_prompt}}` in a template. `-sV` probes it like any live target,
+  one connection per probe, at the deployment's own sampling (no template carries a
+  temperature, as through a REST template); the envelope layer skips a nested `raw_ids` value,
+  so a reply's text in the transcript is not a metadata tell, and reads a model name only from
+  `model_path`.
+- **Docs and examples:** `examples/target.websocket.yaml` and `examples/scope.websocket.yaml`
+  with Scenario H in `examples/README.md` (its output is the command's real output, and a test
+  pins it); the MANUAL (§3, §4.2 "A chat endpoint over a WebSocket", §13), `USAGE.md`, the
+  FAQ, `dottore(1)` and `dottore-scope(5)`, `SUPPLY-CHAIN.md` (the closure re-checked:
+  `websockets` 17.2 has no dependencies), contracts u01 (A-19), u02 (A-54), u04 (§1, §4, §7
+  A-47 and OD-34 to OD-37) and u09, the ledger, `docs/10`, `docs/12`, the scope and target
+  templates.
+  `tests/ws_chat_server.py` is a loopback JSON-over-WebSocket server with seventeen behaviours;
+  `tests/adapters/test_websocket.py` (42 tests), `tests/adapters/test_websocket_audit.py` (31),
+  `tests/adapters/test_websocket_premerge.py` (62) and `tests/cli/test_websocket_target.py` (34)
+  hold 169 tests (the gate with zero connections, the redirect, streaming, the final frame,
+  timeouts, errors, reconnects, one connection per conversation, the evidence on disk, a real
+  campaign, its replay, a real `-sV` pass, and the audits' regressions). `make gates` (with
+  `PYTHONPATH` set to the worktree's `src`) stacked on `1c5d1e2` (`main` at `be2a762` with #56,
+  #57, #51, #54 and #70) with the pre-merge fixes: 4595 tests, 97.59% coverage, 75 specs lint
+  OK, bandit and pip-audit clean. Not built,
+  open for the owner: a dedicated transcript field on `ModelResponse` (OD-34), several queries
+  multiplexed on one socket (OD-35), a reconnect mid-conversation for a stateless server
+  (OD-36), a `websocket:` block in a fleet entry (OD-37: `dottore fleet` infers `rest` from a
+  `wss://` endpoint, and `run` refuses the file it writes). The four were numbered OD-30 to
+  OD-33 in the PR, which `main` (OD-30, OD-32, OD-33) and PR #88 (OD-31) had taken; renumbered
+  on 2026-10-09.
+- **The pre-commit audit** (a detached worktree at the code commit, 33 mutants, every finding
+  reproduced by execution) found twelve things, all closed before the PR: a frame nested past
+  what the evidence store serializes aborted the campaign (now `inconclusive`, not retried,
+  bounded at 64 levels); the handshake phase had no byte cap (it has the turn's); the whole
+  transcript was copied into every turn's record, quadratic in turns (an intermediate turn
+  records its own frames, the last the conversation's); the conversation cap evicted live
+  conversations, mid-turn included (never evicted now: past 256 a new one is refused); the
+  credential reached exception text through a reflected upgrade header and a close reason, and
+  one shorter than 4 characters was recorded verbatim (one helper scrubs and redacts every
+  message that quotes the wire; a credential shorter than 8 characters is refused before any
+  dial); the query send and the handshake sat outside the turn timeout; a lost conversation was
+  retried and debited three times for nothing (not retried now); request placeholders were
+  accepted in the connection templates and placeholders inside `vars` went on the wire
+  literally (both refused by the loader); `equals` and `final_value` read `1`, `1.0` and `true`
+  as one value (strict now); cleartext `ws://` could go through the environment's proxy (never
+  now; `wss://` still honours it, TLS end to end) and a `Host` header went out twice (the
+  library's headers are refused). Five surviving mutants got a test each (compression never
+  offered, in-memory redaction, a bounded close, the transcript not a metadata tell, an absent
+  block out of the digest). `tests/adapters/test_websocket_audit.py` holds the regressions.
+- **The pre-merge audit** (2026-10-09, on the PR merged with `main` at `6401ee2`) found it not
+  ready to merge, and these are fixed, each with a test in
+  `tests/adapters/test_websocket_premerge.py` (36 of its first 40 tests fail on the PR head, the
+  other 4 pin what held): a frame was parsed with a plain `json.loads`, so one frame with half a
+  character escaped in it made `run` exit 3 ("aborted on UnicodeEncodeError ... 2 of 2 specs
+  never ran"), and frames now go through `bounded_loads` and `well_formed_json` as every reply
+  does (A-47, the WebSocket adapter added to its list), its nesting refusal a `ResponseTooDeep`
+  (#65's one-attempt failure); a tool call's JSON-text arguments were not measured
+  (`check_argument_nesting`, as on the base adapter); a text frame that is not UTF-8, which the
+  library refuses with close code 1007, was retried three times, and is now inconclusive and
+  sent once, as a frame over the cap (1009) is; a socket that failed to open was dialled again
+  inside each debited send, 8 dials for 4 debits under the runner's retries with
+  `max_attempts: 1`, and the adapter now re-dials only within its own retry allowance, which a
+  campaign sets to none, so every dial is a debited, paced send; the loader accepted values
+  JSON cannot hold in the block (an unquoted date stopped the run when the frame was written, NaN
+  went on the wire as `NaN`, half a character in `vars` raised `UnicodeEncodeError` out of `run`
+  from the target digest), and now runs the spec loader's A-54 walk over it; a `ws://` or
+  `wss://` endpoint on another provider passed the gate and the REST adapter posted HTTP to the
+  socket, credential included, four times per attempt (`run` exit 3), and it is refused when the
+  file is loaded; the loader's refusals listed the names the operator wrote whole (cut
+  at 300 characters and at most 20 now, A-51); the docs said every `-sV` probe goes out at
+  temperature 0, which only the OpenAI and Anthropic adapters send (corrected in the MANUAL,
+  `docs/10` and u09 rather than adding a sampling field the target file would have to declare);
+  a comment said `json.loads` overflows near 1,000 levels (about 116,000 on 3.14); the MANUAL
+  said `Sec-WebSocket-*` is refused where five named headers are; and the four open decisions
+  are renumbered (above). Found while fixing: `dottore fleet` wrote a bare host for a `wss://`
+  entry, which authorizes every port, and now pins 443 (80 for `ws://`).
+- **The second pre-merge audit** (2026-10-09, on `abcf7d4`) found it merge-ready but for these,
+  fixed with 16 more tests in the same file (9 of them fail on `abcf7d4`, the other 7 pin what
+  held): the redactor's high-entropy rule masked four of the adapter's error class names in the
+  CLI's error line and the stored evidence ("failed on transport, so nothing was evaluated:
+  «REDACTED:high_entropy:bcc67449»: ws-live: a text frame was not UTF-8"), so
+  `WebSocketTurnOverflow`, `WebSocketFrameUndecodable`, `WebSocketConversationLost` and
+  `WebSocketTooManyConversations` are now `WebSocketOverflow`, `WebSocketUndecodable`,
+  `WebSocketLost` and `WebSocketTooMany`, and a test checks that every exported error name
+  survives `redact_text`; a close the server starts with 1007 or 1009, which the library echoes,
+  read as this side's overflow or undecodable frame with the server's reason dropped, and is now
+  `WebSocketClosed` with the reason (scrubbed and redacted) and not retried, while a close this
+  side starts keeps its two classes; a key that is not text in a template below its top level
+  (`opts: {on: true, ~: 1}`) went on the wire as `{"True": true, "None": 1}`, and the loader now
+  runs A-44's walk over the block before A-54's (`registry.non_string_keys`); and the scope man
+  page, the MANUAL and u04 say what the code does (the provider list, `reconnect.max_attempts`
+  unused by `run`, the WebSocket exception to "not UTF-8 stops the campaign"). Its verification
+  (on `dceb587`) found the same server close still retried when it met a send instead of a
+  receive (the server acknowledged the auth frame and closed with 1009 at once: three retries,
+  four debited sends, no query): one helper now classifies a close on both paths, with 6 more
+  tests, 4 of which fail on `dceb587` (the other 2 pin that 1011 and 1001 are still retried).
+- **Stacked on the PRs merged after `6401ee2`** (2026-10-09, on `1c5d1e2`). #88 refuses a target
+  file's key that no reader reads: `websocket` is now in the key lists of the MANUAL (§4.2),
+  `dottore-scope(5)` and u12 A-53, and the loader takes the block, since that check is built
+  from `Target`. #68 fails one `-sV` probe, not the run, on a reply the adapters refuse: it does
+  the same for each WebSocket refusal (a frame nested past 64 levels, a text frame that is not
+  UTF-8, a 1007 or 1009 close the server starts), as the MANUAL (§3, the `-sV` row, §13) and u04
+  §4 now say, pinned by 4 tests in `tests/cli/test_websocket_target.py` that fail with the
+  isolation turned off. #51 writes control characters out in CLI errors: a server's close
+  reason, which the adapter quotes, reaches the terminal as `␛` and `␊`, pinned by a test that
+  fails when the run's error line skips `for_terminal`; the loader's refusals of the block print
+  a key with control characters written out too (checked by hand). Unchanged and checked: frames
+  go through `bounded_loads` and `well_formed_json` (A-47), `logprobs` is `None`, a reported
+  usage is trued up through `_reported_total`, and after #56 and #57 every exported error class
+  name still survives `redact_text` and the credential is still scrubbed from frames and errors.
+
 ### Fixed (a CLI error names the operator's file, and `diff` masks a report's reason)
 
 - **An existing file in a CLI error keeps its name wherever the message writes it.** `_masked`

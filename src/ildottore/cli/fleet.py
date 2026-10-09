@@ -210,7 +210,10 @@ def load_fleet(path: str | Path) -> FleetConfig:
         ) from exc
 
 
-_DEFAULT_PORTS = {"https": 443, "http": 80}
+#: The allowlist's own defaults (``policy.allowlist``): ``wss`` as ``https`` and ``ws`` as
+#: ``http``, since the WebSocket adapter made both authorizable. Without them a ``wss://`` entry
+#: wrote a bare host, which authorizes every port on it (pre-merge audit of PR #87).
+_DEFAULT_PORTS = {"https": 443, "http": 80, "wss": 443, "ws": 80}
 
 
 def _scope_endpoint(endpoint: str) -> tuple[str, str]:

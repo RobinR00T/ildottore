@@ -30,7 +30,9 @@ weights, baseline resistance). Six signal layers run independently, each emittin
 signal: any layer contradicting the statistical layer surfaces a `spoofing_flag`, never
 suppressed. Every run is **reproducible** offline (fixed seeded probe battery); live, as far as
 the target is deterministic at temperature 0, which every probe pins (`PROBE_SAMPLING`, with a
-512-token reply cap). Benign probes only - no jailbreak payloads, scope-allowlist-gated.
+512-token reply cap) and the OpenAI and Anthropic adapters send (a REST template and a WebSocket
+target have no sampling field: their probes go out at the deployment's own). Benign probes
+only - no jailbreak payloads, scope-allowlist-gated.
 
 ## §3 Dependencies & interface contracts
 - Consumes `shared.protocols.TargetAdapter` (u04) via injected instance: **no provider SDKs
@@ -51,7 +53,9 @@ the target is deterministic at temperature 0, which every probe pins (`PROBE_SAM
   version + schema; a pack update must not silently break the loader.
 - KEEP: seeded probe battery (seed = `(target_id, probe.name)`) ⇒ deterministic replay. The
   seed rides in request metadata and is not sent; on the wire every probe is temperature 0 with
-  a capped reply (as built 2026-10-07: three layers had sent no temperature at all).
+  a capped reply (as built 2026-10-07: three layers had sent no temperature at all) wherever the
+  adapter sends sampling (OpenAI, Anthropic; not a REST template nor a WebSocket target, whose
+  wire shape has no field for it, pre-merge audit of PR #87).
 - DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always
   disables). Resolved as built: `-sV` (and `-A`) imply adaptive ordering; there is no
   `--no-adaptive` flag (`00-INDEX.md` OD-5). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs

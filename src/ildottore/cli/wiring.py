@@ -37,9 +37,19 @@ from ildottore.adapters import (
     RestAdapter,
     RestTemplate,
     RetryConfig,
+    WebSocketAdapter,
 )
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
+from ildottore.adapters.websocket import (
+    CONNECTION_PLACEHOLDERS,
+    MESSAGES,
+    PROMPT,
+    RESERVED,
+    RESERVED_HEADERS,
+    TOKEN,
+    placeholders,
+)
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.execute import default_is_env_error
@@ -61,7 +71,7 @@ from ildottore.policy import (
 )
 from ildottore.policy.scope import MAX_ID_CHARS
 from ildottore.redactor import register_known_secret
-from ildottore.registry import LintError, Registry, load_paths
+from ildottore.registry import LintError, Registry, load_paths, non_json_values, non_string_keys
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.config_errors import cut, listed, quoted, validation_problems, yaml_problem
@@ -78,6 +88,7 @@ from ildottore.shared.models import (
     Sampling,
     SeededSetup,
     Target,
+    WebSocketSpec,
 )
 from ildottore.shared.protocols import Reporter, TargetAdapter
 from ildottore.store import FsEvidenceStore, SqliteRunStore
@@ -664,7 +675,9 @@ def build_real_adapter(
 
     Routes on ``target.provider``: ``openai`` → :class:`OpenAIAdapter`,
     ``anthropic`` → :class:`AnthropicAdapter`, ``mcp`` → the read-only
-    :class:`MCPAdapter` (Model Context Protocol server discovery), anything else → the
+    :class:`MCPAdapter` (Model Context Protocol server discovery), ``websocket`` → the
+    template-driven :class:`WebSocketAdapter` (its wire shape is the target file's
+    ``websocket:`` block), anything else → the
     generic :class:`RestAdapter` (the long-tail escape hatch, ADR-0002). ``target.endpoint``
     is the **full** request URL (``specs/targets/example-openai.yaml``); its origin
     becomes the adapter's ``base_url`` and its path is either the adapter's own
@@ -702,6 +715,23 @@ def build_real_adapter(
             allowlist=allowlist,
             api_key=api_key,
             model=target.model,
+            **extra,
+        )
+    if provider == "websocket":
+        if target.websocket is None:  # load_target refuses the file; a hand-built Target
+            raise ValueError(
+                f"target {target.id!r} is provider websocket and has no websocket block"
+            )
+        # The full URL is dialled as declared (no query, no userinfo: the loader refuses both),
+        # so the gate and the socket agree on one string.
+        return WebSocketAdapter(
+            id=target.id,
+            url=request_url_for(target) or (target.endpoint or ""),
+            allowlist=allowlist,
+            spec=target.websocket,
+            api_key=api_key,
+            model=target.model,
+            declared=target.capabilities,
             **extra,
         )
     # The DECLARED path wins over the provider default: a gateway (Azure OpenAI, LiteLLM, a
@@ -1035,7 +1065,7 @@ _TargetFileTopLevel = create_model(
         "reads, and ``mock_scenario``, which :func:`load_mock_scenario` reads; text where "
         "``Target`` holds text, ``null`` as absent, each block left to its reader. Built from "
         "``Target``, so a field added there is a key the file may hold without a second list to "
-        "keep in step (pre-merge audit: another branch's ``websocket`` field was refused by one)."
+        "keep in step (pre-merge audit: PR #87's ``websocket`` field was refused by one)."
     ),
     **_TOP_LEVEL_FIELDS,
 )
@@ -1225,6 +1255,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         command = command_raw
 
     seeded = _seeded_setup(path, raw.get("seeded_setup"), target_type)
+    websocket = _websocket_spec(path, raw.get("websocket"), provider, endpoint, auth_ref)
 
     return Target(
         id=target_id,
@@ -1239,6 +1270,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         transport=transport,
         command=command,
         seeded_setup=seeded,
+        websocket=websocket,
     )
 
 
@@ -1246,11 +1278,17 @@ def provider_returns_tool_calls(target: Target) -> bool:
     """True when the adapter ``target`` routes to reads tool calls from a reply.
 
     The OpenAI and Anthropic adapters do; the REST template and the read-only MCP adapter
-    return none, so a seeded spec judged on its tool trace could never fail there (OD-18 B).
+    return none, so a seeded spec judged on its tool trace could never fail there (OD-18 B);
+    the WebSocket adapter does only when its block declares ``response.tool_calls_path``.
     The runner asks the adapter itself (``returns_tool_calls``); the plan asks this.
     """
 
-    return (target.provider or "").strip().lower() in ("openai", "anthropic")
+    provider = (target.provider or "").strip().lower()
+    if provider == "websocket":
+        return (
+            target.websocket is not None and target.websocket.response.tool_calls_path is not None
+        )
+    return provider in ("openai", "anthropic")
 
 
 def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSetup | None:
@@ -1320,6 +1358,153 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
 #: A run token goes into a canary the evaluators match exactly: plain characters, and long
 #: enough not to occur by chance.
 _RUN_TOKEN = re.compile(r"[A-Za-z0-9_-]{8,64}")
+
+
+def _websocket_spec(
+    path: Path,
+    raw: object,
+    provider: str | None,
+    endpoint: str | None,
+    auth_ref: str | None,
+) -> WebSocketSpec | None:
+    """The ``websocket`` block of a ``provider: websocket`` target, checked before any send.
+
+    Refused here, not at send time (rule 12, refuse before you send): the block missing or on
+    another provider, an endpoint that is not ``ws://`` or ``wss://`` or that carries a query,
+    a fragment or a user:password, a placeholder no template may use (not reserved and not in
+    ``vars``), any placeholder inside ``vars`` (they are plain values, never rendered), a
+    request placeholder (``{{prompt}}``, ``{{messages}}``, ``{{system_prompt}}``) in a template
+    rendered with no request (``headers``, ``handshake.send``, ``session.start``),
+    ``{{token}}`` without an ``auth_ref``, a query template that carries neither ``{{prompt}}``
+    nor ``{{messages}}``, an upgrade header the library writes itself (``Host``,
+    ``Connection``, ``Upgrade`` and :data:`~ildottore.adapters.websocket.RESERVED_HEADERS`' five
+    ``Sec-WebSocket-`` headers), ``one_query_in_flight: false``, a key that is not text (A-44)
+    or a value JSON cannot hold (a date, a set, bytes, NaN, half a character: A-54) anywhere in
+    the block, the walks a spec gets, and a ``ws://`` or ``wss://`` endpoint on any other
+    provider (an HTTP adapter cannot dial it). Each refusal names the field; a name the operator
+    wrote (a header, a placeholder) is cut as every refusal of the operator's files cuts it
+    (A-51).
+    """
+
+    is_websocket = (provider or "").strip().lower() == "websocket"
+    if raw is None:
+        if is_websocket:
+            raise ValueError(
+                f"target file {path} is provider websocket and has no 'websocket' block; declare "
+                "message, response and (usually) handshake (docs/MANUAL.md §4.2)"
+            )
+        if urlsplit((endpoint or "").strip()).scheme.lower() in ("ws", "wss"):
+            # The allowlist authorizes ws and wss since this adapter, so the REST adapter got
+            # past the gate and posted HTTP to the socket, credential included, four times per
+            # attempt, and `run` exited 3 (pre-merge audit of PR #87).
+            raise ValueError(
+                f"target file {path}: a ws:// or wss:// endpoint is dialled only by provider "
+                "websocket, with a 'websocket' block declaring its wire shape "
+                "(docs/MANUAL.md §4.2)"
+            )
+        return None
+    if not is_websocket:
+        raise ValueError(
+            f"target file {path} declares 'websocket', which is read only by provider websocket"
+        )
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'websocket' must be a mapping")
+    # Before the model reads it: the templates are free-form JSON below their top level, so a key
+    # YAML built from `on` or `~` went on the wire as "True" or "None" (A-44's walk; second
+    # pre-merge audit), and a date stopped the run when the frame was written, NaN went on the
+    # wire, and half a character raised out of `run` from the target's digest (A-54's walk;
+    # pre-merge audit of PR #87). Keys first, as the spec loader checks them.
+    not_text = non_string_keys({"websocket": raw})
+    if not_text:
+        raise ValueError(
+            f"target file {path} 'websocket' has a key that is not text: {'; '.join(not_text)}"
+        )
+    not_json = non_json_values({"websocket": raw})
+    if not_json:
+        raise ValueError(
+            f"target file {path} 'websocket' holds a value JSON cannot hold: {'; '.join(not_json)}"
+        )
+    try:
+        spec = WebSocketSpec.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'websocket' failed validation: {validation_problems(exc)}"
+        ) from exc
+
+    parts = urlsplit(endpoint or "")
+    if parts.scheme.lower() not in ("ws", "wss") or not parts.hostname:
+        raise ValueError(
+            f"target file {path}: a provider websocket endpoint must be a ws:// or wss:// URL "
+            "with a host"
+        )
+    if parts.query or parts.fragment:
+        raise ValueError(
+            f"target file {path}: the websocket endpoint carries a query or fragment, which the "
+            "scope cannot authorize; move it into the handshake frame"
+        )
+    if parts.username is not None or parts.password is not None:
+        raise ValueError(
+            f"target file {path}: the websocket endpoint carries a user or password; a "
+            "credential goes through auth_ref and the {{token}} placeholder"
+        )
+    if not spec.session.one_query_in_flight:
+        raise ValueError(
+            f"target file {path}: websocket.session.one_query_in_flight: false is not built "
+            "(several queries multiplexed on one socket need a correlation id); leave it true"
+        )
+    if TOKEN in spec.vars:
+        raise ValueError(
+            f"target file {path}: websocket.vars may not name {{{{token}}}}; the credential "
+            "comes from auth_ref only"
+        )
+    in_vars = sorted(placeholders(list(spec.vars.values())))
+    if in_vars:
+        names = _placeholder_names(in_vars)
+        raise ValueError(
+            f"target file {path}: websocket.vars carries {names}; vars are plain values and "
+            "are never rendered, so a placeholder there would go on the wire literally"
+        )
+    reserved_headers = sorted(name for name in spec.headers if name.lower() in RESERVED_HEADERS)
+    if reserved_headers:
+        raise ValueError(
+            f"target file {path}: websocket.headers sets {listed(reserved_headers)}, which "
+            "the WebSocket library writes itself; remove it"
+        )
+    handshake = spec.handshake.send if spec.handshake is not None else {}
+    connection_only = placeholders([handshake, spec.session.start, spec.headers])
+    misplaced = sorted((connection_only & RESERVED) - CONNECTION_PLACEHOLDERS)
+    if misplaced:
+        names = _placeholder_names(misplaced)
+        raise ValueError(
+            f"target file {path}: websocket headers, handshake.send and session.start are sent "
+            f"before any query, so they may use only {{{{token}}}} and vars, not {names}"
+        )
+    used = connection_only | placeholders(spec.message.send)
+    unknown = sorted(used - RESERVED - set(spec.vars))
+    if unknown:
+        names = _placeholder_names(unknown)
+        raise ValueError(
+            f"target file {path}: websocket templates use {names}, which is neither a reserved "
+            "placeholder (token, prompt, system_prompt, messages) nor declared under "
+            "websocket.vars"
+        )
+    if TOKEN in used and auth_ref is None:
+        raise ValueError(
+            f"target file {path}: a websocket template uses {{{{token}}}} and the target "
+            "declares no auth_ref"
+        )
+    if not placeholders(spec.message.send) & {PROMPT, MESSAGES}:
+        raise ValueError(
+            f"target file {path}: websocket.message.send carries neither {{{{prompt}}}} nor "
+            "{{messages}}, so no attack text would reach the target"
+        )
+    return spec
+
+
+def _placeholder_names(names: list[str]) -> str:
+    """``{{a}}, {{b}}``: placeholder names a refusal lists, each cut and at most 20 (A-51)."""
+
+    return listed(names, show=lambda name: cut("{{" + name + "}}"))
 
 
 def load_mock_scenario(path: Path) -> str:

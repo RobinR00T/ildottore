@@ -1,6 +1,7 @@
 # scope.yaml - the AUTHORIZATION record. No run starts without covering every target here.
 # Default-DENY: adapters refuse any host or path not listed under a target's `endpoints`.
 # Plain http is allowed ONLY to loopback (localhost, 127.0.0.1, ::1); everything else https.
+# The same for a WebSocket target: wss anywhere allowlisted, cleartext ws only to loopback.
 # An optional top-level `checksum:` (sha256 of the body) is verified on load when present, so a
 # scope edited without updating it is refused. It is an integrity check, not a signature. Every
 # run records the same sha256 in its run store and reports, naming the scope it ran under.

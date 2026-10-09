@@ -60,6 +60,7 @@ __all__ = [
     "RetryConfig",
     "map_logprobs",
     "read_capped",
+    "redact_ids",
 ]
 
 # HTTP statuses that mean "try again later" (transient / env, not a defect).
@@ -369,6 +370,26 @@ def map_logprobs(
     return out
 
 
+def redact_ids(redactor: Redactor, ids: Mapping[str, Any]) -> dict[str, Any]:
+    """Redactor-mask provider request/response ids before they persist.
+
+    The ``model`` echo, when it is a string, is a model name, not an opaque id: it skips the
+    entropy rule (patterns and known credentials still apply). Mixed-case names such as
+    ``meta-llama/Meta-Llama-3-8B-Instruct`` were masked as high-entropy before the
+    fingerprint's metadata layer could read them (audit of the fingerprint). This is in
+    memory only: the evidence store, the run store and the reports apply their own full
+    redactor to everything they keep. Shared by the HTTP adapters and the WebSocket one.
+    """
+
+    model = ids.get(_MODEL_ID)
+    if not isinstance(model, str):  # a nested value gets the full redactor
+        return cast("dict[str, Any]", redactor.redact(dict(ids)))
+    rest = {key: value for key, value in ids.items() if key != _MODEL_ID}
+    redacted = cast("dict[str, Any]", redactor.redact(rest))
+    redacted[_MODEL_ID] = redactor.without_entropy().redact_text(model)
+    return {key: redacted[key] for key in ids}
+
+
 @dataclass
 class BaseAdapter(ABC):
     """Common send loop shared by every concrete adapter.
@@ -432,23 +453,9 @@ class BaseAdapter(ABC):
         return self.base_url.rstrip("/") + self._request_path
 
     def _redact_ids(self, ids: Mapping[str, Any]) -> dict[str, Any]:
-        """Redactor-mask provider request/response ids before they persist.
+        """Redactor-mask provider request/response ids before they persist (:func:`redact_ids`)."""
 
-        The ``model`` echo, when it is a string, is a model name, not an opaque id: it skips the
-        entropy rule (patterns and known credentials still apply). Mixed-case names such as
-        ``meta-llama/Meta-Llama-3-8B-Instruct`` were masked as high-entropy before the
-        fingerprint's metadata layer could read them (audit of the fingerprint). This is in
-        memory only: the evidence store, the run store and the reports apply their own full
-        redactor to everything they keep.
-        """
-
-        model = ids.get(_MODEL_ID)
-        if not isinstance(model, str):  # a nested value gets the full redactor
-            return cast("dict[str, Any]", self.redactor.redact(dict(ids)))
-        rest = {key: value for key, value in ids.items() if key != _MODEL_ID}
-        redacted = cast("dict[str, Any]", self.redactor.redact(rest))
-        redacted[_MODEL_ID] = self.redactor.without_entropy().redact_text(model)
-        return {key: redacted[key] for key in ids}
+        return redact_ids(self.redactor, ids)
 
     def _check_allowlist(self, url: str) -> None:
         """Refuse an off-allowlist URL **before** any egress (contract §4 KEEP)."""

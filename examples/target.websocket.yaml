@@ -1,0 +1,43 @@
+# target.websocket.yaml, a CHAT ENDPOINT OVER A WEBSOCKET: an assistant whose only chat surface
+# is a socket that streams its answer in JSON frames (Scenario H in examples/README.md). Its
+# authorization record is examples/scope.websocket.yaml.
+#
+# No two WebSocket chat APIs share a wire shape, so this file declares it: the first frame after
+# the socket opens (the handshake, usually the credential), the frame that carries a query, how
+# the streamed reply is read back, the frame that starts a conversation and the reconnect cap.
+# The adapter knows nothing else. Every value below is a placeholder for the shape YOUR
+# deployment speaks; none of it describes a real product. Read docs/MANUAL.md §4.2.
+id: ws-assistant-staging
+type: chatbot                        # a deployed application: its scene is the operator's (OD-18 B)
+provider: websocket                  # routes to the WebSocket adapter
+endpoint: "wss://assistant.example.test/ws/chat"   # the URL dialled: no query, no user:password
+auth_ref: "env://ASSISTANT_WS_TOKEN" # never inline secrets; resolved at send time into {{token}}
+capabilities:
+  tools: false
+  rag: true
+  memory: false
+# sampling_defaults: not applicable, the frame templates carry no sampling fields.
+websocket:
+  vars:                              # plain values the templates may use as {{name}}; never secrets
+    client: "ildottore"
+  handshake:                         # the first frame after the socket opens
+    send: { type: "auth", token: "{{token}}", client: "{{client}}" }
+    expect: { path: "type", equals: "auth_ok" }     # the first reply must say this, or the run stops
+  session:                           # sent once per connection, after the handshake (optional)
+    start: { type: "new_conversation" }
+    one_query_in_flight: true        # the only policy built: one query at a time per connection
+  message:                           # one query; {{prompt}} is the attack text of the turn
+    send: { type: "query", text: "{{prompt}}" }
+  response:                          # how the streamed reply is read
+    text_path: "delta.text"          # each fragment of the answer (dotted JSON path)
+    final_path: "type"               # the turn ends on the frame where this path...
+    final_value: "done"              # ...equals this value (leave it out: "is present")
+    type_path: "type"                # where a frame's kind is read for ignore_types (the default)
+    ignore_types: ["ping", "typing"] # frames discarded
+    error_path: "error"              # present in a frame: the attempt is inconclusive
+    usage_path: "usage"              # optional: a mapping with total_tokens trues up the ledger
+    # tool_calls_path: "tool_calls"  # declare it only when the server sends its tool calls
+    timeout_seconds: 30              # per turn, from the query to the final frame
+  reconnect:                         # a socket that fails to open: under `dottore run` the runner
+    max_attempts: 1                  # retries it, each dial a debited request; this (0 to 5) caps
+                                     # the adapter's own re-dials where it has retries of its own
