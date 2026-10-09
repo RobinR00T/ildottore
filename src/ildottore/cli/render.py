@@ -176,8 +176,9 @@ def coverage_lines(
                 "declare, or a scene the target file does not declare seeded or the adapter "
                 "could not carry; or a reply that never reached the tool carrying the scene; or "
                 "every send ended in an environment error, such as a network "
-                "failure, a timeout, HTTP 429 or 5xx, a reply over the size cap or one that could "
-                "not be decoded), so their framework codes are NOT counted as covered"
+                "failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could "
+                "not be decoded or one nested too deeply), so their framework codes are NOT "
+                "counted as covered"
             ]
             if cov.not_exercised
             else []
