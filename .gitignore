@@ -5,7 +5,9 @@ __pycache__/
 .eggs/
 build/
 dist/
-.venv/
+# No trailing slash: a worktree's .venv is a symlink to the main checkout's, and git sees a
+# symlink as a file, which a directory-only pattern does not match.
+.venv
 venv/
 .env
 .python-version

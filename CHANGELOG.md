@@ -5,6 +5,16 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a worktree's `.venv` link showed as untracked)
+
+- **`.gitignore` ignored `.venv` only as a directory** (`.venv/`), and a git worktree that reuses
+  the main checkout's venv through a symlink has a file there, as git sees it: `git status`
+  listed `?? .venv` and a `git add -A` would have committed the link. The rule is now `.venv`,
+  which matches the directory and everything under it, and the link; no tracked file is newly
+  ignored. `AGENTS.md` §4 records the worktree setup: the link, `PYTHONPATH` pointing at the
+  worktree's `src` (without it the steps that import the package run the main checkout's code,
+  and the coverage gate reads 0%), and no `make venv` or `make install` there.
+
 ### Fixed (a reply that holds half a character)
 
 - **One reply with a lone surrogate aborted the whole campaign.** JSON lets a string escape any
