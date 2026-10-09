@@ -7,6 +7,7 @@ domain fixtures). Nothing here duplicates a fixture a sub-package already define
 * repo/fixture path discovery (``repo_root``, ``fixtures_dir``, ``load_fixture_json``)
 * a deterministic :class:`FrozenClock` (``frozen_clock``) for wall-budget tests
 * a :class:`MockTarget` factory (``mock_target_factory``) reusing the u03 public surface
+* ``no_known_secrets``: an empty registry of the redactor's process-wide credentials
 * an **autouse, session-scoped no-live-socket guard** (validation-plan layer 5 / CI §4):
   any attempt to open a TCP connection to a non-loopback host during the test run raises,
   so an accidental real provider call fails closed instead of leaking a live key.
@@ -25,6 +26,7 @@ from typing import Any
 
 import pytest
 
+from ildottore import redactor as redactor_mod
 from ildottore.adapters.mock import MockScenario, MockTarget
 from ildottore.shared.models import Capabilities
 
@@ -128,6 +130,18 @@ def mock_target_factory() -> Callable[..., MockTarget]:
         return MockTarget(scenario, id=id)
 
     return factory
+
+
+# --------------------------------------------------------------------------------------------
+# Registered credentials (process-wide in the redactor)
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def no_known_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Registered credentials are process-wide: a test's own do not outlive it."""
+
+    monkeypatch.setattr(redactor_mod, "_KNOWN_SECRETS", set())
 
 
 # --------------------------------------------------------------------------------------------

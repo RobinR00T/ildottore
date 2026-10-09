@@ -13,14 +13,15 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ildottore import safe_yaml
 from ildottore.policy.errors import ChecksumMismatchError, ScopeError
-from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
+from ildottore.shared.files import read_text_capped
 
 
 class Endpoint(BaseModel):
@@ -32,6 +33,14 @@ class Endpoint(BaseModel):
     path_prefixes: list[str] = Field(default_factory=lambda: ["/"])
 
 
+#: The longest target id or identity name a scope or target file may give (OD-27, decided
+#: 2026-10-07). Unbounded, an id of a million characters was printed whole wherever a run that
+#: started wrote it: the `--dry-run` plan, the `-sV` lines, the reports and the run store. A
+#: fleet's ids are held to 64, as they name files; one written by hand gets twice that. The
+#: longest id in this repository's examples is 21 characters. Clause A-57.
+MAX_ID_CHARS: Final = 128
+
+
 class Identity(BaseModel):
     """A named auth identity **reference** - ``auth_ref`` resolves to a secret elsewhere.
 
@@ -40,7 +49,7 @@ class Identity(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    name: str
+    name: str = Field(max_length=MAX_ID_CHARS)
     auth_ref: str
     # The tenant-scoped canary this identity legitimately owns (audit M14, multi_identity).
     # A `{{run_id}}` placeholder is substituted per run. If this canary reaches ANOTHER
@@ -53,7 +62,7 @@ class ScopeTarget(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    id: str
+    id: str = Field(max_length=MAX_ID_CHARS)
     base_url: str
     endpoints: list[Endpoint] = Field(default_factory=list)
     identities: list[Identity] = Field(min_length=1)
@@ -127,15 +136,16 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
     for identity in entry.identities:
         if identity.name in names:
             raise ScopeError(
-                f"scope file {file_path} target {entry.id!r} declares identity "
-                f"{identity.name!r} more than once; each identity needs its own name"
+                f"scope file {file_path} target {quoted(entry.id)} declares identity "
+                f"{quoted(identity.name)} more than once; each identity needs its own name"
             )
         names.add(identity.name)
         if identity.canary:  # the runner ignores an empty one
             if identity.canary in canaries:
                 raise ScopeError(
-                    f"scope file {file_path} target {entry.id!r}: identity {identity.name!r} "
-                    "declares the canary of another identity; each canary has one owner"
+                    f"scope file {file_path} target {quoted(entry.id)}: identity "
+                    f"{quoted(identity.name)} declares the canary of another identity; each "
+                    "canary has one owner"
                 )
             canaries.add(identity.canary)
 
@@ -180,6 +190,7 @@ def load_scope_with_digest(
     records the record that authorized it, not a second read of a file that may have changed
     in between (audit D-17, threat model S4).
 
+    * Reads at most 1 MiB of the file (``shared.files.read_text_capped``, clause A-43).
     * Parses YAML with a **safe** loader - no code execution, no network.
     * Validates the :class:`Scope` model (default-deny: unknown fields rejected).
     * If a ``checksum`` is present, verifies it via ``verifier`` (SHA-256 by
@@ -192,8 +203,8 @@ def load_scope_with_digest(
     verifier = verifier if verifier is not None else Sha256Verifier()
     file_path = Path(path)
     try:
-        raw_text = file_path.read_text(encoding="utf-8")
-    except OSError as exc:  # pragma: no cover - filesystem error surface
+        raw_text = read_text_capped(file_path)
+    except OSError as exc:  # over the 1 MiB cap (A-43), or a filesystem error
         raise ScopeError(f"cannot read scope file {file_path}: {exc}") from exc
 
     try:
@@ -225,7 +236,7 @@ def load_scope_with_digest(
     for entry in scope.targets:
         if entry.id in seen:
             raise ScopeError(
-                f"scope file {file_path} declares target id {entry.id!r} more than once; "
+                f"scope file {file_path} declares target id {quoted(entry.id)} more than once; "
                 "an authorization record must have exactly one entry per target"
             )
         seen.add(entry.id)
@@ -268,5 +279,5 @@ def scope_hash(path: str | Path, *, verifier: IntegrityVerifier | None = None) -
     """
 
     verifier = verifier if verifier is not None else Sha256Verifier()
-    raw_text = Path(path).read_text(encoding="utf-8")
+    raw_text = read_text_capped(path)
     return verifier.compute(_strip_checksum_line(raw_text).encode("utf-8"))
