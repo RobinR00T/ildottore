@@ -24,7 +24,6 @@ state computed and then dropped somewhere a human looks):
 
 from __future__ import annotations
 
-import asyncio
 import fnmatch
 import json
 import os
@@ -41,8 +40,8 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
+from ildottore.cli import interrupts, wiring
 from ildottore.cli import resume as resume_mod
-from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
@@ -1117,21 +1116,24 @@ def _validate_options(opts: RunOptions) -> None:
 
 
 def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
-    """Handle SIGTERM or SIGHUP as Ctrl-C would be handled at this moment (u12 A-60).
+    """Handle SIGTERM or SIGHUP as asyncio handles Ctrl-C, or as Ctrl-C is handled here (A-60).
 
     ``signal.default_int_handler`` raised KeyboardInterrupt wherever the main thread was, and
     inside a weakref callback Python prints "Exception ignored" and drops it: a SIGTERM sent
     with a probe on the wire left a resume sending (41 requests where 25 were expected, CI on
-    PRs #72 and #82). Inside ``asyncio.run`` the SIGINT handler is asyncio's, which cancels the
-    run on the first signal instead of raising, so that one cannot be dropped (a second, or one
-    after the run's task has finished, raises in place as before). With no Python handler for
-    SIGINT (ignored, as for a job a script starts with ``&``, where asyncio installs none) it
-    raises, as before, and can still be dropped in a callback. A program that embeds
-    ``execute_run`` and gives Ctrl-C a handler that does nothing, or installs one through
-    ``loop.add_signal_handler``, makes SIGTERM and SIGHUP do nothing either; ``dottore`` does
-    neither (pre-commit audit).
+    PRs #72 and #82). Calling asyncio's own Ctrl-C handler instead stopped that, but only while
+    Ctrl-C had a handler: with it ignored (a job a script starts with ``&``) the signal still
+    raised, and raised in gather's callback it left the run waiting for a second signal as it
+    closed (pre-merge audit of #94). Inside a loop of :func:`interrupts.run_until_stopped`, which
+    every request is sent from, the first signal now cancels the run's task whatever Ctrl-C's
+    disposition, and KeyboardInterrupt is raised once the loop is closed; a second raises in
+    place. Outside one, it calls whatever SIGINT handler is in place and raises when there is
+    none, as before: a program that embeds ``execute_run`` and gives Ctrl-C a handler that does
+    nothing makes the signal do nothing there either; ``dottore`` does not.
     """
 
+    if interrupts.stop_running_loop():
+        return
     handler = signal.getsignal(signal.SIGINT)
     if callable(handler):
         handler(signal.SIGINT, frame)
@@ -1150,21 +1152,24 @@ def _termination_as_interrupt() -> Iterator[None]:
     """
 
     previous: dict[signal.Signals, Any] = {}
-    for name in ("SIGTERM", "SIGHUP"):
-        sig = getattr(signal, name, None)
-        # An ignored signal stays ignored: `nohup dottore run` set SIGHUP to SIG_IGN so a scan
-        # survives an SSH logout, and mapping it anyway aborted the scan on hangup.
-        if sig is None or signal.getsignal(sig) is signal.SIG_IGN:
-            continue
+    # Watched from before the first handler is set until after the last is put back, so a
+    # signal one of them takes always counts for this campaign.
+    with interrupts.terminations_watched():
+        for name in ("SIGTERM", "SIGHUP"):
+            sig = getattr(signal, name, None)
+            # An ignored signal stays ignored: `nohup dottore run` set SIGHUP to SIG_IGN so a
+            # scan survives an SSH logout, and mapping it anyway aborted the scan on hangup.
+            if sig is None or signal.getsignal(sig) is signal.SIG_IGN:
+                continue
+            try:
+                previous[sig] = signal.signal(sig, _interrupt_as_ctrl_c)
+            except ValueError:
+                break
         try:
-            previous[sig] = signal.signal(sig, _interrupt_as_ctrl_c)
-        except ValueError:
-            break
-    try:
-        yield
-    finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
+            yield
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
 
 
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
@@ -2123,7 +2128,7 @@ def _run_one_target(
         spend_sink=lambda spend: _record_spend_quietly(run_db, campaign_run_id, spend),
     )
     try:
-        return asyncio.run(
+        return interrupts.run_until_stopped(
             built.runner.run(
                 run_id=run_id,
                 target=target,

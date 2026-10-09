@@ -123,7 +123,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-42 | u12 | a run parses each target file once, so the target it authorizes is the one it sends to |
 | A-46 | u12 | a resumed run records what its -sV probe pass sent however the pass ends (an error, Ctrl-C, SIGTERM, a stop after it), each probe once |
 | A-49 | u12 | a report finding that fails validation is refused on one line naming the report, the place and the reason, never the value |
-| A-60 | u12 | SIGTERM and SIGHUP stop a run as Ctrl-C does, even raised inside a callback: they call the SIGINT handler in place, and raise only when there is none |
+| A-60 | u12 | SIGTERM and SIGHUP stop a run as Ctrl-C does, even raised inside a callback: inside a loop the first cancels the run and KeyboardInterrupt comes once the loop is closed, with Ctrl-C at its default or ignored; outside one they call the SIGINT handler in place |
 | A-61 | u12 | a run id is never masked as a phone number: a draw whose 12 hex digits are all decimal is drawn again, and the redactor keeps its phone rule |
 | A-26 | u11 | a gap says which kind it is (roadmap, out of reach, or by design), with the reason |
 | A-12..A-15 | u11 | no denominator over survivors, uncounted values are reported, figures carry their edition, machine formats carry the run state |

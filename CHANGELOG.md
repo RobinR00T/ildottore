@@ -5,6 +5,31 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
+
+- **A SIGTERM inside one of asyncio's callbacks no longer leaves the run waiting for a second.**
+  With Ctrl-C ignored (a job a script starts with `&`, some CI runners), the handler #94 installed
+  still raised a SIGTERM or SIGHUP wherever Python was, and raised inside gather's callback it left
+  the task awaiting it with nothing to wake it: the run stopped sending, then waited as it closed
+  until a second signal, and the stuck part's spend was written only when Python collected the task
+  (measured through the real CLI on Python 3.12.13 and 3.14.7: still running 3.0 s after it started,
+  when a second SIGTERM ended it). Every loop a campaign runs (the `-sV` probe pass, each target's
+  campaign) now goes through `interrupts.run_until_stopped`, which does for SIGTERM and SIGHUP what
+  `asyncio.run` does for Ctrl-C, whatever Ctrl-C's disposition: the first signal cancels the run's
+  task and wakes the loop instead of raising, the task unwinds inside the loop, where the runner
+  writes the spend, and KeyboardInterrupt (exit 130) comes once the loop is closed. A signal that
+  arrives after the task is done, even inside `loop.close()`, is kept and raised then, which raising
+  from a loop callback of its own could not do; a second signal raises in place, as a second Ctrl-C
+  does; Ctrl-C keeps asyncio's handler. Measured on the same path: one SIGTERM, and exit 130 within
+  0.9 s of the start, the spend of 6 requests written inside the loop, with Ctrl-C ignored or at its
+  default. A signal Python drops outside a loop (in a cleanup callback, while planning or writing)
+  keeps the campaign's next loop from starting. u12 A-60 (amended), the MANUAL and the EXIT STATUS
+  of `dottore(1)`; `tests/cli/test_termination_signals.py` (28 tests: the test that pinned the hang
+  pins one signal as enough in both arms now, its safety net never needed, beside a signal after the
+  task and one inside `loop.close()`, one that has to wake a loop waiting in select(), a second
+  signal and one dropped outside a loop), and a `[sigterm-ctrl-c-ignored]` case in
+  `tests/cli/test_probe_pass_spend.py`, whose signal cases now check exit 130.
+
 ### Fixed (a run id of twelve decimal digits, masked as a phone number)
 
 - **About one run in 281 was named `run-«REDACTED:phone»`.** A run id is `run-` and the first 12
@@ -49,7 +74,8 @@ versioning: [SemVer](https://semver.org/).
   change how every stop works, so u12 A-60 and the MANUAL now say what happens and to send the
   signal again, and a test pins it (a second SIGTERM is needed with SIGINT ignored, and not with
   SIGINT at its default). No clock decides the test: the second signal is queued from inside the
-  first, and the stuck task is collected inside the test.
+  first, and the stuck task is collected inside the test. Fixed since: one signal is enough now
+  (the entry above).
 - **The SIGHUP tests pass under `nohup`.** `nohup make test` hands the suite SIGHUP ignored, an
   ignored SIGHUP stays ignored (as `nohup dottore run` needs), and three SIGHUP cases of
   `tests/cli/test_termination_signals.py` failed. A fixture gives SIGHUP a handler that does nothing

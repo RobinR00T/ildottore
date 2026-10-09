@@ -17,7 +17,6 @@ is swapped in here without touching ``core``.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import re
 import time
@@ -50,6 +49,7 @@ from ildottore.adapters.websocket import (
     TOKEN,
     placeholders,
 )
+from ildottore.cli import interrupts
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.execute import default_is_env_error
@@ -947,7 +947,7 @@ def fingerprint_probe(
     metered = MeteredAdapter(inner=adapter, meter=meter)
     try:
         with meter.bound(ledger, RateLimiter(rate_rps)):
-            fingerprint = asyncio.run(build_fingerprint_engine().run(metered))
+            fingerprint = interrupts.run_until_stopped(build_fingerprint_engine().run(metered))
     except BudgetExhausted as exc:
         raise ProbeCeilingReached(ledger.spend().requests, str(exc)) from exc
     return ProbePass(fingerprint=fingerprint, requests=ledger.spend().requests)

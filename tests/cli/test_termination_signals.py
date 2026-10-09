@@ -6,10 +6,14 @@ callback Python prints "Exception ignored" and drops it, so the run went on: in 
 sent with a probe on the wire left the resume sending (41 requests served where 25 were
 expected, `tests/cli/test_probe_pass_spend.py` on PRs #72 and #82). A Ctrl-C there was never lost:
 inside `asyncio.run` it goes to asyncio's own handler, which cancels the run instead of raising.
-SIGTERM and SIGHUP now do what Ctrl-C would do at that moment.
+SIGTERM and SIGHUP then called whatever Ctrl-C handler was in place, which left one case: with
+Ctrl-C ignored they still raised, and raised inside gather's callback they left the run waiting
+for a second signal as it closed (pre-merge audit of #94). Every loop `dottore` runs is now one of
+`interrupts.run_until_stopped`, where the first of them cancels the run's task whatever Ctrl-C's
+disposition, and KeyboardInterrupt is raised once the loop is closed.
 
-The signal is raised inside a real weakref callback, deterministically: `signal.raise_signal`
-runs the Python handler before it returns, so the handler runs inside the callback.
+The signal is raised inside a real callback, deterministically: `signal.raise_signal` runs the
+Python handler before it returns, so the handler runs inside the callback.
 
 SIGHUP is given a handler that does nothing for every test here (`sighup_handled`): under `nohup`
 it is ignored, and an ignored SIGHUP stays ignored, so the SIGHUP cases failed under `nohup make
@@ -21,16 +25,21 @@ from __future__ import annotations
 import asyncio
 import gc
 import logging
+import selectors
 import signal
+import threading
 import weakref
-from collections.abc import Iterator
+from collections.abc import Callable, Coroutine, Iterator
 from typing import Any
 
 import pytest
 
+from ildottore.cli.interrupts import run_until_stopped
 from ildottore.cli.run import _termination_as_interrupt
 
 pytestmark = pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="POSIX signals")
+
+_Driver = Callable[[Coroutine[Any, Any, None]], None]
 
 
 class _Referent:
@@ -75,10 +84,36 @@ def ctrl_c() -> Iterator[None]:
         signal.signal(signal.SIGINT, previous)
 
 
+@pytest.fixture(params=["default", "ignored"])
+def sigint(request: pytest.FixtureRequest) -> Iterator[str]:
+    """Ctrl-C at its default, or ignored as for a job a script starts with `&`."""
+
+    disposition = signal.default_int_handler if request.param == "default" else signal.SIG_IGN
+    previous = signal.signal(signal.SIGINT, disposition)
+    try:
+        yield str(request.param)
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+def _asyncio_run(main: Coroutine[Any, Any, None]) -> None:
+    asyncio.run(main)
+
+
+def _run_until_stopped(main: Coroutine[Any, Any, None]) -> None:
+    run_until_stopped(main)
+
+
 @pytest.mark.usefixtures("ctrl_c")
+@pytest.mark.parametrize(
+    "drive", [_run_until_stopped, _asyncio_run], ids=["run_until_stopped", "asyncio.run"]
+)
 @pytest.mark.parametrize("name", ["SIGTERM", "SIGHUP", "SIGINT"])
-def test_a_signal_inside_a_callback_stops_the_event_loop(name: str) -> None:
-    """SIGINT is the control: it always stopped the loop. SIGTERM and SIGHUP were dropped."""
+def test_a_signal_inside_a_callback_stops_the_event_loop(name: str, drive: _Driver) -> None:
+    """SIGINT is the control: it always stopped the loop. SIGTERM and SIGHUP were dropped.
+
+    `asyncio.run` is the loop of a program that embeds `execute_run`'s pieces: there the signal
+    still goes to the Ctrl-C handler in place, asyncio's own."""
 
     finished: list[bool] = []
 
@@ -88,7 +123,7 @@ def test_a_signal_inside_a_callback_stops_the_event_loop(name: str) -> None:
         finished.append(True)
 
     with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
-        asyncio.run(campaign())
+        drive(campaign())
     assert not finished, f"{name} inside a callback let the run finish"
 
 
@@ -107,56 +142,78 @@ def test_a_termination_signal_outside_a_loop_still_interrupts(name: str, sigint:
         signal.signal(signal.SIGINT, previous)
 
 
-def test_a_termination_signal_in_a_loop_with_ctrl_c_ignored_still_interrupts() -> None:
-    """With SIGINT ignored asyncio installs no handler of its own; SIGTERM must still stop it."""
+@pytest.mark.parametrize("name", ["SIGTERM", "SIGHUP"])
+def test_a_termination_signal_in_a_loop_cancels_the_run(sigint: str, name: str) -> None:
+    """With SIGINT ignored asyncio installs no handler of its own; the signal still stops the run,
+    by cancelling it: the campaign sees CancelledError at its next await, not a KeyboardInterrupt
+    raised wherever it was, and KeyboardInterrupt comes out once the loop is closed."""
 
-    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    finished: list[bool] = []
+    seen: list[str] = []
 
     async def campaign() -> None:
-        signal.raise_signal(signal.SIGTERM)
-        await asyncio.sleep(0.5)
-        finished.append(True)
+        try:
+            signal.raise_signal(getattr(signal, name))
+            await asyncio.sleep(0.5)
+            seen.append("finished")
+        except BaseException as exc:
+            seen.append(type(exc).__name__)
+            raise
 
-    try:
-        with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
-            asyncio.run(campaign())
-    finally:
-        signal.signal(signal.SIGINT, previous)
-    assert not finished
+    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        run_until_stopped(campaign())
+    assert seen == ["CancelledError"]
 
 
-@pytest.mark.parametrize("sigint", ["default", "ignored"])
-def test_with_ctrl_c_ignored_a_sigterm_in_an_asyncio_callback_waits_for_a_second(
-    sigint: str,
-) -> None:
-    """What is left open (u12 A-60, the MANUAL): with Ctrl-C ignored a SIGTERM raises where the
-    main thread is, and raised inside one of asyncio's own callbacks (here gather's, reading a
-    result) it leaves the gather unfinished and the task awaiting it with nothing to wake it.
-    `asyncio.run` cancels that task as it closes and then waits for it: ten turns of the closing
-    loop later it is still cancelled and not done, and only the second signal ends the wait. With
-    Ctrl-C at its default asyncio's handler cancels the run instead of raising, and the first
-    signal is enough. If this fails because the first is enough with Ctrl-C ignored too, the docs
-    that say to send the signal again are out of date.
+def test_a_second_signal_raises_where_the_run_is(sigint: str) -> None:
+    """The first cancels; a second, before the run has stopped, raises in place, as a second
+    Ctrl-C does under `asyncio.run`: it is for a stop that does not end."""
 
-    No clock decides it: the second signal is queued from inside the first's callback, so it runs
-    on the loop `asyncio.run` drives as it closes, however slow the machine (a timer set before the
-    first signal made 3 of 4 cases fail after a 0.25 s stall, pre-merge audit). With Ctrl-C at its
-    default it is a timer 5 s on, which the closed loop never runs; it fails the test only if the
-    run is still waiting ten turns after it fires.
+    seen: list[str] = []
+
+    async def campaign() -> None:
+        try:
+            signal.raise_signal(signal.SIGTERM)
+            signal.raise_signal(signal.SIGTERM)
+            await asyncio.sleep(0.5)
+        except BaseException as exc:
+            seen.append(type(exc).__name__)
+            raise
+
+    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        run_until_stopped(campaign())
+    assert seen == ["KeyboardInterrupt"]
+
+
+def test_one_signal_inside_an_asyncio_callback_is_enough(sigint: str) -> None:
+    """A SIGTERM raised inside one of asyncio's own callbacks (gather's, reading a result).
+
+    It used to raise there with Ctrl-C ignored, and gather's callback stopped before it woke
+    the task awaiting it: `asyncio.run` cancelled that task as it closed and waited for it, and
+    only a second signal ended the wait, the stuck part's spend written when Python collected
+    the task (pre-merge audit of #94). Now the handler only cancels the task, gather's callback
+    finishes, and the task unwinds inside the loop (here its `except`, in the runner the
+    `finally` that writes the spend) before KeyboardInterrupt comes out, with Ctrl-C at its
+    default or ignored alike.
+
+    No clock decides it. The safety net is a callback queued from inside the first signal that
+    goes round the loop: it stops once the task is done, and if ten turns later the task is
+    still not done, nothing will wake it, so it records that and sends the second signal to end
+    the test. It must never be needed.
     """
 
     signals: list[str] = []
-    finished: list[bool] = []
+    unwound: list[str] = []
     stuck: list[tuple[bool, int]] = []
     tasks: list[asyncio.Task[Any]] = []
     turns = 0
 
-    def second() -> None:
+    def net() -> None:
         nonlocal turns
-        if turns < 10:  # let the closing loop go round: nothing wakes the task
+        if tasks[0].done():
+            return
+        if turns < 10:
             turns += 1
-            asyncio.get_running_loop().call_soon(second)
+            asyncio.get_running_loop().call_soon(net)
             return
         stuck.append((tasks[0].done(), tasks[0].cancelling()))
         signals.append("second")
@@ -166,11 +223,7 @@ def test_with_ctrl_c_ignored_a_sigterm_in_an_asyncio_callback_waits_for_a_second
         def result(self) -> None:
             if not signals:
                 signals.append("first")
-                loop = asyncio.get_running_loop()
-                if sigint == "ignored":
-                    loop.call_soon(second)  # behind the first, on the loop that closes the run
-                else:
-                    loop.call_later(5.0, second)  # a safety net: the first is enough here
+                asyncio.get_running_loop().call_soon(net)
                 signal.raise_signal(signal.SIGTERM)
             return super().result()
 
@@ -181,31 +234,180 @@ def test_with_ctrl_c_ignored_a_sigterm_in_an_asyncio_callback_waits_for_a_second
         tasks.append(task)
         child = _SignalOnResult(loop=loop)
         loop.call_soon(child.set_result, None)
-        await asyncio.gather(child)
-        finished.append(True)
+        try:
+            await asyncio.gather(child)
+            unwound.append("finished")
+        except BaseException as exc:
+            unwound.append(type(exc).__name__)
+            raise
 
-    previous = signal.signal(
-        signal.SIGINT, signal.default_int_handler if sigint == "default" else signal.SIG_IGN
-    )
     try:
         with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
-            asyncio.run(campaign())
+            run_until_stopped(campaign())
+        assert signals == ["first"] and not stuck, "a second signal was needed"
+        assert unwound == ["CancelledError"]
+        assert tasks[0].cancelled()
     finally:
-        signal.signal(signal.SIGINT, previous)
-    assert not finished
-    if sigint == "default":
-        assert signals == ["first"] and not stuck
-        return
-    assert signals == ["first", "second"]
-    assert stuck == [(False, 1)]  # cancelled once as asyncio.run closed, and never woken
-    # The stuck task is still pending: collect it here, with asyncio's "Task was destroyed but
-    # it is pending!" muted, rather than in whichever test the collector next runs in.
-    task_ref = weakref.ref(tasks.pop())
-    logger = logging.getLogger("asyncio")
-    muted = logger.disabled
-    logger.disabled = True
-    try:
-        gc.collect()
-    finally:
-        logger.disabled = muted
-    assert task_ref() is None
+        # Were the task stuck it would still be pending: collect it here, with asyncio's "Task
+        # was destroyed but it is pending!" muted, rather than in whichever test runs next.
+        if tasks and not tasks[0].done():
+            tasks.clear()
+            logger = logging.getLogger("asyncio")
+            muted = logger.disabled
+            logger.disabled = True
+            try:
+                gc.collect()
+            finally:
+                logger.disabled = muted
+
+
+class _ClosingLoop(asyncio.SelectorEventLoop):
+    """A loop that raises SIGTERM as it is closed, after its last turn."""
+
+    closes = 0
+
+    def close(self) -> None:
+        super().close()
+        _ClosingLoop.closes += 1
+        if _ClosingLoop.closes == 1:
+            signal.raise_signal(signal.SIGTERM)
+
+
+@pytest.mark.parametrize("moment", ["after the task", "as the loop closes"])
+def test_a_signal_as_the_last_loop_stops_is_not_lost(sigint: str, moment: str) -> None:
+    """A SIGTERM that comes once the run's task is done, while the loop is still turning, or
+    inside `loop.close()` after its last turn, where a callback queued on the loop never runs
+    (why raising from a loop callback of our own was rejected): it is kept and raised once the
+    loop is closed, so the campaign does not go on to its next step."""
+
+    finished: list[bool] = []
+
+    async def campaign() -> None:
+        if moment == "after the task":
+            # Queued now, it runs on the next turn, once this task has returned.
+            asyncio.get_running_loop().call_soon(signal.raise_signal, signal.SIGTERM)
+        finished.append(True)
+
+    _ClosingLoop.closes = 0 if moment == "as the loop closes" else 1
+    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        run_until_stopped(campaign(), loop_factory=_ClosingLoop)
+    assert finished == [True]
+    assert _ClosingLoop.closes == (1 if moment == "as the loop closes" else 2)
+
+
+class _WatchedSelector(selectors.DefaultSelector):
+    """Tells the test when the loop waits with nothing to do, and whether it was woken.
+
+    A wait with no timeout polls, so a loop the handler never wakes is seen as such instead of
+    blocking the test: once the handler has run (read before the poll), a poll that finds
+    nothing ready means nothing will ever wake the loop. The poll's length decides nothing.
+    """
+
+    def __init__(self, waiting: threading.Event, handled: list[str]) -> None:
+        super().__init__()
+        self.waiting = waiting
+        self.handled = handled
+        self.unwoken = False
+
+    def select(self, timeout: float | None = None) -> list[tuple[selectors.SelectorKey, int]]:
+        if timeout is not None:
+            return list(super().select(timeout))
+        self.waiting.set()
+        while True:
+            handled = bool(self.handled)
+            ready = list(super().select(0 if handled else 0.05))
+            if ready:
+                return ready
+            if handled:
+                self.unwoken = True
+                raise KeyboardInterrupt  # the safety net: the test fails on `unwoken`
+
+
+def test_a_signal_wakes_a_loop_that_is_waiting(sigint: str) -> None:
+    """A SIGTERM that arrives while the loop waits in select() with nothing scheduled, as it
+    does for a reply that has not come: the handler runs and returns, Python resumes the wait,
+    and without a wake-up the cancellation would be seen only when something else woke it."""
+
+    handled: list[str] = []
+    waiting = threading.Event()
+    selector = _WatchedSelector(waiting, handled)
+    seen: list[str] = []
+
+    def factory() -> asyncio.AbstractEventLoop:
+        return asyncio.SelectorEventLoop(selector)
+
+    async def campaign() -> None:
+        try:
+            await asyncio.get_running_loop().create_future()  # a reply that never comes
+        except BaseException as exc:
+            seen.append(type(exc).__name__)
+            raise
+
+    def send() -> None:
+        assert waiting.wait(60), "the loop never waited"
+        signal.pthread_kill(threading.main_thread().ident or 0, signal.SIGTERM)
+
+    original = signal.getsignal(signal.SIGTERM)
+    sender = threading.Thread(target=send)
+    with _termination_as_interrupt():
+        installed = signal.getsignal(signal.SIGTERM)
+        assert callable(installed)
+
+        def noted(signum: int, frame: Any) -> None:
+            installed(signum, frame)
+            handled.append("SIGTERM")
+
+        signal.signal(signal.SIGTERM, noted)
+        try:
+            sender.start()
+            with pytest.raises(KeyboardInterrupt):
+                run_until_stopped(campaign(), loop_factory=factory)
+        finally:
+            signal.signal(signal.SIGTERM, installed)
+            sender.join()
+    assert signal.getsignal(signal.SIGTERM) is original
+    assert not selector.unwoken, "the handler left the loop waiting"
+    assert seen == ["CancelledError"]
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_a_signal_dropped_outside_a_loop_still_stops_the_next(sigint: str) -> None:
+    """Outside a loop the signal raises where the main thread is, and Python drops what is
+    raised inside a weakref callback. The campaign remembers it: its next loop does not start,
+    so nothing is sent after it."""
+
+    ran: list[bool] = []
+
+    async def campaign() -> None:
+        ran.append(True)
+
+    with _termination_as_interrupt():
+        _signal_inside_a_weakref_callback(signal.SIGTERM)  # dropped: Python only prints it
+        with pytest.raises(KeyboardInterrupt):
+            run_until_stopped(campaign())
+    assert not ran
+    run_until_stopped(campaign())  # a new campaign starts afresh
+    assert ran == [True]
+
+
+def test_outside_the_main_thread_it_is_asyncio_run() -> None:
+    results: list[int] = []
+
+    async def campaign() -> int:
+        return 7
+
+    worker = threading.Thread(target=lambda: results.append(run_until_stopped(campaign())))
+    worker.start()
+    worker.join()
+    assert results == [7]
+
+
+def test_it_refuses_a_running_loop() -> None:
+    async def campaign() -> None:
+        return None
+
+    async def inside() -> None:
+        with pytest.raises(RuntimeError, match="running event loop"):
+            run_until_stopped(campaign())
+
+    asyncio.run(inside())

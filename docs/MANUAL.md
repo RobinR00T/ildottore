@@ -774,17 +774,22 @@ compile (a `regex_absence` or `regex_presence` pattern, a `step_arg_patterns` en
 evaluator could never decide), refuse the run (exit 3) naming them (five at most, then how many
 more) and pointing at `dottore lint`; `--exclude <id>` leaves such a spec out and runs the rest.
 
-Ctrl-C, SIGTERM (what `timeout`, `docker stop`, systemd and CI timeouts send) and SIGHUP all stop
-a run the same way: the requests in flight are cancelled and the spend is recorded, so a run that
-had started its attack traffic can be resumed (a fresh run stopped in its `-sV` probe pass has
-nothing to resume). An ignored SIGHUP stays ignored, so `nohup dottore run ...` survives a logout;
-a SIGKILL stops it without recording what the unfinished part spent. In older versions a SIGTERM
-or SIGHUP that arrived while requests were being sent could be dropped if Python was running a
-cleanup callback at that instant, and the run went on. That can still happen when Ctrl-C is
-ignored, as for a job a script starts with `&`, and there a signal at such an instant can also
-stop the sending but leave the process waiting, as it shuts down, for a task nothing will wake.
-If such a job keeps running, or does not exit, after a SIGTERM, send it again: the second one
-stops it (a SIGKILL would stop it without recording what the unfinished part spent).
+Ctrl-C, SIGTERM (what `timeout`, `docker stop`, systemd and CI timeouts send) and SIGHUP all stop a
+run the same way: the requests in flight are cancelled, the spend is recorded and the process exits
+130, so a run that had started its attack traffic can be resumed (a fresh run stopped in its `-sV`
+probe pass has nothing to resume). One signal is enough, with Ctrl-C at its default or ignored (as
+for a job a script starts with `&`): while requests are being sent it cancels the run instead of
+raising wherever Python is, and one that arrives as a sending step (the probe pass, a target's
+campaign) closes is kept and stops the run once that step has closed. A second signal before the
+first has stopped the run stops it at once, as a second Ctrl-C does. An ignored SIGHUP stays
+ignored, so `nohup dottore run ...` survives a logout; a SIGKILL stops it without recording what
+the unfinished part spent. In older versions a SIGTERM or SIGHUP that arrived while requests were
+being sent could be dropped if Python was running a cleanup callback at that instant, and the run
+went on; with Ctrl-C ignored, one at such an instant could also stop the sending and leave the
+process waiting for a second signal as it shut down. Between the sending steps (planning, the run
+store's writes, the reports) a signal still stops the run where it is; one that Python drops there,
+in a cleanup callback, still keeps the run from sending anything more, and a run past its last
+request then finishes with its own exit code.
 
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an

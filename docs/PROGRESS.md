@@ -3,6 +3,34 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09 (evening): one SIGTERM stops a run with Ctrl-C ignored too
+
+- On `fix/sigterm-hang-a60` (from `main` at `f12ba83`): the hang the afternoon entry left open is
+  fixed. With Ctrl-C ignored, a SIGTERM or SIGHUP landing in gather's callback left the run waiting
+  for a second signal as it closed, and the stuck part's spend was written when Python collected the
+  task (measured through the real CLI on Python 3.12.13 and 3.14.7: still running 3.0 s after the
+  start, when a second SIGTERM ended it). New `cli/interrupts.py`: `run_until_stopped` replaces
+  `asyncio.run` for the `-sV` probe pass and each target's campaign and runs the coroutine as a task
+  made before the loop starts; on the first signal, whatever Ctrl-C's disposition, the handler
+  (`stop_running_loop`) cancels that task and wakes the loop, and KeyboardInterrupt is raised once
+  the loop is closed, also for a signal that comes after the task is done or inside `loop.close()`;
+  a second raises in place; Ctrl-C keeps asyncio's handler; and a signal Python drops outside a loop
+  keeps the next loop from starting. The same CLI path now: one SIGTERM, exit 130 within 0.9 s, the
+  spend of 6 requests written inside the loop, in both arms and on both Pythons. u12 A-60 amended in
+  place (no new number), its 00-INDEX row, the MANUAL, the EXIT STATUS of `dottore(1)`, the
+  CHANGELOG. `tests/cli/test_termination_signals.py` has 28 tests (10 before): the hang test pins
+  one signal as enough in both arms, its safety net never needed, and no clock decides any of them;
+  30 runs in a row green on each Python, alongside a `make gates` run. Each broken variant fails it:
+  #94's handler (raising in place) fails 3 (the hang test's ignored arm and two CancelledError
+  cases), a handler that raises from a loop callback of its own fails the two `loop.close()` cases,
+  no wake-up fails the two select() cases, and no memory of a dropped signal fails the two
+  dropped-signal cases. `tests/cli/test_probe_pass_spend.py` gains `[sigterm-ctrl-c-ignored]`
+  through the real CLI (without the wake-up it still passes, in 32 s instead of about 2), and its
+  three signal cases check exit 130. `make gates` green (with `PYTHONPATH` set to the worktree's
+  `src`): 4637 tests, 97.58% coverage, 75 specs lint OK, four import contracts kept, self-scan,
+  bandit and pip-audit clean. Python 3.11, what CI runs, is not installed on this machine; tested on
+  3.12.13 and 3.14.7.
+
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
 - On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of the

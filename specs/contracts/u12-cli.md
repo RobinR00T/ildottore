@@ -339,44 +339,66 @@ pytest with `&` passes SIGINT on ignored); an interruption at the write after a 
 succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases
 not recorded, each comparing the store with what the stub served.
 
-**A-60 SIGTERM and SIGHUP stop a run as Ctrl-C does, inside a callback too (added
-2026-10-08).** `execute_run` turned them into Ctrl-C by installing `signal.default_int_handler`,
-which raises KeyboardInterrupt wherever the main thread is. Raised inside a weakref callback,
-Python prints "Exception ignored" and drops it, and the run goes on: in CI the `[sigterm]` case of
-`tests/cli/test_probe_pass_spend.py` saw a resume keep sending after its SIGTERM (41 requests
-served where 25 were expected, `WeakSet._remove` in the child's stderr; three first attempts on
-two PRs: #72's runs 37755261302 and 37758633140 and #82's run 37689645382, Linux, Python 3.11.16
-and 3.11.17), and in older versions a SIGTERM or SIGHUP raised inside a weakref callback under
-`asyncio.run` was dropped every time. Ctrl-C was never dropped there:
-inside `asyncio.run` the SIGINT handler is asyncio's, which cancels the run instead of raising.
-SIGTERM and SIGHUP now call whatever SIGINT handler is in place at that moment, so inside the
-event loop the first of them cancels the run as Ctrl-C does (a second, or one after the run's task
-has finished, raises in place as before), and they raise as before only when SIGINT has no Python
-handler (ignored, as for a job a script starts with `&`, where asyncio installs none). A program
-that embeds `execute_run` and gives Ctrl-C a handler that does nothing, or one installed through
-`loop.add_signal_handler`, makes them do nothing either; `dottore` does neither. An
-ignored SIGHUP still stays ignored (`nohup`). Outside the event loop (planning, the store writes,
-the reports) a signal still raises where the main thread is, so one landing in a callback there
-is dropped, as Ctrl-C is in any Python program; with SIGINT ignored that holds inside the loop
-too, and there a signal can also land in one of asyncio's own callbacks (gather's, which wakes
-the task awaiting it) and leave that task with nothing to wake it: `asyncio.run` cancels the
-other tasks as it closes, so the run stops sending, but the process waits for that task until a
-second signal, and the stuck part's spend is recorded only when Python collects the task
-(pre-merge audit of #94; measured through `execute_run` with SIGINT ignored and the first SIGTERM
-raised inside the runner's gather: it waited for the second, sent 3 s later, and the spend was
-written as the process exited). It is documented and not fixed, because each fix in view changes how
-every stop works and is not a follow-up's to make: raising from a loop callback of its own would
-avoid both, but one that arrives as the last loop stops would then be queued on a loop that does not
-run again, and lost; cancelling the run's task without raising, as asyncio does for Ctrl-C, needs a
-handle on the task `asyncio.run` creates and its own review. The MANUAL says to send the signal
-again. The requests are sent inside the loop. Checked by `tests/cli/test_termination_signals.py`:
-SIGTERM, SIGHUP and, as a control, SIGINT raised inside a real weakref callback under `asyncio.run`
-(the first two fail on `e4d6c83`); SIGTERM and SIGHUP outside a loop with SIGINT at its default and
-ignored; SIGTERM inside a loop with SIGINT ignored; and a SIGTERM raised inside gather's callback,
-which takes a second one with SIGINT ignored (ten turns of the closing loop later the task is still
-cancelled and not done) and not with SIGINT at its default; the second is queued from inside the
-first, so no clock decides it, and the stuck task is collected inside the test. The SIGHUP cases
-give SIGHUP a handler of its own first, so they hold when the suite runs under `nohup`.
+**A-60 SIGTERM and SIGHUP stop a run as Ctrl-C does, inside a callback too (added 2026-10-08,
+amended 2026-10-09).** `execute_run` turned them into Ctrl-C by installing
+`signal.default_int_handler`, which raises KeyboardInterrupt wherever the main thread is. Raised
+inside a weakref callback, Python prints "Exception ignored" and drops it, and the run goes on: in
+CI the `[sigterm]` case of `tests/cli/test_probe_pass_spend.py` saw a resume keep sending after its
+SIGTERM (41 requests served where 25 were expected, `WeakSet._remove` in the child's stderr; three
+first attempts on two PRs: #72's runs 37755261302 and 37758633140 and #82's run 37689645382, Linux,
+Python 3.11.16 and 3.11.17), and in older versions a SIGTERM or SIGHUP raised inside a weakref
+callback under `asyncio.run` was dropped every time. Ctrl-C was never dropped there: inside
+`asyncio.run` the SIGINT handler is asyncio's, which cancels the run instead of raising. #94 made
+SIGTERM and SIGHUP call whatever SIGINT handler was in place, which left Ctrl-C ignored (a job a
+script starts with `&`, where asyncio installs no handler): there they still raised, and one raised
+inside one of asyncio's own callbacks (gather's, which wakes the task awaiting it) left that task
+with nothing to wake it, so `asyncio.run` stopped the sending as it closed but waited for that task
+until a second signal, and the stuck part's spend was recorded only when Python collected the task
+(pre-merge audit of #94; measured through the real CLI with Ctrl-C ignored and the first SIGTERM
+raised inside the runner's gather, on Python 3.12.13 and 3.14.7: it was still running 3.0 s after it
+started, when a second SIGTERM ended it with exit 130, and the spend of 6 requests was written
+outside the loop as the process exited, after "Task was destroyed but it is pending!").
+
+Every loop a campaign runs, the `-sV` probe pass and each target's campaign, is now one of
+`interrupts.run_until_stopped`, which does for SIGTERM and SIGHUP what `asyncio.run` does for
+Ctrl-C, whatever Ctrl-C's disposition. The coroutine runs as a task created before the loop starts;
+the first signal cancels it and wakes the loop (which may be waiting in select() for a reply)
+instead of raising, so nothing is raised inside a callback, asyncio's or a weakref's; the task
+unwinds inside the loop, where the runner's `finally` writes the spend; and KeyboardInterrupt (exit
+130) is raised once the loop is closed. A signal that comes after the task is done, as the loop
+closes or inside `loop.close()`, is kept and raised then too: this is why raising from a loop
+callback of our own was rejected, since such a signal would be queued on a loop that does not run
+again, and lost. A second signal before the run has stopped raises in place, as a second Ctrl-C
+does. Ctrl-C keeps asyncio's own handler, which cancels the coroutine `asyncio.Runner` runs and
+through it the task. Measured through the same CLI path: one SIGTERM, the process gone with exit 130
+0.8 to 0.9 s after it started, the spend of 6 requests written inside the loop, with Ctrl-C ignored
+and at its default, on both Pythons. Outside a loop (planning, the store writes, the reports) a
+signal still calls whatever SIGINT handler is in place, and raises where the main thread is when
+there is none: one landing in a callback there is dropped, as Ctrl-C is in any Python program, but
+the campaign remembers it and its next loop does not start, so nothing is sent after it; past its
+last loop the run then finishes with its own exit code. A program that embeds `execute_run` and
+gives Ctrl-C a handler that does nothing makes them do nothing outside a loop; `dottore` does not.
+An ignored SIGHUP still stays ignored (`nohup`). Outside the main thread no handler is installed and
+`run_until_stopped` is `asyncio.run`.
+
+Checked by `tests/cli/test_termination_signals.py` (28 tests): SIGTERM, SIGHUP and, as a control,
+SIGINT raised inside a real weakref callback under `run_until_stopped` and under `asyncio.run`
+(under `asyncio.run`, SIGTERM and SIGHUP fail on `e4d6c83`); SIGTERM and SIGHUP outside a loop with
+SIGINT at its default and ignored; SIGTERM and SIGHUP in a loop, which the campaign sees as
+CancelledError, and a second SIGTERM, which raises in place; a SIGTERM raised inside gather's
+callback, which one signal now stops with SIGINT at its default and ignored (with #94's handler its
+ignored arm fails, and so do the CancelledError cases with SIGINT ignored): a safety net queued from
+inside the first signal sends a second only if ten turns of the loop later the task is still not
+done, and it is never needed, so no clock decides it; a SIGTERM once the task is done and one inside
+`loop.close()`, both raised after the loop is closed (the second fails a handler that raises from a
+loop callback of its own); one that arrives while the loop waits in select() with nothing scheduled,
+which has to wake it (a selector that polls tells a loop that was not woken from one that was, the
+poll's length deciding nothing; without the wake the CLI case below still passes, but in 32 s
+instead of about 2); one dropped in a weakref callback outside a loop, which keeps the next loop
+from starting; and `run_until_stopped` outside the main thread and inside a running loop. Through
+the real CLI, `tests/cli/test_probe_pass_spend.py` adds a `[sigterm-ctrl-c-ignored]` case with a
+probe on the wire, and its three signal cases check exit 130. The SIGHUP cases give SIGHUP a handler
+of its own first, so they hold when the suite runs under `nohup`.
 
 **A-61 A run id is never masked as a phone number (added 2026-10-09).** A run id was `run-` and the
 first 12 hexadecimal digits of a UUID4. When all twelve came out decimal, (10/16) ** 12 of the draws

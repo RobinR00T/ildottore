@@ -257,6 +257,11 @@ confirmed exploits, so read summary.status.reason before treating 3 as a retryab
 infrastructure error.
 .PP
 Only an exploited (fail) finding trips the gate; pass and inconclusive never do.
+.PP
+Ctrl-C, SIGTERM and SIGHUP stop a run the same way, with Ctrl-C at its default or ignored: the
+requests in flight are cancelled, the spend is recorded for --resume, and the exit status is
+130. One signal is enough; a second, before the first has stopped the run, stops it at once.
+An ignored SIGHUP stays ignored (nohup).
 .SH FILES
 .TP
 .I scope.yaml
