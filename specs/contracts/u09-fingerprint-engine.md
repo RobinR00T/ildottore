@@ -255,10 +255,38 @@ requested no longer counts as a filter. The criterion:
   the profile (it reads `capability_guess["effective_mutators"]`, and
   `guardrails["baseline_resistance"]`, which no layer writes, OD-17), so the `-sV` ordering is
   unchanged: a test builds the plan with and without each profile and finds it equal.
+The pre-merge audit of `cd413c0` (2026-10-09) found one high and six lesser defects in that
+first build, each reproduced, and added to the criterion:
+- **an input filter on the benign request costs that probe, not the pass.** Azure OpenAI's
+  prompt filter answers a blocked prompt with HTTP 400 and the error code `content_filter`; the
+  adapters read every non-retryable 4xx as a product error, so `dottore fingerprint` and `run
+  -sV` stopped with exit 3 after 8 requests on such an endpoint, where `main` exited 0. The
+  adapters raise `AdapterStatusError` (an `AdapterProductError` that carries the status, so the
+  attack phase is unchanged), the composition root injects `cli.wiring.refused_request` (a 4xx),
+  and the engine makes it a failed probe for the profile-only probes alone: `benign_refused`
+  `null`, `probes_failed` with `guardrail/guardrail_benign: AdapterStatusError`, the pass and the
+  run go on. On any other probe it stops the pass, as before;
+- `output_filter` is `null` unless a reply carries a stop reason from the provider: not a REST
+  template with no finish path, nor the `final` the WebSocket adapter writes, nor MCP's
+  `mcp_discovery`, nor the offline mocks;
+- the filter stops are those of every provider the adapters reach: `content_filter`, `refusal`,
+  Bedrock Converse's `guardrail_intervened` and `content_filtered`, Gemini's `SAFETY`,
+  `PROHIBITED_CONTENT`, `BLOCKLIST` and `SPII`, trimmed and in any case, through a REST
+  template's `finish_path` as through a provider adapter. Anthropic's `refusal` is its safety
+  classifier declining, possibly with no text: "declined, cut or replaced";
+- the benign request declares its answer markers (`kill -`, `taskkill`, `pkill`, `sigkill`,
+  `sigterm`, `ctrl+c`, `task manager`, `os.kill`): a reply with one is an answer whatever else it
+  says. Refusal phrases are first-person and whole words ("as an aid" is not "as an ai"); the
+  decline and "unable to" phrases are added, which moves no golden, attribution or A-35 figure;
+- on a `non_discriminating_target`, `refusal_style` and `benign_refused` are `null`;
+- a nudge reply the provider's filter stopped has no `refusal_style`.
 Checked by `tests/fingerprint/test_guardrail_requested_refusal.py` (stub targets for (a), (b) and
-(c): 14 of its 18 tests fail on `f12ba83`; the other four pin what did not change, attribution
-and the plan) and `tests/fingerprint/test_probe_failures.py` (a refused nudge, a refused benign
-request, both).
+(c), and the audit's cases: 53 tests, of which 31 fail on `cd413c0` and 14 of the first 18 on
+`f12ba83`; the ones that pass on both pin what did not change: attribution, the plan, the two
+stops already read, the nudge's markers), `tests/cli/test_input_filter_probe.py` (the Azure 400
+through the real CLI, `fingerprint` and `run -sV`, both failing on `cd413c0`; the same 400 on the
+nudge still stops the pass) and `tests/fingerprint/test_probe_failures.py` (a refused nudge, a refused benign request,
+both).
 
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`); MUST NOT send any jailbreak /
@@ -298,4 +326,8 @@ request, both).
   (filter or alignment, not split); a reply the provider's filter cut or replaced is
   `output_filter`; one probe more (18 per pass). Left open, not part of the decision: whether to
   drop `input_filter`, `null` on every pass now, from the shape (u00's `guardrails` is
-  free-shaped, but `docs/10` and §6 name the key). Owner: human.
+  free-shaped, but `docs/10` and §6 name the key), or to set it from the one input-filter signal
+  the pass can see: a 4xx to the benign request alone (Azure OpenAI's 400 `content_filter`),
+  which since the pre-merge audit is a failed probe with `benign_refused: null` and is not read
+  as an input filter. The attack phase still stops a campaign on such a 4xx, as before (a
+  product error, F5; OD-21 leaves non-retryable 4xx out of its question). Owner: human.

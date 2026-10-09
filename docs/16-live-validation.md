@@ -70,8 +70,8 @@ What came back:
   layer's phrase list lacks. Adding it would not help as the layer stands: it reads any refusal
   as an output filter, and its probe asks the model to refuse. (Fixed on 2026-10-09, OD-40, u09
   A-67: a refusal the probe asked for gives only its style, a second probe asks something benign
-  that should be answered, and only the provider's own filter stop marks an output filter. Not
-  re-run live since; "decline" is still not on the list.)
+  that should be answered, and only the provider's own filter stop marks an output filter; the
+  first-person "decline" phrases are on the list since the same day. Not re-run live since.)
 
 That is one small local model, not a calibration: it shows the probes reach a real model, that
 a split shows up, and two defects the offline mock could not surface (it ignores sampling); not

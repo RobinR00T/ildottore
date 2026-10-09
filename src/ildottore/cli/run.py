@@ -1549,8 +1549,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     # -sV / -A: fingerprint before attacking, then let the plan use it.
     #
-    # NOT under --dry-run/--estimate/-sn: fingerprinting SENDS (ten probes per target), and
-    # those three commands promise the opposite. The guard used to exclude -sn only, so
+    # NOT under --dry-run/--estimate/-sn: fingerprinting SENDS (18 probes per target since u09
+    # A-67), and those three commands promise the opposite. The guard used to exclude -sn only, so
     # `--dry-run -sV` printed "dry-run: plan resolved, sent nothing." after posting ten live
     # requests with a real bearer token, and `--quick --dry-run` is the first command the
     # README teaches. A no-send promise has to hold for every combination, not the ones that

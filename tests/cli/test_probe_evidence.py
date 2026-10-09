@@ -1,6 +1,6 @@
 """Recognition traffic is evidence (contract u10/u12, added 2026-09-22).
 
-A fingerprint pass is 17 requests per target and it left **no trace**: the evidence tree could
+A fingerprint pass is 18 requests per target and it left **no trace**: the evidence tree could
 not answer "what did this tool send my endpoint", which is the question the product exists to
 answer, and it is exactly what kept a day's worth of probes carrying attack framing invisible.
 

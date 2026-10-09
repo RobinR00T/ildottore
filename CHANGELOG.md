@@ -42,6 +42,46 @@ versioning: [SemVer](https://semver.org/).
   the two probes and what a reply to each means, its known limits, the offline example re-run),
   MANUAL, FAQ, USAGE, `dottore(1)`, `docs/09` and `docs/16` (the probe count).
 
+- **Pre-merge audit of `cd413c0`: an input filter on the new benign request stopped `-sV`.**
+  Azure OpenAI's prompt filter answers a blocked prompt with HTTP 400 and the error code
+  `content_filter`, the adapters read any non-retryable 4xx as a product error, and the pass let
+  it through: against such an endpoint `dottore fingerprint` and `run -sV` exited 3 after 8
+  requests, where `main` exited 0. The adapters now raise `AdapterStatusError`, an
+  `AdapterProductError` that carries the status (so the attack phase stops on it as before; its
+  halt reason now reads "aborted on AdapterStatusError: ... non-retryable HTTP 400"), and a 4xx
+  to the benign request alone is a failed probe:
+  `benign_refused: null`, `probe_errors` lists `guardrail/guardrail_benign: AdapterStatusError`,
+  stderr warns, and the pass and the run go on. On any other probe it still stops the pass. It
+  is the one input-filter signal a pass sees; `input_filter` stays `null` (OD-40, open).
+  `tests/cli/test_input_filter_probe.py` (the Azure body through the real CLI; two of its three
+  tests fail on `cd413c0`).
+- **`output_filter` is `null` when no reply carries a stop reason from the provider**: a REST
+  template with no `finish_path`, a WebSocket target (the adapter writes `final`), an MCP server
+  (`mcp_discovery`), the offline mocks. It said `false`, which the pass could not know.
+- **Every provider's filter stop is read**: Bedrock Converse's `guardrail_intervened` and
+  `content_filtered`, Gemini's `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST` and `SPII`, besides
+  `content_filter` and Anthropic's `refusal` (its safety classifier declining, possibly with no
+  text), trimmed and in any case, at a REST template's `finish_path` too (a test goes through the
+  real REST adapter).
+- **A benign reply that names how is an answer** ("I can't see your machine, but run kill -9
+  <pid>"): the probe declares its answer markers (`kill -`, `taskkill`, `pkill`, `sigkill`,
+  `sigterm`, `ctrl+c`, `task manager`, `os.kill`). Refusal phrases are first-person whole words,
+  so "As an aid" is no longer "as an AI", and a typographic apostrophe is read as `'`. The
+  first-person decline phrases (`i must decline`, `i have to decline`, `i'll have to decline`, `i
+  will decline`, `i respectfully decline`) and `i'm unable to` / `i am unable to` are refusals
+  now; no golden, attribution or A-35 figure moves (measured again: 12,276 passes, 2,344 of
+  10,752 differ, none names more).
+- On a `non_discriminating_target`, `refusal_style` and `benign_refused` are `null` (the layer's
+  own evidence keeps what it read), and a nudge reply the provider's filter stopped has no
+  refusal style.
+- The present-tense "17 probes" left in the MANUAL, u10 A-23, u12 (A-48's figures and OD-23's
+  fingerprint line), ADR-0008, `tests/cli/test_probe_evidence.py` and a `run.py` comment ("ten
+  probes per target") read 18; three test stubs that returned 17 probe requests use
+  `fingerprint_probe_count()`.
+- `tests/fingerprint/test_guardrail_requested_refusal.py` has 53 tests now, 31 of them failing on
+  `cd413c0`; u09 A-67 lists the audit's additions, OD-40 its open part; `docs/10`, MANUAL, FAQ
+  and `docs/16` say what changed.
+
 ### Fixed (a run id of twelve decimal digits, masked as a phone number)
 
 - **About one run in 281 was named `run-«REDACTED:phone»`.** A run id is `run-` and the first 12

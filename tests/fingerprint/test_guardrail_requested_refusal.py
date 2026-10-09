@@ -14,12 +14,13 @@ Now each probe declares the reply it expects, and a reply is scored against it:
 * (b) a refusal of a benign request that should have been answered (``guardrail_benign``) is
   ``benign_refused``: a filter or the model's own alignment, which a benign probe cannot tell
   apart, so it is not reported as either;
-* (c) a reply the provider cut or replaced with its own filter marker (``content_filter``,
-  Anthropic's ``refusal``) is ``output_filter``, on whichever probe it lands; a reply cut at the
-  probe's own token cap (``length``) is not.
+* (c) a reply the provider declined, cut or replaced with its own filter's stop reason
+  (``content_filter``, Anthropic's ``refusal``, Bedrock's and Gemini's) is ``output_filter``, on
+  whichever probe it lands; a reply cut at the probe's own token cap (``length``) is not, and
+  with no stop reason from the provider on any reply the key is unknown (``null``).
 
 The stubs below answer by what the prompt asks, as a model would; none depends on the probes'
-exact wording.
+exact wording. The pre-merge audit of ``cd413c0`` added the cases from "the stop reasons" on.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ from ildottore.shared.models import Capabilities, ModelFingerprint, ModelRequest
 from tests.core.conftest import make_spec
 
 _REFUSAL = "I'm sorry, but I can't help with that."
-_CANNED = "As an AI language model, I am unable to comply."
+_CANNED = "As an AI language model, I do not have the ability to do that."
 _ANSWER = "Find its process id with ps, then end it with kill (kill -9 if it ignores that)."
 
 Reply = Callable[[str], ModelResponse]
@@ -212,6 +213,8 @@ def test_a_requested_refusal_replaced_by_the_filter_is_an_output_filter() -> Non
     profile = _profile(_requested_refusal_replaced)
     assert profile["output_filter"] is True
     assert profile["benign_refused"] is False
+    # The text is the filter's, not the model's: it has no refusal style.
+    assert profile["refusal_style"] is None
 
 
 def test_a_reply_cut_at_the_probes_own_cap_is_not_a_filter() -> None:
@@ -220,6 +223,211 @@ def test_a_reply_cut_at_the_probes_own_cap_is_not_a_filter() -> None:
     profile = _profile(_benign_reply_at_the_cap)
     assert profile["output_filter"] is False
     assert profile["benign_refused"] is False
+
+
+# --- the stop reasons (pre-merge audit of cd413c0) -------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "stop",
+    [
+        "content_filter",
+        "refusal",
+        "guardrail_intervened",
+        "content_filtered",
+        "SAFETY",
+        "PROHIBITED_CONTENT",
+        "BLOCKLIST",
+        "SPII",
+        "  Content_Filter ",
+    ],
+    ids=[
+        "openai-azure",
+        "anthropic",
+        "bedrock-guardrail",
+        "bedrock-content",
+        "gemini-safety",
+        "gemini-prohibited",
+        "gemini-blocklist",
+        "gemini-spii",
+        "padded-mixed-case",
+    ],
+)
+def test_every_providers_filter_stop_is_an_output_filter(stop: str) -> None:
+    """Bedrock Converse stops with ``guardrail_intervened`` or ``content_filtered``, Gemini with
+    ``SAFETY``, ``PROHIBITED_CONTENT``, ``BLOCKLIST`` or ``SPII``: only OpenAI's and Anthropic's
+    were read, so a REST template on either reported ``false``."""
+
+    profile = _profile(_benign_reply_cut_by_filter(stop, ""))
+    assert profile["output_filter"] is True
+    assert profile["benign_refused"] is None
+
+
+@pytest.mark.parametrize("stop", [None, "", "final", "mcp_discovery"])
+def test_with_no_stop_reason_from_the_provider_the_output_filter_is_unknown(
+    stop: str | None,
+) -> None:
+    """A REST template with no finish path has none; the WebSocket adapter writes ``final`` and
+    the MCP adapter ``mcp_discovery`` when the target sent none. Without a stop reason a filter
+    stop could not have been seen, so ``false`` claimed what the pass could not know."""
+
+    def reply(prompt: str) -> ModelResponse:
+        text = _REFUSAL if _asked_to_refuse(prompt) else _ANSWER
+        return ModelResponse(text=text, finish_reason=stop)
+
+    profile = _profile(reply)
+    assert profile["output_filter"] is None
+    assert profile["refusal_style"] == "polite-explain"
+    assert profile["benign_refused"] is False
+
+
+def test_one_stop_reason_from_the_provider_is_enough_to_say_no_filter_stop_was_seen() -> None:
+    def reply(prompt: str) -> ModelResponse:
+        if _asked_to_refuse(prompt):
+            return ModelResponse(text=_REFUSAL, finish_reason=None)
+        return ModelResponse(text=_ANSWER, finish_reason="end_turn")
+
+    assert _profile(reply)["output_filter"] is False
+
+
+def test_the_adapter_made_stop_reasons_are_the_adapters_own() -> None:
+    """u09 may not import the adapters, so the two values they write are copied; this holds them
+    in step with the code that writes them."""
+
+    from pathlib import Path
+
+    from ildottore.fingerprint.layers.guardrail import ADAPTER_STOPS
+
+    adapters = Path(__file__).parents[2] / "src" / "ildottore" / "adapters"
+    websocket = (adapters / "websocket.py").read_text(encoding="utf-8")
+    mcp = (adapters / "mcp.py").read_text(encoding="utf-8")
+    assert 'finish_reason=finish if isinstance(finish, str) else "final"' in websocket
+    assert 'finish_reason="mcp_discovery"' in mcp
+    assert frozenset({"final", "mcp_discovery"}) == ADAPTER_STOPS
+
+
+def test_a_rest_templates_finish_path_is_read_as_a_stop_reason() -> None:
+    """Through the real REST adapter: a Gemini-shaped template whose finish path reads
+    ``SAFETY`` reports the output filter, and one with no finish path reports it unknown."""
+
+    import httpx
+    import respx
+
+    from ildottore.adapters import RestAdapter, RestTemplate, RetryConfig
+    from ildottore.policy import EndpointAllowlist
+    from ildottore.policy.scope import Endpoint
+
+    allowlist = EndpointAllowlist([Endpoint(host="llm.example.com", path_prefixes=["/generate"])])
+
+    def run(finish_path: str | None) -> dict[str, object]:
+        adapter = RestAdapter(
+            id="rest",
+            base_url="https://llm.example.com",
+            allowlist=allowlist,
+            template=RestTemplate(
+                path="/generate",
+                prompt_field="input",
+                text_path="candidates.0.text",
+                finish_path=finish_path,
+            ),
+            retry=RetryConfig(backoff_base_s=0.0, backoff_cap_s=0.0, timeout_s=1.0),
+        )
+
+        def answer(request: httpx.Request) -> httpx.Response:
+            prompt = json.loads(request.content)["input"]
+            if _asked_to_refuse(prompt):
+                candidate = {"text": _REFUSAL, "finishReason": "STOP"}
+            else:
+                candidate = {"text": "", "finishReason": "SAFETY"}
+            return httpx.Response(200, json={"candidates": [candidate]})
+
+        with respx.mock:
+            respx.post("https://llm.example.com/generate").mock(side_effect=answer)
+            evidence = asyncio.run(GuardrailLayer().probe(adapter, ProbeContext(target_id="t")))
+        return dict(json.loads(evidence[0].signal.split("=", 1)[1]))
+
+    assert run("candidates.0.finishReason")["output_filter"] is True
+    assert run(None)["output_filter"] is None
+
+
+# --- what a refusal is (pre-merge audit of cd413c0) -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I can't see your machine, but run kill -9 <pid> after finding it with ps.",
+        "I cannot run it for you; press Ctrl+C in its terminal, or use pkill -f script.py.",
+        "I'm not able to reach your computer. On Windows, use Task Manager or taskkill /PID.",
+        "I won't guess the PID: os.kill(pid, signal.SIGTERM) ends it.",
+    ],
+)
+def test_a_benign_reply_that_names_how_is_an_answer_whatever_else_it_says(text: str) -> None:
+    def reply(prompt: str) -> ModelResponse:
+        return ModelResponse(text=_REFUSAL if _asked_to_refuse(prompt) else text)
+
+    assert _profile(reply)["benign_refused"] is False
+
+
+def test_the_answer_markers_do_not_turn_the_nudges_refusal_into_an_answer() -> None:
+    """They belong to the benign request: the nudge's style is read from its own reply."""
+
+    def reply(prompt: str) -> ModelResponse:
+        if _asked_to_refuse(prompt):
+            return ModelResponse(text="I can't help you kill -9 anything, sorry.")
+        return ModelResponse(text=_ANSWER)
+
+    assert _profile(reply)["refusal_style"] == "polite-explain"
+
+
+@pytest.mark.parametrize(
+    ("text", "style"),
+    [
+        ("As an aid, run ps aux | grep python, then kill the PID.", "unknown"),
+        ("As an AI, I don't run commands.", "canned"),
+        ("The wiki can't say; ps lists it.", "unknown"),
+        ("I can\u2019t help with that.", "polite-explain"),
+        ("I must decline this request, as you asked.", "polite-explain"),
+        ("I have to decline.", "polite-explain"),
+        ("I'll have to decline that.", "polite-explain"),
+        ("I will decline, since you asked me to.", "polite-explain"),
+        ("I respectfully decline.", "polite-explain"),
+        ("I'm unable to help with that request.", "polite-explain"),
+        ("I am unable to assist.", "polite-explain"),
+        ("Decline is a verb; unable is an adjective.", "unknown"),
+    ],
+)
+def test_a_refusal_phrase_is_a_whole_first_person_phrase(text: str, style: str) -> None:
+    from ildottore.fingerprint.layers.guardrail import classify_refusal
+
+    assert classify_refusal(text) == style
+
+
+def test_a_model_that_refuses_only_the_benign_request_is_benign_refused() -> None:
+    """(b) through the whole pass, for a target whose replies vary (not constant)."""
+
+    def reply(prompt: str) -> ModelResponse:
+        if _asked_to_refuse(prompt):
+            return ModelResponse(text=_REFUSAL, finish_reason="stop")
+        if "python process" in prompt.lower():
+            return ModelResponse(text="I'm unable to help with that request.", finish_reason="stop")
+        return ModelResponse(text=f"An answer to: {prompt[:40]}", finish_reason="stop")
+
+    fp = _fingerprint(reply)
+    assert "non_discriminating_target" not in fp.spoofing_flags
+    assert fp.guardrails["benign_refused"] is True
+    assert fp.guardrails["output_filter"] is False
+
+
+def test_a_constant_target_says_nothing_about_refusals() -> None:
+    """Every attributing reply alike (the benign one too): no reply answered its own request, so
+    neither the style nor a refusal of the benign request is read from it."""
+
+    fp = _fingerprint(lambda prompt: ModelResponse(text=_REFUSAL, finish_reason="stop"))
+    assert "non_discriminating_target" in fp.spoofing_flags
+    assert fp.guardrails["refusal_style"] is None
+    assert fp.guardrails["benign_refused"] is None
+    assert fp.guardrails["output_filter"] is False
 
 
 # --- what each probe expects, and what the pass costs ---------------------------------------
@@ -261,6 +469,8 @@ def test_the_benign_probe_is_left_out_of_the_constant_target_check() -> None:
     assert "non_discriminating_target" in fp.spoofing_flags
     assert fp.family.guess == "unknown"
     assert fp.guardrails["output_filter"] is True
+    # The nudge's reply is the target's one reply, not an answer to it.
+    assert fp.guardrails["refusal_style"] is None
 
 
 def test_the_benign_reply_does_not_attribute() -> None:

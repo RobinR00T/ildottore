@@ -145,15 +145,20 @@ with the credential as its placeholder, and `-sV` works (one connection per prob
 ### Does `dottore fingerprint` tell me whether my endpoint has an output filter?
 
 Only when the provider says so. `guardrails.output_filter` is `true` when a probe's reply came
-back marked as cut or replaced by the provider's own filter (`content_filter`, or Anthropic's
-`refusal`). A refusal does not count: one probe asks the model to refuse, and refusing is doing
-as asked, so it only gives the refusal's style (`refusal_style`). The other asks a benign
-question near a boundary; if that is refused, `benign_refused` is `true`, which means a filter
-or the model's own alignment, and a benign probe cannot tell which. `input_filter` is always
-`null`. A `false` is what two benign probes saw, not proof that there is no filter: a filter that
-acts only on harmful content never acts on them. Until 2026-10-09 any refusal of the first probe
-was reported as an output filter, so a model that followed the instruction looked filtered
-([`10-fingerprint.md`](10-fingerprint.md) §1, OD-40).
+back with the provider's own filter stop reason (declined, cut or replaced: OpenAI's and Azure's
+`content_filter`, Anthropic's `refusal`, Bedrock's and Gemini's equivalents), and `null` when no
+reply carries any stop reason from the provider (a REST template without `finish_path`, a
+WebSocket or MCP target), since nothing could have been seen. A refusal does not count: one
+probe asks the model to refuse, and refusing is doing as asked, so it only gives the refusal's
+style (`refusal_style`). The other asks a benign question near a boundary; if that is refused,
+`benign_refused` is `true`, which means a filter or the model's own alignment, and a benign probe
+cannot tell which. If an input filter rejects that question outright with a 4xx (Azure's prompt
+filter answers HTTP 400), the probe is listed as failed and `benign_refused` is `null`; the
+fingerprint goes on. `input_filter` is always `null`. A `false` is what two benign probes saw,
+not proof that there is no filter: a filter that acts only on harmful content never acts on
+them. Until 2026-10-09 any refusal of the first probe was reported as an output filter, so a
+model that followed the instruction looked filtered ([`10-fingerprint.md`](10-fingerprint.md)
+§1, OD-40).
 
 ### If my system passes Il Dottore, does it meet OWASP AISVS?
 

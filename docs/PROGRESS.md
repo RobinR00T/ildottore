@@ -21,12 +21,22 @@ The carryover ledger. Every agent session updates this so context survives even 
   the ordering is unchanged and pinned. Golden: only `guardrails` changed. Tests:
   `tests/fingerprint/test_guardrail_requested_refusal.py` (18, 14 fail on `f12ba83`), three new
   cases in `test_probe_failures.py`, and the CLI tests that pinned 17 probes now derive the count.
-  `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 4639 tests, 97.60%
-  coverage, 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
-  Left open: dropping `input_filter` from the shape (OD-40), and the
-  refusal phrase list, which still lacks "decline" (the live `llama3.2:3b` refused the nudge with
-  it), so such a refusal reads as an answer: a missed `benign_refused`, never a false filter. Not
-  re-run against a live model.
+  `make gates` green on `cd413c0`: 4639 tests, 97.60% coverage. The pre-merge audit of
+  `cd413c0` found it not merge-ready, one high reproduced: an input filter that answers the
+  benign request with a 4xx (Azure OpenAI's prompt filter: HTTP 400 `content_filter`) stopped
+  `fingerprint` and `run -sV` with exit 3 after 8 requests, where `main` exited 0. Fixed on top:
+  `AdapterStatusError` carries the status, `cli.wiring.refused_request` is injected, and the
+  engine makes a 4xx to a profile-only probe a failed probe (`benign_refused: null`); the same
+  4xx on any other probe still stops the pass. Also: `output_filter` is `null` with no stop
+  reason from the provider (REST without `finish_path`, WebSocket `final`, MCP, mocks);
+  Bedrock's and Gemini's filter stops are read; answer markers on the benign request;
+  first-person whole-word refusal phrases with "decline" and "unable to"; `null` style and
+  `benign_refused` on a constant target; the remaining present-tense 17s. A-35 measured again,
+  unchanged; golden unchanged. Left open: dropping `input_filter`, or setting it from that 4xx
+  (OD-40), and the attack phase, which still stops a campaign on such a 4xx (a product error, as
+  on `main`). `make --no-print-directory gates` green on the fix: 4683 tests, 97.61% coverage, 75
+  specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean. Not re-run
+  against a live model.
 
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 

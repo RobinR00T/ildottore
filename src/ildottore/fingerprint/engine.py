@@ -65,6 +65,14 @@ class FingerprintEngine:
     predicate the attack phase classifies an attempt's error with
     (``core.execute.default_is_env_error``), which u09 may not import. ``None`` isolates
     nothing and every error goes through, as before.
+
+    ``is_request_refused`` decides which errors of a **profile-only** probe (the guardrail
+    layer's benign request, §7 A-67) are a failed probe too: the endpoint refused that one
+    request (the composition root's predicate: a 4xx), as Azure OpenAI's prompt filter does
+    with HTTP 400 ``content_filter``. Every other probe went through before it with the same
+    credential and route, so the refusal is about that prompt, and the profile reads it as
+    unknown. On any other probe the same error stops the pass, as before. ``None`` isolates
+    nothing more.
     """
 
     def __init__(
@@ -73,10 +81,12 @@ class FingerprintEngine:
         layers: list[FingerprintLayer] | None = None,
         pack: SignaturePack | None = None,
         is_env_error: Callable[[BaseException], bool] | None = None,
+        is_request_refused: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self._layers = layers if layers is not None else default_layers()
         self._pack = pack if pack is not None else load_pack()
         self._is_env_error = is_env_error
+        self._is_request_refused = is_request_refused
 
     @property
     def layers(self) -> list[FingerprintLayer]:
@@ -101,7 +111,12 @@ class FingerprintEngine:
         target_id = adapter.id
         ctx = ProbeContext(target_id=target_id, signature_pack=self._pack)
 
-        isolated = _ProbeIsolation(adapter, self._is_env_error)
+        isolated = _ProbeIsolation(
+            adapter,
+            self._is_env_error,
+            is_request_refused=self._is_request_refused,
+            profile_only=PROFILE_ONLY_PROBES,
+        )
         # The carrier layer's probes are left out of the check: a target can answer carriers
         # differently (that is what comprehension measures) and every attributing probe alike.
         # So is the guardrail layer's benign request, whose reply no layer attributes from
@@ -163,6 +178,11 @@ class FingerprintEngine:
                 spoofing_flags=fused.spoofing_flags,
             )
         guardrails = _guardrails_from_evidence(evidence)
+        if constant and guardrails:
+            # Every attributing reply alike: the nudge's reply is the target's one reply, not an
+            # answer to the request to refuse, and the benign one reads nothing either (§7 A-67).
+            # A filter stop is the provider's, not the text's, and stands.
+            guardrails = {**guardrails, "refusal_style": None, "benign_refused": None}
         caps = capability_guess(adapter.capabilities())
         # The one key the PLANNER reads (``core.planner._order_family_effective``). Without
         # it, adaptive mode reordered nothing and ``-sV`` bought a fingerprint that changed
@@ -307,10 +327,17 @@ class _ProbeIsolation:
     """
 
     def __init__(
-        self, inner: TargetAdapter, is_env_error: Callable[[BaseException], bool] | None
+        self,
+        inner: TargetAdapter,
+        is_env_error: Callable[[BaseException], bool] | None,
+        *,
+        is_request_refused: Callable[[BaseException], bool] | None = None,
+        profile_only: frozenset[str] = frozenset(),
     ) -> None:
         self._inner = inner
         self._is_env_error = is_env_error
+        self._is_request_refused = is_request_refused
+        self._profile_only = profile_only
         self.id = inner.id
         #: The layer probing now, set by the engine before each layer runs.
         self.layer = ""
@@ -320,9 +347,10 @@ class _ProbeIsolation:
         try:
             return await self._inner.send(request)
         except Exception as exc:
-            if not self._refused(exc):
+            probe = str((request.metadata or {}).get("probe", "probe"))
+            if not (self._refused(exc) or self._refused_request(probe, exc)):
                 raise
-            failed = ProbeFailed(str((request.metadata or {}).get("probe", "probe")), exc)
+            failed = ProbeFailed(probe, exc)
             self.failures.append(f"{self.layer}/{failed}")
             raise failed from exc
 
@@ -334,6 +362,15 @@ class _ProbeIsolation:
             self._is_env_error is not None
             and self._is_env_error(exc)
             and getattr(exc, "retryable", True) is False
+        )
+
+    def _refused_request(self, probe: str, exc: Exception) -> bool:
+        """A profile-only probe the endpoint refused (§7 A-67): that probe fails, not the pass."""
+
+        return (
+            probe in self._profile_only
+            and self._is_request_refused is not None
+            and self._is_request_refused(exc)
         )
 
 
