@@ -99,6 +99,19 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
   times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
   stray lines and its reply together.
+- **Half a character in a reply.** JSON can escape a lone surrogate (half of a UTF-16 pair),
+  which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
+  call's arguments are, each one is read as U+FFFD, the replacement character, and the attempt
+  is evaluated on that text as usual. The evidence shows U+FFFD and does not keep which code
+  unit it was, except in a tool call's arguments sent as JSON text: those are stored as the
+  target sent them, the escape included, and read as U+FFFD once parsed. Over an MCP SSE stream,
+  which is decoded as text first, each raw byte of one reads as U+FFFD, as any other invalid
+  UTF-8 there does. Like a zero-width space, half a character inside a word splits it: a leak
+  split that way is not matched by `regex_absence`, a canary split that way is not found by
+  `secret_leakage`, and a registered credential split that way is not masked as that
+  credential. A body that is not valid UTF-8 in any other way
+  (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD) and an
+  MCP stdio line (skipped, so the call times out).
 - **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
   limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
   from the command line). A larger regular file is refused before any of it is read; anything
@@ -525,6 +538,16 @@ checked the same way: a spec file that fails to load, and a selected spec whose 
 compile (a `regex_absence` or `regex_presence` pattern, a `step_arg_patterns` entry, whose
 evaluator could never decide), refuse the run (exit 3) naming them (five at most, then how many
 more) and pointing at `dottore lint`; `--exclude <id>` leaves such a spec out and runs the rest.
+
+Ctrl-C, SIGTERM (what `timeout`, `docker stop`, systemd and CI timeouts send) and SIGHUP all stop
+a run the same way: the requests in flight are cancelled and the spend is recorded, so a run that
+had started its attack traffic can be resumed (a fresh run stopped in its `-sV` probe pass has
+nothing to resume). An ignored SIGHUP stays ignored, so `nohup dottore run ...` survives a logout;
+a SIGKILL stops it without recording what the unfinished part spent. Until 2026-10-08 a SIGTERM
+or SIGHUP that arrived while requests were being sent could be dropped if Python was running a
+cleanup callback at that instant, and the run went on. That can still happen when Ctrl-C is
+ignored, as for a job a script starts with `&`: if such a job keeps running after a SIGTERM, send
+it again (a SIGKILL would stop it without recording what the unfinished part spent).
 
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an

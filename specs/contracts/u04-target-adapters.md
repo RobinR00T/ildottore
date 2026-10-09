@@ -19,7 +19,10 @@ pinned sampling params (temperature, top_p, `seed` where supported), preserving 
 placement and message roles verbatim; (c) captures token logprobs into the common `TokenLogprob`
 shape when the provider exposes them (ADR-0005); (d) maps provider errors to env-error (retry/skip)
 vs product-defect (raise) per `AGENTS.md §2`; (e) surfaces raw request/response ids + full sampling
-config for reproducibility (`docs/01 §5`). No normalization layer hides the bytes (ADR-0002).
+config for reproducibility (`docs/01 §5`). No normalization layer hides the bytes (ADR-0002),
+with one exception: a lone surrogate, half a character no UTF-8 writer can hold, reads as U+FFFD
+where the reply is parsed (§7 A-47); and, as before A-47, any invalid UTF-8 in an MCP SSE stream
+reads as U+FFFD, since httpx decodes the stream as text.
 
 ## §3 Dependencies & interface contracts
 - Implements `shared.protocols.TargetAdapter` (`id: str`, `async send(ModelRequest)->ModelResponse`,
@@ -119,6 +122,69 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   and every other spec runs (`tests/cli/test_hostile_nesting.py`).
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/adapters` clean; `lint-imports` green
   (adapters import only `shared` + u01 interfaces + httpx: never evaluators/core, `docs/01 §2`).
+- **A-47 A reply that holds half a character is kept and judged, and nothing that is written or sent
+  holds a lone surrogate (added 2026-10-07).** JSON lets a string escape any UTF-16 code unit, so a
+  reply can carry a surrogate (U+D800 to U+DFFF) with no partner, escaped or as its raw UTF-8 bytes
+  (`ED A0 80`, which `json.loads` decodes with `surrogatepass`), and Python keeps it as a code point
+  that no UTF-8 writer accepts. One such reply, in the text, the `id`, the `model` echo, a logprob
+  token or alternative, a tool call's name, made `dottore run` exit 3 ("aborted on
+  UnicodeEncodeError ... 2 of 2 specs never ran or did not finish", no evidence written: the
+  evidence store hashes the encoded payload) and `run -sV` exit 3 with no report (the probe
+  evidence); a multi-turn spec sends the reply on in its next request and the `--judge` request
+  quotes it, and httpx raised the same error encoding either (the judge received nothing); sqlite
+  refuses it too, and pydantic's JSON serializer with `PydanticSerializationError` (first noted on
+  main by PR #57, open on 2026-10-09; reproduced end to end by the pre-commit audit of
+  `fix/hostile-logprob`, 2026-10-07; `dottore fingerprint`, which writes nothing, exited 0). Every
+  reply is now made well formed where it is parsed (`shared.wellformed.well_formed_json`: the base
+  adapter's body, so OpenAI, Anthropic and the REST template, and the MCP adapter's JSON body, SSE
+  `data:` event and stdio line, the last now decoded with `surrogatepass`, the handler `json.loads`
+  decodes bytes with: strict decoding skipped a line with the raw bytes as stray output and the call
+  timed out), and so are a tool call's arguments carried as JSON text, which the reply's parse never
+  opens (`shared.toolcalls.call_arguments`, read by the evaluators and the in-band tool loop): a
+  lone surrogate reads as U+FFFD, a high half followed by a low half is the character the pair
+  encodes, every other character is kept, and keys are treated like values; two keys that read the
+  same once replaced keep both values (the replaced one takes the next `, #n`; a key the target
+  wrote well formed keeps its name). A first walk only looks, and a reply with no surrogate is
+  passed on as it is; one that holds a surrogate is fixed in place, since each caller holds the only
+  reference to a fresh parse. The helper lives in `shared/` (u00's package), beside
+  `shared/toolcalls.py`, which already serves the adapters and the evaluators; §1 keeps this unit
+  out of `shared/`, and the owner signed that off on 2026-10-07. The attempt is evaluated on that
+  text, so a leak with half a character before, after or between its words still fails
+  (`tests/cli/test_lone_surrogate.py`: 30 of its 37 cases fail on `main` at `a40e596`, all on the
+  surrogate, and the other 7, six `fingerprint` cases and a well formed pair, pin what already held;
+  `tests/adapters/test_lone_surrogate_replies.py`, 9 of 9 fail there, the raw stdio line on the
+  timeout; `tests/shared/test_wellformed.py`). Not claimed: which code unit stood there (the
+  evidence shows U+FFFD, as for a U+FFFD the target sent: OD-28), except in a tool call's arguments
+  carried as JSON text, which the evidence keeps as the target sent them (the escape, six ASCII
+  characters) and only their parse reads as U+FFFD; the same bytes do not read the same on every
+  transport (raw `ED A0 80` is one U+FFFD where a body is parsed as bytes and three over an MCP SSE
+  stream, which httpx decodes as text first; a CESU-8 pair joins into its character in the first and
+  is six U+FFFD in the second); half a character inside a word splits it as a zero-width space does
+  today, with the same verdicts (a test pins the parity): `regex_absence` misses a leak split that
+  way (`PI-DIRECT-001` is inconclusive and `run` exits 0, where the leak written plainly fails it
+  and exits 2), `secret_leakage` misses a split canary and passes, and the spec falls to its other
+  evaluators (`SP-LEAK-001` is inconclusive without `--judge` and passes when the judge says
+  secure), and a registered credential split that way is not masked as the credential (each half
+  stays readable unless the entropy rule takes it) until the fix for split credentials (PR #57, open
+  on 2026-10-09) reads U+FFFD as a splitter, which the owner approved on 2026-10-07 for whichever of
+  the two lands second (OD-28); invalid UTF-8 that is not an encoded surrogate (one `FF` byte, a
+  multibyte character cut short) is still a body that is not JSON and stops the campaign on the base
+  adapter and the MCP JSON body, while over an MCP SSE stream it reads as U+FFFD and on an MCP stdio
+  line the line is skipped and the call times out; the walks visit the whole parsed reply: on 4 MiB
+  bodies, one with no surrogate costs about main's peak memory (1.00 to 1.02 times) and 1 to 14
+  times its parse in CPU, and a hostile one up to about 42 times its parse in CPU, and most shapes
+  no more peak memory than main; the worst is one 4 MiB string holding a half, about 3 times the
+  parse's peak (held three times while it is replaced, as in any version), then up to about 2.4
+  times for one object of some 250,000 keys that collide once replaced, and up to 1.8 times for many
+  distinct long keys holding a half (each original kept for the walk, so a repeated one is renamed
+  once); a reply nested past 100 levels never reaches the walk, since `bounded_loads` refuses it
+  first (`ResponseTooDeep`, above), and the walk's cost at depth (1.25 times a clean value nested
+  116,000 levels, about 2.1 times with a half at the bottom) holds only for a value built otherwise;
+  the judge's reasoning, parsed from the judge's text past its adapter, can still hold one, measured
+  as harmless because it is neither persisted nor printed (the aggregate verdict writes its own
+  reasoning); a spec file whose YAML holds the escape is the operator's input, not a reply, and
+  since PR #89 (u02) `dottore lint` refuses it in any field, naming the spec and the field, and
+  `run` refuses it when it loads, naming the file (exit 3, nothing sent).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
@@ -143,3 +209,25 @@ config for reproducibility (`docs/01 §5`). No normalization layer hides the byt
   request sent. Decide whether a malformed success body fails its attempt (inconclusive, as
   `ResponseTooDeep`) or keeps stopping the campaign (a misconfigured endpoint is then caught at
   the first request instead of after the whole battery). A non-retryable 4xx is not in question.
+- **OD-28** (decided 2026-10-07, A-47): what a reply that holds a lone surrogate becomes. The owner
+  left the choice to the build on 2026-10-07, and it is U+FFFD where the reply is parsed, the
+  attempt evaluated as usual, as built. Why: it is what most of the target's consumers end up with
+  once the text is encoded (WebIDL's `USVString`, JavaScript's `toWellFormed` and Go's
+  `encoding/json` read a lone surrogate as U+FFFD; Node's `JSON.parse` keeps it until the text is
+  encoded), so a verdict is about the reply they get; Unicode's security report advises against
+  deleting code points (UTR #36 rev. 15, 2014-09-19, 3.5 "Deletion of Code Points") and, for
+  ill-formed input, substituting U+FFFD or stopping (3.6.2), and here deleting would show the
+  evaluators text no consumer sees (`<scr`, a half and `ipt>` read as `<script>`, a fail no browser
+  would render); and the evidence keeps a mark where something stood. Rejected: deleting the half
+  (it would find a canary and mask a credential that half a character splits, at the cost above); a
+  visible marker of the code unit (the evaluators would read it as reply text); refusing the reply
+  as an environment error, inconclusive and not retried (a target adding six characters to a leaking
+  reply would make it "not evaluated", `test_a_lone_surrogate_does_not_hide_a_leak`); replacing it
+  only where the evidence is written (a multi-turn spec and the `--judge` request still failed in
+  httpx). What it costs, and where it goes: half a character inside a word splits it as a zero-width
+  space does today, so a leak split that way is missed by `regex_absence` (inconclusive, exit 0) and
+  a canary by `secret_leakage` (`SP-LEAK-001` passes when a judge says secure, where refusing the
+  reply would have left it inconclusive), left as its own task for the evaluators; a registered
+  credential split that way is masked once PR #57 (open on 2026-10-09) reads U+FFFD as a splitter,
+  which the owner approved for whichever of the two lands second. Not built: an evidence field
+  saying a reply was altered (an additive `ModelResponse` field, u00); U+FFFD is the mark.

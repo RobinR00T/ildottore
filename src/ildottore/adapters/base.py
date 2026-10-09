@@ -12,7 +12,8 @@ Everything provider-agnostic lives here so each concrete adapter (``openai``,
   attempt is *skipped* by re-raising as :class:`AdapterEnvError` (env, per
   ``AGENTS.md §2``). A malformed 200 body is a **product defect** →
   :class:`AdapterProductError` (never masked as a flake); one nested too deeply to evaluate
-  is :class:`ResponseTooDeep`, an environment failure that is not retried.
+  is :class:`ResponseTooDeep`, an environment failure that is not retried. A lone surrogate in
+  a body is read as U+FFFD where it is parsed (:mod:`ildottore.shared.wellformed`, A-47).
 * **Logprob mapping** - :func:`map_logprobs` folds a provider-neutral token list
   into :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005 / OD-1).
 * **Redaction** - raw request/response ids are redacted through u01's redactor
@@ -43,6 +44,7 @@ from ildottore.shared.models import (
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.toolcalls import check_argument_nesting
+from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
     "ACCEPT_ENCODING",
@@ -507,7 +509,9 @@ class BaseAdapter(ABC):
         if response.is_success:
             label = f"{self.id}: response from {self._request_path}"
             try:
-                payload = bounded_loads(raw)
+                # Half a character (a lone surrogate) parses, and then no UTF-8 writer
+                # takes it: the evidence store aborted the campaign on one (A-47).
+                payload = well_formed_json(bounded_loads(raw))
             except NestedTooDeeply as exc:
                 raise ResponseTooDeep(f"{label} is {exc}; not evaluated") from exc
             except ValueError as exc:  # non-JSON success body = malformed
