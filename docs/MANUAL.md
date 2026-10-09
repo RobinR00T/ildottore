@@ -451,7 +451,7 @@ websocket:
     tool_calls_path: null                          # declare it only if the server sends calls
     model_path: null                               # optional: feeds the fingerprint's envelope layer
     timeout_seconds: 30                            # per turn, query to final frame
-  reconnect: {max_attempts: 1}                     # 0 to 5; under `run` the runner retries instead (see Reconnects)
+  reconnect: {max_attempts: 1}                     # 0 to 5; unused by run (see Reconnects)
   headers: {}                                      # on the HTTP upgrade; {{token}} allowed here too
 ```
 
@@ -463,25 +463,25 @@ none) and `{{messages}}` (the whole history as a JSON list, for a server that ke
 Any other name must be declared under `vars`, which are plain values: a placeholder inside a
 `vars` value is refused (it would go on the wire literally). `headers`, `handshake.send` and
 `session.start` are sent before any query, so they may use only `{{token}}` and `vars`. A
-string that is exactly one placeholder takes the value's own type (`"{{messages}}"` becomes
-the list); inside a longer string it is spliced as text. The loader refuses, before anything
-is sent: a block missing or on another provider; an endpoint that is not `ws://` or `wss://`,
-or that carries a query, a fragment or a user:password; a placeholder that is neither reserved
-nor in `vars`; `{{token}}` without an `auth_ref`, or inside `vars`; a request placeholder in a
+string that is exactly one placeholder takes the value's own type (`"{{messages}}"` becomes the
+list); inside a longer string it is spliced as text. The loader refuses, before anything is
+sent: a block missing or on another provider; an endpoint that is not `ws://` or `wss://`, or
+that carries a query, a fragment or a user:password; a placeholder that is neither reserved nor
+in `vars`; `{{token}}` without an `auth_ref`, or inside `vars`; a request placeholder in a
 connection template; a `message.send` with neither `{{prompt}}` nor `{{messages}}`; an upgrade
 header the library writes itself (`Host`, `Connection`, `Upgrade`, and `Sec-WebSocket-Key`,
 `-Version`, `-Extensions`, `-Protocol` and `-Accept`); `one_query_in_flight: false`; a
 `timeout_seconds` outside (0, 600]; a `reconnect.max_attempts` outside 0 to 5; a key that is
-not text anywhere in the block (YAML reads `on:`, `~:` and `5:` as a boolean, null and a number;
-`opts: {on: true}` went on the wire as `{"True": true}`) and a value JSON cannot hold (an
-unquoted date, a `!!set`, `!!binary` data, `.nan` or `.inf`, half a character), each named by
-its path as `dottore lint` names one in a spec (a date in a template stopped the run when the
-frame was written, NaN went on the wire as `NaN`, and half a character in `vars` raised out of
-`run`). A `ws://` or `wss://` endpoint on any other provider is
-refused too: only this adapter dials it. The error names the field and never quotes the value; a
-name it lists (a header, a placeholder) is cut at 300 characters, and at most 20 are listed. At
-send time, before any dial, a resolved credential shorter than 8 characters is refused too: the
-redactor masks a credential by value only from that length.
+not text anywhere in the block (YAML reads `on:`, `~:` and `5:` as a boolean, null and a
+number; `opts: {on: true}` went on the wire as `{"True": true}`) and a value JSON cannot hold
+(an unquoted date, a `!!set`, `!!binary` data, `.nan` or `.inf`, half a character), each named
+by its path as `dottore lint` names one in a spec (a date in a template stopped the run when
+the frame was written, NaN went on the wire as `NaN`, and half a character in `vars` raised out
+of `run`). A `ws://` or `wss://` endpoint on any other provider is refused too: only this
+adapter dials it. The error names the field and never quotes the value; a name it lists (a
+header, a placeholder) is cut at 300 characters, and at most 20 are listed. At send time,
+before any dial, a resolved credential shorter than 8 characters is refused too: the redactor
+masks a credential by value only from that length.
 
 **One connection per conversation.** A single-turn attempt dials, sends the handshake and the
 session start, sends its query, reads the turn and closes. A multi-turn attempt keeps one
@@ -506,28 +506,29 @@ the adapter dials inside one send where it has retries of its own, never more th
 open was dialled again inside each send, uncounted: `max_attempts: 1` made 8 dials for 4 debited
 requests.
 
-**Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a product
-defect, as a malformed HTTP reply is). A frame whose `type_path` value is in `ignore_types` is
-discarded; one with `error_path` present ends the attempt as `inconclusive` (an environment
-error, retried by the runner's policy and debited each time); every string at `text_path` is
-appended; the frame satisfying `final_path`/`final_value` ends the turn; its `usage_path`
-mapping, if any, trues up the token ledger (without one the pre-send estimate stands, as for a
-REST target). A turn with no text at all is a product defect. No final frame within
-`timeout_seconds` (counted from the query send, which is inside it), or a connection closed
-mid-turn, is an environment error: inconclusive, and the runner's `--timeout` still bounds the
-whole send. The handshake and session phase runs under the same timeout and caps. A turn over
-4 MiB, over 4096 frames, a single frame over 4 MiB, or a frame nested deeper than 64 levels is
-refused unread and not retried (inconclusive): a deeper frame would have overflowed the
-evidence store's serializer and aborted the campaign. Each frame is parsed as every reply is:
-its nesting is measured before it is parsed (past 100 levels it is refused unparsed), and half a
-character escaped in a string (a lone surrogate, `\ud800`) reads as U+FFFD, so one such frame no
-longer aborts the campaign (A-47). A text frame that is not UTF-8, the raw bytes of half a
-character included, is refused by the library, which closes the connection (close code 1007):
-inconclusive and not retried. A close the server starts with 1007 or 1009 (it says the query
-frame was invalid or too large) is not retried either, and the error quotes its reason,
-scrubbed and redacted; any other close mid-turn is retried by the runner. Compression is not negotiated. `sampling_defaults` do not apply:
-the templates carry no sampling fields, so neither a spec's sampling nor the `-sV` probes'
-temperature 0 reaches the target (as through a REST template).
+**Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a
+product defect, as a malformed HTTP reply is). A frame whose `type_path` value is in
+`ignore_types` is discarded; one with `error_path` present ends the attempt as `inconclusive`
+(an environment error, retried by the runner's policy and debited each time); every string at
+`text_path` is appended; the frame satisfying `final_path`/`final_value` ends the turn; its
+`usage_path` mapping, if any, trues up the token ledger (without one the pre-send estimate
+stands, as for a REST target). A turn with no text at all is a product defect. No final frame
+within `timeout_seconds` (counted from the query send, which is inside it), or a connection
+closed mid-turn, is an environment error: inconclusive, and the runner's `--timeout` still
+bounds the whole send. The handshake and session phase runs under the same timeout and caps. A
+turn over 4 MiB, over 4096 frames, a single frame over 4 MiB, or a frame nested deeper than 64
+levels is refused unread and not retried (inconclusive): a deeper frame would have overflowed
+the evidence store's serializer and aborted the campaign. Each frame is parsed as every reply
+is: its nesting is measured before it is parsed (past 100 levels it is refused unparsed), and
+half a character escaped in a string (a lone surrogate, `\ud800`) reads as U+FFFD, so one such
+frame no longer aborts the campaign (A-47). A text frame that is not UTF-8, the raw bytes of
+half a character included, is refused by the library, which closes the connection (close code
+1007): inconclusive and not retried. A close the server starts with 1007 or 1009 (it says the
+query frame was invalid or too large) is not retried either, and the error quotes its reason,
+scrubbed and redacted; any other close mid-turn is retried by the runner. Compression is not
+negotiated. `sampling_defaults` do not apply: the templates carry no sampling fields, so
+neither a spec's sampling nor the `-sV` probes' temperature 0 reaches the target (as through a
+REST template).
 
 **Tool calls.** The adapter reads tool calls only when `tool_calls_path` is declared (each
 frame's list at that path, accumulated); without it, a seeded spec judged on its tool trace is

@@ -168,7 +168,7 @@ _INVALID_PAYLOAD: Final = 1007
 
 # The class names below reach the CLI's error line and the stored evidence, which the redactor
 # reads: a name its high-entropy rule masks is unreadable there, as four were until the second
-# pre-merge audit of PR #87 (`WebSocketFrameUndecodable` printed as a high_entropy mask).
+# pre-merge audit of PR #87 (each printed as a high_entropy mask).
 # `tests/adapters/test_websocket_premerge.py` checks every exported one survives `redact_text`.
 
 
@@ -731,9 +731,7 @@ class WebSocketAdapter:
         try:
             await connection.send(json.dumps(wire))
         except ConnectionClosed as exc:
-            raise WebSocketClosed(
-                f"{self.id}: the connection closed while sending: {self._safe(str(exc))}"
-            ) from exc
+            raise self._closed(exc, "while sending") from exc
         frames.append({"direction": "sent", "frame": recorded})
 
     async def _recv_frame(
@@ -744,32 +742,7 @@ class WebSocketAdapter:
         try:
             raw = await connection.recv()
         except ConnectionClosed as exc:
-            sent, received = exc.sent, exc.rcvd
-            # The library echoes a close it receives, so a sent 1009 or 1007 is this side's
-            # refusal only when it was not an echo of the server's (second pre-merge audit of
-            # PR #87: a server's 1009 read as "a frame exceeded ...", its reason dropped).
-            ours = sent is not None and not exc.rcvd_then_sent
-            if ours and sent is not None and sent.code == _MESSAGE_TOO_BIG:
-                raise WebSocketOverflow(
-                    f"{self.id}: a frame exceeded {self.max_frame_bytes} bytes; not read further"
-                ) from exc
-            if ours and sent is not None and sent.code == _INVALID_PAYLOAD:
-                raise WebSocketUndecodable(
-                    f"{self.id}: a text frame was not UTF-8 and the connection was closed (1007); "
-                    "not evaluated"
-                ) from exc
-            # The close reason is the server's text: scrubbed and redacted before it is
-            # quoted (a credential in it reached attempt.error: pre-commit audit, F5).
-            closed = WebSocketClosed(
-                f"{self.id}: the connection closed mid-turn: {self._safe(str(exc))}"
-            )
-            if (
-                received is not None
-                and exc.rcvd_then_sent
-                and received.code in (_MESSAGE_TOO_BIG, _INVALID_PAYLOAD)
-            ):
-                closed.retryable = False  # the server refused what was sent; it would again
-            raise closed from exc
+            raise self._closed(exc, "mid-turn") from exc
         if isinstance(raw, bytes):
             raise AdapterProductError(
                 f"{self.id}: received a binary frame; this adapter reads JSON text frames"
@@ -795,6 +768,40 @@ class WebSocketAdapter:
             raise too_deep
         frames.append({"direction": "received", "frame": _scrub(frame, self.api_key)})
         return frame, len(raw.encode("utf-8"))
+
+    def _closed(self, exc: ConnectionClosed, when: str) -> AdapterEnvError:
+        """The error for a connection closed ``when`` (on a send or a receive), by who closed it.
+
+        The library echoes a close it receives, so a sent 1009 or 1007 is this side's refusal
+        (a frame over the cap, a text frame that is not UTF-8) only when it was not an echo of
+        the server's: a server's 1009 read as "a frame exceeded ...", its reason dropped. A close
+        the server started with 1007 or 1009 says the frame sent was invalid or too large, so it
+        is not retried; it was retried when it came before a send, three times and debited each
+        time for no query (second pre-merge audit of PR #87 and its verification). Any other
+        close is retried by the runner. The close reason is the server's text: scrubbed and
+        redacted before it is quoted (a credential in it reached attempt.error: pre-commit
+        audit, F5).
+        """
+
+        sent, received = exc.sent, exc.rcvd
+        ours = sent is not None and not exc.rcvd_then_sent
+        if ours and sent is not None and sent.code == _MESSAGE_TOO_BIG:
+            return WebSocketOverflow(
+                f"{self.id}: a frame exceeded {self.max_frame_bytes} bytes; not read further"
+            )
+        if ours and sent is not None and sent.code == _INVALID_PAYLOAD:
+            return WebSocketUndecodable(
+                f"{self.id}: a text frame was not UTF-8 and the connection was closed (1007); "
+                "not evaluated"
+            )
+        closed = WebSocketClosed(f"{self.id}: the connection closed {when}: {self._safe(str(exc))}")
+        if (
+            received is not None
+            and exc.rcvd_then_sent
+            and received.code in (_MESSAGE_TOO_BIG, _INVALID_PAYLOAD)
+        ):
+            closed.retryable = False  # the server refused what was sent; it would again
+        return closed
 
     def _tool_call(self, call: Mapping[str, Any]) -> JsonDict:
         """A tool call read from a frame, refused when its JSON-text arguments nest too deeply.

@@ -47,9 +47,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   against `redact_text` by a test); also fixed: a 1007 or 1009 close the server starts is its own
   (`WebSocketClosed` with its reason, not retried), a key that is not text in the block is
   refused (A-44's walk), and the scope man page, the MANUAL and u04 match the code. 9 of the 16
-  new tests fail on `abcf7d4`. `make gates` green (with `PYTHONPATH` set to the worktree's
-  `src`): 3604 tests, 97.24% coverage, 75 specs lint OK, four import contracts kept,
-  self-scan, bandit and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no dependencies).
+  new tests fail on `abcf7d4`. Its verification (on `dceb587`): the same server close was still
+  retried when it met a send rather than a receive (three retries, four debited sends, no
+  query); one helper classifies both now (6 more tests, 4 fail on `dceb587`). `make gates` green
+  (with `PYTHONPATH` set to the worktree's `src`): 3610 tests, 97.24% coverage, 75 specs
+  lint OK, four import contracts kept, self-scan, bandit and pip-audit clean with `websockets`
+  17.2 (BSD-3-Clause, no dependencies).
 
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 

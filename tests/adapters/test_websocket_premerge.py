@@ -492,6 +492,64 @@ async def test_a_close_the_server_starts_with_1007_or_1009_is_not_this_sides(cod
     assert ledger.spend().requests == 1 and server.log.queries == 1
 
 
+@pytest.mark.parametrize("code", [1007, 1009])
+async def test_a_server_close_before_a_send_is_not_retried_either(code: int) -> None:
+    """The server acknowledges the auth frame and closes at once: the session frame's send
+    meets the close. It was retried three times, four debited sends for no query
+    (verification of the second pre-merge audit)."""
+
+    async def handler(connection: ServerConnection, log: Log) -> None:
+        async for raw in connection:
+            message = json.loads(raw)
+            log.frames.append(message)
+            if message.get("type") == "auth":
+                await send_json(connection, {"type": "auth_ok"})
+                await connection.close(code, "session frame refused")
+                return
+
+    ledger = BudgetLedger(max_requests=100)
+    with HandlerServer(handler) as server:
+        result = await _attempt(_adapter(server), ledger)
+    error = result.errors[0]
+    assert error.startswith("WebSocketClosed: ws-test: the connection closed")
+    assert "session frame refused" in error and error.endswith(NOT_RETRYABLE_MARK)
+    assert result.retries == 0 and ledger.spend().requests == 1
+    assert server.log.connections == 1 and server.log.queries == 0
+
+
+@pytest.mark.parametrize(
+    ("code", "retryable"), [(1007, False), (1009, False), (1011, True), (1001, True)]
+)
+async def test_a_send_that_meets_a_server_close_is_classified_as_a_receive_is(
+    code: int, retryable: bool
+) -> None:
+    """The send path, deterministically: the frame's send raises the library's close.
+
+    Through a live server the close can land on the send or on the next receive, depending on
+    timing; both go through one classification now.
+    """
+
+    from websockets.exceptions import ConnectionClosedError
+    from websockets.frames import Close
+
+    class _ClosedConnection:
+        async def send(self, _message: str) -> None:
+            close = Close(code, "refused")
+            raise ConnectionClosedError(close, close, rcvd_then_sent=True)
+
+    with FakeChatServer("echo") as server:
+        adapter = _adapter(server)
+        with pytest.raises(WebSocketClosed, match="closed while sending") as info:
+            await adapter._send_template(
+                _ClosedConnection(),  # type: ignore[arg-type]
+                {"type": "x"},
+                None,
+                [],
+            )
+    assert info.value.retryable is retryable and "refused" in str(info.value)
+    assert WebSocketClosed.retryable is True  # the class keeps its default
+
+
 async def test_a_close_the_server_starts_with_another_code_is_still_retried() -> None:
     async def on_query(connection: ServerConnection, _message: dict[str, Any]) -> None:
         await connection.close(1011, "internal error")

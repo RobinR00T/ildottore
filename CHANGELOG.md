@@ -55,12 +55,12 @@ versioning: [SemVer](https://semver.org/).
   templates.
   `tests/ws_chat_server.py` is a loopback JSON-over-WebSocket server with seventeen behaviours;
   `tests/adapters/test_websocket.py` (42 tests), `tests/adapters/test_websocket_audit.py` (31),
-  `tests/adapters/test_websocket_premerge.py` (56) and `tests/cli/test_websocket_target.py` (29)
-  hold 158 tests (the gate with zero connections, the redirect, streaming, the final frame,
+  `tests/adapters/test_websocket_premerge.py` (62) and `tests/cli/test_websocket_target.py` (29)
+  hold 164 tests (the gate with zero connections, the redirect, streaming, the final frame,
   timeouts, errors, reconnects, one connection per conversation, the evidence on disk, a real
   campaign, its replay, a real `-sV` pass, and the audits' regressions). `make gates` (with
   `PYTHONPATH` set to the worktree's `src`) after merging `main` at `6401ee2` and the pre-merge
-  fixes: 3604 tests, 97.24% coverage, 75 specs lint OK, bandit and pip-audit clean. Not built,
+  fixes: 3610 tests, 97.24% coverage, 75 specs lint OK, bandit and pip-audit clean. Not built,
   open for the owner: a dedicated transcript field on `ModelResponse` (OD-34), several queries
   multiplexed on one socket (OD-35), a reconnect mid-conversation for a stateless server
   (OD-36), a `websocket:` block in a fleet entry (OD-37: `dottore fleet` infers `rest` from a
@@ -128,7 +128,11 @@ versioning: [SemVer](https://semver.org/).
   (`opts: {on: true, ~: 1}`) went on the wire as `{"True": true, "None": 1}`, and the loader now
   runs A-44's walk over the block before A-54's (`registry.non_string_keys`); and the scope man
   page, the MANUAL and u04 say what the code does (the provider list, `reconnect.max_attempts`
-  unused by `run`, the WebSocket exception to "not UTF-8 stops the campaign").
+  unused by `run`, the WebSocket exception to "not UTF-8 stops the campaign"). Its verification
+  (on `dceb587`) found the same server close still retried when it met a send instead of a
+  receive (the server acknowledged the auth frame and closed with 1009 at once: three retries,
+  four debited sends, no query): one helper now classifies a close on both paths, with 6 more
+  tests, 4 of which fail on `dceb587` (the other 2 pin that 1011 and 1001 are still retried).
 
 ### Fixed (a reply that holds half a character)
 
