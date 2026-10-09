@@ -141,11 +141,13 @@ reads as U+FFFD, since httpx decodes the stream as text.
   since a resume adopts stored verdicts; a figure a model can produce is believed, so a target can
   still send confident logprobs and be scored "likely memorized", as before, and absurd but finite
   ones (two of `-1.7e308`) make the mean NLL infinite, read as "no memorization signal"; a token
-  is read with `str()`, unchecked (a lone surrogate there, or in the reply's text, still aborts
-  `run` with exit 3 on `UnicodeEncodeError`, open; and a token, or an alternative's token, nested
-  about 100,000 levels deep still overflows `str()` with `RecursionError`, so `fingerprint` and
-  `run -sV` exit 1 and `run` exits 3, as on main, which the depth cap of `fix/target-deep-json`
-  turns into `ResponseTooDeep`: pre-merge audit). `tests/cli/test_logprob_figures.py` (through the
+  is read with `str()`, unchecked (a lone surrogate there, or in the reply's text, reads as U+FFFD
+  where the reply is parsed and the attempt is judged, A-47; a token, or an alternative's token,
+  nested past 100 levels never reaches `str()`, since its reply is refused where it is parsed as
+  `ResponseTooDeep` (§4): that attempt fails and `run` goes on, while `fingerprint` and `run -sV`
+  stop with exit 3 and a one-line error, as on any reply nested too deeply; before PR #65 one nested
+  about 100,000 levels overflowed `str()` with `RecursionError`, and before PR #79 a lone surrogate
+  aborted `run` with exit 3: pre-merge audit). `tests/cli/test_logprob_figures.py` (through the
   CLI: `fingerprint`, `run`, `run -sV` and the membership spec, both directions, the text still
   judged), `tests/adapters/test_base.py`, `tests/evaluators/test_data_leak.py`,
   `tests/shared/test_logprobs.py`.
@@ -249,10 +251,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   if one does in a token's own figure, its membership spec is inconclusive, with nothing in the
   evidence saying why (in an alternative it costs only that token's alternatives). Also the
   owner's: an entry that is not an object (a list such as `["a", 0.9]`, a string, a number) or
-  that carries no figure is skipped and the rest is scored, as on main, though the whole-block
-  reasoning applies to it too (pre-merge audit). Open:
-  whether the evidence should say a block was unreadable rather than absent, which needs an
-  additive field on `ModelResponse` (u00).
+  that carries no figure is skipped and the rest is scored, as before this change, though the
+  whole-block reasoning applies to it too (pre-merge audit). Open: whether the evidence should
+  say a block was unreadable rather than absent, which needs an additive field on
+  `ModelResponse` (u00).
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default
   in MVP-1 to shrink the secret-leak surface: needs sign-off.
 - **OD-21** (open, 2026-10-07): a 200 whose body is not JSON (brackets that do not balance

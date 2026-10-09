@@ -10,14 +10,16 @@ The carryover ledger. Every agent session updates this so context survives even 
   and no report, and `run` abort with exit 3; a positive token figure scored
   `DL-MEMORIZE-DIVERGENCE-001` "likely memorized"; NaN and infinities reached the report as
   non-JSON tokens. A figure is now read only when it is a finite JSON number at or below zero; an
-  entry's own figure that is not (named token or not) makes the block read as no block, so the attempt and its text
-  evaluators go on and the membership spec is inconclusive, and an alternative that is not costs
-  only its token's alternatives (u04 §7 A-39, `tests/cli/test_logprob_figures.py`). Open for the
-  owner (OD-24): the whole block versus only the bad entry, a positive figure counted as
-  impossible, and whether the evidence should say the block was unreadable rather than absent.
-  Found by the audits and left open, both on main too: a lone surrogate in a token or the reply's
-  text still aborts `run` (exit 3, `UnicodeEncodeError`), and a token nested about 100,000 levels
-  deep still overflows `str()` (closed by the depth cap of `fix/target-deep-json`, PR #65).
+  entry's own figure that is not (named token or not) makes the block read as no block, so the
+  attempt and its text evaluators go on and the membership spec is inconclusive, and an
+  alternative that is not costs only its token's alternatives (u04 §7 A-39,
+  `tests/cli/test_logprob_figures.py`). Open for the owner (OD-24): the whole block versus only
+  the bad entry, a positive figure counted as impossible, and whether the evidence should say the
+  block was unreadable rather than absent. Found by the audits, both since closed on main: a
+  lone surrogate in a token or the reply's text, which aborted `run` (exit 3,
+  `UnicodeEncodeError`), now reads as U+FFFD (A-47, PR #79), and a token nested about 100,000
+  levels deep, which overflowed `str()`, is refused with its reply as nested too deeply, so it
+  fails one attempt, not the campaign (PR #65).
 
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 

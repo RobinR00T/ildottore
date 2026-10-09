@@ -309,7 +309,7 @@ zero, as a `log p` is. A reply in which a token's figure is anything else (a str
 positive number, NaN, an infinity, or an integer no float holds) is read as carrying no logprob
 block: the membership spec is inconclusive and every spec is still judged on the reply's text.
 Such a figure among a token's alternatives drops only that token's alternatives, which are never
-scored. Until 2026-10-07 a 400-digit figure, a list or an object there made `fingerprint` and
+scored. In older versions a 400-digit figure, a list or an object there made `fingerprint` and
 `run -sV` exit 1 with no report, and a positive token figure was scored as "likely memorized".
 
 `run` and `fingerprint` parse a target file once: the target the scope authorizes, its route and
