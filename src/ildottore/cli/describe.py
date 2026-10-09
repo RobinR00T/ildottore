@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ildottore.cli import wiring
+from ildottore.redactor import visible_controls
 from ildottore.registry import LintError, SpecNotFoundError
 from ildottore.shared.models import AttackSpec
 
@@ -55,4 +56,5 @@ def render_describe(spec: AttackSpec) -> str:
         f"evaluators:  {', '.join(e.type.value for e in spec.evaluators)}",
         f"description: {spec.description.strip()}",
     ]
-    return "\n".join(lines)
+    # One line per field: a pack's text written out, so no field starts a line of its own.
+    return "\n".join(visible_controls(line) for line in lines)

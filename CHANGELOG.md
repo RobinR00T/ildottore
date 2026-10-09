@@ -5,6 +5,133 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (control characters on the terminal)
+
+- **Pre-existing on main (`d54097c`, and `d19b221`), found by the pre-merge audit of PR #49 and
+  reproduced:** every CLI error goes through `cli/app._masked`, which redacted secrets and left
+  control characters as they were. A spec file whose name holds a newline (a third-party pack
+  author chooses file names, `docs/02` §4) made `dottore run` print on stderr
+  `... failed to load ...: attacks/x` and, on a line of its own,
+  `::error title=pwned::injected.yaml: ...`, which a GitHub Actions runner reads as a workflow
+  command. `_masked` now writes every control character out, after the redactor
+  (`visible_controls`): a C0 control and DEL as their control pictures (a newline as `␊`, ESC as
+  `␛`, DEL as `␡`, as the redactor already wrote `␀` and `␁`), and a C1 control, U+2028, U+2029
+  and a lone surrogate, which have no picture, as the escape Python writes (`\x85`, `\u2028`,
+  `\udc9b`). A lone surrogate is how an undecodable byte of a Linux file name arrives: a
+  `surrogateescape` stream wrote it back raw (a C1 control for 0x80 to 0x9f), a strict one could
+  not encode it.
+- **A registered credential split by control characters is masked whole on the terminal.** The
+  redactor finds one by value, so split by a newline it was printed in two readable halves (split
+  by `\x00` or `\x01` it was masked, because the redactor drops its stash delimiters first).
+  This branch first masked it in a match of its own for the terminal
+  (`Redactor.mask_split_credentials`); PR #57, which lands just before it, moved the match into
+  `redact_text` (u01 A-32), so the merge dropped this branch's copy and the terminal masks such a
+  credential as the reports do: the stretch it covers gets the mask the credential gets in one
+  piece, digest included, every occurrence, overlapping credentials as one. The credential is
+  matched before the key patterns, so a key pattern cannot take a split key's head and leave its
+  tail, and the escaping runs after the redactor, so a key right after a C1 control keeps the word
+  boundary its pattern needs. Split by printable characters (a space, or the `[0m` of an escape
+  sequence) a credential is still kept, as before.
+- **Format characters are written out too (decided by the owner on 2026-10-07).** A terminal
+  shows almost no character of Unicode category Cf (13 prepended concatenation marks, such as
+  U+0600, have a glyph): a bidi control (U+202A to U+202E, U+2066 to U+2069)
+  reorders what is read (Trojan Source, CVE-2021-42574), a zero-width space, a joiner or a soft
+  hyphen is invisible, and the tag characters (U+E0001, U+E0020 to U+E007F) carry invisible
+  ASCII. `visible_controls` writes every one of them (the 170 of Unicode 16.0, pinned so the
+  output does not depend on the Python's Unicode version) as the escape Python writes (`\u200b`,
+  `\xad`, `\U000e0041`), and the redactor ignores them as it ignores the controls when it
+  matches a registered credential (A-32): written out, a credential split by one would print as
+  two halves around the escape. U+FFFD, which the redactor's match also ignores, shows, so it is
+  printed as it is. The cost:
+  an emoji written with a zero-width joiner, a right-to-left mark in Arabic or Hebrew text or a
+  soft hyphen shows its escape in every line this fix writes out (errors, warnings, `describe`,
+  `registry ls`, `lint`, `coverage`), and an existing path holding one, which `_masked` keeps
+  unredacted, no longer reads as the file's name.
+- **A lone surrogate in a labelled value or a PEM body no longer crashes the masking** (on main
+  too). The mask's digest encoded the value strictly, so `token=AAAAAAAA` followed by an
+  undecodable byte raised `UnicodeEncodeError` inside `_masked`, and the CLI printed the error it
+  was masking as a traceback, `::error` line and credential included. The digest now encodes with
+  `surrogatepass`, which leaves every other value's digest as it was.
+- The same text reached the terminal raw on paths that bypass `_masked`, now written out the same
+  way (`visible_controls`, or `Redactor.for_terminal` where the text is redacted): the text output
+  of `dottore lint` (a pack's file names and the values its messages quote) and of
+  `dottore coverage` (the files that failed to load and why), a spec's name in `registry ls` (the
+  tabs between columns stay tabs) and every field of `describe`, a missing `--spec-path` in the
+  registry warning, a halted report's reason in `dottore diff`, a labels file's
+  spec ids in `dottore calibrate`, the attempt and probe lines of `dottore replay` (a probe's
+  stored transport error) and its warning, the spend warning and the "run on <target> did not
+  complete" line, which quotes a target's error; and, since this branch merged main, the canaries
+  `run --dry-run -vv` lists to seed (`seed:` lines, OD-18 B, #58), a spec's text.
+- **Merged with main (`a40e596`).** Every error main added since `4aa6cef` goes through `_masked`,
+  and its new `-sV` resume notice quotes the target id with `repr`, so none prints a raw control
+  character. A refusal that names an operator's id whole (A-51: the id in front of the authorization
+  refusal and the ids the scope authorizes, at most 128 characters since A-57) now writes a format
+  character in it out, up to ten characters each: `tests/cli/test_operator_file_quoted_values.py`
+  expects the id written out, bounds the line at 5,000 characters (2,500 before; two ids of 128 tag
+  characters take 1,280 each) and looks for an id quoted whole by its `repr` with the opening quote.
+- **`dottore diff` and `dottore calibrate` refuse a report whose `spec_id` is not a spec id** (the
+  schema's `^[A-Z]+(-[A-Z0-9]+)+$`, exit 3). Every row of `diff` starts with one, so a crafted
+  report holding `::error ...` there printed a workflow command with no control character at all;
+  a report this tool wrote holds no other.
+- **`describe` prints each field on one line.** A description with a paragraph break printed its
+  next paragraph at the start of a line, which a pack author controls; three shipped specs have
+  one (AG-CODEEXEC-UNEXPECTED-001, DOS-RESOURCE-HIJACK-001, RECON-MODEL-IDENTITY-001) and now
+  show it as `␊`.
+- **`dottore coverage` lists each file that failed to load as a bullet**
+  (`    - <path>  <message>`). The line began with the file name, so a file named `::error ...`
+  started a line a runner trims and reads as a command, with no control character at all.
+- **The run's error lines and its coverage block are printed as plain, unwrapped text.** `rich`
+  wrapped them at 80 columns in a CI log, where a target's error could place `::error` at the start
+  of the wrapped line, read `[/]` in it as markup (`MarkupError` on the "did not complete" line,
+  which comes before the reports are written) and `:warning:` as an emoji. The "no --judge"
+  warning goes through the same printer, so it is on one line now on every live run, dry run or
+  estimate without `--judge`, and it writes the target id it names out.
+- **`--compare` prints a target id as text** (on main too): `[/]` in one raised `MarkupError` in
+  the comparison table and the run wrote no report; `:warning:` became an emoji.
+- **stdout and stderr write a character their encoding lacks as its escape** (`backslashreplace`)
+  instead of failing. A control picture is not in cp1252 (a Windows pipe), so `registry ls` and
+  `describe` would exit 1 with nothing printed; main failed the same way on any character cp1252
+  lacks (a CJK spec name), and on an ASCII stdout a full run exited 3 on the `·` of its coverage
+  line. stderr did this already. Each stream gets its own setting back when the command ends, for
+  a caller that runs the app in-process.
+- **`fingerprint` prints its JSON in ASCII.** pydantic left DEL, a C1 control, U+2028 and U+2029
+  raw in a string of the fingerprint (the operator's target id, a signature pack's names), and on a
+  cp1252 stdout the stream's own escapes (`\x81`) made the output invalid JSON with exit 0. DEL and
+  every character outside ASCII are now JSON escapes inside pydantic's own output (`json.dumps`
+  would have written `1e-07` for its `1e-7` and `NaN` for its `null`), so an ASCII fingerprint is
+  byte-identical to before; a lone surrogate, which pydantic cannot write as JSON, falls back to
+  `json.dumps` instead of a traceback. Every JSON output now escapes every control character
+  (`lint --json`, `coverage --json` and `schema export` already did).
+- **A run id or an evidence digest with a trailing newline is refused**
+  (`store/paths.validate_run_id` and `validate_sha256` used `match`, whose `$` let it through, so
+  `replay` printed such a run id on two lines).
+- Not changed, and not covered by this fix:
+  - a GitHub Actions runner also reads the legacy `##[error]...` form **anywhere in a line**
+    (`ActionCommand.TryParse` in the runner's source, read and not run on a runner), so a pack
+    file named `x ##[error]...` still reaches a log line; neither the CLI nor this fix
+    neutralises it;
+  - the operator's own values in the run's plan lines (target ids and model names under
+    `--dry-run`, `--estimate` and `-sn`);
+  - invisible characters outside Cf: the variation selectors (U+FE00 to U+FE0F, U+E0100 to
+    U+E01EF), U+034F and U+3164 print raw, so a credential split by one still reads whole;
+  - the text glued to a split credential: masked whole, the key no longer forms one high-entropy
+    token with what is glued to its first half, so that text prints where main masked it together
+    with the first half (and printed the second half); main prints the same for the key in one
+    piece;
+  - a `replay` line starts with an attempt id or a probe id read from the evidence tree, so a
+    forged tree can still start one.
+- Test: `tests/test_terminal_control_chars.py` (229 cases: every control character and a format
+  character of each kind through `_masked` and `visible_controls`, every format character of the
+  running Python, a credential split by each class, every occurrence, overlapping and periodic
+  credentials, a lone surrogate after a label, `run`, `lint`, `coverage`, `registry ls`,
+  `describe`, `diff`, `calibrate`, `replay` and `fingerprint` (a lone surrogate included) through
+  the CLI, a cp1252 stdout, the `rich` lines, the "no --judge" warning, the `--compare` table and,
+  since the merge with main, the `seed:` line of `--dry-run -vv`).
+  Against main's code 224 of them fail; the 5 that pass are the two stash delimiters, which the
+  redactor already wrote out, a credential split by either, which it already masked, and the
+  streams keeping their setting, which main never changes. `tests/cli/test_calibrate.py` gives its
+  report a spec id (`A` was none).
+
 ### Fixed (a registered credential split by characters that do not show)
 
 - **A credential the tool registered is masked whole when a control or a format character splits
@@ -95,10 +222,9 @@ versioning: [SemVer](https://semver.org/).
   as `abc@host` does on main (handling that is the URL rule's, not this match's:
   PR #56 tried and withdrew it). A value holding `\x00` or `\x01` is matched only through its
   escaped forms, so written as it is, or without that character, it is read as any other text, as
-  on main. On the terminal
-  the format characters themselves are still printed as they are: the owner decided on 2026-10-07
-  that they are written out like the control characters (`visible_controls`), and that lands on
-  PR #51, where the function lives.
+  on main. On the terminal the format characters themselves are written out like the control
+  characters (`visible_controls`), as the owner decided on 2026-10-07, since PR #51, which lands
+  right after this one, where the function lives.
 - **Found on the way, on main, filed apart:** the JSON report keeps a dict key a target wrote (a
   tool-call argument name) raw, so a registered credential or an email written as one is
   readable there; the HTML, SARIF and JUnit reports and the evidence store mask it.
@@ -579,7 +705,8 @@ versioning: [SemVer](https://semver.org/).
   attribute 'get'` or the like, both without the file; the refusals of several targets or of two
   findings for one spec quote the ids the report holds); a key a finding does not know is part of
   the place and goes through the redactor (what it recognises there, such as an email, is masked),
-  and is otherwise printed as pydantic renders it, control characters included, until #51 is in; and
+  and is otherwise printed as pydantic renders it, control characters included until #51 wrote them
+  out; and
   what pydantic can read is taken as read (`confirmed: "yes"` is true). A first version validated
   every finding together to list them all and peaked at 1,116 MiB instead of 135 MiB on a 12 MB
   report (pre-commit audit); the findings are validated one at a time, as before, at about 6% more
@@ -1587,8 +1714,8 @@ versioning: [SemVer](https://semver.org/).
   the value never. The same through `run -t`, `run --judge`, `fingerprint` and `fleet --judge`. Not
   changed, and written in the clause: other refusals of a target file still quote what it says
   (`type`, `mock_scenario`, a `seeded_setup` tool name, the `id`); a key is printed as pydantic
-  renders it, control characters included, so one with a line break still splits the line until #51
-  is in; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true` is
+  renders it, control characters included, so one with a line break split the line until #51 wrote
+  them out; what pydantic can read is taken as read (`tools: 'off'` is false, `temperature: true` is
   1.0, no range on `temperature` or `top_p`); and a key `capabilities` does not know, or a
   `capabilities` that is empty or `false`, was still ignored without a word (since A-50, above, the
   key is refused, and so is a `capabilities` of `false`, `0`, `[]` or `""`). Contract u12 A-45;
@@ -1613,8 +1740,8 @@ versioning: [SemVer](https://semver.org/).
   path, never followed by a colon: the CLI keeps an existing absolute path readable, and a relative
   path, or `<path>:`, is not one, so a report named after a commit SHA had its name masked as a
   high-entropy value. As in every message of the CLI, a directory whose name holds a space or one of
-  `()[],;'"` still cuts the path short, and a control character in a name reaches the terminal as
-  written until #51, which escapes them there, is in. Found by the pre-merge audit of #51.
+  `()[],;'"` still cuts the path short, and a control character in a name reached the terminal as
+  written until #51 wrote them out there. Found by the pre-merge audit of #51.
 - **A value that parses and overflows later.** On 3.14 the parser holds about 116,000 levels and
   `repr` overflows from about 69,500, so a report whose run status carried a reason nested 70,000
   levels deep was read and then overflowed when the refusal of an incomplete run formatted it (exit

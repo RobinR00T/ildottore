@@ -109,13 +109,19 @@ def _without_stash_delimiters(text: str) -> str:
 
 # --- a registered credential split by characters that do not show -----------------------
 #: The control characters: C0, DEL, C1 (U+0085, the next-line control, among them), the line and
-#: paragraph separators, and lone surrogates (an undecodable byte of a file name arrives as one).
+#: paragraph separators, and lone surrogates. A terminal or a CI log reader acts on them instead of
+#: showing them. A Linux file name with a byte that is not UTF-8 arrives as a lone surrogate, which
+#: a strict stream cannot encode and a `surrogateescape` stream writes back as the raw byte, a C1
+#: control for 0x80 to 0x9f.
 _CONTROL_RANGES: Final = ((0x00, 0x1F), (0x7F, 0x9F), (0x2028, 0x2029), (0xD800, 0xDFFF))
 #: The format characters, Unicode category Cf as of Unicode 16.0: the soft hyphen, the zero-width
 #: space, joiners and word joiner, the bidi marks, embeddings, overrides and isolates, the byte
 #: order mark, the interlinear annotation and some script-specific marks, and the tag characters
 #: (invisible ASCII). Pinned, not read from `unicodedata`, so a mask does not depend on the
 #: Python's Unicode version (3.11 has 14.0); a test checks it holds every Cf of the Python it runs.
+#: A terminal shows none of them: a bidi control reorders what is read (Trojan Source,
+#: CVE-2021-42574), and a zero-width or a tag character hides text (decided by the owner on
+#: 2026-10-07: written out like the controls).
 _FORMAT_RANGES: Final = (
     *((0x00AD, 0x00AD), (0x0600, 0x0605), (0x061C, 0x061C), (0x06DD, 0x06DD)),
     *((0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2), (0x180E, 0x180E)),
@@ -244,6 +250,45 @@ def _stretches(clean: str, joined: str, secret: str) -> Iterator[tuple[int, int,
 
 
 _STASH_DELIMITER: Final = re.compile(r"[\x00\x01]")
+
+
+# --- what a terminal acts on instead of showing ------------------------------------------
+#: The control and the format characters, not U+FFFD: it splits a credential for the match by
+#: value (`_INVISIBLE_RANGES`, A-32) but shows, so it is printed as it is.
+_TERMINAL_RANGES: Final = (*_CONTROL_RANGES, *_FORMAT_RANGES)
+_TERMINAL_CONTROLS: Final = re.compile(
+    "[" + "".join(f"{chr(low)}-{chr(high)}" for low, high in _TERMINAL_RANGES) + "]"
+)
+
+
+def _visible_control(match: re.Match[str]) -> str:
+    code = ord(match.group(0))
+    if code < 0x20:
+        return chr(0x2400 + code)  # its control picture, as the stash delimiters are written
+    if code == 0x7F:
+        return "\u2421"
+    if code < 0x100:
+        return f"\\x{code:02x}"
+    return f"\\u{code:04x}" if code < 0x10000 else f"\\U{code:08x}"
+
+
+def visible_controls(text: str) -> str:
+    """``text`` with every character a terminal acts on written out, for printing.
+
+    A C0 control and DEL become their control pictures (``\\n`` is ``␊``, ``ESC`` is ``␛``, DEL
+    is ``␡``), as :func:`visible_stash_delimiters` writes ``\\x00`` and ``\\x01`` (``␀``,
+    ``␁``). A C1 control, a separator, a lone surrogate and a format character (Unicode
+    Cf: a zero-width space, a soft hyphen, a bidi control, a tag character), which have no
+    picture, become the escape Python writes for them (``\\x85``, ``\\u2028``, ``\\udc9b``,
+    ``\\u200b``, ``\\xad``, ``\\U000e0041``): a bidi control reorders what is read and a
+    format character hides text. The result holds no character of :data:`_TERMINAL_CONTROLS`, so
+    it is its own fixed point. A spec file named
+    ``x\\n::error ...`` printed a line GitHub Actions reads as a workflow command (pre-merge
+    audit of PR #49). It runs after the redactor: escaping first would hide from it a credential
+    split by a control character, and it would read the escapes as text.
+    """
+
+    return _TERMINAL_CONTROLS.sub(_visible_control, text)
 
 
 #: The email shape; a ``skip`` match is a run of address characters with no address in it.
@@ -729,6 +774,16 @@ class Redactor:
         if joined != stripped or stripped == text:  # masked, or no delimiter to show
             return joined
         return self._to_fixed_point(visible_stash_delimiters(text))
+
+    def for_terminal(self, text: str) -> str:
+        """``text`` redacted, its control and format characters written out, for printing.
+
+        :meth:`redact_text`, which masks a registered credential those characters split (A-32),
+        then :func:`visible_controls`. Errors and warnings quote a target's reply, a report's
+        reason or a pack's file names, and reached stderr with their control characters raw.
+        """
+
+        return visible_controls(self.redact_text(text))
 
     def _to_fixed_point(self, text: str) -> str:
         current = text

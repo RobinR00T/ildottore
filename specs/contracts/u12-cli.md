@@ -97,7 +97,18 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   the same rule. A registered credential split by control or format characters (Unicode Cf), or
   by U+FFFD (what half a character in a reply reads as, u04 A-47), is masked whole by the
   redactor itself (`redact_text`, since PR #57; u01 A-32), with the digest of the unsplit
-  credential, on the terminal as in the reports: it used to print in two readable halves.)
+  credential, on the terminal as in the reports: it used to print in two readable halves. Last,
+  after every mask, `_masked` writes every control character out (`redactor.visible_controls`:
+  C0 and DEL as control pictures, C1, U+2028, U+2029, lone surrogates and format characters
+  (Unicode Cf, since PR #51) as Python escapes; U+FFFD, which shows, is printed as it is). The
+  other terminal paths that print what a pack, a report or a target wrote do the same
+  (`Redactor.for_terminal` where the text is redacted), the `rich` lines of a run are printed as
+  plain, unwrapped text, the `--compare` table prints target ids as text, and `diff`/`calibrate`
+  refuse a report spec id that is not a spec id: no line of those paths starts with such text,
+  except a `replay` line, which starts with an attempt or probe id read from the evidence tree.
+  The JSON outputs escape every control character (`fingerprint` escapes DEL and non-ASCII inside
+  pydantic's own output). This does not stop the legacy `##[cmd]` form a GitHub runner reads
+  anywhere in a line, and it does not cover the operator's own values in the plan lines.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces
@@ -400,8 +411,8 @@ pinned:
   and grants, and the target's `id`, which several refusals name (two files with one id,
   `--hardened` on a live target, a target the scope does not authorize);
 * a key the operator typed is part of the location and is printed as pydantic renders it (a
-  `true:` key as `1`), control characters included, so a key holding a line break still splits
-  the message until the terminal writes them out (#51);
+  `true:` key as `1`), its control and format characters written out, as #51 writes them in every
+  error (§6);
 * a file with both blocks wrong is refused on its `capabilities` block alone;
 * only what pydantic cannot read as the field's type is refused: `tools: 'off'` reads as false,
   `temperature: '0.5'` as 0.5, `temperature: true` as 1.0, and `temperature` and `top_p` have no
@@ -454,10 +465,10 @@ and said so rather than pinned (pre-commit, delta and pre-merge audits):
 * an unknown key is printed as the location, as A-45 says of any key: one that is not text as
   pydantic renders it (`on:` as `1`, `off:` as `0`, `~:` as `None`), an empty key or one holding
   half a character (a lone surrogate) as `<root>` (the latter with `Input should be a valid
-  string`), and control characters as written until #51 writes them out; a credential pasted as a
-  key is masked as any error text is (a registered credential and the known key shapes first, then
-  the entropy rule), and the entropy rule leaves a low-entropy one readable (about 1 in 20 random
-  64-hex keys, and the tests' repeated value);
+  string`), and control characters written out, as #51 writes them in every error (§6); a
+  credential pasted as a key is masked as any error text is (a registered credential and the known
+  key shapes first, then the entropy rule), and the entropy rule leaves a low-entropy one readable
+  (about 1 in 20 random 64-hex keys, and the tests' repeated value);
 * unknown keys are listed on the one line as `validation_problems` lists any block's problems
   since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 keys give
   a line of 1,040 bytes, where `sampling_defaults` on `2f6201a` printed 789 KB);
@@ -665,8 +676,8 @@ clause, and said so rather than pinned:
 * a key is printed as the location, as A-45 says of any key: one that is not text as pydantic
   renders it (`on:` as `1`, `~:` as `None`, a `!!binary` key as `b'...'`, a number too long to
   write out as `<unprintable int object>`), an empty key, or one holding a lone surrogate, as
-  `<root>`, control characters as written until #51 writes them out (so a line break in a key
-  splits the one line, and the second may start with anything), and a credential pasted as a key
+  `<root>`, its control and format characters written out since #51 (before, a line break in a key
+  split the one line, and the second could start with anything), and a credential pasted as a key
   is masked only by the redactor's own rules;
 * unknown keys are listed on the one line as `validation_problems` lists any block's problems
   since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 unknown keys
@@ -712,14 +723,16 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
   while an empty or zero one (`0`, `""`, `[]`, `false`, `null`) reads as no summary; `<path>:
   expected a JSON run report or a list of findings` has a colon after the path as typed; and the
   refusals of a report with several targets or two findings for one spec, and of two reports about
-  different targets, quote the target ids and the spec id the reports hold;
+  different targets, quote the target ids and the spec id the reports hold; and a finding whose
+  `spec_id` is not a spec id (#51) is refused as `the report <absolute path> holds '<id>', which is
+  not a spec id; is this a run report?`, its control and format characters written out;
 * a key a finding does not know is part of the place and goes through the CLI's redactor with the
   rest of the line: what the redactor recognises in it (an email, a known token format, a labelled
   secret, a run of high enough entropy) is masked, while a key of hex digits often is not, and the
   mask can take the `findings.0.` before it or the `: ` after it, while a short password-like key
-  (`hunter2`) prints as written; it is printed as pydantic renders it, control characters included,
-  so a key holding a line break still splits the line until the terminal writes them out (#51), and
-  whole until #76 cuts a place past 300 characters (a key of 1 MiB prints 1 MiB);
+  (`hunter2`) prints as written; it is printed as pydantic renders it, its control and format
+  characters written out since #51 (before, a key holding a line break split the line), and cut
+  past 300 characters since #76 (before, a key of 1 MiB printed 1 MiB);
 * the finding that fails still builds all of its own errors before 20 are listed, as on the base
   (one finding with a million keys it does not have peaks over 1 GiB on both, by an amount that
   varies from run to run, and the base also printed 195 MB of error text);

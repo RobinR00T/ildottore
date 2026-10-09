@@ -15,6 +15,7 @@ small pure helper (dict-in, dataclass-out, no I/O) so it is unit-testable withou
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -25,7 +26,7 @@ from pydantic import BaseModel, ValidationError
 from ildottore.shared.config_errors import validation_problems
 from ildottore.shared.digits import described
 from ildottore.shared.enums import VerdictStatus
-from ildottore.shared.models import Finding
+from ildottore.shared.models import SPEC_ID_PATTERN, Finding
 
 __all__ = [
     "DriftClass",
@@ -97,7 +98,7 @@ def _read_report(path: Path) -> Any:
     # and a relative path, or one with a colon after it, is not one, so a report named after a
     # commit SHA had its name masked as a high-entropy value (pre-commit and delta audits). Not
     # escaped here: an escaped name is no longer a path on disk, so the CLI masked it too.
-    # Control characters are escaped for every message on the terminal once #51 is in.
+    # Control characters are written out for every message on the terminal (`_masked`, #51).
     shown = path.absolute()
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -135,6 +136,9 @@ def incomplete_reason(path: Path) -> str | None:
     reason = status.get("reason")
     state = state if isinstance(state, str) and state else "incomplete"
     return f"{state}: {reason}" if isinstance(reason, str) and reason else state
+
+
+_SPEC_ID = re.compile(SPEC_ID_PATTERN)
 
 
 class _LocatedFinding(BaseModel):
@@ -178,6 +182,16 @@ def load_findings(path: Path) -> dict[str, Finding]:
     if not isinstance(raw_findings, list):
         raise ValueError(f"{path}: expected a JSON run report or a list of findings")
     findings = [_validate_finding(path, index, raw) for index, raw in enumerate(raw_findings)]
+    # Every row of `dottore diff` starts with a spec id, so a report holding `::error ...` there
+    # printed a line a CI runner reads as a workflow command, control characters or not
+    # (pre-commit audit of the control-characters block). A report this tool wrote holds spec
+    # ids only, which the spec schema shapes.
+    for finding in findings:
+        if not _SPEC_ID.fullmatch(finding.spec_id):
+            raise ValueError(
+                f"the report {path.absolute()} holds {finding.spec_id!r}, which is not a spec id; "
+                "is this a run report?"
+            )
     targets = sorted({f.target_id for f in findings})
     if len(targets) > 1:
         raise ValueError(

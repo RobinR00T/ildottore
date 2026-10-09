@@ -3,6 +3,48 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09: PR #51, format characters and the pre-merge follow-ups (begun 2026-10-07)
+
+- The owner decided on 2026-10-07 (in the session that built it) that format characters (Unicode
+  Cf: zero-width characters, the soft hyphen, bidi controls, the byte order mark, tag characters)
+  are written out on the terminal too, in PR #51: `visible_controls` writes them as Python escapes.
+  This branch's terminal-only match of a split credential (`mask_split_credentials`) was dropped
+  when it was stacked on PR #57, which masks such a credential in `redact_text` itself (A-32).
+- The pre-merge audit of PR #51 found no blocker. Its follow-ups, and those of the delta audit
+  after them, are fixed here: the "no --judge" warning wrote the operator's target id raw (and is
+  on one line now); `--compare` read a target id as markup (`[/]` raised `MarkupError` and no
+  report was written, on main too) and `:warning:` in it as an emoji; `validate_sha256` used
+  `match` with `$`; `fingerprint` keeps pydantic's JSON and escapes DEL and non-ASCII in it,
+  falling back to `json.dumps` on a lone surrogate. Accepted and documented: the text glued to a
+  split credential prints, as main prints it next to the credential in one piece. The legacy
+  `##[cmd]` form is handled in PR #54, stacked on this one.
+- Rebased on `4aa6cef` (PR #53). `make gates`: 2,478 tests (228 new in this PR), coverage 96.50%.
+- Merged with main at `a40e596` (#83) on 2026-10-09. Every error main added since `4aa6cef`
+  (quoted values #86, capped reads #76, id lengths #91, non-JSON values and `--runs` bounds #89,
+  spec file names #49, fleet id casing #85, the `-sV` resume advice #83) goes through `_masked`;
+  the new `-sV` resume notice quotes the target id with `repr`. Two interactions fixed in the
+  merge: the `seed:` line of `--dry-run -vv` (#58) printed a spec's canary raw and now writes it
+  out; and A-51's refusals name an id of up to 128 characters whole, which `_masked` now writes
+  out at up to ten characters each, so `tests/cli/test_operator_file_quoted_values.py` expects the
+  written-out id, bounds its line at 5,000 characters and looks for a whole `repr` with its quote
+  (u01 A-51 and A-57 say so). `make gates`: 3,571 tests (229 from this PR), coverage 97.12%.
+- Stacked on `4f466e2` (main `fb9a8a8` with #88, #60, #68, #66, #56 and #57, the tree main
+  holds before this squash). `redactor.py` keeps one copy of the control and format ranges,
+  #57's, and builds `_TERMINAL_CONTROLS` from those two alone, so `visible_controls` never
+  escapes U+FFFD, which #57's match drops; `mask_split_credentials` is gone, `for_terminal` is
+  `visible_controls(redact_text(...))` and `_masked` redacts `mask_url_passwords(str(exc))` again.
+  `cli/diff.py` keeps #82's per-finding validation, then this branch's spec-id check, whose
+  refusal now names the report as A-49 does (`the report <absolute path> holds '<id>', which is
+  not a spec id; is this a run report?`, added to A-49's list). `fingerprint` keeps #68's probe
+  warning (now written out too, as every warning) and prints this branch's ASCII JSON. Tests
+  changed for the stack: the four `mask_split_credentials` cases call `for_terminal` or the
+  redactor's split match; the periodic case uses a credential whose end repeats its start once
+  (#57 matches one repeating a piece more than twice over without overlaps, a case it lists as
+  open); the `lint`/`coverage` key is written as its `repr` since #90; the `fingerprint` stub
+  gains the fields #68's warning reads. The pre-merge audit's medium (a key's control characters
+  are written out, MANUAL and u12) and lows are applied, and the "until #51" sentences of the
+  merged entries are in the past tense. `make gates` green there: 4,324 tests, coverage 97.40%.
+
 ## State, 2026-10-09: a registered credential split by characters that do not show (PR #57, begun 2026-10-07)
 
 - On `fix/redactor-split-credentials` (`tests/test_redactor_split_credentials.py`): the redactor
@@ -89,13 +131,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   (`api_key=<registered credential><tail>` keeps its tail), and a registered credential that is
   a label word (`password`) hides the label from it; repeated `BEGIN PRIVATE KEY` markers before
   one `END` cost 3.4 s a megabyte. Python 3.11, the version CI runs, was not available here.
-- PR #51 also edits `redactor.py`, so the second to merge rebases. Its `mask_split_credentials`
-  names an overlapping run the way `_credential_runs` does, and the credentials it reads now come
-  in one order whatever the hash seed. **To do when the two meet:** it masks every registered
+- PR #51 also edits `redactor.py`. Its `mask_split_credentials` masked every registered
   credential of any text holding a control character, and every PEM holds a newline, so on the
-  terminal a key's digest is computed over the credential's mask while the reports compute it
-  over the credential: the two digests differ (nothing leaks). Masking only the runs that hold a
-  control character fixes it. PR #57 (split credentials), which lands right after this one,
+  terminal a key's digest would have been computed over the credential's mask while the reports
+  computed it over the credential (nothing leaks). It is gone: stacked on PR #57, #51 leaves the
+  split match to `redact_text`, whose tokens record each stretch as written, so the terminal and
+  the reports give a key one digest. PR #57 (split credentials), which lands right after this one,
   rewrites the same loop: its clause is A-32, and it passes the stretch as written to `_keep`.
 - Stacked on `08ac9f8` (main `fb9a8a8` with #88, #60, #68 and #66, the tree main holds before
   this squash): only CHANGELOG and PROGRESS conflicted. The pre-merge audit's LOWs are applied
@@ -508,8 +549,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   taken out again (Ctrl-C, `fork`, queueing), so lint and a run still draw that line a few
   levels apart, and in a selection of more than 512 patterns a spec nested 482 to 487 deep ends
   `inconclusive` with no reason in the report (documented in `compile_spec_pattern` and A-33; a
-  per-process cache would close it). The message quotes with `ascii`; until PR #51 and PR #54
-  merge, the lint text line does not go through `visible_controls`, so a `##[` in a pattern is
+  per-process cache would close it). The message quotes with `ascii`; the lint text line goes
+  through `visible_controls` since PR #51, and until PR #54 merges a `##[` in a pattern is
   printed as written, as in every other lint message on `main`. Open for the owner as OD-22:
   refuse the run (as built, like F-10) or skip only that spec (like `setup_not_seeded`); reuse
   `EVALUATOR_MISCONFIGURED` (as built) or a code of its own.
@@ -959,6 +1000,31 @@ The carryover ledger. Every agent session updates this so context survives even 
   destructive call counts as confirmation. `AG-CONFIRM-BYPASS-001` says it does;
   `kill_chain_progression` fails any destroy whatever the flag, so `AG-DESTRUCTIVE-DBDROP-001`
   contradicts its own description.
+
+## State, 2026-10-06 (evening): control characters on the terminal
+
+- On `fix/cli-control-chars` (`tests/test_terminal_control_chars.py`), off `d19b221`: every CLI
+  error (`cli/app._masked`) and the paths that bypassed it (`lint` and `coverage` text, the
+  spec name in `registry ls` and `describe`, `diff`, `calibrate` and `replay` lines, the spend and
+  "did not complete" lines) write control characters out after the redactor: C0 and DEL as control
+  pictures (`␊`), C1, U+2028, U+2029 and lone surrogates as Python escapes. A spec file named with
+  a newline printed a GitHub Actions workflow command on stderr (pre-merge audit of PR #49, on main
+  too). A registered credential split by control characters is masked whole on the terminal. `rich`
+  prints the run's error and coverage lines unwrapped and without markup (a wrap at 80 columns
+  could start a line with `::error`; `[/]` in a target's error raised `MarkupError` before the
+  reports were written). `coverage` lists unloaded files as bullets; `diff` and `calibrate` refuse
+  a report whose spec ids are not spec ids; a lone surrogate after a label no longer crashes the
+  masking (on main too); stdout escapes what its encoding lacks; `fingerprint` prints ASCII JSON; a
+  run id with a trailing newline is refused.
+- The pre-commit audit (two reviewers) found 10 of 42 mutants surviving (8 that would reopen a raw
+  line or a leak) and seven defects; the delta audit of those fixes found one regression of mine
+  (`fingerprint`'s JSON invalid on a cp1252 stdout) and two unpinned fixes. All fixed here. Left
+  open, pre-existing on main: the legacy `##[cmd]` form a GitHub runner reads anywhere in a line;
+  the reports and stores keep a credential split by a control character readable (`redact_text`
+  unchanged); a credential split by an invisible format character (U+200B) was neither masked nor
+  shown (on the terminal it is since 2026-10-07, above).
+- `make gates` green: 2,397 tests (195 new), coverage 96.49%. PR #49 touches `_masked` too: the
+  second to merge rebases.
 
 ## State, 2026-10-06 (evening): PR #50 merged; the first full local pass
 

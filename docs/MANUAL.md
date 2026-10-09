@@ -241,6 +241,32 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `target 'live' auth_ref a literal value (not shown) is not authorized by the scope (declared:
   'env://LIVE_KEY'); refusing to read an unauthorized credential`. The same holds for the
   judge-file mismatch of `dottore fleet --judge`.
+- **Errors, warnings and the inspection commands print no raw control character.** An error, a
+  warning, the text output of `lint`, `coverage`, `diff`, `calibrate` and `replay`, a spec's name
+  in `registry ls` and `describe`, and a canary on a `seed:` line of `run --dry-run -vv` quote
+  file names and values that a pack author, a report or a target wrote: a spec file named `x`, a
+  newline and `::error ...` printed a line a GitHub
+  Actions runner reads as a workflow command. A C0 control and DEL are written as their control
+  pictures (a newline as `␊`, ESC as `␛`, DEL as `␡`, as the redactor writes `␀` and `␁`), and a
+  C1 control, U+2028, U+2029 and a lone surrogate (an undecodable byte of a Linux file name) as
+  the escape Python writes (`\x85`, `\u2028`, `\udc9b`), and so is a format character (Unicode
+  Cf), which a terminal mostly does not show or which changes how a line reads: a zero-width space
+  `\u200b`, a soft hyphen `\xad`, a bidi control, a tag character `\U000e0041` (13 of them, the
+  prepended concatenation marks such as U+0600, do have a glyph). The cost: a joined emoji, a
+  right-to-left mark or a soft hyphen in a name prints its escape, and an existing path holding
+  one no longer reads as the file's name. This happens after the redactor, which masks a
+  registered credential split by control or format characters (or by U+FFFD, which is
+  printed as it is) whole; split by spaces or other printable characters it is still
+  kept. `dottore coverage` lists each file that failed to load as a bullet, so no line
+  starts with a file name, `diff` and `calibrate` refuse a report whose spec ids are not
+  spec ids (each `diff` row starts with one), and the run prints its error and coverage
+  lines unwrapped, so a wrap at 80 columns in a CI log cannot start one with `::error`. A
+  character the output's encoding lacks is written as its escape. The JSON outputs escape every
+  control character, `fingerprint`'s included. Not covered: a GitHub runner also reads the legacy
+  `##[error]` form anywhere in a line, which nothing here neutralises; a forged evidence tree can
+  still start a `replay` line with an id; the operator's own values in the run's plan lines (the
+  target id under `--dry-run`, `--estimate` and `-sn`) are printed as written; invisible
+  characters outside Cf (variation selectors, U+034F, U+3164) are not written out.
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
@@ -319,9 +345,9 @@ A value under `capabilities` or `sampling_defaults` that cannot be read as its f
 anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
 problems found in that block (the `capabilities` block alone if both are wrong), never the value
 written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
-valid boolean, unable to interpret input`. The field is printed from the key you wrote, so a control
-character in a key reaches the terminal as written (a line break splits the line), and a key that is
-not text is printed as pydantic renders it (`on:` as `1`). What can be read
+valid boolean, unable to interpret input`. The field is printed from the key you wrote, its control
+and format characters written out (a line break as `␊`), and a key that is not text is printed as
+pydantic renders it (`on:` as `1`). What can be read
 is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
 `top_p` have no range check. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
 `logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set, so a `tool:` written
@@ -905,8 +931,8 @@ finding, by its index), never the value written: `error: the report /abs/bad.jso
 findings.0.status: Input should be 'pass', 'fail' or 'inconclusive'`. At most 20 problems are listed
 and the rest counted. A key a finding does not have is part of the place and goes through the
 redactor like the rest of the message: an email or a known token format in it is masked, but a key
-of hex digits or a short password often prints as written, and a control character reaches the
-terminal as written (a line break splits the line). What can be read is taken as read (`"confirmed":
+of hex digits or a short password often prints as written, and its control and format characters
+are written out (a line break as `␊`). What can be read is taken as read (`"confirmed":
 "yes"` is true). `dottore calibrate REPORT LABELS` applies the
 same one-target rule and the same refusals, counts agreement as an exact status match, prints an
 undefined precision or recall as `n/a` and floors its percentages (99.6% is shown as 99%, not

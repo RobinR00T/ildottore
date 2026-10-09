@@ -29,6 +29,8 @@ from ildottore.shared.enums import (
 
 # id pattern ^[A-Z]+(-[A-Z0-9]+)+$ ; spec_version ^\d+\.\d+$ ; owasp ^LLM\d{2}$
 _ID_PATTERN = r"^[A-Z]+(-[A-Z0-9]+)+$"
+#: The spec id shape, for the readers of a stored report (``dottore diff`` and ``calibrate``).
+SPEC_ID_PATTERN = _ID_PATTERN
 _SPEC_VERSION_PATTERN = r"^\d+\.\d+$"
 # OWASP LLM Top 10 code, or an RAI code for the Responsible-AI pack (docs/12 P2), which has
 # no OWASP-security mapping. The `nist_ai_rmf` field carries its primary framework mapping.

@@ -434,7 +434,9 @@ file of 1,000 aliases of 6,000 characters `repr` writes as ten each: audit of th
 6,000-character text (a `repr` of 6,004,000 characters). The integer cases use a 600-digit hex
 number under the digit limit Python allows at its lowest (640), as #77 refuses a YAML number of more
 than 1,000 characters. Checks: `tests/cli/test_operator_file_quoted_values.py` (each refusal of the
-table through the CLI with a value past the cut: the line under 2,500 characters, the file named
+table through the CLI with a value past the cut: the line under 5,000 characters (2,500 until #51
+wrote a format character out, as up to ten: the two ids of 128 tag characters a refusal names whole
+then take 1,280 each), the file named
 where the refusal names it, the exact cut and no mask; twenty ids or references listed and the rest
 counted, through `run`, `fingerprint` and the credential refusal; the three refusals of `--resume`;
 a `repr` of exactly 300 characters quoted whole and one of 301 cut; the head equal to the start of
@@ -535,7 +537,8 @@ is imposed here, so an id with spaces or other characters loads as before. A-51'
 still matters: an id of 128 characters can have a `repr` of 1,282 (U+E0001 is written `\U000e0001`),
 so A-51's cases of a long id use such ids, and its test checks that no id is quoted whole anywhere
 in the output, which a second, cut quote of the same id on the line would otherwise hide: it looks
-for the 300 characters of the id's `repr` after the opening quote, one more than a cut keeps, with
+for the opening quote of the id's `repr` and the 300 characters after it (one more than a cut keeps;
+the quote since #51, which writes an id named whole in the same escapes without one), with
 the line breaks removed first so that a message Rich folds would be caught too (none that quotes an
 id goes through Rich today, so that part is defensive). The `-sV` probe ceiling refusal and its
 resume notice write the `repr` whole, and no case of that test reaches them. Not covered: a spec id
@@ -544,7 +547,8 @@ printed about 507 KB on a mock run, exit 0); `dottore diff` prints a report's ta
 two reports disagree, and `dottore diff` and `calibrate` list every target id of a report with
 several targets whole, a report being the tool's own output (OD-26) and one written before A-57 able
 to hold a longer id; a run stored with a longer id cannot be resumed, its target file being refused
-now; and an id may hold control characters, which reach the terminal as they are. Endpoints,
+now; and an id may hold control and format characters, which the plan and `-sV` lines print as they
+are (errors and warnings write them out since #51, u12 §6, up to ten characters each). Endpoints,
 `auth_ref` references and labels spec ids stay unbounded, cut in refusals, and `calibrate` still
 lists the labels a report does not cover whole, as its normal output. Checks:
 `tests/cli/test_operator_id_length.py` (the figure; 128 characters load and 129 are refused, for a

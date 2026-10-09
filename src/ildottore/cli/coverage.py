@@ -32,6 +32,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ildottore.cli import wiring
+from ildottore.redactor import visible_controls
 from ildottore.reporting.summary import (
     AxisCoverage,
     BatteryCoverage,
@@ -169,7 +170,13 @@ def _unloaded_lines(coverage: BatteryCoverage) -> list[str]:
         f"  WARNING: {len(coverage.unloaded)} spec file(s) failed to load and are NOT counted "
         "(run `dottore lint` for the full reason):",
     ]
-    lines.extend(f"    {path}  {message[:100]}" for path, message in coverage.unloaded)
+    # One bullet per file, its name and message written out: a line began with the file name,
+    # so one named `::error ...` (no control character needed) or `x\n::error ...` started a
+    # line a GitHub Actions runner reads as a workflow command (pre-merge audit of PR #49).
+    lines.extend(
+        f"    - {visible_controls(path)}  {visible_controls(message[:100])}"
+        for path, message in coverage.unloaded
+    )
     return lines
 
 

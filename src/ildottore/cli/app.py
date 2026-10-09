@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import math
 import re
+import sys
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 
@@ -44,6 +46,7 @@ from ildottore.redactor import (
     Redactor,
     mask_url_passwords,
     overlaps_known_secret,
+    visible_controls,
 )
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
@@ -88,14 +91,35 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit(ExitCode.CLEAN)
 
 
+def _streams_escape_what_they_cannot_encode(ctx: typer.Context) -> None:
+    """Write a character the terminal's encoding lacks as its escape instead of failing.
+
+    Control characters are written out as control pictures (``visible_controls``), which a
+    cp1252 or ASCII stream cannot encode: `registry ls` exited 1 and printed nothing on such a
+    stream when a spec's name held a newline (pre-commit audit of the control-characters
+    block). stderr already does this by default; stdout raised. Each stream gets its own
+    setting back when the command ends, for a caller that runs the app in its own process.
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        errors = getattr(stream, "errors", None)
+        if reconfigure is not None and errors is not None:
+            reconfigure(errors="backslashreplace")
+            ctx.call_on_close(partial(reconfigure, errors=errors))
+
+
 @app.callback()
 def _root(
+    ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option("--version", callback=_version_callback, is_eager=True, help="Show version."),
     ] = False,
 ) -> None:
     """Il Dottore root - see ``dottore <command> --help`` for each command."""
+
+    _streams_escape_what_they_cannot_encode(ctx)
 
 
 def _spec_paths(spec: list[Path] | None) -> list[Path]:
@@ -152,6 +176,12 @@ def _masked(exc: BaseException) -> str:
     Errors quote what the operator wrote, an endpoint URL with its password included: the
     scope refusal printed ``http://alice:<password>@host/...`` to stderr while reports, evidence
     and the run store all masked it (review of PR #32, SEC-02 left open on this path).
+
+    They also quote what a third party wrote, a spec file name of a pack included, and printed
+    its control characters raw: a file named ``x\\n::error ...`` made a line GitHub Actions
+    reads as a workflow command (pre-merge audit of PR #49). A registered credential split by
+    control characters is masked whole by the redactor (u01 A-32), and the control characters
+    are written out last, after every mask (``visible_controls``).
     """
 
     # Every rule but the entropy fallback runs on the whole text first, labels and context
@@ -205,7 +235,7 @@ def _masked(exc: BaseException) -> str:
         shown += [entropy.redact_text(text[end : match.start()]), kept(match.group(0))]
         end = match.end()
     shown.append(entropy.redact_text(text[end:]))
-    return "".join(shown)
+    return visible_controls("".join(shown))
 
 
 @app.command()
@@ -549,6 +579,30 @@ def fleet(
 # --- fingerprint -----------------------------------------------------------------
 
 
+#: What pydantic's JSON leaves raw that a terminal acts on or cp1252 cannot encode: DEL and every
+#: character outside ASCII (it escapes the C0 controls itself).
+_JSON_NOT_ASCII = re.compile(r"[^\x00-\x7e]")
+
+
+def _json_escape(match: re.Match[str]) -> str:
+    units = match.group(0).encode("utf-16-be")
+    return "".join(
+        f"\\u{int.from_bytes(units[i : i + 2], 'big'):04x}" for i in range(0, len(units), 2)
+    )
+
+
+def _ascii_json(text: str) -> str:
+    """pydantic's JSON with DEL and every character outside ASCII as a JSON escape.
+
+    pydantic left a C1 control, DEL and U+2028 a target echoed raw, and on a cp1252 stdout the
+    stream's own escapes (``\\x81``) are not JSON (delta audit of the control-characters
+    block). ``json.dumps`` escaped them too, but wrote ``1e-07`` for pydantic's ``1e-7`` and
+    ``NaN`` for its ``null`` (pre-merge audit): the numbers and the layout stay pydantic's.
+    """
+
+    return _JSON_NOT_ASCII.sub(_json_escape, text)
+
+
 @app.command()
 def fingerprint(
     target: Annotated[Path, typer.Argument(help="Target file (target.yaml).")],
@@ -591,7 +645,11 @@ def fingerprint(
         typer.echo(warning, err=True)
     if empty:
         raise typer.Exit(ExitCode.ERROR)
-    typer.echo(fp.model_dump_json(indent=2))
+    try:
+        shown = _ascii_json(fp.model_dump_json(indent=2))
+    except ValueError:  # a lone surrogate (a target id written `"t\ud800"`), not JSON to pydantic
+        shown = json.dumps(fp.model_dump(mode="json"), indent=2)
+    typer.echo(shown)
     raise typer.Exit(ExitCode.CLEAN)
 
 
@@ -767,7 +825,8 @@ def replay(
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     if warning is not None:
-        typer.echo(f"warning: {warning}", err=True)
+        # It names the --run-db path; written out like an error (`_masked`).
+        typer.echo(f"warning: {visible_controls(warning)}", err=True)
     typer.echo(replay_mod.render_replay(result))
 
 
@@ -792,9 +851,11 @@ def diff(
         for label, path in (("baseline", baseline), ("current", current)):
             incomplete = diff_mod.incomplete_reason(path)
             if incomplete is not None:
+                # The reason is the report's, and quotes a target's transport error.
                 typer.echo(
                     f"error: the {label} report describes a run that did not complete "
-                    f"({incomplete}). Its missing specs would diff as ONLY-IN-BASELINE, "
+                    f"({visible_controls(incomplete)}). Its missing specs would diff as "
+                    "ONLY-IN-BASELINE, "
                     "which is not a regression, so the comparison would read clean. "
                     "Re-run that scan, or diff two complete reports.",
                     err=True,
