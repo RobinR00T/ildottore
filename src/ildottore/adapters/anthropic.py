@@ -22,12 +22,40 @@ from typing import Any
 
 from ildottore.adapters.base import AdapterProductError, BaseAdapter
 from ildottore.shared.media import MediaError, render_media_part
-from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
+from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
-__all__ = ["AnthropicAdapter"]
+__all__ = ["AnthropicAdapter", "sent_sampling"]
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _DEFAULT_MAX_TOKENS = 1024
+
+
+def sent_sampling(sampling: Sampling) -> Sampling:
+    """The sampling a Messages API request carries, from what it was asked to carry (u12 A-66).
+
+    One function for the wire and for the record: ``_build_request`` sends exactly this, and the
+    runner and the probe and judge wrappers record it, so an attempt never holds a field that did
+    not go out. Two fields never do:
+
+    * ``seed``: the Messages API has none (``capabilities().seed`` is false);
+    * ``top_p`` beside a ``temperature``: Anthropic's API reference refuses the pair on every
+      Claude 4 model (HTTP 400; read in the reference bundled with the claude-api skill, cached
+      2026-09-25, not tested against the live API). Every request the scanner makes sets a
+      temperature (a spec's own, temperature 0 for a spec that declares none, the probes' 0, the
+      judge's 0 and 0.5), so a ``top_p``, a spec's own or a target file's ``sampling_defaults``,
+      is dropped and the temperature kept. Before, a spec with ``top_p`` (six shipped ones) or a
+      ``top_p`` in the block stopped the campaign at its first request.
+
+    ``max_tokens`` is recorded as asked; with none the adapter sends its default of 1024, which
+    is not recorded.
+    """
+
+    drop: dict[str, None] = {}
+    if sampling.seed is not None:
+        drop["seed"] = None
+    if sampling.top_p is not None and sampling.temperature is not None:
+        drop["top_p"] = None
+    return sampling.model_copy(update=drop) if drop else sampling
 
 
 @dataclass
@@ -204,7 +232,7 @@ class AnthropicAdapter(BaseAdapter):
         return {"role": role, "content": content}
 
     def _build_request(self, request: ModelRequest) -> tuple[dict[str, Any], dict[str, str]]:
-        sampling = request.sampling
+        sampling = sent_sampling(request.sampling) if request.sampling is not None else None
         max_tokens = _DEFAULT_MAX_TOKENS
         if sampling is not None and sampling.max_tokens is not None:
             max_tokens = sampling.max_tokens
@@ -222,7 +250,7 @@ class AnthropicAdapter(BaseAdapter):
         if sampling is not None:
             if sampling.temperature is not None:
                 body["temperature"] = sampling.temperature
-            if sampling.top_p is not None:
+            if sampling.top_p is not None:  # only without a temperature (sent_sampling)
                 body["top_p"] = sampling.top_p
             # No `seed` field on the Messages API (seed=False capability).
 

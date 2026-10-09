@@ -86,8 +86,8 @@ def fingerprint_target(
     adapter = wiring.build_probe_adapter(
         scope, target, real_target=real_target, scenario=scenario, mock_scenario=mock_scenario
     )
-    # A live target's sampling_defaults fills what PROBE_SAMPLING leaves unset, as under
-    # `run -sV` (OD-39, u12 A-66).
-    adapter = wiring.with_sampling_fallback(adapter, real_target)
+    # A live target's sampling_defaults fills what PROBE_SAMPLING leaves unset, and the adapter's
+    # own rule drops what it does not send, as under `run -sV` (OD-39, u12 A-66).
+    adapter = wiring.with_sent_sampling(adapter, real_target)
     engine = wiring.build_fingerprint_engine()
     return asyncio.run(engine.run(adapter))

@@ -376,6 +376,8 @@ class TargetPlan:
     # What of the target file's `sampling_defaults` fills what a spec or a -sV probe
     # leaves unset (OD-39): the fields its adapter sends, on a live route; None otherwise.
     sampling_defaults: Sampling | None = None
+    # The `sampling:` lines of the dry run: what the block fills and what does not go out.
+    sampling_notes: list[str] = field(default_factory=list)
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -680,6 +682,13 @@ def resolve_target_plans(
             identities=identities,
             sampling_defaults=sampling_defaults,
         )
+        notes = sampling_notes(
+            target,
+            runnable,
+            live=not loaded.uses_mock,
+            applied=apply_sampling_defaults,
+            fallback=sampling_defaults,
+        )
         plans.append(
             TargetPlan(
                 target=target,
@@ -695,9 +704,135 @@ def resolve_target_plans(
                 not_seeded=not_seeded,
                 identities=identities,
                 sampling_defaults=sampling_defaults,
+                sampling_notes=notes,
             )
         )
     return plans
+
+
+#: Why a field of a target file's ``sampling_defaults`` does not go out (OD-39, u12 A-66).
+_NO_SEED = {"anthropic": "the Messages API has none"}
+_ANTHROPIC_TOP_P = "anthropic takes no top_p beside a temperature, and every request carries one"
+
+
+def sampling_notes(
+    target: Target,
+    specs: list[AttackSpec],
+    *,
+    live: bool,
+    applied: bool,
+    fallback: Sampling | None,
+) -> list[str]:
+    """The dry run's ``sampling:`` lines for one target: what its block fills, what never goes out.
+
+    Counted over ``specs`` through the adapter's own rule (:func:`wiring.sent_sampling_for`), so
+    a field the spec sets itself, or one the adapter drops, is not counted as filled. On an
+    Anthropic target the ``top_p`` the specs set themselves is said too: it is not sent beside
+    their temperature (Claude 4 models refuse the pair).
+    """
+
+    notes: list[str] = []
+    block = target.sampling_defaults
+    rule = wiring.sent_sampling_for(target) if live else None
+    total = len(specs)
+    if block is not None and not live:
+        notes.append(f"{target.id}'s sampling_defaults is not sent (an offline mock sends nothing)")
+    elif block is not None and not applied:
+        notes.append(
+            f"{target.id}'s sampling_defaults is not sent (a resume of a run started before it "
+            "was applied)"
+        )
+    elif block is not None and fallback is None:
+        provider = (target.provider or "").strip().lower() or "rest"
+        notes.append(
+            f"{target.id}'s sampling_defaults is not sent (nothing in it goes out through "
+            f"provider {provider})"
+        )
+    elif block is not None and fallback is not None:
+        kept = fallback.model_dump(exclude_none=True)
+        unsent: list[str] = []
+        fills: list[str] = []
+        no_seed = _NO_SEED.get(
+            (target.provider or "").strip().lower(), "capabilities.seed is not true"
+        )
+        for name, value in block.model_dump(exclude_none=True).items():
+            if name not in kept:  # only the seed: the rest of a live block is the provider's
+                unsent.append(f"{name} {value} ({no_seed})")
+            elif name == "top_p" and rule is not None:
+                unsent.append(f"{name} {value} ({_ANTHROPIC_TOP_P})")
+            else:
+                filled = 0
+                for spec in specs:
+                    own = getattr(spec.sampling, name) if spec.sampling is not None else None
+                    sent = spec_sampling(spec, fallback)
+                    sent = rule(sent) if rule is not None else sent
+                    if own is None and getattr(sent, name) == value:
+                        filled += 1
+                fills.append(f"{name} {value} on {filled} of {total}")
+        if fills:
+            notes.append(
+                f"{target.id}'s sampling_defaults fills {', '.join(fills)} specs (a spec's own "
+                "value wins)"
+            )
+        if unsent:
+            notes.append(f"{target.id}'s sampling_defaults sends no {', no '.join(unsent)}")
+    if rule is not None:
+        own_top_p = sum(1 for s in specs if s.sampling is not None and s.sampling.top_p is not None)
+        if own_top_p:
+            notes.append(
+                f"{target.id} gets no top_p from the {own_top_p} of {total} specs that set one: "
+                "anthropic takes no top_p beside a temperature"
+            )
+    return notes
+
+
+def judge_sampling_notes(judge: Target, *, applied: bool) -> list[str]:
+    """The dry run's ``judge sampling:`` lines: what the judge file's block fills (OD-39).
+
+    The judge sets its temperature (0, then 0.5) and ``top_p`` 1.0, so its own file's block
+    fills only ``max_tokens`` and ``seed``; an Anthropic judge sends no ``top_p`` beside its
+    temperature.
+    """
+
+    notes: list[str] = []
+    rule = wiring.sent_sampling_for(judge)
+    if judge.sampling_defaults is not None:
+        kept = wiring.sampling_fallback(judge)
+        added = {
+            name: value
+            for name, value in (kept.model_dump(exclude_none=True) if kept else {}).items()
+            if name not in ("temperature", "top_p")
+        }
+        if not applied:
+            notes.append(
+                f"{judge.id}'s sampling_defaults is not sent (a resume of a run started before "
+                "it was applied)"
+            )
+        elif kept is None:
+            notes.append(f"{judge.id}'s sampling_defaults is not sent (nothing in it goes out)")
+        elif added:
+            filled = ", ".join(f"{name} {value}" for name, value in added.items())
+            notes.append(
+                f"{judge.id}'s sampling_defaults fills {filled} on every judge request (the "
+                "judge's own temperature and top_p win)"
+            )
+        else:
+            notes.append(
+                f"{judge.id}'s sampling_defaults fills nothing: the judge sets its own temperature "
+                "and top_p"
+            )
+        seed = judge.sampling_defaults.seed
+        if applied and kept is not None and seed is not None and kept.seed is None:
+            reason = _NO_SEED.get(
+                (judge.provider or "").strip().lower(), "capabilities.seed is not true"
+            )
+            notes.append(f"{judge.id}'s sampling_defaults sends no seed {seed} ({reason})")
+    if rule is not None:
+        notes.append(
+            f"{judge.id} gets no top_p (the judge's 1.0): anthropic takes no top_p beside a "
+            "temperature"
+        )
+    return notes
 
 
 def fingerprint_probe_count() -> int:
@@ -935,6 +1070,7 @@ def _print_dry_run_plan(
     sending: bool = False,
     detail: int = 0,
     filtered: bool = False,
+    judge_notes: list[str] | None = None,
 ) -> None:
     """Print the resolved plan (one line under ``--quiet``).
 
@@ -952,6 +1088,7 @@ def _print_dry_run_plan(
 
     requests = sum(p.estimate.requests for p in plans)
     specs = sum(len(p.selected) for p in plans)
+    judge_notes = judge_notes or []
     headline = "resolved, sending now." if sending else "plan resolved, sent nothing."
     label = "plan" if sending else "dry-run"
     if quiet:
@@ -1010,24 +1147,10 @@ def _print_dry_run_plan(
             if detail >= 2:
                 for spec_id, reason in plan.not_seeded:
                     print(f"    - {spec_id}: {visible_controls(reason)}")
-        if plan.sampling_defaults is not None:
-            # Per field, how many of the specs it goes out with: a spec's own value wins, so a
-            # block's temperature reaches none of the shipped battery (OD-39).
-            total = len(plan.selected)
-            filled = ", ".join(
-                f"{name} {value} on {_leaving_unset(plan.selected, name)} of {total}"
-                for name, value in plan.sampling_defaults.model_dump(exclude_none=True).items()
-            )
-            print(
-                f"  sampling: {plan.target.id}'s sampling_defaults fills {filled} specs (a "
-                "spec's own value wins)"
-            )
-        elif plan.target.sampling_defaults is not None:
-            print(
-                f"  sampling: {plan.target.id}'s sampling_defaults is not sent (an offline mock, "
-                "a provider whose requests carry no such field, or a resume of a run started "
-                "before it was applied)"
-            )
+        # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
+        # temperature reaches none of the shipped battery), and what never goes out (OD-39).
+        for note in plan.sampling_notes:
+            print(f"  sampling: {visible_controls(note)}")
         if detail >= 2:
             # What the operator plants: each seeded spec's own canary (run_token-<spec id>). The
             # canary is the pack author's text, written out as every such line is (u12 §6).
@@ -1042,6 +1165,8 @@ def _print_dry_run_plan(
             f"  judge:   +{judge_requests} request(s) to the --judge model, paced and debited "
             "from the same ceilings"
         )
+    for note in judge_notes:
+        print(f"  judge sampling: {visible_controls(note)}")
     if fingerprint_probes:
         print(
             f"  fingerprint: +{fingerprint_probes} probe(s) per target before the battery "
@@ -1061,12 +1186,6 @@ def _print_dry_run_plan(
         f"  budgets: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
         f"{budgets.max_wall_s}s wall (derived from this plan)"
     )
-
-
-def _leaving_unset(specs: list[AttackSpec], field_name: str) -> int:
-    """How many of ``specs`` leave ``field_name`` of their sampling unset (the block fills it)."""
-
-    return sum(1 for s in specs if s.sampling is None or getattr(s.sampling, field_name) is None)
 
 
 def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
@@ -1888,6 +2007,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             detail=opts.verbose,
             filtered=bool(
                 opts.categories or opts.spec_globs or opts.exclude_globs or opts.top_tests
+            ),
+            judge_notes=(
+                judge_sampling_notes(judge_target, applied=apply_sampling_defaults)
+                if judge_target is not None
+                else None
             ),
         )
     elif pacing_rate is None and opts.rate is not None and not opts.quiet:

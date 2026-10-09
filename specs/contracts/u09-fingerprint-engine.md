@@ -58,8 +58,10 @@ only - no jailbreak payloads, scope-allowlist-gated.
   wire shape has no field for it, pre-merge audit of PR #87). Since 2026-10-09 (OD-39, u12 A-66)
   the composition root fills what `PROBE_SAMPLING` leaves unset from the live target file's
   `sampling_defaults`, outside the probe recorder: a `top_p` or `seed` there goes out with every
-  probe (no `seed` on Anthropic) and `probes/` records it; temperature 0 and the 512-token cap
-  are the probe's own and win. The engine itself is unchanged.
+  probe (a `seed` only with `capabilities.seed: true`; on Anthropic neither, since that adapter
+  sends no seed and no `top_p` beside the probe's temperature 0) and `probes/` records what went
+  out; temperature 0 and the 512-token cap are the probe's own and win. The engine itself is
+  unchanged.
 - DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always
   disables). Resolved as built: `-sV` (and `-A`) imply adaptive ordering; there is no
   `--no-adaptive` flag (`00-INDEX.md` OD-5). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs

@@ -276,6 +276,7 @@ class CampaignRunner:
         timestamp: Callable[[], str] | None = None,
         spend_sink: Callable[[Spend], None] | None = None,
         sampling_defaults: Sampling | None = None,
+        sent_sampling: Callable[[Sampling], Sampling] | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -337,6 +338,10 @@ class CampaignRunner:
         # an adapter that sends sampling, so what an attempt records is what went out (OD-39,
         # u12 A-66). Each field fills what a spec leaves unset (:func:`spec_sampling`).
         self._sampling_defaults = sampling_defaults
+        # What of a request's sampling the target's adapter puts on the wire (the Anthropic
+        # adapter never sends a seed, nor a top_p beside a temperature): applied before the
+        # attempt is recorded, so the record is the request that went out (u12 A-66).
+        self._sent_sampling = sent_sampling
 
     async def run(
         self,
@@ -851,9 +856,7 @@ class CampaignRunner:
         """Reproduce one (spec, mutation) as N single-turn sends (the classic path)."""
 
         mutated_prompt = self._apply_mutation(spec, mutation, base_prompt)
-        request = _build_request(
-            spec, mutated_prompt, scene=scene, sampling_defaults=self._sampling_defaults
-        )
+        request = _build_request(spec, mutated_prompt, scene=scene, sampling=self._sampling(spec))
         return await reproduce(
             adapter,
             request,
@@ -892,7 +895,7 @@ class CampaignRunner:
         single-turn path mutates it, and the tool rounds as further sends.
         """
 
-        sampling = spec_sampling(spec, self._sampling_defaults)
+        sampling = self._sampling(spec)
         system_prompt = spec.setup.system_prompt if spec.setup is not None else None
         if scene is not None:
             system_prompt = scene.system_prompt(system_prompt)
@@ -928,6 +931,12 @@ class CampaignRunner:
         )
 
     # --- multi-identity (authz_leak, audit M14) ------------------------------
+
+    def _sampling(self, spec: AttackSpec) -> Sampling:
+        """The sampling a request of ``spec`` goes out with: filled, then as the adapter sends."""
+
+        sampling = spec_sampling(spec, self._sampling_defaults)
+        return self._sent_sampling(sampling) if self._sent_sampling is not None else sampling
 
     def _param_accepted(self, mutation: str) -> bool:
         """True unless ``mutation`` carries a parameter its mutator declares it does not take.
@@ -982,9 +991,9 @@ class CampaignRunner:
         identities: dict[str, ModelResponse] = {}
         owners: dict[str, str] = {}
         for probe in probes:
-            request = _build_request(
-                spec, base_prompt, sampling_defaults=self._sampling_defaults
-            ).model_copy(update={"identity": probe.identity_id})
+            request = _build_request(spec, base_prompt, sampling=self._sampling(spec)).model_copy(
+                update={"identity": probe.identity_id}
+            )
             try:
                 # Paced like every other send: an identity sweep is N more requests on the
                 # wire, so it obeys the authorized rate too.
@@ -1500,12 +1509,13 @@ def _build_request(
     prompt: str,
     *,
     scene: InBandSetup | None = None,
-    sampling_defaults: Sampling | None = None,
+    sampling: Sampling | None = None,
 ) -> ModelRequest:
     """Build a :class:`ModelRequest` from a spec + mutated prompt (pinned sampling).
 
-    The sampling is :func:`spec_sampling`: the spec's own, filled from the target file's
-    ``sampling_defaults`` where the composition root passes them (OD-39).
+    ``sampling`` is the runner's (``CampaignRunner._sampling``: the spec's own, filled from the
+    target file's ``sampling_defaults``, as the adapter sends it, OD-39); without one, the spec's
+    own (:func:`spec_sampling`).
 
     A ``multimodal`` spec's ``attack.media`` rides along as the declarative carrier (the adapter
     renders it for transport). For evidence, the request also records the SHA-256 of each rendered
@@ -1514,7 +1524,7 @@ def _build_request(
     it. Computing a hash is not transport rendering; the adapter still owns what goes on the wire.
     """
 
-    sampling = spec_sampling(spec, sampling_defaults)
+    sampling = sampling if sampling is not None else spec_sampling(spec)
     system_prompt = spec.setup.system_prompt if spec.setup is not None else None
     media = spec.attack.media
     metadata: JsonDict | None = {"media_sha256": media_digests(media)} if media else None

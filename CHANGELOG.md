@@ -17,18 +17,35 @@ versioning: [SemVer](https://semver.org/).
   a `-sV` probe keeps `PROBE_SAMPLING` (temperature 0, 512 tokens) and takes `top_p` and `seed`;
   the `--judge` model keeps its temperature (0, then 0.5) and `top_p` 1.0 and takes `max_tokens`
   and `seed` from its own file's block, never the scanned target's. No `dottore` flag sets
-  sampling. Only what the adapter sends is applied: all four fields through OpenAI, all but `seed`
-  through Anthropic (the Messages API has none), nothing through a REST template, an MCP server
-  or a WebSocket target, by design, and nothing on the offline mock. With the examples' block
+  sampling. Only what the adapter sends is applied: all four fields through OpenAI (a block `seed`
+  only to a file that sets `capabilities.seed: true`), through Anthropic all but `seed` and no
+  `top_p` beside a temperature (next item), nothing through a REST template, an MCP server or a
+  WebSocket target, by design, and nothing on the offline mock. With the examples' block
   (`temperature: 0.0, top_p: 1.0`), the shipped battery now sends `top_p` 1.0 on the 69 of 75
   specs that set none; no shipped spec leaves its temperature to the block.
+- **An Anthropic request carries no `top_p` beside a `temperature`.** Anthropic's API reference
+  says every Claude 4 model answers the pair with HTTP 400 (read in the reference bundled with the
+  claude-api skill, cached 2026-09-25; not tested against the live API), and every request the
+  scanner makes sets a temperature. So a block `top_p` stopped every Anthropic campaign at its
+  first request (found by the pre-merge audit through a strict stub: `f12ba83` exit 0, the first
+  version of this change exit 3 with 0 of 10 specs run), and on main already the six shipped specs
+  that set `top_p` 1.0 themselves (`EMB-INVERSION-PROBE-001`, `EMB-NEIGHBOR-LEAK-001`,
+  `EMB-XTENANT-RETRIEVAL-001`, `PI-DIRECT-001`, `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`)
+  did, as did every request of an Anthropic `--judge` (its `top_p` 1.0). The Anthropic adapter
+  now keeps the temperature and sends no `top_p` with it, the spec's, the block's or the judge's
+  (`adapters.anthropic.sent_sampling`, the one function the request and the record are built
+  from), and no `seed`, which it never sent. 1.0 is `top_p`'s default; a block `top_p` below 1 is
+  not applied there, and `--dry-run` says so.
 - **The record is what went out.** Each attempt's `sampling` and `request.sampling` are the filled
   values (the single-turn send, every turn of a conversation, the identity sweep), and so is each
-  probe under `probes/`, filled outside the probe recorder. `--estimate` and the token ceilings
+  probe under `probes/`, filled outside the probe recorder; on Anthropic without the `seed` and
+  the `top_p` that did not go out. `--estimate` and the token ceilings
   derived from it price the block's `max_tokens` for a spec that declares none, the cap each send
   reserves; `--dry-run` prints, per field, on how many specs the block fills it
   (`sampling: local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of
-  10 specs (a spec's own value wins)`), or that it is not sent.
+  10 specs (a spec's own value wins)`), what of it does not go out and why (`sends no seed 7
+  (capabilities.seed is not true)`), the specs' own `top_p` an Anthropic target does not get,
+  the same for the `--judge` file (`judge sampling:` lines), or that a block is not sent.
 - **A resume continues as its run started.** The run context records
   `sampling_defaults_applied`. A run an older version started records nothing and sent none of
   the block, so its resume sends none either (target, judge and `-sV` probes), prices without it,
@@ -37,19 +54,28 @@ versioning: [SemVer](https://semver.org/).
   sampling_defaults; a fresh run sends them`, never silenced by `-q`) and records false, so every
   later resume agrees. A value that is not a boolean is refused as a corrupt record (exit 3). The
   target digest is unchanged: a run without a block resumes as before, and an edited block is
-  still a different target.
-- Contract u12 A-66 and OD-39 (u08, u09 and u06 notes, `00-INDEX`);
-  `tests/cli/test_sampling_defaults.py` (29 tests through a loopback stub that keeps every body;
-  25 fail on `f12ba83`, and the 4 that pass are the controls: no block, a spec with no `sampling`
-  and no block, a REST target, the offline mock). MANUAL §4.2 (a precedence table), its
+  still a different target, a refusal that now names `sampling_defaults` among what may differ;
+  an edited `--judge` file reads "a different --judge file (its endpoint, model or
+  sampling_defaults differ)" where it said "stored a judge, now a judge".
+- Contract u12 A-66 and OD-39 (u04, u08, u09 and u06 notes, `00-INDEX`);
+  `tests/cli/test_sampling_defaults.py` (42 tests through a loopback stub that keeps every body
+  and whose Anthropic endpoints refuse `temperature` with `top_p`; the new helpers are imported
+  inside the tests that use them, so the file is collected anywhere: 37 fail on `f12ba83` and 15
+  on the first version of this change, and the 5 that pass on `f12ba83` are controls: no block, a
+  spec with no `sampling` and no block, a REST target, the offline mock, an Anthropic `-sV` pass
+  with no block sent); `tests/adapters/test_anthropic.py` expects no `top_p` beside a
+  temperature and a lone `top_p` sent. The unused `SemanticJudgeEvaluator._JUDGE_SAMPLING`
+  (`seed=0`, sent by nothing) is removed, with the docstring that said the judge's sampling is
+  recorded in evidence (its requests are not stored). MANUAL §4.2 (a precedence table), its
   `--dry-run`, `--estimate`, `--resume` and `--budget-tokens` rows, the FAQ, USAGE,
   `dottore(1)`, `dottore-scope(5)`, `docs/01`, `docs/03`, `docs/09`, `docs/10`, and every example
   target file (a commented block, and what it fills) are updated; `examples/README.md` shows the
   new `sampling:` line in Scenarios B and G, and a test runs both commands against it.
 - Left as they were, and said in A-66: a REST, MCP or WebSocket attempt still records the spec's
-  own sampling, which nothing carries, and an Anthropic attempt the spec's `seed`; the OpenAI
-  adapter sends a `seed` whatever `capabilities.seed` says; the Anthropic adapter's 1024-token
-  default is not recorded; `SemanticJudgeEvaluator._JUDGE_SAMPLING` is read by nothing.
+  own sampling, which nothing carries; the OpenAI adapter sends a spec's `seed` whatever
+  `capabilities.seed` says; the Anthropic adapter's 1024-token default is not recorded; Claude
+  models that take no sampling at all (Opus 4.7 and later, Sonnet 5, the Fable models, per the
+  same reference) refuse the temperature every request carries, a defect older than this change.
 
 ### Fixed (a run id of twelve decimal digits, masked as a phone number)
 

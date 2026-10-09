@@ -501,21 +501,27 @@ def _assert_same_context(
     if stored_target != current_target:
         raise ValueError(
             f"run {run_id!r} was made against a different target than the one resolved now "
-            "(its endpoint, model, capabilities, offline scenario or seeded_setup differ, even "
-            "though the id "
-            "matches). Resuming would publish one target's evidence as another's. Restore the "
-            "target as it was, or start a fresh run."
+            "(its endpoint, model, capabilities, sampling_defaults, offline scenario or "
+            "seeded_setup differ, even though the id matches). Resuming would publish one "
+            "target's evidence as another's. Restore the target as it was, or start a fresh run."
         )
     context = context or {}
     stored_judge = context.get("judge_digest")
     current_judge = target_digest(judge) if judge is not None else None
     if stored_judge != current_judge:
+        # Both there and different: the same flag names another file, or the same file was
+        # edited; "stored a judge, now a judge" said neither (pre-merge audit of A-66).
+        which = (
+            "a different --judge file (its endpoint, model or sampling_defaults differ)"
+            if stored_judge and current_judge
+            else f"{'a judge' if stored_judge else 'no judge'} stored, "
+            f"{'a judge' if current_judge else 'none'} now"
+        )
         raise ValueError(
             f"run {run_id!r} was judged by a different model than this invocation offers "
-            f"(stored {'a judge' if stored_judge else 'no judge'}, now "
-            f"{'a judge' if current_judge else 'none'}). `semantic_judge` decides verdicts, so "
-            "one campaign would be arbitrated by two different models and merged into one "
-            "finding per spec. Resume with the same --judge, or start a fresh run."
+            f"({which}). `semantic_judge` decides verdicts, so one campaign would be arbitrated "
+            "by two different models and merged into one finding per spec. Resume with the "
+            "same --judge, or start a fresh run."
         )
     stored_adaptive = context.get("adaptive")
     if adaptive is not None and stored_adaptive is not None and bool(stored_adaptive) != adaptive:

@@ -9,11 +9,22 @@ leaves unset is taken from the block of the file the request goes to (the judge'
 the judge), and what is still unset is the provider's default.
 
 Through the real CLI against a loopback stub that keeps every body it is sent: an OpenAI target,
-an Anthropic one (which has no ``seed``, so the block's is neither sent nor recorded), a REST
-template (which carries no sampling field, by design), the ``--judge`` model, the ``-sV`` probes,
-``--estimate`` (which prices the ``max_tokens`` the block adds) and ``--resume`` of a run started
-before the block was applied (it continues as it started, and says so). The attempt and the
-probe evidence record what went out.
+an Anthropic one, a REST template (which carries no sampling field, by design), the ``--judge``
+model, the ``-sV`` probes, ``--estimate`` (which prices the ``max_tokens`` the block adds) and
+``--resume`` of a run started before the block was applied (it continues as it started, and says
+so). The attempt and the probe evidence record what went out.
+
+The Anthropic endpoint is strict, as Anthropic's API reference says every Claude 4 model is
+(read in the reference bundled with the claude-api skill, cached 2026-09-25; not tested against
+the live API): a request with both ``temperature`` and ``top_p`` gets HTTP 400. Every request
+the scanner makes sets a temperature, so the adapter sends no ``top_p`` beside it, the spec's own
+or the block's, and records none; 8d1bc59 stopped every such campaign at its first request (a
+block ``top_p``), and so did main for the six specs that set ``top_p`` themselves (the pre-merge
+audit of A-66). The Messages API has no ``seed`` either, and a block's ``seed`` goes out only to a
+target whose file sets ``capabilities.seed: true``.
+
+The helpers this branch adds are imported inside the tests that use them, so on a tree without
+them the CLI tests are collected and fail on what they check.
 """
 
 from __future__ import annotations
@@ -33,7 +44,6 @@ from typer.testing import CliRunner
 from ildottore.cli import wiring
 from ildottore.cli.app import app
 from ildottore.cli.run import fingerprint_probe_count
-from ildottore.core.runner import fill_sampling, spec_sampling
 from ildottore.shared.models import Sampling, Target
 from tests.cli.conftest import write_scope
 
@@ -53,6 +63,26 @@ _JUDGE_SAYS_SECURE = json.dumps(
 )
 _SAMPLING_KEYS = ("temperature", "top_p", "max_tokens", "seed")
 
+#: What a strict Anthropic endpoint answers to a request with both (the message is the stub's;
+#: the reference names no exact text).
+_BOTH_REFUSED = {
+    "type": "error",
+    "error": {
+        "type": "invalid_request_error",
+        "message": "temperature and top_p cannot both be specified for this model.",
+    },
+}
+
+
+def _anthropic(text: str) -> dict[str, Any]:
+    return {
+        "id": "stub",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": text}],
+        "stop_reason": "end_turn",
+    }
+
 
 def _openai(content: str) -> dict[str, Any]:
     return {
@@ -70,7 +100,8 @@ def _openai(content: str) -> dict[str, Any]:
 
 @pytest.fixture
 def stub() -> Iterator[tuple[int, list[tuple[str, dict[str, Any]]]]]:
-    """An OpenAI target, an Anthropic one, a REST one and a judge; every body kept in order."""
+    """An OpenAI target, a strict Anthropic one, a REST one and a judge of either provider; every
+    body kept in order."""
 
     seen: list[tuple[str, dict[str, Any]]] = []
 
@@ -78,22 +109,21 @@ def stub() -> Iterator[tuple[int, list[tuple[str, dict[str, Any]]]]]:
         def do_POST(self) -> None:
             body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))))
             seen.append((self.path, body))
-            if self.path.startswith("/judge/"):
-                reply: dict[str, Any] = _openai(_JUDGE_SAYS_SECURE)
+            status = 200
+            if self.path.endswith("/messages") and "temperature" in body and "top_p" in body:
+                status, reply = 400, _BOTH_REFUSED
+            elif self.path == "/judge/v1/messages":
+                reply = _anthropic(_JUDGE_SAYS_SECURE)
+            elif self.path.startswith("/judge/"):
+                reply = _openai(_JUDGE_SAYS_SECURE)
             elif self.path == "/v1/messages":
-                reply = {
-                    "id": "stub",
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": "I cannot help with that."}],
-                    "stop_reason": "end_turn",
-                }
+                reply = _anthropic("I cannot help with that.")
             elif self.path == "/rest":
                 reply = {"text": "I cannot help with that."}
             else:
                 reply = _openai("I cannot help with that.")
             raw = json.dumps(reply).encode()
-            self.send_response(200)
+            self.send_response(status)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(raw)))
             self.end_headers()
@@ -123,10 +153,14 @@ def _files(
     provider: str = "openai",
     block: dict[str, Any] | None = None,
     judge_block: dict[str, Any] | None = None,
+    seed: bool = False,
+    judge_provider: str = "openai",
+    judge_seed: bool = False,
 ) -> None:
     path = {"openai": "/v1/chat/completions", "anthropic": "/v1/messages", "rest": "/rest"}
     endpoint = f"http://127.0.0.1:{port}{path[provider]}"
-    judge_endpoint = f"http://127.0.0.1:{port}/judge/v1/chat/completions"
+    judge_path = "/judge" + path[judge_provider]
+    judge_endpoint = f"http://127.0.0.1:{port}{judge_path}"
     (tmp_path / "scope.yaml").write_text(
         f'version: "1.0"\ntargets:\n  - id: stub\n    base_url: "{endpoint}"\n'
         f'    endpoints:\n      - host: "127.0.0.1:{port}"\n'
@@ -134,16 +168,18 @@ def _files(
         '    identities:\n      - name: default\n        auth_ref: "env://NONE"\n'
         f'  - id: judge\n    base_url: "{judge_endpoint}"\n'
         f'    endpoints:\n      - host: "127.0.0.1:{port}"\n'
-        '        path_prefixes: ["/judge/v1/chat/completions"]\n'
+        f'        path_prefixes: ["{judge_path}"]\n'
         '    identities:\n      - name: judge\n        auth_ref: "env://NONE"\n'
     )
     (tmp_path / "target.yaml").write_text(
         f'id: stub\ntype: chatbot\nprovider: {provider}\nendpoint: "{endpoint}"\nmodel: m\n'
-        "capabilities:\n  tools: false\n  rag: false\n" + _flow(block)
+        "capabilities:\n  tools: false\n  rag: false\n"
+        + ("  seed: true\n" if seed else "")
+        + _flow(block)
     )
     (tmp_path / "judge.yaml").write_text(
-        f'id: judge\ntype: model\nprovider: openai\nendpoint: "{judge_endpoint}"\nmodel: j\n'
-        + _flow(judge_block)
+        f'id: judge\ntype: model\nprovider: {judge_provider}\nendpoint: "{judge_endpoint}"\n'
+        "model: j\n" + ("capabilities:\n  seed: true\n" if judge_seed else "") + _flow(judge_block)
     )
 
 
@@ -296,19 +332,49 @@ def test_a_spec_that_declares_no_sampling_takes_the_block_then_temperature_0(
     assert all(_recorded(a) == expected for a in _stored(tmp_path, "attempts"))
 
 
-def test_anthropic_sends_no_seed_from_the_block_and_records_none(
-    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
+def _both(seen: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
+    return [body for _, body in seen if "temperature" in body and "top_p" in body]
+
+
+@pytest.mark.parametrize("seed", [False, True], ids=["no-seed-capability", "seed-capability"])
+def test_anthropic_sends_no_seed_and_no_top_p_beside_a_temperature(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]], seed: bool
 ) -> None:
-    """The Messages API has no seed: the block's is dropped, so no attempt records one; its
-    max_tokens replaces the adapter's own 1024."""
+    """The Messages API has no seed, and a Claude 4 model refuses a top_p beside a temperature:
+    the block's are dropped, on the wire and in the record; its max_tokens replaces the adapter's
+    own 1024. 8d1bc59 sent the block's top_p beside the pinned temperature 0 and the strict
+    endpoint stopped the run (exit 3)."""
 
     port, seen = stub
-    _files(tmp_path, port, provider="anthropic", block={"top_p": 0.25, "seed": 7, "max_tokens": 33})
+    block = {"top_p": 0.25, "seed": 7, "max_tokens": 33}
+    _files(tmp_path, port, provider="anthropic", block=block, seed=seed)
     result = CliRunner().invoke(app, _run(tmp_path, spec_dir=_undeclared_spec_dir(tmp_path)))
     assert result.exit_code == 0, result.output
-    expected = {"temperature": 0.0, "top_p": 0.25, "max_tokens": 33}
+    assert _both(seen) == []
+    expected = {"temperature": 0.0, "max_tokens": 33}
     assert seen and all(_sampled(body) == expected for _, body in seen), seen
     assert all(_recorded(a) == expected for a in _stored(tmp_path, "attempts"))
+
+
+@pytest.mark.parametrize("block", [None, {"top_p": 0.25}], ids=["no-block", "block-top_p"])
+def test_an_anthropic_spec_with_its_own_top_p_goes_out_without_it(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]], block: dict[str, Any] | None
+) -> None:
+    """PI-DIRECT-001 sets temperature 0 and top_p 1.0 itself: on main as on 8d1bc59 the strict
+    endpoint refused its first request and the run stopped. It keeps its temperature now, and
+    neither the wire nor the attempt holds its top_p or its seed."""
+
+    port, seen = stub
+    _files(tmp_path, port, provider="anthropic", block=block)
+    command = _run(tmp_path)
+    command[command.index(_SPEC)] = "PI-DIRECT-001"
+    result = CliRunner().invoke(app, command)
+    assert result.exit_code in (0, 1), result.output
+    assert _both(seen) == []
+    expected = {"temperature": 0.0, "max_tokens": 600}
+    assert seen and all(_sampled(body) == expected for _, body in seen), seen
+    attempts = _stored(tmp_path, "attempts")
+    assert attempts and all(_recorded(a) == expected for a in attempts)
 
 
 def test_a_rest_target_sends_no_sampling_and_records_none_of_the_block(
@@ -352,6 +418,7 @@ def test_the_judge_takes_its_own_files_block_not_the_targets(
         port,
         block={"top_p": 0.25, "max_tokens": 33, "seed": 7},
         judge_block={"temperature": 0.9, "top_p": 0.75, "max_tokens": 99, "seed": 5},
+        judge_seed=True,
     )
     result = CliRunner().invoke(app, _run(tmp_path, "--judge", str(tmp_path / "judge.yaml")))
     assert result.exit_code == 0, result.output
@@ -365,6 +432,41 @@ def test_the_judge_takes_its_own_files_block_not_the_targets(
     assert all(s == {**_OWN, "top_p": 0.25} for s in attacked), attacked
 
 
+@pytest.mark.parametrize(
+    ("judge_provider", "judge_seed", "expected"),
+    [
+        # The file does not set capabilities.seed: true, so the block's seed stays home.
+        ("openai", False, {"top_p": 1.0, "max_tokens": 99}),
+        # The Messages API has no seed, and a Claude 4 judge refuses the judge's top_p 1.0
+        # beside its temperature (main and 8d1bc59 sent both: every judge request refused).
+        ("anthropic", True, {"max_tokens": 99}),
+    ],
+    ids=["openai-without-seed-capability", "anthropic"],
+)
+def test_the_judges_seed_and_top_p_go_out_only_where_its_adapter_sends_them(
+    tmp_path: Path,
+    stub: tuple[int, list[tuple[str, dict[str, Any]]]],
+    judge_provider: str,
+    judge_seed: bool,
+    expected: dict[str, Any],
+) -> None:
+    port, seen = stub
+    _files(
+        tmp_path,
+        port,
+        judge_block={"max_tokens": 99, "seed": 5},
+        judge_provider=judge_provider,
+        judge_seed=judge_seed,
+    )
+    result = CliRunner().invoke(app, _run(tmp_path, "--judge", str(tmp_path / "judge.yaml")))
+    assert result.exit_code == 0, result.output
+    assert _both([(path, body) for path, body in seen if path.endswith("/messages")]) == []
+    judged = [_sampled(body) for path, body in seen if path.startswith("/judge/")]
+    assert {json.dumps(s, sort_keys=True) for s in judged} == {
+        json.dumps({"temperature": t, **expected}, sort_keys=True) for t in (0.0, 0.5)
+    }, judged
+
+
 def test_the_probes_keep_their_own_sampling_and_take_the_rest(
     tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
 ) -> None:
@@ -372,7 +474,8 @@ def test_the_probes_keep_their_own_sampling_and_take_the_rest(
     wire and in `probes/`, through `run -sV` and `dottore fingerprint` alike."""
 
     port, seen = stub
-    _files(tmp_path, port, block={"temperature": 0.9, "top_p": 0.25, "seed": 7, "max_tokens": 33})
+    block = {"temperature": 0.9, "top_p": 0.25, "seed": 7, "max_tokens": 33}
+    _files(tmp_path, port, block=block, seed=True)
     expected = {"temperature": 0.0, "max_tokens": 512, "top_p": 0.25, "seed": 7}
 
     fingerprint = CliRunner().invoke(
@@ -391,6 +494,25 @@ def test_the_probes_keep_their_own_sampling_and_take_the_rest(
     seen.clear()
     result = CliRunner().invoke(app, _run(tmp_path, "-sV"))
     assert result.exit_code == 0, result.output
+    probes = [_sampled(body) for _, body in seen[: fingerprint_probe_count()]]
+    assert probes and all(p == expected for p in probes), probes
+    stored = _stored(tmp_path, "probes")
+    assert len(stored) == fingerprint_probe_count()
+    assert all(_recorded(p) == expected for p in stored)
+
+
+def test_an_anthropic_probe_takes_no_top_p_beside_its_temperature(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
+) -> None:
+    """A probe's temperature 0 is its own, so the block's top_p does not go out with it, on a
+    strict endpoint that would refuse the pair (8d1bc59: the pass stopped at its first probe)."""
+
+    port, seen = stub
+    _files(tmp_path, port, provider="anthropic", block={"top_p": 0.25, "seed": 7}, seed=True)
+    result = CliRunner().invoke(app, _run(tmp_path, "-sV"))
+    assert result.exit_code == 0, result.output
+    assert _both(seen) == []
+    expected = {"temperature": 0.0, "max_tokens": 512}
     probes = [_sampled(body) for _, body in seen[: fingerprint_probe_count()]]
     assert probes and all(p == expected for p in probes), probes
     stored = _stored(tmp_path, "probes")
@@ -431,7 +553,7 @@ def test_the_dry_run_says_what_the_block_fills_and_where_it_is_not_sent(
     tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
 ) -> None:
     port, _seen = stub
-    _files(tmp_path, port, block={"top_p": 0.25, "seed": 7})
+    _files(tmp_path, port, block={"top_p": 0.25, "seed": 7}, seed=True)
     sent = CliRunner().invoke(app, _run(tmp_path, "--dry-run"))
     assert sent.exit_code == 0, sent.output
     # The spec sets its own seed, so the block's reaches none of it.
@@ -439,10 +561,53 @@ def test_the_dry_run_says_what_the_block_fills_and_where_it_is_not_sent(
         "sampling: stub's sampling_defaults fills top_p 0.25 on 1 of 1, seed 7 on 0 of 1 specs "
         "(a spec's own value wins)" in sent.output
     ), sent.output
+    _files(tmp_path, port, block={"top_p": 0.25, "seed": 7})
+    no_seed = CliRunner().invoke(app, _run(tmp_path, "--dry-run"))
+    assert no_seed.exit_code == 0, no_seed.output
+    assert (
+        "sampling: stub's sampling_defaults sends no seed 7 (capabilities.seed is not true)"
+        in no_seed.output
+    ), no_seed.output
     _files(tmp_path, port, provider="rest", block={"top_p": 0.25})
     unsent = CliRunner().invoke(app, _run(tmp_path, "--dry-run"))
     assert unsent.exit_code == 0, unsent.output
-    assert "sampling: stub's sampling_defaults is not sent" in unsent.output, unsent.output
+    assert (
+        "sampling: stub's sampling_defaults is not sent (nothing in it goes out through provider "
+        "rest)" in unsent.output
+    ), unsent.output
+
+
+def test_the_dry_run_says_what_an_anthropic_target_and_judge_do_not_send(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
+) -> None:
+    port, seen = stub
+    _files(
+        tmp_path,
+        port,
+        provider="anthropic",
+        block={"top_p": 0.25, "seed": 7, "max_tokens": 33},
+        judge_block={"max_tokens": 99, "seed": 5},
+        judge_provider="anthropic",
+    )
+    command = _run(tmp_path, "--dry-run", "--judge", str(tmp_path / "judge.yaml"))
+    command[command.index(_SPEC)] = "PI-DIRECT-001"
+    result = CliRunner().invoke(app, command)
+    assert result.exit_code == 0, result.output
+    assert seen == []
+    lines = [ln.strip() for ln in result.stdout.splitlines() if "sampling: " in ln]
+    assert lines == [
+        "sampling: stub's sampling_defaults fills max_tokens 33 on 0 of 1 specs (a spec's own "
+        "value wins)",
+        "sampling: stub's sampling_defaults sends no top_p 0.25 (anthropic takes no top_p beside "
+        "a temperature, and every request carries one), no seed 7 (the Messages API has none)",
+        "sampling: stub gets no top_p from the 1 of 1 specs that set one: anthropic takes no "
+        "top_p beside a temperature",
+        "judge sampling: judge's sampling_defaults fills max_tokens 99 on every judge request "
+        "(the judge's own temperature and top_p win)",
+        "judge sampling: judge's sampling_defaults sends no seed 5 (the Messages API has none)",
+        "judge sampling: judge gets no top_p (the judge's 1.0): anthropic takes no top_p beside "
+        "a temperature",
+    ], lines
 
 
 # --- a resume ---------------------------------------------------------------------------------
@@ -506,6 +671,48 @@ def test_an_old_run_without_a_block_resumes_without_a_word(
     assert "sampling_defaults" not in resumed.stderr, resumed.stderr
 
 
+def test_an_edited_block_refuses_the_resume_and_says_so(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
+) -> None:
+    """The block is part of the target's digest; the refusal names it among what may differ."""
+
+    port, seen = stub
+    _files(tmp_path, port, block={"top_p": 0.25})
+    run_id = _halt(tmp_path)
+    _files(tmp_path, port, block={"top_p": 0.5})
+    seen.clear()
+    resumed = CliRunner().invoke(app, _run(tmp_path, "--resume", run_id))
+    assert resumed.exit_code == 3, resumed.output
+    assert "different target" in resumed.output, resumed.output
+    assert "sampling_defaults" in resumed.output, resumed.output
+    assert seen == []
+
+
+def test_an_edited_judge_file_is_named_as_such(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
+) -> None:
+    """Both digests there and different: "stored a judge, now a judge" said nothing useful."""
+
+    port, seen = stub
+    _files(tmp_path, port, judge_block={"max_tokens": 99})
+    judge = ("--judge", str(tmp_path / "judge.yaml"))
+    run_id = _halt_with(tmp_path, *judge)
+    _files(tmp_path, port, judge_block={"max_tokens": 98})
+    seen.clear()
+    resumed = CliRunner().invoke(app, _run(tmp_path, "--resume", run_id, *judge))
+    assert resumed.exit_code == 3, resumed.output
+    assert "a different --judge file (its endpoint, model or sampling_defaults differ)" in " ".join(
+        resumed.output.split()
+    ), resumed.output
+    assert seen == []
+
+
+def _halt_with(tmp_path: Path, *extra: str) -> str:
+    halted = CliRunner().invoke(app, _run(tmp_path, "--budget-requests", "1", *extra))
+    assert halted.exit_code == 3, halted.output
+    return _run_id(tmp_path)
+
+
 def test_a_record_that_is_not_true_or_false_is_refused(
     tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
 ) -> None:
@@ -526,6 +733,8 @@ def test_a_record_that_is_not_true_or_false_is_refused(
 
 
 def test_fill_sampling_fills_only_what_is_unset() -> None:
+    from ildottore.core.runner import fill_sampling
+
     own = Sampling(temperature=0.0, seed=42)
     fallback = Sampling(temperature=0.9, top_p=0.25, seed=7, max_tokens=33)
     assert fill_sampling(own, fallback) == Sampling(
@@ -536,6 +745,8 @@ def test_fill_sampling_fills_only_what_is_unset() -> None:
 
 
 def test_spec_sampling_without_a_block_is_what_the_runner_always_sent() -> None:
+    from ildottore.core.runner import spec_sampling
+
     (spec,) = wiring.build_registry([_SPEC_FILE]).list()
     assert spec_sampling(spec) is spec.sampling
     undeclared = spec.model_copy(update={"sampling": None})
@@ -544,27 +755,54 @@ def test_spec_sampling_without_a_block_is_what_the_runner_always_sent() -> None:
 
 
 @pytest.mark.parametrize(
-    ("provider", "expected"),
+    ("provider", "seed", "expected"),
     [
-        ("openai", Sampling(temperature=0.9, top_p=0.25, seed=7, max_tokens=33)),
-        ("OpenAI ", Sampling(temperature=0.9, top_p=0.25, seed=7, max_tokens=33)),
-        ("anthropic", Sampling(temperature=0.9, top_p=0.25, max_tokens=33)),
-        ("rest", None),
-        ("mcp", None),
-        ("websocket", None),
-        (None, None),
+        ("openai", True, Sampling(temperature=0.9, top_p=0.25, seed=7, max_tokens=33)),
+        ("OpenAI ", True, Sampling(temperature=0.9, top_p=0.25, seed=7, max_tokens=33)),
+        # capabilities.seed false (as unless set): the file says the provider takes none.
+        ("openai", False, Sampling(temperature=0.9, top_p=0.25, max_tokens=33)),
+        ("anthropic", True, Sampling(temperature=0.9, top_p=0.25, max_tokens=33)),
+        ("rest", True, None),
+        ("mcp", True, None),
+        ("websocket", True, None),
+        (None, True, None),
     ],
 )
 def test_sampling_fallback_keeps_what_the_adapter_sends(
-    provider: str | None, expected: Sampling | None
+    provider: str | None, seed: bool, expected: Sampling | None
 ) -> None:
+    from ildottore.shared.models import Capabilities
+
     block = Sampling(temperature=0.9, top_p=0.25, seed=7, max_tokens=33)
-    target = Target(id="t", type="chatbot", provider=provider, sampling_defaults=block)  # type: ignore[arg-type]
+    target = Target(
+        id="t",
+        type="chatbot",  # type: ignore[arg-type]
+        provider=provider,
+        sampling_defaults=block,
+        capabilities=Capabilities(seed=seed),
+    )
     assert wiring.sampling_fallback(target) == expected
     seed_only = target.model_copy(
         update={"provider": "anthropic", "sampling_defaults": Sampling(seed=7)}
     )
     assert wiring.sampling_fallback(seed_only) is None, "nothing it sends is left"
+
+
+@pytest.mark.parametrize(
+    ("asked", "sent"),
+    [
+        (Sampling(temperature=0.0, top_p=1.0, seed=42), Sampling(temperature=0.0)),
+        (Sampling(top_p=0.25, max_tokens=9), Sampling(top_p=0.25, max_tokens=9)),
+        (Sampling(temperature=0.5), Sampling(temperature=0.5)),
+    ],
+    ids=["temperature-wins", "top_p-alone", "nothing-to-drop"],
+)
+def test_the_anthropic_rule_drops_the_seed_and_a_top_p_beside_a_temperature(
+    asked: Sampling, sent: Sampling
+) -> None:
+    rule = wiring.sent_sampling_for(Target(id="t", type="chatbot", provider="anthropic"))  # type: ignore[arg-type]
+    assert rule is not None and rule(asked) == sent
+    assert wiring.sent_sampling_for(Target(id="t", type="chatbot", provider="openai")) is None  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

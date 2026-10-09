@@ -51,7 +51,8 @@ model: "gpt-4o"
 auth_ref: "env://MY_API_KEY"        # never inline secrets
 capabilities: { tools: false, rag: false }
 # Optional: fills a sampling field a spec, a -sV probe or (in the judge's own file) the judge
-# leaves unset; a field they set wins. Sent by the openai and anthropic adapters only.
+# leaves unset; a field they set wins. Sent by the openai and anthropic adapters only (anthropic:
+# no seed, and no top_p beside a temperature); a seed only with `seed: true` in capabilities.
 # sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
