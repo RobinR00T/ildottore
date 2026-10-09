@@ -178,14 +178,26 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   value) is refused before any request, with an error that names the variable and never the
   value. Values shorter than 8 characters are not registered. The 8-hex digest after a mask is
   salted per process, so a report cannot be used to confirm a guessed password; set
-  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose. What the tool itself
-  generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
-  readable in every report, in both copies of a finding the JSON report carries, so a custom
-  spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
-  prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part of
-  an absolute path that exists on this machine is exempt from the entropy rule (a temp or CI
-  workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and labels
-  in it are still masked, and the rest of the path is redacted. Otherwise only
+  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose: a digest is computed over
+  the value as written (a private key's too, whatever is registered inside it, when the key
+  pattern takes it whole: its 16 KB bound counts each mask inside the key as a stash token), so
+  with the salt pinned one value reads the same in every run. A password in a URL is masked
+  behind a registered, masked or empty user too (not yet behind a user holding a raw `@`, nor
+  behind a registered credential that runs across the URL's `://`, `:` or `@`), and registered
+  credentials that overlap in the text are masked as one. Two cases are masked less well than
+  before PR #56, a trade-off the owner accepted for its merge (a follow-up issue tracks them):
+  a registered credential holding an `@` across a URL's `@` lets the URL rule read on to a later
+  `@`, so a labelled value written after the URL (`,password=<value>`) keeps its tail readable
+  and the host is reported wrong; and two overlapping registered credentials, masked as one run,
+  can cover a URL's separator, so its password stays readable (`key-ABCD1234` and `1234://bob`
+  registered). Both need a target that writes a registered credential holding a URL separator.
+  What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
+  id) is left readable in every report, in both copies of a finding the JSON report carries, so
+  a custom spec id reads the same in every run and `dottore diff` can match it. Error messages
+  the CLI prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The
+  part of an absolute path that exists on this machine is exempt from the entropy rule (a temp
+  or CI workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and
+  labels in it are still masked, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
   tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
   digest of the scope body (`scope checksum mismatch: the scope body hashes to '<sha256>', not

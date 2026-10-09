@@ -5,6 +5,97 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a URL password behind a registered user; masks that depended on the process)
+
+- **A URL password is masked behind a registered, masked or empty user.** A registered
+  credential as the user of a URL (`https://<it>:<password>@localhost:8080/v1`) was set aside
+  as a stash token before the URL rule ran, and the URL rule refused a user holding one, so the
+  password stayed readable in the reports, the evidence and on the terminal. A dotted host hid
+  it only because the email rule then took `<password>@<host>` as an address, host included. A
+  user the target wrote as a mask (`«REDACTED:email»`) left it readable the same way, and so did
+  no user at all (`redis://:<password>@localhost:6379/0`, the form Redis documents; found on
+  main by the pre-commit audit of this fix). The rule now reads a mask in the user or the
+  password and takes an empty user: a password that is one registered credential keeps its
+  `credential` mask, and any other is masked whole as `url_password`, so the rest of a password
+  holding a registered credential (`pre<it>post`) is no longer readable either. A credential is
+  one piece of the user or of the password whatever it holds (`ops:svc-key` as the user,
+  `P@ssw0rd!` in the password). The empty user widens an over-mask main already made with a
+  one-character user: `http://:8080?email=bob@example.com` read `?email=«REDACTED:email»` and now
+  reads `http://:«REDACTED:url_password»@example.com`, the email's domain readable.
+- **A mask no longer depends on the process or on the text before it.** The digest of a
+  `pem_private_key` mask was computed over the key with the stash tokens of the masks inside it,
+  whose numbers count the masks set aside before them and follow the order the registered
+  credentials were tried in. For two of one length that order was a set's, which changes with
+  `PYTHONHASHSEED`: with the salt pinned, six hash seeds of twelve gave one digest and six
+  another, and in one process the same key had another digest after a mask. A hashed mask now
+  digests what was written there, so a key's digest is the HMAC of the key as it appears in the
+  text, whatever is registered inside it, and a pinned `ILDOTTORE_REDACTION_SALT` correlates it
+  across runs as the manual says. The same holds for a hashed pattern the operator registers.
+  The key pattern bounds a key at 16 KB of the text as one pass reads it, where each mask inside
+  the key is a stash token whose length grows with the masks before it. So a key near the bound
+  may be masked as a key or not depending on the text before it, and one that a single pass
+  cannot take whole may be masked as a key on a later pass (digested over its text with the masks
+  inside it, not as written) or never, its contents then left to the other rules; on main too.
+  A real key is far under the bound (a 26 KB one of random base64 lines is still masked whole).
+- **Overlapping registered credentials are masked as one.** The same set order decided which of
+  two overlapping credentials was masked (`12345678ab87654321` with `12345678ab` and
+  `ab87654321` registered: seven seeds of twelve masked one, five the other), and the other's
+  tail stayed readable; a credential overlapping itself (`abababab` in `ababababab`) left its
+  last characters. Every occurrence is found now, overlapping ones make one run named after its
+  longest credential (the first of two of one length), and the credentials are tried longest
+  first, then by value.
+- **A registered credential holding a stash delimiter cannot break a stash token.** The
+  redactor drops `\x00` and `\x01` from the text before it reads it, but a credential kept them,
+  so one with `\x01` after a digit (or `\x00` before one) matched across a token's edge: a mask
+  was lost, a raw delimiter reached the output and the text was no fixed point, which the
+  evidence store refuses. A form holding one is not registered now (main registered it, but it
+  never matched the text as read, only across a stash token); its `repr` and JSON forms, as a
+  library quotes it, hold none and are. Such a credential written raw in a reply is not masked by
+  value, as on main (an `env://` key holding one is refused before any request). Found
+  on main by the pre-commit audit of this fix. Registering it without the delimiters instead,
+  as this fix first did, let it cross a URL's `@` (`pass\x01word@db` read as `password@db`) and
+  leave the first part of a password readable that main masked (pre-merge audit).
+- **Backed out before the merge:** a pass that joined a URL's password to a registered
+  credential crossing `://`, the `:` or the `@`. Each of its two versions opened holes the next
+  audit found (a password tail behind credentials holding `:` and `@`; then a labelled secret
+  after the URL swallowed into the mask, the host misreported and a quadratic shape), all from
+  reading the URL before knowing where the credentials are. That class stays open.
+- Cost, measured on a megabyte, best of three: clean text and URLs as on main (0.16 s where main
+  took 0.17 s, and 0.30 s where main took 0.28 s; URLs whose user is registered 0.29 s where main
+  took 0.25 s and left every password readable); a reply repeating a registered credential
+  55,000 times takes 0.26 s where main took 0.25 s (every occurrence is found, not only the ones
+  `str.replace` reached), and one credential overlapping itself all the way 0.05 s where main
+  took 0.28 s. Credentials that overlap themselves are found one occurrence at a time: sixteen
+  registered (`a` repeated 8 to 23 times) over a megabyte of `a` take 2.0 s where main took
+  0.10 s (leaving the last six characters readable), a case that needs a target knowing them.
+  Memory, on a 4 MiB reply repeating an 8-character registered credential: bare, the process
+  grows by 163 MB where main grew by 138 MB; inside key blocks, by 134 MB where main grew by
+  3 MB, since every occurrence is a run where `str.replace` made one token. The URL rule is
+  possessive: its first version here, an alternation without it, kept a frame per character and
+  grew the process by about 640 MB on a 4 MB reply; it grows by nothing now.
+- Found by the pre-commit audit of `fix/cli-control-chars` (PR #51), with differential fuzzing
+  against main `d19b221`. Tests: `tests/test_redactor_url_password_and_digests.py` (twelve hash
+  seeds in subprocesses, digests checked against an HMAC computed in the test, the evidence
+  store's leak guard, a Hypothesis property over URL shapes, the URL rule's memory measured in a
+  subprocess); 24 mutants of the fix, each caught. Docs: `docs/02` (S6), the u01 contract (A-31)
+  and the contract index, the manual, the playbook. Left open: a registered credential across a
+  URL's `://`, `:` or `@` breaks the URL rule. It stops it and leaves the rest of the password
+  readable, as on main (`password@db` registered, in `redis://u:<password>password@db`); or,
+  across the `@`, it lets the rule read on to a later `@`, so a labelled value after the URL
+  loses its tail where main masked it (`Adm1n@2026` registered, in
+  `redis://ops:Adm1n@2026-db.internal:6379,password=Secr3t@Value99xyz`); and two overlapping
+  credentials, masked as one run, can cover a separator that main's one-at-a-time replacement
+  left, so a password main masked stays readable while main left part of the second credential
+  readable instead (`key-ABCD1234` and `1234://bob`). Each needs a target writing a registered
+  credential that holds a URL separator. The last two are regressions against the
+  redactor before this change, which the owner accepted for the merge (2026-10-09);
+  a follow-up issue tracks them. Also open, on main too: a raw `@` in the user or
+  in an unregistered password of a URL leaves the password, or its part after the
+  `@`, readable (`myadmin@srv:<password>@localhost`, an Azure-style login); the
+  labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its
+  tail readable, and a registered credential that is a label word (`password`) hides the label
+  from it; repeated `BEGIN PRIVATE KEY` markers before one `END` cost 3.4 s a megabyte.
+
 ### Fixed (a halted run keeps the replies it paid for, and a run that spent can be resumed)
 
 - **A run halted inside an identity sweep, or between two attempts of one batch, stored nothing

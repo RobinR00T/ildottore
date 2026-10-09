@@ -178,6 +178,32 @@ file's own `judge:` block, never from a `--judge` file, which could otherwise na
 any credential and have both written into the scope (SEC-04). Checks: the same file, plus
 `tests/cli/test_fleet.py`.
 
+**A-31 A mask depends only on what it masks (added 2026-10-07).** With the salt fixed, one value is
+masked the same way in every process and wherever it appears: a digest is computed over the value
+as it is written in the text, never over the redactor's own stash tokens (their numbers count the
+masks set aside before them) nor over anything a set orders (its order changes with
+`PYTHONHASHSEED`). A private key's digest depended on both: six hash seeds of twelve gave one
+digest and six another, and in one process the same key had another digest after a mask. The same
+set order decided which of two overlapping registered credentials was masked and left the other's
+tail readable; overlapping credentials are one run now, named after the longest. The URL rule holds
+when part of the URL is already masked: a URL's password stayed readable because its user was a
+registered credential, set aside before the rule ran. (Not across a separator: a registered
+credential holding the URL's `://`, `:` or `@` across it still breaks the rule. It stops it, as
+before A-31, or across the `@` lets it read on to a later `@`, so a labelled value after the URL
+loses its tail, which was masked before A-31; and two overlapping credentials masked as one run can
+cover a separator that the one-at-a-time replacement before A-31 left, and leave a URL password
+readable that it masked. The owner accepted those two regressions for the merge of PR #56; a
+follow-up issue tracks them. A pass that joined the password to such a credential was backed out
+after the audits of its two versions each found a new hole in it. Not yet every rule either: the
+labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its tail
+readable, as before A-31. Nor every key: the key pattern's 16 KB bound counts each mask inside the
+key as a stash token whose length grows with the masks before it, so a key near the bound is
+masked as a key or not depending on the text before it, and one a single pass cannot take whole is
+masked as a key later, over its text with the masks inside it, or never; before A-31 too.)
+Checks: `tests/test_redactor_url_password_and_digests.py` (twelve hash seeds in subprocesses,
+digests against an HMAC computed in the test, the evidence store's leak guard, a property over
+URL shapes, credentials holding a URL's separators inside the user or the password).
+
 **A-37 Every YAML file is measured with its aliases expanded, by one measure (added 2026-10-07).** A
 scope, target, fleet, labels, policy pack or signature pack file holding more than 100,000 nodes
 with every alias counted where it is used (a text one more node per 64 characters), nested deeper
@@ -341,10 +367,11 @@ pins a port no URL has, so it matches nothing instead of raising and denying eve
 it (read as a bare host, it matched an IPvFuture literal that repeated it: second delta audit); and
 `dottore fleet` reads an endpoint stripped too and refuses an unreadable one, or one with a port it
 cannot read, or a `--judge` endpoint that differs, quoting it as urllib reads it, its tabs and line
-breaks removed, cut and without what precedes the last `@` of its authority (the CLI masks a
-password only in the `user:password@` shape, so an empty user, a space or a second `@` printed it;
-and a tab or a line break between the two slashes, which urllib removes, hid the authority from a
-search for `//`: final audit, 0 leaks in 102,024 refused endpoints of its fuzz since). The adapter
+breaks removed, cut and without what precedes the last `@` of its authority (the
+CLI masks a password only in the `user:password@` shape, so a space or a second `@`
+printed it, and an empty user did until A-31; and a tab or a line break between the
+two slashes, which urllib removes, hid the authority from a search for `//`: final
+audit, 0 leaks in 102,024 refused endpoints of its fuzz since). The adapter
 `run` builds still reads the target's endpoint unstripped: an endpoint with a Unicode space in front
 passes the gate and the run stops at its first send (exit 3, `EndpointNotAllowed`), its password
 masked, as on `a0bca70` for `run` and newly for `fleet --run`, which stopped at the pre-flight
