@@ -6,6 +6,8 @@ registered **zero** calls (the request never left the process - contract §7).
 
 from __future__ import annotations
 
+import math
+
 import httpx
 import pytest
 import respx
@@ -233,3 +235,148 @@ def test_map_logprobs_skips_broken_entry() -> None:
 
     out = map_logprobs([{"logprob": -0.1}, {"token": "b", "logprob": -0.2}])
     assert out == [TokenLogprob(token="b", logprob=-0.2, top=None)]
+
+
+def _short(value: object) -> str:
+    """A test id that stays short for a 400-digit integer."""
+
+    text = repr(value)
+    return text if len(text) <= 24 else f"{text[:6]}...{len(text)}-chars"
+
+
+#: Figures no model produces, as ``json.loads`` hands them over (A-39).
+_IMPOSSIBLE: list[object] = [
+    10**400,
+    -(10**400),
+    [1],
+    {},
+    "abc",
+    "-0.5",
+    True,
+    float("inf"),
+    float("-inf"),
+    float("nan"),
+    0.5,
+]
+
+
+@pytest.mark.parametrize("figure", _IMPOSSIBLE, ids=_short)
+def test_map_logprobs_does_not_read_a_block_with_an_impossible_token_figure(
+    figure: object,
+) -> None:
+    """The whole block, not the entry: the readable rest alone would be scored as if it were
+    the reply's, and a block of confident tokens with one impossible figure among them would
+    read as "likely memorized"."""
+
+    good = {"token": "a", "logprob": -0.01}
+    assert map_logprobs([good, {"token": "b", "logprob": figure}, good]) is None
+
+
+@pytest.mark.parametrize("figure", _IMPOSSIBLE, ids=_short)
+def test_map_logprobs_drops_only_the_alternatives_of_a_token_with_an_impossible_one(
+    figure: object,
+) -> None:
+    """No alternative is ever scored, so an impossible one costs its token the alternatives
+    and nothing else: every token figure is still read (pre-commit audit F3, OD-24)."""
+
+    kept = {"token": "c", "logprob": -0.2, "top_logprobs": [{"token": "c", "logprob": -0.2}]}
+    as_list = [
+        {
+            "token": "a",
+            "logprob": -0.1,
+            "top_logprobs": [{"token": "a", "logprob": -0.1}, {"token": "b", "logprob": figure}],
+        },
+        kept,
+    ]
+    as_map = [{"token": "a", "logprob": -0.1, "top_logprobs": {"a": -0.1, "b": figure}}, kept]
+    expected = [
+        TokenLogprob(token="a", logprob=-0.1, top=None),
+        TokenLogprob(token="c", logprob=-0.2, top=[("c", -0.2)]),
+    ]
+
+    assert map_logprobs(as_list) == expected
+    assert map_logprobs(as_map) == expected
+
+
+@pytest.mark.parametrize("figure", [0.5, float("nan"), 10**400], ids=_short)
+def test_map_logprobs_reads_the_figure_of_an_entry_that_names_no_token(figure: object) -> None:
+    """An entry with no token is skipped, but its figure is read first: skipped unread, a
+    positive one beside four confident tokens let the rest be scored "likely memorized" (delta
+    audit L2). An alternative that names no token costs its token the alternatives the same way."""
+
+    good = {"token": "a", "logprob": -0.01}
+    no_token = [good, good, good, good, {"token": None, "logprob": figure}]
+    missing_token = [good, good, good, good, {"logprob": figure}]
+    # Beside a readable alternative, or a skip-first reading would keep that one.
+    alternative = [
+        {
+            "token": "a",
+            "logprob": -0.01,
+            "top_logprobs": [{"token": "a", "logprob": -0.01}, {"token": None, "logprob": figure}],
+        },
+        good,
+    ]
+
+    assert map_logprobs(no_token) is None
+    assert map_logprobs(missing_token) is None
+    assert map_logprobs(alternative) == [
+        TokenLogprob(token="a", logprob=-0.01, top=None),
+        TokenLogprob(token="a", logprob=-0.01, top=None),
+    ]
+
+
+def test_map_logprobs_skips_a_null_alternative_in_either_shape() -> None:
+    """Absent is not impossible: a null alternative is skipped in the map shape as it always
+    was in the list shape (the map shape raised ``TypeError`` on it), and alternatives that are
+    all null are none at all in both shapes."""
+
+    as_list = [{"token": "a", "logprob": -0.1, "top_logprobs": [{"token": "b", "logprob": None}]}]
+    as_map = [{"token": "a", "logprob": -0.1, "top_logprobs": {"a": -0.1, "b": None}}]
+    only_null = [{"token": "a", "logprob": -0.1, "top_logprobs": {"b": None}}]
+
+    assert map_logprobs(as_list) == [TokenLogprob(token="a", logprob=-0.1, top=None)]
+    assert map_logprobs(as_map) == [TokenLogprob(token="a", logprob=-0.1, top=[("a", -0.1)])]
+    assert map_logprobs(only_null) == [TokenLogprob(token="a", logprob=-0.1, top=None)]
+
+
+def test_map_logprobs_skips_a_null_token_figure_and_reads_the_rest() -> None:
+    """Absent, not impossible: a token whose own figure is null is skipped as before, and the
+    block is still read (only a figure no model produces voids it)."""
+
+    out = map_logprobs([{"token": "a", "logprob": None}, {"token": "b", "logprob": -0.2}])
+    assert out == [TokenLogprob(token="b", logprob=-0.2, top=None)]
+
+
+@pytest.mark.parametrize("blob", [5, True, 0.5, "abc"], ids=repr)
+def test_map_logprobs_reads_a_top_logprobs_that_is_no_list_or_map_as_no_alternatives(
+    blob: object,
+) -> None:
+    """A number or a bool there raised ``TypeError`` when iterated; a string, iterated
+    character by character, already read as no alternatives (kept as a control)."""
+
+    out = map_logprobs([{"token": "a", "logprob": -0.1, "top_logprobs": blob}])
+    assert out == [TokenLogprob(token="a", logprob=-0.1, top=None)]
+
+
+def test_map_logprobs_keeps_every_figure_a_model_produces() -> None:
+    """The other direction: certainty (``0``, an integer), OpenAI's ``-9999.0`` floor for an
+    alternative it gives no chance, and a figure far below any real one are all kept."""
+
+    out = map_logprobs(
+        [
+            {
+                "token": "a",
+                "logprob": 0,
+                "top_logprobs": [{"token": "a", "logprob": 0}, {"token": "z", "logprob": -9999.0}],
+            },
+            {"token": "b", "logprob": -3, "top_logprobs": {"b": 0, "y": -1e300}},
+            {"token": "c", "logprob": -0.0},
+        ]
+    )
+    assert out == [
+        TokenLogprob(token="a", logprob=0.0, top=[("a", 0.0), ("z", -9999.0)]),
+        TokenLogprob(token="b", logprob=-3.0, top=[("b", 0.0), ("y", -1e300)]),
+        TokenLogprob(token="c", logprob=-0.0, top=None),
+    ]
+    # ``-0.0 == 0.0``, so the sign is read apart: the figure is kept as sent.
+    assert math.copysign(1.0, out[2].logprob) == -1.0

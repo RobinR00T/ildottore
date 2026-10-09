@@ -592,3 +592,113 @@ def test_a_stdio_mcp_target_is_recognised_whatever_the_case_and_spaces(tmp_path:
     )
 
     assert wiring.target_uses_mock(target) is False
+
+
+@pytest.mark.usefixtures("low_limit")
+def test_a_key_on_the_path_that_is_not_printable_is_written_as_repr() -> None:
+    """A spec chooses its keys: a newline in one forged a finding line on the terminal, and an
+    escape sequence reached it raw (pre-merge audit of #80, with this check in)."""
+
+    key = "x" + chr(27) + "[31m" + chr(10) + "[ERROR] SCHEMA (FAKE-SPEC-001): forged"
+    doc = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    doc["setup"][key] = int("9" * 600) ** 2
+
+    [message] = validate_attack_spec_schema(doc)
+
+    assert message == f"setup/{key!r}: a number too long to write out (over 640 digits)"
+    assert chr(27) not in message and chr(10) not in message
+
+
+@pytest.mark.usefixtures("low_limit")
+def test_a_lone_surrogate_in_a_key_on_the_path_is_written_escaped(tmp_path: Path) -> None:
+    """Printing the path wrote the key as it was, and a lone surrogate in it cannot be encoded:
+    lint exited 1 with a ``UnicodeEncodeError`` traceback (found by the delta audit of
+    ``fix/spec-non-json-values``, on main at ``c3e70d8``)."""
+
+    escape = chr(92) + "ud800"  # YAML's escape for a lone surrogate, written without one
+    text = _planted(("setup", "tools", 0, "mode")).replace(
+        "  - name:", f'  - "a{escape}b": {HEX_LOW}\n    name:', 1
+    )
+    specs = _spec_dir(tmp_path, text)
+
+    result = runner.invoke(app, ["lint", str(specs)])
+
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+    assert result.exit_code == 1
+    assert (
+        "[ERROR] SCHEMA (AC-BFLA-001): setup/tools/0/'a" + escape + "b': a number" in result.stdout
+    )
+
+
+@pytest.mark.usefixtures("low_limit")
+def test_a_printable_key_that_is_not_ascii_stays_readable() -> None:
+    """Only what cannot be printed is escaped: a key in Spanish or Chinese reads as written."""
+
+    spanish = "a" + chr(0xF1) + "o"
+    chinese = chr(0x4E2D) + chr(0x6587)
+    doc = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    doc["setup"][spanish] = {chinese: int("9" * 600) ** 2}
+
+    assert validate_attack_spec_schema(doc) == [
+        f"setup/{spanish}/{chinese}: a number too long to write out (over 640 digits)"
+    ]
+
+
+def test_a_lone_surrogate_in_a_key_under_step_arg_patterns_is_a_finding(tmp_path: Path) -> None:
+    """jsonschema's location printed the key with ``str``: a lone surrogate under
+    ``step_arg_patterns`` made lint exit 1 with a ``UnicodeEncodeError`` traceback, before A-40
+    too (pre-commit audit of its follow-up). On main A-54 (#89) reports such a key before the
+    JSON schema runs, so this guards that route and not :func:`_format_error`, which the next test
+    does (pre-merge audit of #90)."""
+
+    escape = chr(92) + "ud800"
+    doc = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    doc["evaluators"][0]["step_arg_patterns"] = {"KEYHERE": 5}
+    text = yaml.safe_dump(doc, sort_keys=False, width=10**6).replace("KEYHERE", f"a{escape}b")
+    specs = _spec_dir(tmp_path, text.replace(f"a{escape}b:", f'"a{escape}b":'))
+
+    result = runner.invoke(app, ["lint", str(specs)])
+
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+    assert result.exit_code == 1
+    assert f"evaluators/0/step_arg_patterns/'a{escape}b': a key holding half a" in result.stdout
+
+
+def test_a_schema_error_under_a_key_with_control_characters_is_one_line(tmp_path: Path) -> None:
+    """jsonschema's location printed the key with ``str``: a newline in a key under
+    ``step_arg_patterns`` made ``dottore lint`` print a forged second finding line on main, and
+    an escape sequence went out raw (``click`` strips it from a pipe, not from a terminal). The
+    key is written as ``repr`` now (pre-merge audit of #90)."""
+
+    key = "a" + chr(27) + "[31m" + chr(10) + "[ERROR] SCHEMA (FAKE-001): forged"
+    doc = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    doc["evaluators"][0]["step_arg_patterns"] = {key: 5}
+
+    [message] = validate_attack_spec_schema(doc)
+    assert chr(27) not in message and chr(10) not in message
+
+    specs = _spec_dir(tmp_path, yaml.safe_dump(doc, sort_keys=False, width=10**6))
+    result = runner.invoke(app, ["lint", str(specs)])
+
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+    assert result.exit_code == 1
+    findings = [line for line in result.stdout.splitlines() if line.startswith("[ERROR]")]
+    location = f"evaluators/0/step_arg_patterns/{key!r}"
+    assert findings == [f"[ERROR] SCHEMA (AC-BFLA-001): {location}: 5 is not of type 'string'"]
+
+
+def test_a_schema_error_location_stays_readable_and_names_the_root() -> None:
+    """The location of an ordinary schema error reads as before: a printable key as written, and
+    an error about the document itself at ``<root>``."""
+
+    spanish = "a" + chr(0xF1) + "o"
+    doc = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    doc["evaluators"][0]["step_arg_patterns"] = {spanish: 5}
+    del doc["id"]
+
+    messages = validate_attack_spec_schema(doc)
+
+    assert "<root>: 'id' is a required property" in messages
+    assert any(
+        m.startswith(f"evaluators/0/step_arg_patterns/{spanish}: 5 is not") for m in messages
+    )
