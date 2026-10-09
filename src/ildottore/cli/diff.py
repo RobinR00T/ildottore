@@ -19,7 +19,9 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
+from ildottore.shared.digits import described
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import SPEC_ID_PATTERN, Finding
 
@@ -79,6 +81,34 @@ class DriftReport:
         return bool(self.regressions)
 
 
+def _read_report(path: Path) -> Any:
+    """Parse a JSON report, with the file named in every way it can fail to read.
+
+    ``json.loads`` raises ``RecursionError``, not a ``ValueError``, on a document nested past
+    its stack (200,000 levels of ``[``): no handler caught it, and the traceback exited 1, which
+    this tool uses for "findings below --fail-on", so a CI step read a malformed report as an
+    almost clean result (pre-merge audit of #51). A decoding error did not say which of the
+    two files it was about either.
+    """
+
+    # Absolute and never followed by a colon: the CLI keeps an existing absolute path readable,
+    # and a relative path, or one with a colon after it, is not one, so a report named after a
+    # commit SHA had its name masked as a high-entropy value (pre-commit and delta audits). Not
+    # escaped here: an escaped name is no longer a path on disk, so the CLI masked it too.
+    # Control characters are written out for every message on the terminal (`_masked`, #51).
+    shown = path.absolute()
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except RecursionError as exc:
+        raise ValueError(f"the report {shown} is nested too deeply to read as JSON") from exc
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"the report {shown} is not UTF-8 text (byte {exc.start})") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"the report {shown} is not valid JSON ({exc})") from exc
+    except ValueError as exc:  # past the digit limit, a plain ValueError naming no file (A-40)
+        raise ValueError(f"the report {shown} holds {described('read')}") from exc
+
+
 def incomplete_reason(path: Path) -> str | None:
     """Why this report describes a run that did not finish, or ``None`` when it did.
 
@@ -91,15 +121,18 @@ def incomplete_reason(path: Path) -> str | None:
     say, so it is treated as complete: silence there is age, not a claim.
     """
 
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = _read_report(path)
     if not isinstance(data, dict):
         return None  # a bare findings list carries no run-level state
     status = (data.get("summary") or {}).get("status")
     if not isinstance(status, dict) or status.get("complete", True):
         return None
-    state = str(status.get("state", "incomplete"))
+    # Text only: this tool writes both as text, and formatting a list nested 70,000 levels deep
+    # overflowed the stack (a traceback and exit 1, pre-commit audit of the nesting fix).
+    state = status.get("state")
     reason = status.get("reason")
-    return f"{state}: {reason}" if reason else state
+    state = state if isinstance(state, str) and state else "incomplete"
+    return f"{state}: {reason}" if isinstance(reason, str) and reason else state
 
 
 _SPEC_ID = re.compile(SPEC_ID_PATTERN)
@@ -118,7 +151,7 @@ def load_findings(path: Path) -> dict[str, Finding]:
     Compare one target's report at a time.
     """
 
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = _read_report(path)
     raw_findings = data["findings"] if isinstance(data, dict) else data
     if not isinstance(raw_findings, list):
         raise ValueError(f"{path}: expected a JSON run report or a list of findings")

@@ -45,14 +45,23 @@ from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
-from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, Spend
+from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
 from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
-from ildottore.core.setup_delivery import MAX_TOOL_ROUNDS, delivers_in_band, in_band_setup
+from ildottore.core.setup_delivery import (
+    MAX_TOOL_ROUNDS,
+    delivers_in_band,
+    in_band_setup,
+    seeded_canaries,
+    seeding_gap,
+    trace_gap,
+)
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.redactor import Redactor, visible_controls
+from ildottore.registry import uncompilable_patterns
 from ildottore.reporting import RunStatus
+from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import Category, EvaluatorType
 from ildottore.shared.models import (
@@ -110,6 +119,42 @@ class ScopeRequiredError(PolicyError):
     This is the non-bypassable gate (contract §4 KEEP): no ``-A``/flag can satisfy it,
     only a real scope authorization record.
     """
+
+
+class SpecLoadError(ValueError):
+    """Spec files failed to load, so the run is refused rather than run on what parsed.
+
+    ``spec_files`` are the names the CLI prints in clear: each is a path relative to a spec root
+    that names an entry on disk under it. Whoever wrote the spec tree chose it (the operator, or
+    the author of a pack they installed), so it carries nothing of this run, and it is what the
+    operator has to find; a credential or PII shape inside it is still masked by the value and
+    shape rules. The entropy rule masked them (`attacks/DL-PII-ELICIT-001.yaml` read
+    `«REDACTED:high_entropy:…».yaml`), so the refusal could not say which file to fix (pre-merge
+    audit of PR #47).
+    """
+
+    def __init__(self, message: str, *, spec_files: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.spec_files = spec_files
+
+
+def _spec_files_on_disk(spec_paths: list[Path], names: list[str]) -> tuple[str, ...]:
+    """The ``names`` that are a relative path to an entry on disk under one of ``spec_paths``.
+
+    An entry, not only a regular file: a directory or a dangling link named ``*.yaml`` fails to
+    load too, and its name is just as much the tree's. A spec path given as a file is its
+    own parent's tree, as the loader displays it. ``os.path.lexists`` answers False, never
+    raises, for a name the filesystem refuses (too long, a NUL byte).
+    """
+
+    roots = [path if path.is_dir() else path.parent for path in spec_paths]
+    return tuple(
+        name
+        for name in dict.fromkeys(names)
+        if not Path(name).is_absolute()
+        and ".." not in Path(name).parts
+        and any(os.path.lexists(root / name) for root in roots)
+    )
 
 
 @dataclass
@@ -306,6 +351,9 @@ class TargetPlan:
     estimate: PlanEstimate
     budgets: PlanBudgets
     mutators_by_spec: dict[str, list[str]]
+    # OD-18 B: specs that need the deployment's scene and that its target file does not declare
+    # seeded. The runner reports them (`setup_not_seeded`) and sends nothing for them.
+    not_seeded: list[tuple[str, str]] = field(default_factory=list)  # (spec id, reason)
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -336,6 +384,7 @@ def estimate_plan(
     mutators_by_spec: dict[str, list[str]] | None = None,
     judge: bool = False,
     target: Target | None = None,
+    fixtures_hold_scene: bool = False,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -343,6 +392,9 @@ def estimate_plan(
     in-band to ``target`` (OD-18) counts each turn with every tool round it may play, so the
     ceilings derived from this cover the worst case: a turn of a tool spec is up to
     ``1 + MAX_TOOL_ROUNDS`` sends, and its input carries the documents and tool definitions.
+    A spec that needs a deployment's scene (OD-18 B) and is not declared seeded sends nothing,
+    so it costs nothing, unless ``fixtures_hold_scene`` (the offline mock, whose fixtures are
+    written for the scene).
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
@@ -358,6 +410,19 @@ def estimate_plan(
     judge_tokens = 0
     by_category: dict[str, int] = {}
     for spec in specs:
+        if (
+            target is not None
+            and not fixtures_hold_scene
+            and (
+                seeding_gap(spec, target)
+                or trace_gap(
+                    spec,
+                    target,
+                    returns_tool_calls=wiring.provider_returns_tool_calls(target),
+                )
+            )
+        ):
+            continue  # setup_not_seeded: the runner sends nothing for it (OD-18 B)
         mutators = (mutators_by_spec or {}).get(spec.id) or _effective_mutators(spec)
         turns = spec.attack.turns
         n_turns = len(turns) if turns is not None and len(turns) >= 2 else 1
@@ -423,6 +488,13 @@ BUDGET_DERIVATION_CAP = PlanBudgets(
     max_attempts=20_000,
 )
 
+#: The largest value an integer flag of ``run`` takes: ``2**53``, the last of the run of whole
+#: numbers a float holds exactly. The plan multiplies ``--runs`` into float arithmetic, and a
+#: ``--runs`` of 306 digits was an ``OverflowError`` there with one spec, a traceback with exit
+#: 1 (pre-commit audit of ``fix/huge-int-repr``, F6, A-55). No flag needs more:
+#: ``--budget-wall`` of ``2**53`` seconds is 285 million years.
+MAX_FLAG_VALUE = 2**53
+
 
 def budgets_for(
     estimate: PlanEstimate,
@@ -460,7 +532,11 @@ def budgets_for(
     requests = int(estimate.total_requests * BUDGET_HEADROOM)
     wall_s = DEFAULT_PLAN_BUDGETS.max_wall_s or 0
     if rate_rps is not None and rate_rps > 0:
-        wall_s = max(wall_s, int(estimate.total_requests / rate_rps * BUDGET_HEADROOM) + 1)
+        # Bounded before int(): a rate near zero made the quotient infinite, and int() of it was
+        # an OverflowError, a traceback with exit 1 (`--rate 1e-308`, A-55). Anything past the
+        # bound is past the cap, which bounds the result below as it did.
+        paced = estimate.total_requests / rate_rps * BUDGET_HEADROOM
+        wall_s = max(wall_s, int(min(paced, MAX_FLAG_VALUE)) + 1)
     return PlanBudgets(
         max_tokens=_axis(
             DEFAULT_PLAN_BUDGETS.max_tokens, tokens, BUDGET_DERIVATION_CAP.max_tokens, o.max_tokens
@@ -486,7 +562,7 @@ def budgets_for(
 def resolve_target_plans(
     *,
     scope: Scope,
-    targets: list[tuple[Path, Target]],
+    targets: list[wiring.TargetFile],
     specs: list[AttackSpec],
     runs: int,
     rate_rps: float | None = None,
@@ -506,7 +582,8 @@ def resolve_target_plans(
     pack = wiring.build_permissive_pack(specs)
     policy = wiring.build_policy_engine(scope, pack)
     plans: list[TargetPlan] = []
-    for path, target in targets:
+    for loaded in targets:
+        path, target = loaded.path, loaded.target
         endpoint = wiring.scope_endpoint_of(scope, target)
         decision = authorize_target(scope, target.id, endpoint)
         fingerprint = (fingerprints or {}).get(target.id)
@@ -531,8 +608,32 @@ def resolve_target_plans(
                 runnable.append(spec)
             else:
                 blocked.append((spec.id, verdict.reason or "blocked_by_policy"))
+        # The offline mock replays the specs' fixtures, written for the scene, so it holds every
+        # scene; a live deployment holds only those its operator declared seeded (OD-18 B).
+        fixtures_hold_scene = loaded.uses_mock
+        # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
+        # declared, a per-run canary with no run_token, two scene tools under one deployment
+        # name, or a trace spec through an adapter that reads no tool calls.
+        calls_visible = wiring.provider_returns_tool_calls(target)
+        not_seeded = [
+            (spec.id, gap)
+            for spec in runnable
+            if not fixtures_hold_scene
+            and (
+                gap := seeding_gap(spec, target)
+                or trace_gap(spec, target, returns_tool_calls=calls_visible)
+            )
+            is not None
+        ]
+        unseeded = {spec_id for spec_id, _ in not_seeded}
+        runnable = [spec for spec in runnable if spec.id not in unseeded]
         estimate = estimate_plan(
-            runnable, runs, mutators_by_spec=mutators_by_spec, judge=judge, target=target
+            runnable,
+            runs,
+            mutators_by_spec=mutators_by_spec,
+            judge=judge,
+            target=target,
+            fixtures_hold_scene=fixtures_hold_scene,
         )
         plans.append(
             TargetPlan(
@@ -546,6 +647,7 @@ def resolve_target_plans(
                 estimate=estimate,
                 budgets=budgets_for(estimate, rate_rps=rate_rps, overrides=budget_overrides),
                 mutators_by_spec=mutators_by_spec,
+                not_seeded=not_seeded,
             )
         )
     return plans
@@ -566,6 +668,41 @@ def fingerprint_probe_count() -> int:
     return sum(
         getattr(layer, "probe_count", 1) for layer in wiring.build_fingerprint_engine().layers
     )
+
+
+def _probe_pass_remedy(adaptive_campaign: bool, *, attack_room: bool) -> str:
+    """The advice of a refusal because the ``-sV`` probe pass does not fit the request ceiling.
+
+    Every half of it has to let the invocation through (u12 A-48). Dropping ``-sV`` turns
+    adaptive planning off, and a resume of a campaign that planned adaptively is refused for
+    that, so there it is not offered: the advice was "Raise --budget-requests, or drop -sV"
+    for every campaign, and dropping ``-sV`` was refused again for one run with ``-sV`` or
+    ``--deep``. Nor is it offered when the ceiling cannot hold the rest of the campaign without
+    the probes either (``attack_room`` false, see :func:`_fits_without_probes`): a resume whose
+    spend left one request of room halted after it, exit 3, keeping nothing.
+    """
+
+    if adaptive_campaign:
+        return (
+            "Raise --budget-requests (the campaign ran with adaptive planning, which its resume "
+            "has to keep)"
+        )
+    if not attack_room:
+        return (
+            "Raise --budget-requests (without the probes, it would still not hold the rest of "
+            "the campaign)"
+        )
+    return "Raise --budget-requests, or drop -sV"
+
+
+def _fits_without_probes(plans: list[TargetPlan], ceiling: int, *, spent: int, done: int) -> bool:
+    """Whether the rest of every target's campaign fits ``ceiling`` with no probe pass.
+
+    ``spent`` is the spend the campaign has on record, ``done`` the requests a resume does not
+    send again (:func:`_answered_requests`); the rest is priced as ``--estimate`` prices it.
+    """
+
+    return all(spent + max(0, plan.estimate.total_requests - done) <= ceiling for plan in plans)
 
 
 def _no_judge_warning(
@@ -677,6 +814,7 @@ def _print_estimate(
             f"{len(plan.selected)} specs"
             + (f", {skipped} skipped (capability)" if skipped else "")
             + (f", {blocked} blocked (policy)" if blocked else "")
+            + (f", {len(plan.not_seeded)} not seeded" if plan.not_seeded else "")
         )
     by_category: dict[str, int] = {}
     for plan in plans:
@@ -764,6 +902,22 @@ def _print_dry_run_plan(
             if detail >= 2:
                 for spec_id, reason in plan.blocked_by_policy:
                     print(f"    - {spec_id}: {reason}")
+        if plan.not_seeded:
+            print(
+                f"  not seeded: {len(plan.not_seeded)} spec(s) on {plan.target.id}, their "
+                "scene is not in the deployment as seeded_setup declares it, or their tool "
+                "trace cannot be read through this adapter (-vv says which)"
+            )
+            if detail >= 2:
+                for spec_id, reason in plan.not_seeded:
+                    print(f"    - {spec_id}: {reason}")
+        if detail >= 2:
+            # What the operator plants: each seeded spec's own canary (run_token-<spec id>). The
+            # canary is the pack author's text, written out as every such line is (u12 §6).
+            for spec in plan.selected:
+                canaries = seeded_canaries(spec, plan.target)
+                if canaries:
+                    print(f"  seed:    {spec.id}: {visible_controls(', '.join(canaries))}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
     judge_requests = sum(p.estimate.judge_requests for p in plans)
     if judge_requests:
@@ -819,8 +973,21 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "
             f"{len(plan.blocked_by_policy)} blocked by policy"
+            + (f", {len(plan.not_seeded)} not seeded" if plan.not_seeded else "")
         )
     print("  reachability is authorization-level (scope + allowlist); no request was sent.")
+
+
+def _flag_figure(value: int) -> str:
+    """``value`` with thousands separators, or its sign and size past 21 digits.
+
+    Separated, so the CLI's redactor does not mask it as a phone number, and described past 21
+    digits, so a 4,300-digit value is not printed back.
+    """
+
+    if abs(value) < 10**21:
+        return f"{value:,}"
+    return f"a {'negative ' if value < 0 else ''}number of more than 21 digits"
 
 
 def _validate_options(opts: RunOptions) -> None:
@@ -834,12 +1001,20 @@ def _validate_options(opts: RunOptions) -> None:
     fail_on_band(opts.fail_on)
     if opts.timeout_s is not None and not opts.timeout_s > 0:
         raise ValueError(f"--timeout must be greater than 0 seconds (got {opts.timeout_s})")
-    if opts.concurrency is not None and opts.concurrency < 1:
-        raise ValueError(f"--concurrency must be at least 1 (got {opts.concurrency})")
-    if opts.top_tests is not None and opts.top_tests < 1:
-        raise ValueError(f"--top-tests must be at least 1 (got {opts.top_tests})")
-    if opts.runs < 1:
-        raise ValueError(f"--runs must be at least 1 (got {opts.runs})")
+    # An upper bound too (A-55): a `--runs` of 306 digits was an OverflowError in the plan's
+    # float arithmetic, a traceback with exit 1, and `--budget-tokens -1` passed the dry run and
+    # the estimate with exit 0 while the run refused it.
+    for flag, value, least in (
+        ("--concurrency", opts.concurrency, 1),
+        ("--top-tests", opts.top_tests, 1),
+        ("--runs", opts.runs, 1),
+        ("--budget-tokens", opts.budget_tokens, 0),
+        ("--budget-requests", opts.budget_requests, 0),
+        ("--budget-wall", opts.budget_wall_s, 0),
+    ):
+        if value is not None and not least <= value <= MAX_FLAG_VALUE:
+            bound = f"at least {least}" if value < least else f"at most {MAX_FLAG_VALUE:,}"
+            raise ValueError(f"{flag} must be {bound} (got {_flag_figure(value)})")
     report_paths = list(_report_outputs(opts).values())
     for path in report_paths:
         parent = Path(path).parent
@@ -901,7 +1076,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     2. a target (or the ``--judge`` model) not **reachable** under the scope ⇒
        :class:`ScopeError`. Reachable, not merely present: an entry with an empty endpoint
        allowlist used to pass this gate and then be denied on every single attempt;
-    3. an empty spec selection ⇒ :class:`ValueError`, rather than a green run of nothing.
+    3. an empty spec selection ⇒ :class:`ValueError`, rather than a green run of nothing;
+    4. a selected spec whose regex does not compile ⇒ :class:`ValueError`, naming it (A-33).
 
     ``-sn`` reports and stops. ``--estimate``/``--dry-run`` resolve the real per-target plan,
     print it and stop. Otherwise the campaign runs, and a campaign that did not finish
@@ -939,32 +1115,36 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # reachability), not a second, weaker one written here: asking only whether the id is
     # present left the false green one character away, because `ScopeTarget.endpoints`
     # defaults to empty and a typo in `host` reads exactly like a missing allowlist.
-    loaded_targets = [(path, wiring.load_target(path)) for path in opts.targets]
+    # Each file parsed once: everything below asks the same read (u12 A-42).
+    loaded_targets = [wiring.read_target_file(path) for path in opts.targets]
     # Two target files with the same id shared one run id and one evidence tree, so one
     # report held a PASS and a FAIL for the same spec on "the same" target (audit R11).
     seen_ids: dict[str, Path] = {}
-    for path, target in loaded_targets:
+    for loaded in loaded_targets:
+        path, target = loaded.path, loaded.target
         if target.id in seen_ids:
             raise ValueError(
-                f"two target files declare the id {target.id!r} ({seen_ids[target.id]} and "
+                f"two target files declare the id {quoted(target.id)} ({seen_ids[target.id]} and "
                 f"{path}); each target in one run needs its own id"
             )
         seen_ids[target.id] = path
     judge_target = wiring.load_target(opts.judge) if opts.judge is not None else None
-    to_authorize = list(loaded_targets)
+    to_authorize = [(loaded.path, loaded.target) for loaded in loaded_targets]
     if judge_target is not None and opts.judge is not None:
         # The judge is a model we send prompts to, so it goes through the same gate. It used
         # to be loaded and never checked: with the judge absent from the scope (which is what
         # `fleet --judge` generated), every semantic_judge verdict came back inconclusive
         # with the reason only in the JSON, and the run exited 0.
         to_authorize.append((opts.judge, judge_target))
+    # Each id cut at 300 characters, as the reason quotes it, and the scope's own ids listed up
+    # to 20, each cut (clause A-51).
     refusals = [
-        f"{target.id} ({reason})"
+        f"{cut(target.id)} ({reason})"
         for _, target in to_authorize
         if (reason := _refusal_for(scope, target)) is not None
     ]
     if refusals:
-        authorized = ", ".join(sorted(t.id for t in scope.targets)) or "<none>"
+        authorized = listed(sorted(t.id for t in scope.targets)) or "<none>"
         # A stdio MCP target is authorized by its COMMAND LINE, not by an endpoint, and the
         # generic advice ("allowlist the endpoint") pointed at the wrong field. The spelling
         # matters too: the scope's `commands` entries are matched against the joined argv, so
@@ -974,7 +1154,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             if (target.transport or "").strip().lower() == "stdio" and target.command:
                 joined = " ".join(target.command)
                 stdio_hint = (
-                    f" {target.id!r} is a stdio MCP target, so it is authorized by its "
+                    f" {quoted(target.id)} is a stdio MCP target, so it is authorized by its "
                     f'command line, not by an endpoint: add commands: ["{joined}"] to its '
                     "scope entry (one string, exactly as shown)."
                 )
@@ -1004,9 +1184,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{e.path or e.spec_id or '?'}: {e.message[:120]}" for e in load_errors[:5]
         )
         more = f" (and {len(load_errors) - 5} more problem(s))" if len(load_errors) > 5 else ""
-        raise ValueError(
+        raise SpecLoadError(
             f"{len(files)} spec file(s) failed to load and would silently leave the "
-            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first."
+            f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first.",
+            spec_files=_spec_files_on_disk(spec_paths, [e.path for e in load_errors[:5] if e.path]),
         )
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
@@ -1050,6 +1231,21 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"spec={opts.spec_globs or []}, exclude={opts.exclude_globs or []}); "
             "nothing would be tested. Check the selectors against `dottore registry ls`."
         )
+    # A selected spec whose regex does not compile is refused, as a spec file that fails to load
+    # is (F-10): a defect in the battery, whatever this target would have done with the spec.
+    # Its evaluator abstains on every attempt, so a run that sent it spent on it, scored it
+    # `inconclusive` (or `fail` through another evaluator) with the reason in no report, and
+    # counted it as covered; the engine's other refusals aborted the campaign instead (A-33).
+    # Each refused spec is named with its first such pattern; `dottore lint` lists them all.
+    refused = [(spec.id, found[0]) for spec in selected if (found := uncompilable_patterns(spec))]
+    if refused:
+        shown = "; ".join(f"{spec_id}: {problem}" for spec_id, problem in refused[:5])
+        more = f" (and {len(refused) - 5} more spec(s))" if len(refused) > 5 else ""
+        raise ValueError(
+            f"{len(refused)} selected spec(s) write a regex that does not compile, so their "
+            f"oracle could never decide: {shown}{more}. Run `dottore lint` on the spec path, "
+            "then fix them or leave them out with --exclude."
+        )
 
     if opts.resume is not None and len(loaded_targets) != 1:
         # A campaign stores one run id per target, so "resume this run" names exactly one.
@@ -1078,12 +1274,37 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     evidence_root = opts.evidence_root or Path(".dottore/evidence")
     run_db = opts.run_db or Path(".dottore/runs.sqlite")
 
-    routes = [(path, target, _route_for(opts, path)) for path, target in loaded_targets]
+    routes = [(loaded.path, loaded.target, _route_for(opts, loaded)) for loaded in loaded_targets]
     any_live = any(real is not None for _, _, (_, real) in routes)
     # Pacing applies to traffic that leaves the process. An offline mock campaign is not
     # paced (there is nobody to be polite to, and pacing CI would only slow it); the plan
     # output says so out loud instead of quietly dropping the flag.
     pacing_rate = timing.rate_rps if any_live else None
+    # Under one request per wall-clock ceiling, a run waits past the ceiling: the ledger checks
+    # it when a send is charged, not while the rate limiter sleeps, so `--rate 1e-308` ran on
+    # without end once its derived ceiling stopped overflowing, and with `--budget-wall 0 -sV`
+    # too, the probe pass reading no ceiling (pre-commit and delta audits of A-55). The pace
+    # checked is the one that applies, a template's included, before anything is sent.
+    wall = (
+        opts.budget_wall_s if opts.budget_wall_s is not None else BUDGET_DERIVATION_CAP.max_wall_s
+    )
+    # Written so a NaN refuses: `--rate inf` against a zero ceiling is `inf * 0`, which no
+    # comparison holds for (pre-merge audit of A-55).
+    if pacing_rate is not None and wall is not None and not pacing_rate * wall >= 1:
+        if wall == 0:  # no pace sends under it, so raising the rate is no advice
+            raise ValueError(
+                "--budget-wall 0 leaves a live run no time to send anything, at any pace; "
+                "raise --budget-wall"
+            )
+        pace = (
+            f"--rate {pacing_rate:.3e}"
+            if opts.rate is not None
+            else f"the -T{opts.template} pace of {pacing_rate:.3e} requests per second"
+        )
+        raise ValueError(
+            f"{pace} is less than one request per {wall:,}-second wall-clock ceiling, so the "
+            "run would wait past that ceiling between two sends; raise the rate or --budget-wall"
+        )
 
     # Resolved BEFORE the fingerprint pass, which SENDS. It used to sit after it, so
     # `-sV --resume <id-of-a-changed-battery>` put 17 probes on a real endpoint with a real
@@ -1093,14 +1314,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     prior_spend: Spend | None = None
     resume_from: TestRun | None = None
     provisional: list[TargetPlan] | None = None
-    if opts.resume is not None:
-        # The budgets are derived from a plan, and the real plan needs the fingerprint, which
-        # SENDS. A provisional plan resolved with no fingerprint derives the same ceilings (the
-        # estimate counts specs and mutators, which -sV reorders rather than changes), so the
-        # wall-clock refusal can happen here rather than after 17 probes have gone out. The
-        # first version of this check sat below the probe pass, which is the exact defect the
-        # clause above it says was fixed.
-        provisional = resolve_target_plans(
+
+    def provisional_plans() -> list[TargetPlan]:
+        # No fingerprint: it needs the probe pass, which SENDS (see the resume block below).
+        return resolve_target_plans(
             scope=scope,
             targets=loaded_targets,
             specs=selected,
@@ -1115,21 +1332,20 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             ),
             judge=judge_target is not None,
         )
-        prior_spend = _prior_spend(run_db, opts.resume, provisional[0].budgets)
-        if opts.fingerprint_first and prior_spend is not None:
-            ceiling = provisional[0].budgets.max_requests
-            probes = fingerprint_probe_count() * len(loaded_targets)
-            if ceiling is not None and prior_spend.requests + probes > ceiling:
-                raise ValueError(
-                    f"run {opts.resume!r} has already spent {prior_spend.requests} of its "
-                    f"{ceiling}-request ceiling, and -sV would send {probes} more before any "
-                    "attack traffic. Three sequential resumes used to run a whole probe pass "
-                    "each, past an exhausted ceiling. Raise --budget-requests, or drop -sV."
-                )
+
+    #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
+    #: campaign that planned adaptively is refused without it (u12 A-48).
+    adaptive_campaign = False
+    if opts.resume is not None:
+        # Same campaign first, then money. The ceiling refusals below used to run first and
+        # advise "Raise --budget-requests, or drop -sV" to a resume this check then refused
+        # whichever was followed: raising, for a campaign run without -sV ("halted with
+        # adaptive planning off"); dropping it, for one run with it (u12 A-48). Read-only here:
+        # the evidence is adopted into the journal below, past the last refusal before traffic.
         resume_from = resume_mod.load_resume_run(
             evidence_root,
             opts.resume,
-            loaded_targets[0][1],
+            loaded_targets[0].target,
             run_db=run_db,
             specs=selected,
             mock_scenario=routes[0][2][0],
@@ -1137,9 +1353,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             judge=judge_target,
             adaptive=adaptive,
             allow_unverified=opts.resume_unverified,
-            # The modes that send nothing write nothing either: no journal adoption.
-            adopt=not (opts.dry_run or opts.estimate or opts.discovery_only),
+            adopt=False,
         )
+        adaptive_campaign = resume_mod.stored_adaptive(run_db, opts.resume) is True
         inherited = resume_mod.stored_runs(run_db, opts.resume)
         if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
             # stderr and never suppressed: this changes the denominator of the reproducibility
@@ -1151,6 +1367,37 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 file=sys.stderr,
             )
             opts.runs = inherited
+        # Inherited BEFORE the provisional plan below: it derives the ceilings the refusals
+        # read, and at this invocation's --runs (5 by default) a campaign run at --runs 20
+        # was refused against a 2,000-request ceiling where its own was 3,300 (pre-commit
+        # audit of u12 A-48).
+        # The budgets are derived from a plan, and the real plan needs the fingerprint, which
+        # SENDS. A provisional plan resolved with no fingerprint derives the same ceilings (the
+        # estimate counts specs and mutators, which -sV reorders rather than changes), so the
+        # wall-clock refusal can happen here rather than after 17 probes have gone out. The
+        # first version of this check sat below the probe pass, which is the exact defect the
+        # clause above it says was fixed.
+        provisional = provisional_plans()
+        prior_spend = _prior_spend(run_db, opts.resume, provisional[0].budgets)
+        if opts.fingerprint_first and prior_spend is not None:
+            ceiling = provisional[0].budgets.max_requests
+            probes = fingerprint_probe_count() * len(loaded_targets)
+            if ceiling is not None and prior_spend.requests + probes > ceiling:
+                remedy = _probe_pass_remedy(
+                    adaptive_campaign,
+                    attack_room=_fits_without_probes(
+                        provisional,
+                        ceiling,
+                        spent=prior_spend.requests,
+                        done=_answered_requests(resume_from, selected),
+                    ),
+                )
+                raise ValueError(
+                    f"run {opts.resume!r} has already spent {prior_spend.requests} of its "
+                    f"{ceiling}-request ceiling, and -sV would send {probes} more before any "
+                    "attack traffic. Three sequential resumes used to run a whole probe pass "
+                    f"each, past an exhausted ceiling. {remedy}."
+                )
         if not opts.quiet:
             done, again = resume_progress(resume_from)
             print(
@@ -1182,18 +1429,35 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         # fingerprint is what feeds the plan the ledger is later derived from.
         probe_total = fingerprint_probe_count() * len(loaded_targets)
         if probe_total > opts.budget_requests:
+            # On a resume this is reached only with no spend on record (the pre-check above
+            # refuses first otherwise), so the ceiling covers this invocation alone.
+            remedy = _probe_pass_remedy(
+                adaptive_campaign,
+                attack_room=_fits_without_probes(
+                    provisional or provisional_plans(),
+                    opts.budget_requests,
+                    spent=0,
+                    done=_answered_requests(resume_from, selected),
+                ),
+            )
             raise ValueError(
                 f"-sV sends {probe_total} probe(s) ({fingerprint_probe_count()} per target "
                 f"across {len(loaded_targets)}), which is more than the --budget-requests "
-                f"ceiling of {opts.budget_requests}. Raise the ceiling or drop -sV: the probe "
-                "pass is traffic to the target like any other."
+                f"ceiling of {opts.budget_requests}: the probe pass is traffic to the target "
+                f"like any other. {remedy}."
             )
+    if resume_from is not None and not sends_nothing:
+        # Adopted only here, past the last refusal before any traffic, so a refused resume
+        # writes nothing; and the modes that send nothing write nothing either (u12 A-48).
+        resume_mod.adopt_resumed(run_db, resume_from)
     # One run id per target, minted HERE rather than inside the campaign, because the probe
     # pass happens first and its evidence has to file under the run it belongs to. A resumed
     # campaign keeps the original id (the evidence and the run store are keyed by it).
     run_ids = {
-        target.id: (opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}")
-        for _, target in loaded_targets
+        loaded.target.id: (
+            opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}"
+        )
+        for loaded in loaded_targets
     }
 
     printer = ProgressPrinter(no_color=opts.no_color, quiet=opts.quiet)
@@ -1237,9 +1501,31 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             if opts.budget_requests is not None
             else None
         )
+
+        def ceiling_remedy() -> str:
+            # A resumed pass that reaches the ceiling with a spend on record has its sends
+            # recorded, and they fill it; otherwise the ceiling covers this invocation alone.
+            return _probe_pass_remedy(
+                adaptive_campaign,
+                attack_room=prior_spend is None
+                and _fits_without_probes(
+                    provisional or provisional_plans(),
+                    opts.budget_requests or 0,
+                    spent=0,
+                    done=_answered_requests(resume_from, selected),
+                ),
+            )
+
         for _, target, (mock_scenario, real_target) in routes:
             if opts.resume is None:
                 starts[target.id] = wiring.utc_timestamp()
+            # The pass's ledger is made here, not inside the pass, so what it sent is known
+            # however it ends, and a resumed run records it then, success included (u12 A-46).
+            # Only the ceiling used to: a probe answered 503 three times left the store at 20
+            # while the target had served 23, and so did a product error, Ctrl-C, SIGTERM, or
+            # anything stopping the run before the runner's ledger opened. Each retry of the
+            # same resume then sent its probes against a ceiling that had never seen them.
+            probe_ledger = BudgetLedger(max_requests=probe_ceiling)
             try:
                 probe_pass = wiring.fingerprint_probe(
                     scope,
@@ -1249,22 +1535,38 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     evidence=probe_store,
                     run_id=run_ids[target.id],
                     mock_scenario=mock_scenario,
-                    max_requests=probe_ceiling,
+                    ledger=probe_ledger,
                 )
+                # Inside the try: a signal landing between the pass and this write lost the
+                # whole pass (2 of 16 real SIGINTs a few ms after the last probe, pre-commit
+                # audit). Interrupted here, the handler below writes it again.
+                _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
             except wiring.ProbeCeilingReached as exc:
-                if prior_spend is not None:
-                    # A resumed run records what this probe pass spent before refusing: it did
-                    # not, so each retry of the same command spent the ceiling again (60 allowed,
-                    # 106 sent after three tries; pre-commit audit of the leftovers).
-                    _persist_spend(
-                        run_db, run_ids[target.id], prior_spend.plus(Spend(requests=exc.requests))
-                    )
+                _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
                 raise ValueError(
                     f"the -sV probe pass on {target.id!r} reached the --budget-requests ceiling "
                     f"({exc}) after {exc.requests} request(s), before any attack traffic: "
-                    "retries count as requests. Raise the ceiling or drop -sV. The exchanges are "
-                    f"in {evidence_root / run_ids[target.id] / 'probes'}."
+                    f"retries count as requests. {ceiling_remedy()}. The exchanges are in "
+                    f"{evidence_root / run_ids[target.id] / 'probes'}."
                 ) from exc
+            except BaseException:
+                # The error's own message can understate the sends: a probe adapter has no
+                # retries of its own (the meter owns them), so three 503s read "exhausted 1
+                # attempt(s)". The count is the ledger's. Plain print, as the resume notice.
+                recorded = _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
+                sent = probe_ledger.spend().requests
+                if prior_spend is not None and sent:
+                    print(
+                        f"resume: the -sV probe pass on {target.id!r} stopped after {sent} "
+                        "request(s), retries included; "
+                        + (
+                            f"{run_ids[target.id]} now records {recorded} request(s) spent"
+                            if recorded is not None
+                            else f"they could not be added to the spend of {run_ids[target.id]}"
+                        ),
+                        file=sys.stderr,
+                    )
+                raise
             fingerprints[target.id] = probe_pass.fingerprint
             probes_sent[target.id] = probe_pass.requests
     if fingerprints and not opts.quiet:
@@ -1314,7 +1616,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # three policy-blocked specs: "3 of 0 planned", exit 0, zero requests.
     barren = [
         f"{p.target.id} ({len(p.skipped_capability)} skipped for capabilities, "
-        f"{len(p.blocked_by_policy)} blocked by policy)"
+        f"{len(p.blocked_by_policy)} blocked by policy"
+        + (f", {len(p.not_seeded)} not seeded" if p.not_seeded else "")
+        + ")"
         for p in plans
         if not p.selected
     ]
@@ -1324,6 +1628,14 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{'; '.join(barren)}. Widen the selection or declare the capability on the "
             "target. A spec blocked by policy needs a policy pack that enables it, and the CLI "
             "cannot load one today (open decision), so it cannot run from `dottore`."
+            + (
+                " A spec counted as not seeded runs once what `--dry-run -vv` names for it is "
+                "fixed: its id in seeded_setup.specs, a seeded_setup.run_token, its own "
+                "deployment name for each of its scene tools in seeded_setup.tools, or an "
+                "adapter that returns tool calls."
+                if any(p.not_seeded for p in plans if not p.selected)
+                else ""
+            )
         )
 
     # Resolved BEFORE the three modes that send nothing, so a typo in the id is caught by the
@@ -1534,7 +1846,7 @@ def _refusal_for(scope: Scope, target: Target) -> str | None:
     return None if decision.allowed else (decision.reason or "not authorized by the scope")
 
 
-def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target | None]:
+def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None, Target | None]:
     """Decide the adapter route for one target: ``(mock_scenario, real_target)``.
 
     ``--hardened`` always forces the offline hardened replay (a mock-only flag); otherwise a
@@ -1544,22 +1856,20 @@ def _route_for(opts: RunOptions, target_path: Path) -> tuple[str | None, Target 
     (contract §5).
     """
 
-    uses_mock = wiring.target_uses_mock(target_path)
-    if opts.hardened and not uses_mock:
+    if opts.hardened and not loaded.uses_mock:
         # It replayed offline fixtures, sent nothing, and published ten passes, "complete" and
         # exit 0 under the live target's name, with no marker anywhere that it was a replay
         # (audit 2026-10-03, R3). A clean report about a model nobody contacted is refused.
-        target = wiring.load_target(target_path)
         raise ValueError(
             f"--hardened replays the offline hardened fixtures and sends nothing, so it cannot "
-            f"be used with the live target {target.id!r} ({target_path}): the report would "
-            "describe a model that was never contacted. Drop --hardened, or point it at a "
-            "mock target."
+            f"be used with the live target {quoted(loaded.target.id)} ({loaded.path}): the "
+            "report would describe a model that was never contacted. Drop --hardened, or point "
+            "it at a mock target."
         )
-    if opts.hardened or uses_mock:
-        scenario = "hardened" if opts.hardened else wiring.load_mock_scenario(target_path)
+    if opts.hardened or loaded.uses_mock:
+        scenario = "hardened" if opts.hardened else loaded.mock_scenario()
         return scenario, None
-    return None, wiring.load_target(target_path)
+    return None, loaded.target
 
 
 def _run_one_target(
@@ -1669,7 +1979,7 @@ def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) 
         raise ValueError(
             f"run {run_id!r} already spent {prior.wall_s:.1f}s of its {ceiling}s wall-clock "
             "ceiling, which the campaign's budget covers as a whole. Resuming it would do no "
-            "work and halt again on the same axis. Raise --budget-wall-s for this campaign, or "
+            "work and halt again on the same axis. Raise --budget-wall for this campaign, or "
             "start a fresh run."
         )
     return prior
@@ -1819,10 +2129,9 @@ def _persist_run_spend(run_db: Path, result: CampaignResult) -> None:
     """Record what the campaign consumed, once it is known.
 
     The runner also hands its spend to the store however it stops (a ceiling, an abort,
-    Ctrl-C, and SIGTERM or SIGHUP, which ``execute_run`` turns into Ctrl-C). A SIGKILL still
-    loses the dead half's spend, and so does a Ctrl-C during a resumed run's ``-sV`` probe pass
-    (the probes are counted only once the pass returns). Closing those would mean a write per
-    request.
+    Ctrl-C, and SIGTERM or SIGHUP, which ``execute_run`` turns into Ctrl-C), and a resumed run's
+    ``-sV`` probe pass is recorded however it ends (:func:`_charge_probe_pass`). A SIGKILL still
+    loses the dead half's spend: closing that would mean a write per request.
     """
 
     _persist_spend(run_db, result.run.run_id, result.spend)
@@ -1836,14 +2145,54 @@ def _record_spend_quietly(run_db: Path, run_id: str, spend: Spend) -> None:
     hygiene block). A finished run still records its spend through ``_persist_run_spend``.
     """
 
+    _recorded_requests(run_db, run_id, spend)
+
+
+def _recorded_requests(run_db: Path, run_id: str, spend: Spend) -> int | None:
+    """Record ``spend`` and return the requests the store then holds for ``run_id``.
+
+    ``None`` when it could not be recorded, which is said on stderr and is never the run's
+    error: a locked database must not replace the Ctrl-C or the error that stopped the run.
+    """
+
     try:
-        _persist_spend(run_db, run_id, spend)
+        return _persist_spend(run_db, run_id, spend)
     except Exception as exc:  # the database, not the campaign
         reason = Redactor().for_terminal(str(exc))
         print(f"warning: the spend of {run_id} could not be recorded: {reason}", file=sys.stderr)
+        return None
 
 
-def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> None:
+def _charge_probe_pass(
+    run_db: Path, run_id: str, prior: Spend | None, ledger: BudgetLedger
+) -> int | None:
+    """Record a resumed run's spend with what its ``-sV`` probe pass sent (u12 A-46).
+
+    Called however the pass ends, success included, so a stop before the runner's ledger opens
+    loses nothing either. The figure is written whole, not added: the store keeps the highest
+    per axis, so the runner's later record of the same probes plus the attack counts each probe
+    once. Returns the requests the store then holds, or ``None`` when nothing was recorded:
+    nothing sent, no prior spend, or a failed write (a warning says so). No prior spend is a
+    fresh run, whose run row is written after the pass so there is nothing to resume, or a
+    ``--resume-unverified`` run with no recorded spend, told its ceiling covers this invocation
+    alone; neither recorded the probes before, at the ceiling either.
+    """
+
+    sent = ledger.spend().requests
+    if prior is None or sent == 0:
+        return None
+    # Not retried when a signal lands during the write. In the probe loop's handlers nothing
+    # catches it after, so one landing there loses the pass (2 of 41 real SIGINTs just after a
+    # 503 stop, delta audit). Writing again closed that, and on a locked store made Ctrl-C wait
+    # one more busy timeout per interrupted write (9.9 s instead of 4.7 after a 503, 15.1
+    # instead of 9.8 after a pass that succeeded) for a record lost anyway (pre-merge audit).
+    # The window stays, like a SIGKILL's, and u12 A-46 says so.
+    return _recorded_requests(run_db, run_id, prior.plus(Spend(requests=sent)))
+
+
+def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> int:
+    """Record ``spend`` (the highest per axis is kept) and return the requests now recorded."""
+
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
@@ -1856,6 +2205,7 @@ def _persist_spend(run_db: Path, run_id: str, spend: Spend) -> None:
                 "wall_s": round(spend.wall_s, 6),
             },
         )
+        return int((store.get_run_spend(run_id) or {}).get("requests", 0))
 
 
 def _print_progress(

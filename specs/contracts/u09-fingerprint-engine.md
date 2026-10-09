@@ -28,8 +28,9 @@ evidence, spoofing_flags}` and stop; (2) **adaptive first pass**: feed that fing
 weights, baseline resistance). Six signal layers run independently, each emitting weighted
 `Evidence`; `combine` fuses them into per-field guesses + confidence. Self-report is a **weak**
 signal: any layer contradicting the statistical layer surfaces a `spoofing_flag`, never
-suppressed. Every run is **reproducible** (fixed seeded probe battery). Benign probes only -
-no jailbreak payloads, scope-allowlist-gated.
+suppressed. Every run is **reproducible** offline (fixed seeded probe battery); live, as far as
+the target is deterministic at temperature 0, which every probe pins (`PROBE_SAMPLING`, with a
+512-token reply cap). Benign probes only - no jailbreak payloads, scope-allowlist-gated.
 
 ## §3 Dependencies & interface contracts
 - Consumes `shared.protocols.TargetAdapter` (u04) via injected instance: **no provider SDKs
@@ -48,7 +49,9 @@ no jailbreak payloads, scope-allowlist-gated.
   default first step on an unknown endpoint.
 - KEEP: signature DB is a versioned data pack with a self-test corpus; loader validates pack
   version + schema; a pack update must not silently break the loader.
-- KEEP: seeded probe battery (seed = `(target_id, probe.name)`) ⇒ deterministic replay.
+- KEEP: seeded probe battery (seed = `(target_id, probe.name)`) ⇒ deterministic replay. The
+  seed rides in request metadata and is not sent; on the wire every probe is temperature 0 with
+  a capped reply (as built 2026-10-07: three layers had sent no temperature at all).
 - DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always
   disables). Resolved as built: `-sV` (and `-A`) imply adaptive ordering; there is no
   `--no-adaptive` flag (`00-INDEX.md` OD-5). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs
@@ -101,7 +104,10 @@ reason}], mutator_weights, baseline_resistance}`: nothing silently dropped (`doc
   statistical layer) ⇒ correct `spoofing_flags` set + family confidence not inflated by the
   self-report; **0 cases** where a spoofed self-id silently wins.
 - **Determinism:** same target + seed ⇒ byte-identical `ModelFingerprint` on replay (golden
-  fixture in `tests/fixtures/fingerprint/golden/`).
+  fixture in `tests/fixtures/fingerprint/golden/`). Live, only as far as the target is
+  deterministic at temperature 0: the first local pass gave byte-identical output with 9 of its
+  17 probes at temperature 1, and again with all 17 at 0 (`docs/16` §1), which is one model,
+  not a guarantee.
 - **Adaptive planner:** given a fixed fingerprint, `TestPlan` selected/skipped sets match the
   golden plan; every skip carries a reason (assert no un-reasoned drops).
 - **Safety-negative:** all probes classified benign; an out-of-scope target ⇒ adapter refusal

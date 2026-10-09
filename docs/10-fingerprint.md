@@ -219,8 +219,11 @@ fragments, so a version is named only from what the model says about itself (for
 "sonnet" in its self-description), the weakest and most easily spoofed channel; otherwise the
 version is `null`.
 
-- Every fingerprint run is **reproducible** (fixed seeded probe battery, evidence stored like
-  any attempt: `docs/07`).
+- Every fingerprint run is **reproducible offline** (fixed seeded probe battery: a replay of
+  the same replies gives the same fingerprint). Live, it is as deterministic as the target is
+  at temperature 0, which every probe pins (`PROBE_SAMPLING`); the seed is metadata and is not
+  sent. `run -sV` stores its probes as evidence (`probes/`); a standalone `dottore fingerprint`
+  stores none.
 - **Signature DB** is a versioned data pack, not code: it ships in-repo under
   `src/ildottore/fingerprint/signatures/`, validated by `fingerprint/signatures.py` on load, so
   new models = update the signature pack, not the engine. Ships with a self-test corpus.
@@ -235,7 +238,8 @@ What the planner does today, with and without a fingerprint:
    `memory`, `logprobs`, `multi_identity` and the rest.
 2. **Orders each spec's mutators by carrier comprehension** (built, see the introduction above
    §1): the carriers the target recovered move to the front, in the spec's declared order; the
-   rest follow, in declared order. It selects no spec and drops no variant.
+   rest follow, in declared order. It selects no spec and drops no variant. Seen over the wire
+   once, against a local 3B model (`docs/16` §1, 2026-10-07).
 3. **Does not set baseline expectations.** The design was to record the family's known
    resistance and score a result relative to it. That half is the dead `_baseline_resistance`
    hook described above §1: nothing writes the guardrails key it reads, and nothing reads the
@@ -272,4 +276,8 @@ dottore run --suite owasp:llm ...                        # no -sV ⇒ no tailori
 
 - Signature DB ships a labeled corpus; CI measures **family precision/recall** and
   **version top-1/top-3 accuracy**, gated so a signature-pack update can't regress recognition.
-- Determinism: same target + seed ⇒ same fingerprint verdict.
+- Determinism: every probe goes out at temperature 0 with a reply capped at 512 tokens
+  (`PROBE_SAMPLING`), so a target that is deterministic at temperature 0 gives the same verdict
+  twice. The seed is folded into each request's metadata and is not sent. Three layers used to
+  send their probes with no temperature, and a live server sampled them at its default (1.0 on
+  Ollama); the first live pass found it (`docs/16` §1, 2026-10-07).

@@ -836,3 +836,32 @@ def test_fingerprint_prints_a_lone_surrogate_in_a_target_id(
     result = CliRunner().invoke(app, ["fingerprint", "t.yaml", "--offline"])
     assert result.exit_code == 0, result.output
     assert result.stdout.isascii() and json.loads(result.stdout)["target_id"] == target_id
+
+
+def test_the_dry_run_writes_a_canary_to_seed_out(tmp_path: Path) -> None:
+    """The `--dry-run -vv` seed line, which main gained with OD-18 B (#58), quotes a spec's
+    canary, the pack author's text: written out like the other lines that quote a pack (merge of
+    this PR with main)."""
+
+    bola = (REPO / "specs" / "attacks" / "AC-BOLA-001.yaml").read_text()
+    planted = 'canaries: ["ZYNAP_CANARY_{{run_id}}"]'
+    assert bola.count(planted) == 1
+    specs = tmp_path / "specs"
+    specs.mkdir()
+    (specs / "AC-BOLA-001.yaml").write_text(
+        bola.replace(planted, 'canaries: ["ZYNAP_CANARY_{{run_id}}\\n::error title=pwned::seed"]')
+    )
+    app_target = (REPO / "examples" / "target.app.yaml").read_text().split("seeded_setup:")[0]
+    target = tmp_path / "target.yaml"
+    target.write_text(app_target + "seeded_setup:\n  specs: ['*']\n  run_token: eng-2026-q4\n")
+    result = CliRunner().invoke(
+        app,
+        [
+            *("run", "--dry-run", "-vv", "--spec", "AC-BOLA-001", "-t", str(target)),
+            *("--scope", str(REPO / "examples" / "scope.app.yaml")),
+            *("--spec-path", str(specs)),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert _injected_lines(result.stdout) == [], result.stdout
+    assert f"ZYNAP_CANARY_eng-2026-q4-AC-BOLA-001{LF}::error title=pwned::seed" in result.stdout

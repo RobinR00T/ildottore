@@ -18,6 +18,12 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
   optional two-axis `iopc:` block, `techniques` + `impacts`, see `docs/15`, plus an optional
   `aisvs:` list of the OWASP AISVS controls a failure is evidence against) so findings roll up
   to the frameworks operators report against.
+- **JSON, written in YAML.** Every value is one JSON holds: a mapping, a list, a string, a
+  finite number that can be written out (A-40), a boolean or null. YAML builds more (an
+  unquoted `2026-01-01` is a date, `!!set` a set, an `!!omap` or `!!pairs` entry a pair,
+  `!!binary` bytes, `.nan` and `.inf` floats JSON does not write, an escape between U+D800 and
+  U+DFFF half a character), and such a value is a `SCHEMA` finding at its path, so quote a date
+  in a tool's `returns` and write a character outside the basic plane as itself (A-54).
 
 ## 2. Field reference
 
@@ -35,7 +41,7 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 | `requires` | ✓ | Capabilities needed (`rag`, `tools`, `memory`, `system_prompt`). |
 | `description` | ✓ | What the test validates. |
 | `preconditions` | | Human-readable prerequisites. |
-| `setup` | | Declarative setup: `documents`, `tools` (mock defs: `name`, optional `description` and `returns`; `destructive: true` makes `tool_call` treat a call as destructive whatever its name, and `external: true` marks egress, which an allowlist taken from the setup never authorizes and the linter refuses on an explicit one), `memory_seed`, `system_prompt`. `system_prompt` always reaches the target. Against a `type: model` target the other three are delivered in-band (OD-18, ADR-0009 option A): `memory_seed` entries become saved memory from earlier sessions after the system prompt (`session`, `role`, `content`), `documents` (`content_template` or `content`, by `id`) become retrieved context before the attack, and `tools` become tool definitions (`name`, `description` or `The <name> tool.`, any arguments), each call answered with the tool's `returns` (`OK` when absent) for at most 4 rounds. Against any other target type they are read only by the evaluators, the lint fixture engine and the linter; 32 of the 75 shipped specs depend on one of the three. |
+| `setup` | | Declarative setup: `documents`, `tools` (mock defs: `name`, optional `description` and `returns`; `destructive: true` makes `tool_call` treat a call as destructive whatever its name, and `external: true` marks egress, which an allowlist taken from the setup never authorizes and the linter refuses on an explicit one), `memory_seed`, `system_prompt`. `system_prompt` always reaches the target. Against a `type: model` target the other three are delivered in-band (OD-18, ADR-0009 option A): `memory_seed` entries become saved memory from earlier sessions after the system prompt (`session`, `role`, `content`), `documents` (`content_template` or `content`, by `id`) become retrieved context before the attack, and `tools` become tool definitions (`name`, `description` or `The <name> tool.`, any arguments), each call answered with the tool's `returns` (`OK` when absent) for at most 4 rounds. Against any other target type (a deployed application, ADR-0009 option B) the operator seeds them into the deployment and the target file declares the spec under `seeded_setup.specs`; undeclared, the spec is `inconclusive: setup_not_seeded` with nothing sent, and declared, it goes out as its plain prompt with tool calls judged under the spec's names through `seeded_setup.tools`. 32 of the 75 shipped specs depend on one of the three. |
 | `attack` | ✓ | `user_prompt` and/or `carrier` (for indirect injection). `media` adds image or audio parts; the `render_text` of an image that is rendered from it (no `data_b64`) counts as part of the request for `dottore lint`'s echo rule. |
 | `mutations` | | List of mutation strategies to apply (see §4). |
 | `expected_secure_behavior` | ✓ | Bulleted description of a passing target (drives judge rubric). |

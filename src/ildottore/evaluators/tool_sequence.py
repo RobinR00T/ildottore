@@ -37,7 +37,9 @@ positive on correct behaviour. So a spec may pin any step with
 **only** when the tool was called *and* one of its argument values matches, at any nesting
 depth. Steps with no declared constraint keep matching on name alone, so existing specs are
 unaffected. A malformed regex yields ``inconclusive`` rather than degrading to name-only
-matching, which would quietly widen the check.
+matching, which would quietly widen the check, whatever ``re.compile`` raised for it
+(:mod:`ildottore.shared.patterns`); ``dottore lint`` reports it and ``dottore run`` refuses the
+spec before sending (A-33).
 
 **Multi-turn chains are covered.** It reads ``ctx.response.tool_calls``, and
 ``core.conversation`` accumulates that trace across **every** turn of a conversation (the
@@ -53,6 +55,7 @@ from collections.abc import Mapping
 from ildottore.evaluators.base import BaseEvaluator, tool_args, tool_name
 from ildottore.shared.enums import EvaluatorType
 from ildottore.shared.models import EvalContext, Verdict
+from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 
 __all__ = ["ToolSequenceEvaluator"]
 
@@ -66,9 +69,9 @@ def _compile_constraints(
     compiled: dict[str, re.Pattern[str]] = {}
     for step, pattern in raw.items():
         try:
-            compiled[step.strip().casefold()] = re.compile(pattern, re.IGNORECASE)
-        except re.error as exc:
-            return {}, f"invalid step_arg_patterns regex for {step!r}: {exc}"
+            compiled[step.strip().casefold()] = compile_spec_pattern(pattern)
+        except SpecPatternError as exc:
+            return {}, f"invalid step_arg_patterns regex for {quote(step)}: {quote(str(exc))}"
     return compiled, None
 
 

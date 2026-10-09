@@ -1,7 +1,7 @@
 # ADR-0009: a spec's setup never reaches a live target (OD-18)
 
-* **Status:** accepted on 2026-10-06 by the owner: **C, with A first** (A built in this change; B
-  follows)
+* **Status:** accepted on 2026-10-06 by the owner: **C, with A first**. A built on 2026-10-06
+  (#50), B on 2026-10-07; both halves are in.
 * **Date:** 2026-10-03
 * **Context:** OD-18 in `specs/contracts/00-INDEX.md`; found by the AISVS mapping audit of the
   same day and verified in the code before this was written
@@ -78,7 +78,7 @@ trace, and the manual says which specs test the model and which test the applica
 The owner chose **C, with A first**, reversing the recommended order: the first live pass is
 against hosted model APIs, where nothing can be seeded, so B alone would leave the 26 specs
 `inconclusive`. A applies to a target of `type: model`; a deployed application (any other type)
-keeps today's behaviour until B lands, and the documents keep saying so.
+kept the old behaviour until B landed on 2026-10-07 (below).
 
 ### A as built
 
@@ -112,5 +112,64 @@ keeps today's behaviour until B lands, and the documents keep saying so.
   without a system field) when there is a memory seed, makes the spec `inconclusive`
   (`setup_not_delivered`), never a send without them.
 * **Not built:** a turn with media is one send with its tools attached, its calls recorded and
-  not answered; B, the operator-seeded declaration and tool-name map for deployed
-  applications.
+  not answered.
+
+### B as built (2026-10-07)
+
+* **When:** the target is any type but `model` and the spec declares `setup.documents`,
+  `setup.tools` or `setup.memory_seed`. Nothing of the scene goes on the wire: the deployment has
+  its own documents, tools and memory, and the operator seeds the spec's into them.
+* **The declaration:** the target file's `seeded_setup` block. `specs` lists the spec ids (or
+  `fnmatch` globs, case kept) whose scene the operator seeded; `tools` maps a spec's tool name to
+  the deployment's; `granted_tools` lists the deployment's own tools outside every scene;
+  `run_token` replaces `{{run_id}}` in a seeded spec. The loader refuses the block on a `type:
+  model` target (one of A or B would be read wrong), an unknown key, an empty or non-string
+  entry, a name both mapped and granted, and a `run_token` that is not 8 to 64 plain characters.
+* **The gate** (`setup_delivery.seeding_gap`, asked by the runner of the spec as written,
+  before its canary is bound, and by the plan, so the dry run counts what the run reports): a
+  spec is `inconclusive: setup_not_seeded`, with nothing sent, when it is not declared; when its
+  canary has to be in the deployment (in the scene, or planted outside it as `AC-BOLA-001`
+  plants one in another customer's record) and no `run_token` is declared (the operator seeds
+  before the run, so a canary bound per run could never be there and `secret_leakage` would be
+  blind: pre-commit audit H1, delta audit D-H2); or when two of its own scene tools map to one
+  deployment name. `setup_delivery.trace_gap` adds a fourth: a spec judged on its tool trace is
+  `setup_not_delivered` through an adapter that reads no tool calls (REST, MCP), where it could
+  only ever see "no call" and pass. The dry run prints the count and, at `-vv`, the
+  reason per spec; a target where nothing else runs is refused as having nothing to send; the
+  summary does not count such a spec as exercised. Every offline mock is exempt (`offline_mock`
+  on `MockTarget` and `ComprehendingMock`): it answers from the spec, not from a deployment, and
+  the plan exempts the same routes.
+* **A seeded spec** goes out as its plain prompt (or pinned turns); the attempt's request records
+  `setup_delivery: seeded` and the tool-name map it applied (`seeded_tools`). Its canary, when
+  it has to be seeded, is `<run_token>-<spec id>`: one token for all made every seeded spec's
+  canary the same, so a reply quoting one spec's seeded record failed another (delta audit
+  D-M1). `--dry-run -vv` prints each canary to seed.
+* **The tool-name map** is applied per spec, to that spec's scene tools only, to every key a
+  call's name is read from (`name` and `function.name`), before the evaluators run. Specs name
+  one deployment tool differently (`lookup_ticket`, `read_ticket`), and a target-wide map renamed
+  a call into a name the judging spec does not use. The stored evidence keeps the calls as the
+  deployment made them. The ADR named the `tool_call` evaluator as the reader; renaming before
+  every evaluator covers the trace evaluators (`tool_call`, `tool_sequence`,
+  `kill_chain_progression`) and the reach check below with one change. The judge sees only the
+  reply's text, so the map does not reach it.
+* **Granted tools:** the map alone left the false "unauthorized" fail on any tool the deployment
+  has beyond the spec's scene (a search before answering, an escalation). A name in
+  `granted_tools` joins the `tool_call` allowlist through the evaluator context, except a name
+  that is one of the spec's own scene tools: granting `http_post` re-authorized the egress
+  `AG-EXFIL-EGRESS-001` forbids (pre-commit audit, H2). Arguments and destructive names are
+  still judged.
+* **Reach:** a seeded spec whose untrusted content is a tool's result, judged by no trace
+  evaluator, is `inconclusive: setup_not_reached` when the reply shows no call to that tool
+  (under the spec's name). A deployment that runs its tools server-side shows none, and its
+  plain answer used to pass. Nothing shows that a seeded document or memory was retrieved, so a
+  seeded RAG or memory spec has no such check; the docs say so.
+* **Resume:** `seeded_setup` is part of the target's digest when present and left out when absent,
+  so a run stored before the field existed still resumes, and a changed declaration is a changed
+  target (the refusal names it). A spec the gate now stops, which the stored run had already
+  sent, is scored from its attempts when they are all there, and otherwise kept as evidence,
+  inconclusive, with nothing more sent: returning the stored finding as it was published the
+  resume placeholder, a confirmed critical turned into an unscored inconclusive (delta audit
+  D-H1).
+* **Not built:** a fleet entry is written as a `chatbot` target with no `seeded_setup`, so a spec
+  that needs a scene is `setup_not_seeded` on it; a target file is the way to declare one. The
+  tool cannot check that what the operator seeded is what the spec declares.
