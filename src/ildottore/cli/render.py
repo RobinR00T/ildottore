@@ -189,7 +189,12 @@ def coverage_lines(
             [
                 f"WARNING: {len(cov.off_universe)} framework value(s) outside their pinned "
                 "universe were NOT counted: "
-                + ", ".join(f"{sid} {field}={value!r}" for sid, field, value in cov.off_universe)
+                # A pack's free text, printed without markup since PR #51: `rich` no longer eats
+                # the `[warning]` of `##[warning]x`, so the log command is written out here.
+                + ", ".join(
+                    f"{sid} {field}={visible_controls(repr(value))}"
+                    for sid, field, value in cov.off_universe
+                )
             ]
             if cov.off_universe
             else []
