@@ -16,11 +16,15 @@ versioning: [SemVer](https://semver.org/).
   printable is now written as `repr` (`setup/'a\ud800b': a number too long ...`), as #80 writes a
   key that is not printable. A key Python counts as printable reads as written (Spanish, Chinese);
   one holding a zero-width or bidi mark, an ideographic space or a no-break space is written as
-  `repr` too. The location of every other JSON-schema error follows the same rule: a lone surrogate
-  in a key under `step_arg_patterns` was the same traceback before #81 too. Found by the pre-merge
-  audit of #80 and the delta audit of `fix/spec-non-json-values`. Still open: a newline or another
-  control character in a key that pydantic names, or in the spec `id`, still forges a finding line
-  or reaches the terminal raw (#89 handles only an `id` UTF-8 cannot encode).
+  `repr` too. The location of every other JSON-schema error follows the same rule. A lone surrogate
+  in a key under `step_arg_patterns`, the same traceback before #81 too, is closed on main by A-54
+  (#89), which reports the key before the schema runs; what this change still does there is stop
+  control characters: a key `a\n[ERROR] SCHEMA (FAKE-001): forged` under `step_arg_patterns` made
+  `dottore lint` print a forged second finding line, and it now prints as `'a\n[ERROR]...'`
+  (pre-merge audit of #90). Found by the pre-merge audit of #80 and the delta audit of
+  `fix/spec-non-json-values`. Still open: a newline or another control character in a key that
+  pydantic names, or in the spec `id`, still forges a finding line or reaches the terminal raw (#89
+  handles only an `id` UTF-8 cannot encode).
 
 ### Fixed (a refused `--resume -sV` whose advice was refused in turn)
 
@@ -485,12 +489,13 @@ versioning: [SemVer](https://semver.org/).
   value built in code is named by its type. At most 20 are listed and the rest counted, a set or a
   pair is the finding and what it holds is not walked, a container shared through an alias is
   reported once, a key on this check's paths that is not printable is written as its `repr` (A-40's
-  own paths print keys as written until its follow-up lands), and a value in a field the schema
-  types (`name: 2026-01-01`) gets this message instead of the schema's `datetime.date(2026, 1, 1) is
-  not of type 'string'`. A key that is not a string is A-44's finding (below), reported before this
-  check runs. None of the 75 shipped specs holds such a value (none of the 129 YAML files of the
-  repository that load is flagged). Found on 2026-10-07 by the pre-commit audit of
-  `fix/huge-int-repr` (finding F6). Clause A-54 (u02); `tests/registry/test_non_json_values.py`.
+  paths and the locations of JSON-schema errors do too since #90, while a spec id UTF-8 can encode
+  is still printed as written), and a value in a field the schema types (`name: 2026-01-01`) gets
+  this message instead of the schema's `datetime.date(2026, 1, 1) is not of type 'string'`. A key
+  that is not a string is A-44's finding (below), reported before this check runs. None of the 75
+  shipped specs holds such a value (none of the 129 YAML files of the repository that load is
+  flagged). Found on 2026-10-07 by the pre-commit audit of `fix/huge-int-repr` (finding F6). Clause
+  A-54 (u02); `tests/registry/test_non_json_values.py`.
 - **`--runs` past what a float holds exited 1 with a traceback.** `dottore run ... --dry-run --runs
   <4,300 nines>` (and `--estimate`, and the run) gave `OverflowError: int too large to convert to
   float` where the plan multiplied its token estimate by the budget headroom: from 305 nines with
@@ -739,9 +744,9 @@ versioning: [SemVer](https://semver.org/).
   a string; write it in quotes, without a tag`. At most 20 are listed and the rest counted, a key
   that is a number too long to write out is reported first by the check of the section below, and a
   key on the path that is not printable (an escape sequence, a newline, a bidi control) is written
-  as its `repr`, so it cannot forge a finding line (the spec id and the paths of other schema errors
-  print as written, as before). Found on 2026-10-07 by the session on `fix/huge-int-repr`. Clause
-  A-44 (u02).
+  as its `repr`, so it cannot forge a finding line (A-40's paths and the locations of JSON-schema
+  errors do too since #90, while a spec id UTF-8 can encode is still printed as written). Found on
+  2026-10-07 by the session on `fix/huge-int-repr`. Clause A-44 (u02).
 - **Keys of two types in one mapping crashed the schema check itself.** `step_arg_patterns: {5: 1,
   a: 2}` gave two schema errors whose paths were sorted, an int against a str: `TypeError` and
   exit 1. The key check runs first, so the schema never sees such a mapping.

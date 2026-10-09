@@ -642,10 +642,12 @@ def test_a_printable_key_that_is_not_ascii_stays_readable() -> None:
     ]
 
 
-def test_a_schema_error_under_a_key_with_a_lone_surrogate_is_a_finding(tmp_path: Path) -> None:
+def test_a_lone_surrogate_in_a_key_under_step_arg_patterns_is_a_finding(tmp_path: Path) -> None:
     """jsonschema's location printed the key with ``str``: a lone surrogate under
     ``step_arg_patterns`` made lint exit 1 with a ``UnicodeEncodeError`` traceback, before A-40
-    too (pre-commit audit of its follow-up)."""
+    too (pre-commit audit of its follow-up). On main A-54 (#89) reports such a key before the
+    JSON schema runs, so this guards that route and not :func:`_format_error`, which the next test
+    does (pre-merge audit of #90)."""
 
     escape = chr(92) + "ud800"
     doc = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
@@ -657,7 +659,30 @@ def test_a_schema_error_under_a_key_with_a_lone_surrogate_is_a_finding(tmp_path:
 
     assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
     assert result.exit_code == 1
-    assert f"evaluators/0/step_arg_patterns/'a{escape}b': " in result.stdout
+    assert f"evaluators/0/step_arg_patterns/'a{escape}b': a key holding half a" in result.stdout
+
+
+def test_a_schema_error_under_a_key_with_control_characters_is_one_line(tmp_path: Path) -> None:
+    """jsonschema's location printed the key with ``str``: a newline in a key under
+    ``step_arg_patterns`` made ``dottore lint`` print a forged second finding line on main, and
+    an escape sequence went out raw (``click`` strips it from a pipe, not from a terminal). The
+    key is written as ``repr`` now (pre-merge audit of #90)."""
+
+    key = "a" + chr(27) + "[31m" + chr(10) + "[ERROR] SCHEMA (FAKE-001): forged"
+    doc = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
+    doc["evaluators"][0]["step_arg_patterns"] = {key: 5}
+
+    [message] = validate_attack_spec_schema(doc)
+    assert chr(27) not in message and chr(10) not in message
+
+    specs = _spec_dir(tmp_path, yaml.safe_dump(doc, sort_keys=False, width=10**6))
+    result = runner.invoke(app, ["lint", str(specs)])
+
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+    assert result.exit_code == 1
+    findings = [line for line in result.stdout.splitlines() if line.startswith("[ERROR]")]
+    location = f"evaluators/0/step_arg_patterns/{key!r}"
+    assert findings == [f"[ERROR] SCHEMA (AC-BFLA-001): {location}: 5 is not of type 'string'"]
 
 
 def test_a_schema_error_location_stays_readable_and_names_the_root() -> None:
