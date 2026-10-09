@@ -83,8 +83,8 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
   classified by the status (a `401` stays a `401`), and so is an error status whose body is over
-  the limit (until 2026-10-07 a `401` with a 5 MB body was an inconclusive attempt where a short
-  one stops the run). A reply whose brackets balance (as many
+  the limit (before PR #68 a `401` with a 5 MB body was an inconclusive attempt where a short one
+  stops the run). A reply whose brackets balance (as many
   close as open) and nest more than 100 levels deep (objects and arrays, outside strings, read
   from the text before it is
   parsed, whether or not the rest is valid JSON; a provider's reply nests about 10), or a tool

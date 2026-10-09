@@ -189,7 +189,7 @@ partial):
   every other error does (a refusal by the scope, a 200 that is not JSON, the request ceiling):
   the target is not answering, and isolating that too made a target that never replies cost
   25.5 minutes of probing (three 30 s timeouts per probe) before an attack that failed the
-  same way. Before (2026-10-07), one
+  same way. Before PR #68, one
   refused reply stopped `run -sV` with exit 3 before any attack, after one request, while
   without `-sV` it failed one attempt (OD-23).
 

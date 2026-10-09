@@ -172,7 +172,7 @@ async def read_capped(response: httpx.Response, label: str) -> bytes:
 
     An error status whose body cannot be decoded, or is over the cap, returns an empty body: the
     status is what classifies that reply, and a 401 must not turn into an inconclusive
-    "undecodable" or "too large". The size half was missing until 2026-10-07: a 401 with a 5 MB
+    "undecodable" or "too large". The size half was missing before PR #68: a 401 with a 5 MB
     body was an inconclusive attempt where a short one stops the run, and once the ``-sV``
     probe pass let a refused reply fail only its probe, ``dottore fingerprint`` exited 0 on it
     (delta audit of OD-23).

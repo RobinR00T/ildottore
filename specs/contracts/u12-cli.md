@@ -711,7 +711,6 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
   every probe was refused); before, exit 3 before any attack. A probe that gets no answer at
   all still exits 3 with its cause. Options, and why isolating every environment failure was
   withdrawn: u09 §9 and `00-INDEX.md`.
-
 - **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
   file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
   as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in
