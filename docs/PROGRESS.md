@@ -3,7 +3,7 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
-## State, 2026-10-07 (night): log commands in the middle of a line
+## State, 2026-10-09: log commands in the middle of a line (PR #54, begun 2026-10-07)
 
 - PR #54, on `fix/cli-legacy-workflow-commands` (`tests/test_terminal_log_commands.py`), stacked
   on PR #51 (`796c07c`, still open): `visible_controls` also writes the second `#` of
@@ -26,12 +26,19 @@ The carryover ledger. Every agent session updates this so context survives even 
 - Open for the owner: OD-20, the JSON outputs keep `##[` as it is (by instruction) and still
   carry a command when printed to a log; option B escapes the `[` as `\u005b`. A real GitHub
   Actions run was not done: it needs a push to a fork or scratch repo, which waits for approval.
-- Found on the way, not fixed (pre-existing on main): a `regex_absence` pattern that is not a
-  valid regex makes `dottore lint` exit 1 with a `re.PatternError` traceback
-  (`registry/fixtures_engine.py`) instead of a lint error.
+- Found on the way, not fixed here (pre-existing on main): a `regex_absence` pattern that is not
+  a valid regex made `dottore lint` exit 1 with a `re.PatternError` traceback
+  (`registry/fixtures_engine.py`) instead of a lint error; fixed since on main by PR #63 (A-33).
 - `make gates` green on `796c07c` plus this branch: 2,518 tests (40 new; 26 fail on PR #51's
   code), coverage 96.57%. The suite prints `ResourceWarning`s for unclosed sqlite connections
   (28 lines, the same on PR #51's tree without this branch); not fixed here.
+- Stacked on `e6ac2af` (main `fb9a8a8` with #88, #60, #68, #66, #56, #57 and #51, the tree main
+  holds before this squash). The S6 row, the manual, u12 §6 and §9 and `cli/run.py` conflicted:
+  each keeps both sides, the `-vv` plan's not-seeded reasons (OD-18 B, on main since) go through
+  `visible_controls` as the skipped and refused ones do, and the "not covered" lists drop the
+  legacy form and #51's split-credential item, which #57 closed. The stacked merge had kept two
+  copies of a #51 CHANGELOG bullet and of its PROGRESS heading; one of each is left. `make gates`
+  green there: 4,364 tests, coverage 97.46%.
 
 ## State, 2026-10-09: PR #51, format characters and the pre-merge follow-ups (begun 2026-10-07)
 
@@ -580,8 +587,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   levels apart, and in a selection of more than 512 patterns a spec nested 482 to 487 deep ends
   `inconclusive` with no reason in the report (documented in `compile_spec_pattern` and A-33; a
   per-process cache would close it). The message quotes with `ascii`; the lint text line goes
-  through `visible_controls` since PR #51, and until PR #54 merges a `##[` in a pattern is
-  printed as written, as in every other lint message on `main`. Open for the owner as OD-22:
+  through `visible_controls` since PR #51, which writes a `##[` in a pattern out as `#\x23[`
+  since PR #54, as in every other lint message. Open for the owner as OD-22:
   refuse the run (as built, like F-10) or skip only that spec (like `setup_not_seeded`); reuse
   `EVALUATOR_MISCONFIGURED` (as built) or a code of its own.
 
