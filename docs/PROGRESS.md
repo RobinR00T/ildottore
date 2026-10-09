@@ -3,7 +3,7 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
-## State, 2026-10-07 (night): PR #51, format characters and the pre-merge follow-ups
+## State, 2026-10-09: PR #51, format characters and the pre-merge follow-ups (begun 2026-10-07)
 
 - The owner decided on 2026-10-07 (in the session that built it) that format characters (Unicode
   Cf: zero-width characters, the soft hyphen, bidi controls, the byte order mark, tag characters)
@@ -28,6 +28,22 @@ The carryover ledger. Every agent session updates this so context survives even 
   out at up to ten characters each, so `tests/cli/test_operator_file_quoted_values.py` expects the
   written-out id, bounds its line at 5,000 characters and looks for a whole `repr` with its quote
   (u01 A-51 and A-57 say so). `make gates`: 3,571 tests (229 from this PR), coverage 97.12%.
+- Stacked on `4f466e2` (main `fb9a8a8` with #88, #60, #68, #66, #56 and #57, the tree main
+  holds before this squash). `redactor.py` keeps one copy of the control and format ranges,
+  #57's, and builds `_TERMINAL_CONTROLS` from those two alone, so `visible_controls` never
+  escapes U+FFFD, which #57's match drops; `mask_split_credentials` is gone, `for_terminal` is
+  `visible_controls(redact_text(...))` and `_masked` redacts `mask_url_passwords(str(exc))` again.
+  `cli/diff.py` keeps #82's per-finding validation, then this branch's spec-id check, whose
+  refusal now names the report as A-49 does (`the report <absolute path> holds '<id>', which is
+  not a spec id; is this a run report?`, added to A-49's list). `fingerprint` keeps #68's probe
+  warning (now written out too, as every warning) and prints this branch's ASCII JSON. Tests
+  changed for the stack: the four `mask_split_credentials` cases call `for_terminal` or the
+  redactor's split match; the periodic case uses a credential whose end repeats its start once
+  (#57 matches one repeating a piece more than twice over without overlaps, a case it lists as
+  open); the `lint`/`coverage` key is written as its `repr` since #90; the `fingerprint` stub
+  gains the fields #68's warning reads. The pre-merge audit's medium (a key's control characters
+  are written out, MANUAL and u12) and lows are applied, and the "until #51" sentences of the
+  merged entries are in the past tense. `make gates` green there: 4,324 tests, coverage 97.40%.
 
 ## State, 2026-10-09: a registered credential split by characters that do not show (PR #57, begun 2026-10-07)
 
@@ -1006,7 +1022,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   open, pre-existing on main: the legacy `##[cmd]` form a GitHub runner reads anywhere in a line;
   the reports and stores keep a credential split by a control character readable (`redact_text`
   unchanged); a credential split by an invisible format character (U+200B) was neither masked nor
-  shown (on the terminal it is since 2026-10-07, below).
+  shown (on the terminal it is since 2026-10-07, above).
 - `make gates` green: 2,397 tests (195 new), coverage 96.49%. PR #49 touches `_masked` too: the
   second to merge rebases.
 

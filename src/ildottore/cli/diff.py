@@ -188,7 +188,10 @@ def load_findings(path: Path) -> dict[str, Finding]:
     # ids only, which the spec schema shapes.
     for finding in findings:
         if not _SPEC_ID.fullmatch(finding.spec_id):
-            raise ValueError(f"{path}: {finding.spec_id!r} is not a spec id; is this a run report?")
+            raise ValueError(
+                f"the report {path.absolute()} holds {finding.spec_id!r}, which is not a spec id; "
+                "is this a run report?"
+            )
     targets = sorted({f.target_id for f in findings})
     if len(targets) > 1:
         raise ValueError(

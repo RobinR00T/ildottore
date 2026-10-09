@@ -411,8 +411,8 @@ pinned:
   and grants, and the target's `id`, which several refusals name (two files with one id,
   `--hardened` on a live target, a target the scope does not authorize);
 * a key the operator typed is part of the location and is printed as pydantic renders it (a
-  `true:` key as `1`), control characters included, so a key holding a line break still splits
-  the message until the terminal writes them out (#51);
+  `true:` key as `1`), its control and format characters written out, as #51 writes them in every
+  error (§6);
 * a file with both blocks wrong is refused on its `capabilities` block alone;
 * only what pydantic cannot read as the field's type is refused: `tools: 'off'` reads as false,
   `temperature: '0.5'` as 0.5, `temperature: true` as 1.0, and `temperature` and `top_p` have no
