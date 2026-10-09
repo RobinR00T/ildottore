@@ -82,7 +82,20 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   capped too. The adapters ask only for those two (`Accept-Encoding: gzip, deflate`); any other
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
-  classified by the status (a `401` stays a `401`).
+  classified by the status (a `401` stays a `401`). A reply whose brackets balance (as many
+  close as open) and nest more than 100 levels deep (objects and arrays, outside strings, read
+  from the text before it is
+  parsed, whether or not the rest is valid JSON; a provider's reply nests about 10), or a tool
+  call whose JSON-string arguments do, is refused the same way: inconclusive, not retried, and
+  the rest of the scan goes on. Tool-call arguments whose brackets do not balance read as no
+  arguments, as before; arguments whose brackets balance and nest past 100 are refused even when
+  they are not JSON, so that reply is inconclusive instead of judged by the tool's name. During a
+  `-sV` or `-A` probe pass a reply refused on any of these grounds still stops the run before the
+  attack. A success reply that is not JSON (brackets that do not balance included), or holds an
+  integer of more than 4,300 digits (which Python refuses to read), still stops the run (exit 3);
+  over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
+  times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
+  stray lines and its reply together.
 - **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
   limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
   from the command line). A larger regular file is refused before any of it is read; anything
@@ -467,7 +480,7 @@ required.
 | `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the spec's `sampling.max_tokens` or, when it declares none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0); tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a spec that declares none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
-| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run |
+| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. That it is the same campaign (target, route, judge, planning mode, `--runs`, battery, evidence) is checked first, the budget after (against the campaign's `--runs`), and a resume refused before it sends anything writes nothing. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run. The planning mode is adaptive when the campaign ran with `-sV`, `-A` or `--deep`, and a resume has to keep it: the refusal names those flags, to leave out or to put back (the run store does not record which of them set it). With `-sV`, a request ceiling the campaign's spend leaves too small for the 17 probes is refused before they are sent, and the refusal offers dropping `-sV` (or the `-A` that implies it) only when the campaign did not plan adaptively and the ceiling holds the rest of it without the probes, priced as `--estimate` prices it; otherwise it says to raise `--budget-requests` |
 | `--resume-unverified` | resume a run whose integrity record is missing; its ceiling then covers this invocation only |
 | `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
 | `--compare` | model-comparison matrix across targets (a band per spec x target), printed in the terminal and embedded in the JSON report. The matrix renders for **any** multi-target run; `--compare` states the intent and refuses a single target (exit 3) |
@@ -523,9 +536,9 @@ it again (a SIGKILL would stop it without recording what the unfinished part spe
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an
 environment error (a timeout, a 5xx after retries) are sent again under the same attempt id
-(except an error a retry would repeat, such as a reply over the size cap, recorded with
-`[not retryable]` and kept), and a resumed spec is scored over its full `--runs`, one attempt per
-id.
+(except an error a retry would repeat, such as a reply over the size cap or nested too deeply,
+recorded with `[not retryable]` and kept), and a resumed spec is scored over its full `--runs`,
+one attempt per id.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
 authorized but answered nothing at all (every attempt failed on transport). That code is
@@ -661,10 +674,13 @@ nested past the limit used to be composed whole first (198 KB of chains of `[` 3
 written past the limit starts (a deeper branch, or one as deep written first, aliases expanded,
 used to be named instead, and so did a key before an empty list, as in `k: []`), and a recursive
 alias written before the nesting is no longer what is reported. A text or an alias written at
-level 101 opens no level and is left to what refused it before. Under the limit the cost stays:
-the same chains 98 deep are accepted in about 2.3 times the time of the flat list, and up to
-about 3 times when they hold their texts at the bottom (OD-30: a lower limit for flow nesting
-only is decided, not built yet).
+level 101 opens no level and is left to what refused it before. Flow style nests at most 20 levels:
+a list or a map written with brackets or braces inside 20 others written that way is refused where
+it starts, `document is nested too deeply in flow style (over 20 levels of brackets or braces)`,
+because the scanner pays for each of them on every token inside it (the same chains 98 deep were
+accepted in 2 to 3 times the time of the flat list; now refused in 0.01 s). Block style counts only
+toward the limit of 100, and the YAML files the repository ships nest at most 2 flow levels; a file
+written as JSON is flow style throughout, so it too nests at most 20 levels.
 A key written twice in one
 mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a file
 with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than text

@@ -17,6 +17,65 @@ The carryover ledger. Every agent session updates this so context survives even 
   callback can still be dropped, as Ctrl-C can in any Python program. Contract u12 A-60;
   `tests/cli/test_termination_signals.py`, 2 of its 8 tests fail on `e4d6c83`.
 
+## State, 2026-10-07 (afternoon): a refused `--resume -sV` whose advice was refused in turn
+
+- Found by the pre-commit audit of `fix/resume-wall-flag-name` and fixed on
+  `fix/resume-sv-ceiling-advice`: `run --resume -sV` with a request ceiling too small for the probe
+  pass was refused with "Raise --budget-requests, or drop -sV" before the planning-mode check, and
+  each half was refused again for one kind of campaign (measured through the CLI on `0501752`:
+  raising, on a campaign halted without `-sV`; dropping `-sV`, on one halted with `-sV` or
+  `--deep`). The campaign checks (target, route, judge, planning mode, `--runs`, battery, evidence)
+  now run before the wall-clock and request-ceiling refusals, and the campaign's `--runs` is
+  inherited before the plan those ceilings come from (a campaign at `--runs 20` was refused against
+  2,000 requests where its own derived ceiling was 3,300); the planning-mode refusal names `-sV`,
+  `-A` and `--deep`; the three probe-pass refusals offer dropping `-sV` only when it lets the resume
+  through (not on a campaign that planned adaptively, and only when the ceiling holds the rest of
+  the campaign without the probes, as `--estimate` prices it). The journal adoption moved past the
+  last refusal before traffic, so a resume refused before it sends writes nothing (on `0501752` the
+  `--budget-requests` pre-flight refused after adopting, when no spend was recorded; and no test
+  checked that `run` adopts at all, the new one checks the halted run's digests).
+  `tests/cli/test_resume_sv_advice.py` follows and pins every piece of advice through the CLI; 20 of
+  its 24 tests fail on `0501752`. Contract u12 A-48. The pre-commit audit of the change (a 120-case
+  matrix through the CLI) found the spent-ceiling case, the `--runs` order, an unfollowed pre-flight
+  advice and miscounted figures; its delta round (no regression, 2,367 tests green) a ceiling one
+  request past the spend, a ceiling of 0 and advice written ahead of the words the test reads; its
+  third round (no regression, 2,374 tests green) one untested refusal case; all fixed here. What
+  `--estimate` does not price (the multi-identity sweep, which the open #60 adds to the estimate,
+  and retries) can still halt a followed "drop -sV" at an exact fit; written in A-48. Left open, a
+  question for the owner: the recorded planning mode is one flag for `-sV`, `-A` and `--deep`, so a
+  campaign run with `-sV` resumes with `--deep` in its place (measured: it goes through), and its
+  second half runs the mutators in their declared order, with no fingerprint; the advice never
+  offers that swap. Also open, from `0501752`: a stored mode that is not a boolean is read by
+  truthiness (`"false"` reads as on), where a wrong-typed `runs` or spend is refused as corrupt; and
+  only the request axis is read, so a campaign halted on `--budget-tokens` is told about requests.
+
+## State, 2026-10-08: a hostile reply nested too deeply fails one attempt (PR #65, open)
+
+- On `fix/target-deep-json` (PR #65): a target reply whose brackets balance and nest past 100
+  levels (`shared.nesting.MAX_DEPTH`), however deep, is `ResponseTooDeep`, an environment failure
+  that is not retried:
+  that attempt is inconclusive and the scan goes on. Before, `json.loads` raised
+  `RecursionError` past the parser's stack (400 KB of `[`) and pydantic overflowed past about
+  255 levels when writing evidence (600 bytes), and either aborted the campaign at the first
+  request (exit 3). Covers the OpenAI, Anthropic and REST bodies, the MCP JSON body, SSE event
+  and stdio line, a tool call's JSON-string arguments and the judge's reply. The depth is read
+  from the text before parsing, so it does not depend on the Python version; brackets that do
+  not balance are "not JSON". Also: an MCP stdio line may be 4 MiB (64 KiB stopped the campaign
+  on a server with 300 tools), with 4 MiB in all per request. Four audits (before the commit,
+  a delta round on its fixes, before the merge, and a delta round on those follow-ups) found,
+  among others, a quadratic string pattern, a lost detection on unbalanced tool arguments and
+  carriage-return lines past the stdio total; all fixed, and the last round found only wording.
+  Found while fixing
+  the operator-file case on `fix/cli-deep-json` (PR #61, merged first as `0501752`).
+- **Left for separate fixes** (pre-commit audit, both also on `main`): with `-sV` or `-A`, one
+  refused reply in the probe pass stops the run before the attack; and a 400-digit token count in
+  `usage` crashes `dottore run` with a traceback (exit 1, no report). The first is in progress on
+  `fix/sv-probe-env-error` (OD-23).
+- **For the owner (OD-21, open):** a 200 whose body is not JSON still stops the whole campaign
+  (`AdapterProductError`, runner `aborted`, exit 3, one request sent): measured, not as the
+  finding assumed. Whether it should fail only its attempt, as a reply too deep now does, is a
+  decision, not a fix; the trade-off is a misconfigured endpoint caught at the first request.
+
 ## State, 2026-10-08 (morning): a regex that does not compile is a lint finding (PR #63)
 
 - On `fix/lint-invalid-regex` (`tests/test_invalid_spec_patterns.py`, clause A-33 in `u02`): a
@@ -69,6 +128,21 @@ The carryover ledger. Every agent session updates this so context survives even 
   change the same lines (the halt path, the seeding gate, the sweep): whoever merges second keeps
   the count, not the set.
 
+## State, 2026-10-08 (morning): a limit of its own for flow nesting (OD-30)
+
+- On `fix/yaml-flow-nesting-limit`, on `main` after #84 (`9b8b511`): the owner decided OD-30 on
+  2026-10-08, option A with a limit of 20. A list or a map written with brackets or braces inside 20
+  others written that way is now refused where it starts (A-58): chains of `[` 98 deep, accepted
+  under the limit of 100 at 2 to 3 times the time of a flat list, are refused at the 21st `[` in
+  0.01 s, and chains at the limit holding 300 texts each walk a fifth of the keys they did at 98
+  levels (11.4 million against 52.0); the limit bounds each token's walk, not a file's (a denser
+  file walks 21.0 million). Block nesting does not count; the repository nests at most 2 flow
+  levels. Converting the depth tests to block style uncovered that three alias-depth tests of #61
+  had, since #84, passed for the wrong reason (their anchors were written 101 deep, so they were
+  refused as written): fixed, and they now assert their written nesting. Also splits two glued
+  bullets (OD-33, from #84; a `Tests:` bullet, from #77). 22 of the 28 new tests fail on `9b8b511`;
+  nine mutants killed. To merge after #76, as agreed with its session.
+
 ## State, 2026-10-08: a live fingerprint orders a live plan (run 2026-10-07)
 
 - PR #58 (OD-18 option B) squash-merged as `0f936b6`: with #50, OD-18 is complete. A live
@@ -95,11 +169,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   with no new clause number. Those two tests fail on `0501752` (a third checks that the scan catches
   a refusal like this one and leaves docstrings out), and a message that names `--budget-requests`
   instead, or no flag, fails the first. The MANUAL, USAGE and the man page now name the flag that
-  lifts the refusal. Left open as its own task: on a resume with `-sV`, the request-ceiling refusal
-  runs before the planning-mode check, so on a campaign halted without `-sV` its advice to raise
-  `--budget-requests` leads to a second refusal (only dropping `-sV` works there). Noted: the error
-  masker can mask a `--flag=VALUE` whose value is long, such as `--budget-wall=SECONDS`, as a
-  high-entropy value (`--budget-wall=60` is printed as written); no message writes that form.
+  lifts the refusal. Left open as its own task, and fixed by #83 (u12 A-48): on a resume with `-sV`,
+  the request-ceiling refusal ran before the planning-mode check, so on a campaign halted without
+  `-sV` its advice to raise `--budget-requests` led to a second refusal (only dropping `-sV` worked
+  there). Noted: the error masker can mask a `--flag=VALUE` whose value is long, such as
+  `--budget-wall=SECONDS`, as a high-entropy value (`--budget-wall=60` is printed as written); no
+  message writes that form.
 
 ## State, 2026-10-07 (night): ids bounded at 128 characters (OD-27 decided)
 
@@ -217,13 +292,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   (main with #77 and every open PR) found no failure due to this change and one more claim, the
   order in which refusals made while composing are reported (the order they are made, not the order
   written), corrected with a test; and #87 numbering its own OD-30 to OD-33 in u04, which it has to
-  renumber. OD-30, decided by the owner on 2026-10-08: option A, a lower limit for flow nesting
-  only, to be built on its own branch. Until then, under the limit the per-token cost stays (chains
-  98 deep accepted at about 2.3 times the flat list); the repository's 130 YAML files nest at most 2
-  flow levels; libyaml's scanner, whose C composer would take the per-node checks with it, was not
-  chosen. #77 (A-41 and A-42, merged first) edits the same `compose_node`: the merge kept both sides
-  of four additions (the module docstring, the constants, the class docstring, `__init__`), the
-  method itself merged cleanly, and both branches' tests pass together.
+  renumber. OD-30, decided by the owner on 2026-10-08: option A, built as A-58 (entry above);
+  libyaml's scanner, whose C composer would take the per-node checks with it, was not chosen. #77
+  (A-41 and A-42, merged first) edits the same `compose_node`: the merge kept both sides of four
+  additions (the module docstring, the constants, the class docstring, `__init__`), the method
+  itself merged cleanly, and both branches' tests pass together.
 
 ## State, 2026-10-07 (evening): fleet target ids that differ only by case
 

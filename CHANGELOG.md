@@ -23,6 +23,192 @@ versioning: [SemVer](https://semver.org/).
   (8 tests, 3 of them raising the signal inside a real weakref callback; 2 fail on `e4d6c83`).
   Reported by the session of PR #72 from its CI runs.
 
+### Fixed (a refused `--resume -sV` whose advice was refused in turn)
+
+- **Each half of the advice worked for one kind of campaign only.** `dottore run --resume -sV` with
+  a request ceiling that the campaign's spend left too small for the 17 probes was refused (exit 3)
+  with "Raise --budget-requests, or drop -sV", and that refusal ran before the check of the
+  campaign's planning mode. Measured through the CLI on `0501752`: on a campaign halted without
+  `-sV`, raising the ceiling was refused again ("halted with adaptive planning off and this
+  invocation asks for on") and only dropping `-sV` went through; on one halted with `-sV` or
+  `--deep`, dropping `-sV` was refused again (the same refusal, "on" and "off" the other way) and
+  only raising went through. The checks that a resume continues the same campaign (target, route,
+  judge, planning mode, `--runs`, battery and evidence) now run before the wall-clock and
+  request-ceiling refusals, so a campaign run without `-sV` gets the planning-mode refusal first.
+  That refusal now names the flags that set the mode: "Resume without -sV, -A or --deep, or start a
+  fresh run", or "Resume with -sV, -A or --deep, whichever it ran with, or start a fresh run" (it
+  named none; the run store records the mode, not which of the three flags set it). The three
+  refusals of a probe pass that does not fit the request ceiling (the resume's pre-check, the
+  `--budget-requests` pre-flight and a pass that reaches the ceiling) offer dropping `-sV` only when
+  the ceiling would hold the rest of the campaign without the probes, priced as `--estimate
+  --resume` prices it, and the campaign is not one that must keep adaptive planning: not to a
+  campaign that recorded adaptive planning ("Raise --budget-requests (the campaign ran with adaptive
+  planning, which its resume has to keep)"), and not when the ceiling would not hold that rest ("...
+  (without the probes, it would still not hold the rest of the campaign)"): a resume whose spend
+  left one request of room halted after it, exit 3, keeping nothing, and a fresh run with a ceiling
+  below its battery, 0 included, halts before it ends. After a pass that reached the ceiling on a
+  resume with a spend on record, its sends are recorded and fill the ceiling. Two of the three said
+  "Raise the ceiling"; all name the flag now. The advice says `-sV` where the invocation said `-A`,
+  which implies it, and it reads the request axis only: a campaign halted on `--budget-tokens` is
+  still told about requests, as on `0501752`. What the estimate does not price can still halt a
+  followed "drop -sV" at an exact fit: the multi-identity sweep of a live target with two or more
+  identities (`--estimate` leaves it out on `0501752` too), and retries; with `--judge`, a resume's
+  rest is over-priced, so dropping `-sV` is sometimes not offered where it would complete.
+- **The ceilings those refusals read are the campaign's.** The provisional plan they are derived
+  from was resolved before the resume inherited the campaign's `--runs`, so without `--runs` a
+  derived ceiling was the invocation's default of 5, not the campaign's: with the shipped battery on
+  the offline mock the derived request ceiling is 2,000 up to `--runs 10` and 3,300 at `--runs 20`,
+  so a campaign run at `--runs 20` was refused against 2,000 (and at a slow pace its derived
+  wall-clock ceiling was the invocation's too). The inherited `--runs` now comes first.
+- **A resume refused before it sends writes nothing.** The campaign checks read the evidence that a
+  resume adopts into the artifact journal; the adoption now happens after the last refusal before
+  any traffic, the `--budget-requests` pre-flight included, so moving the checks up did not make a
+  refusal for money write to the run store. On `0501752` one did: a resume with no recorded spend,
+  refused by that pre-flight, had already adopted the evidence. And with `run`'s adoption turned
+  off, all 2,351 tests of `0501752` pass (the `--dry-run` test counts journal rows, and a resume
+  journals the attempts it sends): the new test checks the halted run's digests.
+- `tests/cli/test_resume_sv_advice.py` follows every piece of advice each of these refusals gives,
+  as an operator would, through the CLI, and asserts that each is an invocation that goes through,
+  not a second refusal; each test also pins the advice it expects, so a piece worded in a way the
+  test does not read cannot pass unfollowed (one written as a sentence of its own ahead of the
+  advice is not read). 20 of its 24 tests fail on `0501752`. Two tests of
+  `tests/cli/test_resume_integrity.py` resumed with `-sV` a campaign halted without it, which is now
+  refused for its planning mode first; they halt a campaign with `-sV`. `docs/MANUAL.md`, `USAGE.md`
+  and `man/man1/dottore.1` say what a resume has to keep and what each refusal offers. Contract u12
+  A-48. Found by the pre-commit audit of `fix/resume-wall-flag-name`; the pre-commit audit of this
+  change found the spent-ceiling case, the `--runs` order, the pre-flight's advice on a resume that
+  no test followed, and miscounted figures in these notes, its delta round a ceiling one request
+  past the spend, a ceiling of 0 and advice written ahead of the words the test reads, and a third
+  round a ProbeCeilingReached case no test covered and the limits above.
+
+### Fixed (YAML nested more than 20 levels in flow style)
+
+- **Under the depth limit, flow nesting still cost on every token.** PyYAML's pure-Python scanner
+  keeps one possible simple key per open flow level (`[ ]`, `{ }`) and passes over them about three
+  times on every token, so each open flow level costs on every token written inside it. Under the
+  depth limit of 100, a 198 KB list of chains of `[` 98 deep was accepted after the scanner walked
+  29.8 million keys, and the same chains holding 300 texts each after 52.0 million: 1.65 s and 2.34
+  s, 2.0 and 2.8 times the 0.82 s of a flat list of as many texts (best of three, alternating, at a
+  load average of 4.5). The owner decided OD-30 on 2026-10-08: a limit of its own for flow nesting,
+  20 levels. Every loader now refuses a list or a map written with brackets or braces inside 20
+  others written that way, where it starts and before the rest of it is composed: `document is
+  nested too deeply in flow style (over 20 levels of brackets or braces)`, exit 3 at the CLI and a
+  `PARSE_ERROR` in `lint`. Both files are refused at the 21st `[` in 0.01 s (0.17 and 0.31 million
+  keys), and chains 19 deep in the root list holding 300 texts each, the costliest shape the audits
+  of #84 found, walk 11.4 million keys in 1.11 s, about 1.35 times the flat list. The limit bounds
+  what each token walks, about 21 keys a pass, not what a file walks: a denser file, whose entries
+  carry an anchor and a tag (four tokens each), walks 21.0 million keys in 789 KB, 2.3 times a flat
+  list (pre-commit audit). Block nesting does not count, only toward the limit of 100, which is
+  checked first, and neither does a single pair in a flow list (`[k: v]`), a map with no bracket of
+  its own (the first version counted it, and refused 11 such lists). The YAML files the repository
+  ships nest at most 2 flow levels. Tests: `tests/cli/test_yaml_flow_nesting.py`, 28 tests, 22 of
+  which fail on `9b8b511` (`main` with #84): twelve because composing goes on to a character no
+  token can start, lines inside the collection at flow level 21 (lists, maps, both mixed, inside
+  block maps, and with a tag or an anchor before the bracket); four because the CLI accepts chains
+  98 deep (`lint`: `document root is not a mapping`; `calibrate`: an invalid labels file) or refuses
+  chains 320 deep at level 101 with A-52's message; five because 21 lists holding single pairs, or
+  11 read from a stream, are accepted; one because `yaml.load_all` does not refuse. The other six
+  pin what holds on both: every shape at 20 levels, the depth limit checked first, the repository's
+  files, and what chains at the limit cost. Nine mutants of the check, of A-52's and of the depth
+  measured with aliases expanded are all killed. The two CLI tests of A-52 moved to the new file.
+  Clause A-58 (u01), OD-30, u02 §4.
+- **Three tests had passed for another reason since #84.** The alias-depth tests of #61
+  (`calibrate`, `run -t` and `lint` on a value 80,000 or 1,600 levels deep through aliases) wrote
+  each anchor 101 levels deep, so since #84 their files were refused as they were written, not for
+  their aliases, and their assertion, `nested too deeply`, could not tell: with the depth check of
+  `check_expanded` removed, all three still pass on `9b8b511`. They now nest 20 levels per anchor,
+  under both written limits, assert that with `written_nesting` (`tests/cli/conftest.py`), and fail
+  without that check. The tests that wrote their depth as chains of `[` (in
+  `test_yaml_written_nesting.py`, `test_deep_json.py` and `test_yaml_expansion.py`) now write it in
+  block style, or in block style with 20 flow levels inside, and pass on `9b8b511` as they did. The
+  test of #63 that lints a spec with tool arguments nested 60 deep near the limit of 100 wrote the
+  spec as JSON, flow style throughout, which this limit refuses; it now writes block YAML, keeping
+  the 60 levels.
+- **Two bullets glued into the paragraph before them are split again:** OD-33 in u01 §9 (glued by
+  the reflow of OD-30 in #84) and the `Tests:` bullet of the construction-cost entry (from #77).
+
+### Fixed (one target reply nested too deeply stopped the whole scan)
+
+- **`json.loads` raises `RecursionError`, not a `ValueError`, on a document nested past the
+  parser's stack.** A target whose 200 reply carried `[` 200,000 levels deep (about 400 KB,
+  under the 4 MiB cap) escaped the handler that classifies a malformed body, and the runner
+  aborted the campaign: `dottore run` exited 3 with "aborted on RecursionError", one request
+  sent, every other spec never run. A reply the parser accepts was as fatal and far smaller when
+  the deep value is one the adapter keeps (an id, the usage, a tool call's input): 300 levels
+  (about 600 bytes) parsed, then overflowed pydantic's serializer when the evidence was written
+  ("aborted on ValueError: Circular reference detected"). Measured on Python 3.14 against a local
+  stub: `replay`'s validation gives up past 200 levels, the serializer past about 255, the
+  redactor past about 995, `repr` past about 70,000 and the parser past about 116,000 (about
+  10,000 on 3.12). The MCP adapter keeps the server's values as text, so there a reply was fatal
+  past `repr`'s limit (80,000 levels in `serverInfo.name`, delta audit) or the parser's.
+- **Every reply is now parsed with its nesting bounded** (`shared.nesting.bounded_loads`, 100
+  levels of objects and arrays; a provider's reply nests about 10, an OpenAI reply with logprobs
+  9): the base adapter's body (OpenAI, Anthropic, REST), the MCP adapter's JSON body, SSE
+  `data:` event and stdio line, and a tool call's arguments carried as a JSON string, which the
+  reply's own parse never opens. The depth is read from the text's brackets outside its strings,
+  before it is parsed, so the parser never decides and the verdict is the same on every Python
+  (the pre-commit audit found 20,000 unclosed `[` were "not JSON" on 3.14 and a stack overflow
+  on 3.12). Brackets that balance and nest past the limit are too deep, whether or not the rest
+  is valid JSON; brackets that do not balance are not JSON, and are refused as that without being
+  parsed. A reply too deep is `ResponseTooDeep`, an environment failure that is not retried, as
+  a reply over the size cap is: that attempt is inconclusive with the error recorded
+  (`[not retryable]`, so `--resume` keeps it) and every other spec runs. With a stub whose first
+  reply is too deep, the run exits 0 and only that attempt is inconclusive; with every reply too
+  deep, all 6 attempts are sent and the run ends "unreachable" (exit 3), as it does when every
+  reply is over the size cap. An MCP reply nested past the limit is now inconclusive too, where a
+  shallower one than `repr`'s limit was rendered as text and scored before.
+- **The cost of the guard:** a reply with no more than 100 brackets is not measured, which is most
+  replies. A hostile 4 MiB body costs about 0.27 s (empty lists) to 0.42 s (chains 100 deep),
+  against 0.07 s and 0.28 s for `json.loads` alone, measured with the machine under load; a
+  string of 4 MiB of escaped quotes, 0.03 s. Two earlier versions in this branch were slower:
+  walking the parsed value took 0.76 s and 1.49 s (pre-commit audit), and a string pattern that
+  could fail on a lone backslash at the very end was retried from every escaped quote, 38 s for
+  160 KB (delta audit). A test now measures 4 MiB of hostile strings in a subprocess, under 5 s
+  and 120 MB.
+- **An MCP server over stdio may write a reply line as long as an HTTP reply, 4 MiB** (it was
+  asyncio's default of 64 KiB, and a server listing 300 ordinary tools, 148 KB on one line,
+  stopped the campaign with "Separator is not found, and chunk exceed the limit", on `main` too).
+  A longer line, or more than 4 MiB in all for one request (its stray lines and its reply
+  together, every byte but each line's ending newline counted), is `ResponseTooLarge`: without
+  that total, 63 lines of 4 MiB took 80 s and 419 MB per attempt (delta audit), and counting a
+  line without all its trailing carriage returns let lines of them through (pre-merge audit). A
+  deep line is refused at once, ahead of the handler that skips a stray non-JSON line.
+- **The judge's reply** goes through the same parse: one nested past the parser's stack raised
+  `RecursionError` out of the evaluator and aborted the campaign; it is now inconclusive, as
+  judge output that is not usable JSON. `call_arguments` reads arguments nested too deeply as
+  `{}`, as it reads arguments that are not JSON; a live reply carrying them is refused by its
+  adapter, so only a call from elsewhere (a fixture) can get there. Arguments whose brackets do
+  not balance are not refused: they read as no arguments and the call is judged by its name, as
+  on `main` (refused, 101 unclosed `[` turned a call to a forbidden tool from a fail into an
+  inconclusive; delta audit). Arguments whose brackets balance and nest past 100 are refused even
+  when they are not JSON, so such a call is inconclusive where `main` judged it by its name: the
+  balance is a count, and telling those apart without parsing them is left open (pre-merge
+  audit). The fingerprint engine's two `json.loads` read the layers' own flat signals, not a
+  target's text, and are unchanged.
+- **The "Not exercised" line** of the summary and of the HTML report names a reply nested too
+  deeply among the environment errors.
+- **Not changed:** with `-sV` or `-A`, such a reply during the fingerprint probe pass still stops
+  the run before any attack (exit 3 after one request), as a reply over the size cap already did,
+  while a 503 there is retried (pre-commit audit; a separate fix). A 200 whose body is not JSON
+  (brackets that do not balance included), or is JSON with an integer of more than 4,300 digits
+  (which Python refuses to read), is still a product defect and still stops the campaign (exit 3,
+  "aborted on AdapterProductError", one request sent, measured against the same stub); whether
+  it should fail only its attempt is open decision OD-21. The finding behind this fix took that
+  case to fail only its attempt already; it did not.
+- **Docs:** the MANUAL (bounded replies, `--resume`), `docs/02` (a row for a reply built to
+  crash the scanner), `docs/09`, contract u04 (§4 KEEP, §7, §9 OD-21) and the 00-INDEX ledger.
+  55 tests: `tests/adapters/test_deep_replies.py` (27, every adapter and both MCP transports),
+  `tests/cli/test_hostile_nesting.py` (3, through the CLI against a local stub, one of them
+  arguments exactly 100 deep through the in-band tool loop, the deepest place a reply reaches:
+  111 levels in the report; with the limit at 200 or 250 its `replay` fails, at 300 the run
+  aborts), `tests/shared/test_nesting.py` (24) and one judge test. The tests of the fix fail on
+  `main` (by `RecursionError`, "DID NOT RAISE", exit 3, `readline`'s `ValueError` or
+  `AdapterProductError`); the guards of what the audits found (the margin, the linear pattern,
+  the balance rule) have nothing to catch there. Four audits ran: one before the commit, a
+  delta round on its fixes, one before the merge, and a delta round on its follow-ups (the
+  later commits), which found only wording and two untested ways to miscount a line ending, now
+  tested.
+
 ### Fixed (a regex a spec writes that does not compile)
 
 - **`dottore lint` crashed on it.** A `regex_absence` pattern `(x` made lint exit 1 with a
@@ -393,25 +579,24 @@ versioning: [SemVer](https://semver.org/).
   it before, where it was. Nesting written thousands of levels deep, which the entry below still
   refused without a position, now has one. Under the limit the cost stays: the same chains 98 deep
   are accepted in 5.5 to 5.6 s, about 2.3 times the flat list, and up to about 3 times when the
-  chains hold their texts at the bottom (OD-30, decided by the owner on 2026-10-08: a lower limit
-  for flow nesting only, where the repository's own files nest at most 2 flow levels, to be built on
-  its own branch). Tests: `tests/cli/test_yaml_written_nesting.py`. 18 of the 32 fail on `5fdac72`
-  (`main`): eight because composing goes on to a character no token can start, written lines inside
-  the collection at level 101; two because the scanner walks 97.4 million possible keys for `lint`
-  and `calibrate` on the audit's 198 KB file, over a bound of 5 million (1.1 million now), the file
-  refused with the same message and position; four because a file is reported as too large, two
-  written deep first and two whose list past the limit sits inside lists whose ends would take the
-  count past the cap; two because the deepest branch, or a key before an empty list, is named; one
-  because `yaml.load_all` does not refuse; and one because 5,000 levels have no position. The other
-  fourteen pin what does not change: the position for one branch, a text, an alias and a map's keys
-  at level 101, every shape at the limit loading as plain PyYAML loads it, and the refusal a
-  `RecursionError` while composing still gets (both loaders catch it, and no other test reaches
-  those handlers now), simulated in process, since a real overflow switches off a pure-Python
-  tracer, and real in a subprocess with little stack left, and a tag too long on the list at level
-  101, reported as such. Thirteen mutants of the check and of those two handlers are all killed.
-  Clause A-52 (u01), u02 §4. Found by the pre-commit audit of the construction-cost fix (A-41 and
-  A-42); the same on `main` (`2f6201a`), whose depth limit is #61's: refused after the same 97.4
-  million keys.
+  chains hold their texts at the bottom (OD-30, decided by the owner on 2026-10-08 and built as
+  A-58, the entry above). Tests: `tests/cli/test_yaml_written_nesting.py`. 18 of the 32 fail on
+  `5fdac72` (`main`): eight because composing goes on to a character no token can start, written
+  lines inside the collection at level 101; two because the scanner walks 97.4 million possible keys
+  for `lint` and `calibrate` on the audit's 198 KB file, over a bound of 5 million (1.1 million
+  now), the file refused with the same message and position; four because a file is reported as too
+  large, two written deep first and two whose list past the limit sits inside lists whose ends would
+  take the count past the cap; two because the deepest branch, or a key before an empty list, is
+  named; one because `yaml.load_all` does not refuse; and one because 5,000 levels have no position.
+  The other fourteen pin what does not change: the position for one branch, a text, an alias and a
+  map's keys at level 101, every shape at the limit loading as plain PyYAML loads it, and the
+  refusal a `RecursionError` while composing still gets (both loaders catch it, and no other test
+  reaches those handlers now), simulated in process, since a real overflow switches off a
+  pure-Python tracer, and real in a subprocess with little stack left, and a tag too long on the
+  list at level 101, reported as such. Thirteen mutants of the check and of those two handlers are
+  all killed. Clause A-52 (u01), u02 §4. Found by the pre-commit audit of the construction-cost fix
+  (A-41 and A-42); the same on `main` (`2f6201a`), whose depth limit is #61's: refused after the
+  same 97.4 million keys.
 
 ### Fixed (two fleet target ids that differ only by case)
 
@@ -518,7 +703,8 @@ versioning: [SemVer](https://semver.org/).
   `fingerprint` now parse each target file once (`wiring.read_target_file`), and a piped target
   works. A file named twice is still parsed once per name (`-t X -t X`, refused as a repeated id,
   and `-t X --judge X`), and a scope with a `checksum:` line is still parsed twice, by design: the
-  second parse is the check that the line is part of no other value. - Tests:
+  second parse is the check that the line is part of no other value.
+- Tests:
   `tests/cli/test_yaml_construction_cost.py`: each number notation at 1,001 characters as a value, a
   key, a list item, in a flow list or mapping and at the root, and at 1,000 as a value; a long text;
   1,000 and 1,001 keys sharing one hash, in block and flow mappings; two mappings; three merge

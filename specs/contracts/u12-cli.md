@@ -423,6 +423,54 @@ and said so rather than pinned (pre-commit, delta and pre-merge audits):
   written no longer loads. A `capabilities: false` resumes the same way once deleted or written
   as `{}`.
 
+**A-48 The advice of a refusal is advice the tool would accept, and a resume is checked for being
+the same campaign before it is checked for money (added 2026-10-07).** `run --resume -sV` with a
+request ceiling that could not hold the probe pass was refused with "Raise --budget-requests, or
+drop -sV", before the check of the planning mode (A-24). Each half was right for one kind of
+campaign only, measured through the CLI on `0501752` (pre-commit audit of
+`fix/resume-wall-flag-name`): on a campaign halted without `-sV`, raising the ceiling was refused
+again ("halted with adaptive planning off and this invocation asks for on"); on one halted with
+`-sV` or `--deep`, dropping `-sV` was ("on" and "off" the other way). Now:
+
+* the checks that the resume continues the same campaign (target, route, judge, planning mode,
+  `--runs`, battery and evidence) run before the wall-clock and request-ceiling refusals, and the
+  resume inherits the campaign's `--runs` before the provisional plan those ceilings are derived
+  from (at the invocation's default of 5, a campaign run at `--runs 20` was refused against a
+  derived 2,000 requests where its own was 3,300). The checks only read: the evidence is adopted
+  into the artifact journal after the last refusal before any traffic, so a resume refused before
+  it sends writes nothing (on `0501752` the `--budget-requests` pre-flight refused a resume with no
+  recorded spend after adopting);
+* the planning-mode refusal names the flags that set the mode, `-sV`, `-A` and `--deep`, to leave
+  out or to put back (it named none);
+* the three refusals of a probe pass that does not fit the request ceiling (the resume's
+  pre-check, the `--budget-requests` pre-flight and the pass that reaches the ceiling) offer
+  dropping `-sV` only when the ceiling would hold the rest of the campaign without the probes,
+  priced as `--estimate --resume` prices it, and never to a campaign that recorded adaptive
+  planning (a resume whose spend left one request of room halted after it, exit 3, keeping
+  nothing; after a pass that reached the ceiling on a resume with a spend on record, its sends are
+  recorded and fill the ceiling). Otherwise they say to raise `--budget-requests`, and every one
+  names that flag (two said "the ceiling").
+
+`tests/cli/test_resume_sv_advice.py` follows every piece of advice each of these refusals gives,
+through the CLI, and asserts that each is an invocation that goes through, not a second refusal;
+each test pins the advice it expects, and a flag the advice names that its grammar cannot turn into
+an invocation fails it. 20 of its 24 tests fail on `0501752`; the other four guard what did not
+change (a campaign that recorded no planning mode may still drop `-sV` when the ceiling holds the
+rest, and a resume refused for the wall-clock or the request ceiling leaves the journal as it found
+it). Limits, written here rather than fixed in a test: the advice answers the check that refused, so
+following "Resume with -sV" adds the probe pass, which a tight ceiling then refuses on its own (with
+advice that goes through), and following "Resume without -sV, -A or --deep" under a ceiling that
+does not hold the rest of the campaign halts (measured with 6 spent and 3 to send: at ceilings 6, 7
+and 8), as any resume did on `0501752`; "whichever it ran with" asks the operator for what the run
+store does not keep (one flag for the three); the advice reads the request axis only, so a campaign
+halted on `--budget-tokens` is still told about requests, as on `0501752`; the estimate leaves out
+the multi-identity sweep of a live target with two or more identities and retries, so a followed
+"drop -sV" at an exact fit can still halt, and it over-prices a resume's rest with `--judge` (the
+safe direction); the test grammar does not read a piece written as a sentence of its own ahead of
+the advice; the advice names `-sV` where the invocation said `-A`, which implies it; and the stored
+mode is read by truthiness, as the planning-mode check reads it, so the advice and the check agree
+on a value that is not a boolean.
+
 **A-55 Every integer flag of `run` is bounded above as well as below, and so is a live run's pace
 against the wall-clock ceiling (added 2026-10-07).** `--runs` had a lower bound only, and the plan
 multiplies its token estimate by the budget headroom, a float: `dottore run ... --dry-run --runs
