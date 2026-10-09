@@ -110,6 +110,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-7..A-11 | u12 | no-send holds under combination, printed numbers are computed by the working code, operational failure exits 3, a resume is bound to its target, a ceiling binds every request |
 | A-42 | u12 | a run parses each target file once, so the target it authorizes is the one it sends to |
 | A-46 | u12 | a resumed run records what its -sV probe pass sent however the pass ends (an error, Ctrl-C, SIGTERM, a stop after it), each probe once |
+| A-60 | u12 | SIGTERM and SIGHUP stop a run as Ctrl-C does, even raised inside a callback: they call the SIGINT handler in place, and raise only when there is none |
 | A-26 | u11 | a gap says which kind it is (roadmap, out of reach, or by design), with the reason |
 | A-12..A-15 | u11 | no denominator over survivors, uncounted values are reported, figures carry their edition, machine formats carry the run state |
 | A-25 | u09 | the ordering -sV produces is measured in CI, not just executed |
