@@ -32,7 +32,6 @@ confidence < the spec's ``confidence_threshold`` ⇒ ``inconclusive`` (``docs/04
 
 from __future__ import annotations
 
-import json
 import secrets
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -41,6 +40,7 @@ from ildottore.adapters.base import AdapterError
 from ildottore.evaluators.base import BaseEvaluator
 from ildottore.shared.enums import EvaluatorType, InconclusiveReason, VerdictStatus
 from ildottore.shared.models import EvalContext, ModelRequest, Sampling, Verdict
+from ildottore.shared.nesting import bounded_loads
 from ildottore.shared.protocols import TargetAdapter
 
 __all__ = ["JudgeVerdict", "SemanticJudgeEvaluator"]
@@ -108,8 +108,10 @@ def _parse_judge_output(raw: str) -> JudgeVerdict | None:
         return None
     candidate = text[start : end + 1]
     try:
-        payload = json.loads(candidate)
-    except (json.JSONDecodeError, ValueError):
+        # Bounded: a reply nested past the parser's stack raised RecursionError, which this
+        # handler let through, and the runner aborted the campaign (2026-10-07).
+        payload = bounded_loads(candidate)
+    except ValueError:  # not JSON, or nested too deeply (both ValueErrors)
         return None
     if not isinstance(payload, dict):
         return None

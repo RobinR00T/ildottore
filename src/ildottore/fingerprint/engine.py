@@ -292,8 +292,8 @@ class _ProbeIsolation:
 
     A refused reply is one that came back and cannot be used: an environment failure (the
     injected predicate) marked ``retryable = False``, the marker ``core.execute`` reads (a reply
-    over the size cap, one it cannot decode, and ``ResponseTooDeep`` once
-    ``fix/target-deep-json`` lands). The target answered, and a retry would get the same reply.
+    over the size cap, one it cannot decode, one nested too deeply: ``ResponseTooDeep``). The
+    target answered, and a retry would get the same reply.
     A probe that got **no answer at all** (a 5xx, a 429, a timeout, a refused connection, still
     failing after the meter's retries) goes through and stops the pass, as before: the target is
     not answering, and isolating it too made a target that never replies cost 17 probes of three

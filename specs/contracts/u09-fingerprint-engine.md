@@ -167,7 +167,8 @@ while without `-sV` the same reply failed one attempt and every spec ran (pre-co
 - the engine classifies a send's error with the predicate the attack phase uses for an attempt
   (`core.execute.default_is_env_error`, injected by `cli.wiring.build_fingerprint_engine`, since
   u09 may not import `core`) and the `retryable = False` marker the attack phase reads; such a
-  refused reply becomes `ProbeFailed` for that probe, and anything else goes through and stops
+  refused reply (over 4 MiB, undecodable, or nested past 100 levels: `ResponseTooDeep`) becomes
+  `ProbeFailed` for that probe, and anything else goes through and stops
   the pass: a probe that gets **no answer at all** (a 5xx, a 429, a timeout, a refused
   connection, after the meter's retries), a product error, a refusal by the scope, the request
   ceiling, every `BaseException`. The first version isolated every environment failure, and

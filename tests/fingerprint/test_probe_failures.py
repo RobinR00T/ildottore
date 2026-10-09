@@ -29,6 +29,7 @@ from ildottore.adapters.base import (
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
+    ResponseTooDeep,
     ResponseTooLarge,
     ResponseUndecodable,
 )
@@ -36,7 +37,7 @@ from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.cli.wiring import build_fingerprint_engine
 from ildottore.core.execute import default_is_env_error
 from ildottore.fingerprint import PROBES_FAILED_FLAG, FingerprintEngine, failed_probes
-from ildottore.fingerprint.base import ProbeContext, ProbeFailed
+from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, ProbeFailed
 from ildottore.fingerprint.layers.behavioral import SELF_REPORT_DETAIL
 from ildottore.fingerprint.layers.carrier import CARRIER_PROBE_DETAIL
 from ildottore.fingerprint.layers.statistical import StatisticalLayer, response_vector
@@ -214,16 +215,9 @@ def test_every_probe_refused_gives_an_empty_fingerprint_and_says_so() -> None:
     assert "non_discriminating_target" not in fp.spoofing_flags
 
 
-class _TooDeep(AdapterEnvError):
-    """Stands for ``ResponseTooDeep`` (on ``fix/target-deep-json``): env, not retried."""
-
-    is_env_error = True
-    retryable = False
-
-
 @pytest.mark.parametrize(
     "error",
-    [ResponseTooLarge("x"), ResponseUndecodable("x"), _TooDeep("x")],
+    [ResponseTooLarge("x"), ResponseUndecodable("x"), ResponseTooDeep("x")],
     ids=["too-large", "undecodable", "too-deep"],
 )
 def test_every_kind_of_refused_reply_is_a_failed_probe(error: BaseException) -> None:
@@ -231,6 +225,29 @@ def test_every_kind_of_refused_reply_is_a_failed_probe(error: BaseException) -> 
 
     fp = _run(_Target({0: error}))
     assert failed_probes(fp) == [f"metadata/self_id: {type(error).__name__}"]
+
+
+class _Sampled(_Target):
+    """Keeps the sampling each request went out with."""
+
+    def __init__(self, failures: dict[int, BaseException]) -> None:
+        super().__init__(failures)
+        self.sampling: list[object] = []
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        self.sampling.append(request.sampling)
+        return await super().send(request)
+
+
+def test_a_refused_probe_still_went_out_at_the_probe_sampling() -> None:
+    """The isolation wraps the send and leaves the request as its layer built it: a probe whose
+    reply is refused was sent at ``PROBE_SAMPLING`` (temperature 0, a 512-token cap; #55), as
+    every probe of a pass with no failure."""
+
+    target = _Sampled(dict.fromkeys(range(len(_ORDER)), ResponseTooDeep("x")))
+    fp = _run(target)
+    assert len(failed_probes(fp)) == len(_ORDER)
+    assert target.sampling == [PROBE_SAMPLING] * len(_ORDER)
 
 
 @pytest.mark.parametrize(

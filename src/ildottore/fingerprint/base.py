@@ -56,7 +56,7 @@ class ProbeFailed(Exception):
 
     The engine raises it to a layer in place of the adapter's error when the error is one the
     attack phase would record as an inconclusive attempt and would not retry (a reply over the
-    size cap, one it cannot decode, and ``ResponseTooDeep`` once it lands). A probe that got no
+    size cap, one it cannot decode, one nested too deeply: ``ResponseTooDeep``). A probe that got no
     answer at all (a 503 or a timeout after the retries) is not one: it stops the pass. A layer
     with several probes catches it and treats that probe as unanswered: no evidence from it,
     never evidence from an empty reply, and its other probes still sent and counted. A layer

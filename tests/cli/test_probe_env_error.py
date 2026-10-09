@@ -25,6 +25,7 @@ from ildottore.cli.app import app
 from ildottore.cli.run import fingerprint_probe_count
 from ildottore.fingerprint import PROBES_FAILED_FLAG, failed_probes
 from ildottore.shared.models import ModelFingerprint
+from ildottore.shared.nesting import MAX_DEPTH
 from ildottore.store.replay import replay_run
 
 _Reply = tuple[int, dict[str, str], bytes]
@@ -59,14 +60,22 @@ def _undecodable() -> _Reply:
     return 200, {**_JSON, "content-encoding": "br"}, _ANSWER
 
 
+def _too_deep() -> _Reply:
+    """A reply whose brackets nest past ``MAX_DEPTH`` (#65): refused as ``ResponseTooDeep``."""
+
+    deep = b"[" * (MAX_DEPTH + 1) + b"]" * (MAX_DEPTH + 1)
+    return 200, _JSON, _ANSWER[:-1] + b', "x": ' + deep + b"}"
+
+
 def _unavailable() -> _Reply:
     return 503, {"content-type": "text/plain"}, b"down"
 
 
-#: The refused reply and the class it fails with. Neither is retried: one send per probe.
+#: The refused reply and the class it fails with. None is retried: one send per probe.
 _REFUSALS: dict[str, tuple[Callable[[], _Reply], str]] = {
     "too large": (_too_large, "ResponseTooLarge"),
     "undecodable": (_undecodable, "ResponseUndecodable"),
+    "too deep": (_too_deep, "ResponseTooDeep"),
 }
 
 _SPECS = ("JB-REFUSAL-SUPPRESS-001", "PI-DIRECT-001")

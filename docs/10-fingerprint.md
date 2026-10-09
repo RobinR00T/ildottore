@@ -158,8 +158,8 @@ partial):
   was named `meta-llama` at 0.67 and a refuse-all target `llama-3-8b` with a 2023-03 cutoff.
 - `probes_failed`: one or more probes got **no usable reply**: the reply came back and the
   adapters refused it, an environment failure a retry would repeat (`retryable = False`: over
-  4 MiB, an encoding they do not decode; and `ResponseTooDeep`, a reply nested too deeply,
-  once `fix/target-deep-json` lands with the same marker), as an attack attempt would be
+  4 MiB, an encoding they do not decode, and `ResponseTooDeep`, a reply nested more than 100
+  levels deep, which has the same marker), as an attack attempt would be
   inconclusive. That probe's layer gives no evidence from it, never evidence from an empty
   reply: a missing guardrail nudge leaves `guardrails` empty (unknown, not "no filter"), a
   missing carrier is left out of `carrier_comprehension` (unmeasured, not 0.0), and one missing
@@ -272,7 +272,8 @@ What the planner does today, with and without a fingerprint:
    `memory`, `logprobs`, `multi_identity` and the rest.
 2. **Orders each spec's mutators by carrier comprehension** (built, see the introduction above
    §1): the carriers the target recovered move to the front, in the spec's declared order; the
-   rest follow, in declared order. It selects no spec and drops no variant.
+   rest follow, in declared order. It selects no spec and drops no variant. Seen over the wire
+   once, against a local 3B model (`docs/16` §1, 2026-10-07).
 3. **Does not set baseline expectations.** The design was to record the family's known
    resistance and score a result relative to it. That half is the dead `_baseline_resistance`
    hook described above §1: nothing writes the guardrails key it reads, and nothing reads the
