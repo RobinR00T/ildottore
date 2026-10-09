@@ -320,17 +320,17 @@ def test_run_names_a_target_file_with_a_number_too_long(
 
 @pytest.mark.usefixtures("low_limit")
 @pytest.mark.parametrize("field", ["provider", "transport"])
-def test_a_number_as_provider_or_transport_is_ignored_as_any_value_not_text(
+def test_a_number_as_provider_or_transport_is_refused_as_not_text(
     tmp_path: Path, field: str
 ) -> None:
-    """The target loader reads both only as text, but the mock routing called ``str`` on them
-    first: exit 3 with ``error: Exceeds the limit`` and no file (pre-commit audit of A-40). Now
-    the number is read as ``5`` always was, as no provider."""
+    """The target loader read both only as text, but the mock routing called ``str`` on them
+    first: exit 3 with ``error: Exceeds the limit`` and no file (pre-commit audit of A-40). A-40
+    read the number as ``5`` was read, as no provider; since A-53 the top-level check refuses
+    both as not text, naming the file and not the number."""
 
     scope = write_scope(tmp_path)
     plain = REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml"  # a chatbot spec, no setup
     specs = _spec_dir(tmp_path, plain.read_text(encoding="utf-8"))
-    outputs = []
     for value in (HEX_LOW, "5"):
         target = tmp_path / "target.yaml"
         target.write_text(f"id: mock-target\ntype: chatbot\n{field}: {value}\n", encoding="utf-8")
@@ -347,9 +347,11 @@ def test_a_number_as_provider_or_transport_is_ignored_as_any_value_not_text(
                 "--dry-run",
             ],
         )
-        assert result.exit_code == 0, result.output
-        outputs.append(result.output)
-    assert outputs[0] == outputs[1]
+        assert result.exit_code == ExitCode.ERROR, result.output
+        assert error_line(result) == (
+            f"error: target file {target} failed validation: {field}: Input should be a valid "
+            "string"
+        )
 
 
 @pytest.mark.usefixtures("low_limit")

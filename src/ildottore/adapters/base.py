@@ -170,13 +170,17 @@ async def read_capped(response: httpx.Response, label: str) -> bytes:
     so a 200 KB gzip reply allocated about 150 MB on its way to being refused. The compressed
     bytes are capped too, so an endless stream of empty deflate blocks ends.
 
-    An error status whose body cannot be decoded returns an empty body: the status is what
-    classifies that reply, and a 401 must not turn into an inconclusive "undecodable".
+    An error status whose body cannot be decoded, or is over the cap, returns an empty body: the
+    status is what classifies that reply, and a 401 must not turn into an inconclusive
+    "undecodable" or "too large". The size half was missing before PR #68: a 401 with a 5 MB
+    body was an inconclusive attempt where a short one stops the run, and once the ``-sV``
+    probe pass let a refused reply fail only its probe, ``dottore fingerprint`` exited 0 on it
+    (delta audit of OD-23).
     """
 
     try:
         return await _read_decoded(response, label)
-    except ResponseUndecodable:
+    except (ResponseUndecodable, ResponseTooLarge):
         if response.is_success:
             raise
         return b""

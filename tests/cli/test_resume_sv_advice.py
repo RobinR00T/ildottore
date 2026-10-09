@@ -15,8 +15,9 @@ the CLI, and asserts that each one is a resume that goes through, not a second r
 advice is read off the message with the grammar below, and each test pins the pieces it expects;
 a flag named in the sentence of the advice that the grammar does not turn into an invocation
 fails the test. Not read: a piece written as a sentence of its own ahead of the advice (third
-audit round). "Goes through" is measured on the offline mock, where the plan prices every
-request; the identity sweep and retries are not priced (u12 A-48).
+audit round). "Goes through" is measured on the offline mock (one case adds a loopback judge),
+where the plan prices every request; retries are not priced (u12 A-48); the identity sweep is,
+since A-34 (u08), and so is the judge without the attempts a resume keeps.
 """
 
 from __future__ import annotations
@@ -24,7 +25,9 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import threading
 from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -35,6 +38,7 @@ from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.cli.run import fingerprint_probe_count
 from ildottore.fingerprint import FingerprintEngine
+from ildottore.shared.enums import EvaluatorType
 from ildottore.shared.models import ModelFingerprint, ModelRequest
 from ildottore.shared.protocols import TargetAdapter
 from ildottore.store.run_sqlite import SqliteRunStore
@@ -269,6 +273,100 @@ def test_the_preflight_of_a_resume_with_no_recorded_spend_gives_advice_that_goes
     )
 
     assert "more than the --budget-requests ceiling" in errors[0], errors[0]
+
+
+#: Three judged specs at --runs 3, each attempt one request to the target and two to the judge
+#: (sent once the spec's three replies are in): 17 probes, two specs (18) and the third's three
+#: replies (3), whose first judge request the ceiling refuses. Those three are stored without a
+#: verdict, so the resume sends them again (3) and judges them (6).
+JUDGED_HALT = PROBES + 21
+
+
+@pytest.fixture
+def judge_endpoint() -> Iterator[str]:
+    """A loopback judge that finds every reply secure."""
+
+    verdict = {"verdict": "secure", "confidence": 0.95, "reasoning": "it refused"}
+    message = {"role": "assistant", "content": json.dumps(verdict)}
+    body = json.dumps(
+        {
+            "id": "judge",
+            "object": "chat.completion",
+            "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10},
+        }
+    ).encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("content-length", "0")))
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/v1/chat/completions"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    ("ceiling", "expected"),
+    [
+        # 38 spent and 9 requests of the campaign left: 47 holds them. Priced with every judge
+        # request of the battery (18), the rest was 21, so 59, and only raising was offered.
+        (JUDGED_HALT + 9, {RAISE, DROP}),
+        (JUDGED_HALT + 8, {RAISE}),
+    ],
+    ids=["rest-just-fits", "one-short"],
+)
+def test_with_a_judge_the_room_for_dropping_sv_leaves_out_the_judging_already_done(
+    tmp_path: Path, judge_endpoint: str, ceiling: int, expected: set[Piece]
+) -> None:
+    """The room check behind "drop -sV" priced every judge request of the battery, so with
+    `--judge` it was not offered where the resume's rest fitted (pre-merge audit of #66, whose
+    `--estimate --resume` takes off the judge's share of the attempts the resume keeps)."""
+
+    port = judge_endpoint.split(":")[2].split("/")[0]
+    write_target(tmp_path, mock_scenario="hardened")
+    scope = write_scope(tmp_path)
+    scope.write_text(
+        scope.read_text(encoding="utf-8")
+        + f'  - id: judge\n    base_url: "{judge_endpoint}"\n'
+        + f'    endpoints:\n      - host: "127.0.0.1:{port}"\n'
+        + '        path_prefixes: ["/v1/chat/completions"]\n'
+        + '    identities:\n      - name: judge\n        auth_ref: "env://NONE"\n',
+        encoding="utf-8",
+    )
+    judge = tmp_path / "judge.yaml"
+    judge.write_text(
+        f'id: judge\ntype: chatbot\nprovider: openai\nendpoint: "{judge_endpoint}"\nmodel: j\n',
+        encoding="utf-8",
+    )
+    judged = (EvaluatorType.REFUSAL, EvaluatorType.SEMANTIC_JUDGE)
+    write_spec_tree(
+        tmp_path, [make_spec(f"PI-DIRECT-{i:03d}", evaluators=judged) for i in range(1, 4)]
+    )
+    flags = ["--judge", str(judge), "--rate", "1000"]
+    run_id = _halt(tmp_path, *flags, "-sV", "--budget-requests", str(JUDGED_HALT))
+    with SqliteRunStore(tmp_path / "state" / "runs.sqlite") as store:
+        assert (store.get_run_spend(run_id) or {}).get("requests") == JUDGED_HALT
+    _forget(tmp_path, run_id, mode=True)
+
+    _follow_every_piece(
+        tmp_path,
+        [*_base(tmp_path), *flags, "--resume", run_id, "-sV", "--budget-requests", str(ceiling)],
+        expected,
+    )
 
 
 class _RetryingEngine:

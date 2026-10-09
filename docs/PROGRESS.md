@@ -26,6 +26,125 @@ The carryover ledger. Every agent session updates this so context survives even 
   task `asyncio.run` creates), and an old all-digit run's reports, and those of its resumes, which
   keep the mask.
 
+## State, 2026-10-09: a halted run keeps what it paid for, and resumes (PR #66, begun 2026-10-07)
+
+- On `fix/resume-halt-mid-batch` (on main `0501752`, after #61): a request ceiling that stopped a
+  run inside an identity sweep or between two attempts of a batch stored nothing for that spec,
+  and `--resume` refused the run as one that "sent nothing" (found by the delta audit of
+  `fix/authz-leak-identity-sweep`; on main, `DL-XTENANT-001 --runs 2 --budget-requests 3` sent 3
+  and stored 0, and `PI-DIRECT-001 --runs 3 --budget-requests 2` sent 2 and stored 0). Decided
+  and built: every reply the target gave is stored when its batch returns or a halt stops it,
+  judged when the ceiling leaves room; when the ceiling refuses the judge, a deterministic fail is
+  kept (OD-19) and any other reply is stored without a verdict, which the resume sends again and
+  judges. A run that spent requests and stored no reply resumes from the start with its spend
+  carried; one that spent none, an `--evidence-root` lacking what the journal holds (pending
+  rows included), and an empty tree for a run older than the journal are refused.
+  `--estimate --resume` now takes off the judge's share of the kept attempts (it priced 12 judge
+  requests for a resume that sent 8). Measured through the CLI against a loopback stub, halted
+  spend plus the resume's sends equals the final spend in every shape (1+3, 2+3, 3+3, 2+7, 7+12
+  with a judge, 1+5 on the token ceiling). The pre-commit audit (two auditors) found, among
+  others, a resume that published a PASS over a missing verdict and a deterministic fail lost at
+  the judge; all fixed (the CHANGELOG lists them), then a delta audit and a pre-merge audit
+  (verdict: merge) whose findings are fixed too; 30 mutants of the fix all caught. With `--judge`
+  a reply stored without a verdict is paid for twice (re-sent, not re-judged). Open: the attempts
+  axis counts an attempt whose first request was refused, and a Ctrl-C (or a SIGTERM or SIGHUP,
+  which stop a run as Ctrl-C does, A-60) still drops the batch in flight. `make gates` green on
+  its branch: 2386 tests (main `0501752`: 2351), coverage 96.50%, `dottore lint` 0/0 over 75 specs.
+  Stacked on `e02b0b6` (main `6401ee2` with #62, #64, #82, #90, #67, #69, #74, #88, #60 and #68,
+  the tree main holds before this squash): `cli/run.py` (imports, the estimate call),
+  `core/runner.py` (`__all__`, the breach line, which keeps the `figures` form of
+  `fix/halt-reason-figures` and this branch's notes) and the MANUAL's `--estimate` row conflicted,
+  each resolved keeping both sides. With #60's sweep priced, the three strict `xfail`s pass (3
+  passed under `--runxfail`) and the marker is gone. The pre-merge audit's medium, fixed here: the
+  room check of the `-sV` refusals (A-48) priced every judge request of the battery, so with
+  `--judge` it did not offer a "drop -sV" that fitted; it now takes off the judge's share as
+  `--estimate --resume` does, each share clamped at zero (two `--judge` cases in
+  `tests/cli/test_resume_sv_advice.py`, one failing without the fix). `make gates` green there:
+  3,955 tests, coverage 97.31%.
+
+## State, 2026-10-07 (midday): one refused `-sV` probe reply no longer stops the run
+
+- On `fix/sv-probe-env-error` (`tests/fingerprint/test_probe_failures.py`,
+  `tests/cli/test_probe_env_error.py`, clause A-35 in `u09`): with `-sV` or `-A`, a probe reply
+  the adapters refuse as an environment failure (over 4 MiB, undecodable) stopped the run with
+  exit 3 before any attack, while without `-sV` it failed one attempt (pre-commit audit of
+  `fix/target-deep-json`). Now a reply that comes back refused (`retryable = False`, by the
+  attack phase's own predicate) is a failed probe: its layer gives no evidence from it, the
+  fingerprint is built from the rest (`probes_failed`, `probe_errors=[...]`), stderr says so,
+  and the run goes on. A probe that gets no answer at all (503, timeout, refused connection)
+  still stops the pass with its cause, as before: the first version isolated those too and its
+  pre-commit audit measured 25.5 minutes of probing on a target that never replies (92 s
+  before) and `dottore fingerprint` exiting 0 on a closed port; it also found refused replies
+  letting a constant target skip the constant check (closed). The delta audit found a 401 with
+  a body over 4 MiB read as a refused reply (now classified by its status in `read_capped`,
+  which also stops the attack phase treating it as inconclusive), `dottore fingerprint` exiting
+  0 when every probe is refused (now 3), and A-35 promising more than it holds: a partial pass
+  can still break a tie a full one leaves unknown. Its real domain, measured over 12,276
+  passes: it never names more than the same probes answered with an empty reply. The pre-merge
+  audit (PR #68; no high or medium) found refusals of varied replies getting a target flagged
+  constant (now never claimed once an attributing reply is refused; a refused carrier does not
+  count, the delta audit's last catch), an unreproducible figure (replaced by the
+  measurement above), and three untested behaviours (tested). A 200 that is not JSON still
+  stops the pass (OD-21). Mutation passes (17 mutants, then 6 and 6 for the first two audits'
+  findings, every one caught but an equivalent one) found the one-probe layers' own handling
+  redundant with the engine's, so it is not there. Open for the owner as OD-23.
+  `fix/target-deep-json` documents this gap as open in four places (CHANGELOG, MANUAL "Bounded
+  replies", `docs/02`, `u04` §4) that flip when the second of the two merges: flipped in the
+  merge with `main`, where PR #65 landed first, and `ResponseTooDeep` is now a failed probe too.
+
+## State, 2026-10-09: `authz_leak` fed where it is declared (PR #60, begun 2026-10-07)
+
+- `EMB-XTENANT-RETRIEVAL-001` (requires `rag`) declares `authz_leak` to corroborate across
+  identities, but the identity sweep ran only for a spec that required `multi_identity`, so the
+  evaluator never had two identities and its `capability_unavailable` held the spec
+  `inconclusive` unless a deterministic check failed, a secure reply included. In the
+  2026-10-06 local pass it was one of the 30 inconclusive (one attempt held by `authz_leak`
+  alone, the other by a compromised judge). Found by the pre-commit audit of OD-18 B; it
+  predates it. Option chosen: keep `requires: [rag]` (the spec still runs on single-identity RAG
+  targets) and sweep for a spec that declares `authz_leak` when the target declares
+  `multi_identity` (`sweeps_identities`), never over an in-band scene; with no sweep that check
+  is set aside and named in the verdict, after a sweep short of two answers it is kept.
+  `DL-XTENANT-001` (requires `multi_identity`) is unchanged. The estimate now prices the sweep,
+  one request per scope identity on a live route, which it never did for `DL-XTENANT-001`
+  either, and `--estimate --resume` leaves it out for a finished spec: with one identity every
+  `docs/16` §3 figure is unchanged (re-measured), with two the last row is 784. Clause A-34
+  (u08). The pre-commit audit found the half-failed sweep that passed a seen leak and the
+  in-band sweep that read the scanner's own context as a leak; both fixed before the commit.
+  `make gates` green: 2,320 tests, coverage 96.46%.
+  Open, not decided here: the sweep is one observation per spec, scored on every attempt, so a
+  cross-identity fail counts as reproduced on all of them, and its replies are not stored as
+  evidence (a confirmed critical can cite no reply that shows the leak); and a scope identity's
+  `canary` binds `{{run_id}}`, which a seeded deployment cannot hold (it would need the
+  `run_token`).
+  Merged with main at `a40e596` (#93's A-59 and #83's A-48 among what landed since its base,
+  #58): the runner merged cleanly (the sweep's skip uses `_holds_plan`, its predicate
+  `sweeps_identities`); the `--estimate --resume` figure now counts a finished spec with
+  `planned_attempts_held` instead of building `mutators x runs` ids (A-59), and the room check of
+  the `-sV` refusals reads that figure, so it no longer prices a finished spec's sweep again
+  (A-48's limit now names retries only). One test pins both. Stacked on `9d7e7a7` (main `6401ee2`
+  with #62, #64, #82, #90, #67, #69, #74 and #88, the tree main holds before this squash): only the
+  ledgers conflicted. `make gates` green there: 3,842 tests, coverage 97.23%.
+
+## State, 2026-10-07 (evening): a target file's top-level keys
+
+- On `fix/target-unknown-top-level-keys` (u12 A-53; OD-31, decided by the owner on 2026-10-08:
+  refuse both), from the "outside the clause" list of A-50: the three readers of a target file took
+  the top-level keys they knew and dropped the rest, and read a `name`, `provider`, `endpoint`,
+  `model`, `auth_ref` or `transport` that was not text as absent. So `endpont:` ran a live target on
+  the offline mock, sending it nothing (one spec: inconclusive, exit 0; the full battery: a FAIL and
+  a PASS, exit 1; measured on `2f6201a` and `c3e70d8`), and `capabilities:` children that lost their
+  indent were ignored (34 specs planned instead of 59 on a `type: model` target). Built reversibly:
+  `_read_target_yaml` checks the top level against `Target`'s fields and `mock_scenario`, text where
+  text is read, and every reader refuses on the A-45 line naming the file and the key. Every target
+  file and target block of the repository, and what `dottore fleet` writes, still load (new test).
+  Left open, written in the clause: a misspelled value (`provider: opnai` goes to the REST adapter,
+  and `transport: stido` on a stdio MCP target runs it on the offline mock, where its `mcp` suite
+  scores a PASS with exit 0). `tests/cli/test_target_top_level_keys.py`: 43 of its 90 tests fail on
+  `9b8b511`. A number as `provider` or `transport`, which A-40 (#81) read as no provider, is refused
+  as not text; A-40's two tests of it now expect that. The check is built from `Target`'s fields, so
+  the `websocket` field #87 adds is legal when it lands (pre-merge audit: a list kept by hand failed
+  35 tests on the two merged).
+
 ## State, 2026-10-07 (afternoon): a logprob figure no model produces
 
 - On `fix/hostile-logprob`: a reply whose logprob (or one of its `top_logprobs`) was a 400-digit
@@ -261,7 +380,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   advice and miscounted figures; its delta round (no regression, 2,367 tests green) a ceiling one
   request past the spend, a ceiling of 0 and advice written ahead of the words the test reads; its
   third round (no regression, 2,374 tests green) one untested refusal case; all fixed here. What
-  `--estimate` does not price (the multi-identity sweep, which the open #60 adds to the estimate,
+  `--estimate` does not price (the multi-identity sweep, which #60 added to the estimate,
   and retries) can still halt a followed "drop -sV" at an exact fit; written in A-48. Left open, a
   question for the owner: the recorded planning mode is one flag for `-sV`, `-A` and `--deep`, so a
   campaign run with `-sV` resumes with `--deep` in its place (measured: it goes through), and its
@@ -331,7 +450,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   Found while writing it and left as its own task: a top-level key a target file does not know
   (`endpont:`, or a `capabilities` block whose indent was lost) and a `name`, `provider`,
   `endpoint`, `model`, `auth_ref` or `transport` that is not text are still dropped without a
-  word. `tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`.
+  word (refused since A-53, PR #88; see the entry above).
+  `tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`.
   Pre-commit, delta and pre-merge audits found nothing high or medium and no open PR that combines
   into wrong behavior; their lows (key order in what `fleet` writes, keys printed as pydantic
   renders them, a long line until #76, how a halted run resumes, the reversal recipe) are written

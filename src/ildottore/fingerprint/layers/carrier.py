@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
-from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, seed_for
+from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, ProbeFailed, seed_for
 from ildottore.shared.models import (
     FingerprintEvidence,
     ModelRequest,
@@ -214,7 +214,12 @@ class CarrierLayer:
                 # (1.0 on Ollama; first live pass, 2026-10-07).
                 sampling=PROBE_SAMPLING,
             )
-            response = await adapter.send(request)
+            try:
+                response = await adapter.send(request)
+            except ProbeFailed:
+                # No reply is not "did not understand": the carrier is left out of the map,
+                # unmeasured, rather than scored zero. The engine records the failure (§7 A-35).
+                continue
             comprehension[mutator.name] = _comprehended(response.text or "")
 
         # Unattributed (weight 0.0) so the family combiner ignores it: this says nothing about

@@ -48,7 +48,9 @@ def _opts(tmp_path: Path, spec_dir: Path, **kw: object) -> RunOptions:
         # the ceiling halts the campaign is scheduler-dependent: locally the first spec's
         # three attempts were always stored, and in CI the halt landed before any of them
         # were, so every test here failed on an evidence tree that did not exist. A resume
-        # test needs a halted run with evidence, not a halted run.
+        # test needs a halted run with evidence, not a halted run. (That was the halt dropping
+        # the replies its batches had received, fixed on 2026-10-07; serial still makes the
+        # halted run the same on every machine.)
         concurrency=1,
     )
     for key, value in kw.items():

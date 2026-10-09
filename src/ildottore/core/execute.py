@@ -29,7 +29,7 @@ import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger
+from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetExhausted, BudgetLedger
 from ildottore.core.pacing import RateLimiter
 from ildottore.shared.amounts import is_count
 from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampling
@@ -38,6 +38,7 @@ from ildottore.shared.protocols import TargetAdapter
 __all__ = [
     "NOT_RETRYABLE_MARK",
     "AttemptResult",
+    "BudgetExhaustedAfterReply",
     "RetryPolicy",
     "default_is_env_error",
     "execute_attempt",
@@ -84,6 +85,20 @@ class AttemptResult:
     errors: list[str] = field(default_factory=list)
 
 
+class BudgetExhaustedAfterReply(BudgetExhausted):
+    """A token ceiling crossed by the usage a reply reported, with that reply in hand.
+
+    The provider billed those tokens, so the ledger records them and the campaign halts
+    (``BudgetLedger.add_tokens``). The answered attempt rides on ``result`` so the caller can
+    store it: it used to be dropped with the exception, and the resume sent it again and paid
+    for it twice. Raised rather than returned, so a caller that does not look for it still halts.
+    """
+
+    def __init__(self, cause: BudgetExhausted, result: AttemptResult) -> None:
+        super().__init__(cause.axis, cause.limit, cause.attempted)
+        self.result = result
+
+
 def default_is_env_error(exc: BaseException) -> bool:
     """Classify ``exc`` as an environment error (retry/skip) vs a product defect (fail).
 
@@ -128,9 +143,12 @@ async def execute_attempt(
 
     Returns an :class:`AttemptResult`. Raises :class:`BudgetExhausted` (from the
     ledger) straight through - the runner converts that into a ``budget_exhausted``
-    halt. A non-env exception propagates (a real product/harness defect must not be
-    masked). Env errors are retried up to ``retry.max_retries`` then returned as an
-    ``env_error`` result for the runner to record ``inconclusive``.
+    halt; when the ceiling is crossed by the usage of a reply already received, the
+    exception is a :class:`BudgetExhaustedAfterReply` carrying the answered result, so
+    the reply is stored rather than lost. A non-env exception propagates (a real
+    product/harness defect must not be masked). Env errors are retried up to
+    ``retry.max_retries`` then returned as an ``env_error`` result for the runner to record
+    ``inconclusive``.
     """
 
     policy = retry if retry is not None else RetryPolicy()
@@ -202,8 +220,7 @@ async def execute_attempt(
             )
         else:
             latency_ms = max(0.0, (clock() - started) * 1000.0)
-            _reconcile_tokens(ledger, response, reserved)
-            return AttemptResult(
+            answered = AttemptResult(
                 attempt=_attempt(
                     attempt_id,
                     spec_id,
@@ -218,6 +235,11 @@ async def execute_attempt(
                 retries=send_index,
                 errors=errors,
             )
+            try:
+                _reconcile_tokens(ledger, response, reserved)
+            except BudgetExhausted as exc:
+                raise BudgetExhaustedAfterReply(exc, answered) from exc
+            return answered
 
     # Unreachable: the loop either returns or raises. Kept for type-completeness.
     raise AssertionError("execute_attempt loop exited without a result")  # pragma: no cover

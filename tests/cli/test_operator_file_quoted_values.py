@@ -731,19 +731,26 @@ def low_limit() -> Iterator[None]:
 
 
 @pytest.mark.parametrize(
-    ("load", "body"),
+    ("load", "body", "refusal"),
     [
         # The anchor inside the list: a label before it would be refused first.
-        (load_labels, "y: [&a " + "a" * 6_000 + ", " + ALIASES[1:] + "\n"),
+        (
+            load_labels,
+            "y: [&a " + "a" * 6_000 + ", " + ALIASES[1:] + "\n",
+            "spec 'y' has an invalid verdict",
+        ),
+        # A-51 read such a `provider` as no provider; since u12 A-53 the top-level check refuses
+        # it as not text.
         (
             target_uses_mock,
             f"{ANCHOR}id: t\ntype: chatbot\nprovider: {ALIASES}\ntransport: stdio\n",
+            "failed validation: provider: Input should be a valid string",
         ),
     ],
     ids=["labels-verdict", "target-provider"],
 )
 def test_a_list_of_aliases_is_not_turned_into_text(
-    tmp_path: Path, load: Callable[[Path], object], body: str
+    tmp_path: Path, load: Callable[[Path], object], body: str, refusal: str
 ) -> None:
     # `str()` of it wrote about 675 MB of text before the value was checked (audit of A-51).
     path = tmp_path / "file.yaml"
@@ -751,8 +758,9 @@ def test_a_list_of_aliases_is_not_turned_into_text(
     loaded, reference = peak_of(lambda: safe_yaml.safe_load(path.read_text(encoding="utf-8")))
     assert isinstance(loaded, dict)
 
-    _, peak = peak_of(lambda: load(path))
+    refused, peak = peak_of(lambda: load(path))
 
+    assert isinstance(refused, ValueError) and refusal in str(refused), refused
     assert peak < reference + 3_000_000, (peak, reference)
 
 
@@ -770,9 +778,16 @@ def test_an_integer_label_key_is_refused_as_a_key_not_as_its_verdict(tmp_path: P
 
 @pytest.mark.usefixtures("low_limit")
 def test_an_integer_key_or_provider_of_a_target_is_not_turned_into_text(tmp_path: Path) -> None:
+    # A-51 read such a `provider` and `transport` as no provider; since u12 A-53 the top-level
+    # check refuses both as not text, naming the file and never writing the number out.
     path = tmp_path / "target.yaml"
     path.write_text(f"id: t\ntype: chatbot\nprovider: {HEX}\ntransport: {HEX}\n", "utf-8")
-    assert target_uses_mock(path) is True
+    with pytest.raises(ValueError) as caught:
+        target_uses_mock(path)
+    assert str(caught.value) == (
+        f"target file {path} failed validation: provider: Input should be a valid string; "
+        "transport: Input should be a valid string"
+    )
 
     case = _with(_run(tmp_path, TARGET + f"seeded_setup:\n  ? {HEX}\n  : x\n"), 0, "")
     result = runner.invoke(app, case.args)
@@ -1018,7 +1033,7 @@ def test_a_stdio_target_is_real_only_with_a_command(
 
 
 def test_a_transport_of_aliases_is_not_turned_into_text(tmp_path: Path) -> None:
-    # `provider` is checked first, so it says `mcp` here and `transport` is the one read.
+    # `provider` says `mcp`, so `transport` is the one value the top-level check refuses.
     path = tmp_path / "target.yaml"
     path.write_text(
         f"{ANCHOR}id: t\ntype: agent\nprovider: mcp\ntransport: {ALIASES}\ncommand: [s]\n",
@@ -1027,9 +1042,13 @@ def test_a_transport_of_aliases_is_not_turned_into_text(tmp_path: Path) -> None:
     loaded, reference = peak_of(lambda: safe_yaml.safe_load(path.read_text(encoding="utf-8")))
     assert isinstance(loaded, dict)
 
-    uses_mock, peak = peak_of(lambda: target_uses_mock(path))
+    refused, peak = peak_of(lambda: target_uses_mock(path))
 
-    assert uses_mock is True
+    # A-51 read it as no transport; since u12 A-53 the top-level check refuses it as not text.
+    assert isinstance(refused, ValueError)
+    assert str(refused) == (
+        f"target file {path} failed validation: transport: Input should be a valid string"
+    )
     assert peak < reference + 3_000_000, (peak, reference)
 
 

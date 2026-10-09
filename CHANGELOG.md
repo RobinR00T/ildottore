@@ -57,6 +57,242 @@ versioning: [SemVer](https://semver.org/).
 - "Until 2026-10-08" (MANUAL) and "on main `e4d6c83`" (u12 A-60) read "In older versions" now; the
   commit stays where it names what a test fails on.
 
+### Fixed (a halted run keeps the replies it paid for, and a run that spent can be resumed)
+
+- **A run halted inside an identity sweep, or between two attempts of one batch, stored nothing
+  for that spec and could not be resumed.** Found by the delta audit of
+  `fix/authz-leak-identity-sweep`, reproduced on main `0f936b6`: `DL-XTENANT-001` against a
+  loopback stub with two scope identities, `--runs 2 --budget-requests 3`, sent three requests
+  (the sweep and one answered attempt), stored no evidence, and `--resume` was refused with "a
+  run that sent nothing has nothing to continue" while the run store recorded the three. A plain
+  spec did the same (`PI-DIRECT-001 --runs 3 --budget-requests 2`: two replies sent and lost).
+  The runner evaluated and stored a batch only after the whole batch returned, so a refused debit
+  dropped the replies already received, and the resume, had it been allowed, would have sent
+  them and paid for them again.
+- **What a halted run keeps now.** `reproduce` and `reproduce_conversation` fill the runner's
+  list as each attempt completes, and the runner evaluates and stores what the batch received
+  before the halt goes on, whatever stopped it: a refused debit, a product error, or a reply
+  whose own reported usage crossed the token ceiling (`BudgetExhaustedAfterReply` carries that
+  reply with the halt, through a conversation too when it was the conversation's last; it is
+  still a `BudgetExhausted`, so a caller that does not look for it halts all the same). When the
+  same ceiling refuses the judge's request, which is where a `--judge` run usually stops, a reply
+  a deterministic check already failed keeps that fail (OD-19: it decides without the judge, and
+  its reasoning says the judge was not consulted), and any other is stored without a verdict; a
+  resume counts that one as not answered, sends it again and judges it, and the first reply stays
+  cited (`replay` lists it with `?`). Of one attempt id's artifacts, the one scored is answered and
+  judged, else any with a verdict, so a re-send that ends in an environment error is scored as the
+  inconclusive it is. A conversation the halt stops mid-way is not stored (it has no final reply),
+  and neither are an identity sweep's replies, as in a finished run: their sends are in the spend. A
+  Ctrl-C still drops the batch in flight. With `--judge`, a reply stored without a verdict is paid
+  for twice: the resume sends it again rather than judging the stored one (a design choice;
+  re-judging is a possible follow-up). A run halted by this version is not for an older one to
+  resume: it would keep that reply and score the spec without it.
+- **A product error stops new specs at once, and an evaluator's error is not hidden.** Evaluating
+  a failed batch's replies (a slow judge) used to run before the campaign's abort was set, so a
+  waiting spec started in the meantime; the abort is set first now. An evaluator that raises
+  while a halt is being handled is quoted in the halt's reason (`also raised KeyError: ...`).
+- **A run that spent requests and stored no reply is resumable.** `--resume` accepts it when the
+  run store records a request spent, sends every spec from the start, carries the spend, and
+  says so (`stored no answered attempt before it stopped, after N request(s) that left none`,
+  for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request
+  that failed, or a Ctrl-C). Still refused: a run that spent none (with the old message, which is
+  then true, now worded as what it checks: `a run whose run store records no request spent has
+  nothing to continue`); an `--evidence-root` holding none of the artifacts the run store
+  journals for the run (`not the tree the run wrote`, or, for writes begun and never confirmed,
+  which may also have failed on this tree, `never confirmed`), since from the tree alone that looks
+  like a sweep halt and resuming would send everything again; and an empty tree for a run that does
+  not record the scope it went out under, which may predate the journal (`predates the artifact
+  journal`).
+- **`--estimate --resume` prices the judge for what the resume sends.** It subtracted the target
+  requests already done and kept the whole battery's judge requests: 12 judge requests for a
+  resume that sent 8. It now takes off two per attempt the resume keeps, of a spec the judge
+  reads. With PR #60, which prices the identity sweep, the estimate is exact after a halt in or
+  after a sweep too: the three sweeping shapes, a strict `xfail` until both had landed, pass, and
+  the marker is gone. The room check behind the `-sV` refusals' "drop -sV" advice (u12 A-48),
+  which prices the rest as `--estimate --resume` does, takes off the same judge share: it priced
+  every judge request of the battery, so with `--judge` that advice was not offered where the
+  rest fitted (pre-merge audit; two `--judge` cases in `tests/cli/test_resume_sv_advice.py`, one
+  of them failing without the fix).
+- **Contracts and docs:** u12 A-24 (a halt keeps what it paid for; what a resume keeps and what
+  a finished spec is, which A-11's sweep skip reads), u12 A-48 (the judge's share in the room
+  check), u08's budget-gate and resume criteria and its A-59 (the stored attempts a halted resume
+  and the seeding gate count are the ones with a verdict); the
+  MANUAL (`--resume`, `--estimate`, the resume paragraph, `replay`), USAGE, `dottore(1)`, the
+  `--resume` help text, `docs/09`. Left open: the attempts axis counts an attempt whose first
+  request the ceiling refused (one per halted batch, conservative), and a Ctrl-C drops the batch
+  in flight (so do SIGTERM and SIGHUP, which stop a run as Ctrl-C does, A-60).
+- **Tests:** `tests/cli/test_resume_halted_mid_batch.py` (15, through the real CLI against a
+  loopback stub: a halt inside the sweep at two points, inside a batch, inside a sweeping spec's
+  batch, at the judge, on the token ceiling, the refusals that stay, and the judge's share
+  attempt by attempt; every halt-then-resume test asserts the halted spend, the final spend and
+  the resume's sends as the stub counted them, and the estimate wherever it is exact),
+  `tests/core/test_halt_keeps_answers.py` (19) and one in `tests/core/test_seeded_setup.py`.
+  Against main's code before #60, ten of the CLI tests fail and five do not: the three that price
+  the sweep (strict `xfail`s then), and two that pin refusals main already made with the message
+  it prints (three more pin refusals main also made and fail there on a message that is new). Each
+  of 30 mutants of the fix, one piece removed at a time, is caught by a new test that fails for that
+  piece. The pre-commit audit (two auditors) found a resume that published a PASS over a missing
+  verdict, a deterministic fail lost at the judge, a conversation's last reply dropped on the token
+  ceiling, the abort delayed by the judge, an evaluator error swallowed, two empty-tree acceptances,
+  a negative spend accepted, and four doc overclaims; the delta audit after them found a run whose
+  first evidence write failed refused as "not the tree the run wrote", a judge not consulted that no
+  stored verdict mentioned, notes repeated once per reply, two untested guards and three doc rows
+  still overclaiming. All fixed here. The pre-merge audit (verdict: merge) found the resume message
+  naming two of its causes, the MANUAL describing the old `replay` ranking, the judge's double cost
+  and the downgrade risk unstated, and one abort untested; fixed in a second commit. Four existing
+  tests changed: three fixtures that built a stored reply without a verdict (a shape no run wrote
+  before this change; one of them the priors of `tests/core/test_planned_attempts.py`, A-59's) and
+  one F11 test whose second ceiling relied on the first run losing a reply.
+
+### Fixed (one refused reply during the `-sV` probe pass stopped the whole run)
+
+- **`dottore run -sV` (and `-A`) exited 3 before any attack on one probe reply.** A reply the
+  adapters refuse as an environment failure that a retry would not change (`ResponseTooLarge`,
+  over 4 MiB; `ResponseUndecodable`, an encoding they do not decode) stopped the run after one
+  request, while without `-sV` the same reply failed one attempt and every spec ran (pre-commit
+  audit of `fix/target-deep-json`, reproduced on `main` against a local stub). A single 503 at
+  the same point was retried and the run went on, so a refused reply was handled worse than a
+  503. `dottore fingerprint` exited 3 the same way. The fingerprint layers called the adapter
+  with nothing between one probe and the pass.
+- **A probe whose reply comes back refused is now a failed probe.** The engine classifies a
+  probe's error with the predicate the attack phase uses for an attempt
+  (`core.execute.default_is_env_error`, injected by `cli.wiring.build_fingerprint_engine`) and
+  the `retryable = False` marker the attack phase reads: the target answered, and a retry would
+  get the same reply (so `ResponseTooDeep`, a reply nested past 100 levels, is covered too).
+  That probe's layer gives no evidence from it and never reads it as an empty reply: a missing
+  guardrail nudge leaves `guardrails` empty (unknown, not "no filter"), a missing carrier is left
+  out of `carrier_comprehension` (unmeasured, not 0.0), and one missing statistical reply drops
+  the statistical layer (explicitly: a signature pack's centroid only has to be non-empty, so
+  two replies' vector could otherwise match a shorter one). When refused replies leave fewer
+  than three attributing replies, too few for the constant-target check, the text layers'
+  evidence is not counted (a constant "I am Llama" target with 8 of 10 replies refused was
+  named meta-llama at 0.41). Every other probe is still sent, once. The fingerprint records the
+  failures as `layer/probe: ErrorClass` in an `engine` evidence entry `probe_errors=[...]` with
+  the flag `probes_failed` (never the error's text, which can quote the reply); `run -sV` prints
+  `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` on stderr, not silenced
+  by `-q` and on one line (not through `rich`, which cut the evidence path at 80 columns), ends
+  the fingerprint line with `[N of 17 probes got no usable reply]`, and goes on to the attack;
+  `dottore fingerprint` warns on stderr and exits 0. When every probe is refused the line says the
+  fingerprint is empty, and `dottore fingerprint` prints it as an `error:` and exits 3: an empty
+  fingerprint printed with exit 0 read as a result to a script (delta audit). The line promises
+  nothing about what follows, since with several targets the next one's probe pass can still stop
+  the run. Refusals cannot get past the constant-target check, and a pass with an attributing
+  reply refused is never called constant: with fewer than three attributing replies left, or the
+  ones left all alike, the text evidence is not counted and the flag is not set (a refused carrier
+  does not count: the check never reads the carriers). Measured against the same probes answered
+  with an empty reply (12,276 passes over every subset of the attributing sends of the 12 corpus
+  targets), a partial pass never names more: identical when no statistical probe is refused,
+  otherwise `unknown` or lower confidence (2,344 of 10,752 differ, none the other way). Against a
+  full pass it can still break a tie the full pass leaves unknown, as a bland reply would; the
+  confidence is renormalized, not discounted.
+- **An error status whose body is over 4 MiB is classified by its status.** `read_capped`
+  returned an empty body for an error status it could not decode ("a `401` stays a `401`") but
+  raised `ResponseTooLarge` for one over the cap, so a `401` with a 5 MB body was an
+  inconclusive attempt where a short `401` stops the run, and with the probe-pass change
+  `dottore fingerprint` exited 0 on it (delta audit, reproduced). Now it is the `401`: one
+  request, exit 3, "non-retryable HTTP 401", in the probe pass and the attack phase alike
+  (`tests/adapters/test_response_cap.py`).
+- **A probe that gets no answer at all still stops the pass, as before:** a 503, a 429, a
+  timeout or a refused connection still failing after the retries ends the run with exit 3 and
+  its cause, because the target is not answering. The first version of this fix isolated those
+  too, and the pre-commit audit measured what that cost: a target that accepts the connection
+  and never replies took 25.5 minutes of probing (17 probes, three 30 s timeouts each: `dottore
+  fingerprint` ran 1,534 s; neither `--budget-wall` nor `--timeout` bounds the probe pass) and
+  38 minutes for a 2-spec `run -sV` ending in the same exit 3, against 92 s before; and `dottore
+  fingerprint` exited 0 on a closed port with the cause reduced to a class name. A refusal by
+  the scope, a 200 that is not JSON (OD-21) and the request ceiling still stop the pass too, as
+  does any interrupt. Open for the owner as OD-23 (u09 §9). Clause A-35 in u09;
+  `tests/fingerprint/test_probe_failures.py` (each of the 17 probes refused in turn) and
+  `tests/cli/test_probe_env_error.py` (a local stub through the real CLI).
+
+### Fixed (`authz_leak` in `EMB-XTENANT-RETRIEVAL-001` never ran, and kept the spec from passing)
+
+- **`EMB-XTENANT-RETRIEVAL-001` could not pass anywhere.** It requires `rag` and declares
+  `authz_leak` "for cross-identity corroboration when >=2 identities are scoped", but the runner
+  sent the attack as each scope identity only for a spec that required `multi_identity`. So
+  that `authz_leak` never had two identities to compare, returned `capability_unavailable`, and
+  that inconclusive decided the aggregate unless a deterministic check failed: with a judge and
+  a secure reply, every attempt came out `inconclusive`. In the 2026-10-06 local pass the spec
+  was one of the 30 inconclusive, held there on one of its two attempts by `authz_leak` alone
+  (the other attempt had a compromised judge, so the spec would still be inconclusive in that
+  pass). Lint never showed it, because the golden harness drives only a spec's first evaluator.
+  Found by the pre-commit audit of OD-18 option B; it predates that change.
+- **The sweep now runs where the evaluator is declared** (`core.runner.sweeps_identities`): for
+  a spec that requires `multi_identity`, as before, and, on a target that declares
+  `multi_identity`, for one that declares `authz_leak`. Never over an in-band scene (OD-18 A):
+  every identity would carry the same scene, the other tenant's document included, and a model
+  echoing it read as "A received B-only data". The spec keeps `requires: [rag]`, so it still
+  runs on single-identity RAG targets. With no sweep behind it, an `authz_leak` on a spec that
+  does not require two identities is set aside and the verdict says so (`authz_leak set aside:
+  no identity sweep ran`, whatever kept it from running); after a sweep where fewer than two
+  identities answered it is kept (`authz_leak kept: fewer than two identities answered the
+  identity sweep`), since the one that answered may have shown a leak. Both notes sit in each
+  attempt's verdict, which only the JSON report carries. `DL-XTENANT-001`, which requires
+  `multi_identity`, a spec whose only evaluator is `authz_leak`, and a compared `authz_leak`
+  that only finds a shared line (needs-review) are unchanged. Two scope identities on a target
+  that does not declare `multi_identity` are not taken for tenants: no sweep there, as for
+  `DL-XTENANT-001`.
+- **`--estimate` and `--dry-run` price the sweep**, one request per scope identity (two or more)
+  for each spec that sweeps, on a live route only (the offline mock wires none), and
+  `--estimate --resume` leaves it out for a spec whose every attempt is answered (the runner
+  does not sweep it again). They never priced it, for `DL-XTENANT-001` either: with two
+  identities, the fully capable deployment with a `run_token` priced 780 for a run that would
+  send 782; it now prices 784, what this change sends. With one identity every figure in
+  `docs/16` §3 is unchanged (re-measured).
+- **Offline:** the mock `hardened` scenario with every capability declared moves one spec from
+  `inconclusive` to `pass` (`rag` target 64 pass and 11 inconclusive to 65 and 10, `model` 63 and
+  12 to 64 and 11); `bare` and `vulnerable` are unchanged (measured on both trees).
+- **Docs:** clause A-34 in `specs/contracts/u08-execution-engine.md` (A-11 of u12 amended; the
+  index header no longer carries a clause range, which every new clause had to edit),
+  `docs/04` (the `authz_leak` row and the combination rule), `docs/11` §3, `docs/16` §3, the
+  manual's `--estimate` and troubleshooting rows, the FAQ, `dottore-scope(5)`, `AGENTS.md` and the
+  spec's own comment. Tests: `tests/core/test_authz_leak_corroboration.py` (18, one of them
+  through the real command line against a loopback stub; run against main's code with an import
+  shim, 15 fail and 3 are controls that hold on both).
+- **Merged with main after A-48 and A-59:** the `--estimate --resume` figure asks whether a spec
+  is finished by counting its stored attempts with `planned_attempts_held`, as the runner does
+  (A-59), instead of building `mutators x runs` attempt ids, which grows without end at the
+  `2**53` a run accepts; and the room check behind the `-sV` refusals' "drop -sV" advice (A-48),
+  which prices the rest as `--estimate --resume` does, subtracts a finished spec's sweep as that
+  figure does. With the sweep priced, retries are what that advice still cannot see (entry below).
+  One more test in the same file pins both (19 there).
+
+### Changed (a target file refuses a key no reader reads and a field that is not text; OD-31)
+
+- **A misspelled key at a target file's top level was dropped without a word, and a misspelled
+  endpoint ran a live target on the offline mock.** `load_target`, `target_uses_mock` and
+  `load_mock_scenario` each took the keys they knew and never looked at the rest, and a `name`,
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text was read as absent.
+  On `2f6201a`, `run` of a live target with `endpont:` (or an endpoint written as a list) had no
+  endpoint, so it went to the offline `bare` mock, which sent it nothing: one spec came back
+  inconclusive with exit 0, and the full battery scored a FAIL (`DOS-TOKEN-AMP-001`) and a PASS
+  (`MCP-TOOLPOISON-001`) with exit 1 (on `c3e70d8` too); the dry run said `authorized at` the
+  scope's base URL with no word about the endpoint. A `capabilities:` whose `tools`, `rag` and
+  `memory` lost their indent left them at the top level, ignored: a `type: model` target planned 34
+  specs with 39 skipped for a capability, against 59 and 8. And `model: 20240613`, which YAML reads
+  as a number, was no model. All three readers now check the top level and refuse, before anything
+  is sent (exit 3), on the A-45 line: `error: target file target.yaml failed validation: endpont:
+  Extra inputs are not permitted` (`model: Input should be a valid string`), never the value. The
+  keys are `Target`'s fields and `mock_scenario`; one of the six text fields with nothing after it,
+  `null` or `~` is still absent. **A behavior change:** a target file that loads today with such a
+  key or value is refused, a key that only holds an anchor for a `<<` merge (`x-defaults: &d`)
+  included (a map merged inline still loads); no file of the repository has one (a new test loads
+  every target file and every target block of the docs and man pages through the three readers, and
+  every target file `dottore fleet` writes). A run halted before this change with such a key resumes
+  once the key is deleted (still on the mock, for a lost endpoint) and is refused as another target
+  once the key is corrected. Refusing is the owner's decision, OD-31 (2026-10-08), built as the
+  smallest reversible change. Still read as written, and said so in the clause: `provider: opnai`
+  with an endpoint routes to the REST adapter, and a stdio MCP target with `transport: stido` or
+  `provider: mpc` runs on the offline mock, where its `mcp` suite scores a PASS with exit 0; a key
+  inside `capabilities` is A-50's (#78); the line lists the first 20 problems, then `and N more`,
+  as #76 has `validation_problems` do (20,000 unknown keys gave a 788,937-byte line before it, and
+  790 bytes since, for a file named `t.yaml`). A number as `provider` or `transport`, which A-40
+  (below) read as no provider, is refused as not text, and A-40's two tests of it, and two of
+  A-51's (#86, an integer `provider` and a `transport` of aliases), now expect the refusal, as a
+  third (a `provider` of aliases, which measured only the memory) does. Contract u12 A-53;
+  `tests/cli/test_target_top_level_keys.py` (43 of its 90 tests fail on `9b8b511`, this branch's
+  base).
+
 ### Fixed (a reply's logprob figure that no model produces stops nothing and decides nothing)
 
 - **A logprob that no float holds, or that is not a number, crashed the command.** The OpenAI
@@ -484,10 +720,11 @@ versioning: [SemVer](https://semver.org/).
   target's text, and are unchanged.
 - **The "Not exercised" line** of the summary and of the HTML report names a reply nested too
   deeply among the environment errors.
-- **Not changed:** with `-sV` or `-A`, such a reply during the fingerprint probe pass still stops
-  the run before any attack (exit 3 after one request), as a reply over the size cap already did,
-  while a 503 there is retried (pre-commit audit; a separate fix). A 200 whose body is not JSON
-  (brackets that do not balance included), or is JSON with an integer of more than 4,300 digits
+- **Not changed here:** with `-sV` or `-A`, such a reply during the fingerprint probe pass stopped
+  the run before any attack (exit 3 after one request), as a reply over the size cap did, while a
+  503 there is retried (pre-commit audit). The separate fix (PR #68) now makes it fail only that
+  probe (see "one refused reply during the `-sV` probe pass" above). A 200 whose body is not
+  JSON (brackets that do not balance included), or is JSON with an integer of more than 4,300 digits
   (which Python refuses to read), is still a product defect and still stops the campaign (exit 3,
   "aborted on AdapterProductError", one request sent, measured against the same stub); whether
   it should fail only its attempt is open decision OD-21. The finding behind this fix took that
@@ -573,7 +810,8 @@ versioning: [SemVer](https://semver.org/).
   and fleet blocks of the docs and man pages, through the real loaders). Refusing both is the
   owner's decision (OD-29), built as the smallest reversible change. Still dropped without a
   word, and written in the clause: a top-level key a target file does not know, and a `name`,
-  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text. Contract u12 A-50;
+  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text (since A-53, above,
+  both are refused). Contract u12 A-50;
   `tests/cli/test_target_capabilities_strict.py` (19 of its 40 tests fail on `2f6201a`).
 
 ### Fixed (a refusal that named a flag `dottore run` does not have)
@@ -1191,7 +1429,8 @@ versioning: [SemVer](https://semver.org/).
   exited 3 with the same unnamed message; the refusal now names the target file and says what the
   value is instead of quoting it. As `provider` or `transport` it exited 3 too, because the mock
   routing called `str` on them before the target loader, which reads them only as text, ignored
-  it; they are read only as text there as well, so the number is no provider, as `5` always was.
+  it; they are read only as text there as well, and since A-53 (above) a value there that is not
+  text, the number and `5` alike, is refused naming the file.
   The signature pack's `pack_version` is refused the same way (a library path; the CLI loads the
   built-in pack).
 - Each check stands on its own: a cap on a literal's length in the YAML loader does not cover a

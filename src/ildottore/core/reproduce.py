@@ -24,7 +24,13 @@ import sys
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 
 from ildottore.core.budgets import BudgetLedger
-from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error, execute_attempt
+from ildottore.core.execute import (
+    AttemptResult,
+    BudgetExhaustedAfterReply,
+    RetryPolicy,
+    default_is_env_error,
+    execute_attempt,
+)
 from ildottore.core.pacing import RateLimiter
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import ModelRequest, Sampling, Verdict
@@ -127,6 +133,7 @@ async def reproduce(
     now: Callable[[], float] | None = None,
     completed: set[str] | None = None,
     pacer: RateLimiter | None = None,
+    into: list[AttemptResult] | None = None,
 ) -> list[AttemptResult]:
     """Execute ``request`` ``n`` times, returning the raw per-run results in order.
 
@@ -134,6 +141,11 @@ async def reproduce(
     would count too) plus one *request* per send inside :func:`execute_attempt`. A
     :class:`~ildottore.core.budgets.BudgetExhausted` from either debit propagates so
     the runner records ``budget_exhausted`` with whatever ran so far.
+
+    ``into`` (optional) is the caller's list, and each result is appended to it as it
+    completes: a halt propagates as an exception, and the attempts the batch already had
+    answered went with it, unstored, so the resume sent them again and paid for them twice.
+    A reply whose own usage crossed the token ceiling is appended before the halt goes on.
 
     ``completed`` (optional) is a resume set: the attempt ids a prior run already answered
     (or that failed in a way a retry would repeat); a run whose id is in the set is
@@ -145,28 +157,32 @@ async def reproduce(
 
     if n < 1:
         raise ValueError("n must be >= 1")
-    results: list[AttemptResult] = []
+    results: list[AttemptResult] = into if into is not None else []
     for run_index in range(n):
         attempt_id = attempt_id_for(spec_id, mutation, run_index)
         if completed is not None and attempt_id in completed:
             continue
         ledger.debit_attempt()
         pinned = _pin_attempt_index(request, run_index)
-        result = await execute_attempt(
-            adapter,
-            pinned,
-            attempt_id=attempt_id,
-            spec_id=spec_id,
-            mutation=mutation,
-            sampling=sampling,
-            ledger=ledger,
-            retry=retry,
-            timeout_s=timeout_s,
-            is_env_error=is_env_error,
-            sleep=sleep,
-            now=now,
-            pacer=pacer,
-        )
+        try:
+            result = await execute_attempt(
+                adapter,
+                pinned,
+                attempt_id=attempt_id,
+                spec_id=spec_id,
+                mutation=mutation,
+                sampling=sampling,
+                ledger=ledger,
+                retry=retry,
+                timeout_s=timeout_s,
+                is_env_error=is_env_error,
+                sleep=sleep,
+                now=now,
+                pacer=pacer,
+            )
+        except BudgetExhaustedAfterReply as halt:
+            results.append(halt.result)
+            raise
         results.append(result)
     return results
 
