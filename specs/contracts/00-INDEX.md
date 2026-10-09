@@ -102,7 +102,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | Clause | Unit | The claim it makes checkable |
 |---|---|---|
 | A-1..A-3 | u09 | benign is a predicate over the carrier, the probe discriminates, declared cost equals real cost |
-| A-4..A-6 | u08 | the wall budget measures time, every send passes the rate gate, a halt says why |
+| A-4..A-6 | u08 | the wall budget measures time, every send passes the rate gate, a halt says why, in figures the redactor keeps |
 | A-59 | u08 | a prior's attempts are counted against the plan from what is stored, never by building the plan, so a resume costs what the run stored, whatever `--runs` says |
 | A-24 | u12 | a resume is bound to its campaign: battery, target, route, sample size and money |
 | A-45 | u12 | a target file's `capabilities` or `sampling_defaults` refusal names the file, the field and the reason on one line, never the value |
@@ -111,6 +111,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-7..A-11 | u12 | no-send holds under combination, printed numbers are computed by the working code, operational failure exits 3, a resume is bound to its target, a ceiling binds every request |
 | A-42 | u12 | a run parses each target file once, so the target it authorizes is the one it sends to |
 | A-46 | u12 | a resumed run records what its -sV probe pass sent however the pass ends (an error, Ctrl-C, SIGTERM, a stop after it), each probe once |
+| A-49 | u12 | a report finding that fails validation is refused on one line naming the report, the place and the reason, never the value |
 | A-60 | u12 | SIGTERM and SIGHUP stop a run as Ctrl-C does, even raised inside a callback: they call the SIGINT handler in place, and raise only when there is none |
 | A-26 | u11 | a gap says which kind it is (roadmap, out of reach, or by design), with the reason |
 | A-12..A-15 | u11 | no denominator over survivors, uncounted values are reported, figures carry their edition, machine formats carry the run state |
@@ -134,6 +135,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-56 | u01 | no two of a fleet's ids differ only by case, on every file system, so no generated target file overwrites another; each refusal locates its entries |
 | A-21..A-22 | u14 | a test asserts the claim against the real collaborator, and is deterministic |
 | A-39 | u04 (and u06) | a reply's logprob figure is read only when a model could produce it (a finite number at or below zero); a token figure that is not makes the block read as no block, an alternative only its token's alternatives, so nothing crashes on it and nothing is scored from it |
+| A-36 | u08 (and u09) | a figure the target reports (token usage, moderation latency) is checked where it is read, and nothing the tool writes takes the ledger past what a float converts |
 | A-47 | u04 | a reply that holds half a character (a lone surrogate) is read as U+FFFD where it is parsed, in a tool call's arguments too, and judged: one such reply no longer aborts the campaign, and a leak with a half before, after or between its words still fails |
 | A-48 | u12 | a refusal's advice is advice the tool would accept; a resume is checked for being the same campaign before money |
 
