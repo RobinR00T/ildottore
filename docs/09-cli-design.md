@@ -231,7 +231,7 @@ battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and 
 Each of these was in the design and is **not** on the CLI today. Every flag in the list was
 tried on `run --quick --dry-run` and answered "No such option" (exit 3):
 
-- `--seed <int>` (determinism is pinned per spec in its `sampling`, not by a run flag).
+- `--seed <int>` (determinism is pinned per spec in its `sampling`, not by a run flag; a field a spec leaves unset is filled from the target file's `sampling_defaults`, OD-39).
 - `--allow-endpoint <host/prefix>` (extend the allowlist, audited). The scope file is the only
   way to authorize an endpoint.
 - `--unsafe-render` (render raw dangerous payloads in the report). `config.SafetyFlags` and the

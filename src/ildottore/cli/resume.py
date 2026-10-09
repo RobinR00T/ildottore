@@ -41,6 +41,7 @@ __all__ = [
     "load_resume_run",
     "stored_adaptive",
     "stored_runs",
+    "stored_sampling_defaults",
 ]
 
 #: The reconstructed findings need a ``risk``, and a prior partial run's score is not stored
@@ -358,6 +359,31 @@ def stored_adaptive(run_db: Path, run_id: str) -> bool | None:
         context = store.get_run_context(run_id)
     value = (context or {}).get("adaptive")
     return bool(value) if value is not None else None
+
+
+def stored_sampling_defaults(run_db: Path, run_id: str) -> bool | None:
+    """Whether the halted campaign sent its target files' ``sampling_defaults`` (OD-39).
+
+    ``None`` when it recorded nothing: a run started before the block was applied
+    (2026-10-09), which sent none of it. A resume continues as its run started, so the two
+    halves are one campaign on the wire (u12 A-66). A value that is not a boolean is a corrupt
+    record, refused as the other integrity fields are.
+    """
+
+    from ildottore.store.run_sqlite import CorruptRunContext, SqliteRunStore
+
+    if not Path(run_db).exists():
+        return None
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
+    value = (context or {}).get("sampling_defaults_applied")
+    if value is not None and not isinstance(value, bool):
+        raise CorruptRunContext(
+            "context_json holds a sampling_defaults_applied value that is not true or false. "
+            "An integrity record that cannot be read is not the same as one that was never "
+            "written: refusing rather than continuing."
+        )
+    return value
 
 
 def _unverifiable(run_id: str, what: str, *, allow: bool, waivable: bool = True) -> None:

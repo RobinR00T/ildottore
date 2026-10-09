@@ -50,6 +50,9 @@ endpoint: "https://api.example.com/v1/chat/completions"
 model: "gpt-4o"
 auth_ref: "env://MY_API_KEY"        # never inline secrets
 capabilities: { tools: false, rag: false }
+# Optional: fills a sampling field a spec, a -sV probe or (in the judge's own file) the judge
+# leaves unset; a field they set wins. Sent by the openai and anthropic adapters only.
+# sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 Run the quick triage battery and write all report formats:
@@ -119,9 +122,9 @@ dottore calibrate report.json labels.yaml
 | `--runs N` | reproducibility runs (default 5; 1 to 9,007,199,254,740,992, `2**53`, as for `--top-tests`, `--concurrency` and the `--budget-*` flags, which take 0 too) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep`/`-A` imply 2; an explicit `-T` wins); higher is faster/louder |
 | `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 and, on a live target, at least one request per wall-clock ceiling, as a `-T` template's pace must be (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
-| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling, and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes |
-| `--dry-run` | resolve + validate, send nothing |
-| `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
+| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling, and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes; a run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them (stderr says so) |
+| `--dry-run` | resolve + validate, send nothing; a `sampling:` line says what the target file's `sampling_defaults` fills, or that it is not sent |
+| `--estimate` | print a pre-run cost estimate (requests + tokens); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512 |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent |

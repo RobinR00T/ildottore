@@ -74,6 +74,22 @@ their own line, and the derived ceilings make room for them. The multi-identity 
 too, and since PR #60 (merged 2026-10-09) `--estimate` and `--dry-run` price it: one request per
 scope identity for each spec that sweeps them.
 
+### Which sampling does a request go out with?
+
+The one its sender sets, with the gaps filled from the target file's `sampling_defaults` (owner's
+decision OD-39, 2026-10-09; older versions parsed the block and sent none of it). Field by field
+(`temperature`, `top_p`, `max_tokens`, `seed`): an attack takes the spec's own `sampling`, then
+the block, then temperature 0 if the spec declares no `sampling` at all; a `-sV` probe keeps its
+temperature 0 and 512-token cap and takes `top_p` and `seed` from the block; the `--judge` model
+keeps its temperature (0, then 0.5) and `top_p` 1.0 and takes `max_tokens` and `seed` from the
+block of its own file, never from the scanned target's. Whatever is still unset is the provider's
+default, and no `dottore` flag sets sampling. Only the OpenAI and Anthropic adapters send
+sampling (Anthropic has no `seed`); a REST template, an MCP server and a WebSocket target carry
+none, by design, so there the block reaches nothing. Each attempt's evidence records what went
+out, and `--dry-run` prints, per field, on how many specs the block fills it (a block's
+`temperature` fills none of the shipped battery, whose specs all set theirs). A run an older
+version started resumes without the block, as it started, and says so. See the MANUAL, §4.2.
+
 ### Can the judge itself be fooled by a prompt injection?
 
 That is assumed and defended. The judge gets a per-call random tripwire token; it is flagged

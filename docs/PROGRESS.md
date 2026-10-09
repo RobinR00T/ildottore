@@ -3,6 +3,27 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09 (evening): `sampling_defaults` applied as a fallback (OD-39)
+
+- On `feat/apply-sampling-defaults`, from `main` at `f12ba83`: the owner decided (2026-10-09,
+  20:36) that a target file's `sampling_defaults`, parsed and validated since #73 and #78 and sent
+  by nothing, applies as a fallback. Built (u12 A-66, OD-39 closed): per field, the request's own
+  value (the spec's `sampling`, then temperature 0 for a spec that declares none, after the block;
+  `PROBE_SAMPLING`; the judge's per-pass temperature and `top_p` 1.0), then the block of the file
+  the request goes to (the judge's own), then the provider's default; only the fields the
+  adapter sends (`wiring.sampling_fallback`: OpenAI all four, Anthropic no `seed`, REST, MCP and
+  WebSocket none); the runner fills its own requests (`core.runner.spec_sampling`, so attempts
+  record what went out), the probes and the judge go through `wiring._SamplingFallback` (outside
+  the probe recorder); `--estimate` prices the block's `max_tokens`; `--dry-run` prints a
+  `sampling:` line; a run an older version started (no `sampling_defaults_applied` in its
+  context) resumes without the block and says so on stderr. `tests/cli/test_sampling_defaults.py`:
+  29 tests, 25 fail on `f12ba83`. Docs in the same pass: MANUAL §4.2 and four flag rows, FAQ,
+  USAGE, both man pages, `docs/01`, `03`, `09`, `10`, the example target files and the README's
+  Scenario B and G transcripts, the u08, u09 and u06 contracts. Left open, and written in A-66:
+  a REST, MCP or WebSocket attempt still records the spec's sampling that nothing carries (and an
+  Anthropic one its `seed`), the OpenAI adapter sends a `seed` whatever `capabilities.seed` says,
+  and `SemanticJudgeEvaluator._JUDGE_SAMPLING` is dead code.
+
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
 - On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of the

@@ -5,6 +5,52 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (a target file's `sampling_defaults` is sent, as a fallback: OD-39)
+
+- **`sampling_defaults` reaches the wire.** The block was parsed, validated and kept in the
+  target's digest, and no request carried it: `sampling_defaults: { top_p: 0.25 }` changed
+  nothing, as the MANUAL said ("applied to nothing today"). By the owner's decision of 2026-10-09
+  it is a fallback, field by field (`temperature`, `top_p`, `max_tokens`, `seed`): the request's
+  own value first, then the block of the file the request goes to, then the provider's default.
+  An attack takes the spec's `sampling`, then the block, then temperature 0 for a spec that
+  declares no `sampling` (so the block's temperature wins over that pin, never over a spec's own);
+  a `-sV` probe keeps `PROBE_SAMPLING` (temperature 0, 512 tokens) and takes `top_p` and `seed`;
+  the `--judge` model keeps its temperature (0, then 0.5) and `top_p` 1.0 and takes `max_tokens`
+  and `seed` from its own file's block, never the scanned target's. No `dottore` flag sets
+  sampling. Only what the adapter sends is applied: all four fields through OpenAI, all but `seed`
+  through Anthropic (the Messages API has none), nothing through a REST template, an MCP server
+  or a WebSocket target, by design, and nothing on the offline mock. With the examples' block
+  (`temperature: 0.0, top_p: 1.0`), the shipped battery now sends `top_p` 1.0 on the 69 of 75
+  specs that set none; no shipped spec leaves its temperature to the block.
+- **The record is what went out.** Each attempt's `sampling` and `request.sampling` are the filled
+  values (the single-turn send, every turn of a conversation, the identity sweep), and so is each
+  probe under `probes/`, filled outside the probe recorder. `--estimate` and the token ceilings
+  derived from it price the block's `max_tokens` for a spec that declares none, the cap each send
+  reserves; `--dry-run` prints, per field, on how many specs the block fills it
+  (`sampling: local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of
+  10 specs (a spec's own value wins)`), or that it is not sent.
+- **A resume continues as its run started.** The run context records
+  `sampling_defaults_applied`. A run an older version started records nothing and sent none of
+  the block, so its resume sends none either (target, judge and `-sV` probes), prices without it,
+  says so on stderr when a block would have applied (`resume: <run id> started before
+  sampling_defaults was applied, so it continues as it started, without the target file's
+  sampling_defaults; a fresh run sends them`, never silenced by `-q`) and records false, so every
+  later resume agrees. A value that is not a boolean is refused as a corrupt record (exit 3). The
+  target digest is unchanged: a run without a block resumes as before, and an edited block is
+  still a different target.
+- Contract u12 A-66 and OD-39 (u08, u09 and u06 notes, `00-INDEX`);
+  `tests/cli/test_sampling_defaults.py` (29 tests through a loopback stub that keeps every body;
+  25 fail on `f12ba83`, and the 4 that pass are the controls: no block, a spec with no `sampling`
+  and no block, a REST target, the offline mock). MANUAL §4.2 (a precedence table), its
+  `--dry-run`, `--estimate`, `--resume` and `--budget-tokens` rows, the FAQ, USAGE,
+  `dottore(1)`, `dottore-scope(5)`, `docs/01`, `docs/03`, `docs/09`, `docs/10`, and every example
+  target file (a commented block, and what it fills) are updated; `examples/README.md` shows the
+  new `sampling:` line in Scenarios B and G, and a test runs both commands against it.
+- Left as they were, and said in A-66: a REST, MCP or WebSocket attempt still records the spec's
+  own sampling, which nothing carries, and an Anthropic attempt the spec's `seed`; the OpenAI
+  adapter sends a `seed` whatever `capabilities.seed` says; the Anthropic adapter's 1024-token
+  default is not recorded; `SemanticJudgeEvaluator._JUDGE_SAMPLING` is read by nothing.
+
 ### Fixed (a run id of twelve decimal digits, masked as a phone number)
 
 - **About one run in 281 was named `run-«REDACTED:phone»`.** A run id is `run-` and the first 12

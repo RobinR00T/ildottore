@@ -58,6 +58,7 @@ from ildottore.core.runner import (
     CampaignResult,
     answered_attempt_ids,
     resume_progress,
+    spec_sampling,
     sweeps_identities,
     unjudged_attempt_ids,
 )
@@ -83,6 +84,7 @@ from ildottore.shared.models import (
     Finding,
     ModelFingerprint,
     PlanBudgets,
+    Sampling,
     Target,
     TestRun,
     TestRunSummary,
@@ -371,6 +373,9 @@ class TargetPlan:
     not_seeded: list[tuple[str, str]] = field(default_factory=list)  # (spec id, reason)
     # The scope identities a live run sends each sweeping spec as (fewer than two: no sweep).
     identities: int = 0
+    # What of the target file's `sampling_defaults` fills what a spec or a -sV probe
+    # leaves unset (OD-39): the fields its adapter sends, on a live route; None otherwise.
+    sampling_defaults: Sampling | None = None
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -403,6 +408,7 @@ def estimate_plan(
     target: Target | None = None,
     fixtures_hold_scene: bool = False,
     identities: int = 0,
+    sampling_defaults: Sampling | None = None,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -419,9 +425,10 @@ def estimate_plan(
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
-    are a deliberately rough gloss (prompt length / 4 for input; the spec's
-    ``sampling.max_tokens`` or 512 for output). No per-model pricing is known, so this
-    reports volume, not a dollar figure.
+    are a deliberately rough gloss (prompt length / 4 for input; for output the
+    ``max_tokens`` each send goes out with, the spec's own or else the target file's
+    ``sampling_defaults`` (``sampling_defaults``, OD-39), or 512). No per-model pricing is
+    known, so this reports volume, not a dollar figure.
     """
 
     total_requests = 0
@@ -463,11 +470,8 @@ def estimate_plan(
         if identities >= 2 and target is not None and sweeps_identities(spec, target):
             requests += identities  # one plain send per identity: no scene, no rounds
         in_tokens = max(1, len(prompt) // 4)
-        out_tokens = (
-            spec.sampling.max_tokens
-            if spec.sampling is not None and spec.sampling.max_tokens
-            else DEFAULT_COMPLETION_TOKENS
-        )
+        # The cap the send goes out with, the one the ledger reserves (`reserve_tokens`).
+        out_tokens = spec_sampling(spec, sampling_defaults).max_tokens or DEFAULT_COMPLETION_TOKENS
         total_requests += requests
         total_in += requests * in_tokens
         total_out += requests * out_tokens
@@ -593,6 +597,7 @@ def resolve_target_plans(
     adaptive: bool = False,
     budget_overrides: PlanBudgets | None = None,
     judge: bool = False,
+    apply_sampling_defaults: bool = True,
 ) -> list[TargetPlan]:
     """Resolve, per target, exactly what the run would do - without sending anything.
 
@@ -600,6 +605,8 @@ def resolve_target_plans(
     the planner's capability filter (a spec whose ``requires`` the target does not declare
     is skipped) and the policy gate (scope reachability, the engagement pack, layer-B and
     ``requires_policy`` capabilities). What survives both is what would be sent.
+    ``apply_sampling_defaults`` false prices it without the target file's
+    ``sampling_defaults``, as a resume of a run started before they were applied sends it.
     """
 
     pack = wiring.build_permissive_pack(specs)
@@ -634,6 +641,12 @@ def resolve_target_plans(
         # The offline mock replays the specs' fixtures, written for the scene, so it holds every
         # scene; a live deployment holds only those its operator declared seeded (OD-18 B).
         fixtures_hold_scene = loaded.uses_mock
+        # The live route sends the block's fields its adapter carries (OD-39); the mock, none.
+        sampling_defaults = (
+            wiring.sampling_fallback(target)
+            if apply_sampling_defaults and not loaded.uses_mock
+            else None
+        )
         # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
         # declared, a per-run canary with no run_token, two scene tools under one deployment
         # name, or a trace spec through an adapter that reads no tool calls.
@@ -665,6 +678,7 @@ def resolve_target_plans(
             target=target,
             fixtures_hold_scene=fixtures_hold_scene,
             identities=identities,
+            sampling_defaults=sampling_defaults,
         )
         plans.append(
             TargetPlan(
@@ -680,6 +694,7 @@ def resolve_target_plans(
                 mutators_by_spec=mutators_by_spec,
                 not_seeded=not_seeded,
                 identities=identities,
+                sampling_defaults=sampling_defaults,
             )
         )
     return plans
@@ -995,6 +1010,24 @@ def _print_dry_run_plan(
             if detail >= 2:
                 for spec_id, reason in plan.not_seeded:
                     print(f"    - {spec_id}: {visible_controls(reason)}")
+        if plan.sampling_defaults is not None:
+            # Per field, how many of the specs it goes out with: a spec's own value wins, so a
+            # block's temperature reaches none of the shipped battery (OD-39).
+            total = len(plan.selected)
+            filled = ", ".join(
+                f"{name} {value} on {_leaving_unset(plan.selected, name)} of {total}"
+                for name, value in plan.sampling_defaults.model_dump(exclude_none=True).items()
+            )
+            print(
+                f"  sampling: {plan.target.id}'s sampling_defaults fills {filled} specs (a "
+                "spec's own value wins)"
+            )
+        elif plan.target.sampling_defaults is not None:
+            print(
+                f"  sampling: {plan.target.id}'s sampling_defaults is not sent (an offline mock, "
+                "a provider whose requests carry no such field, or a resume of a run started "
+                "before it was applied)"
+            )
         if detail >= 2:
             # What the operator plants: each seeded spec's own canary (run_token-<spec id>). The
             # canary is the pack author's text, written out as every such line is (u12 §6).
@@ -1028,6 +1061,12 @@ def _print_dry_run_plan(
         f"  budgets: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
         f"{budgets.max_wall_s}s wall (derived from this plan)"
     )
+
+
+def _leaving_unset(specs: list[AttackSpec], field_name: str) -> int:
+    """How many of ``specs`` leave ``field_name`` of their sampling unset (the block fills it)."""
+
+    return sum(1 for s in specs if s.sampling is None or getattr(s.sampling, field_name) is None)
 
 
 def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
@@ -1421,6 +1460,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     prior_spend: Spend | None = None
     resume_from: TestRun | None = None
     provisional: list[TargetPlan] | None = None
+    # Whether the target files' `sampling_defaults` go out (OD-39, u12 A-66): always for a fresh
+    # run; a resume continues as its run started (read in the resume block below).
+    apply_sampling_defaults = True
 
     def provisional_plans() -> list[TargetPlan]:
         # No fingerprint: it needs the probe pass, which SENDS (see the resume block below).
@@ -1438,6 +1480,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 max_wall_s=opts.budget_wall_s,
             ),
             judge=judge_target is not None,
+            apply_sampling_defaults=apply_sampling_defaults,
         )
 
     #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
@@ -1463,6 +1506,18 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             adopt=False,
         )
         adaptive_campaign = resume_mod.stored_adaptive(run_db, opts.resume) is True
+        # A run started before the block was applied (2026-10-09) recorded nothing and sent none
+        # of it, so its resume sends none either: two halves on two samplings would be scored as
+        # one campaign. stderr and never suppressed, as the --runs notice below (u12 A-66).
+        apply_sampling_defaults = resume_mod.stored_sampling_defaults(run_db, opts.resume) is True
+        unsent = _unsent_sampling_defaults(routes, judge_target)
+        if not apply_sampling_defaults and unsent:
+            print(
+                f"resume: {opts.resume} started before sampling_defaults was applied, so it "
+                f"continues as it started, without {' and '.join(unsent)} sampling_defaults; "
+                "a fresh run sends them",
+                file=sys.stderr,
+            )
         inherited = resume_mod.stored_runs(run_db, opts.resume)
         if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
             # stderr and never suppressed: this changes the denominator of the reproducibility
@@ -1613,6 +1668,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             rate_rps=pacing_rate,
             fingerprints={},
             adaptive=adaptive,
+            apply_sampling_defaults=apply_sampling_defaults,
         )
         no_judge = _no_judge_warning(preview, routes, judge_target)
     if no_judge:
@@ -1674,6 +1730,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     run_id=run_ids[target.id],
                     mock_scenario=mock_scenario,
                     ledger=probe_ledger,
+                    apply_sampling_defaults=apply_sampling_defaults,
                 )
                 # Inside the try: a signal landing between the pass and this write lost the
                 # whole pass (2 of 16 real SIGINTs a few ms after the last probe, pre-commit
@@ -1764,6 +1821,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             max_wall_s=opts.budget_wall_s,
         ),
         judge=judge_target is not None,
+        apply_sampling_defaults=apply_sampling_defaults,
     )
 
     # A target with nothing left to run is refused, for the same reason an empty --spec
@@ -1865,6 +1923,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             runs=opts.runs,
             judge=judge_target,
             adaptive=adaptive,
+            sampling_defaults_applied=apply_sampling_defaults,
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         result = _run_one_target(
@@ -1893,6 +1952,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 Spend(requests=probes_sent.get(target.id, 0))
             ),
             started_at=starts.get(target.id),
+            apply_sampling_defaults=apply_sampling_defaults,
         )
         results.append(result)
         _persist_run_spend(run_db, result)
@@ -2067,6 +2127,25 @@ def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None,
     return None, loaded.target
 
 
+def _unsent_sampling_defaults(
+    routes: list[tuple[Path, Target, tuple[str | None, Target | None]]],
+    judge: Target | None,
+) -> list[str]:
+    """Whose ``sampling_defaults`` this run would send, as the resume notice names them.
+
+    The live target's and the ``--judge`` model's, each when its adapter carries a field of it
+    (:func:`wiring.sampling_fallback`, OD-39); an offline route sends none.
+    """
+
+    owners = []
+    live = [real for _, _, (_, real) in routes if real is not None]
+    if any(wiring.sampling_fallback(real) is not None for real in live):
+        owners.append("the target file's")
+    if judge is not None and wiring.sampling_fallback(judge) is not None:
+        owners.append("the --judge file's")
+    return owners
+
+
 def _run_one_target(
     *,
     target: Target,
@@ -2088,6 +2167,7 @@ def _run_one_target(
     run_id: str | None = None,
     prior_spend: Spend | None = None,
     started_at: str | None = None,
+    apply_sampling_defaults: bool = True,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -2121,6 +2201,7 @@ def _run_one_target(
         judge_target=judge_target,
         # Recorded however the campaign stops, Ctrl-C included, so a resume's ceiling is right.
         spend_sink=lambda spend: _record_spend_quietly(run_db, campaign_run_id, spend),
+        apply_sampling_defaults=apply_sampling_defaults,
     )
     try:
         return asyncio.run(
@@ -2300,6 +2381,7 @@ def _persist_run_integrity(
     runs: int,
     judge: Target | None = None,
     adaptive: bool = False,
+    sampling_defaults_applied: bool = True,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -2311,6 +2393,10 @@ def _persist_run_integrity(
     Everything here is known before the first request, so there is no reason to make a resume
     depend on the campaign finishing. What genuinely cannot be known in advance is the spend,
     and that is written separately, when the campaign stops.
+
+    ``sampling_defaults_applied`` says whether its target files' ``sampling_defaults`` go out
+    (OD-39): a run started before they were applied recorded nothing, and its resumes write
+    false, so every later resume continues as it started (u12 A-66).
     """
 
     from ildottore.store.run_sqlite import SqliteRunStore
@@ -2325,6 +2411,7 @@ def _persist_run_integrity(
                 "judge_digest": target_digest(judge) if judge is not None else None,
                 "adaptive": adaptive,
                 "runs": runs,
+                "sampling_defaults_applied": sampling_defaults_applied,
             },
         )
 

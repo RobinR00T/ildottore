@@ -8,6 +8,10 @@ capabilities:
   rag: false
   memory: false
   streaming: true
+# A fallback, field by field (OD-39): only what the spec or the -sV probe leaves unset is taken
+# from here (top_p on most shipped specs). For a small local model, a cap on the reply is one
+# more field it fills for every spec that declares none:
+#   sampling_defaults: { temperature: 0.0, top_p: 1.0, max_tokens: 400 }
 sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 # No auth_ref: local Ollama needs no key. The endpoint is cross-checked against
 # scope.local.yaml's allowlist before any call (plain http is allowed to loopback only).

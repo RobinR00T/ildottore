@@ -112,9 +112,18 @@ false unless set; any other key, or a capabilities that is neither a mapping nor
 capabilities line with nothing under it is null, so keys below it that lost their indent are
 top-level keys, which are refused as any other unknown key is.
 .B sampling_defaults
-is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
-their own sampling, which the openai and anthropic adapters send (a REST template and a
-WebSocket target have no field for it).
+(temperature, top_p, max_tokens, seed) is a fallback, field by field (OD-39): a field the spec,
+the -sV probe or the judge sets goes out as set, a field it leaves unset is taken from this
+block, and one still unset is the provider's default. An attack takes the spec's sampling, then
+the block, then temperature 0 for a spec that declares no sampling. A probe keeps temperature 0
+and its 512-token cap, so the block adds only top_p and seed. The judge keeps temperature 0 (0.5
+on its second pass) and top_p 1.0, and takes max_tokens and seed from its own file's block, never
+the scanned target's. Only the openai and anthropic adapters send sampling (anthropic has no
+seed, so the block's is dropped); a REST template, an MCP server and a WebSocket target carry no
+sampling field, by design, and the offline mock sends nothing. Each attempt and probe records
+what went out; --dry-run prints what the block fills, and --estimate prices its max_tokens. A
+run an older version started sent none of it, and its resume continues without it (stderr says
+so).
 .B auth_ref
 accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
 refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is

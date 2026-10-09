@@ -9,6 +9,10 @@ capabilities:
   rag: false
   streaming: true
   seed: true                         # provider supports seed -> determinism recorded
+# A fallback, field by field (OD-39): a field the spec or the -sV probe sets is sent as set,
+# and this fills only what it leaves unset. Every shipped spec sets temperature 0, so here it is
+# top_p 1.0 that goes out on the 69 specs (and every probe) that set none. max_tokens and seed
+# work the same way; a field still unset is OpenAI's own default.
 sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 # Its authorization record ships beside it: examples/scope.openai.yaml (Scenario D in
 # examples/README.md). Check the pair, and the cost, before spending anything:

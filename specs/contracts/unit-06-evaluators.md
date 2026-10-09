@@ -72,8 +72,11 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
 - **Judge robustness:** `tests/fixtures/adversarial-judge/` → 0 verdict flips (all →
   `inconclusive`/`judge_compromised`).
 - Determinism: judge at `temperature=0` + fixed seed ⇒ stable verdict on replay. (As built: only
-  the first judge pass is at temperature 0, and no pass sends a seed; `dottore replay` re-reads
-  stored verdicts and does not call the judge again.)
+  the first judge pass is at temperature 0, and the judge sends no seed of its own; `dottore
+  replay` re-reads stored verdicts and does not call the judge again. Since 2026-10-09, OD-39 and
+  u12 A-66, the composition root fills what the judge leaves unset, `max_tokens` and `seed`, from
+  the `sampling_defaults` of the judge's own target file, never the scanned target's; the
+  judge's temperature and `top_p` 1.0 win. The evaluator itself is unchanged.)
 - **`logprob_membership` scores only figures a model produces (u04 §7 A-39, added 2026-10-07):**
   a `TokenLogprob` from any adapter whose figure is not a finite number at or below zero makes
   the verdict `inconclusive: capability_unavailable`, never a score; scored, a positive figure

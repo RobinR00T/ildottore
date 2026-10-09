@@ -261,7 +261,9 @@ version is `null`.
   at temperature 0, which every probe pins (`PROBE_SAMPLING`) and the OpenAI and Anthropic
   adapters send; a REST template and a WebSocket target have no field for it, so there the
   probes go out at the deployment's own sampling. The seed is metadata and is not
-  sent. `run -sV` stores its probes as evidence (`probes/`); a standalone `dottore fingerprint`
+  sent; a `top_p` or `seed` in the target file's `sampling_defaults` is, since the block fills
+  what `PROBE_SAMPLING` leaves unset (OD-39, 2026-10-09; its temperature and `max_tokens` never
+  reach a probe). `run -sV` stores its probes as evidence (`probes/`); a standalone `dottore fingerprint`
   stores none.
 - **Signature DB** is a versioned data pack, not code: it ships in-repo under
   `src/ildottore/fingerprint/signatures/`, validated by `fingerprint/signatures.py` on load, so
@@ -319,6 +321,8 @@ dottore run --suite owasp:llm ...                        # no -sV ⇒ no tailori
   (`PROBE_SAMPLING`) through the OpenAI and Anthropic adapters, so a target that is
   deterministic at temperature 0 gives the same verdict twice; a REST template and a WebSocket
   target carry no sampling field (the target file declares their wire shape), so theirs is the
-  deployment's own. The seed is folded into each request's metadata and is not sent. Three
+  deployment's own. The seed is folded into each request's metadata and is not sent; the
+  target file's `sampling_defaults` fills the fields `PROBE_SAMPLING` leaves unset (`top_p`,
+  `seed`), and `probes/` records them (OD-39). Three
   layers used to send their probes with no temperature, and a live server sampled them at its
   default (1.0 on Ollama); the first live pass found it (`docs/16` §1, 2026-10-07).

@@ -39,7 +39,7 @@ import contextlib
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.conversation import reproduce_conversation
@@ -115,7 +115,9 @@ __all__ = [
     "ScenarioProvider",
     "TestPlanBuilder",
     "answered_attempt_ids",
+    "fill_sampling",
     "resume_progress",
+    "spec_sampling",
     "sweeps_identities",
     "unjudged_attempt_ids",
 ]
@@ -273,6 +275,7 @@ class CampaignRunner:
         send_meter: SendMeter | None = None,
         timestamp: Callable[[], str] | None = None,
         spend_sink: Callable[[Spend], None] | None = None,
+        sampling_defaults: Sampling | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -330,6 +333,10 @@ class CampaignRunner:
         # recorded it only from a returned result, so a run interrupted with Ctrl-C left its
         # spend unrecorded and a resume's ceiling under-counted it (audit of F11, pre-existing).
         self._spend_sink = spend_sink
+        # The target file's ``sampling_defaults``, as the composition root passes it: only for
+        # an adapter that sends sampling, so what an attempt records is what went out (OD-39,
+        # u12 A-66). Each field fills what a spec leaves unset (:func:`spec_sampling`).
+        self._sampling_defaults = sampling_defaults
 
     async def run(
         self,
@@ -844,7 +851,9 @@ class CampaignRunner:
         """Reproduce one (spec, mutation) as N single-turn sends (the classic path)."""
 
         mutated_prompt = self._apply_mutation(spec, mutation, base_prompt)
-        request = _build_request(spec, mutated_prompt, scene=scene)
+        request = _build_request(
+            spec, mutated_prompt, scene=scene, sampling_defaults=self._sampling_defaults
+        )
         return await reproduce(
             adapter,
             request,
@@ -883,7 +892,7 @@ class CampaignRunner:
         single-turn path mutates it, and the tool rounds as further sends.
         """
 
-        sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
+        sampling = spec_sampling(spec, self._sampling_defaults)
         system_prompt = spec.setup.system_prompt if spec.setup is not None else None
         if scene is not None:
             system_prompt = scene.system_prompt(system_prompt)
@@ -973,9 +982,9 @@ class CampaignRunner:
         identities: dict[str, ModelResponse] = {}
         owners: dict[str, str] = {}
         for probe in probes:
-            request = _build_request(spec, base_prompt).model_copy(
-                update={"identity": probe.identity_id}
-            )
+            request = _build_request(
+                spec, base_prompt, sampling_defaults=self._sampling_defaults
+            ).model_copy(update={"identity": probe.identity_id})
             try:
                 # Paced like every other send: an identity sweep is N more requests on the
                 # wire, so it obeys the authorized rate too.
@@ -1447,10 +1456,56 @@ def _carrier_never_reached(spec: AttackSpec, attempt: Attempt, response: ModelRe
     return bool(carriers) and not carriers & answered
 
 
+#: What a spec that declares no ``sampling`` is sent with, once the target file's
+#: ``sampling_defaults`` has filled what it holds: temperature 0, the scanner's own pin.
+_UNDECLARED_SAMPLING: Final = Sampling(temperature=0.0)
+
+
+def fill_sampling(own: Sampling, fallback: Sampling | None) -> Sampling:
+    """``own``, each field it leaves unset taken from ``fallback`` (OD-39, u12 A-66).
+
+    A field set in ``own`` always wins; ``fallback`` (a target file's ``sampling_defaults``)
+    fills only what is ``None``. Nothing to fill returns ``own`` itself, so a request with no
+    fallback is the object it was.
+    """
+
+    if fallback is None:
+        return own
+    fill = {
+        name: value
+        for name in type(own).model_fields
+        if getattr(own, name) is None and (value := getattr(fallback, name)) is not None
+    }
+    return own.model_copy(update=fill) if fill else own
+
+
+def spec_sampling(spec: AttackSpec, sampling_defaults: Sampling | None = None) -> Sampling:
+    """The sampling a request of ``spec`` goes out with, field by field (OD-39, u12 A-66).
+
+    Each of ``temperature``, ``top_p``, ``seed`` and ``max_tokens``: the spec's own value
+    first; then the target file's ``sampling_defaults`` (``sampling_defaults``, which the
+    composition root passes only for an adapter that sends sampling); then, for a spec that
+    declares no ``sampling`` at all, temperature 0; anything still unset is not sent, so the
+    provider's default applies. With no ``sampling_defaults`` this is what the runner always
+    sent: the spec's own block, or temperature 0.
+    """
+
+    if spec.sampling is not None:
+        return fill_sampling(spec.sampling, sampling_defaults)
+    return fill_sampling(fill_sampling(Sampling(), sampling_defaults), _UNDECLARED_SAMPLING)
+
+
 def _build_request(
-    spec: AttackSpec, prompt: str, *, scene: InBandSetup | None = None
+    spec: AttackSpec,
+    prompt: str,
+    *,
+    scene: InBandSetup | None = None,
+    sampling_defaults: Sampling | None = None,
 ) -> ModelRequest:
     """Build a :class:`ModelRequest` from a spec + mutated prompt (pinned sampling).
+
+    The sampling is :func:`spec_sampling`: the spec's own, filled from the target file's
+    ``sampling_defaults`` where the composition root passes them (OD-39).
 
     A ``multimodal`` spec's ``attack.media`` rides along as the declarative carrier (the adapter
     renders it for transport). For evidence, the request also records the SHA-256 of each rendered
@@ -1459,7 +1514,7 @@ def _build_request(
     it. Computing a hash is not transport rendering; the adapter still owns what goes on the wire.
     """
 
-    sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
+    sampling = spec_sampling(spec, sampling_defaults)
     system_prompt = spec.setup.system_prompt if spec.setup is not None else None
     media = spec.attack.media
     metadata: JsonDict | None = {"media_sha256": media_digests(media)} if media else None
