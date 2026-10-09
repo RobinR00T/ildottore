@@ -416,8 +416,8 @@ def test_a_fleet_wss_entry_writes_a_target_run_refuses(tmp_path: Path) -> None:
 # --- second pre-merge audit, MEDIUM 1: no error class name reads as a credential --------------
 
 # Every error class of the package, these included, is checked against the redactor by
-# tests/test_redactor_error_class_names.py (u01 A-63); this campaign test pins one name end to
-# end, through the reason and the stored evidence.
+# tests/policy/test_redactor_error_class_names.py (u01 A-63); this campaign test pins one name end
+# to end, through the reason and the stored evidence.
 
 
 def test_the_campaign_names_an_undecodable_frame_in_its_error(

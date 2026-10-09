@@ -619,19 +619,24 @@ which any message wrote with its class: `ChecksumMismatchError` (21 characters, 
 (17, 3.73). Raised from a mock target's adapter, the first read `error: run on mock-t did not
 complete: aborted on «REDACTED:high_entropy:2559426b»: scope checksum mismatch: ...` on the terminal
 and in `summary.status.reason`. They are `ScopeChecksumError` (18, 3.57), `ProbeCeilingHit` (15),
-`ReplyOverBudget` (15) and `_ImpossibleLogprob` (18, 3.57); `ChecksumMismatchError`, which
-`ildottore.policy` exported in 0.1.0, stays as an alias of the same class, so code that imports or
-catches it still works. The rule is not changed: a name is chosen that it keeps, as a figure is
-written so the phone rule keeps it (u08 A-6, u12 A-61). Checked by
-`tests/test_redactor_error_class_names.py`, which imports every module of the package, takes every
-class `BaseException.__subclasses__` reaches that the package defines, and fails on any whose name
-`redact_text` changes, alone or in six lines shaped as those messages write it; on `f12ba83` it
-names the four, in 24 lines. It replaces #87's test, which read the WebSocket adapter's `__all__`
-only. Not covered: a class written inside a function body (the package has none), and the names of
-other packages' exceptions, which cannot be renamed: of 216 distinct names in Python's builtins, the
-standard-library modules the adapters use and the ten declared dependencies, the rule masks 12,
-among them httpx's `TooManyRedirects` (never raised: no send follows a redirect, and the adapters
-catch only `TimeoutException` and `TransportError`), websockets' `InvalidProxyStatus` and
+`ReplyOverBudget` (15) and `_UnreadableLogprob` (18, 3.61), named for what `readable_logprob`
+refuses (a string that spells a number, a bool, anything that is not a JSON number, as well as a
+figure no model produces); `ChecksumMismatchError`, which `ildottore.policy` exported in 0.1.0,
+stays as an alias of the same class, so code that imports or catches it still works. The rule is not
+changed: a name is chosen that it keeps, as a figure is written so the phone rule keeps it (u08 A-6,
+u12 A-61). Checked by `tests/policy/test_redactor_error_class_names.py` (CI Gate 3), which imports
+every module of the package, takes every class `BaseException.__subclasses__` reaches that the
+package defines, and fails on any whose name `redact_text` changes, alone or in six lines shaped as
+those messages write it. A class written inside a function body exists only once the function runs,
+so whether that walk sees it depends on which tests ran first: every class written in a function
+body, at any depth, is read from the source instead and its name checked in the same lines (there
+are none; a test shows the pass finds one in an `if`, in a function inside a function and in a
+method). On `f12ba83` two of its four tests fail: the walk, naming the four in 24 lines, and the
+alias. It replaces #87's test, which read the WebSocket adapter's `__all__` only. Not covered: the
+names of other packages' exceptions, which cannot be renamed: of 216 distinct names in Python's
+builtins, the standard-library modules the adapters use and the ten declared dependencies, the rule
+masks 12, among them httpx's `TooManyRedirects` (never raised: no send follows a redirect, and the
+adapters catch only `TimeoutException` and `TransportError`), websockets' `InvalidProxyStatus` and
 `InvalidProxyMessage` (an `InvalidHandshake`, reworded without its class) and six of pydantic's
 (`PydanticSchemaGenerationError` among them); nor a plugin's own.
 

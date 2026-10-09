@@ -20,13 +20,16 @@ versioning: [SemVer](https://semver.org/).
   did would have read `aborted on «REDACTED:high_entropy:2559426b»: scope checksum mismatch: ...`,
   as a run whose mock target's adapter raised the first one showed on the terminal and in
   `summary.status.reason`. They are now `ScopeChecksumError`, `ProbeCeilingHit`, `ReplyOverBudget`
-  and `_ImpossibleLogprob`; the rule is unchanged. `ildottore.policy` exported
-  `ChecksumMismatchError` in 0.1.0, so that name stays as an alias of the same class (`except
-  ChecksumMismatchError` still catches it); the other three never shipped, and the entries below
-  that named them use the new names. `tests/test_redactor_error_class_names.py` (2 tests, both fail
-  on `f12ba83`) imports every module, walks every exception class the package defines and fails on
-  any whose name `redact_text` changes, alone or in six lines shaped as those messages write it; on
-  `f12ba83` it names the four, in 24 lines. It replaces #87's test, which read the WebSocket
+  and `_UnreadableLogprob` (it covers whatever `readable_logprob` refuses, a string or a bool too);
+  the rule is unchanged. `ildottore.policy` exported `ChecksumMismatchError` in 0.1.0, so that name
+  stays as an alias of the same class (`except ChecksumMismatchError` still catches it); the other
+  three never shipped, and the entries below that named them use the new names.
+  `tests/policy/test_redactor_error_class_names.py` (4 tests, run by CI Gate 3) imports every
+  module, walks every exception class the package defines and fails on any whose name `redact_text`
+  changes, alone or in six lines shaped as those messages write it, and reads every class written
+  inside a function body, at any depth, from the source, so a class the walk would see only once its
+  function has run is checked whatever ran first (there are none). On `f12ba83` the walk names the
+  four, in 24 lines, and the alias test fails too. It replaces #87's test, which read the WebSocket
   adapter's `__all__` only. Not covered: other packages' names, which cannot be renamed. The rule
   masks 12 of 216 in Python's builtins, the standard-library modules the adapters use and the ten
   dependencies; httpx's `TooManyRedirects` is never raised (no send follows a redirect), and
