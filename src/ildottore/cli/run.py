@@ -54,6 +54,7 @@ from ildottore.core.runner import (
     answered_attempt_ids,
     resume_progress,
     sweeps_identities,
+    unjudged_attempt_ids,
 )
 from ildottore.core.setup_delivery import (
     MAX_TOOL_ROUNDS,
@@ -732,11 +733,22 @@ def _fits_without_probes(
 
     ``spent`` is the spend the campaign has on record; what the resume does not send again is
     :func:`_answered_requests` over these ``plans``, the identity sweep of a spec it will not
-    sweep again included (A-34), so the rest is priced as ``--estimate --resume`` prices it.
+    sweep again included (A-34), and the judge's requests for the attempts it keeps
+    (:func:`_judge_requests_kept`), so the rest is priced as ``--estimate --resume`` prices it.
+    Each share is clamped at zero on its own: the judge's share used to be priced whole, so a
+    "drop -sV" that fitted was not offered with ``--judge``, and one share's surplus must not
+    pay for the other's rest.
     """
 
     done = _answered_requests(resume_from, specs, plans=plans, runs=runs)
-    return all(spent + max(0, plan.estimate.total_requests - done) <= ceiling for plan in plans)
+    judge_done = _judge_requests_kept(resume_from, specs)
+    return all(
+        spent
+        + max(0, plan.estimate.requests - done)
+        + max(0, plan.estimate.judge_requests - judge_done)
+        <= ceiling
+        for plan in plans
+    )
 
 
 def _no_judge_warning(
@@ -796,12 +808,14 @@ def _print_estimate(
     quiet: bool = False,
     fingerprint_probes: int = 0,
     already_done: int = 0,
+    judge_already_done: int = 0,
 ) -> None:
     """Print the pre-run estimate, per target and totalled (skipped under --quiet).
 
     Per target on purpose: the previous version estimated the selection once and printed it
     once, so a two-target run understated the spend by half - an error in the direction that
-    costs the operator money.
+    costs the operator money. ``judge_already_done`` is the judge's share of a resume: the
+    requests it will not make for the attempts the resumed run keeps.
     """
 
     if quiet:
@@ -821,6 +835,13 @@ def _print_estimate(
             f"  + {judge_requests} request(s) to the --judge model (~{judge_tokens} tokens), "
             "paced and debited from the same ceilings"
         )
+        if judge_already_done:
+            # A resume judges only what it sends: the whole battery's judge was priced, so a
+            # resume after a judged half promised 12 judge requests and sent 8.
+            print(
+                f"  minus {judge_already_done} judge request(s) for the attempts the resumed "
+                f"run keeps (~{max(0, judge_requests - judge_already_done)} still to send)"
+            )
     print(
         f"  ~tokens: {tokens_in} in + {tokens_out} out "
         f"(~{tokens_in + tokens_out} total, rough gloss)"
@@ -1456,15 +1477,35 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     "attack traffic. Three sequential resumes used to run a whole probe pass "
                     f"each, past an exhausted ceiling. {remedy}."
                 )
-        if not opts.quiet:
+        if not opts.quiet and not resume_from.findings:
+            # The run spent requests and stored no reply: an identity sweep, a -sV probe pass, a
+            # conversation cut mid-way, a first request that failed, a Ctrl-C mid-batch. It used
+            # to be refused as a run that "sent nothing", with its spend stranded under an id
+            # nothing could continue. The list is printed as examples: two audits in a row found
+            # one more cause than a closed list named.
+            spent = prior_spend.requests if prior_spend is not None else 0
+            print(
+                f"resume: {opts.resume} stored no answered attempt before it stopped, after "
+                f"{spent} request(s) that left none (for example an identity sweep, a -sV probe "
+                "pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C); "
+                "they count against the campaign's ceiling, and every spec is sent from the start"
+            )
+        elif not opts.quiet:
             done, again = resume_progress(resume_from)
+            unjudged = len(unjudged_attempt_ids(resume_from))
+            errored = again - unjudged
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
                 f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
                 "would repeat); they will not be re-sent"
                 + (
-                    f"; {again} that ended in an environment error will be sent again"
-                    if again
+                    f"; {errored} that ended in an environment error will be sent again"
+                    if errored
+                    else ""
+                )
+                + (
+                    f"; {unjudged} answered but not evaluated before the halt will be sent again"
+                    if unjudged
                     else ""
                 )
             )
@@ -1733,6 +1774,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             quiet=opts.quiet,
             fingerprint_probes=(fingerprint_probe_count() if opts.fingerprint_first else 0),
             already_done=_answered_requests(resume_from, selected, plans=plans, runs=opts.runs),
+            judge_already_done=_judge_requests_kept(resume_from, selected),
         )
         return RunOutcome(
             exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True, estimated=True
@@ -2140,6 +2182,32 @@ def _answered_requests(
             ):
                 total += plan.identities
     return total
+
+
+def _judge_requests_kept(resume_from: TestRun | None, specs: list[AttackSpec]) -> int:
+    """The judge requests a resume will not make: the estimate's passes for each kept attempt.
+
+    The resume judges only the attempts it sends. A kept one is never judged again: an answered
+    one was judged by the halted run, and one that failed in a way a retry would repeat is never
+    judged at all. Both are in the battery the estimate priced, so both come off.
+    """
+
+    if resume_from is None:
+        return 0
+    judged = {
+        spec.id
+        for spec in specs
+        if any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators)
+    }
+    answered = answered_attempt_ids(resume_from)
+    kept = {
+        attempt.attempt_id
+        for finding in resume_from.findings
+        if finding.spec_id in judged
+        for attempt in finding.attempts
+        if attempt.attempt_id in answered
+    }
+    return JUDGE_PASSES * len(kept)
 
 
 def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool) -> None:

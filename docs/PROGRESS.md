@@ -3,6 +3,42 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09: a halted run keeps what it paid for, and resumes (PR #66, begun 2026-10-07)
+
+- On `fix/resume-halt-mid-batch` (on main `0501752`, after #61): a request ceiling that stopped a
+  run inside an identity sweep or between two attempts of a batch stored nothing for that spec,
+  and `--resume` refused the run as one that "sent nothing" (found by the delta audit of
+  `fix/authz-leak-identity-sweep`; on main, `DL-XTENANT-001 --runs 2 --budget-requests 3` sent 3
+  and stored 0, and `PI-DIRECT-001 --runs 3 --budget-requests 2` sent 2 and stored 0). Decided
+  and built: every reply the target gave is stored when its batch returns or a halt stops it,
+  judged when the ceiling leaves room; when the ceiling refuses the judge, a deterministic fail is
+  kept (OD-19) and any other reply is stored without a verdict, which the resume sends again and
+  judges. A run that spent requests and stored no reply resumes from the start with its spend
+  carried; one that spent none, an `--evidence-root` lacking what the journal holds (pending
+  rows included), and an empty tree for a run older than the journal are refused.
+  `--estimate --resume` now takes off the judge's share of the kept attempts (it priced 12 judge
+  requests for a resume that sent 8). Measured through the CLI against a loopback stub, halted
+  spend plus the resume's sends equals the final spend in every shape (1+3, 2+3, 3+3, 2+7, 7+12
+  with a judge, 1+5 on the token ceiling). The pre-commit audit (two auditors) found, among
+  others, a resume that published a PASS over a missing verdict and a deterministic fail lost at
+  the judge; all fixed (the CHANGELOG lists them), then a delta audit and a pre-merge audit
+  (verdict: merge) whose findings are fixed too; 30 mutants of the fix all caught. With `--judge`
+  a reply stored without a verdict is paid for twice (re-sent, not re-judged). Open: the attempts
+  axis counts an attempt whose first request was refused, and a Ctrl-C (or a SIGTERM or SIGHUP,
+  which stop a run as Ctrl-C does, A-60) still drops the batch in flight. `make gates` green on
+  its branch: 2386 tests (main `0501752`: 2351), coverage 96.50%, `dottore lint` 0/0 over 75 specs.
+  Stacked on `e02b0b6` (main `6401ee2` with #62, #64, #82, #90, #67, #69, #74, #88, #60 and #68,
+  the tree main holds before this squash): `cli/run.py` (imports, the estimate call),
+  `core/runner.py` (`__all__`, the breach line, which keeps the `figures` form of
+  `fix/halt-reason-figures` and this branch's notes) and the MANUAL's `--estimate` row conflicted,
+  each resolved keeping both sides. With #60's sweep priced, the three strict `xfail`s pass (3
+  passed under `--runxfail`) and the marker is gone. The pre-merge audit's medium, fixed here: the
+  room check of the `-sV` refusals (A-48) priced every judge request of the battery, so with
+  `--judge` it did not offer a "drop -sV" that fitted; it now takes off the judge's share as
+  `--estimate --resume` does, each share clamped at zero (two `--judge` cases in
+  `tests/cli/test_resume_sv_advice.py`, one failing without the fix). `make gates` green there:
+  3,955 tests, coverage 97.31%.
+
 ## State, 2026-10-07 (midday): one refused `-sV` probe reply no longer stops the run
 
 - On `fix/sv-probe-env-error` (`tests/fingerprint/test_probe_failures.py`,

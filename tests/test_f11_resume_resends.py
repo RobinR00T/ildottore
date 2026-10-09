@@ -300,12 +300,14 @@ def test_a_run_started_before_the_journal_keeps_resuming(tmp_path: Path) -> None
     endpoint = Endpoint()
     endpoint.up = True
     _run(tmp_path, endpoint, specs=THREE, journal=False, budgets=PlanBudgets(max_requests=3))
+    # The first run keeps the three replies it got (the third one used to be lost with the
+    # halt), so two more requests stop the resume inside the same spec, at base64_wrap #1.
     halted = _run(
         tmp_path,
         endpoint,
         specs=THREE,
         resume_from=_resume_from(tmp_path, THREE),
-        budgets=PlanBudgets(max_requests=3),
+        budgets=PlanBudgets(max_requests=2),
     )
     assert halted.status == "budget_exhausted" and halted.findings == [], "halted mid-spec"
     _check(tmp_path)
@@ -524,7 +526,7 @@ def test_adoption_confirms_a_pending_row_whose_file_is_present(tmp_path: Path) -
 def test_the_estimate_counts_every_turn_of_an_answered_conversation() -> None:
     from ildottore.cli.run import _answered_requests
     from ildottore.shared.enums import ScanBand, VerdictStatus
-    from ildottore.shared.models import Attempt, Finding, RiskScore
+    from ildottore.shared.models import Attempt, Finding, RiskScore, Verdict
 
     spec = make_spec("JB-MULTI-001")
     spec = spec.model_copy(
@@ -535,6 +537,9 @@ def test_the_estimate_counts_every_turn_of_an_answered_conversation() -> None:
         spec_id="JB-MULTI-001",
         request=ModelRequest(prompt="c"),
         response=ModelResponse(text="no"),
+        verdict=Verdict(  # as stored: the runner writes an answered attempt with its verdict
+            status=VerdictStatus.PASS, confidence=1.0, reasoning="ok", evaluator_type="refusal"
+        ),
     )
     finding = Finding(
         spec_id="JB-MULTI-001",

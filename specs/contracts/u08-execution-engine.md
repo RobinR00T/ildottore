@@ -137,7 +137,22 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
   asserts byte-stable plan + finding ids across two runs.
 - **Budget gates:** property tests (Hypothesis) prove no run exceeds any of tokens/requests/
   wall-clock/attempts; breach ⇒ `TestRun.status == budget_exhausted` with partial persisted, not
-  raised-away. `tests/core/test_budgets.py`.
+  raised-away. `tests/core/test_budgets.py`. (Amended 2026-10-07: the partial includes every
+  reply the target gave. `reproduce` and `reproduce_conversation` fill the caller's list as each
+  attempt completes, so the answers a batch had when a debit was refused, a product error was
+  raised, or a reply's own usage crossed the token ceiling (`BudgetExhaustedAfterReply`, which
+  carries it, through a conversation too when that reply was its last) are evaluated and stored
+  before the halt goes on. They were dropped with the exception, and the resume sent them and
+  paid for them again. An evaluator whose request the ceiling refuses (the judge) is recorded as
+  not consulted: a deterministic fail decides without it (OD-19) and is stored, its reasoning
+  naming the evaluator not consulted (only the aggregate is stored, and it was silent: delta
+  audit); otherwise the reply is stored without a verdict. If that was the campaign's last
+  attempt, the campaign is complete: every verdict is decided and nothing more is sent. A product error sets the campaign's abort before the
+  batch's replies are evaluated, so no spec starts while they are judged, and an evaluator's own
+  error during that evaluation is quoted in the halt's reason, not swallowed by it. A conversation
+  the halt stops mid-way has no reply to score and is not stored; its turns are in the spend, as
+  are an identity sweep's, whose replies a finished run does not store either. A Ctrl-C still
+  drops the batch in flight. `tests/core/test_halt_keeps_answers.py`.)
 - **Policy gate:** out-of-allowlist / policy-forbidden spec ⇒ `blocked_by_policy` attempt, zero
   adapter `send` calls (asserted via mock adapter call-count). `tests/core/test_policy_gate.py`.
 - **Capability gating:** target without `tools`/`rag`/`multi_identity`/`logprobs` ⇒
@@ -156,7 +171,13 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
   specs. `tests/core/test_resume.py`. (As built since 2026-10-04, F11: an attempt that ended in an
   environment error is not complete and is sent again under its id; the finding scores one
   attempt per id, the answered one, and cites every artifact. `tests/test_f11_resume_resends.py`
-  interrupts resumes on purpose.)
+  interrupts resumes on purpose. Since 2026-10-07 a reply stored without a verdict is not
+  complete either: it is sent again, and of one id's artifacts the scored one is answered and
+  judged, else any with a verdict (an environment error's inconclusive), else a bare reply, so
+  a failed re-send is never scored as if that attempt had not been sent (pre-commit audit: it
+  published a PASS from the one verdict left). A prior holding every planned id is a finished
+  spec only when each has a verdict (`_settled_attempt_ids`). A run that spent requests and
+  stored no attempt resumes from nothing, u12 A-24.)
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/core` clean; `lint-imports` green
   (core imports interfaces only: asserted).
 
@@ -303,7 +324,13 @@ the runner's name and in its module, so a plan built another way (an f-string, a
 counted there; the equivalence and verdict tests still pin the answer. Every targeted mutant dies
 but four equivalent ones, which give the same counts: dropping the early answer (it only costs the
 read), dropping the `runs <= 0` return or making it `runs < 0`, and reading the widest index from
-`runs` instead of `runs - 1`.
+`runs` instead of `runs - 1`. With the halted-run rule (u12 A-24, merged after this clause), the
+set the halt path and the seeding gate count is the stored attempts that have a verdict
+(`_settled_attempt_ids`), and the sweep's is the set a resume keeps, which leaves out a reply
+stored without one; the gate's message still counts every stored attempt as sent. The priors of
+`tests/core/test_planned_attempts.py` carry a verdict on each reply, as the runner stores them,
+and one more test there pins a prior holding its plan with one reply not judged: kept, not scored,
+and counted without building the plan.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
