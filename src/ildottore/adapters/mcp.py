@@ -46,6 +46,7 @@ from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.wellformed import well_formed_json
 
 __all__ = ["MCPAdapter"]
 
@@ -314,7 +315,11 @@ class MCPAdapter:
         return headers
 
     def _decode(self, response: httpx.Response, method: str) -> Any:
-        """Decode a JSON-RPC reply that is either JSON or a Streamable-HTTP SSE event."""
+        """Decode a JSON-RPC reply that is either JSON or a Streamable-HTTP SSE event.
+
+        A lone surrogate in it is read as U+FFFD, as where every adapter parses a reply (A-47).
+        An SSE stream is decoded as text first, so a raw byte of one is U+FFFD already there.
+        """
 
         ctype = response.headers.get("content-type", "")
         if "text/event-stream" in ctype:
@@ -329,10 +334,11 @@ class MCPAdapter:
 
         ``json.loads`` raised ``RecursionError`` on a reply nested past its stack, which the
         ``except ValueError`` here let through, and the runner aborted the campaign (2026-10-07).
+        A lone surrogate in what parses reads as U+FFFD (A-47).
         """
 
         try:
-            return bounded_loads(text)
+            return well_formed_json(bounded_loads(text))
         except NestedTooDeeply as exc:
             raise ResponseTooDeep(f"{self.id}: {what} is {exc}; not evaluated") from exc
         except ValueError as exc:
@@ -452,7 +458,11 @@ class MCPAdapter:
                     "bytes; not read further"
                 )
             try:
-                msg = bounded_loads(raw.decode().strip())
+                # `surrogatepass`, the error handler `json.loads` decodes bytes with, so an HTTP
+                # body and this line read alike: strict decoding skipped a line holding the raw
+                # bytes of half a character as stray output, and the call timed out (pre-commit
+                # audit, A-47).
+                msg = well_formed_json(bounded_loads(raw.decode("utf-8", "surrogatepass").strip()))
             except NestedTooDeeply as exc:
                 # Refused at once, before the `except ValueError` below would skip it as a stray
                 # line and leave the adapter waiting for a reply until the timeout.
