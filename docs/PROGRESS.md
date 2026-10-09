@@ -30,6 +30,29 @@ The carryover ledger. Every agent session updates this so context survives even 
   both insert at the top of CHANGELOG `[Unreleased]` and of this ledger, so whichever merges
   second rebases and keeps both entries.
 
+## State, 2026-10-07 (morning): a worktree's `.venv` link is ignored
+
+- The pre-merge audit of PR #60 found every worktree showing `?? .venv`: worktrees reuse the
+  main checkout's venv through a symlink, git sees a symlink as a file, and `.gitignore` had
+  `.venv/`, which matches directories only, so a `git add -A` would have committed the link. On
+  `fix/gitignore-venv-symlink` the rule is `.venv` (the directory and everything under it, and
+  the link). Checked: in a worktree with the link, `git status --porcelain` no longer lists it
+  and `git check-ignore -v .venv` names `.gitignore:10:.venv`; a real `.venv/` directory, a
+  nested one and the files inside stay ignored; no tracked file becomes ignored (0 before and
+  after). Nothing depends on the directory-only form: CI checks out without a venv, the Makefile
+  hands ruff, mypy and bandit explicit paths (pytest takes `testpaths`), mypy's `^\.venv/`
+  exclude is a regex of its own, and what does read `.gitignore` (ruff walking `src tests`,
+  `tests/test_yaml_duplicate_keys.py` through `git ls-files --exclude-standard`, an sdist
+  build) sees no difference between `.venv/` and `.venv`.
+- The worktree setup was practice, not written anywhere in the repo; it is now in `AGENTS.md`
+  §4: the link, `PYTHONPATH=<worktree>/src` (without it the steps that import the package run
+  the main checkout's code and the coverage gate reads 0%, measured), and no `make venv` or
+  `make install` in a worktree (the venv is shared).
+- Found by the pre-commit audit, not fixed here (its own branch): `.gitignore` line 32,
+  `!tests/**/*.sarif` followed by a comment on the same line, re-includes nothing, because git
+  reads no trailing comments; a SARIF fixture added under `tests/` would be ignored. None is
+  tracked today. `venv/` keeps its trailing slash: nothing here creates a `venv` link.
+
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 
 - First noted on main by PR #57 (open on 2026-10-09), reproduced end to end by the pre-commit audit
