@@ -398,7 +398,10 @@ file). That is a change for a pair, NaN or an infinity, which ran and are refuse
 129 YAML files of the repository that load is flagged. Checked by
 `tests/registry/test_non_json_values.py` (66 tests, 65 failing on `c3e70d8`, 19 of them because the
 walk they call is not there; the one that passes checks that the shipped battery still lints clean,
-and another pins that no shipped spec holds such a value).
+and another pins that no shipped spec holds such a value). The walk is public as
+`registry.non_json_values` since PR #87 (2026-10-09), and A-44's as `registry.non_string_keys`:
+the CLI's target loader runs both over a target file's `websocket:` block, whose frame templates
+are JSON too, keys first, with the same messages (`tests/adapters/test_websocket_premerge.py`).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).

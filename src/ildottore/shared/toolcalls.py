@@ -42,8 +42,11 @@ def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
     ``parameters``, or ``function.arguments``, each either a mapping or OpenAI's JSON string.
     A string that is not a JSON object reads as ``{}``, and so does one nested deeper than
     :data:`~ildottore.shared.nesting.MAX_DEPTH`. A live reply carrying one never gets here:
-    its adapter refuses it (:func:`check_argument_nesting`), so only a call from elsewhere (a
-    fixture) can read as ``{}`` for its depth, where ``json.loads`` raised ``RecursionError``.
+    every adapter that reads tool calls refuses it (:func:`check_argument_nesting`: the base
+    adapter's OpenAI and Anthropic replies, and a WebSocket target's frames when its block
+    declares ``tool_calls_path``; the REST template and MCP discovery read none), so only a
+    call from elsewhere (a fixture) can read as ``{}`` for its depth, where ``json.loads``
+    raised ``RecursionError``.
     A lone surrogate escaped in that string reads as U+FFFD, as it does in the reply around
     it (A-47).
     """

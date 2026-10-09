@@ -97,10 +97,12 @@ allowlist, which then denied every attempt: the false green the gate exists to p
 typo away. A differential test enumerates scope/target shapes and asserts the two answers never
 diverge.
 
-**A-19 Schemes are allowlisted.** `https`, loopback `http` and the offline `mock` scheme; every
-other scheme is denied. Refusing `http` off-loopback and letting the rest through to the host
-check meant `ws://`, `ftp://`, `file:///etc/passwd` and a scheme-relative `//host/path` all
-passed, with the invariant resting on adapter implementation rather than on the gate.
+**A-19 Schemes are allowlisted.** `https`, loopback `http`, the offline `mock` scheme and, since
+the WebSocket adapter (2026-10-07), `wss` (as `https`, default port 443) and loopback `ws` (as
+`http`); every other scheme is denied. Refusing `http` off-loopback and letting the rest
+through to the host check meant `ws://`, `ftp://`, `file:///etc/passwd` and a scheme-relative
+`//host/path` all passed, with the invariant resting on adapter implementation rather than on
+the gate. `tests/policy/test_allowlist.py` pins both halves.
 
 **A-20 One answer per target.** A scope declaring an id twice is refused: `Scope.target()`
 returns the first match, so a permissive entry silently shadowed a narrowing one, including its
@@ -177,6 +179,51 @@ generates pins every endpoint to its port. The judge `fleet` authorizes comes fr
 file's own `judge:` block, never from a `--judge` file, which could otherwise name any host and
 any credential and have both written into the scope (SEC-04). Checks: the same file, plus
 `tests/cli/test_fleet.py`.
+
+**A-31 A mask depends only on what it masks (added 2026-10-07).** With the salt fixed, one value is
+masked the same way in every process and wherever it appears: a digest is computed over the value
+as it is written in the text, never over the redactor's own stash tokens (their numbers count the
+masks set aside before them) nor over anything a set orders (its order changes with
+`PYTHONHASHSEED`). A private key's digest depended on both: six hash seeds of twelve gave one
+digest and six another, and in one process the same key had another digest after a mask. The same
+set order decided which of two overlapping registered credentials was masked and left the other's
+tail readable; overlapping credentials are one run now, named after the longest. The URL rule holds
+when part of the URL is already masked: a URL's password stayed readable because its user was a
+registered credential, set aside before the rule ran. (Not across a separator: a registered
+credential holding the URL's `://`, `:` or `@` across it still breaks the rule. It stops it, as
+before A-31, or across the `@` lets it read on to a later `@`, so a labelled value after the URL
+loses its tail, which was masked before A-31; and two overlapping credentials masked as one run can
+cover a separator that the one-at-a-time replacement before A-31 left, and leave a URL password
+readable that it masked. The owner accepted those two regressions for the merge of PR #56; a
+follow-up issue tracks them. A pass that joined the password to such a credential was backed out
+after the audits of its two versions each found a new hole in it. Not yet every rule either: the
+labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its tail
+readable, as before A-31. Nor every key: the key pattern's 16 KB bound counts each mask inside the
+key as a stash token whose length grows with the masks before it, so a key near the bound is
+masked as a key or not depending on the text before it, and one a single pass cannot take whole is
+masked as a key later, over its text with the masks inside it, or never; before A-31 too.)
+Checks: `tests/test_redactor_url_password_and_digests.py` (twelve hash seeds in subprocesses,
+digests against an HMAC computed in the test, the evidence store's leak guard, a property over
+URL shapes, credentials holding a URL's separators inside the user or the password).
+
+**A-32 A registered credential is matched with the characters that do not show ignored (added
+2026-10-07).** In a text holding a control character (C0, DEL, C1, U+2028, U+2029, a lone
+surrogate), a format character (Unicode Cf, pinned to Unicode 16.0) or U+FFFD (what half a
+character in a reply reads as where the reply is parsed, u04 A-47), `redact_text` finds each
+registered credential in the text with those characters dropped, and the stretch it covers, the
+characters inside included, becomes the mask an unsplit occurrence gets, with the same digest;
+overlapping credentials are masked as one, named by the longest as it shows (the first to start on
+a tie), and a credential too short to be matched without those characters is matched as written and
+masked with what it overlaps. Split by a newline or a zero-width space a credential was kept in two
+readable halves in every report, in the evidence and on the terminal, while split by `\x00` it was
+masked (audit of PR #51). Text without such a character is redacted byte for byte as before, unless
+a registered credential itself holds one (a differential fuzz against main is the check, run before
+a change to this match is merged), redaction stays a fixed point, and the match is linear in time
+and memory: the terminal-only first version took about 140 MB a megabyte of control characters.
+Checks: `tests/test_redactor_split_credentials.py` (every Cf character of the running Python, the
+JSON report, evidence, run store and CLI paths, a property test for the fixed point, memory and
+scaling on multi-megabyte hostile text), and in `tests/cli/test_lone_surrogate.py` a credential
+split by half a character in a reply (escaped, as raw bytes, or a U+FFFD the target wrote).
 
 **A-37 Every YAML file is measured with its aliases expanded, by one measure (added 2026-10-07).** A
 scope, target, fleet, labels, policy pack or signature pack file holding more than 100,000 nodes
@@ -341,10 +388,11 @@ pins a port no URL has, so it matches nothing instead of raising and denying eve
 it (read as a bare host, it matched an IPvFuture literal that repeated it: second delta audit); and
 `dottore fleet` reads an endpoint stripped too and refuses an unreadable one, or one with a port it
 cannot read, or a `--judge` endpoint that differs, quoting it as urllib reads it, its tabs and line
-breaks removed, cut and without what precedes the last `@` of its authority (the CLI masks a
-password only in the `user:password@` shape, so an empty user, a space or a second `@` printed it;
-and a tab or a line break between the two slashes, which urllib removes, hid the authority from a
-search for `//`: final audit, 0 leaks in 102,024 refused endpoints of its fuzz since). The adapter
+breaks removed, cut and without what precedes the last `@` of its authority (the
+CLI masks a password only in the `user:password@` shape, so a space or a second `@`
+printed it, and an empty user did until A-31; and a tab or a line break between the
+two slashes, which urllib removes, hid the authority from a search for `//`: final
+audit, 0 leaks in 102,024 refused endpoints of its fuzz since). The adapter
 `run` builds still reads the target's endpoint unstripped: an endpoint with a Unicode space in front
 passes the gate and the run stops at its first send (exit 3, `EndpointNotAllowed`), its password
 masked, as on `a0bca70` for `run` and newly for `fleet --run`, which stopped at the pre-flight
@@ -368,7 +416,8 @@ the offset of the first bad byte in the file, in the spec loader's words (`not U
 N)`), exit 3 in `run`, `fleet`, `calibrate` and `fingerprint`: they raised `read_text`'s own
 `UnicodeDecodeError`, which named no file (`error: 'utf-8' codec can't decode byte 0xff in position
 15: invalid start byte`). The path is shown as the CLI shows every path (A-38): an existing absolute
-one as written, a relative one through the redactor, which masks a directory name that looks random.
+one as written, a relative one as written when it exists and is one word, any other through the
+redactor, which masks a directory name that looks random.
 A valid file's text, and so a scope checksum, is unchanged. Not covered: the stdio advice's command
 line, which is meant to be copied exactly, is written whole; so is a target's endpoint wherever a
 run that has started prints it (the plan, the reports and the run store), and a labels spec id where
@@ -388,7 +437,9 @@ file of 1,000 aliases of 6,000 characters `repr` writes as ten each: audit of th
 6,000-character text (a `repr` of 6,004,000 characters). The integer cases use a 600-digit hex
 number under the digit limit Python allows at its lowest (640), as #77 refuses a YAML number of more
 than 1,000 characters. Checks: `tests/cli/test_operator_file_quoted_values.py` (each refusal of the
-table through the CLI with a value past the cut: the line under 2,500 characters, the file named
+table through the CLI with a value past the cut: the line under 5,000 characters (2,500 until #51
+wrote a format character out, as up to ten: the two ids of 128 tag characters a refusal names whole
+then take 1,280 each), the file named
 where the refusal names it, the exact cut and no mask; twenty ids or references listed and the rest
 counted, through `run`, `fingerprint` and the credential refusal; the three refusals of `--resume`;
 a `repr` of exactly 300 characters quoted whole and one of 301 cut; the head equal to the start of
@@ -489,7 +540,8 @@ is imposed here, so an id with spaces or other characters loads as before. A-51'
 still matters: an id of 128 characters can have a `repr` of 1,282 (U+E0001 is written `\U000e0001`),
 so A-51's cases of a long id use such ids, and its test checks that no id is quoted whole anywhere
 in the output, which a second, cut quote of the same id on the line would otherwise hide: it looks
-for the 300 characters of the id's `repr` after the opening quote, one more than a cut keeps, with
+for the opening quote of the id's `repr` and the 300 characters after it (one more than a cut keeps;
+the quote since #51, which writes an id named whole in the same escapes without one), with
 the line breaks removed first so that a message Rich folds would be caught too (none that quotes an
 id goes through Rich today, so that part is defensive). The `-sV` probe ceiling refusal and its
 resume notice write the `repr` whole, and no case of that test reaches them. Not covered: a spec id
@@ -498,7 +550,8 @@ printed about 507 KB on a mock run, exit 0); `dottore diff` prints a report's ta
 two reports disagree, and `dottore diff` and `calibrate` list every target id of a report with
 several targets whole, a report being the tool's own output (OD-26) and one written before A-57 able
 to hold a longer id; a run stored with a longer id cannot be resumed, its target file being refused
-now; and an id may hold control characters, which reach the terminal as they are. Endpoints,
+now; and an id may hold control and format characters, which the plan and `-sV` lines print as they
+are (errors and warnings write them out since #51, u12 §6, up to ten characters each). Endpoints,
 `auth_ref` references and labels spec ids stay unbounded, cut in refusals, and `calibrate` still
 lists the labels a report does not cover whole, as its normal output. Checks:
 `tests/cli/test_operator_id_length.py` (the figure; 128 characters load and 129 are refused, for a

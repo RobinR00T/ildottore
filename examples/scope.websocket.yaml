@@ -1,0 +1,16 @@
+# scope.websocket.yaml, the AUTHORIZATION record for the WebSocket chat scenario (Scenario H).
+#
+# Default-DENY: the adapter refuses any host or path not listed under `endpoints` before the
+# socket is dialled, and a redirect at the upgrade is never followed. `wss://` is authorized
+# like `https://`; cleartext `ws://` only to loopback, like `http://`. The key is referenced by
+# env-var (`auth_ref`) and read only at send time, never written here.
+version: "1.0"
+targets:
+  - id: ws-assistant-staging        # must match target.websocket.yaml's id
+    base_url: "wss://assistant.example.test/ws/chat"
+    endpoints:
+      - host: "assistant.example.test:443"   # pinned: a bare host would authorize every port
+        path_prefixes: ["/ws/chat"]
+    identities:
+      - name: default
+        auth_ref: "env://ASSISTANT_WS_TOKEN"

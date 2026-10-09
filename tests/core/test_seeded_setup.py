@@ -317,7 +317,7 @@ def test_a_stored_run_without_the_block_keeps_its_digest() -> None:
     before = {
         k: v
         for k, v in plain.model_dump(mode="json").items()
-        if k not in digest._TARGET_COSMETIC and k != "seeded_setup"
+        if k not in digest._TARGET_COSMETIC and k not in ("seeded_setup", "websocket")
     }
     before["__route__"] = "live"
     assert target_digest(plain) == digest._sha(before)

@@ -66,7 +66,7 @@ ildottore/
   src/ildottore/
     cli/                           # the `dottore` command (typer): run, fleet, fingerprint, …
     core/                          # runner + multi-turn conversation engine (the orchestrator)
-    adapters/                      # thin over-the-wire clients (openai-compatible, anthropic, rest, read-only mcp)
+    adapters/                      # thin over-the-wire clients (openai-compatible, anthropic, rest, read-only mcp, websocket)
     evaluators/                    # verdict engine: deterministic-first + semantic_judge
     mutators/                      # payload transforms / obfuscation enhancers
     policy/                        # scope + endpoint allowlist (default-deny authorization gate)

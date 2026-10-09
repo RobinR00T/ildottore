@@ -72,6 +72,7 @@ from ildottore.core.setup_delivery import (
 from ildottore.fingerprint import failed_probes
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
+from ildottore.redactor import Redactor, visible_controls
 from ildottore.registry import uncompilable_patterns
 from ildottore.reporting import RunStatus
 from ildottore.shared.config_errors import cut, listed, quoted
@@ -805,9 +806,9 @@ def _no_judge_warning(
         if judged:
             lines.append(
                 f"warning: no --judge on a live target: {judged} of the {len(plan.selected)} "
-                f"specs that will run on {plan.target.id} use semantic_judge and come back "
-                "inconclusive wherever their deterministic evaluators do not decide. Pass "
-                "--judge <judge-target.yaml> for a decisive run."
+                f"specs that will run on {visible_controls(plan.target.id)} use semantic_judge "
+                "and come back inconclusive wherever their deterministic evaluators do not "
+                "decide. Pass --judge <judge-target.yaml> for a decisive run."
             )
     return "\n".join(lines) or None
 
@@ -973,15 +974,18 @@ def _print_dry_run_plan(
             )
             if detail >= 2:
                 for spec_id, reason in plan.skipped_capability:
-                    print(f"    - {spec_id}: {reason}")
+                    print(f"    - {spec_id}: {visible_controls(reason)}")
         if plan.blocked_by_policy:
             print(
                 f"  blocked: {len(plan.blocked_by_policy)} spec(s) on {plan.target.id}, "
                 "refused by the policy pack"
             )
             if detail >= 2:
+                # The reason quotes a pack's `requires_policy` values as their `repr`, which writes
+                # a control character out and not a log command: `##[error]` there raised an
+                # annotation on a GitHub runner under `-vv` (pre-commit audit of this block).
                 for spec_id, reason in plan.blocked_by_policy:
-                    print(f"    - {spec_id}: {reason}")
+                    print(f"    - {spec_id}: {visible_controls(reason)}")
         if plan.not_seeded:
             print(
                 f"  not seeded: {len(plan.not_seeded)} spec(s) on {plan.target.id}, their "
@@ -990,13 +994,14 @@ def _print_dry_run_plan(
             )
             if detail >= 2:
                 for spec_id, reason in plan.not_seeded:
-                    print(f"    - {spec_id}: {reason}")
+                    print(f"    - {spec_id}: {visible_controls(reason)}")
         if detail >= 2:
-            # What the operator plants: each seeded spec's own canary (run_token-<spec id>).
+            # What the operator plants: each seeded spec's own canary (run_token-<spec id>). The
+            # canary is the pack author's text, written out as every such line is (u12 §6).
             for spec in plan.selected:
                 canaries = seeded_canaries(spec, plan.target)
                 if canaries:
-                    print(f"  seed:    {spec.id}: {', '.join(canaries)}")
+                    print(f"  seed:    {spec.id}: {visible_controls(', '.join(canaries))}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
     judge_requests = sum(p.estimate.judge_requests for p in plans)
     if judge_requests:
@@ -1921,12 +1926,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         state=states[0] if states else "complete",
         reason="; ".join(f"{k}: {v}" for k, v in sorted(incomplete.items())) or None,
     )
-    # Masked before the terminal sees it, for the same reason the reporters mask it (SEC-01).
-    from ildottore.reporting import default_redactor
-
-    _mask = default_redactor()
-    for target_id, reason in sorted(incomplete.items()):
-        printer.error(f"error: run on {target_id} did not complete: {_mask.redact_text(reason)}")
+    # Masked before the terminal sees it, for the same reason the reporters mask it (SEC-01),
+    # by the redactor `default_redactor()` gives them.
+    for line in _incomplete_lines(incomplete, Redactor()):
+        printer.error(line)
 
     report_paths = _write_reports(
         opts,
@@ -1952,6 +1955,21 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         report_paths=report_paths,
         incomplete=incomplete,
     )
+
+
+def _incomplete_lines(incomplete: dict[str, str], redactor: Redactor) -> list[str]:
+    """One error line per target whose run did not complete, ready for the terminal.
+
+    The reason quotes a target's transport error, which reached stderr with its control
+    characters raw, and a credential split by one in two readable halves (pre-merge audit of
+    PR #49). The target id is the operator's, written out too.
+    """
+
+    return [
+        f"error: run on {visible_controls(target_id)} did not complete: "
+        f"{redactor.for_terminal(reason)}"
+        for target_id, reason in sorted(incomplete.items())
+    ]
 
 
 def _unreachable_reason(result: CampaignResult) -> str | None:
@@ -1987,7 +2005,8 @@ def probe_failure_warning(
     Names the probes and the error classes only (never an error's message, which can quote the
     target's reply), the first three of them, and how many of the pass's ``probes`` failed
     (u09 §7 A-35, OD-23). It promises nothing about what follows: with several targets, the
-    next one's probe pass can still stop the run (delta audit).
+    next one's probe pass can still stop the run (delta audit). The target id and the evidence
+    path in it are written out (``visible_controls``), as every other warning is.
     """
 
     failed = failed_probes(fingerprint)
@@ -1999,7 +2018,7 @@ def probe_failure_warning(
         if every_probe_failed(fingerprint, probes)
         else "the fingerprint is built from the replies that came back"
     )
-    return (
+    return visible_controls(
         f"{severity}: {subject}: {len(failed)} of {probes} probe(s) got no usable reply "
         f"({shown}); {built}{tail}"
     )
@@ -2253,12 +2272,17 @@ def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool
     with SqliteRunStore(Path(run_db)) as store:
         before, _after = store.add_run_scope(run_id, scope_sha256, resumed=resumed)
     if before and before[-1] != scope_sha256:
+        # Read back from the run store, which keeps any string there: a restored or edited
+        # store printed `##[error]...` or a newline and `::error` (delta audit of the log
+        # commands block). Written out like every stored text (`visible_controls`).
         first = (
             "before scope digests were recorded"
             if before[0] == "unrecorded"
-            else f"under scope sha256 {before[0][:12]}..."
+            else f"under scope sha256 {visible_controls(before[0][:12])}..."
         )
-        last = "" if len(before) == 1 else f", last ran under {before[-1][:12]}...,"
+        last = (
+            "" if len(before) == 1 else f", last ran under {visible_controls(before[-1][:12])}...,"
+        )
         print(
             f"note: {run_id} started {first}{last} and goes on under {scope_sha256[:12]}...; "
             "the run store records each scope in order",
@@ -2383,9 +2407,7 @@ def _recorded_requests(run_db: Path, run_id: str, spend: Spend) -> int | None:
     try:
         return _persist_spend(run_db, run_id, spend)
     except Exception as exc:  # the database, not the campaign
-        from ildottore.redactor import Redactor
-
-        reason = Redactor().redact_text(str(exc))
+        reason = Redactor().for_terminal(str(exc))
         print(f"warning: the spend of {run_id} could not be recorded: {reason}", file=sys.stderr)
         return None
 

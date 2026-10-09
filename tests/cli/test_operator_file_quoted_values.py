@@ -35,7 +35,7 @@ from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, 
 from ildottore.policy import authorize_target, load_scope
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.scope import Endpoint
-from ildottore.redactor import Redactor
+from ildottore.redactor import Redactor, visible_controls
 from ildottore.shared.config_errors import (
     MAX_PROBLEM_CHARS,
     _repr_head,
@@ -557,10 +557,11 @@ NOT_ALLOWED_TARGET = live_target(TAG_ID).replace(LIVE_URL, NOT_ALLOWED_ENDPOINT)
 NOT_ALLOWED_SCOPE = SCOPE_HEAD + scope_entry(TAG_ID, live=True).replace(
     '/v1/chat/completions"]', '/x"]'
 )
+#: The listed id is the id itself, as the terminal writes a format character out (u12 §6, #51).
 NOT_ALLOWED_CUTS = (
     cut_of(NOT_ALLOWED_ENDPOINT),
     cut_of(TAG_ID),
-    f"The scope authorizes: {TAG_ID}.",
+    f"The scope authorizes: {visible_controls(TAG_ID)}.",
 )
 
 
@@ -586,7 +587,7 @@ def _run_stdio(tmp_path: Path) -> Case:
         None,
         "stdio command not authorized",
         cut_of(TAG_ID),
-        f"{TAG_ID} (stdio command not authorized for",
+        f"{visible_controls(TAG_ID)} (stdio command not authorized for",
         'commands: ["python server.py"]',
     )
 
@@ -614,15 +615,19 @@ def test_a_refusal_quotes_a_value_of_the_file_up_to_300_characters(
     line = next((x for x in lines if case.reason in x), None)
     assert line is not None, [x[:300] for x in lines]
     # Length first, so the base fails on the defect (a line of 500 KB to 2 MB), not the text.
-    assert len(line) < 2_500, len(line)
+    # 5,000, not 2,500, since #51 writes a format character out: the two ids of 128 tag
+    # characters that a refusal names whole, the head and the list, take 1,280 each.
+    assert len(line) < 5_000, len(line)
     assert all(str(path) in line for path in case.files), line
     assert all(cut in line for cut in case.cuts), line
     assert "REDACTED" not in line, line
-    # A cut keeps the first 299 characters of an id's repr after its quote: the first 300,
-    # anywhere in the output with Rich's line folding undone, are an id quoted whole, which a
-    # second quote of the same id, cut, on the line would hide (audits of A-57).
+    # A cut keeps the first 299 characters of an id's repr after its quote: the quote and the
+    # 300 after it, anywhere in the output with Rich's line folding undone, are an id quoted
+    # whole, which a second quote of the same id, cut, on the line would hide (audits of A-57).
+    # The quote is looked for too since #51 writes the id out where a refusal names it whole
+    # (128 characters), in the same escapes as its repr and without the quote.
     flat = (result.stdout + result.stderr).replace("\n", "")
-    assert all(repr(tag)[1:301] not in flat for tag in (TAG_ID, TAG_NAME)), line
+    assert all(repr(tag)[:301] not in flat for tag in (TAG_ID, TAG_NAME)), line
 
 
 #: A file that is not UTF-8, as each command reads it: one byte 0xff after a valid first line.

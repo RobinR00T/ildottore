@@ -30,6 +30,273 @@ The carryover ledger. Every agent session updates this so context survives even 
   `asyncio.run` creates), and an old all-digit run's reports, and those of its resumes, which keep
   the mask.
 
+## State, 2026-10-07 (evening): a chat endpoint over a WebSocket (provider websocket)
+
+- On `feat/websocket-adapter`: a template-driven JSON-over-WebSocket adapter, so an assistant
+  whose only chat surface is a socket is declared in a target file (`websocket:` block:
+  handshake with `{{token}}`, query with `{{prompt}}`, how the streamed reply is read, session
+  start, bounded reconnect) with no code. Same charter as the HTTP adapters: the gate before the
+  dial (`wss` as `https`, `ws` loopback-only), no redirect followed, the credential recorded as
+  its placeholder and scrubbed by value, every frame in the evidence, a turn bounded in time
+  (inconclusive), bytes and frames (not retried), one connection per conversation, no query
+  resent by the adapter. Worked example `examples/target.websocket.yaml` (Scenario H, dry run
+  pinned: 10 specs, 125 requests). The pre-commit audit (33 mutants, twelve findings, all
+  reproduced) is closed in the same PR: a nested frame no longer aborts the campaign, the
+  handshake phase is capped, the transcript is recorded once, no live conversation is evicted,
+  the credential is scrubbed from every error message and refused under 8 characters, the
+  query send is under the turn timeout, a lost conversation is debited once, the loader
+  refuses request placeholders in connection templates, placeholders in `vars` and the
+  library's own upgrade headers, `equals`/`final_value` compare by type, cleartext `ws://`
+  never goes through a proxy (`tests/adapters/test_websocket_audit.py`). Open for the owner:
+  OD-34 (a transcript field on `ModelResponse` instead of `raw_ids["websocket"]`), OD-35
+  (several queries on one socket), OD-36 (a reconnect mid-conversation for a stateless server),
+  OD-37 (a `websocket:` block in a fleet entry). The PR numbered them OD-30 to OD-33, which
+  `main` (OD-30, OD-32, OD-33) and PR #88 (OD-31) had taken; renumbered on 2026-10-09, after
+  checking that no open PR claims OD-34 to OD-37 (the PR defines no A-clause; it amends A-19).
+  Not built: binary frames, SSE or polled streams (declare them as `rest`), a session that
+  survives a reconnect.
+- Pre-merge audit (2026-10-09, the PR merged with `main` at `6401ee2`, which brought #65, #79,
+  #92 and #93 among others): not merge-ready, now fixed. Frames are parsed with `bounded_loads` and
+  `well_formed_json` (a frame with half a character escaped made `run` exit 3; the adapter is
+  now on A-47's list) and `WebSocketFrameTooDeep` is a `ResponseTooDeep`; a tool call's
+  JSON-text arguments are measured; close code 1007 (a text frame that is not UTF-8) is not
+  retried, as 1009 is not; the adapter re-dials a socket that failed to open only within its
+  own retry allowance, so under `run` every dial is a debited send (it was 8 dials for 4
+  debits); the loader runs A-54's walk over the block (a date, NaN, half a character), refuses
+  a `ws://` or `wss://` endpoint on any other provider, and cuts the names its refusals list;
+  the docs no longer say a WebSocket (or REST) probe goes out at temperature 0, and the frame
+  case is written into OD-21. Found while fixing: a fleet's `wss://` entry got a bare host in
+  its scope (every port); it is pinned to 443 now. `tests/adapters/test_websocket_premerge.py`:
+  36 of its first 40 tests fail on the PR head.
+- Second pre-merge audit (2026-10-09, on `abcf7d4`): merge-ready once four error class names the
+  redactor's high-entropy rule masked in the CLI error and the evidence are renamed
+  (`WebSocketOverflow`, `WebSocketUndecodable`, `WebSocketLost`, `WebSocketTooMany`, each checked
+  against `redact_text` by a test); also fixed: a 1007 or 1009 close the server starts is its own
+  (`WebSocketClosed` with its reason, not retried), a key that is not text in the block is
+  refused (A-44's walk), and the scope man page, the MANUAL and u04 match the code. 9 of the 16
+  new tests fail on `abcf7d4`. Its verification (on `dceb587`): the same server close was still
+  retried when it met a send rather than a receive (three retries, four debited sends, no
+  query); one helper classifies both now (6 more tests, 4 fail on `dceb587`).
+- Stacked on `1c5d1e2` (2026-10-09: `main` at `be2a762` with #56, #57, #51, #54 and #70, the
+  tree main holds before this squash): the MANUAL's "Bounded replies" (two hunks, #68's one-probe
+  rule and #57's credential sentence kept beside the WebSocket text) and §13 (the WebSocket rows
+  and #60's `authz_leak` row) conflicted, each resolved keeping both sides; the index held
+  OD-21 twice (main's copy dropped, the PR's, which adds the frame case, kept in main's place).
+  Follow-ups of the earlier PRs: `websocket` in the A-53 key lists (#88), the WebSocket
+  refusals named where #68's rule is stated, with 4 tests of the `-sV` pass, and a test that a
+  close reason reaches the terminal written out (#51). `make gates` green (with `PYTHONPATH` set
+  to the worktree's `src`): 4595 tests, 97.59% coverage, 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no
+  dependencies).
+
+## State, 2026-10-09: CLI errors keep the operator's file names (PR #70, begun 2026-10-07)
+
+- PR #70 (`fix/cli-masked-paths`, `tests/cli/test_masked_paths.py`, clause A-38): besides main's
+  rule, `_masked` keeps an existing path written whole, absolute or relative (one word, from the
+  working directory), before a colon or a period and through directories with a space or
+  `()[],;'"`, between characters the entropy rule does not join into a token, so the rest of
+  the message is read as on main; only the whole-path walk is capped (1,024 lookups, 65,536
+  checks). `dottore diff`'s
+  incomplete-report refusal goes through `_masked`, as `calibrate`'s does. Found by the audits of
+  PR #61. Three audits found the fix printing keys main masked while it kept more than whole
+  paths (the name an `OSError` quotes, the existing directories of a missing path through a
+  space, a `//` or a `/./`), so it was rebuilt on main's rule; a differential fuzz of 120,000
+  messages finds no such key now. The delta audit of the rebuild found main's rule calling
+  `os.path.exists` where main called `Path.exists` (which raises on 3.11 and 3.12), cached checks
+  left uncounted, and touching parts merged; all three fixed. The audit of that fix found the cap
+  stopping main's rule, which then printed a value main masked; main's rule has no cap now, makes
+  main's lookups or fewer and, after the final audit (a cache of every path took 1.3 GiB where
+  main took 21 MiB), holds nothing between tokens. Open for the owner: OD-25, printing the name
+  of a file that does not exist. PR #51, which landed just before this one, touches the same S6
+  row and `diff` refusal lines: stacked on it, `_masked` applies `visible_controls` last and the
+  refusal's own wrapper is gone.
+- Stacked on `6ac7c95` (main `fb9a8a8` with #88, #60, #68, #66, #56, #57, #51 and #54, the
+  tree main holds before this squash; this worktree had resolved a merge of `a40e596` only, so
+  the stacking brought in everything newer). `cli/app.py` (imports, `_masked`'s last line, the
+  `diff` refusal), `cli/diff.py`, the manual and the S6 row conflicted, each resolved keeping both
+  sides; the stacked CHANGELOG had kept #82's old note on report paths beside this branch's
+  rewrite of it, and one is left. A-49 no longer says the CLI cuts a report path holding a space
+  short, and this branch's "until #51" sentences are in the past tense. `make gates` green there:
+  4,425 tests, coverage 97.50%.
+
+## State, 2026-10-09: log commands in the middle of a line (PR #54, begun 2026-10-07)
+
+- PR #54, on `fix/cli-legacy-workflow-commands` (`tests/test_terminal_log_commands.py`), stacked
+  on PR #51 (`796c07c`, still open): `visible_controls` also writes the second `#` of
+  `##<letters>[` as `\x23`, so GitHub's legacy `##[cmd]` and Azure's `##vso[area.event]`, which
+  a runner reads anywhere in a line, no longer reach a log line whole; the off-universe values
+  of `coverage` and of the run's summary and the `-vv` plan's reasons (a pack's
+  `requires_policy`), all printed as a `repr`, go through it too. The `-vv` plan was found by the
+  pre-commit audit (two reviewers): annotation, `set-output` and `add-mask` on the GitHub runner,
+  `task.setvariable` on the Azure parser. The delta audit added the resume note, which quoted
+  scope digests read back from the run store raw.
+- Verified with the runners' own code, not on a hosted runner: the CLI's output from main, PR
+  #51 and this branch (17 outputs each) fed to actions/runner `67f01c2`'s `OutputManager` with
+  its real `ActionCommandManager` (scratch L0 test): on main and PR #51 every line with `##[`
+  was a command (annotations, `add-mask` masking `FAIL` in later lines, `set-output`
+  `verdict=clean`), from this branch none. Azure through the agent's `Command.TryParse`
+  (`59c86a8`): `task.logissue` and `task.setvariable` before, none after. PR #51 opened one more
+  such line (the run's off-universe warning, which `rich` markup used to cut). Again after the
+  rebase onto the reworked PR #51 (`796c07c`): 11 of 18 outputs with a command on GitHub and 5
+  on Azure from PR #51 alone, none from this branch.
+- Open for the owner: OD-20, the JSON outputs keep `##[` as it is (by instruction) and still
+  carry a command when printed to a log; option B escapes the `[` as `\u005b`. A real GitHub
+  Actions run was not done: it needs a push to a fork or scratch repo, which waits for approval.
+- Found on the way, not fixed here (pre-existing on main): a `regex_absence` pattern that is not
+  a valid regex made `dottore lint` exit 1 with a `re.PatternError` traceback
+  (`registry/fixtures_engine.py`) instead of a lint error; fixed since on main by PR #63 (A-33).
+- `make gates` green on `796c07c` plus this branch: 2,518 tests (40 new; 26 fail on PR #51's
+  code), coverage 96.57%. The suite prints `ResourceWarning`s for unclosed sqlite connections
+  (28 lines, the same on PR #51's tree without this branch); not fixed here.
+- Stacked on `e6ac2af` (main `fb9a8a8` with #88, #60, #68, #66, #56, #57 and #51, the tree main
+  holds before this squash). The S6 row, the manual, u12 §6 and §9 and `cli/run.py` conflicted:
+  each keeps both sides, the `-vv` plan's not-seeded reasons (OD-18 B, on main since) go through
+  `visible_controls` as the skipped and refused ones do, and the "not covered" lists drop the
+  legacy form and #51's split-credential item, which #57 closed. The stacked merge had kept two
+  copies of a #51 CHANGELOG bullet and of its PROGRESS heading; one of each is left. `make gates`
+  green there: 4,364 tests, coverage 97.46%.
+
+## State, 2026-10-09: PR #51, format characters and the pre-merge follow-ups (begun 2026-10-07)
+
+- The owner decided on 2026-10-07 (in the session that built it) that format characters (Unicode
+  Cf: zero-width characters, the soft hyphen, bidi controls, the byte order mark, tag characters)
+  are written out on the terminal too, in PR #51: `visible_controls` writes them as Python escapes.
+  This branch's terminal-only match of a split credential (`mask_split_credentials`) was dropped
+  when it was stacked on PR #57, which masks such a credential in `redact_text` itself (A-32).
+- The pre-merge audit of PR #51 found no blocker. Its follow-ups, and those of the delta audit
+  after them, are fixed here: the "no --judge" warning wrote the operator's target id raw (and is
+  on one line now); `--compare` read a target id as markup (`[/]` raised `MarkupError` and no
+  report was written, on main too) and `:warning:` in it as an emoji; `validate_sha256` used
+  `match` with `$`; `fingerprint` keeps pydantic's JSON and escapes DEL and non-ASCII in it,
+  falling back to `json.dumps` on a lone surrogate. Accepted and documented: the text glued to a
+  split credential prints, as main prints it next to the credential in one piece. The legacy
+  `##[cmd]` form is handled in PR #54, stacked on this one.
+- Rebased on `4aa6cef` (PR #53). `make gates`: 2,478 tests (228 new in this PR), coverage 96.50%.
+- Merged with main at `a40e596` (#83) on 2026-10-09. Every error main added since `4aa6cef`
+  (quoted values #86, capped reads #76, id lengths #91, non-JSON values and `--runs` bounds #89,
+  spec file names #49, fleet id casing #85, the `-sV` resume advice #83) goes through `_masked`;
+  the new `-sV` resume notice quotes the target id with `repr`. Two interactions fixed in the
+  merge: the `seed:` line of `--dry-run -vv` (#58) printed a spec's canary raw and now writes it
+  out; and A-51's refusals name an id of up to 128 characters whole, which `_masked` now writes
+  out at up to ten characters each, so `tests/cli/test_operator_file_quoted_values.py` expects the
+  written-out id, bounds its line at 5,000 characters and looks for a whole `repr` with its quote
+  (u01 A-51 and A-57 say so). `make gates`: 3,571 tests (229 from this PR), coverage 97.12%.
+- Stacked on `4f466e2` (main `fb9a8a8` with #88, #60, #68, #66, #56 and #57, the tree main
+  holds before this squash). `redactor.py` keeps one copy of the control and format ranges,
+  #57's, and builds `_TERMINAL_CONTROLS` from those two alone, so `visible_controls` never
+  escapes U+FFFD, which #57's match drops; `mask_split_credentials` is gone, `for_terminal` is
+  `visible_controls(redact_text(...))` and `_masked` redacts `mask_url_passwords(str(exc))` again.
+  `cli/diff.py` keeps #82's per-finding validation, then this branch's spec-id check, whose
+  refusal now names the report as A-49 does (`the report <absolute path> holds '<id>', which is
+  not a spec id; is this a run report?`, added to A-49's list). `fingerprint` keeps #68's probe
+  warning (now written out too, as every warning) and prints this branch's ASCII JSON. Tests
+  changed for the stack: the four `mask_split_credentials` cases call `for_terminal` or the
+  redactor's split match; the periodic case uses a credential whose end repeats its start once
+  (#57 matches one repeating a piece more than twice over without overlaps, a case it lists as
+  open); the `lint`/`coverage` key is written as its `repr` since #90; the `fingerprint` stub
+  gains the fields #68's warning reads. The pre-merge audit's medium (a key's control characters
+  are written out, MANUAL and u12) and lows are applied, and the "until #51" sentences of the
+  merged entries are in the past tense. `make gates` green there: 4,324 tests, coverage 97.40%.
+
+## State, 2026-10-09: a registered credential split by characters that do not show (PR #57, begun 2026-10-07)
+
+- On `fix/redactor-split-credentials` (`tests/test_redactor_split_credentials.py`): the redactor
+  masks a registered credential split by control characters or by format characters (Unicode
+  Cf) whole, with the unsplit digest, in `redact_text` itself, so the reports, the evidence
+  store, the run store and the terminal no longer keep it in two readable halves (found by the
+  audit of PR #51, on main). In a text holding such a character the whole match by value runs
+  on the text with them dropped, and overlapping credentials are masked as one; text without one
+  is redacted byte for byte as on main unless a registered credential holds one (differential
+  fuzz: 0 differences in 2,079,091 texts). A
+  lone surrogate no longer crashes `_digest` (the same line as PR #51). The owner decided on
+  2026-10-07 that the terminal writes the format characters out too: that goes to PR #51, where
+  `visible_controls` lives. The pre-commit audit found one regression of mine (a short credential
+  with invisible characters inside was no longer masked as written) and seven low items (a value
+  padded with spaces masking prose, a digest that followed the hash seed, a periodic credential
+  costing a search per character, a registered `\x00` breaking a stash token, on main, tests that
+  could not fail, doc claims), all fixed. The delta audit found that my first fix let a short
+  credential break a longer one (up to 7 characters readable), and the pre-merge audit that the
+  second left up to 6 of a short one readable; short and long matches are masked as one union now,
+  every occurrence of a short one included (its delta audit: one overlapping itself lost its second
+  occurrence under a longer match).
+  Filed apart, on main: the JSON report keeps a dict key a target wrote raw, and a lone surrogate
+  in a reply aborts the campaign in the evidence store (fixed since by PR #79, A-47). `make gates`
+  on the branch, before the merge below: 2,380 tests (78 new), coverage 96.44%.
+- Merged with main at `6401ee2` (2026-10-09). U+FFFD is a splitter now (`_REPLACEMENT_RANGES` in
+  `_INVISIBLE_RANGES`), as PR #79's merge note asked: #79 reads half a character in a reply as
+  U+FFFD before the redactor runs, so on the two together a credential split by one kept both
+  halves in the evidence and `r.json`. Two new `_SPLITTERS` cases and a CLI case in
+  `tests/cli/test_lone_surrogate.py` (the escape, the raw bytes, a U+FFFD the target wrote) fail
+  without the range, all five. #79's sentences that said such a credential is not masked (MANUAL,
+  the threat-model row, the CHANGELOG, u04 A-47 and OD-28) now say it is. The clause is u01
+  A-32, not A-31: PR #56, which lands just before this one, defines its own A-31 (main has
+  neither number). `make gates` on the merge: 3,529 tests, coverage 97.15%.
+- Stacked on `2250b30` (main `fb9a8a8` with #88, #60, #68, #66 and #56, the tree main holds
+  before this squash). `redactor.py` conflicted in four places, resolved as #56's notes asked:
+  #56's `_credential_runs` (tokens keyed by the stretch) runs in a text without a splitter, the
+  split match runs after it and alone in a text with one, `_mask_matches` passes each stretch as
+  written to `_keep` and keys its tokens by it (so a private key holding a split credential keeps
+  the digest A-31 gives it), one delimiter guard in `register_known_secret`, and one naming rule
+  for a run (`_longest`, the length as it shows) in both matches. #56's overlap case for a key
+  read with a trailing CR expected the CR form's own digest, which this branch's
+  `test_a_key_read_with_a_trailing_cr_is_masked_as_its_plain_form` rules out (A-32): that case
+  now checks a contained credential without a control character. Differential fuzz of the
+  merge against `2250b30`, 20,000 generated texts: 0 differences in the 9,635 without a
+  splitter, and in the 10,365 with one, a registered credential readable once the splitters are
+  dropped in 6,380 outputs of `2250b30` and in none of the merge's. The index row is
+  A-29..A-32, and the CHANGELOG's open case of two credentials overlapping in plain text is
+  closed by #56. `make gates` green there: 4,095 tests, coverage 97.35%.
+
+## State, 2026-10-09: a URL password behind a registered user; masks that depended on the process (PR #56, begun 2026-10-07)
+
+- PR #56, branch `fix/redactor-url-userinfo-pem-digest` on `0f936b6`
+  (`tests/test_redactor_url_password_and_digests.py`): two defects already on main, found by the
+  pre-commit audit of `fix/cli-control-chars` with differential fuzzing against `d19b221`. A
+  registered credential as a URL's user left the password readable when the host had no dot (the
+  URL rule refused a user already set aside as a stash token), and the digest of a private-key
+  mask was computed over stash tokens whose numbers depend on the masks before the key and on a
+  set's iteration order, so it changed with `PYTHONHASHSEED`. Fixed with the case the same order
+  decided: one of two overlapping registered credentials masked, the other's tail readable. Also
+  fixed, on main too: `redis://:<password>@host` kept its password, and a registered credential
+  holding `\x01` could break a stash token (its raw forms are no longer registered). New clause
+  A-31 in the u01 contract (a mask depends only on what it masks).
+- Five audits by subagent: pre-commit (100,000 differential cases; the first URL rule took about
+  640 MB on a 4 MB reply, possessive now), a delta, pre-merge (2.1 million cases and the real CLI
+  offline: no password in any report, the evidence or stderr, where main printed them) and two
+  more deltas. The pre-merge audit found one case the PR made worse: a credential holding a
+  delimiter, registered as the text reads it (`password@db`), crossed a URL's `@`. The two versions
+  of a pass that joined the password to a credential crossing a URL separator each opened new
+  holes (a password tail behind credentials holding `:` and `@`; then a labelled secret after the
+  URL swallowed into the mask and a quadratic shape), all from reading the URL before knowing
+  where the credentials are. The pass was backed out; a form holding a delimiter is no longer
+  registered (main registered it, but it never matched the text as read), which closes the
+  regression. 24 mutants of the final fix, each caught. `make gates` green on `0f936b6`: 2,359
+  tests (2,302 on main), coverage 96.41%.
+- Open: a registered credential across a URL's `://`, `:` or `@` breaks the URL rule. It stops it
+  and leaves the rest of the password readable, as on main; or, across the `@`, lets it read on to
+  a later `@`, so a labelled value after the URL loses its tail where main masked it; and two
+  overlapping registered credentials masked as one run can cover a separator that main's
+  one-at-a-time replacement left (main leaves part of the second credential readable there).
+  Each needs a target writing a registered credential that holds a URL separator. The owner accepted
+  the last two for the merge (2026-10-09); a follow-up issue tracks them. Also open, on main too: a
+  raw `@` in a URL's user or unregistered password leaves the password, or its part after the `@`,
+  readable (`myadmin@srv:<password>@localhost`); the labelled-secret rule stops at a mask
+  (`api_key=<registered credential><tail>` keeps its tail), and a registered credential that is
+  a label word (`password`) hides the label from it; repeated `BEGIN PRIVATE KEY` markers before
+  one `END` cost 3.4 s a megabyte. Python 3.11, the version CI runs, was not available here.
+- PR #51 also edits `redactor.py`. Its `mask_split_credentials` masked every registered
+  credential of any text holding a control character, and every PEM holds a newline, so on the
+  terminal a key's digest would have been computed over the credential's mask while the reports
+  computed it over the credential (nothing leaks). It is gone: stacked on PR #57, #51 leaves the
+  split match to `redact_text`, whose tokens record each stretch as written, so the terminal and
+  the reports give a key one digest. PR #57 (split credentials), which lands right after this one,
+  rewrites the same loop: its clause is A-32, and it passes the stretch as written to `_keep`.
+- Stacked on `08ac9f8` (main `fb9a8a8` with #88, #60, #68 and #66, the tree main holds before
+  this squash): only CHANGELOG and PROGRESS conflicted. The pre-merge audit's LOWs are applied
+  here: the playbook no longer counts the clauses, A-31 and S6 compare with the redactor before
+  A-31 instead of "main", and the manual, S6, A-31 and the CHANGELOG name the two accepted
+  regressions. `make gates` green there: 4,012 tests, coverage 97.32%.
+
 ## State, 2026-10-09: a halted run keeps what it paid for, and resumes (PR #66, begun 2026-10-07)
 
 - On `fix/resume-halt-mid-batch` (on main `0501752`, after #61): a request ceiling that stopped a
@@ -302,7 +569,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 
-- First noted on main by PR #57 (open on 2026-10-09), reproduced end to end by the pre-commit audit
+- First noted on main by PR #57 (split credentials), reproduced end to end by the pre-commit audit
   of `fix/hostile-logprob`, and fixed on `fix/lone-surrogate-reply`: a reply carrying a lone
   surrogate (escaped, or its raw bytes `ED A0 80`) in its text, `id`, `model` echo, a logprob token
   or a tool call made `run` exit 3 with every spec unrun and no evidence (the evidence store's
@@ -435,9 +702,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   taken out again (Ctrl-C, `fork`, queueing), so lint and a run still draw that line a few
   levels apart, and in a selection of more than 512 patterns a spec nested 482 to 487 deep ends
   `inconclusive` with no reason in the report (documented in `compile_spec_pattern` and A-33; a
-  per-process cache would close it). The message quotes with `ascii`; until PR #51 and PR #54
-  merge, the lint text line does not go through `visible_controls`, so a `##[` in a pattern is
-  printed as written, as in every other lint message on `main`. Open for the owner as OD-22:
+  per-process cache would close it). The message quotes with `ascii`; the lint text line goes
+  through `visible_controls` since PR #51, which writes a `##[` in a pattern out as `#\x23[`
+  since PR #54, as in every other lint message. Open for the owner as OD-22:
   refuse the run (as built, like F-10) or skip only that spec (like `setup_not_seeded`); reuse
   `EVALUATOR_MISCONFIGURED` (as built) or a code of its own.
 
@@ -678,7 +945,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   have spread to the endpoint or `auth_ref` row of the `--judge` refusal, and A-30's credential
   half was tested with the key on one side only. Numbering: A-56 and OD-33 came from the session
   keeping the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without
-  having claimed them, so it has to renumber.
+  having claimed them, so it has to renumber (renumbered to OD-34 to OD-37, 2026-10-09).
 
 ## State, 2026-10-07 (night): a load refusal names its spec file
 
@@ -886,6 +1153,32 @@ The carryover ledger. Every agent session updates this so context survives even 
   destructive call counts as confirmation. `AG-CONFIRM-BYPASS-001` says it does;
   `kill_chain_progression` fails any destroy whatever the flag, so `AG-DESTRUCTIVE-DBDROP-001`
   contradicts its own description.
+
+## State, 2026-10-06 (evening): control characters on the terminal
+
+- On `fix/cli-control-chars` (`tests/test_terminal_control_chars.py`), off `d19b221`: every CLI
+  error (`cli/app._masked`) and the paths that bypassed it (`lint` and `coverage` text, the
+  spec name in `registry ls` and `describe`, `diff`, `calibrate` and `replay` lines, the spend and
+  "did not complete" lines) write control characters out after the redactor: C0 and DEL as control
+  pictures (`␊`), C1, U+2028, U+2029 and lone surrogates as Python escapes. A spec file named with
+  a newline printed a GitHub Actions workflow command on stderr (pre-merge audit of PR #49, on main
+  too). A registered credential split by control characters is masked whole on the terminal. `rich`
+  prints the run's error and coverage lines unwrapped and without markup (a wrap at 80 columns
+  could start a line with `::error`; `[/]` in a target's error raised `MarkupError` before the
+  reports were written). `coverage` lists unloaded files as bullets; `diff` and `calibrate` refuse
+  a report whose spec ids are not spec ids; a lone surrogate after a label no longer crashes the
+  masking (on main too); stdout escapes what its encoding lacks; `fingerprint` prints ASCII JSON; a
+  run id with a trailing newline is refused.
+- The pre-commit audit (two reviewers) found 10 of 42 mutants surviving (8 that would reopen a raw
+  line or a leak) and seven defects; the delta audit of those fixes found one regression of mine
+  (`fingerprint`'s JSON invalid on a cp1252 stdout) and two unpinned fixes. All fixed here. Left
+  open, pre-existing on main: the legacy `##[cmd]` form a GitHub runner reads anywhere in a line
+  (written out since 2026-10-07 in PR #54, above);
+  the reports and stores keep a credential split by a control character readable (`redact_text`
+  unchanged); a credential split by an invisible format character (U+200B) was neither masked nor
+  shown (on the terminal it is since 2026-10-07, above).
+- `make gates` green: 2,397 tests (195 new), coverage 96.49%. PR #49 touches `_masked` too: the
+  second to merge rebases.
 
 ## State, 2026-10-06 (evening): PR #50 merged; the first full local pass
 

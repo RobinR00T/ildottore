@@ -66,7 +66,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
 - **Authorization-gated.** Every egress is checked against the scope's endpoint allowlist
   (default-deny) before any request leaves the process. An out-of-scope host or off-prefix
   path raises an error and sends nothing. Plain `http` is allowed only to loopback
-  (`localhost`, `127.0.0.1`, `::1`); everything else must be `https`. A path that carries an
+  (`localhost`, `127.0.0.1`, `::1`); everything else must be `https`. A WebSocket target
+  follows the same rule: `wss://` is authorized like `https://`, cleartext `ws://` only to
+  loopback, and an HTTP redirect at the upgrade is never followed (the scope authorized one
+  URL). A path that carries an
   encoded slash or backslash (`%2f`, `%5c`), a literal backslash or a double encoding (`%25`)
   is refused outright: an origin that decodes it would resolve a path outside the prefix the
   scope authorized (`/v1/chat/..%2f..%2fadmin` is `/admin` to such an origin). So are the forms
@@ -91,11 +94,14 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   call whose JSON-string arguments do, is refused the same way: inconclusive, not retried, and
   the rest of the scan goes on. Tool-call arguments whose brackets do not balance read as no
   arguments, as before; arguments whose brackets balance and nest past 100 are refused even when
-  they are not JSON, so that reply is inconclusive instead of judged by the tool's name. During a
-  `-sV` or `-A` probe pass, a 2xx reply refused on any of these grounds (its size, its encoding
-  or its nesting) fails that one probe and the run goes on (see `-sV` under `dottore run`). A
-  success reply that is not JSON (brackets that do not balance included), or holds an
-  integer of more than 4,300 digits (which Python refuses to read), still stops the run (exit 3);
+  they are not JSON, so that reply is inconclusive instead of judged by the tool's name. A
+  WebSocket target's frames are parsed the same way, with a bound of 64 levels of their own, and
+  a text frame that is not UTF-8 is refused as undecodable (§4.2). During a
+  `-sV` or `-A` probe pass, a 2xx reply or a WebSocket frame refused on any of these grounds (its
+  size, its encoding or its nesting) fails that one probe and the run goes on (see `-sV` under
+  `dottore run`). A success reply that is not JSON (brackets that do not balance included), or
+  holds an integer of more than 4,300 digits (which Python refuses to read), still stops the run
+  (exit 3), and so does a WebSocket frame that is not a JSON object;
   over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
   times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
   stray lines and its reply together.
@@ -107,11 +113,13 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   target sent them, the escape included, and read as U+FFFD once parsed. Over an MCP SSE stream,
   which is decoded as text first, each raw byte of one reads as U+FFFD, as any other invalid
   UTF-8 there does. Like a zero-width space, half a character inside a word splits it: a leak
-  split that way is not matched by `regex_absence`, a canary split that way is not found by
-  `secret_leakage`, and a registered credential split that way is not masked as that
-  credential. A body that is not valid UTF-8 in any other way
-  (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD) and an
-  MCP stdio line (skipped, so the call times out).
+  split that way is not matched by `regex_absence` and a canary split that way is not found by
+  `secret_leakage`, while a registered credential split that way is still masked whole, as one
+  split by a zero-width space is (redact-at-rest, below). A body that is not valid UTF-8 in any
+  other way
+  (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD), an
+  MCP stdio line (skipped, so the call times out) and a WebSocket text frame that is not UTF-8,
+  the raw bytes of half a character included (inconclusive and not retried, §4.2).
 - **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
   limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
   from the command line). A larger regular file is refused before any of it is read; anything
@@ -176,16 +184,43 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   trailing CR from a Windows-edited `.env` used to be quoted, in clear, by the transport error
   that rejected it). A key with a control character **inside** it (a newline from a pasted
   value) is refused before any request, with an error that names the variable and never the
-  value. Values shorter than 8 characters are not registered. The 8-hex digest after a mask is
+  value. Values shorter than 8 characters are not registered. A registered credential is also
+  found when the text splits it with a newline, a tab or another control character, with an
+  invisible format character (a zero-width space, a soft hyphen, a word joiner, a byte order
+  mark, a bidi control, a tag character), or with U+FFFD, the replacement character half a
+  character in a reply is read as: the stretch it covers is masked with the same
+  digest as the credential written in one piece. One split by a space or another
+  printable character (U+FFFD aside) is not. The 8-hex digest after a mask is
   salted per process, so a report cannot be used to confirm a guessed password; set
-  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose. What the tool itself
-  generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
-  readable in every report, in both copies of a finding the JSON report carries, so a custom
-  spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
-  prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part of
-  an absolute path that exists on this machine is exempt from the entropy rule (a temp or CI
-  workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and labels
-  in it are still masked, and the rest of the path is redacted. Otherwise only
+  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose: a digest is computed over
+  the value as written (a private key's too, whatever is registered inside it, when the key
+  pattern takes it whole: its 16 KB bound counts each mask inside the key as a stash token), so
+  with the salt pinned one value reads the same in every run. A password in a URL is masked
+  behind a registered, masked or empty user too (not yet behind a user holding a raw `@`, nor
+  behind a registered credential that runs across the URL's `://`, `:` or `@`), and registered
+  credentials that overlap in the text are masked as one. Two cases are masked less well than
+  before PR #56, a trade-off the owner accepted for its merge (a follow-up issue tracks them):
+  a registered credential holding an `@` across a URL's `@` lets the URL rule read on to a later
+  `@`, so a labelled value written after the URL (`,password=<value>`) keeps its tail readable
+  and the host is reported wrong; and two overlapping registered credentials, masked as one run,
+  can cover a URL's separator, so its password stays readable (`key-ABCD1234` and `1234://bob`
+  registered). Both need a target that writes a registered credential holding a URL separator.
+  What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
+  id) is left readable in every report, in both copies of a finding the JSON report carries, so
+  a custom spec id reads the same in every run and `dottore diff` can match it. Error messages
+  the CLI prints go through the same redactor, which cannot tell a sha256 from a 64-hex
+  key. The part of an absolute path that exists on this machine is exempt from the
+  entropy rule, and so is a path that exists written whole at the start of the message or
+  after a space, a quote, a comma, a semicolon or an opening bracket: relative to the
+  working directory too (as one word), with a space or a bracket in a directory name of
+  an absolute path, before a `:` or a `.` (a temp or CI workspace directory, or a report
+  named after a commit SHA, used to read `«REDACTED:high_entropy»`). The name of a file
+  that does not exist is not, because it may be a key typed where a file belongs: `No
+  such file or directory` shows an absolute path's existing directories, up to the first
+  whitespace, quote, bracket, comma or semicolon, and judges the name as text, so a SHA
+  or a long random key in it is masked. Emails, key shapes and labels in a kept path are
+  still masked, a kept path holding 8 consecutive characters of a registered credential
+  prints as `«REDACTED:credential»`, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
   tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
   digest of the scope body (`scope checksum mismatch: the scope body hashes to '<sha256>', not
@@ -222,6 +257,37 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `target 'live' auth_ref a literal value (not shown) is not authorized by the scope (declared:
   'env://LIVE_KEY'); refusing to read an unauthorized credential`. The same holds for the
   judge-file mismatch of `dottore fleet --judge`.
+- **Errors, warnings and the inspection commands print no raw control character.** An error, a
+  warning, the text output of `lint`, `coverage`, `diff`, `calibrate` and `replay`, a spec's name
+  in `registry ls` and `describe`, and a canary on a `seed:` line of `run --dry-run -vv` quote
+  file names and values that a pack author, a report or a target wrote: a spec file named `x`, a
+  newline and `::error ...` printed a line a GitHub
+  Actions runner reads as a workflow command. A C0 control and DEL are written as their control
+  pictures (a newline as `␊`, ESC as `␛`, DEL as `␡`, as the redactor writes `␀` and `␁`), and a
+  C1 control, U+2028, U+2029 and a lone surrogate (an undecodable byte of a Linux file name) as
+  the escape Python writes (`\x85`, `\u2028`, `\udc9b`), and so is a format character (Unicode
+  Cf), which a terminal mostly does not show or which changes how a line reads: a zero-width space
+  `\u200b`, a soft hyphen `\xad`, a bidi control, a tag character `\U000e0041` (13 of them, the
+  prepended concatenation marks such as U+0600, do have a glyph). The cost: a joined emoji, a
+  right-to-left mark or a soft hyphen in a name prints its escape, and an existing path holding
+  one no longer reads as the file's name. This happens after the redactor, which masks a
+  registered credential split by control or format characters (or by U+FFFD, which is
+  printed as it is) whole; split by spaces or other printable characters it is still
+  kept. `dottore coverage` lists each file that failed to load as a bullet, so no line
+  starts with a file name, `diff` and `calibrate` refuse a report whose spec ids are not
+  spec ids (each `diff` row starts with one), and the run prints its error and coverage
+  lines unwrapped, so a wrap at 80 columns in a CI log cannot start one with `::error`. A
+  character the output's encoding lacks is written as its escape. A runner also reads a command in
+  the middle of a line (GitHub's legacy `##[error]`, Azure Pipelines'
+  `##vso[task.setvariable ...]`), so the same output writes the second `#` of `##<letters>[` as
+  `\x23`: a spec named `Direct ##[add-mask]FAIL` is listed as `Direct #\x23[add-mask]FAIL`. The
+  JSON outputs escape every control character, `fingerprint`'s included, but keep a value as it
+  is, `##[` included, so a JSON output printed to a CI log can still carry a command: write it to
+  a file (`--json > out.json`, and `dottore fingerprint > fp.json`, which always prints JSON) in a
+  pipeline that runs third-party packs. Not covered: a forged evidence tree can still start a
+  `replay` line with an id; the operator's own values in the run's plan lines (the target id under
+  `--dry-run`, `--estimate` and `-sn`) are printed as written; invisible characters outside Cf
+  (variation selectors, U+034F, U+3164) are not written out.
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
@@ -266,7 +332,7 @@ else must be `https`. Template: [`../specs/scope.example.yaml`](../specs/scope.e
 ```yaml
 id: my-chatbot                   # must match a target id in the scope's `targets`
 type: chatbot                    # model | chatbot | agent | rag | api
-provider: openai                 # openai (and openai-compatible) | anthropic | mcp | rest
+provider: openai                 # openai (and openai-compatible) | anthropic | mcp | websocket | rest
 endpoint: "https://api.example.com/v1/chat/completions"
 model: "gpt-4o"                  # provider model id
 auth_ref: "env://MY_API_KEY"     # reference only; the secret is read at send time, never stored
@@ -281,10 +347,11 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
 The file holds these keys and no others: `id`, `type`, `name`, `provider`, `endpoint`, `model`,
-`auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup` and
-`mock_scenario` (below). Any other key is refused before anything is sent (exit 3), and so is a
-`name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text, on one line
-that names the file and the key, never the value: `error: target file target.yaml failed validation:
+`auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`,
+`websocket` and `mock_scenario` (below). Any other key is refused before anything is sent
+(exit 3), and so is a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is
+not text, on one line that names the file and the key, never the value:
+`error: target file target.yaml failed validation:
 endpont: Extra inputs are not permitted`. Until 2026-10-07 both were read as absent, so `endpont:`
 left a live target with no endpoint and the run went to the offline mock, which sent it nothing and
 scored the mock's replies, and keys of `capabilities` that lost their indent were ignored at the top
@@ -300,9 +367,9 @@ A value under `capabilities` or `sampling_defaults` that cannot be read as its f
 anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
 problems found in that block (the `capabilities` block alone if both are wrong), never the value
 written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
-valid boolean, unable to interpret input`. The field is printed from the key you wrote, so a control
-character in a key reaches the terminal as written (a line break splits the line), and a key that is
-not text is printed as pydantic renders it (`on:` as `1`). What can be read
+valid boolean, unable to interpret input`. The field is printed from the key you wrote, its control
+and format characters written out (a line break as `␊`), and a key that is not text is printed as
+pydantic renders it (`on:` as `1`). What can be read
 is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
 `top_p` have no range check. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
 `logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set, so a `tool:` written
@@ -317,7 +384,9 @@ an older version halted with such a key or value resumes once you delete it (or 
 resume is refused.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
-judge and the `-sV` probes. Whether to apply it or drop it is open.
+judge and the `-sV` probes, and the OpenAI and Anthropic adapters send it; a REST template and a
+WebSocket target have no field for it, so theirs is the deployment's own. Whether to apply it or
+drop it is open.
 
 `logprobs: true` under `capabilities` lets the spec that scores token logprobs run
 (`DL-MEMORIZE-DIVERGENCE-001`, through `logprob_membership`); without it that spec is skipped
@@ -412,8 +481,8 @@ supports only `env://NAME`. Any other scheme is refused before anything is sent,
 included (`unsupported auth_ref scheme in 'vault://kv/live'; only 'env://NAME' is supported`,
 exit 3): a `vault://` resolver is not built. A literal key pasted as the `auth_ref` is refused
 too, and the error says `a literal value (not shown)` instead of quoting it. The secret itself
-is never written to a file. A `provider` other than `openai`, `anthropic` or `mcp` routes to
-the generic REST adapter. Template:
+is never written to a file. A `provider` other than `openai`, `anthropic`, `mcp` or
+`websocket` routes to the generic REST adapter. Template:
 [`../specs/targets/example-openai.yaml`](../specs/targets/example-openai.yaml).
 
 An **MCP server** target uses `provider: mcp`. Over the wire it declares the Streamable-HTTP
@@ -435,6 +504,146 @@ transports (it never calls a tool). The server process gets a minimal environmen
 used to inherit every other
 target's API key. A server that needs a variable gets it on the authorized command line
 (`env NAME=value node server.js`), where the scope has to name it.
+
+#### A chat endpoint over a WebSocket (`provider: websocket`)
+
+Many deployed assistants expose their chat only over a WebSocket that streams the answer in
+JSON frames, and no two share a wire shape. `provider: websocket` declares it in a `websocket:`
+block, so such a deployment is a target without a line of code. The adapter adds no product
+knowledge of its own. Worked file, commented line by line:
+[`../examples/target.websocket.yaml`](../examples/target.websocket.yaml) (Scenario H in
+[`../examples/README.md`](../examples/README.md)).
+
+```yaml
+provider: websocket
+endpoint: "wss://assistant.example.test/ws/chat"   # ws:// or wss://; no query, no user:password
+auth_ref: "env://ASSISTANT_WS_TOKEN"               # becomes {{token}} at send time
+websocket:
+  vars: {client: "ildottore"}                      # plain values usable as {{client}}; never secrets
+  handshake:
+    send: {type: "auth", token: "{{token}}", client: "{{client}}"}
+    expect: {path: "type", equals: "auth_ok"}      # the first reply must satisfy it
+  session:
+    start: {type: "new_conversation"}              # once per connection, after the handshake
+    expect: {path: "type", equals: "session"}      # optional acknowledgement
+    one_query_in_flight: true                      # the only policy built
+  message:
+    send: {type: "query", text: "{{prompt}}"}      # {{prompt}}, or {{messages}} for the history
+  response:
+    text_path: "delta.text"                        # each fragment of the answer
+    final_path: "type"                             # the turn ends on the frame where this path...
+    final_value: "done"                            # ...equals this (left out: is present)
+    type_path: "type"                              # where a frame's kind is read (default)
+    ignore_types: ["ping", "typing"]               # discarded
+    error_path: "error"                            # present: the attempt is inconclusive
+    usage_path: "usage"                            # optional, trues up the token ledger
+    tool_calls_path: null                          # declare it only if the server sends calls
+    model_path: null                               # optional: feeds the fingerprint's envelope layer
+    timeout_seconds: 30                            # per turn, query to final frame
+  reconnect: {max_attempts: 1}                     # 0 to 5; unused by run (see Reconnects)
+  headers: {}                                      # on the HTTP upgrade; {{token}} allowed here too
+```
+
+**Templates.** `handshake.send`, `session.start`, `message.send` and `headers` are JSON
+templates: static fields plus `{{name}}` placeholders. Four are reserved: `{{token}}` (the
+credential `auth_ref` resolves to), `{{prompt}}` (the attack text of the turn: the request's
+prompt, else its last user message), `{{system_prompt}}` (the spec's system prompt, empty when
+none) and `{{messages}}` (the whole history as a JSON list, for a server that keeps no state).
+Any other name must be declared under `vars`, which are plain values: a placeholder inside a
+`vars` value is refused (it would go on the wire literally). `headers`, `handshake.send` and
+`session.start` are sent before any query, so they may use only `{{token}}` and `vars`. A
+string that is exactly one placeholder takes the value's own type (`"{{messages}}"` becomes the
+list); inside a longer string it is spliced as text. The loader refuses, before anything is
+sent: a block missing or on another provider; an endpoint that is not `ws://` or `wss://`, or
+that carries a query, a fragment or a user:password; a placeholder that is neither reserved nor
+in `vars`; `{{token}}` without an `auth_ref`, or inside `vars`; a request placeholder in a
+connection template; a `message.send` with neither `{{prompt}}` nor `{{messages}}`; an upgrade
+header the library writes itself (`Host`, `Connection`, `Upgrade`, and `Sec-WebSocket-Key`,
+`-Version`, `-Extensions`, `-Protocol` and `-Accept`); `one_query_in_flight: false`; a
+`timeout_seconds` outside (0, 600]; a `reconnect.max_attempts` outside 0 to 5; a key that is
+not text anywhere in the block (YAML reads `on:`, `~:` and `5:` as a boolean, null and a
+number; `opts: {on: true}` went on the wire as `{"True": true}`) and a value JSON cannot hold
+(an unquoted date, a `!!set`, `!!binary` data, `.nan` or `.inf`, half a character), each named
+by its path as `dottore lint` names one in a spec (a date in a template stopped the run when
+the frame was written, NaN went on the wire as `NaN`, and half a character in `vars` raised out
+of `run`). A `ws://` or `wss://` endpoint on any other provider is refused too: only this
+adapter dials it. The error names the field and never quotes the value; a name it lists (a
+header, a placeholder) is cut at 300 characters, and at most 20 are listed. At send time,
+before any dial, a resolved credential shorter than 8 characters is refused too: the redactor
+masks a credential by value only from that length.
+
+**One connection per conversation.** A single-turn attempt dials, sends the handshake and the
+session start, sends its query, reads the turn and closes. A multi-turn attempt keeps one
+connection across its turns and closes it after the last; a later turn whose connection is gone
+(the turn before it failed) is an environment error (`inconclusive`, not retried), never a
+silent restart of the session. A live conversation is never evicted: past 256 open at once, a
+new one is refused (`inconclusive`, not retried) and the open ones keep working. Concurrent
+specs therefore never interleave on one socket, and one query is in flight per connection. The
+`-sV` probes are single-turn attempts: one connection each. One request in the budget is one
+query turn; the handshake and session frames ride on it. Cleartext `ws://` never goes through a
+proxy; `wss://` honours the proxy environment (`https_proxy`, `wss_proxy`) as the HTTP adapters
+do, TLS end to end.
+
+**Reconnects.** A socket that fails to open (refused, a `503` at the upgrade, closed or silent
+during the handshake) is dialled again only before the query is on the wire, so the adapter never
+resends a query. Under `run` (the battery, `-sV`, the identity sweep) every live adapter retries
+nothing itself: the adapter dials once per send, and the runner retries the failure as it retries
+any environment error, up to three more sends in a campaign and two in a `-sV` pass, each one a
+request against `--budget-requests` and the rate. `reconnect.max_attempts` is how many more times
+the adapter dials inside one send where it has retries of its own, never more than those
+(`dottore fingerprint` has two). Until the pre-merge audit of 2026-10-09 a socket that failed to
+open was dialled again inside each send, uncounted: `max_attempts: 1` made 8 dials for 4 debited
+requests.
+
+**Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a
+product defect, as a malformed HTTP reply is). A frame whose `type_path` value is in
+`ignore_types` is discarded; one with `error_path` present ends the attempt as `inconclusive`
+(an environment error, retried by the runner's policy and debited each time); every string at
+`text_path` is appended; the frame satisfying `final_path`/`final_value` ends the turn; its
+`usage_path` mapping, if any, trues up the token ledger (without one the pre-send estimate
+stands, as for a REST target). A turn with no text at all is a product defect. No final frame
+within `timeout_seconds` (counted from the query send, which is inside it), or a connection
+closed mid-turn, is an environment error: inconclusive, and the runner's `--timeout` still
+bounds the whole send. The handshake and session phase runs under the same timeout and caps. A
+turn over 4 MiB, over 4096 frames, a single frame over 4 MiB, or a frame nested deeper than 64
+levels is refused unread and not retried (inconclusive): a deeper frame would have overflowed
+the evidence store's serializer and aborted the campaign. Each frame is parsed as every reply
+is: its nesting is measured before it is parsed (past 100 levels it is refused unparsed), and
+half a character escaped in a string (a lone surrogate, `\ud800`) reads as U+FFFD, so one such
+frame no longer aborts the campaign (A-47). A text frame that is not UTF-8, the raw bytes of
+half a character included, is refused by the library, which closes the connection (close code
+1007): inconclusive and not retried. A close the server starts with 1007 or 1009 (it says the
+query frame was invalid or too large) is not retried either, and the error quotes its reason,
+scrubbed and redacted; any other close mid-turn is retried by the runner. Compression is not
+negotiated. `sampling_defaults` do not apply: the templates carry no sampling fields, so
+neither a spec's sampling nor the `-sV` probes' temperature 0 reaches the target (as through a
+REST template).
+
+**Tool calls.** The adapter reads tool calls only when `tool_calls_path` is declared (each
+frame's list at that path, accumulated); without it, a seeded spec judged on its tool trace is
+`inconclusive: setup_not_delivered`, as through a REST template. A call whose arguments are
+JSON text nested more than 100 levels deep makes the attempt inconclusive, not retried, as on the
+HTTP adapters. It carries no tool definitions, so a `type: model` target with tools in its scene
+is `setup_not_delivered` too; a memory seed needs `{{system_prompt}}` in a template.
+
+**Evidence and the credential.** Every frame sent and received is kept on the attempt
+(`response.raw_ids.websocket.frames`, in order, with its direction) and filed by the evidence
+store redacted at rest, so `dottore replay` re-derives the verdict from what went over the
+socket. In a multi-turn attempt the stored attempt is built from the final turn, whose record
+carries the whole conversation's frames (an intermediate turn's record carries only its own).
+The credential is inserted in memory at send time and recorded as `{{token}}`; a server that
+echoes it back, in a frame, an error frame or a close reason, has it scrubbed by value from
+the record and from the error message, which is redacted too. `-sV` probes a WebSocket target
+like any other live one: the text layers read the replies, and the envelope layer reads a
+model name only when `model_path` is declared (there is no HTTP envelope to read; the
+transcript is never read as a tell). The probes go out at the deployment's own sampling, since
+no template carries a temperature, so a fingerprint is as repeatable as the deployment is.
+
+**Not covered.** A connection shared by several concurrent queries (a correlation id); an
+HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (`dottore fleet`
+infers `rest` from a `wss://` endpoint and writes no `websocket:` block, so `run` refuses the
+target file it writes until you set `provider: websocket` and add the block; its scope pins the
+port, 443 for `wss`); a session that must survive a reconnect.
 
 ### 4.3 `fleet.yaml`, many targets in one file
 
@@ -507,7 +716,7 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
-| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). A probe whose reply comes back **refused** (over 4 MiB, in an encoding the adapters do not decode, or nested more than 100 levels deep: what makes an attack attempt inconclusive without a retry) is a failed probe: its layer gives no evidence from it, the fingerprint is built from the replies that came back, a `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` line on stderr names each one as `layer/probe: ErrorClass` (never silenced by `-q`), the fingerprint line ends `[N of 17 probes got no usable reply]`, and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a timeout, a refused connection, after its retries) still stops the run before any attack with its cause (exit 3): the target is not answering. So do a refusal by the scope and a 200 that is not JSON. Before, one refused probe reply stopped the run before any attack too (OD-23). The run's `started_at` is stamped before the probe pass |
+| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). A probe whose reply comes back **refused** (over 4 MiB, in an encoding the adapters do not decode, or nested more than 100 levels deep, and from a WebSocket target a frame refused as §4.2 says or a 1007 or 1009 close the server starts: what makes an attack attempt inconclusive without a retry) is a failed probe: its layer gives no evidence from it, the fingerprint is built from the replies that came back, a `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` line on stderr names each one as `layer/probe: ErrorClass` (never silenced by `-q`), the fingerprint line ends `[N of 17 probes got no usable reply]`, and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a timeout, a refused connection, after its retries) still stops the run before any attack with its cause (exit 3): the target is not answering. So do a refusal by the scope and a 200 that is not JSON. Before, one refused probe reply stopped the run before any attack too (OD-23). The run's `started_at` is stamped before the probe pass |
 | `-A` | aggressive: implies `-sV` and `--deep`, so it fingerprints first and runs at `-T2` unless you pass `-T`. There is no separate `--adaptive` flag: mutator ordering is adaptive only when a fingerprint exists, that is with `-sV` or `-A` |
 
 **Judge and execution**
@@ -894,8 +1103,8 @@ finding, by its index), never the value written: `error: the report /abs/bad.jso
 findings.0.status: Input should be 'pass', 'fail' or 'inconclusive'`. At most 20 problems are listed
 and the rest counted. A key a finding does not have is part of the place and goes through the
 redactor like the rest of the message: an email or a known token format in it is masked, but a key
-of hex digits or a short password often prints as written, and a control character reaches the
-terminal as written (a line break splits the line). What can be read is taken as read (`"confirmed":
+of hex digits or a short password often prints as written, and its control and format characters
+are written out (a line break as `␊`). What can be read is taken as read (`"confirmed":
 "yes"` is true). `dottore calibrate REPORT LABELS` applies the
 same one-target rule and the same refusals, counts agreement as an exact status match, prints an
 undefined precision or recall as `n/a` and floors its percentages (99.6% is shown as 99%, not
@@ -1370,9 +1579,11 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | Live findings all inconclusive | No `--judge`, so `semantic_judge` abstains. Pass a judge target; deterministic evaluators still fire. |
 | A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all. Selected alone they end in `nothing would be sent` (exit 3), whose message says so: "A spec blocked by policy needs a policy pack that enables it, and the CLI cannot load one today (open decision), so it cannot run from `dottore`." |
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
-| `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
+| `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep; from a WebSocket target, a frame refused as §4.2 says or a 1007 or 1009 close the server starts). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
-| Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. |
+| Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. The same for `ws://`: use `wss://` off loopback. |
+| WebSocket run stops with `the handshake reply did not satisfy expect` | The first non-ignored frame after `handshake.send` did not match `handshake.expect`: usually a wrong or unset credential (`auth_ref`), or a reply frame your deployment sends before the acknowledgement that is not in `ignore_types`. A refused upgrade (`HTTP 401`, a redirect) stops the run the same way; a `503` is retried by the runner, each retry a request against the ceiling (see "Reconnects" in §4.2). |
+| WebSocket attempts all `inconclusive` with `WebSocketTurnTimeout` | No frame matched `final_path`/`final_value` within `timeout_seconds`: check the final frame's shape against what your deployment really sends (an acknowledgement frame your server sends after `session.start` is read as part of the first turn unless `session.expect` or `ignore_types` names it). |
 | `authz_leak` is `capability_unavailable` | It needs two identities to compare: the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity, for a spec that requires `multi_identity` (`DL-XTENANT-001`) and for one that declares `authz_leak` to corroborate (`EMB-XTENANT-RETRIEVAL-001`), never over an in-band scene (a `type: model` target gets the spec's documents in every request, the other tenant's included). Without a sweep, the first stays `inconclusive`; the second is decided by its other evaluators, and its verdict says `authz_leak set aside: no identity sweep ran`. After a sweep where fewer than two identities answered, `authz_leak` stays `inconclusive` for both (the second's verdict says `authz_leak kept: fewer than two identities answered the identity sweep`), unless a deterministic check failed: check that every identity's credential and endpoint work. A spec that requires `multi_identity` and carries a scene (documents, tools or memory) is never swept on a `type: model` target, since the scene goes in-band, and stays `inconclusive` there unless a deterministic check failed. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
 | `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |

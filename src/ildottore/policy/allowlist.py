@@ -203,6 +203,13 @@ def _path_allowed(path: str, prefixes: Iterable[str]) -> bool:
     return False
 
 
+#: Schemes carried over TLS, allowed to any allowlisted host (default port 443).
+_SECURE_SCHEMES: frozenset[str] = frozenset({"https", "wss"})
+#: Cleartext schemes, allowed to loopback only (default port 80): a credential must not cross
+#: the network in the clear.
+_CLEARTEXT_SCHEMES: frozenset[str] = frozenset({"http", "ws"})
+
+
 class EndpointAllowlist:
     """Default-deny matcher over a target's allowlisted endpoints."""
 
@@ -241,15 +248,16 @@ class EndpointAllowlist:
         # Schemes are ALLOWLISTED, not blocklisted. This used to refuse the literal scheme
         # ``http`` off-loopback and let everything else through to the host/path check, so
         # ``ws://``, ``ftp://``, ``file://`` and a scheme-relative ``//host/path`` all passed.
-        # Nothing in the tool speaks those today, which made the invariant rest on adapter
+        # Nothing in the tool spoke those then, which made the invariant rest on adapter
         # implementation rather than on the gate: default-deny has to be the gate's answer.
-        # ``mock://`` is the offline scheme (no I/O); cleartext ``http`` stays loopback-only so
-        # a bearer token is never sent in the clear to a remote host.
+        # ``mock://`` is the offline scheme (no I/O). The WebSocket adapter speaks ``wss``,
+        # which is ``https`` with an upgrade, and cleartext ``ws`` stays loopback-only as
+        # ``http`` does, so a handshake token is never sent in the clear to a remote host.
         scheme = parts.scheme.lower()
-        if scheme == "http":
+        if scheme in _CLEARTEXT_SCHEMES:
             if host.lower() not in ("localhost", "127.0.0.1", "::1"):
                 return False
-        elif scheme not in ("https", "mock"):
+        elif scheme not in _SECURE_SCHEMES and scheme != "mock":
             return False
         raw_path = parts.path or "/"
         if _has_ambiguous_separator(raw_path):
@@ -261,8 +269,8 @@ class EndpointAllowlist:
         # allowlist never authorized.
         path = _remove_dot_segments(_decode_dot_segments(raw_path))
         # Fill the scheme's default port so a pinned ``host:443`` matches an implicit-port
-        # https URL while still rejecting an explicit ``:2375`` on the same host.
-        port = parts.port or (443 if parts.scheme == "https" else 80)
+        # https (or wss) URL while still rejecting an explicit ``:2375`` on the same host.
+        port = parts.port or (443 if scheme in _SECURE_SCHEMES else 80)
         for endpoint in self._endpoints:
             if _host_matches(host, port, endpoint.host) and _path_allowed(
                 path, endpoint.path_prefixes

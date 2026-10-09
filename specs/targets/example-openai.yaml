@@ -14,3 +14,5 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 # The Policy Engine cross-checks this endpoint against scope.yaml's allowlist before any call.
 # A deployed application (any type but `model`) declares which specs' documents, tools and memory
 # its operator has seeded, under `seeded_setup` (OD-18 B); see examples/target.app.yaml.
+# A chat endpoint over a WebSocket is `provider: websocket` with a `websocket:` block declaring
+# its wire shape; see examples/target.websocket.yaml.

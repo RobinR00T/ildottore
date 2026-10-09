@@ -9,7 +9,7 @@ import pytest
 import respx
 
 from ildottore.adapters import AdapterProductError, RestAdapter, RestTemplate, RetryConfig
-from ildottore.adapters.rest import _get_path
+from ildottore.adapters.rest import get_path
 from ildottore.policy import EndpointAllowlist
 from ildottore.shared.models import Capabilities, ModelRequest
 from ildottore.shared.protocols import TargetAdapter
@@ -122,25 +122,25 @@ def test_capabilities_config_overrides(rest_allowlist: EndpointAllowlist) -> Non
 # --- JSON-path extractor edge cases ---------------------------------------------
 
 
-def test_get_path_list_index() -> None:
-    assert _get_path({"a": [{"b": 1}, {"b": 2}]}, "a.1.b") == 2
+def testget_path_list_index() -> None:
+    assert get_path({"a": [{"b": 1}, {"b": 2}]}, "a.1.b") == 2
 
 
-def test_get_path_negative_index() -> None:
-    assert _get_path({"a": [10, 20, 30]}, "a.-1") == 30
+def testget_path_negative_index() -> None:
+    assert get_path({"a": [10, 20, 30]}, "a.-1") == 30
 
 
-def test_get_path_out_of_range_is_none() -> None:
-    assert _get_path({"a": [1]}, "a.5") is None
+def testget_path_out_of_range_is_none() -> None:
+    assert get_path({"a": [1]}, "a.5") is None
 
 
-def test_get_path_index_into_non_sequence_is_none() -> None:
-    assert _get_path({"a": {"b": 1}}, "a.0") is None
+def testget_path_index_into_non_sequence_is_none() -> None:
+    assert get_path({"a": {"b": 1}}, "a.0") is None
 
 
-def test_get_path_missing_key_is_none() -> None:
-    assert _get_path({"a": 1}, "a.b.c") is None
+def testget_path_missing_key_is_none() -> None:
+    assert get_path({"a": 1}, "a.b.c") is None
 
 
-def test_get_path_traverse_scalar_is_none() -> None:
-    assert _get_path({"a": 1}, "a.b") is None
+def testget_path_traverse_scalar_is_none() -> None:
+    assert get_path({"a": 1}, "a.b") is None

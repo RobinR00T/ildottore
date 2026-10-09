@@ -77,7 +77,9 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   in `exit_codes.py`: no side effects, table-tested.
 - All terminal output honors the central redactor; secrets/PII never printed (`AGENTS.md §2`).
   (As built, for errors, `cli/app._masked`: URL passwords are masked first, on the whole text.
-  A 64-hex value is then kept readable in exactly two cases: an evidence file name
+  Besides the existing part of an absolute path, a path that exists, written whole, is kept
+  out of the entropy rule (A-38); the name of a file that does not exist is not (OD-25).
+  Outside one, a 64-hex value is kept readable in exactly two cases: an evidence file name
   (`<sha256>.json`), and a digest the error itself carries as one the tool computed (the
   `digests` attribute: on a scope checksum mismatch the digest computed from the body; the
   `checksum:` value the operator typed is not quoted at all; on a tamper refusal the hash the
@@ -88,13 +90,33 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   token character of the entropy rule (`[\w+/=-]`) is glued to it where it matched; what the
   loader quotes from inside the file goes through the redactor (the name is the spec tree
   author's choice, the operator's or an installed pack's, not a value of the run). A kept token
-  that is part of a credential the process registered, from 8 characters, prints as
+  that holds 8 consecutive characters of a credential the process registered prints as
   `«REDACTED:credential»` (one that contains a registered credential loses it to the value rule
   first), and every other 64-hex value goes through the redactor. An error
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
   redactor alone caught such a value only by its entropy; the `fleet --judge` mismatch follows
-  the same rule.)
+  the same rule. A registered credential split by control or format characters (Unicode Cf), or
+  by U+FFFD (what half a character in a reply reads as, u04 A-47), is masked whole by the
+  redactor itself (`redact_text`, since PR #57; u01 A-32), with the digest of the unsplit
+  credential, on the terminal as in the reports: it used to print in two readable halves. Last,
+  after every mask, `_masked` writes every control character out (`redactor.visible_controls`:
+  C0 and DEL as control pictures, C1, U+2028, U+2029, lone surrogates and format characters
+  (Unicode Cf, since PR #51) as Python escapes; U+FFFD, which shows, is printed as it is). The
+  other terminal paths that print what a pack, a report or a target wrote do the same
+  (`Redactor.for_terminal` where the text is redacted), the `rich` lines of a run are printed as
+  plain, unwrapped text, the `--compare` table prints target ids as text, and `diff`/`calibrate`
+  refuse a report spec id that is not a spec id: no line of those paths starts with such text,
+  except a `replay` line, which starts with an attempt or probe id read from the evidence tree.
+  The same paths write the second `#` of `##<letters>[` as `\x23`, the shape of the commands a
+  runner reads anywhere in a line (GitHub's legacy `##[cmd]`, Azure Pipelines'
+  `##vso[area.event]`), and so do the off-universe values `coverage` and the run's summary print
+  as their `repr`, the `-vv` plan's reasons for a refused spec (a pack's `requires_policy`; a
+  skipped or not seeded one's too, defensively) and the scope digests the resume note reads back
+  from the run store. The JSON outputs escape every control character (`fingerprint` escapes DEL
+  and non-ASCII inside pydantic's own output) and keep every value as it is, so printed to a CI
+  log they can still carry such a command (OD-20). This does not cover the operator's own values
+  in the plan lines.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces
@@ -389,6 +411,28 @@ beside the target digest or not a positive whole number (an infinity or a list w
 and exit 1, a negative spend was taken as spent, `true` resumed at one run, a missing count at
 the invocation's default).
 
+**A-38 A CLI error names the operator's existing file, and reads the rest of the message as before
+(added 2026-10-07).** Besides the existing part of an absolute path up to the first whitespace, a
+quote, a bracket, a comma or a semicolon (main's rule, with main's `Path.exists` calls and no cap),
+`_masked` keeps out of the entropy rule a path that exists written whole: absolute, or relative to
+the working directory as one word; read directory by directory, so a directory holding a space or a
+bracket is read whole; starting and ending between characters the entropy rule does not join into a
+token, so every other token is judged exactly as before. Two kept parts that only touch are judged
+apart. A kept text holding 8 consecutive characters of a registered credential prints as
+`«REDACTED:credential»`, as every kept token does (§6), and a whole path holding one is not kept.
+A report named after a commit SHA read `«REDACTED:high_entropy»` before a colon, relative, or under
+a directory with a space, and `dottore diff` printed the key in an incomplete report's reason that
+`calibrate` masked (audits of PR #61).
+Three versions that kept more (the name an `OSError` quotes, the existing directories of a missing
+path through a space, a `//` or a `/./`) printed keys that main masked and were withdrawn (OD-25;
+pre-commit, delta and pre-merge audits). `diff`'s incomplete-report refusal goes through `_masked`.
+The whole-path walk costs at most 1,024 filesystem lookups and 65,536 checks, and no walk starts
+inside what another already read; main's rule walks each distinct token once and holds no path
+between tokens (a 1 MiB message that cost 524,032 lookups costs 2,048; held, the paths took 1.3 GiB
+where main took 21 MiB). Main's rule stopped at a cap printed a value main masked (audit of the
+cap). Checked by `tests/cli/test_masked_paths.py`, and by a differential fuzz against main:
+no key main masked printed, in 120,000 messages.
+
 **A-42 A run parses each target file once (added 2026-10-07).** `dottore run` and `dottore
 fingerprint` parse a target file once per time it is named (`wiring.read_target_file`), and the
 target the scope authorizes, its route (mock or live), its `mock_scenario`, the target handed to the
@@ -430,8 +474,8 @@ pinned:
   and grants, and the target's `id`, which several refusals name (two files with one id,
   `--hardened` on a live target, a target the scope does not authorize);
 * a key the operator typed is part of the location and is printed as pydantic renders it (a
-  `true:` key as `1`), control characters included, so a key holding a line break still splits
-  the message until the terminal writes them out (#51);
+  `true:` key as `1`), its control and format characters written out, as #51 writes them in every
+  error (§6);
 * a file with both blocks wrong is refused on its `capabilities` block alone;
 * only what pydantic cannot read as the field's type is refused: `tools: 'off'` reads as false,
   `temperature: '0.5'` as 0.5, `temperature: true` as 1.0, and `temperature` and `top_p` have no
@@ -484,10 +528,10 @@ and said so rather than pinned (pre-commit, delta and pre-merge audits):
 * an unknown key is printed as the location, as A-45 says of any key: one that is not text as
   pydantic renders it (`on:` as `1`, `off:` as `0`, `~:` as `None`), an empty key or one holding
   half a character (a lone surrogate) as `<root>` (the latter with `Input should be a valid
-  string`), and control characters as written until #51 writes them out; a credential pasted as a
-  key is masked as any error text is (a registered credential and the known key shapes first, then
-  the entropy rule), and the entropy rule leaves a low-entropy one readable (about 1 in 20 random
-  64-hex keys, and the tests' repeated value);
+  string`), and control characters written out, as #51 writes them in every error (§6); a
+  credential pasted as a key is masked as any error text is (a registered credential and the known
+  key shapes first, then the entropy rule), and the entropy rule leaves a low-entropy one readable
+  (about 1 in 20 random 64-hex keys, and the tests' repeated value);
 * unknown keys are listed on the one line as `validation_problems` lists any block's problems
   since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 keys give
   a line of 1,040 bytes, where `sampling_defaults` on `2f6201a` printed 789 KB);
@@ -653,12 +697,13 @@ model. Now `_read_target_yaml`, which every reader goes through, checks the top 
 validation: endpont: Extra inputs are not permitted` (`model: Input should be a valid string`; a key
 that is not text: `1: Keys should be strings`), never the value:
 * the keys are the fields of `Target` (`id`, `type`, `name`, `provider`, `endpoint`, `model`,
-  `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`) and
-  `mock_scenario`; the model is built from `Target`, and `_TEXT_FIELDS` is its `str | None` fields,
-  so a field added there is a key the file may hold, as text when it is text, and a test checks that
+  `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup` and,
+  since #87 landed, `websocket`) and `mock_scenario`; the model is built from `Target`, and
+  `_TEXT_FIELDS` is its `str | None` fields, so a field added there is a key the file may hold,
+  as text when it is text, and a test checks that
   `load_target` hands every field of `Target` to it (a field it did not read would be accepted and
   dropped); another test passes each key through the check. The pre-merge audit found that a list
-  kept by hand refused the `websocket` field #87 adds: 35 tests failed on the two merged, none once
+  kept by hand refused the `websocket` field #87 added: 35 tests failed on the two merged, none once
   the model was built from `Target`;
 * `name`, `provider`, `endpoint`, `model`, `auth_ref` and `transport` are text (`StrictStr`, so
   `!!binary` bytes are refused too) or absent: the key with nothing after it, `null` or `~`,
@@ -706,8 +751,8 @@ clause, and said so rather than pinned:
 * a key is printed as the location, as A-45 says of any key: one that is not text as pydantic
   renders it (`on:` as `1`, `~:` as `None`, a `!!binary` key as `b'...'`, a number too long to
   write out as `<unprintable int object>`), an empty key, or one holding a lone surrogate, as
-  `<root>`, control characters as written until #51 writes them out (so a line break in a key
-  splits the one line, and the second may start with anything), and a credential pasted as a key
+  `<root>`, its control and format characters written out since #51 (before, a line break in a key
+  split the one line, and the second could start with anything), and a credential pasted as a key
   is masked only by the redactor's own rules;
 * unknown keys are listed on the one line as `validation_problems` lists any block's problems
   since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 unknown keys
@@ -740,8 +785,8 @@ validations, and one checks that loading 2,000 bad findings peaks no higher in `
 reading their JSON, which caught two checks of every finding by another route that got past the
 count (delta audit). A check by another route that keeps pydantic's exceptions without listing their
 errors is seen by neither (457 and 375 MiB on the same report, pre-merge audit); that gap is written
-here, not tested. The path is absolute with no colon after it, so the CLI keeps it readable, except
-where it cuts every message's path short (a path holding a space or one of `()[],;'"`, until #70)
+here, not tested. The path is absolute with no colon after it, so the CLI keeps it readable, a path
+holding a space or one of `()[],;'"` too since #70 (A-38), which before cut it short
 (`tests/cli/test_diff_report_validation.py`: 24 of its 31 tests fail on `de392e1`, 23 on the defect
 and the one that counts the validations because the helper it counts is not there; of the 7 that
 pass, 6 check that the redactor leaves each test value readable, so that the CLI tests can fail on
@@ -753,14 +798,16 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
   while an empty or zero one (`0`, `""`, `[]`, `false`, `null`) reads as no summary; `<path>:
   expected a JSON run report or a list of findings` has a colon after the path as typed; and the
   refusals of a report with several targets or two findings for one spec, and of two reports about
-  different targets, quote the target ids and the spec id the reports hold;
+  different targets, quote the target ids and the spec id the reports hold; and a finding whose
+  `spec_id` is not a spec id (#51) is refused as `the report <absolute path> holds '<id>', which is
+  not a spec id; is this a run report?`, its control and format characters written out;
 * a key a finding does not know is part of the place and goes through the CLI's redactor with the
   rest of the line: what the redactor recognises in it (an email, a known token format, a labelled
   secret, a run of high enough entropy) is masked, while a key of hex digits often is not, and the
   mask can take the `findings.0.` before it or the `: ` after it, while a short password-like key
-  (`hunter2`) prints as written; it is printed as pydantic renders it, control characters included,
-  so a key holding a line break still splits the line until the terminal writes them out (#51), and
-  whole until #76 cuts a place past 300 characters (a key of 1 MiB prints 1 MiB);
+  (`hunter2`) prints as written; it is printed as pydantic renders it, its control and format
+  characters written out since #51 (before, a key holding a line break split the line), and cut
+  past 300 characters since #76 (before, a key of 1 MiB printed 1 MiB);
 * the finding that fails still builds all of its own errors before 20 are listed, as on the base
   (one finding with a million keys it does not have peaks over 1 GiB on both, by an amount that
   varies from run to run, and the base also printed 195 MB of error text);
@@ -786,6 +833,19 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-25** the name of a file that does not exist in a CLI error (a mistyped report named after a
+  commit SHA): print it, or keep it masked. Built reversibly (2026-10-07, A-38): masked, as on main,
+  its existing directories printed up to the first whitespace, a quote, a bracket, a comma or a
+  semicolon. Printing the name an `OSError` carries when it looks like a file's (an extension, a
+  directory that exists) printed an `sk-ant-` key given as `<key>.json` and an Azure connection
+  string in the pre-commit audit. Alternatives: print the directory and the extension and mask the
+  stem unless it is a 40- or 64-hex run (a hex key typed as a path would then print); or print a
+  name only when it is the command line's own argument.
+
+- **OD-20** (open, 2026-10-07): a JSON output printed to a CI log can still carry a runner's
+  log command (`##[cmd]`, `##vso[`), because JSON keeps every value as it is (§6). A = leave
+  it, documented; B = write the `[` of `##<letters>[` as `\u005b` in every JSON output, which
+  leaves each parsed value identical (proposed). See `00-INDEX.md`.
 - **OD-23** (shared with u09, 2026-10-07): what `run -sV` / `-A` and `dottore fingerprint` do
   when one probe's reply comes back refused. Built reversibly as option A: the probe fails, a
   `warning:` line on stderr names it (never silenced by `-q`), the fingerprint line ends

@@ -103,8 +103,7 @@ def test_cleartext_http_denied_except_loopback() -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "ws://api.example.com/v1/x",
-        "wss://api.example.com/v1/x",
+        "ws://api.example.com/v1/x",  # cleartext WebSocket off loopback, like http
         "ftp://api.example.com/v1/x",
         "file:///etc/passwd",
         "//api.example.com/v1/x",  # scheme-relative
@@ -116,12 +115,29 @@ def test_only_allowlisted_schemes_pass(url: str) -> None:
 
     The gate used to refuse the literal scheme ``http`` off-loopback and let everything else
     through to the host/path check, so these all passed ``is_allowed``. Nothing in the tool
-    speaks them today, which made the invariant rest on adapter implementation rather than on
-    the gate, and default-deny has to be the gate's own answer.
+    spoke them then, which made the invariant rest on adapter implementation rather than on
+    the gate, and default-deny has to be the gate's own answer. ``wss`` is spoken since the
+    WebSocket adapter and is allowlisted like ``https``; cleartext ``ws`` stays loopback-only.
     """
 
     allowlist = EndpointAllowlist([Endpoint(host="api.example.com", path_prefixes=["/v1"])])
     assert allowlist.is_allowed(url) is False
+
+
+def test_websocket_schemes_follow_the_http_rules() -> None:
+    """``wss`` to an allowlisted host passes (default port 443); ``ws`` only to loopback."""
+
+    remote = EndpointAllowlist([Endpoint(host="api.example.com", path_prefixes=["/v1"])])
+    assert remote.is_allowed("wss://api.example.com/v1/chat") is True
+    assert remote.is_allowed("wss://api.example.com/admin") is False  # path still gated
+    assert remote.is_allowed("ws://api.example.com/v1/chat") is False  # cleartext off loopback
+    pinned = EndpointAllowlist([Endpoint(host="api.example.com:443", path_prefixes=["/v1"])])
+    assert pinned.is_allowed("wss://api.example.com/v1/chat") is True  # implicit 443 matches
+    assert pinned.is_allowed("wss://api.example.com:8443/v1/chat") is False
+    local = EndpointAllowlist([Endpoint(host="127.0.0.1:8765", path_prefixes=["/ws"])])
+    assert local.is_allowed("ws://127.0.0.1:8765/ws/chat") is True
+    assert local.is_allowed("ws://127.0.0.1:8766/ws/chat") is False
+    assert local.is_allowed("ws://127.0.0.1/ws/chat") is False  # implicit port 80, not 8765
 
 
 def test_percent_encoded_dot_segments_are_refused() -> None:

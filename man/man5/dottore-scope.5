@@ -53,7 +53,9 @@ an endpoints allowlist and >=1 identities.
 .TP
 .B endpoints
 Host plus path_prefixes pairs (default-deny). Plain http is permitted only to loopback
-(localhost, 127.0.0.1, ::1); everything else must be https. A host with no port authorizes
+(localhost, 127.0.0.1, ::1); everything else must be https. A WebSocket target follows the
+same rule: wss is authorized like https, cleartext ws only to loopback, and a redirect at the
+upgrade is never followed. A host with no port authorizes
 every port on it; write host:port to pin one, and [::1]:8080 (brackets) for an IPv6 literal.
 A request path carrying an encoded slash or backslash (%2f, %5c), a literal backslash, a
 double encoding (%25), a ";" path parameter (literal or %3b), a %uXXXX escape, an overlong or
@@ -85,7 +87,7 @@ Whether the CLI should accept a pack is an open decision.
 .nf
 id: my-chatbot          # must match a target id in the scope's targets
 type: chatbot           # model | chatbot | agent | rag | api
-provider: openai        # openai (and openai-compatible) | anthropic | mcp | rest
+provider: openai        # openai (and openai-compatible) | anthropic | mcp | websocket | rest
 endpoint: "https://api.example.com/v1/chat/completions"
 model: "gpt-4o"
 auth_ref: "env://MY_API_KEY"
@@ -97,9 +99,10 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 and
 .B type
 are required; the rest are needed only for a live scan. The file holds these keys and name,
-transport, command, seeded_setup and mock_scenario, and no others: any other key, or a name,
-provider, endpoint, model, auth_ref or transport that is not text, is refused before anything is
-sent, naming the file and the key. Quote a model id YAML reads as a number, a date or a boolean.
+transport, command, seeded_setup, websocket and mock_scenario, and no others: any other key, or
+a name, provider, endpoint, model, auth_ref or transport that is not text, is refused before
+anything is sent, naming the file and the key. Quote a model id YAML reads as a number, a date or
+a boolean.
 A key that only holds an anchor for a << merge is refused like any other: write the merged map
 inline.
 .B capabilities
@@ -110,14 +113,16 @@ capabilities line with nothing under it is null, so keys below it that lost thei
 top-level keys, which are refused as any other unknown key is.
 .B sampling_defaults
 is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
-their own sampling.
+their own sampling, which the openai and anthropic adapters send (a REST template and a
+WebSocket target have no field for it).
 .B auth_ref
 accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
 refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is
 refused too, and the error prints "a literal value (not shown)" instead of quoting it. The
-secret is read at send time and never stored. A provider other than openai, anthropic or mcp routes to the generic REST
-adapter. An MCP target sets provider "mcp"; over the wire it gives an endpoint, or as a
-local subprocess it sets transport "stdio" and a command argv (authorized via scope commands).
+secret is read at send time and never stored. A provider other than openai, anthropic, mcp or
+websocket routes to the generic REST adapter. An MCP target sets provider "mcp"; over the wire
+it gives an endpoint, or as a local subprocess it sets transport "stdio" and a command argv
+(authorized via scope commands).
 .PP
 A
 .B type
@@ -149,6 +154,22 @@ to the tool carrying the scene is inconclusive (setup_not_reached). The block is
 type: model target, which gets the scene in-band, and on an unknown key, a name both mapped
 and granted, or a run_token that is not 8 to 64 letters, digits, _ or -. Worked file:
 examples/target.app.yaml.
+.PP
+A chat endpoint over a WebSocket is provider websocket, with a ws:// or wss:// endpoint (no
+query, no user:password) and a websocket block declaring its wire shape: handshake.send (a JSON
+template; {{token}} is the credential auth_ref resolves to) with an optional expect (path,
+equals); message.send with {{prompt}} (or {{messages}} for the whole history); response with
+text_path, final_path and final_value, type_path and ignore_types, error_path, usage_path,
+tool_calls_path, model_path and timeout_seconds (per turn); session.start with an optional
+expect; reconnect.max_attempts (0 to 5: the adapter's own re-dials inside one send, which
+dottore run does not use, since its runner retries a socket that fails to open, each dial a
+debited request); headers (on the upgrade) and vars (plain values the templates use as
+{{name}}, never secrets). A key that is not text (on, ~, 5) or a value JSON cannot hold (an
+unquoted date, a set, binary data, NaN, half a character) anywhere in the block is refused when
+the file is loaded, and so is a ws:// or wss:// endpoint on any other provider. One connection
+per conversation; every frame is kept in the evidence with the credential as its placeholder.
+Worked file:
+examples/target.websocket.yaml; reference in docs/MANUAL.md section 4.2.
 .SH "FLEET FILE"
 .nf
 version: "1"

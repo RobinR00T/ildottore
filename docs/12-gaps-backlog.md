@@ -66,7 +66,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 
 | Gap | Note |
 |-----|------|
-| Streaming pre-moderation leakage | ⬜ needs a streaming adapter; inherently timing-dependent (tension with the reproducibility thesis), so deferred deliberately |
+| Streaming pre-moderation leakage | ⬜ the WebSocket adapter (2026-10-07) reads a streamed reply frame by frame but scores the assembled text; a per-fragment oracle is inherently timing-dependent (tension with the reproducibility thesis), so the spec stays deferred deliberately |
 | Timing / token-probability side-channels | ⬜ infra-dependent and non-reproducible by nature; out of scope for a deterministic scanner |
 | Pre-run cost estimate | ✅ **built** (2026-09-03): `dottore run --estimate` prints requests (specs x runs x mutations x turns) + a rough token gloss, no sends. No per-model pricing baked in (multiply by your rate) |
 | Resume that retries errored attempts (F11) | ✅ **built** (2026-10-04): a `--resume` sends again, under the same attempt id, each attempt that ended in an environment error, and scores one attempt per id; the run store journals every attempt artifact as it is written (schema v4), so a resume interrupted mid-spec can be resumed again (`docs/09 §2`) |

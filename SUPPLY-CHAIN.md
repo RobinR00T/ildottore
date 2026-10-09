@@ -7,9 +7,10 @@ others. This is the policy; the enforcement lives in CI and the dependency confi
 
 Deliberately small, and permissive-licensed with one recorded exception (below):
 
-- `pydantic`, `pyyaml`, `jsonschema`, `httpx`, `jinja2`, `typer`, `rich`, plus `anyio`, which
-  `httpx` already pulls in and which `pyproject.toml` lists only to set a security floor
-  (`>=4.14.2`).
+- `pydantic`, `pyyaml`, `jsonschema`, `httpx`, `jinja2`, `typer`, `rich`, `websockets` (the
+  client of the `provider: websocket` adapter, BSD-3-Clause, no dependencies of its own; added
+  2026-10-07 at `>=14.0`), plus `anyio`, which `httpx` already pulls in and which
+  `pyproject.toml` lists only to set a security floor (`>=4.14.2`).
 
 No heavyweight or native-extension dependency is pulled for the core. The multimodal image renderer
 is **pure stdlib** (`zlib` + a bitmap font, no Pillow), on purpose, so a scan has no imaging
@@ -28,7 +29,9 @@ respx, coverage, ruff, mypy, import-linter and two type-stub packages. `bandit` 
   modified MPL-covered files. Il Dottore neither vendors nor modifies `certifi`; pip installs it
   unmodified beside the tool. The exception is accepted on that basis and recorded here because
   it is not literally "permissive only"; vendoring or patching `certifi` would need a fresh
-  review. Re-check the closure when a runtime dependency is added or bumped.
+  review. Re-check the closure when a runtime dependency is added or bumped. Re-checked on
+  2026-10-07 for `websockets` 17.2: BSD-3-Clause, `Requires-Dist` empty, so the closure above
+  is unchanged.
 - **Weekly, grouped Dependabot.** Python deps and the pinned GitHub Actions are scanned weekly and
   arrive as grouped PRs (`.github/dependabot.yml`: Python split into a runtime group and a dev
   group, Actions in one). Nothing auto-merges.

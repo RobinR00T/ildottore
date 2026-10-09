@@ -4,8 +4,10 @@ Public surface: the shared :class:`~ildottore.adapters.base.BaseAdapter` plumbin
 (allowlist gate, retry/timeout, logprob mapping, redaction) and the three
 concrete adapters - :class:`~ildottore.adapters.openai.OpenAIAdapter`,
 :class:`~ildottore.adapters.anthropic.AnthropicAdapter`, the long-tail
-:class:`~ildottore.adapters.rest.RestAdapter`, and the read-only
-:class:`~ildottore.adapters.mcp.MCPAdapter` (Model Context Protocol servers).
+:class:`~ildottore.adapters.rest.RestAdapter`, the read-only
+:class:`~ildottore.adapters.mcp.MCPAdapter` (Model Context Protocol servers) and the
+template-driven :class:`~ildottore.adapters.websocket.WebSocketAdapter` (a chat endpoint
+over a WebSocket).
 Each implements ``shared.protocols.TargetAdapter`` and enforces u01's default-deny
 endpoint allowlist **before** any egress (contract §2/§4).
 
@@ -28,6 +30,7 @@ from ildottore.adapters.base import (
 from ildottore.adapters.mcp import MCPAdapter
 from ildottore.adapters.openai import OpenAIAdapter
 from ildottore.adapters.rest import RestAdapter, RestTemplate
+from ildottore.adapters.websocket import WebSocketAdapter
 
 __all__ = [
     "AdapterEnvError",
@@ -41,5 +44,6 @@ __all__ = [
     "RestAdapter",
     "RestTemplate",
     "RetryConfig",
+    "WebSocketAdapter",
     "map_logprobs",
 ]
