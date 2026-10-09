@@ -42,6 +42,7 @@ from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
 from ildottore.policy.errors import PolicyError
 from ildottore.redactor import (
+    CREDENTIAL_MASK,
     Redactor,
     mask_url_passwords,
     overlaps_known_secret,
@@ -179,8 +180,8 @@ def _masked(exc: BaseException) -> str:
     They also quote what a third party wrote, a spec file name of a pack included, and printed
     its control characters raw: a file named ``x\\n::error ...`` made a line GitHub Actions
     reads as a workflow command (pre-merge audit of PR #49). A registered credential split by
-    control characters is masked whole first, and the control characters are written out last,
-    after every mask (``visible_controls``).
+    control characters is masked whole by the redactor (u01 A-32), and the control characters
+    are written out last, after every mask (``visible_controls``).
     """
 
     # Every rule but the entropy fallback runs on the whole text first, labels and context
@@ -197,27 +198,44 @@ def _masked(exc: BaseException) -> str:
     carried = [
         d for d in getattr(exc, "digests", ()) if isinstance(d, str) and _SHA256.fullmatch(d)
     ]
+    # A spec file a load refusal names (`spec_files` on SpecLoadError) is a relative path to an
+    # entry under a spec root, a name whoever wrote the tree chose (the operator or a pack's
+    # author), not a value of this run. It is kept only with no token character of the entropy
+    # rule (`[\w+/=-]`) on either side: keeping the tail of a longer token would leave its head
+    # on its own, short enough to pass the rule's length floor in clear.
+    names = sorted(
+        {re.escape(n) for n in getattr(exc, "spec_files", ()) if isinstance(n, str) and n},
+        key=len,
+        reverse=True,
+    )
     # URL passwords first, on the whole text, so a 64-hex password is never kept as a digest.
-    # A kept token that overlaps a registered credential is masked: `sk-<64 hex>` and
-    # `<64 hex>-v2` contain one (re-audit of the digest change).
-    text = plain.redact_text(mask_url_passwords(plain.mask_split_credentials(str(exc))))
+    text = plain.redact_text(mask_url_passwords(str(exc)))
     paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
     keep = re.compile(
         r"(\b(?:"
         + "|".join([_ARTIFACT_NAME, *carried])
         + r")\b"
         + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
+        + "".join(f"|(?<![\\w+/=-]){n}(?![\\w+/=-])" for n in names)
         + ")"
     )
-    parts = keep.split(text)
-    return visible_controls(
-        "".join(
-            part
-            if keep.fullmatch(part) and not overlaps_known_secret(part.removesuffix(".json"))
-            else entropy.redact_text(part)
-            for part in parts
-        )
-    )
+
+    def kept(token: str) -> str:
+        # A kept token that overlaps a registered credential is masked: `sk-<64 hex>` and
+        # `<64 hex>-v2` contain one (re-audit of the digest change). Outright, because the
+        # entropy rule passes an id-shaped spec file name and a low-entropy hex run.
+        return CREDENTIAL_MASK if overlaps_known_secret(token.removesuffix(".json")) else token
+
+    # What is kept is decided where the pattern matched, in context: re-matching each piece of
+    # a split on its own let a piece equal to a name pass with the token it was glued to before
+    # it (pre-commit audit of the spec file names).
+    shown: list[str] = []
+    end = 0
+    for match in keep.finditer(text):
+        shown += [entropy.redact_text(text[end : match.start()]), kept(match.group(0))]
+        end = match.end()
+    shown.append(entropy.redact_text(text[end:]))
+    return visible_controls("".join(shown))
 
 
 @app.command()
@@ -327,8 +345,9 @@ def run(
         str | None,
         typer.Option(
             "--resume",
-            help="Finish a halted run: its id. Answered attempts are not re-sent; those that "
-            "ended in an environment error are sent again (not one a retry would repeat).",
+            help="Finish a halted run: its id. Answered and judged attempts are not re-sent; "
+            "those that ended in an environment error (not one a retry would repeat), and "
+            "replies the halt stored before they were judged, are sent again.",
         ),
     ] = None,
     resume_unverified: Annotated[
@@ -613,6 +632,19 @@ def fingerprint(
     except (PolicyError, AdapterError, ValueError, OSError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    # A probe whose reply came back refused is recorded in the fingerprint and said here, and
+    # the command still prints what came back (OD-23); it used to exit 3 on one such reply. When
+    # every probe was refused there is nothing to print, and a script must not read an empty
+    # fingerprint as a result: exit 3 (delta audit).
+    probes = run_mod.fingerprint_probe_count()
+    empty = run_mod.every_probe_failed(fp, probes)
+    warning = run_mod.probe_failure_warning(
+        fp.target_id, fp, probes=probes, severity="error" if empty else "warning"
+    )
+    if warning is not None:
+        typer.echo(warning, err=True)
+    if empty:
+        raise typer.Exit(ExitCode.ERROR)
     try:
         shown = _ascii_json(fp.model_dump_json(indent=2))
     except ValueError:  # a lone surrogate (a target id written `"t\ud800"`), not JSON to pydantic

@@ -105,7 +105,10 @@ printed on 2026-10-05 for an offline target with `mock_scenario: comprehending` 
   context-size field. When the carrier layer recovered at least one carrier, the key
   `effective_mutators` lists them best-first: it is the one key the planner reads.
 - `guardrails`: the profile the guardrail layer emits (`input_filter`, `output_filter`,
-  `refusal_style`, `moderation_latency_ms`).
+  `refusal_style`, `moderation_latency_ms`). The latency is the figure the probe reply's `usage`
+  reports, read only when it is a finite, non-negative number a float can hold, and `null`
+  otherwise (since 2026-10-07: a 400-digit integer there made `fingerprint` and `run -sV` exit
+  1, and an infinity, a NaN or a negative figure was recorded).
 - `evidence`: `{layer, signal, weight}` per layer hit. The carrier-comprehension scores travel as
   the `carrier` entry.
 - `spoofing_flags`: see below.
@@ -139,7 +142,8 @@ target answered every attributing probe alike (the `non_discriminating_target` f
 envelope has no `model` field. The statistical layer sent its three probes and emitted nothing,
 because they got the same reply.
 
-**Spoofing flags.** Two are emitted:
+**Spoofing flags.** Three are emitted (the third is not about spoofing, it says the pass was
+partial):
 
 - `self_report_conflicts_with_statistical`: a self-report names a family the statistical layer
   disagrees with; the self-report is then left out of the family tally.
@@ -155,6 +159,39 @@ because they got the same reply.
   offline scenario trips it (`bare`, `vulnerable`, `hardened`, and `comprehending`, which gives
   every non-carrier probe the same "I do not understand" reply); before the flag, a constant mock
   was named `meta-llama` at 0.67 and a refuse-all target `llama-3-8b` with a 2023-03 cutoff.
+- `probes_failed`: one or more probes got **no usable reply**: the reply came back and the
+  adapters refused it, an environment failure a retry would repeat (`retryable = False`: over
+  4 MiB, an encoding they do not decode, and `ResponseTooDeep`, a reply nested more than 100
+  levels deep, which has the same marker), as an attack attempt would be
+  inconclusive. That probe's layer gives no evidence from it, never evidence from an empty
+  reply: a missing guardrail nudge leaves `guardrails` empty (unknown, not "no filter"), a
+  missing carrier is left out of `carrier_comprehension` (unmeasured, not 0.0), and one missing
+  statistical reply drops the statistical layer (its vector needs all three). With refused
+  attributing replies the `non_discriminating_target` check cannot be completed (a refused
+  carrier does not count: the check never reads the carriers): when fewer than three
+  attributing replies are left, or the ones left are all alike (the refused ones may have
+  varied), the text layers' evidence is not counted, as for a constant target but without that
+  flag. Measured against the same probes answered with an empty reply (12,276 passes: every
+  subset of the 10 attributing sends of the 12 corpus targets), a partial pass never names
+  more: identical when no statistical probe is refused, otherwise `unknown` or the same family
+  with lower confidence (2,344 of 10,752 differ, none the other way). Against a full pass,
+  losing a tell can still break a tie the full pass leaves `unknown`, or drop a self-report and
+  with it `self_report_conflicts_with_statistical`, as a bland reply would; a refusal gives a
+  target no lever a bland reply does not. The confidence is computed from the evidence that
+  came back and is not discounted for what is missing: the flag is the mark. Every other probe
+  is still sent and counted, so a pass still costs its 17 requests. The engine adds an evidence
+  entry
+  `{"layer": "engine", "signal": "probe_errors=[\"metadata/self_id: ResponseTooLarge\"]",
+  "weight": 0.0}` (layer, probe and error class, never the error's text, which can quote the
+  reply), `run -sV` warns on stderr and ends the fingerprint line with "[N of 17 probes got no
+  usable reply]", and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a
+  timeout, a refused connection, after the retries) still stops the pass with its cause, as
+  every other error does (a refusal by the scope, a 200 that is not JSON, the request ceiling):
+  the target is not answering, and isolating that too made a target that never replies cost
+  25.5 minutes of probing (three 30 s timeouts per probe) before an attack that failed the
+  same way. Before PR #68, one
+  refused reply stopped `run -sV` with exit 3 before any attack, after one request, while
+  without `-sV` it failed one attempt (OD-23).
 
 **Attribution rules** (each one closes a case where a target was named without a signal, found
 by the audit of the fingerprint that followed the full audit of 2026-10-03, and by the
@@ -219,8 +256,11 @@ fragments, so a version is named only from what the model says about itself (for
 "sonnet" in its self-description), the weakest and most easily spoofed channel; otherwise the
 version is `null`.
 
-- Every fingerprint run is **reproducible** (fixed seeded probe battery, evidence stored like
-  any attempt: `docs/07`).
+- Every fingerprint run is **reproducible offline** (fixed seeded probe battery: a replay of
+  the same replies gives the same fingerprint). Live, it is as deterministic as the target is
+  at temperature 0, which every probe pins (`PROBE_SAMPLING`); the seed is metadata and is not
+  sent. `run -sV` stores its probes as evidence (`probes/`); a standalone `dottore fingerprint`
+  stores none.
 - **Signature DB** is a versioned data pack, not code: it ships in-repo under
   `src/ildottore/fingerprint/signatures/`, validated by `fingerprint/signatures.py` on load, so
   new models = update the signature pack, not the engine. Ships with a self-test corpus.
@@ -235,7 +275,8 @@ What the planner does today, with and without a fingerprint:
    `memory`, `logprobs`, `multi_identity` and the rest.
 2. **Orders each spec's mutators by carrier comprehension** (built, see the introduction above
    §1): the carriers the target recovered move to the front, in the spec's declared order; the
-   rest follow, in declared order. It selects no spec and drops no variant.
+   rest follow, in declared order. It selects no spec and drops no variant. Seen over the wire
+   once, against a local 3B model (`docs/16` §1, 2026-10-07).
 3. **Does not set baseline expectations.** The design was to record the family's known
    resistance and score a result relative to it. That half is the dead `_baseline_resistance`
    hook described above §1: nothing writes the guardrails key it reads, and nothing reads the
@@ -272,4 +313,8 @@ dottore run --suite owasp:llm ...                        # no -sV ⇒ no tailori
 
 - Signature DB ships a labeled corpus; CI measures **family precision/recall** and
   **version top-1/top-3 accuracy**, gated so a signature-pack update can't regress recognition.
-- Determinism: same target + seed ⇒ same fingerprint verdict.
+- Determinism: every probe goes out at temperature 0 with a reply capped at 512 tokens
+  (`PROBE_SAMPLING`), so a target that is deterministic at temperature 0 gives the same verdict
+  twice. The seed is folded into each request's metadata and is not sent. Three layers used to
+  send their probes with no temperature, and a live server sampled them at its default (1.0 on
+  Ollama); the first live pass found it (`docs/16` §1, 2026-10-07).

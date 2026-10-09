@@ -19,13 +19,13 @@ from __future__ import annotations
 import json
 
 from ildottore.fingerprint.attribution import encode_signal
-from ildottore.fingerprint.base import ProbeContext, seed_for
+from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, seed_for
 from ildottore.fingerprint.signatures import SignaturePack
+from ildottore.shared.amounts import is_amount
 from ildottore.shared.models import (
     FingerprintEvidence,
     ModelRequest,
     ModelResponse,
-    Sampling,
 )
 from ildottore.shared.protocols import TargetAdapter
 
@@ -124,11 +124,17 @@ class GuardrailLayer:
 
 
 def _latency_ms(response: ModelResponse) -> float | None:
-    """Extract a moderation latency if the adapter reported one; else ``None``."""
+    """Extract a moderation latency if the adapter reported one; else ``None``.
+
+    The figure is the target's, so it is read only when it is a finite, non-negative number a
+    float can hold: a 400-digit integer made ``float()`` raise ``OverflowError`` and
+    ``dottore fingerprint`` and ``run -sV`` exit 1, and an infinity, a NaN or a negative
+    figure was recorded as a latency (2026-10-07).
+    """
 
     usage = response.usage or {}
     raw = usage.get("moderation_latency_ms")
-    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+    if is_amount(raw):
         return float(raw)
     return None
 
@@ -139,4 +145,8 @@ def _seeded(request: ModelRequest, target_id: str, probe_name: str) -> ModelRequ
     seed = seed_for(target_id, probe_name)
     meta = dict(request.metadata or {})
     meta["seed"] = seed
-    return request.model_copy(update={"metadata": meta, "sampling": Sampling()})
+    # ``PROBE_SAMPLING`` (temperature 0, a capped reply), as every probe: an empty ``Sampling()``
+    # sent no temperature, and a live Ollama sampled these probes at its default of 1.0
+    # (first live ``-sV`` pass, 2026-10-07).
+    sampling = request.sampling or PROBE_SAMPLING
+    return request.model_copy(update={"metadata": meta, "sampling": sampling})

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
+
+from pydantic import ConfigDict, StrictStr, ValidationError, create_model
 
 from ildottore.adapters import (
     AnthropicAdapter,
@@ -39,6 +42,7 @@ from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
+from ildottore.core.execute import default_is_env_error
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
@@ -55,12 +59,15 @@ from ildottore.policy import (
     load_scope,
     load_scope_with_digest,
 )
+from ildottore.policy.scope import MAX_ID_CHARS
 from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
-from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.config_errors import cut, listed, quoted, validation_problems, yaml_problem
+from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
+from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -69,6 +76,7 @@ from ildottore.shared.models import (
     ModelRequest,
     ModelResponse,
     Sampling,
+    SeededSetup,
     Target,
 )
 from ildottore.shared.protocols import Reporter, TargetAdapter
@@ -80,6 +88,7 @@ __all__ = [
     "BuiltRunner",
     "ProbeCeilingReached",
     "ProbePass",
+    "TargetFile",
     "bare_adapter_factory",
     "build_evidence_store",
     "build_fingerprint_engine",
@@ -103,6 +112,7 @@ __all__ = [
     "load_target",
     "mock_adapter_factory",
     "planted_secrets",
+    "read_target_file",
     "real_adapter_factory",
     "request_url_for",
     "resolve_auth_ref",
@@ -288,11 +298,17 @@ def build_fingerprint_engine() -> FingerprintEngine:
     import them. It is what makes ``-sV`` change the battery rather than only name the model:
     the planner orders each spec's mutators by what this target demonstrably still
     understands (``fingerprint.layers.carrier``).
+
+    A probe whose reply comes back refused (an environment failure the attack phase would not
+    retry, by its own predicate) is a failed probe (u09 §7 A-35, OD-23): one such reply used to
+    stop ``run -sV`` before any attack while it only failed an attempt without it.
     """
 
     registry = build_mutator_registry()
     carriers = [registry.get(name) for name in registry.names() if name != IDENTITY_MUTATOR]
-    return FingerprintEngine(layers=[*default_layers(), CarrierLayer(carriers)])
+    return FingerprintEngine(
+        layers=[*default_layers(), CarrierLayer(carriers)], is_env_error=default_is_env_error
+    )
 
 
 def build_probe_adapter(
@@ -542,10 +558,12 @@ def shown_auth_ref(auth_ref: str) -> str:
 
     A raw key pasted where a reference belongs used to be quoted back. The CLI's redactor
     masked it only when its entropy was high enough: about 1 in 20 random 64-hex keys and 3 in 4
-    32-hex keys were printed in clear (fourth audit of the residuals).
+    32-hex keys were printed in clear (fourth audit of the residuals). A reference is quoted up
+    to 300 characters (``quoted``): one of a million characters printed the refusal whole
+    (clause A-51).
     """
 
-    return repr(auth_ref) if "://" in auth_ref else "a literal value (not shown)"
+    return quoted(auth_ref) if "://" in auth_ref else "a literal value (not shown)"
 
 
 def resolve_auth_ref(auth_ref: str | None) -> str | None:
@@ -581,7 +599,7 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
         # names the variable and never the value (review of PR #32).
         if any(not ch.isprintable() for ch in value):
             raise ValueError(
-                f"the credential in {name!r} contains a control character (a newline or "
+                f"the credential in {quoted(name)} contains a control character (a newline or "
                 "similar); fix the variable, it cannot be sent as a header"
             )
         return value
@@ -741,9 +759,9 @@ def _authorized_api_key(scope: Scope, target: Target) -> str | None:
     if scope_target is not None:
         authorized = {i.auth_ref for i in scope_target.identities}
         if target.auth_ref not in authorized:
-            declared = ", ".join(shown_auth_ref(ref) for ref in sorted(authorized))
+            declared = listed(sorted(authorized), show=shown_auth_ref)
             raise ValueError(
-                f"target {target.id!r} auth_ref {shown_auth_ref(target.auth_ref)} is not "
+                f"target {quoted(target.id)} auth_ref {shown_auth_ref(target.auth_ref)} is not "
                 f"authorized by the scope (declared: {declared}); refusing to read an "
                 "unauthorized credential"
             )
@@ -862,7 +880,7 @@ def fingerprint_probe(
     evidence: FsEvidenceStore | None = None,
     run_id: str | None = None,
     mock_scenario: str | None = None,
-    max_requests: int | None = None,
+    ledger: BudgetLedger | None = None,
 ) -> ProbePass:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
@@ -871,13 +889,17 @@ def fingerprint_probe(
     paces the probes exactly like the attack traffic; ``None`` leaves them unpaced, which is
     what an offline mock wants.
 
-    Every wire send is paced, debited against ``max_requests`` and recorded, retries included.
+    Every wire send is paced, debited against ``ledger`` and recorded, retries included.
     The live probe adapter used to keep its own two retries under one pacer slot: on a target
     answering 429 to every first send, 17 nominal probes were 34 requests, half of them 53 ms
     after the last, and the ledger was charged 17 (leftovers of the 2026-10-03 audit). Same
     shape as the judge: no adapter retries, a :class:`MeteredAdapter` owns them. A breach of
-    ``max_requests`` raises :class:`ProbeCeilingReached`, carrying the requests really sent so
-    the caller can record them.
+    the ledger's request ceiling raises :class:`ProbeCeilingReached`, carrying the requests
+    really sent.
+
+    The caller owns ``ledger`` so it can read what was sent however the pass ends: an
+    environment or product error, Ctrl-C or SIGTERM end it with an exception that carries no
+    count, and a resumed run lost those requests (u12 A-46). ``None`` is an unbounded ledger.
     """
 
     adapter = build_probe_adapter(
@@ -891,7 +913,7 @@ def fingerprint_probe(
         # Recording is innermost, so what is stored is every send that went on the wire.
         adapter = cast("TargetAdapter", _RecordingAdapter(adapter, evidence, run_id))
     meter = SendMeter()
-    ledger = BudgetLedger(max_requests=max_requests)
+    ledger = ledger if ledger is not None else BudgetLedger()
     metered = MeteredAdapter(inner=adapter, meter=meter)
     try:
         with meter.bound(ledger, RateLimiter(rate_rps)):
@@ -992,8 +1014,38 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
 # --- target.yaml -------------------------------------------------------------------
 
 
+#: The fields of :class:`Target` that are text (``str | None``). ``load_target`` hands them to
+#: ``Target`` as written, so anything else there was read as absent (A-53).
+_TEXT_FIELDS = tuple(
+    name for name, field in Target.model_fields.items() if field.annotation == str | None
+)
+
+_TOP_LEVEL_FIELDS: dict[str, Any] = {
+    **{
+        name: ((StrictStr | None) if name in _TEXT_FIELDS else Any, None)
+        for name in Target.model_fields
+    },
+    "mock_scenario": (Any, None),
+}
+_TargetFileTopLevel = create_model(
+    "_TargetFileTopLevel",
+    __config__=ConfigDict(extra="forbid"),
+    __doc__=(
+        "The top level of a target file: the fields of :class:`Target`, which ``load_target`` "
+        "reads, and ``mock_scenario``, which :func:`load_mock_scenario` reads; text where "
+        "``Target`` holds text, ``null`` as absent, each block left to its reader. Built from "
+        "``Target``, so a field added there is a key the file may hold without a second list to "
+        "keep in step (pre-merge audit: another branch's ``websocket`` field was refused by one)."
+    ),
+    **_TOP_LEVEL_FIELDS,
+)
+
+
 def _read_target_yaml(path: Path) -> dict[str, Any]:
     """Parse a ``target.yaml`` into a raw mapping (shared by every reader below).
+
+    Its top level is checked against :class:`_TargetFileTopLevel`, so every reader refuses the
+    same file: a key none of them reads, or text written as something else (A-53).
 
     A syntax error is re-raised as ``ValueError``, like :func:`load_scope` already does.
     ``yaml.YAMLError`` does not derive from ``ValueError``, so it used to escape the CLI
@@ -1008,12 +1060,61 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
     from ildottore import safe_yaml
 
     try:
-        raw = safe_yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = safe_yaml.safe_load(read_text_capped(path))
     except yaml.YAMLError as exc:
         raise ValueError(f"target file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} must be a mapping at top level")
+    # Every reader below took what it knew and dropped the rest, so `endpont:` for `endpoint`
+    # left a live target with no endpoint and `target_uses_mock` ran it on the offline mock
+    # (nothing sent to it, the mock's replies scored), and `tools: true` under a `capabilities:`
+    # that lost its indent was ignored (A-53, OD-31). Key and reason only, as in the A-45 lines.
+    try:
+        _TargetFileTopLevel.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} failed validation: {validation_problems(exc)}"
+        ) from exc
     return raw
+
+
+@dataclass(frozen=True)
+class TargetFile:
+    """A ``target.yaml`` parsed once: the target, and how a run routes it (u12 A-42).
+
+    ``run`` parsed the file again for each thing it asked of it, four times for a mock target and
+    five for a live one, so a file that was costly to build cost that many times over, and the
+    target handed to the adapter came from another read than the one the scope authorized
+    (pre-commit audit of the YAML size cap, 2026-10-07).
+    """
+
+    path: Path
+    target: Target
+    #: :func:`target_uses_mock` of the same text.
+    uses_mock: bool
+    #: The ``mock_scenario`` as written, checked only when the mock is used, as before.
+    scenario_written: object
+
+    def mock_scenario(self) -> str:
+        """:func:`load_mock_scenario` of the same text."""
+
+        return _mock_scenario(self.path, self.scenario_written)
+
+
+def read_target_file(path: Path) -> TargetFile:
+    """Parse ``target.yaml`` once into the target and its routing (:class:`TargetFile`)."""
+
+    raw = _read_target_yaml(path)
+    return TargetFile(
+        path=path,
+        target=_target_from(path, raw),
+        uses_mock=_uses_mock(raw),
+        scenario_written=raw.get("mock_scenario", "bare"),
+    )
+
+
+#: What a target file's ``type`` can say.
+_TARGET_TYPES = frozenset(t.value for t in TargetType)
 
 
 def load_target(path: Path) -> Target:
@@ -1027,15 +1128,39 @@ def load_target(path: Path) -> Target:
     here (S6); it is resolved only at send time via :func:`resolve_auth_ref`.
     """
 
-    raw = _read_target_yaml(path)
+    return _target_from(path, _read_target_yaml(path))
+
+
+def _target_from(path: Path, raw: dict[str, Any]) -> Target:
+    """The :class:`Target` a parsed ``target.yaml`` declares (:func:`load_target`)."""
+
     target_id = raw.get("id")
     if not isinstance(target_id, str) or not target_id:
         raise ValueError(f"target file {path} is missing a string 'id'")
+    if len(target_id) > MAX_ID_CHARS:
+        # As the scope bounds its ids: a longer one was printed whole by every run that started
+        # (OD-27, clause A-57). The value is never quoted, only its length.
+        raise ValueError(
+            f"target file {path} 'id' is {len(target_id):,} characters, over the "
+            f"{MAX_ID_CHARS}-character limit"
+        )
     endpoint_raw = raw.get("endpoint")
     if isinstance(endpoint_raw, str):
+        # Read as the gate reads it (`request_url_for` strips it): read raw, a leading U+00A0
+        # hid the host from this check and urllib's error reached the CLI later, password
+        # included (delta audit of A-51).
+        try:
+            parts = urlsplit(endpoint_raw.strip())
+        except ValueError as exc:
+            # urllib refuses a host it cannot read (a bracket, a host NFKC turns into a path)
+            # with no file named, and quoted the whole value for some (900 KB: pre-merge audit
+            # of A-51). Not quoted here, as the URL can hold a password.
+            raise ValueError(
+                f"target file {path} 'endpoint' is not a URL that can be read (its host)"
+            ) from exc
         # A password in the endpoint URL is a credential the process now holds: mask it by
         # value everywhere, not only where it still sits inside a URL (SEC-02).
-        register_known_secret(urlsplit(endpoint_raw).password)
+        register_known_secret(parts.password)
     # Required, as the manual says: it defaulted to `model`, and since OD-18 a `model` target
     # gets a spec's documents, tools and memory in-band, so a deployed application's file
     # without the line was sent a synthetic scene and labelled so (pre-merge audit of #50).
@@ -1045,38 +1170,61 @@ def load_target(path: Path) -> Target:
             f"target file {path} is missing 'type'; expected one of "
             f"{', '.join(t.value for t in TargetType)}"
         )
-    try:
-        target_type = TargetType(type_raw)
-    except ValueError as exc:
+    # Refused before the enum looks it up: its own error builds the whole repr of the value, and
+    # a 90 KB list of aliases was 200,080,026 characters of it before the node cap (audit of A-51);
+    # under that cap it can still be tens of megabytes.
+    if not isinstance(type_raw, str) or type_raw not in _TARGET_TYPES:
         raise ValueError(
-            f"target file {path} has invalid type {type_raw!r}; "
+            f"target file {path} has invalid type {quoted(type_raw)}; "
             f"expected one of {', '.join(t.value for t in TargetType)}"
-        ) from exc
-    caps_raw = raw.get("capabilities") or {}
+        )
+    target_type = TargetType(type_raw)
+    # Absent or null is no capabilities, as an absent `sampling_defaults` is no sampling; anything
+    # else is a mapping of the keys `Capabilities` knows. `false`, `0`, `[]` and `""` read as none
+    # and an unknown key was dropped, so `tool: true` (for `tools`) ran the target with tools off
+    # and took the tool specs out of the plan without a word (A-50, OD-29).
+    caps_raw = raw.get("capabilities")
+    if caps_raw is None:
+        caps_raw = {}
     if not isinstance(caps_raw, dict):
         raise ValueError(f"target file {path} 'capabilities' must be a mapping")
-    known = set(Capabilities.model_fields)
-    caps = Capabilities.model_validate({k: v for k, v in caps_raw.items() if k in known})
-    name = raw.get("name") if isinstance(raw.get("name"), str) else None
+    # Field and reason only, as the scope, fleet and pack loaders give them: pydantic's own text
+    # ran to four lines, quoted the value written and did not name the file (A-45).
+    try:
+        caps = Capabilities.model_validate(caps_raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"
+        ) from exc
+    # Text or absent: `_read_target_yaml` refuses anything else, once read as absent (A-53).
+    name = raw.get("name")
 
-    provider = raw.get("provider") if isinstance(raw.get("provider"), str) else None
-    endpoint = raw.get("endpoint") if isinstance(raw.get("endpoint"), str) else None
-    model = raw.get("model") if isinstance(raw.get("model"), str) else None
-    auth_ref = raw.get("auth_ref") if isinstance(raw.get("auth_ref"), str) else None
+    provider = raw.get("provider")
+    endpoint = raw.get("endpoint")
+    model = raw.get("model")
+    auth_ref = raw.get("auth_ref")
     sampling_raw = raw.get("sampling_defaults")
     sampling = None
     if sampling_raw is not None:
         if not isinstance(sampling_raw, dict):
             raise ValueError(f"target file {path} 'sampling_defaults' must be a mapping")
-        sampling = Sampling.model_validate(sampling_raw)
+        try:
+            sampling = Sampling.model_validate(sampling_raw)
+        except ValidationError as exc:
+            raise ValueError(
+                f"target file {path} 'sampling_defaults' failed validation: "
+                f"{validation_problems(exc)}"
+            ) from exc
 
-    transport = raw.get("transport") if isinstance(raw.get("transport"), str) else None
+    transport = raw.get("transport")
     command_raw = raw.get("command")
     command: list[str] | None = None
     if command_raw is not None:
         if not (isinstance(command_raw, list) and all(isinstance(c, str) for c in command_raw)):
             raise ValueError(f"target file {path} 'command' must be a list of strings")
         command = command_raw
+
+    seeded = _seeded_setup(path, raw.get("seeded_setup"), target_type)
 
     return Target(
         id=target_id,
@@ -1090,7 +1238,88 @@ def load_target(path: Path) -> Target:
         sampling_defaults=sampling,
         transport=transport,
         command=command,
+        seeded_setup=seeded,
     )
+
+
+def provider_returns_tool_calls(target: Target) -> bool:
+    """True when the adapter ``target`` routes to reads tool calls from a reply.
+
+    The OpenAI and Anthropic adapters do; the REST template and the read-only MCP adapter
+    return none, so a seeded spec judged on its tool trace could never fail there (OD-18 B).
+    The runner asks the adapter itself (``returns_tool_calls``); the plan asks this.
+    """
+
+    return (target.provider or "").strip().lower() in ("openai", "anthropic")
+
+
+def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSetup | None:
+    """The ``seeded_setup`` block of a target file (OD-18 option B), checked field by field.
+
+    A ``type: model`` target gets the scene in-band (option A), so the block is refused there
+    rather than silently ignored: one of the two would have been read wrong.
+    """
+
+    if raw is None:
+        return None
+    if target_type is TargetType.MODEL:
+        raise ValueError(
+            f"target file {path} declares 'seeded_setup', which is for a deployed application; "
+            "a 'type: model' target gets a spec's setup in-band"
+        )
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'seeded_setup' must be a mapping")
+    known = ("specs", "tools", "granted_tools", "run_token")
+    # A key that is a number too long to write out raised in `str` (A-40).
+    unknown = sorted(described() if too_long(key) else str(key) for key in raw if key not in known)
+    if unknown:
+        # The names the file gives, up to 300 characters in all (clause A-51).
+        raise ValueError(
+            f"target file {path} 'seeded_setup' has unknown key(s) {cut(', '.join(unknown))}; "
+            "expected 'specs', 'tools', 'granted_tools' and 'run_token'"
+        )
+    specs = raw.get("specs", [])
+    if not (isinstance(specs, list) and all(isinstance(s, str) and s for s in specs)):
+        raise ValueError(f"target file {path} 'seeded_setup.specs' must be a list of spec ids")
+    tools = raw.get("tools", {})
+    if not (
+        isinstance(tools, dict)
+        and all(isinstance(k, str) and isinstance(v, str) and k and v for k, v in tools.items())
+    ):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.tools' must map each spec tool name to the "
+            "deployment's name for it"
+        )
+    # Two spec tools may share a deployment name (`lookup_ticket` and `read_ticket` in two
+    # specs, one `get_ticket` in the deployment): the map is applied per spec, and only two of
+    # one spec's own scene tools sharing a name is refused, for that spec, at run time.
+    deployment_names = list(tools.values())
+    granted = raw.get("granted_tools", [])
+    if not (isinstance(granted, list) and all(isinstance(g, str) and g for g in granted)):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.granted_tools' must be a list of the deployment's "
+            "tool names"
+        )
+    both = sorted(set(granted) & set(deployment_names))
+    if both:
+        raise ValueError(
+            f"target file {path} 'seeded_setup' both maps and grants {cut(', '.join(both))}; a "
+            "mapped tool is one of the spec's scene, a granted one is outside every scene"
+        )
+    token = raw.get("run_token")
+    if token is not None and not (isinstance(token, str) and _RUN_TOKEN.fullmatch(token)):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.run_token' must be 8 to 64 letters, digits, '_' "
+            "or '-' (it replaces {{run_id}} in the canaries the operator seeds)"
+        )
+    return SeededSetup(
+        specs=list(specs), tools=dict(tools), granted_tools=list(granted), run_token=token
+    )
+
+
+#: A run token goes into a canary the evaluators match exactly: plain characters, and long
+#: enough not to occur by chance.
+_RUN_TOKEN = re.compile(r"[A-Za-z0-9_-]{8,64}")
 
 
 def load_mock_scenario(path: Path) -> str:
@@ -1102,11 +1331,15 @@ def load_mock_scenario(path: Path) -> str:
     verdict; the runtime :class:`Target` model is unchanged (this is composition config).
     """
 
-    raw = _read_target_yaml(path)
-    scenario = raw.get("mock_scenario", "bare")
+    return _mock_scenario(path, _read_target_yaml(path).get("mock_scenario", "bare"))
+
+
+def _mock_scenario(path: Path, scenario: object) -> str:
+    """The ``mock_scenario`` written in ``path``, refused unless one of :data:`MOCK_SCENARIOS`."""
+
     if not isinstance(scenario, str) or scenario not in MOCK_SCENARIOS:
         raise ValueError(
-            f"target file {path} has invalid mock_scenario {scenario!r}; "
+            f"target file {path} has invalid mock_scenario {quoted(scenario)}; "
             f"expected one of {', '.join(MOCK_SCENARIOS)}"
         )
     return scenario
@@ -1124,13 +1357,20 @@ def target_uses_mock(path: Path) -> bool:
     completely unaffected by this - they keep resolving here to ``True``).
     """
 
-    raw = _read_target_yaml(path)
+    return _uses_mock(_read_target_yaml(path))
+
+
+def _uses_mock(raw: dict[str, Any]) -> bool:
+    """:func:`target_uses_mock` of a parsed ``target.yaml``."""
+
     if "mock_scenario" in raw:
         return True
     # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real
     # over-the-wire (subprocess) target even though it declares no ``endpoint``.
-    provider = str(raw.get("provider") or "").strip().lower()
-    transport = str(raw.get("transport") or "").strip().lower()
+    # Text or absent: `_read_target_yaml` refuses anything else (A-53), where `str` raised on a
+    # number too long to write out (A-40).
+    provider = (raw.get("provider") or "").strip().lower()
+    transport = (raw.get("transport") or "").strip().lower()
     if provider == "mcp" and transport == "stdio" and raw.get("command"):
         return False
     endpoint = raw.get("endpoint")

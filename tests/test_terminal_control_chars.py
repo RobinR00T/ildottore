@@ -450,13 +450,20 @@ def test_a_surrogate_written_out_can_be_encoded_strictly() -> None:
 
 
 @pytest.mark.usefixtures("no_known_secrets")
-def test_mask_split_credentials_leaves_text_without_a_split_credential_unchanged() -> None:
+def test_for_terminal_masks_a_split_credential_as_the_redactor_masks_it_whole() -> None:
+    """The match by value is the redactor's own since PR #57 (u01 A-32): one split by a newline
+    gets the mask the credential gets in one piece, and one split by a space is not matched."""
+
     from ildottore.redactor import Redactor
 
     register_known_secret("Zq9vT4mXa81LpR2w")
     redactor = Redactor(salt="s")
-    for text in ("plain text", "line\nbreak", "Zq9vT4mXa81LpR2w whole", "Zq9v T4mXa81LpR2w"):
-        assert redactor.mask_split_credentials(text) == text
+    whole = redactor.for_terminal("Zq9vT4mXa81LpR2w whole")
+    assert whole.startswith("«REDACTED:credential:") and whole.endswith("» whole")
+    assert redactor.for_terminal("Zq9vT4mX\na81LpR2w whole") == whole
+    assert redactor.for_terminal("plain text") == "plain text"
+    assert redactor.for_terminal("line\nbreak") == f"line{chr(0x240A)}break"
+    assert redactor.for_terminal("Zq9v T4mXa81LpR2w") == "Zq9v T4mXa81LpR2w"
 
 
 @pytest.mark.usefixtures("no_known_secrets")
@@ -480,14 +487,14 @@ def test_a_credential_shorter_than_eight_without_its_controls_is_not_matched() -
     from ildottore.redactor import Redactor
 
     register_known_secret("ab\n\n\n\n\n\ncd")
-    assert Redactor(salt="s").mask_split_credentials("x abcd\ny") == "x abcd\ny"
+    assert Redactor(salt="s").for_terminal("x abcd\ny") == f"x abcd{chr(0x240A)}y"
 
 
 @pytest.mark.usefixtures("no_known_secrets")
-def test_with_no_registered_credential_the_text_is_returned_as_it_is() -> None:
+def test_with_no_registered_credential_the_text_is_only_written_out() -> None:
     from ildottore.redactor import Redactor
 
-    assert Redactor(salt="s").mask_split_credentials("a\nb\x00c") == "a\nb\x00c"
+    assert Redactor(salt="s").for_terminal("a\nb\x00c") == "a\u240ab\u2400c"
 
 
 # --- the pre-commit audit of this block ------------------------------------------------------
@@ -533,9 +540,13 @@ def test_a_key_after_a_c1_control_is_still_recognised() -> None:
 
 @pytest.mark.usefixtures("no_known_secrets")
 def test_a_periodic_credential_overlapping_itself_is_masked_whole() -> None:
-    register_known_secret("Q7wQ7wQ7wQ7w")
-    out = _masked(ValueError("x Q7wQ7w\nQ7wQ7wQ7w y"))
-    assert "Q7w" not in out
+    """Two occurrences of a credential whose end repeats its start, split and overlapping, are
+    one mask. (One that repeats a piece more than twice over, `Q7wQ7wQ7wQ7w`, is matched without
+    overlaps since PR #57, and its overlapping tail is a case the CHANGELOG lists as open.)"""
+
+    register_known_secret("Q7w5Q7w5")
+    out = _masked(ValueError("x Q7w5Q7\nw5Q7w5 y"))
+    assert "Q7w" not in out and "w5" not in out
 
 
 @pytest.mark.usefixtures("no_known_secrets")
@@ -561,21 +572,26 @@ def test_a_lone_surrogate_in_a_labelled_value_does_not_crash_the_masking(text: s
 @pytest.mark.usefixtures("no_known_secrets")
 def test_no_index_is_built_for_text_that_holds_no_credential() -> None:
     """About 140 MB a megabyte of controls, before any credential was looked for (9 MB with
-    the index built late, or the controls dropped by a regex); now the text without them."""
+    the index built late, or the controls dropped by a regex); now the text without them. The
+    match is the redactor's own since PR #57 (u01 A-32), measured here on its own."""
 
     import tracemalloc
 
-    from ildottore.redactor import Redactor
+    from ildottore.redactor import Redactor, _known_secrets
 
     register_known_secret("Zq9vT4mXa81LpR2w")
     text = "a\n" * 500_000
     redactor = Redactor(salt="s")
+    registered = _known_secrets()
     tracemalloc.start()
     try:
-        assert redactor.mask_split_credentials(text) is text
+        out = redactor._redact_split_credentials(
+            text, lambda mask, _written: mask, registered, split=True
+        )
         peak = tracemalloc.get_traced_memory()[1]
     finally:
         tracemalloc.stop()
+    assert out is text
     assert peak < 3 * len(text), peak
 
 
@@ -610,7 +626,8 @@ def _schema_error_pack(root: Path) -> Path:
 def test_a_message_quoting_a_pack_value_is_written_out(tmp_path: Path, command: str) -> None:
     result = CliRunner().invoke(app, [command, str(_schema_error_pack(tmp_path))])
     assert _injected_lines(result.stdout) == [], result.stdout
-    assert f"k{LF}::error title=pwned::from-key" in result.stdout
+    # The key is written as its `repr` since #90 (A-40), so its line break is an escape.
+    assert "'k\\n::error title=pwned::from-key'" in result.stdout
 
 
 def test_describe_writes_every_field_out(tmp_path: Path) -> None:
@@ -732,6 +749,9 @@ def test_fingerprint_prints_ascii_json(monkeypatch: pytest.MonkeyPatch) -> None:
     echoed = "llama-3 " + "".join(map(chr, (0x81, 0x7F, 0x2028, 0x1F642, 0x6771)))
 
     class _Fingerprint:
+        target_id = "t"
+        evidence: tuple[object, ...] = ()  # every probe answered (OD-23 reads the evidence)
+
         def model_dump_json(self, *, indent: int) -> str:  # as pydantic writes it
             guess = json.dumps(echoed, ensure_ascii=False)
             return f'{{\n  "target_id": "t",\n  "weight": 1e-7,\n  "guess": {guess}\n}}'
@@ -836,3 +856,32 @@ def test_fingerprint_prints_a_lone_surrogate_in_a_target_id(
     result = CliRunner().invoke(app, ["fingerprint", "t.yaml", "--offline"])
     assert result.exit_code == 0, result.output
     assert result.stdout.isascii() and json.loads(result.stdout)["target_id"] == target_id
+
+
+def test_the_dry_run_writes_a_canary_to_seed_out(tmp_path: Path) -> None:
+    """The `--dry-run -vv` seed line, which main gained with OD-18 B (#58), quotes a spec's
+    canary, the pack author's text: written out like the other lines that quote a pack (merge of
+    this PR with main)."""
+
+    bola = (REPO / "specs" / "attacks" / "AC-BOLA-001.yaml").read_text()
+    planted = 'canaries: ["ZYNAP_CANARY_{{run_id}}"]'
+    assert bola.count(planted) == 1
+    specs = tmp_path / "specs"
+    specs.mkdir()
+    (specs / "AC-BOLA-001.yaml").write_text(
+        bola.replace(planted, 'canaries: ["ZYNAP_CANARY_{{run_id}}\\n::error title=pwned::seed"]')
+    )
+    app_target = (REPO / "examples" / "target.app.yaml").read_text().split("seeded_setup:")[0]
+    target = tmp_path / "target.yaml"
+    target.write_text(app_target + "seeded_setup:\n  specs: ['*']\n  run_token: eng-2026-q4\n")
+    result = CliRunner().invoke(
+        app,
+        [
+            *("run", "--dry-run", "-vv", "--spec", "AC-BOLA-001", "-t", str(target)),
+            *("--scope", str(REPO / "examples" / "scope.app.yaml")),
+            *("--spec-path", str(specs)),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert _injected_lines(result.stdout) == [], result.stdout
+    assert f"ZYNAP_CANARY_eng-2026-q4-AC-BOLA-001{LF}::error title=pwned::seed" in result.stdout

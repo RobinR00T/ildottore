@@ -82,5 +82,9 @@ def target_digest(target: Target, *, mock_scenario: str | None = None) -> str:
 
     dumped = target.model_dump(mode="json")
     payload = {k: v for k, v in dumped.items() if k not in _TARGET_COSMETIC}
+    # Absent, it is left out, so a run stored before the field existed still resumes; present,
+    # it is part of what answers (which specs the deployment holds the scene for).
+    if payload.get("seeded_setup") is None:
+        payload.pop("seeded_setup", None)
     payload["__route__"] = mock_scenario or "live"
     return _sha(payload)

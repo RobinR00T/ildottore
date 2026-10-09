@@ -15,7 +15,7 @@ are collected in §5, "Not implemented".
 |---|---|---|---|
 | `nmap <host>` | `dottore run <target.yaml>` | positional target file(s), or `-t` | built. The positional is a **file**: a URL or model id is read as a path and fails. `run` must be typed: there is no default subcommand (`dottore target.yaml` is "No such command") |
 | Host discovery `-sn` | Authorized endpoint + declared capabilities + what the battery would run. Sends nothing | `-sn` | built. A `discover` subcommand is not |
-| Service/version detect `-sV` | **Model & guardrail fingerprint** (which model, defenses, carrier comprehension) | `-sV`, or `dottore fingerprint <target.yaml>` | built (17 probes per target, printed in the plan) |
+| Service/version detect `-sV` | **Model & guardrail fingerprint** (which model, defenses, carrier comprehension) | `-sV`, or `dottore fingerprint <target.yaml>` | built (17 probes per target, printed in the plan; a probe whose reply is refused fails alone, said on stderr, and the run goes on; one that gets no answer stops it: OD-23) |
 | Port selection `-p 80,443` | Category selection | `-p pi,jailbreak,leakage` | built |
 | `--top-ports 100` | Top-N highest-signal tests | `--top-tests 20` | built |
 | Timing template `-T0..-T5` | Aggressiveness/rate template `-T0..-T5` | `-T4` | built |
@@ -72,7 +72,7 @@ EXECUTION
   --timeout <s>                     per-attempt timeout
   --budget-tokens / --budget-requests / --budget-wall
                                     hard ceilings; each overrides the one derived from the plan
-  --resume <run-id>                 finish a halted run; answered attempts are not re-sent
+  --resume <run-id>                 finish a halted run; answered, judged attempts are kept
   --resume-unverified               resume a run whose integrity record is missing
 
 SAFETY / SCOPE
@@ -126,16 +126,28 @@ not read by the runner: every mutation variant of every spec is sent `--runs` ti
 **Options are validated before the campaign.** `run` refuses, with exit 3 and before the scope
 is loaded or anything is sent: a `--rate` that is not greater than 0; an unknown `--fail-on`
 band; `--timeout` not greater than 0; `--concurrency`, `--top-tests` or `--runs` below 1; a
-report path whose directory does not exist; and two report formats that would write the same
+negative `--budget-tokens`, `--budget-requests` or `--budget-wall` (the dry run printed it and
+exited 0, the run refused it); any of those six past `2**53` (9,007,199,254,740,992, where the
+run of whole numbers a float holds exactly ends: `--runs` of a few hundred digits crashed the
+plan's float arithmetic with exit 1, A-55); a report path whose directory does not exist; and two
+report formats that would write the same
 file (paths compared after resolving, Unicode-normalized and case-folded, because a
 case-insensitive volume treats `R.json` and `r.json` as one file). These used to be accepted,
 and some failed only after the whole campaign had run.
+
+Once the scope, the targets and the specs are loaded, and before anything is sent (the resume
+block and the `-sV` probe pass included), a live run whose pace (`--rate`, or the `-T`
+template's) is under one request per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap of
+a derived one) is refused too, as is any live run under `--budget-wall 0`: the ceiling is
+checked when a send is charged, and such a run waited past it (A-55). A live `--judge` over
+attack targets that are all mocks is excepted: that run is not paced, so not checked.
 
 **Resume sends again what ended in an environment error (F11, built 2026-10-04).** `--resume
 <run-id>` skips every attempt the halted run ANSWERED and sends again, under the same attempt
 id, each one that ended in an environment error (a timeout, a 5xx after retries, a conversation
 aborted on one), except an error that would repeat identically (a reply over the size cap, an
-undecodable body: recorded with `[not retryable]`). The failed try stays in the evidence tree
+undecodable body, a reply nested too deeply: recorded with `[not retryable]`). The failed try
+stays in the evidence tree
 and is cited as evidence; the finding scores one attempt per id, the answered one, as `replay`
 counts. A resume halted by a ceiling while re-sending keeps the finding a spec already had when
 that finding held every planned attempt. The resume message says how many attempts are kept and
@@ -146,6 +158,27 @@ mid-spec leaves no artifact the manifest does not know, and the next resume is n
 tampered (it was, which is why the first attempt was withdrawn). A resume adopts into the
 journal the artifacts already on disk once they pass the check, so a run started by an older
 version keeps resuming.
+
+**A halted run keeps what it paid for (2026-10-07).** A request ceiling that stopped a run inside
+an identity sweep, or between two attempts of one batch, used to store nothing for that spec, and
+`--resume` refused it as a run that "sent nothing" while the run store recorded the requests that
+went out. Now every reply the target gave is stored as the batch hands it back (a Ctrl-C still
+drops the batch in flight): judged when the ceiling leaves room for the judge, kept with its
+deterministic fail when the ceiling refuses the judge and a deterministic check already failed
+it (OD-19: that decides without the judge), and otherwise stored without a verdict, which the
+resume sends again and judges (the first reply stays cited; if the re-send ends in an
+environment error, that inconclusive is the attempt scored; with `--judge` such a reply is paid
+for twice: it is re-sent rather than re-judged, and judging the stored reply on resume is a
+possible follow-up). A reply whose own usage crosses the token ceiling is stored too, and so is
+a conversation whose last reply did. A run that spent requests and stored no reply (for example
+an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request that failed,
+or a Ctrl-C) is resumed from the start with its spend carried, and the resume message says so.
+Still refused: a run that spent nothing, an `--evidence-root` holding none of the artifacts the
+run store journals for the run (pending ones included), and an empty tree for a run that
+predates the journal (it does not record the scope it went out under), whose silence proves
+nothing. `--estimate --resume` takes off the judge's requests for the attempts the resume keeps,
+as it took off the target's, and prices an identity sweep since PR #60; the room check behind
+the `-sV` refusals' "drop -sV" advice takes off the same judge share.
 
 ## 3. Example invocations (the red-teamer's cheat sheet)
 

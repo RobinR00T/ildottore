@@ -21,13 +21,12 @@ from __future__ import annotations
 import math
 
 from ildottore.fingerprint.attribution import encode_signal
-from ildottore.fingerprint.base import ProbeContext, seed_for
+from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, ProbeFailed, seed_for
 from ildottore.fingerprint.probes import STATISTICAL_BATTERY, build_request
 from ildottore.fingerprint.signatures import SignatureEntry, SignaturePack
 from ildottore.shared.models import (
     FingerprintEvidence,
     ModelRequest,
-    Sampling,
 )
 from ildottore.shared.protocols import TargetAdapter
 
@@ -103,10 +102,20 @@ class StatisticalLayer:
         if not isinstance(pack, SignaturePack):
             return []
         texts: list[str] = []
+        unanswered = False
         for probe in STATISTICAL_BATTERY:
             request = _seeded(build_request(probe), ctx.target_id, probe.name)
-            response = await adapter.send(request)
+            try:
+                response = await adapter.send(request)
+            except ProbeFailed:
+                unanswered = True  # the engine records the failure (§7 A-35)
+                continue
             texts.append(response.text)
+        # The vector is one slot per probe: a missing reply cannot be featurized as an empty
+        # one (that is a short, plain answer, near a centroid). Its siblings are still sent,
+        # so the pass costs what it declares and the engine's constant-target check sees them.
+        if unanswered:
+            return []
         # Three probes asking for different things answered with fewer than three different
         # texts is a canned responder, not a model's style: its short, plain replies sat within
         # reach of one centroid and named that family (a stub alternating two answers drew 0.41
@@ -148,5 +157,5 @@ def _seeded(request: ModelRequest, target_id: str, probe_name: str) -> ModelRequ
     seed = seed_for(target_id, probe_name)
     meta = dict(request.metadata or {})
     meta["seed"] = seed
-    sampling = request.sampling or Sampling()
+    sampling = request.sampling or PROBE_SAMPLING
     return request.model_copy(update={"metadata": meta, "sampling": sampling})

@@ -21,16 +21,57 @@ where ``weight`` is a signed contribution the combiner sums per candidate family
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
-from ildottore.shared.models import FingerprintEvidence
+from ildottore.shared.models import FingerprintEvidence, Sampling
 from ildottore.shared.protocols import TargetAdapter
 
 __all__ = [
+    "PROBE_MAX_TOKENS",
+    "PROBE_SAMPLING",
     "FingerprintLayer",
     "ProbeContext",
+    "ProbeFailed",
     "seed_for",
 ]
+
+
+#: The longest reply a probe asks for. The cap cannot change the statistical or carrier result:
+#: a reply long enough to be cut (in Latin script, past 400 characters) has its length feature
+#: at 1.0, at least 0.45 from every statistical centroid (the largest centroid length is 0.55; a
+#: match needs 0.35 or less), and a carrier probe scores only on a reply of 48 characters or
+#: fewer. The phrase-matching layers (behavioral, tokenizer, guardrail) would miss a tell
+#: written after token 512; no reply to those layers' probes came near in the three live runs
+#: (the longest, the guardrail nudge, was 163 tokens), nor does any corpus reply. Without it a
+#: small model at temperature 0 looped on a carrier it could not read until the 30 s timeout,
+#: three times, and a live ``-sV`` pass (``llama3.2:3b``, 2026-10-07) stopped there.
+PROBE_MAX_TOKENS: Final = 512
+#: The sampling every probe is sent with: temperature 0, so a target that is deterministic at
+#: temperature 0 answers the same way twice, and the reply cap above.
+PROBE_SAMPLING: Final = Sampling(temperature=0.0, max_tokens=PROBE_MAX_TOKENS)
+
+
+class ProbeFailed(Exception):
+    """A probe whose reply came back refused: an environment failure of that one send (§7 A-35).
+
+    The engine raises it to a layer in place of the adapter's error when the error is one the
+    attack phase would record as an inconclusive attempt and would not retry (a reply over the
+    size cap, one it cannot decode, one nested too deeply: ``ResponseTooDeep``). A probe that got no
+    answer at all (a 503 or a timeout after the retries) is not one: it stops the pass. A layer
+    with several probes catches it and treats that probe as unanswered: no evidence from it,
+    never evidence from an empty reply, and its other probes still sent and counted. A layer
+    that lets it through gives no evidence at all and the pass goes on. Before, the error went
+    straight through every layer and one refused reply stopped ``run -sV`` with exit 3 before
+    any attack (OD-23).
+
+    Only the probe's name and the error's class are kept: the error's message can quote the
+    target's reply, and ``dottore fingerprint`` prints the fingerprint as it is.
+    """
+
+    def __init__(self, probe: str, error: BaseException) -> None:
+        self.probe = probe
+        self.error = type(error).__name__
+        super().__init__(f"{probe}: {self.error}")
 
 
 def seed_for(target_id: str, probe_name: str) -> str:

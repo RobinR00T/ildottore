@@ -49,13 +49,30 @@ and send it elsewhere. Add the block; `fleet` then writes `judge.yaml` and `--ru
 `--judge` file is still accepted when it names the same id, endpoint and credential. `run`
 with your own scope is unchanged: the judge must be in that scope.
 
+### Why does `fleet` refuse two ids like `Prod` and `prod`?
+
+Each fleet target is written to `target-<id>.yaml`, and on a case-insensitive file system (the
+macOS and Windows default) `target-Prod.yaml` and `target-prod.yaml` are one file. Until
+2026-10-07 the second entry overwrote the first, `fleet` exited 0, and the `dottore run` it
+printed then refused "two target files declare the id 'prod'". The pair is now refused before
+anything is written, on Linux too, so a fleet file means the same on every machine; rename one
+of them. The message locates the two entries as validation errors do (`targets.0.id` and
+`targets.1.id`, counted from 0), because an id that looks random enough (a model name such as
+`Meta-Llama-3-70B-Instruct`) is masked in the CLI's errors. A `judge:` id spelled as a target's
+only up to case is refused as well, for another reason: no file collides (the judge is written
+to `judge.yaml`), but the generated scope would hold two ids that differ only by case; a
+`judge:` block with no `id:` is `judge`, so a target `Judge` beside it counts, and the message
+says the id is that default. Two target files you write yourself with ids `Prod` and `prod`
+still run together: `run` names no file after a target id.
+
 ### Do `--budget-requests` and `--rate` count the judge's requests?
 
 Yes, since 2026-10-03. The judge sends two requests per evaluated attempt, and they used to sit
 outside both the request ceiling and the rate gate, so `--budget-requests 5` with a judge sent
 15. They are now paced and debited like the target's, `--estimate` and `--dry-run` show them on
 their own line, and the derived ceilings make room for them. The multi-identity sweep counts
-too.
+too, and since PR #60 (merged 2026-10-09) `--estimate` and `--dry-run` price it: one request per
+scope identity for each spec that sweeps them.
 
 ### Can the judge itself be fooled by a prompt injection?
 
@@ -125,18 +142,26 @@ standard (training data, infrastructure, logging) needs an audit, not a scan.
 
 ### Does Il Dottore send a spec's documents, tools or memory to my target?
 
-To a bare model, yes; to a deployed application, not yet. When your target is `type: model`
+To a bare model, yes; to a deployed application, no: you seed them and say so. When your target
+is `type: model`
 (a model API), the spec's memory seed goes as saved memory from earlier sessions after the
 system prompt, its documents as retrieved context
 before the attack, and its tools as tool definitions; when the model calls one, Il Dottore
 answers with what the spec says the tool returns and lets it continue, for at most 4 rounds.
 That tests how the model handles untrusted content, not your application's own retrieval or
-tools, and each attempt says `setup_delivery: in_band`. For any other target type the runner
-sends the prompt, the system prompt and any media, so the 32 specs that depend on setup only
-test something where you have seeded the same content into your deployment, and a tool spec can
-fail falsely when your tools have other names. Letting you declare what you seeded is the second
-half of the decision (OD-18 option B, `docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`),
-not built yet.
+tools, and each attempt says `setup_delivery: in_band`. Any other target type is a deployed
+application, which has its own documents, tools and memory: a spec that depends on them is
+`inconclusive: setup_not_seeded`, with nothing sent, unless your target file declares it seeded
+under `seeded_setup.specs` (ids or globs such as `PI-INDIRECT-*`). Declared, it goes out as the
+plain prompt, and each attempt says `setup_delivery: seeded`. Map the spec's tool names to your
+deployment's under `seeded_setup.tools` (`lookup_ticket: get_ticket`), so a call under your
+name is judged as the spec's tool instead of failing as unauthorized, and list your own tools
+outside any scene under `seeded_setup.granted_tools`. A spec whose canary has to be in your
+deployment needs `seeded_setup.run_token` (`--dry-run -vv` prints the canary to seed), and your
+deployment must return its tool calls, or a spec whose poison is a tool's result is
+`setup_not_reached` (and a spec judged on its tool trace is not sent through a REST target).
+`examples/target.app.yaml` is a worked file. The offline mock needs none of this: its replies are written for the scene (OD-18,
+`docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`).
 
 ### Why does a run refuse my target with "target(s) not authorized by the scope"?
 

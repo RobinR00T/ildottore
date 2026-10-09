@@ -2,7 +2,7 @@
 
 The runner used to send the prompt, the system prompt and the media only, so 32 of the 75 specs
 went out referring to a document, a tool or a memory the target never had. Against a target of
-``type: model`` the scene is now built in the request: memory seed as prior turns, documents as
+``type: model`` the scene is now built in the request: memory seed as saved memory, documents as
 retrieved context before the attack, tools as definitions, and a tool loop that answers each
 call with the spec's declared result.
 """
@@ -188,11 +188,13 @@ async def test_the_tool_rounds_stop_and_leave_no_call_unanswered(fixtures) -> No
 
 
 async def test_another_target_type_gets_no_scene(fixtures) -> None:
+    """A deployed application gets the scene only from its operator (option B): unseeded, the
+    spec sends nothing; seeded, it goes out as the plain prompt."""
+
     adapter = Recording([{"id": "c1", "name": "lookup_ticket", "arguments": {}}])
     result = await _run("PI-INDIRECT-TOOL-001", adapter, fixtures, kind=TargetType.AGENT)
-    (request,) = adapter.requests
-    assert request.tools is None and request.messages is None and request.prompt
-    assert "setup_delivery" not in (result.findings[0].attempts[0].request.metadata or {})
+    assert adapter.requests == []
+    assert result.findings[0].reasoning.startswith("setup_not_seeded")
 
 
 async def test_a_target_that_cannot_carry_tools_sends_nothing(fixtures) -> None:
@@ -275,7 +277,8 @@ def test_the_estimate_counts_every_tool_round_an_in_band_spec_may_play() -> None
     agent = estimate_plan(
         [tool_spec, plain], 5, mutators_by_spec=one, target=_target(TargetType.AGENT)
     )
-    assert bare.requests == agent.requests == 10
+    assert bare.requests == 10
+    assert agent.requests == 5  # the tool spec is not seeded there, so it sends nothing
     assert model.requests == 5 * (1 + MAX_TOOL_ROUNDS) + 5
     assert model.input_tokens > bare.input_tokens  # the tool definitions are input
 

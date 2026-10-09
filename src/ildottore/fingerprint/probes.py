@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ildottore.shared.models import ModelRequest, Sampling
+from ildottore.fingerprint.base import PROBE_SAMPLING
+from ildottore.shared.models import ModelRequest
 
 __all__ = [
     "BEHAVIORAL_BATTERY",
@@ -92,13 +93,14 @@ STATISTICAL_BATTERY: tuple[Probe, ...] = (
 def build_request(probe: Probe) -> ModelRequest:
     """Turn a :class:`Probe` into a deterministic benign :class:`ModelRequest`.
 
-    Sampling is pinned to ``temperature=0`` so a target that honors it responds
-    reproducibly; a target that ignores sampling still yields a stable fingerprint
-    because the combiner is tolerant (evidence weights, not exact text equality).
+    Sampling is :data:`~ildottore.fingerprint.base.PROBE_SAMPLING` (``temperature=0`` and a
+    capped reply) so a target that honors it responds reproducibly; a target that ignores
+    sampling still yields a stable fingerprint because the combiner is tolerant (evidence
+    weights, not exact text equality).
     """
 
     return ModelRequest(
         prompt=probe.prompt,
-        sampling=Sampling(temperature=0.0),
+        sampling=PROBE_SAMPLING,
         metadata={"probe": probe.name},
     )

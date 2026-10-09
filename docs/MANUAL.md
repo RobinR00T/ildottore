@@ -82,7 +82,65 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   capped too. The adapters ask only for those two (`Accept-Encoding: gzip, deflate`); any other
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
-  classified by the status (a `401` stays a `401`).
+  classified by the status (a `401` stays a `401`), and so is an error status whose body is over
+  the limit (before PR #68 a `401` with a 5 MB body was an inconclusive attempt where a short one
+  stops the run). A reply whose brackets balance (as many
+  close as open) and nest more than 100 levels deep (objects and arrays, outside strings, read
+  from the text before it is
+  parsed, whether or not the rest is valid JSON; a provider's reply nests about 10), or a tool
+  call whose JSON-string arguments do, is refused the same way: inconclusive, not retried, and
+  the rest of the scan goes on. Tool-call arguments whose brackets do not balance read as no
+  arguments, as before; arguments whose brackets balance and nest past 100 are refused even when
+  they are not JSON, so that reply is inconclusive instead of judged by the tool's name. During a
+  `-sV` or `-A` probe pass, a 2xx reply refused on any of these grounds (its size, its encoding
+  or its nesting) fails that one probe and the run goes on (see `-sV` under `dottore run`). A
+  success reply that is not JSON (brackets that do not balance included), or holds an
+  integer of more than 4,300 digits (which Python refuses to read), still stops the run (exit 3);
+  over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
+  times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
+  stray lines and its reply together.
+- **Half a character in a reply.** JSON can escape a lone surrogate (half of a UTF-16 pair),
+  which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
+  call's arguments are, each one is read as U+FFFD, the replacement character, and the attempt
+  is evaluated on that text as usual. The evidence shows U+FFFD and does not keep which code
+  unit it was, except in a tool call's arguments sent as JSON text: those are stored as the
+  target sent them, the escape included, and read as U+FFFD once parsed. Over an MCP SSE stream,
+  which is decoded as text first, each raw byte of one reads as U+FFFD, as any other invalid
+  UTF-8 there does. Like a zero-width space, half a character inside a word splits it: a leak
+  split that way is not matched by `regex_absence` and a canary split that way is not found by
+  `secret_leakage`, while a registered credential split that way is still masked whole, as one
+  split by a zero-width space is (redact-at-rest, below). A body that is not valid UTF-8 in any
+  other way
+  (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD) and an
+  MCP stdio line (skipped, so the call times out).
+- **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
+  limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
+  from the command line). A larger regular file is refused before any of it is read; anything
+  else, such as a pipe (`--scope <(cat scope.yaml)`) or a device, is read up to one byte past
+  the limit and refused if that byte comes.  The error names the file and the sizes, written
+  with thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and
+  the command exits 3. `dottore fleet` measures every file it would write and refuses, before
+  writing any, one over the limit: the scope repeats each endpoint and is usually the largest,
+  but a target or the judge file can be larger, as non-ASCII text is written escaped. The judge
+  file is measured only when no `--judge` file replaces it, so with `--judge` a `judge.yaml`
+  over the limit is still written, and a later `run --judge` naming it is refused. 1 MiB holds
+  about 22,000 labels, 2,000 scope targets with two identities each, or the scope written for
+  about 3,800 fleet entries; the largest file shipped here that is read this way, the signature
+  corpus, is 8.7 KB.
+  A file that is not UTF-8 is refused the same way, naming the file and the offset of its first
+  bad byte (`[Errno 92] not UTF-8 text (byte 15): '/path/scope.yaml'` on macOS), exit 3. A
+  target's endpoint that cannot be read as a URL is refused naming the file and the field, not
+  the value, which can hold a password. A refusal that quotes a value of the file (an invalid
+  `type`, a duplicated id, a target the scope does not authorize, an undefined YAML alias)
+  quotes it as it is when its `repr` is 300 characters or fewer, and otherwise its first 300
+  characters and its size, `... (1000002 characters)` or, for a list or a mapping, `... (9000
+  items)`; a list of what the file declares (the ids a scope authorizes, the credentials it
+  declares for a target) shows the first 20 and counts the rest. Only the advice for a stdio
+  target prints its command line whole, to be copied; one made of YAML aliases is bounded by the
+  node cap every YAML file has (A-37). A target or scope id and an identity name are at most 128
+  characters: a longer one is refused when its file is loaded, naming the file. An endpoint has
+  no length limit, and a run that starts prints it whole in its plan and reports, as `calibrate`
+  does with the labels a report does not cover.
 - **Safe-by-design.** Sensitive tools are executed as mocks or in dry-run; exfiltration
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
@@ -119,24 +177,45 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   trailing CR from a Windows-edited `.env` used to be quoted, in clear, by the transport error
   that rejected it). A key with a control character **inside** it (a newline from a pasted
   value) is refused before any request, with an error that names the variable and never the
-  value. Values shorter than 8 characters are not registered. The 8-hex digest after a mask is
+  value. Values shorter than 8 characters are not registered. A registered credential is also
+  found when the text splits it with a newline, a tab or another control character, with an
+  invisible format character (a zero-width space, a soft hyphen, a word joiner, a byte order
+  mark, a bidi control, a tag character), or with U+FFFD, the replacement character half a
+  character in a reply is read as: the stretch it covers is masked with the same
+  digest as the credential written in one piece. One split by a space or another
+  printable character (U+FFFD aside) is not. The 8-hex digest after a mask is
   salted per process, so a report cannot be used to confirm a guessed password; set
-  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose. What the tool itself
-  generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
-  readable in every report, in both copies of a finding the JSON report carries, so a custom
-  spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
-  prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part of
-  an absolute path that exists on this machine is exempt from the entropy rule (a temp or CI
-  workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and labels
-  in it are still masked, and the rest of the path is redacted. Otherwise only
+  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose: a digest is computed over
+  the value as written (a private key's too, whatever is registered inside it, when the key
+  pattern takes it whole: its 16 KB bound counts each mask inside the key as a stash token), so
+  with the salt pinned one value reads the same in every run. A password in a URL is masked
+  behind a registered, masked or empty user too (not yet behind a user holding a raw `@`, nor
+  behind a registered credential that runs across the URL's `://`, `:` or `@`), and registered
+  credentials that overlap in the text are masked as one. Two cases are masked less well than
+  before PR #56, a trade-off the owner accepted for its merge (a follow-up issue tracks them):
+  a registered credential holding an `@` across a URL's `@` lets the URL rule read on to a later
+  `@`, so a labelled value written after the URL (`,password=<value>`) keeps its tail readable
+  and the host is reported wrong; and two overlapping registered credentials, masked as one run,
+  can cover a URL's separator, so its password stays readable (`key-ABCD1234` and `1234://bob`
+  registered). Both need a target that writes a registered credential holding a URL separator.
+  What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
+  id) is left readable in every report, in both copies of a finding the JSON report carries, so
+  a custom spec id reads the same in every run and `dottore diff` can match it. Error messages
+  the CLI prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The
+  part of an absolute path that exists on this machine is exempt from the entropy rule (a temp
+  or CI workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and
+  labels in it are still masked, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
   tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
   digest of the scope body (`scope checksum mismatch: the scope body hashes to '<sha256>', not
   to the recorded checksum`). The value typed in `checksum:` is not quoted at all: the redactor
   masked a real sha256 there only by its entropy, about 19 times in 20, so what appeared in
   clear was mostly a value that was not a digest, such as a key typed by mistake. A scope or
-  fleet file that fails validation names each field and the reason, never the value
-  (pydantic's own message echoes it), and a YAML error in a scope, target, fleet or labels file
+  fleet file, or a target file's `capabilities` or `sampling_defaults`, that fails validation
+  names each field and the reason, never the value
+  (pydantic's own message echoes it), for at most 20 problems, the rest counted (`; and 980
+  more`), and cuts a field path or a reason longer than 300 characters (`... (1000
+  characters)`); a YAML error in a scope, target, fleet or labels file
   gives the problem and where PyYAML found it: line and column, plus where the entry it was
   reading starts when PyYAML records that and it differs (a missing space after a colon is
   reported on the next line); a control character is located by its position instead
@@ -146,16 +225,27 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   mapping, first at line 5, column 5 and again at line 11, column 5`. Keys pulled in by a `<<`
   merge can still be overridden; a map merged in is checked too, and two `<<` in one mapping are
   refused (merge several maps with one list, `<<: [*a, *b]`). A key written as an alias
-  (`*k :`) is reported where the alias is written. An error quotes an `auth_ref` only when it
+  (`*k :`) is reported where the alias is written.
+  Two values that cost far more to build than they weigh are refused the same way, in every file
+  and in specs, where they are written and before the rest of the file is parsed: a number written
+  in more than 1,000 characters (`cannot build this value (a number written in over 1000
+  characters)`; YAML 1.1 reads `1:59:59` as a base-60 integer, which PyYAML builds in time that
+  grows with the square of its length, so one such value in a 1 MiB spec took `lint` 55 s), and
+  the key that takes a file past 1,000 keys that are numbers, a key merged in by `<<` counted in
+  every mapping it is merged into (integers that differ by a multiple of `2 ** 61 - 1` share one
+  hash, and the mapping that holds them is built in time that grows with the square of their
+  count). Keys that are text, as in every file this tool reads, are not counted.
+  An error quotes an `auth_ref` only when it
   is a reference (it contains `://`, such as `env://NAME` or `vault://x`); a literal value
   pasted where a reference belongs is printed as `a literal value (not shown)`, for example
   `target 'live' auth_ref a literal value (not shown) is not authorized by the scope (declared:
   'env://LIVE_KEY'); refusing to read an unauthorized credential`. The same holds for the
   judge-file mismatch of `dottore fleet --judge`.
 - **Errors, warnings and the inspection commands print no raw control character.** An error, a
-  warning, the text output of `lint`, `coverage`, `diff`, `calibrate` and `replay`, and a spec's
-  name in `registry ls` and `describe` quote file names and values that a pack author, a report or
-  a target wrote: a spec file named `x`, a newline and `::error ...` printed a line a GitHub
+  warning, the text output of `lint`, `coverage`, `diff`, `calibrate` and `replay`, a spec's name
+  in `registry ls` and `describe`, and a canary on a `seed:` line of `run --dry-run -vv` quote
+  file names and values that a pack author, a report or a target wrote: a spec file named `x`, a
+  newline and `::error ...` printed a line a GitHub
   Actions runner reads as a workflow command. A C0 control and DEL are written as their control
   pictures (a newline as `␊`, ESC as `␛`, DEL as `␡`, as the redactor writes `␀` and `␁`), and a
   C1 control, U+2028, U+2029 and a lone surrogate (an undecodable byte of a Linux file name) as
@@ -164,12 +254,13 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `\u200b`, a soft hyphen `\xad`, a bidi control, a tag character `\U000e0041` (13 of them, the
   prepended concatenation marks such as U+0600, do have a glyph). The cost: a joined emoji, a
   right-to-left mark or a soft hyphen in a name prints its escape, and an existing path holding
-  one no longer reads as the file's name. This happens after the redactor, and a registered
-  credential split by control or format characters is masked whole first; split by spaces or other
-  printable characters it is still kept. `dottore coverage` lists each file that failed to load as
-  a bullet, so no line starts with a file name, `diff` and `calibrate` refuse a report whose spec
-  ids are not spec ids (each `diff` row starts with one), and the run prints its error and
-  coverage lines unwrapped, so a wrap at 80 columns in a CI log cannot start one with `::error`. A
+  one no longer reads as the file's name. This happens after the redactor, which masks a
+  registered credential split by control or format characters (or by U+FFFD, which is
+  printed as it is) whole; split by spaces or other printable characters it is still
+  kept. `dottore coverage` lists each file that failed to load as a bullet, so no line
+  starts with a file name, `diff` and `calibrate` refuse a report whose spec ids are not
+  spec ids (each `diff` row starts with one), and the run prints its error and coverage
+  lines unwrapped, so a wrap at 80 columns in a CI log cannot start one with `::error`. A
   character the output's encoding lacks is written as its escape. A runner also reads a command in
   the middle of a line (GitHub's legacy `##[error]`, Azure Pipelines'
   `##vso[task.setvariable ...]`), so the same output writes the second `#` of `##<letters>[` as
@@ -177,10 +268,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   JSON outputs escape every control character, `fingerprint`'s included, but keep a value as it
   is, `##[` included, so a JSON output printed to a CI log can still carry a command: write it to
   a file (`--json > out.json`, and `dottore fingerprint > fp.json`, which always prints JSON) in a
-  pipeline that runs third-party packs. Not covered: the reports and the
-  evidence keep a credential split by a control or format character readable; a forged evidence
-  tree can still start a `replay` line with an id; invisible characters outside Cf (variation
-  selectors, U+034F, U+3164) are not written out.
+  pipeline that runs third-party packs. Not covered: a forged evidence tree can still start a
+  `replay` line with an id; the operator's own values in the run's plan lines (the target id under
+  `--dry-run`, `--estimate` and `-sn`) are printed as written; invisible characters outside Cf
+  (variation selectors, U+034F, U+3164) are not written out.
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
@@ -238,18 +329,133 @@ capabilities:
 sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
-`id` and `type` are required; the rest are optional but needed for a live scan. `type: model`
-means a bare model API, and changes what a spec with setup sends: its memory seed goes as saved
-memory from earlier sessions after the system prompt, its documents as retrieved context before
-the attack and its tools as tool definitions,
-with each tool call answered by the spec's declared result for at most 4 rounds (OD-18 option A).
-Declare `tools`, `rag` and `memory` under `capabilities` to send those specs; each attempt then
-records `setup_delivery: in_band`, and the result says how the model handles untrusted context,
-not how a deployed application does. A spec whose untrusted content is only a tool's result is
-`inconclusive` (`setup_not_reached`) when the model never called that tool and nothing else
-failed, and the coverage figures do not count it; an adapter that cannot carry the scene (no
-tool definitions, or no system prompt for a memory seed, as a REST template without a system
-field) leaves the spec `inconclusive: setup_not_delivered` with nothing sent.
+`id` and `type` are required; the rest are optional but needed for a live scan.
+The file holds these keys and no others: `id`, `type`, `name`, `provider`, `endpoint`, `model`,
+`auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup` and
+`mock_scenario` (below). Any other key is refused before anything is sent (exit 3), and so is a
+`name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text, on one line
+that names the file and the key, never the value: `error: target file target.yaml failed validation:
+endpont: Extra inputs are not permitted`. Until 2026-10-07 both were read as absent, so `endpont:`
+left a live target with no endpoint and the run went to the offline mock, which sent it nothing and
+scored the mock's replies, and keys of `capabilities` that lost their indent were ignored at the top
+level (owner's decision OD-31). Quote a model id YAML reads as a number, a date or a boolean
+(`model: "20240613"`). One of the six text fields with nothing after it, `null` or `~` is still
+absent. A key that only holds an anchor for a `<<` merge (`x-defaults: &d`) is refused like any
+other: write the merged map inline. The key is printed as the location, as pydantic renders it
+(`on:` as `1`, a `!!binary` key decoded), so a control character in it reaches the terminal as
+written, as below. A run halted before then with such a key resumes once you delete the key;
+correcting it to the key you meant changes the target, and the resume is refused.
+A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
+`max_tokens` outside 1 to its cap or a key either block does not know is refused before
+anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
+problems found in that block (the `capabilities` block alone if both are wrong), never the value
+written: `error: target file target.yaml 'capabilities' failed validation: tools: Input should be a
+valid boolean, unable to interpret input`. The field is printed from the key you wrote, its control
+and format characters written out (a line break as `␊`), and a key that is not text is printed as
+pydantic renders it (`on:` as `1`). What can be read
+is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
+`top_p` have no range check. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
+`logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set, so a `tool:` written
+for `tools:` is refused (`tool: Extra inputs are not permitted`); older versions ignored it, and
+the target ran with tools off and without the specs that need them. A `capabilities` that is
+not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
+included, unless it is null: to declare none, leave the key out or write `capabilities: {}` (owner's
+decision OD-29). A `capabilities:` with nothing under it is null too, so if the keys below it lost
+their indent they are top-level keys, which are refused as any other unknown key is (above). A run
+an older version halted with such a key or value resumes once you delete it (or write `{}` for
+`false`), since it was never read; correcting a key to the one you meant changes the target, and the
+resume is refused.
+`sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
+every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
+judge and the `-sV` probes. Whether to apply it or drop it is open.
+
+`logprobs: true` under `capabilities` lets the spec that scores token logprobs run
+(`DL-MEMORIZE-DIVERGENCE-001`, through `logprob_membership`); without it that spec is skipped
+for capabilities. The OpenAI adapter asks for logprobs on every request whatever the file says,
+and reads a figure only when it is a JSON number that converts to a finite float at or below
+zero, as a `log p` is. A reply in which a token's figure is anything else (a string, a bool, a
+positive number, NaN, an infinity, or an integer no float holds) is read as carrying no logprob
+block: the membership spec is inconclusive and every spec is still judged on the reply's text.
+Such a figure among a token's alternatives drops only that token's alternatives, which are never
+scored. In older versions a 400-digit figure, a list or an object there made `fingerprint` and
+`run -sV` exit 1 with no report, and a positive token figure was scored as "likely memorized".
+
+`run` and `fingerprint` parse a target file once: the target the scope authorizes, its route and
+the target a live adapter sends to all come from that one parse, even if the file changes while the
+command starts, and a target can come from a pipe (`-t /dev/stdin`). A file named twice
+(`-t X --judge X`) is parsed once per name.
+
+`type: model` means a bare model API, and changes what a spec with setup sends: its memory seed
+goes as saved memory from earlier sessions after the system prompt, its documents as retrieved
+context before the attack and its tools as tool definitions, with each tool call answered by the
+spec's declared result for at most 4 rounds (OD-18 option A). Declare `tools`, `rag` and
+`memory` under `capabilities` to send those specs; each attempt then records `setup_delivery:
+in_band`, and the result says how the model handles untrusted context, not how a deployed
+application does. A spec whose untrusted content is only a tool's result is `inconclusive`
+(`setup_not_reached`) when the model never called that tool and nothing else failed, and the
+coverage figures do not count it; an adapter that cannot carry the scene (no tool definitions,
+or no system prompt for a memory seed, as a REST template without a system field) leaves the
+spec `inconclusive: setup_not_delivered` with nothing sent.
+
+Any other `type` is a **deployed application**, which has its own documents, tools and memory,
+so the scene is the operator's to seed (OD-18 option B). The target file says which specs it
+holds:
+
+```yaml
+seeded_setup:
+  specs: [PI-INDIRECT-TOOL-001, "AG-TOOL-*"]   # spec ids or fnmatch globs (case kept)
+  tools:                                       # a spec's tool name -> the deployment's name
+    lookup_ticket: get_ticket
+    search_kb: kb_search
+  granted_tools: [escalate_to_human]           # the deployment's own tools outside any scene
+  run_token: "eng-2026-q4"                     # replaces {{run_id}} in what you seed
+```
+
+A spec with `setup.documents`, `setup.tools` or `setup.memory_seed` is sent only when the
+deployment holds its scene as declared; otherwise it is `inconclusive` (`setup_not_seeded`)
+with nothing sent, the dry run and `--estimate` count it as "not seeded" (`-vv` says why), and
+the coverage figures do not count it. Four things leave a spec unsent: `specs` does not match
+it; its canary has to be in your deployment (in its scene, or planted in a record outside it, as
+`AC-BOLA-001` plants one in another customer's) and no `run_token` is declared, since you seed
+before the run and a canary bound per run could never be there, so `secret_leakage` would be
+blind; two tools of its own scene map to one deployment name; or it is judged on its tool trace
+and the target's adapter reads no tool calls (a REST template, the MCP adapter:
+`setup_not_delivered`). With a `run_token`, each such spec's canary is
+`<run_token>-<spec id>` in place of `{{run_id}}`, so no two specs share one, and
+`--dry-run -vv` prints every canary to seed (`seed:` lines); a spec whose canary travels in the
+request keeps the per-run one. Use a fresh token per engagement.
+
+A seeded spec goes out as its plain prompt (or pinned turns), and each attempt records
+`setup_delivery: seeded` and the tool-name map it applied (`seeded_tools`). The map is applied
+per spec, to that spec's scene tools only, so two specs may give one deployment tool their own
+names (`lookup_ticket: get_ticket` and `read_ticket: get_ticket`). Calls are judged under the
+spec's names, so `get_ticket` is judged as `lookup_ticket` and a call under the deployment's
+own name is not "unauthorized"; the evidence keeps the call as the deployment made it. A call to
+a `granted_tools` name is not unauthorized either, though its arguments and a destructive name
+are still judged; a grant applies to every seeded spec, except that a name that is one of a
+spec's own scene tools is never granted for that spec (a grant of `http_post` would otherwise
+re-authorize the egress an exfiltration spec forbids). Any other tool is judged as one outside
+the spec's scene.
+
+**Your deployment must show its tool calls.** A spec whose untrusted content is a tool's
+result, and which judges no tool trace, is `inconclusive: setup_not_reached` when the reply
+shows no call to that tool: a deployment that runs its tools server-side and returns only text
+cannot show that the poisoned result was ever fetched. A spec judged on its trace is not sent
+through an adapter that reads no calls (above); through one that does, no call is the secure
+answer, so do not declare trace specs for a deployment that hides its tool calls. Nothing can
+show that a seeded document or memory was ever retrieved, so a plain answer to a seeded RAG or
+memory spec passes: what a seeded spec tests is only as good as what you seeded and what your
+deployment retrieves, which the tool cannot check.
+
+The loader refuses the block on a `type: model` target (which gets the scene in-band), an
+unknown key, an empty or non-string entry, a name both mapped and granted, and a `run_token`
+that is not 8 to 64 letters, digits, `_` or `-`. The block is part of the target's digest, so a
+run stored without it resumes, and one stored with a different declaration does not. Resuming
+a run stored before this check existed, a spec it now stops is scored from the attempts the run
+had sent when it holds all of them, and otherwise kept as evidence, inconclusive, with nothing
+more sent. The offline mocks (`vulnerable`, `hardened`,
+`bare`, `comprehending`) answer from the spec, not from a deployment, and need no declaration.
+Worked file: [`../examples/target.app.yaml`](../examples/target.app.yaml).
 
 `auth_ref`
 supports only `env://NAME`. Any other scheme is refused before anything is sent, `--dry-run`
@@ -302,7 +508,23 @@ targets:
 
 `provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
 `/messages` -> `anthropic`, otherwise `rest`. `dottore fleet` expands this into a scope plus
-one target file per model. Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
+one target file per model, named for its `id` (`target-<id>.yaml`). Two ids that differ only by
+case (`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
+case-insensitive one (the macOS and Windows default) they are one file, and the second entry
+used to overwrite the first. The message locates both entries as validation errors do
+(`targets.0.id`, counted from 0), since the CLI may mask an id that looks random. A `judge:` id
+spelled as a target's only up to case is refused too (the default `judge` of a block with no
+`id:` included), so the scope never holds two ids that differ only by case; spelled exactly the
+same, the judge shares that target's scope entry when its endpoint and credential match, and is
+refused otherwise.
+Each entry is written as a `chatbot` target (an `mcp` one as `api`)
+with no `seeded_setup`, so a spec that needs documents, tools or memory is `setup_not_seeded`
+on a fleet entry that declares the capability; for those, scan with a target file (§4.2). Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
+
+An entry may declare `capabilities` with the keys a target file takes (§4.2). Its target file
+gets `tools: false` (`true` for an `mcp` entry) and `rag: false` unless the entry sets them, plus
+every key the entry sets; a key `capabilities` does not know is refused before anything is
+written (exit 3).
 
 ## 5. Command reference
 
@@ -335,7 +557,7 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
-| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). The run's `started_at` is stamped before the probe pass |
+| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). A probe whose reply comes back **refused** (over 4 MiB, in an encoding the adapters do not decode, or nested more than 100 levels deep: what makes an attack attempt inconclusive without a retry) is a failed probe: its layer gives no evidence from it, the fingerprint is built from the replies that came back, a `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` line on stderr names each one as `layer/probe: ErrorClass` (never silenced by `-q`), the fingerprint line ends `[N of 17 probes got no usable reply]`, and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a timeout, a refused connection, after its retries) still stops the run before any attack with its cause (exit 3): the target is not answering. So do a refusal by the scope and a 200 that is not JSON. Before, one refused probe reply stopped the run before any attack too (OD-23). The run's `started_at` is stamped before the probe pass |
 | `-A` | aggressive: implies `-sV` and `--deep`, so it fingerprints first and runs at `-T2` unless you pass `-T`. There is no separate `--adaptive` flag: mutator ordering is adaptive only when a fingerprint exists, that is with `-sV` or `-A` |
 
 **Judge and execution**
@@ -347,12 +569,12 @@ required.
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep` and `-A` imply 2; an explicit `-T` always wins); higher is faster/louder |
 | `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it). Every send passes it: the battery, each retry (a campaign's adapters do not retry on their own; the runner retries, paced and debited, so a 429 storm is not a burst), the `-sV` probes, the multi-identity sweep and the `--judge` model. Must be greater than 0: `0` or a negative rate is refused (exit 3) instead of silently switching pacing off. **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |
 | `--concurrency INT` | max concurrent specs |
-| `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the spec's `sampling.max_tokens` or, when it declares none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0); tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a spec that declares none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
+| `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the spec's `sampling.max_tokens` or, when it declares none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0). A figure is read only when it is a JSON integer from 0 to 2^53, past which a float no longer holds every integer: one that is negative, larger, or written with a fraction or an exponent is skipped like an absent one and the next shape is read (`total_tokens`, then `tokens`, then input plus output, then prompt plus completion); a sum past 2^53 is no usage, and with no readable shape the reservation stands. A prompt-cache figure is summed only into a pair, and one that is there and unreadable makes the pair a floor: the reservation is trued up to it, never down. (A 400-digit figure made `run` exit 1 with no report, and one past 2^53 halted the campaign on the token ceiling, until 2026-10-07.) Up to 2^53 a figure is believed, as a bill is: a target can report more than it used and halt the run on the ceiling (one reply of 2^53 fills even the largest ceiling these flags take, 2^53 too). Tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a spec that declares none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
-| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N |
+| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. That it is the same campaign (target, route, judge, planning mode, `--runs`, battery, evidence) is checked first, the budget after (against the campaign's `--runs`), and a resume refused before it sends anything writes nothing. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run. The planning mode is adaptive when the campaign ran with `-sV`, `-A` or `--deep`, and a resume has to keep it: the refusal names those flags, to leave out or to put back (the run store does not record which of them set it). With `-sV`, a request ceiling the campaign's spend leaves too small for the 17 probes is refused before they are sent, and the refusal offers dropping `-sV` (or the `-A` that implies it) only when the campaign did not plan adaptively and the ceiling holds the rest of it without the probes, priced as `--estimate` prices it; otherwise it says to raise `--budget-requests`. A halt keeps every reply the target gave: the attempts a batch had answered when the ceiling stopped it are stored (they were lost until 2026-10-07, and the resume sent them and paid for them again), and a reply whose evaluation the ceiling stopped (the judge's request refused) keeps a deterministic check's fail when it has one (that decides without the judge, and the verdict says the judge was not consulted) and is otherwise stored without a verdict, then sent again and judged by the resume. With `--judge`, a reply stored without a verdict is paid for twice: the resume sends it again rather than judging the stored one (a design choice; re-judging is a possible follow-up). A run that spent requests and stored no reply (for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start with its spend carried; one whose run store records no request spent is refused, and so is an `--evidence-root` that holds none of the artifacts the run store journals for the run, or an empty tree for a run that predates that journal |
 | `--resume-unverified` | resume a run whose integrity record is missing; its ceiling then covers this invocation only |
-| `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
+| `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. On a live target whose scope gives it two or more identities it also prices the identity sweep: one request per identity for each spec that sweeps them (`DL-XTENANT-001`, and `EMB-XTENANT-RETRIEVAL-001` when the target declares `multi_identity` and its scene is not sent in-band), which it left out until PR #60 (merged 2026-10-09); with `--resume` it is not counted for a spec whose attempts are all answered, which the runner does not sweep again. With `--resume` it subtracts the requests already done and, with `--judge`, the judge's two requests for each attempt the resume keeps, so it prices what the resume sends. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
 | `--compare` | model-comparison matrix across targets (a band per spec x target), printed in the terminal and embedded in the JSON report. The matrix renders for **any** multi-target run; `--compare` states the intent and refuses a single target (exit 3) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a **mock** target. Refused (exit 3) on a live target: it sends nothing, and used to publish a clean report under the live target's name |
 
@@ -376,19 +598,48 @@ error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` 
 usage error (an unknown option, a value of the wrong type) is `3` too: the command-line library
 defaults to `2`, which here would read as "findings". Options that can only be wrong are
 refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
-`--top-tests 0`, `--runs 0`, `--rate 0`, a report path in a directory that does not exist (`-oA`
+`--top-tests 0`, `--runs 0`, `--rate 0`, a negative `--budget-tokens`, `--budget-requests` or
+`--budget-wall`, any of those six integer flags past 9,007,199,254,740,992 (`2**53`; `--runs` of
+a few hundred digits used to crash the plan's arithmetic with exit 1), a live run whose pace
+(`--rate`, or the `-T` template's) is under one request per wall-clock ceiling (`--budget-wall`,
+0 included, or the 7,200 s cap of a derived one; the ceiling is checked when a send is charged,
+so such a run waited past it; an offline mock run is not paced), a report path in a
+directory that does not exist (`-oA`
 expanded to its four files first), two target files with the same id, and two report formats
 that would write the same file (`two report formats would write the same file: <path>`). That
 last check compares the resolved paths case-insensitively and after Unicode normalization,
 because the macOS default volume treats `R.json` and `r.json`, or `café` composed (NFC) and
-decomposed (NFD), as one name; `-oJ out/R.json -oH out/r.json` is refused.
+decomposed (NFD), as one name; `-oJ out/R.json -oH out/r.json` is refused. The spec paths are
+checked the same way: a spec file that fails to load, and a selected spec whose regex does not
+compile (a `regex_absence` or `regex_presence` pattern, a `step_arg_patterns` entry, whose
+evaluator could never decide), refuse the run (exit 3) naming them (five at most, then how many
+more) and pointing at `dottore lint`; `--exclude <id>` leaves such a spec out and runs the rest.
+
+Ctrl-C, SIGTERM (what `timeout`, `docker stop`, systemd and CI timeouts send) and SIGHUP all stop
+a run the same way: the requests in flight are cancelled and the spend is recorded, so a run that
+had started its attack traffic can be resumed (a fresh run stopped in its `-sV` probe pass has
+nothing to resume). An ignored SIGHUP stays ignored, so `nohup dottore run ...` survives a logout;
+a SIGKILL stops it without recording what the unfinished part spent. Until 2026-10-08 a SIGTERM
+or SIGHUP that arrived while requests were being sent could be dropped if Python was running a
+cleanup callback at that instant, and the run went on. That can still happen when Ctrl-C is
+ignored, as for a job a script starts with `&`: if such a job keeps running after a SIGTERM, send
+it again (a SIGKILL would stop it without recording what the unfinished part spent).
 
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an
 environment error (a timeout, a 5xx after retries) are sent again under the same attempt id
-(except an error a retry would repeat, such as a reply over the size cap, recorded with
-`[not retryable]` and kept), and a resumed spec is scored over its full `--runs`, one attempt per
-id.
+(except an error a retry would repeat, such as a reply over the size cap or nested too deeply,
+recorded with `[not retryable]` and kept), and a resumed spec is scored over its full `--runs`,
+one attempt per id. What a halted run keeps: every reply the target gave, stored when its batch
+returns or a halt stops it (a Ctrl-C still drops the batch in flight), a conversation whose last
+reply crossed the token ceiling included. Each is judged when the ceiling leaves room for the
+judge; when it does not, a reply a deterministic check already failed keeps that fail (it
+decides without the judge), and the others are stored without a verdict, which the resume sends
+again and judges. Its spend is in the run store. Nothing is stored for sends that made no reply,
+an identity sweep or a conversation stopped mid-way: the resume sends them again from the
+start, with their cost already counted against the ceiling. A run halted by this version is not
+for an older one to resume: it would keep a reply stored without a verdict and score the spec
+without it.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
 authorized but answered nothing at all (every attempt failed on transport). That code is
@@ -396,7 +647,29 @@ deliberately chosen over `2` even when the partial run found confirmed exploits,
 scan itself is not a measurement you can act on: the specs that never ran are the ones you
 know nothing about. The findings are still written to every report. If your pipeline treats
 `3` as "infrastructure, retry", read `summary.status.reason` before retrying: it names the
-breached axis and how many specs never ran.
+breached axis, its ceiling, the figure that would have crossed it and how many specs never ran,
+for example `stub: budget ceiling reached on 'max_tokens' (limit 500,000, attempted
+9,007,199,254,740,992); 1 of 1 specs never ran or did not finish`. The figures are written in
+digit groups, seconds with three decimals and a count from 10**18 up as a magnitude
+(`1.000e+300`), because the reason is masked like everything else the tool prints and a bare
+figure that long reads as a phone number to the redactor. A shortened figure is rounded away
+from the ceiling (the attempted figure up, the limit down), so the attempted figure always
+reads larger than the limit.
+
+A resume with `-sV` records what its probe pass sent as soon as the pass ends, whether it
+finished, reached the request ceiling, stopped on an error (a probe with no answer after its
+retries, a 401, a reply that is not JSON) or was stopped by Ctrl-C or SIGTERM, so the next
+resume's ceiling counts those requests too. They are counted as the request ceiling counts them,
+every send attempted, retries included, a send to a target that refused the connection too. When
+an error or a signal stops the pass, stderr gives that count even under `-q`: `resume: the -sV
+probe pass on 'api' stopped after 3 request(s), retries included; run-<id> now records 23
+request(s) spent`, or `they could not be added to the spend of run-<id>` after a warning when the
+run store could not be written. The error line after it can say `exhausted 1 attempt(s)` for
+those three sends (see Troubleshooting); a refusal at the request ceiling gives its own count. A
+Ctrl-C landing during the few milliseconds of that write can lose the record, as a SIGKILL does,
+and cuts the line; after a Ctrl-C, or a pass that finished, it takes a second one in that window.
+Nothing is recorded for a fresh run stopped by its probe pass (it has no run row and nothing to
+resume) or for a `--resume-unverified` run whose spend was never recorded.
 
 ### `dottore fingerprint`, identify the model + guardrails
 
@@ -434,6 +707,16 @@ name counts (not `finish_reason`, `system_fingerprint` or other fields compatibl
 copy). On a live target the capabilities in the fingerprint are the ones the target file
 declares, and a model name such as `meta-llama/Meta-Llama-3-8B-Instruct` reaches the metadata
 layer unmasked. Details in [`10-fingerprint.md`](10-fingerprint.md) §2, "Attribution rules".
+
+A probe whose reply comes back refused (over 4 MiB, an encoding the adapters do not decode,
+nested more than 100 levels deep) does not stop the command: the fingerprint is built from the
+replies that came back, `spoofing_flags` carries `probes_failed`, an evidence entry
+`probe_errors=[...]` lists each failed probe as `layer/probe: ErrorClass`, stderr says `warning:
+<target>: N of 17 probe(s) got no usable reply (...)`, and the exit is 0. Before, it exited 3 on
+the first such reply. When every probe is refused there is no fingerprint: the line starts
+`error:`, nothing is printed on stdout, and the exit is 3. A probe that gets no answer at all (a
+closed port, a 503 or a timeout after the retries), a refusal by the scope or a 200 that is not
+JSON still exits 3, with the cause.
 
 ### `dottore fleet`, expand and optionally scan a fleet
 
@@ -483,19 +766,82 @@ A spec pack can come from a third party, so lint reads only regular files that r
 their pack directory (or, for loose specs, the directory they were found in), at most 1 MiB
 each; a file named directly on the command line is read wherever it points. A document that
 expands, counting every alias where it is used, past 100,000 nodes (a long text counts one node
-per 64 characters), or that holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a
-few aliases used to turn a 4 KB file into 52 MB of error text. A key written twice in one
-mapping is a `PARSE_ERROR` too. A YAML error gives the line and
-the reason without quoting the line, a suite or pack error names the field without the value,
+per 64 characters), that nests deeper than 100 levels once its aliases are expanded, or that
+holds a recursive alias, is one `PARSE_ERROR` and is not loaded: a few aliases used to turn a
+4 KB file into 52 MB of error text, and chained anchors into a value 1,600 levels deep that the
+linter overflowed on. The scope, target, fleet and labels files have the same three limits, and
+so do the policy and signature packs (since 2026-10-07; they had only the depth limit, and an
+835-byte labels file of anchors that each list the previous one twice ran `calibrate` past 25 s
+and 1.7 GB). Too deep is reported before too large, and each where the value crosses its limit:
+`labels file labels.yaml is not valid YAML: document is too large (over 100000 nodes, counting
+every alias where it is used and a text as one node per 64 characters) at line 1, column 266`
+points at the anchor whose two aliases take it past the cap. Composition stops as soon as the
+nodes written in a file pass the cap, an alias counting the node it names, so a large file is
+refused without being composed whole (the first version of this cap composed a 3 MB list of a
+million texts, 785 MB, before refusing it; now 1.4 s and 134 MB), and such a file is reported as
+too large before its depth is checked, unless composition reaches a list or a map past the depth
+limit before the count crosses (a list or a map is counted when it ends). Each file is read up
+to 1 MiB (see **Bounded operator files** in §3), from any file; a scope, target, fleet or labels
+file can be a pipe. A tag longer than 256 characters is refused at the first one, without
+quoting it. A list or a map written inside 100 others is refused where it starts, before
+anything in it or after it is composed (the scanner reads ahead to the end of that line, at most
+1,024 characters, and one token past it, each token read whole, and an error there is reported
+instead): PyYAML's scanner pays on every token for each flow level open around it, and a file
+nested past the limit used to be composed whole first (198 KB of chains of `[` 320 deep, 11 s,
+4.6 times a flat list of as many texts; now 0.1 s). The position is where the first list or map
+written past the limit starts (a deeper branch, or one as deep written first, aliases expanded,
+used to be named instead, and so did a key before an empty list, as in `k: []`), and a recursive
+alias written before the nesting is no longer what is reported. A text or an alias written at
+level 101 opens no level and is left to what refused it before. Flow style nests at most 20 levels:
+a list or a map written with brackets or braces inside 20 others written that way is refused where
+it starts, `document is nested too deeply in flow style (over 20 levels of brackets or braces)`,
+because the scanner pays for each of them on every token inside it (the same chains 98 deep were
+accepted in 2 to 3 times the time of the flat list; now refused in 0.01 s). Block style counts only
+toward the limit of 100, and the YAML files the repository ships nest at most 2 flow levels; a file
+written as JSON is flow style throughout, so it too nests at most 20 levels.
+A key written twice in one
+mapping is a `PARSE_ERROR` too, and so is a number written in more than 1,000 characters or a file
+with more than 1,000 keys that are numbers (§3). A key YAML builds as something other than text
+(`5:`, a bare `on:` or `no:`, `~:`, `2026-10-07:`) is a `SCHEMA` finding at the path of its
+mapping, such as `fixtures/vulnerable/tool_calls/0/args: key 5 is an integer, not a string; write
+it in quotes, without a tag`: a spec is JSON, whose keys are strings, and such a key in a fixture's
+tool-call arguments used to crash lint. The message shows the value YAML built (`0x1F:` as `31`). A
+value JSON cannot hold (an unquoted date or timestamp such as `2026-01-01`, a `!!set`, an entry of
+`!!omap` or `!!pairs`, `!!binary`, `.nan`, `.inf`, an escape between U+D800 and U+DFFF, which
+PyYAML builds as half a character even in a pair) is a `SCHEMA` finding at its path, such as
+`setup/tools/0/returns: a date (YAML reads an unquoted 2026-01-01 as one), which JSON cannot hold;
+write it in quotes, without a tag`: a spec is JSON, and such a value in a tool's `returns` or a
+tool call's arguments passed lint and then crashed `run`.
+A YAML error gives the line and
+the reason without quoting the line (a reason that names an alias or a tag is cut at 300
+characters), a suite or pack error names the field without the value,
 a JSON-schema message can quote the offending value (cut at 300 characters), and at most 20
-schema errors are listed per file. An oracle marker that an echo of the
+schema errors are listed per file. A number too long for Python to write out (more than
+`sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
+`f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included; a key on
+its path, or on any JSON-schema error's, that is not printable is written as `repr`), and
+nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
+as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
+`mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An
+oracle marker that an echo of the
 request would satisfy is `ORACLE_MARKER_IS_ECHOABLE`; the request includes the text rendered
 into the spec's images (see `CONTRIBUTING.md`). An evaluator config that would silently not
 check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no usable
 `patterns`, and a `tool_call` allowlist (`patterns`, the tools the agent is authorized to call)
 that names a tool the setup marks `external: true`. An allowlist name the setup does not declare
 (when it declares tools) is the same code as a warning, naming the closest declared tool when
-one is close.
+one is close. A regex the spec writes (a `regex_absence` or `regex_presence` pattern, a
+`tool_sequence` `step_arg_patterns` entry) that does not compile is the same code as an error,
+whatever the engine's reason (a repetition past its limit and groups nested a few hundred deep
+included): the message names the field (and the step, for a `step_arg_patterns` entry), the
+pattern and the reason, quoted and cut at 120 of their own characters, at most 10 per spec, and
+that spec's fixtures are not proved until it compiles, and `dottore run` refuses a selected spec
+that has such a pattern before sending anything. The engine parses groups recursively, so the
+nesting limit moves a little with the stack: lint accepts about 486 nested groups on Python 3.14
+and a run's check a level or two more, and in a run of more than 512 patterns an evaluator can
+stop a few levels short, ending a spec nested 482 to 487 deep `inconclusive` with no reason in
+the report. Nothing real nests that deep.
 
 ### `dottore describe`, one spec's detail card
 
@@ -560,8 +906,11 @@ attempts: 142  exploited: 142  pooled rate: 1.00 (every attempt of the run; a re
 ```
 
 A resume sends an attempt that ended in an environment error again under its id, so several
-artifacts can share one attempt id (the failed try and its re-send). Replay lists them all but
-counts one per id (the one that got an answer), and says so in a line above the totals: `(2 more artifacts share an attempt id with one listed above: one per id is
+artifacts can share one attempt id (the failed try and its re-send). A reply stored without a
+verdict (a ceiling stopped its evaluation) is sent again the same way, and listed with `?` for
+its verdict. Replay lists them all but counts one per id (the one that got an answer and a
+verdict, else any with a verdict, such as an environment error's inconclusive, else a bare
+reply), and says so in a line above the totals: `(2 more artifacts share an attempt id with one listed above: one per id is
 counted below)` (`1 more artifact shares` for one). Attack attempts and the
 recognition probes sent by `-sV` are listed apart: a probe is not an attempt, so it never enters
 the reproducibility ratio or the attempt count, but it is stored, hashed and replayable like
@@ -579,9 +928,20 @@ inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits 
 regression is present, so it is CI-gateable like `run`. A report covering several targets, or
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
-complete is refused too. `dottore calibrate REPORT LABELS` applies the same one-target rule,
-counts agreement as an exact status match, prints an undefined precision or recall as `n/a`
-and floors its percentages (99.6% is shown as 99%, not 100%).
+complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
+what the JSON parser holds), with the file named. A finding that does not validate (a `status` that
+is not a verdict, a field of the wrong type, a key a finding does not have) is refused on one line
+that names the report and gives the place and the reason of each of its problems (the first such
+finding, by its index), never the value written: `error: the report /abs/bad.json failed validation:
+findings.0.status: Input should be 'pass', 'fail' or 'inconclusive'`. At most 20 problems are listed
+and the rest counted. A key a finding does not have is part of the place and goes through the
+redactor like the rest of the message: an email or a known token format in it is masked, but a key
+of hex digits or a short password often prints as written, and its control and format characters
+are written out (a line break as `␊`). What can be read is taken as read (`"confirmed":
+"yes"` is true). `dottore calibrate REPORT LABELS` applies the
+same one-target rule and the same refusals, counts agreement as an exact status match, prints an
+undefined precision or recall as `n/a` and floors its percentages (99.6% is shown as 99%, not
+100%).
 
 ### `dottore schema export`, the JSON Schemas
 
@@ -668,8 +1028,9 @@ C9.3.5, C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need so
 operator provides: a seeded corpus or tool, a target that exposes its tool trace, or two
 identities. The runner builds a spec's documents, tool definitions and memory seed into the
 request only for a `type: model` target (OD-18 option A, which tests the model rather than an
-application); for any other target it sends the prompt, the system prompt and the media, so
-eight of the 17 are exercisable by the tool alone against a deployed application. C10.4.2 is
+application); a deployed application holds the scene only where its operator has seeded it and
+declared it (`seeded_setup`, option B), and an undeclared spec sends nothing there, so eight of
+the 17 are exercisable by the tool alone against a deployed application. C10.4.2 is
 an MCP control: it applies only where the tools are served over MCP, while its two specs run
 against any tool-using agent. C9.5.4 also needs the
 `offensive_simulation` policy layer, which the CLI cannot enable today (§3), so that row cannot
@@ -693,9 +1054,10 @@ real adapter. It decides what an offline target answers:
 `comprehending` is a **simulated decoder, not a model**. It shows that a target which
 comprehends some carriers and not others changes the plan, through the real layer, the real
 mutators and the real planner. It says nothing about how any actual model behaves: that needs a
-live run, and the fingerprint line prints `[offline mock: <scenario>]` so an offline result is
-never read as one. Three specs decide against any fixed-string offline target (their oracles
-read only the response text); `comprehending` decides exactly what `bare` decides, no more.
+live run (the first, against a local `llama3.2:3b`, is in `docs/16` §1), and the fingerprint
+line prints `[offline mock: <scenario>]` so an offline result is never read as one. Three specs
+decide against any fixed-string offline target (their oracles read only the response text);
+`comprehending` decides exactly what `bare` decides, no more.
 
 Both offline fingerprint paths honour the key: `dottore run -sV` and `dottore fingerprint
 --offline` pass the target's `mock_scenario` to the mock. On a `comprehending` target the
@@ -883,7 +1245,9 @@ evaluators:
 ```
 
 Steps with no declared constraint keep matching on name alone. A malformed regex yields
-`inconclusive` rather than quietly falling back to name-only matching.
+`inconclusive` rather than quietly falling back to name-only matching, and `dottore lint`
+reports it (`EVALUATOR_MISCONFIGURED`), whatever step the entry pins, including one the chain
+does not name; `dottore run` refuses the spec before sending.
 
 **Judge hardening.** The judge is assumed to be attackable. Each judge call carries a
 per-call random tripwire token; the judge is flagged **compromised** if it echoes the
@@ -1044,10 +1408,13 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | Symptom | Cause / fix |
 |---------|-------------|
 | `target(s) not authorized by the scope` (exit 3) | The bracket says which: `endpoint '<url>' not on allowlist for '<id>'` (the target's endpoint host/path is not in that target's `endpoints`) or `target '<id>' not in scope` (the id is not among the scope's `targets`). Add it deliberately. `endpoint not allowed by scope` is the adapter's second check, met only if the first was bypassed. |
+| `selected spec(s) write a regex that does not compile` (exit 3) | A spec's `regex_absence` or `regex_presence` pattern, or a `step_arg_patterns` entry, is not a regex the engine compiles, so its evaluator could never decide. `dottore lint` lists them with the engine's reason (up to 10 per spec); fix it, or run the rest with `--exclude <id>`. |
 | Live findings all inconclusive | No `--judge`, so `semantic_judge` abstains. Pass a judge target; deterministic evaluators still fire. |
 | A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all. Selected alone they end in `nothing would be sent` (exit 3), whose message says so: "A spec blocked by policy needs a policy pack that enables it, and the CLI cannot load one today (open decision), so it cannot run from `dottore`." |
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
+| `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. |
-| `authz_leak` is `capability_unavailable` | A cross-tenant spec needs the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
+| `authz_leak` is `capability_unavailable` | It needs two identities to compare: the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity, for a spec that requires `multi_identity` (`DL-XTENANT-001`) and for one that declares `authz_leak` to corroborate (`EMB-XTENANT-RETRIEVAL-001`), never over an in-band scene (a `type: model` target gets the spec's documents in every request, the other tenant's included). Without a sweep, the first stays `inconclusive`; the second is decided by its other evaluators, and its verdict says `authz_leak set aside: no identity sweep ran`. After a sweep where fewer than two identities answered, `authz_leak` stays `inconclusive` for both (the second's verdict says `authz_leak kept: fewer than two identities answered the identity sweep`), unless a deterministic check failed: check that every identity's credential and endpoint work. A spec that requires `multi_identity` and carries a scene (documents, tools or memory) is never swept on a `type: model` target, since the scene goes in-band, and stays `inconclusive` there unless a deterministic check failed. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
+| `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |

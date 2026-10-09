@@ -47,11 +47,10 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
-from ildottore.fingerprint.base import ProbeContext, seed_for
+from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, ProbeFailed, seed_for
 from ildottore.shared.models import (
     FingerprintEvidence,
     ModelRequest,
-    Sampling,
 )
 from ildottore.shared.protocols import Mutator, TargetAdapter
 
@@ -139,7 +138,7 @@ def is_obscuring(mutator: Mutator, *, probe: str = CARRIER_PROBE_PROMPT) -> bool
     preamble, a fabricated prior turn, a GCG suffix). If the sentence does not survive, the
     mutator encoded or perturbed the operator's own benign words and added nothing of its own.
 
-    Measured on the shipped set: 6 of 18 obscure (``base64_wrap``, ``leetspeak``,
+    Measured on the shipped set: 7 of 18 obscure (``base64_wrap``, ``leetspeak``,
     ``payload_splitting``, ``rot13``, ``translate``, ``unicode_confusable``,
     ``zero_width_inject``), and every carrier the repo documents as an attack technique lands
     on the wrapper side. A mutator that raises is treated as non-obscuring: unknown behaviour
@@ -210,9 +209,17 @@ class CarrierLayer:
             request = ModelRequest(
                 prompt=carried,
                 metadata={"probe": f"carrier_{mutator.name}", "seed": seed},
-                sampling=Sampling(),
+                # ``PROBE_SAMPLING`` (temperature 0, a capped reply), as every probe: it sent no
+                # temperature, so a live server sampled each carrier once at its own default
+                # (1.0 on Ollama; first live pass, 2026-10-07).
+                sampling=PROBE_SAMPLING,
             )
-            response = await adapter.send(request)
+            try:
+                response = await adapter.send(request)
+            except ProbeFailed:
+                # No reply is not "did not understand": the carrier is left out of the map,
+                # unmeasured, rather than scored zero. The engine records the failure (§7 A-35).
+                continue
             comprehension[mutator.name] = _comprehended(response.text or "")
 
         # Unattributed (weight 0.0) so the family combiner ignores it: this says nothing about

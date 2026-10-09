@@ -20,6 +20,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from ildottore.shared.config_errors import quoted
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import ScanBand, VerdictStatus
 from ildottore.shared.models import (
@@ -34,7 +35,13 @@ from ildottore.shared.models import (
 from ildottore.store import paths
 from ildottore.store.replay import replay_run
 
-__all__ = ["RESUME_PLACEHOLDER_RISK", "load_resume_run", "stored_runs"]
+__all__ = [
+    "RESUME_PLACEHOLDER_RISK",
+    "adopt_resumed",
+    "load_resume_run",
+    "stored_adaptive",
+    "stored_runs",
+]
 
 #: The reconstructed findings need a ``risk``, and a prior partial run's score is not stored
 #: with the attempts. It is never published: the runner rescores every resumed spec from the
@@ -67,9 +74,16 @@ def load_resume_run(
 ) -> TestRun:
     """Rebuild the partial :class:`TestRun` for ``run_id`` from stored evidence.
 
-    Raises ``ValueError`` when the run has no stored attempts (a typo in the id, the wrong
-    ``--evidence-root``, or a run that was refused before it sent anything): resuming
-    "nothing" would quietly re-run the whole battery under an id that promises otherwise.
+    Raises ``ValueError`` when the run has no stored attempts and its run store records no
+    request spent (a typo in the id, or a run that was refused before it sent anything):
+    resuming "nothing" would quietly re-run the whole battery under an id that promises
+    otherwise. A run that spent requests and stored no attempt is resumed from nothing, with
+    its spend carried by the caller: an identity sweep, a ``-sV`` probe pass, a conversation cut
+    mid-way, a first request that failed or a Ctrl-C mid-batch leaves no reply to store, for
+    example. That run used to be refused
+    as one that "sent nothing", and its spend was stranded under an id nothing could continue.
+    It is still refused when the run store journals an artifact the evidence root does not
+    hold (the wrong ``--evidence-root``), since resuming would send it all again.
 
     ``specs`` binds it to the battery the run was made with (see :func:`_assert_same_specs`).
 
@@ -104,11 +118,11 @@ def load_resume_run(
             f"{Path(evidence_root) / run_id}): {exc.error_count()} field error(s). Remove the "
             "stray file or point --evidence-root at the right tree."
         ) from exc
-    if not result.attempts:
+    if not result.attempts and _requests_spent(run_db, run_id) <= 0:
         raise ValueError(
             f"no stored attempts for run {run_id!r} under {evidence_root}: nothing to resume. "
-            "Check the run id and --evidence-root; a run that sent nothing has nothing to "
-            "continue."
+            "Check the run id and --evidence-root; a run whose run store records no request "
+            "spent has nothing to continue."
         )
     if run_db is not None and Path(run_db).is_file():
         # Each artifact verifies against its own name, so an edited one renamed to its new
@@ -118,27 +132,20 @@ def load_resume_run(
 
         manifest_store = SqliteRunStore(Path(run_db))
         try:
+            if not result.attempts:
+                _assert_nothing_written(
+                    run_id,
+                    evidence_root,
+                    manifest_store.recorded_evidence(run_id),
+                    manifest_store.pending_artifacts(run_id),
+                    manifest_store.get_run_context(run_id),
+                )
             check_manifest(
                 result,
                 manifest_store.recorded_evidence(run_id),
                 manifest_store.pending_artifacts(run_id),
                 battery=manifest_store.recorded_battery(run_id),
             )
-            # Adopt what is on disk into the journal, now that it passed: artifacts written
-            # before the journal existed (a run started by an older version) were otherwise
-            # known to no record once this resume journaled new ones under the same spec, and
-            # the next resume refused the run as tampered (pre-commit audit of F11). A pending
-            # row whose file is present is confirmed the same way.
-            if adopt:
-                manifest_store.adopt_artifacts(
-                    run_id,
-                    [
-                        (attempt.spec_id, digest)
-                        for digest, attempt in zip(
-                            result.attempt_hashes, result.attempts, strict=True
-                        )
-                    ],
-                )
             row = manifest_store.get_run(run_id) or {}
         except TamperError as exc:
             raise ValueError(f"run {run_id!r} cannot be resumed: {exc}") from exc
@@ -179,7 +186,37 @@ def load_resume_run(
         )
         for spec_id, attempts in sorted(by_spec.items())
     ]
-    return TestRun(run_id=run_id, targets=[target], findings=findings, started_at=started_at)
+    run = TestRun(run_id=run_id, targets=[target], findings=findings, started_at=started_at)
+    if adopt and run_db is not None:
+        adopt_resumed(run_db, run)
+    return run
+
+
+def adopt_resumed(run_db: Path, run: TestRun) -> None:
+    """Journal every artifact of a resumed ``run`` as written, now that it passed the check.
+
+    Artifacts written before the journal existed (a run started by an older version) were
+    otherwise known to no record once this resume journaled new ones under the same spec, and
+    the next resume refused the run as tampered (pre-commit audit of F11). A pending row whose
+    file is present is confirmed the same way. ``dottore run`` calls this itself, past the last
+    refusal before any traffic, so a resume refused before it sends writes nothing (u12 A-48).
+    """
+
+    from ildottore.store import SqliteRunStore
+
+    if not Path(run_db).is_file():
+        return
+    # Every reference load_resume_run builds carries the digest its artifact is stored under.
+    with SqliteRunStore(Path(run_db)) as store:
+        store.adopt_artifacts(
+            run.run_id,
+            [
+                (finding.spec_id, ref.sha256)
+                for finding in run.findings
+                for ref in finding.evidence
+                if ref.sha256 is not None
+            ],
+        )
 
 
 def _assert_same_target(
@@ -191,9 +228,9 @@ def _assert_same_target(
 
     if not Path(run_db).exists():
         raise ValueError(
-            f"cannot verify that run {run_id!r} belongs to target {target.id!r}: no run store "
-            f"at {run_db}. Point --run-db at the store the original run wrote, or the resume "
-            "could splice another target's evidence into this target's report."
+            f"cannot verify that run {run_id!r} belongs to target {quoted(target.id)}: no run "
+            f"store at {run_db}. Point --run-db at the store the original run wrote, or the "
+            "resume could splice another target's evidence into this target's report."
         )
     with SqliteRunStore(Path(run_db)) as store:
         row = store.get_run(run_id)
@@ -201,7 +238,7 @@ def _assert_same_target(
         raise ValueError(
             f"run {run_id!r} is not in the run store at {run_db}, so the target it was made "
             "against cannot be verified. Resuming would attribute its evidence to "
-            f"{target.id!r} on trust."
+            f"{quoted(target.id)} on trust."
         )
     stored = row.get("target_id")
     # Compare like with like. `save_run` writes `target_id` through the redactor, so a
@@ -224,9 +261,72 @@ def _assert_same_target(
         return
     if stored != target.id:
         raise ValueError(
-            f"run {run_id!r} was made against target {stored!r}, not {target.id!r}. Resuming "
-            "it here would report one target's evidence as another's, with zero requests "
-            "sent. Resume it against its own target, or start a fresh run."
+            f"run {run_id!r} was made against target {quoted(stored)}, not {quoted(target.id)}. "
+            "Resuming it here would report one target's evidence as another's, with zero "
+            "requests sent. Resume it against its own target, or start a fresh run."
+        )
+
+
+def _requests_spent(run_db: Path | None, run_id: str) -> int:
+    """The requests the run store records ``run_id`` as having spent (0 when unknown)."""
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if run_db is None or not Path(run_db).is_file():
+        return 0
+    with SqliteRunStore(Path(run_db)) as store:
+        spend = store.get_run_spend(run_id)
+    try:
+        return int((spend or {}).get("requests", 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _assert_nothing_written(
+    run_id: str,
+    evidence_root: Path,
+    recorded: dict[str, set[str]],
+    pending: set[str],
+    context: dict[str, object] | None,
+) -> None:
+    """Refuse an empty evidence tree unless the run store shows the run wrote nothing.
+
+    A run that spent requests and stored nothing is resumable; the same run looked up under
+    the wrong ``--evidence-root`` looks identical from the tree alone, and resuming it would
+    send the whole battery again under its id. The artifact journal tells the two apart, so
+    any digest it holds refuses, a ``pending`` one too (a write begun and never confirmed, on
+    another tree or failed on this one), each with a message that says which it is.
+    The journal only knows runs made since it existed (2026-10-04): a run that does not record
+    the scope it went out under (D-17, built after the journal) may predate it, and its silence
+    proves nothing, so it is refused as well (pre-commit audit: a pre-journal run under the
+    wrong root was accepted and would have been sent again whole).
+    """
+
+    journaled = {digest for digests in recorded.values() for digest in digests}
+    written = journaled - set(pending)
+    if written:
+        raise ValueError(
+            f"run {run_id!r} wrote {len(written)} attempt artifact(s), by its run store, and "
+            f"none is under {evidence_root} (not the tree the run wrote). Point "
+            "--evidence-root at that tree: resuming from an empty one would send every attempt "
+            "again."
+        )
+    if journaled:
+        # A pending row is a write that was begun and never confirmed: on another tree, or one
+        # that failed here (a full disk). Nothing tells the two apart, so it is refused, saying
+        # both: the first version called it "not the tree the run wrote" (delta audit).
+        raise ValueError(
+            f"run {run_id!r} began writing {len(journaled)} attempt artifact(s) that it never "
+            f"confirmed, and none is under {evidence_root} (either another tree, or those "
+            "writes failed here). Nothing tells the two apart: point --evidence-root at the "
+            "tree the run wrote, or start a fresh run."
+        )
+    scopes = (context or {}).get("scope_sha256s")
+    if not isinstance(scopes, list) or not scopes:
+        raise ValueError(
+            f"no stored attempts for run {run_id!r} under {evidence_root} (it spent requests), "
+            "and the run predates the artifact journal, so an empty tree cannot be told from "
+            "the wrong --evidence-root. Check --evidence-root, or start a fresh run."
         )
 
 
@@ -241,6 +341,23 @@ def stored_runs(run_db: Path, run_id: str) -> int | None:
         context = store.get_run_context(run_id)
     value = (context or {}).get("runs")
     return int(value) if value is not None else None
+
+
+def stored_adaptive(run_db: Path, run_id: str) -> bool | None:
+    """Whether the halted campaign planned adaptively; ``None`` when it recorded no mode.
+
+    A resume has to keep that mode (:func:`_assert_same_context`), so the advice of a refusal
+    can only offer what keeps it.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        return None
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
+    value = (context or {}).get("adaptive")
+    return bool(value) if value is not None else None
 
 
 def _unverifiable(run_id: str, what: str, *, allow: bool, waivable: bool = True) -> None:
@@ -358,7 +475,8 @@ def _assert_same_context(
     if stored_target != current_target:
         raise ValueError(
             f"run {run_id!r} was made against a different target than the one resolved now "
-            "(its endpoint, model, capabilities or offline scenario differ, even though the id "
+            "(its endpoint, model, capabilities, offline scenario or seeded_setup differ, even "
+            "though the id "
             "matches). Resuming would publish one target's evidence as another's. Restore the "
             "target as it was, or start a fresh run."
         )
@@ -375,11 +493,19 @@ def _assert_same_context(
         )
     stored_adaptive = context.get("adaptive")
     if adaptive is not None and stored_adaptive is not None and bool(stored_adaptive) != adaptive:
+        # The flags that turn it on are named: the refusal named none, and it is the one an
+        # operator meets first when a -sV resume of a campaign run without it is refused for
+        # money too (u12 A-48).
+        remedy = (
+            "Resume with -sV, -A or --deep, whichever it ran with"
+            if stored_adaptive
+            else "Resume without -sV, -A or --deep"
+        )
         raise ValueError(
             f"run {run_id!r} halted with adaptive planning "
             f"{'on' if stored_adaptive else 'off'} and this invocation asks for "
             f"{'on' if adaptive else 'off'}. It reorders the mutators a spec runs, so the two "
-            "halves would not be the same campaign."
+            f"halves would not be the same campaign. {remedy}, or start a fresh run."
         )
     stored_runs = context.get("runs")
     if runs is not None and stored_runs is not None and int(stored_runs) != runs:

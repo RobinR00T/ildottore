@@ -19,6 +19,7 @@ from types import TracebackType
 from typing import Any
 
 from ildottore.redactor import Redactor, redact_evidence_ref, redact_identity
+from ildottore.shared.amounts import is_amount
 from ildottore.shared.models import Finding, TestRun
 from ildottore.store import migrations
 
@@ -317,7 +318,18 @@ class SqliteRunStore:
         row = self._conn.execute(
             "SELECT spend_json AS value FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
-        return _loads_dict(row["value"] if row is not None else None, column="spend_json")
+        spend = _loads_dict(row["value"] if row is not None else None, column="spend_json")
+        # Every figure is an amount before anyone converts it: `int()` of an infinity or of a
+        # list was a traceback and exit 1, an integer past a float was one when the resume wrote
+        # its spend back, and a negative or NaN figure was taken as what the campaign had spent
+        # (2026-10-07). No value is quoted, as for the other corrupt columns.
+        if spend is not None and not all(is_amount(value) for value in spend.values()):
+            raise CorruptRunContext(
+                "spend_json holds a value that is not a finite, non-negative number. An integrity "
+                "record that cannot be read is not the same as one that was never written: "
+                "refusing rather than continuing."
+            )
+        return spend
 
     def get_run_context(self, run_id: str) -> dict[str, Any] | None:
         """The target digest and run parameters recorded for ``run_id``, or ``None``."""
@@ -325,7 +337,31 @@ class SqliteRunStore:
         row = self._conn.execute(
             "SELECT context_json AS value FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
-        return _loads_dict(row["value"] if row is not None else None, column="context_json")
+        context = _loads_dict(row["value"] if row is not None else None, column="context_json")
+        # `--runs` is read back with `int()`: a list or an infinity was a traceback and exit 1, a
+        # string was quoted in the error, and `true` or `1.9` resumed at one run (pre-commit
+        # audit of the spend check, 2026-10-07). It is written with the target digest, so a
+        # context that has the digest and no count, or a null one, lost it: the resume took this
+        # invocation's default instead and wrote it over the record (delta audit).
+        fields = context or {}
+        runs = fields.get("runs")
+        # A count that is there is checked whatever else is in the row, so no reader of it ever
+        # converts a bad one; a missing one only beside a digest. Without a digest the target
+        # refusal, which no flag waives, fires first and says what is wrong (audits of #61).
+        expected = runs is not None or fields.get("target_digest") is not None
+        # At most 2**53, the bound `run` puts on the flag (`cli.run.MAX_FLAG_VALUE`, which this
+        # package cannot import): a resume inherits the count, and one of 400 digits was an
+        # OverflowError in the plan's float arithmetic, a traceback and exit 1 (A-55).
+        if expected and (
+            isinstance(runs, bool) or not isinstance(runs, int) or not 1 <= runs <= 2**53
+        ):
+            raise CorruptRunContext(
+                "context_json holds no runs value, or one that is not a whole number from 1 to "
+                "2**53. "
+                "An integrity record that cannot be read is not the same as one that was never "
+                "written: refusing rather than continuing."
+            )
+        return context
 
     # --- artifact journal (schema v4) ------------------------------------------
 
@@ -393,7 +429,7 @@ class SqliteRunStore:
             "SELECT evidence_refs_json FROM findings WHERE run_id = ?", (run_id,)
         ).fetchall():
             try:
-                refs = json.loads(row["evidence_refs_json"] or "[]")
+                refs = _loads(row["evidence_refs_json"] or "[]")
             except ValueError:
                 continue
             for ref in refs if isinstance(refs, list) else []:
@@ -423,7 +459,7 @@ class SqliteRunStore:
         for row in rows:
             spec_id = str(row["spec_id"])
             try:
-                refs = json.loads(row["evidence_refs_json"] or "[]")
+                refs = _loads(row["evidence_refs_json"] or "[]")
             except ValueError:
                 unverifiable.add(spec_id)
                 continue
@@ -516,14 +552,45 @@ class CorruptRunContext(ValueError):
     """
 
 
+#: The deepest a stored column may nest. This tool writes them at most 3 levels deep.
+_MAX_COLUMN_DEPTH = 100
+
+
+def _loads(raw: str) -> Any:
+    """``json.loads`` for a stored column, where a value nested too deeply is bad JSON too.
+
+    Past the parser's stack it raises ``RecursionError``, which is not a ``ValueError``, so every
+    reader of these columns let it through and ``replay`` or ``run --resume`` on a tampered store
+    exited 1, the code for findings below ``--fail-on`` (2026-10-07). Under that stack a value can
+    still be too deep to write back: 110,000 levels parse on 3.14 and ``json.dumps`` overflows
+    past about 104,500, so a resume that rewrote the context exited 1 too (pre-merge audit of
+    #61). A column is refused past :data:`_MAX_COLUMN_DEPTH` levels, measured without recursion.
+    """
+
+    try:
+        value = json.loads(raw)
+    except RecursionError as exc:
+        raise ValueError("nested too deeply to read") from exc
+    level = [(value, 1)]
+    while level:
+        item, depth = level.pop()
+        if depth > _MAX_COLUMN_DEPTH:
+            raise ValueError("nested too deeply to read")
+        if isinstance(item, dict):
+            level.extend((child, depth + 1) for child in item.values())
+        elif isinstance(item, list):
+            level.extend((child, depth + 1) for child in item)
+    return value
+
+
 def _loads_dict(raw: str | None, *, column: str) -> dict[str, Any] | None:
     """Parse a stored JSON object column. ``None`` means absent; malformed **raises**."""
 
     if raw is None:
         return None
     try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        parsed = _loads(raw)
+    except ValueError as exc:
         raise CorruptRunContext(
             f"{column} is not readable JSON. An integrity record that cannot be read is not "
             "the same as one that was never written: refusing rather than continuing."

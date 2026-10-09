@@ -27,21 +27,26 @@ import asyncio
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
 from ildottore.adapters.base import (
     ACCEPT_ENCODING,
+    MAX_RESPONSE_BYTES,
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
+    ResponseTooDeep,
+    ResponseTooLarge,
     RetryConfig,
     read_capped,
 )
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
+from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.wellformed import well_formed_json
 
 __all__ = ["MCPAdapter"]
 
@@ -82,6 +87,10 @@ def _stdio_environment() -> dict[str, str]:
 @dataclass
 class MCPAdapter:
     """A read-only MCP-server discovery target (implements ``TargetAdapter``)."""
+
+    #: It never calls a tool, so a reply carries no tool calls: a seeded spec judged on its
+    #: tool trace is not sent through it (OD-18 B).
+    returns_tool_calls: ClassVar[bool] = False
 
     id: str
     base_url: str  # the FULL MCP endpoint URL (origin + path, e.g. http://host:3000/mcp)
@@ -306,25 +315,34 @@ class MCPAdapter:
         return headers
 
     def _decode(self, response: httpx.Response, method: str) -> Any:
-        """Decode a JSON-RPC reply that is either JSON or a Streamable-HTTP SSE event."""
+        """Decode a JSON-RPC reply that is either JSON or a Streamable-HTTP SSE event.
+
+        A lone surrogate in it is read as U+FFFD, as where every adapter parses a reply (A-47).
+        An SSE stream is decoded as text first, so a raw byte of one is U+FFFD already there.
+        """
 
         ctype = response.headers.get("content-type", "")
         if "text/event-stream" in ctype:
             for line in response.text.splitlines():
                 if line.startswith("data:"):
-                    try:
-                        return json.loads(line[len("data:") :].strip())
-                    except ValueError as exc:
-                        raise AdapterProductError(
-                            f"{self.id}: MCP {method} SSE data was not valid JSON: {exc}"
-                        ) from exc
+                    return self._parse(line[len("data:") :].strip(), f"MCP {method} SSE data")
             raise AdapterProductError(f"{self.id}: MCP {method} SSE carried no data event")
+        return self._parse(response.content, f"MCP {method} response")
+
+    def _parse(self, text: str | bytes, what: str) -> Any:
+        """Parse a reply: not JSON is a product defect, nested too deeply is not evaluated.
+
+        ``json.loads`` raised ``RecursionError`` on a reply nested past its stack, which the
+        ``except ValueError`` here let through, and the runner aborted the campaign (2026-10-07).
+        A lone surrogate in what parses reads as U+FFFD (A-47).
+        """
+
         try:
-            return response.json()
+            return well_formed_json(bounded_loads(text))
+        except NestedTooDeeply as exc:
+            raise ResponseTooDeep(f"{self.id}: {what} is {exc}; not evaluated") from exc
         except ValueError as exc:
-            raise AdapterProductError(
-                f"{self.id}: MCP {method} response was not valid JSON: {exc}"
-            ) from exc
+            raise AdapterProductError(f"{self.id}: {what} was not valid JSON: {exc}") from exc
 
     # --- stdio transport (local subprocess, newline-delimited JSON-RPC) --------
 
@@ -350,6 +368,10 @@ class MCPAdapter:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             env=_stdio_environment(),
+            # A reply line may be as long as a reply over HTTP. The default was 64 KiB, and a
+            # server listing 300 ordinary tools (148 KB on one line) stopped the campaign on the
+            # ValueError `readline` raises past it (pre-commit audit, 2026-10-07).
+            limit=MAX_RESPONSE_BYTES,
         )
         try:
             init = await self._stdio_rpc(
@@ -412,15 +434,41 @@ class MCPAdapter:
         await proc.stdin.drain()
 
         # Read lines until the reply with our id arrives (skip notifications / other traffic).
+        # What one request reads is capped as a whole, not only per line: 63 lines of 4 MiB
+        # before the reply took 80 s and 419 MB per attempt and still passed (delta audit).
+        read = 0
         for _ in range(64):
             try:
                 raw = await asyncio.wait_for(proc.stdout.readline(), timeout=self.retry.timeout_s)
             except TimeoutError as exc:
                 raise AdapterEnvError(f"{self.id}: stdio {method} timed out") from exc
+            except ValueError as exc:  # `readline` past the limit above
+                raise ResponseTooLarge(
+                    f"{self.id}: stdio output for {method} has a line that exceeded "
+                    f"{MAX_RESPONSE_BYTES} bytes; not read further"
+                ) from exc
             if not raw:
                 raise AdapterEnvError(f"{self.id}: stdio stream closed during {method}")
+            # Only the newline that ends the line is not counted: stripping every trailing
+            # `\r` too let lines of carriage returns through as empty (pre-merge audit).
+            read += len(raw) - (1 if raw.endswith(b"\n") else 0)
+            if read > MAX_RESPONSE_BYTES:
+                raise ResponseTooLarge(
+                    f"{self.id}: stdio output for {method} exceeded {MAX_RESPONSE_BYTES} "
+                    "bytes; not read further"
+                )
             try:
-                msg = json.loads(raw.decode().strip())
+                # `surrogatepass`, the error handler `json.loads` decodes bytes with, so an HTTP
+                # body and this line read alike: strict decoding skipped a line holding the raw
+                # bytes of half a character as stray output, and the call timed out (pre-commit
+                # audit, A-47).
+                msg = well_formed_json(bounded_loads(raw.decode("utf-8", "surrogatepass").strip()))
+            except NestedTooDeeply as exc:
+                # Refused at once, before the `except ValueError` below would skip it as a stray
+                # line and leave the adapter waiting for a reply until the timeout.
+                raise ResponseTooDeep(
+                    f"{self.id}: stdio output for {method} is {exc}; not evaluated"
+                ) from exc
             except ValueError:
                 continue  # non-JSON line on stdout: skip (should not happen per spec)
             if not isinstance(msg, dict) or msg.get("id") != req_id:

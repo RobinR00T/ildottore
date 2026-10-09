@@ -278,6 +278,25 @@ class Capabilities(_Frozen):
     audio: bool = False
 
 
+class SeededSetup(_Frozen):
+    """What the operator has seeded into a deployed application (OD-18 option B, ADR-0009).
+
+    ``specs`` names the specs (ids or ``fnmatch`` globs) whose documents, tools and memory the
+    operator has put into the deployment. ``tools`` maps a spec's tool name to the name the
+    deployment calls it, so a call under the deployment's own name is judged as the spec's tool.
+    ``granted_tools`` names the deployment's own tools outside any spec's scene (a search, an
+    escalation), which it may call without that being an unauthorized call; what such a call
+    carries is still judged, and a name that is one of a spec's own scene tools is not granted
+    for that spec. ``run_token`` replaces ``{{run_id}}`` in a seeded spec: the operator seeds the
+    scene before the run, so its canary cannot carry the per-run id.
+    """
+
+    specs: list[str] = Field(default_factory=list)
+    tools: dict[str, str] = Field(default_factory=dict)
+    granted_tools: list[str] = Field(default_factory=list)
+    run_token: str | None = None
+
+
 class Target(_Frozen):
     """A target under test (id + type + declared capabilities).
 
@@ -305,6 +324,8 @@ class Target(_Frozen):
     # is spawned only if the scope's target authorized that exact command line.
     transport: str | None = None
     command: list[str] | None = None
+    # OD-18 option B: what a deployed application's operator has seeded (``None``: nothing).
+    seeded_setup: SeededSetup | None = None
 
 
 class TokenLogprob(_Frozen):
@@ -410,6 +431,9 @@ class EvalContext(_Frozen):
     # surfaces in a NON-owner identity's response (A receiving B-only data), not just a canary
     # that crosses >=2 identities. Empty = fall back to the strict >=2-crossing check.
     canary_owners: dict[str, str] = Field(default_factory=dict)
+    # Tool names a seeded deployment grants beyond the spec's scene (OD-18 B,
+    # ``seeded_setup.granted_tools``): a call to one is not unauthorized. Empty off a deployment.
+    granted_tools: list[str] = Field(default_factory=list)
 
 
 class Attempt(_Frozen):

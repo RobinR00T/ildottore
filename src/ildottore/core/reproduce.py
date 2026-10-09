@@ -20,10 +20,17 @@ Deterministic: same target + same seed + same N ⇒ identical attempts and ident
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import sys
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 
 from ildottore.core.budgets import BudgetLedger
-from ildottore.core.execute import AttemptResult, RetryPolicy, default_is_env_error, execute_attempt
+from ildottore.core.execute import (
+    AttemptResult,
+    BudgetExhaustedAfterReply,
+    RetryPolicy,
+    default_is_env_error,
+    execute_attempt,
+)
 from ildottore.core.pacing import RateLimiter
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import ModelRequest, Sampling, Verdict
@@ -32,6 +39,7 @@ from ildottore.shared.protocols import TargetAdapter
 __all__ = [
     "DEFAULT_N",
     "attempt_id_for",
+    "planned_attempts_held",
     "repro_from_verdicts",
     "reproduce",
 ]
@@ -51,6 +59,49 @@ def attempt_id_for(spec_id: str, mutation: str, run_index: int) -> str:
     """
 
     return f"{spec_id}::{mutation}#{run_index}"
+
+
+def planned_attempts_held(
+    stored: Iterable[str], spec_id: str, mutators: Sequence[str], runs: int
+) -> int:
+    """How many of a spec's planned attempts (each mutation, ``runs`` times) are in ``stored``.
+
+    The same number as building every :func:`attempt_id_for` of the plan and intersecting, but
+    counted by reading ``stored`` once, so the work follows what is stored, not ``runs``: a
+    resume built that set for each started spec, and with the ``2**53`` a run store accepts it
+    grew without end (A-59, OD-32). An id counts only in the exact form ``attempt_id_for``
+    writes (an index without a leading zero, inside the plan), so no stored id passes for one,
+    and an index wider than the plan's last one is passed over without being converted (past the
+    interpreter's digit limit, that limit is the widest: ``attempt_id_for`` writes no longer one).
+    """
+
+    if runs <= 0:
+        return 0
+    # The widest index of the plan: a longer one is not planned, and is passed over before
+    # ``int()``, which cost 4 s per check over 10,000 stored indexes of 4,300 digits (delta audit
+    # of A-59). A run count the interpreter cannot write out has no such width to read.
+    try:
+        widest = len(str(runs - 1))
+    except ValueError:
+        widest = sys.get_int_max_str_digits()
+    prefix = f"{spec_id}::"
+    planned = set(mutators)
+    held = 0
+    for attempt_id in set(stored):
+        if not attempt_id.startswith(prefix):
+            continue
+        mutation, sep, index = attempt_id[len(prefix) :].rpartition("#")
+        if (
+            sep
+            and mutation in planned
+            and index.isascii()
+            and index.isdigit()
+            and len(index) <= widest
+            and index == str(int(index))
+            and int(index) < runs
+        ):
+            held += 1
+    return held
 
 
 def _pin_attempt_index(request: ModelRequest, run_index: int) -> ModelRequest:
@@ -82,6 +133,7 @@ async def reproduce(
     now: Callable[[], float] | None = None,
     completed: set[str] | None = None,
     pacer: RateLimiter | None = None,
+    into: list[AttemptResult] | None = None,
 ) -> list[AttemptResult]:
     """Execute ``request`` ``n`` times, returning the raw per-run results in order.
 
@@ -89,6 +141,11 @@ async def reproduce(
     would count too) plus one *request* per send inside :func:`execute_attempt`. A
     :class:`~ildottore.core.budgets.BudgetExhausted` from either debit propagates so
     the runner records ``budget_exhausted`` with whatever ran so far.
+
+    ``into`` (optional) is the caller's list, and each result is appended to it as it
+    completes: a halt propagates as an exception, and the attempts the batch already had
+    answered went with it, unstored, so the resume sent them again and paid for them twice.
+    A reply whose own usage crossed the token ceiling is appended before the halt goes on.
 
     ``completed`` (optional) is a resume set: the attempt ids a prior run already answered
     (or that failed in a way a retry would repeat); a run whose id is in the set is
@@ -100,28 +157,32 @@ async def reproduce(
 
     if n < 1:
         raise ValueError("n must be >= 1")
-    results: list[AttemptResult] = []
+    results: list[AttemptResult] = into if into is not None else []
     for run_index in range(n):
         attempt_id = attempt_id_for(spec_id, mutation, run_index)
         if completed is not None and attempt_id in completed:
             continue
         ledger.debit_attempt()
         pinned = _pin_attempt_index(request, run_index)
-        result = await execute_attempt(
-            adapter,
-            pinned,
-            attempt_id=attempt_id,
-            spec_id=spec_id,
-            mutation=mutation,
-            sampling=sampling,
-            ledger=ledger,
-            retry=retry,
-            timeout_s=timeout_s,
-            is_env_error=is_env_error,
-            sleep=sleep,
-            now=now,
-            pacer=pacer,
-        )
+        try:
+            result = await execute_attempt(
+                adapter,
+                pinned,
+                attempt_id=attempt_id,
+                spec_id=spec_id,
+                mutation=mutation,
+                sampling=sampling,
+                ledger=ledger,
+                retry=retry,
+                timeout_s=timeout_s,
+                is_env_error=is_env_error,
+                sleep=sleep,
+                now=now,
+                pacer=pacer,
+            )
+        except BudgetExhaustedAfterReply as halt:
+            results.append(halt.result)
+            raise
         results.append(result)
     return results
 

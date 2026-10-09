@@ -225,18 +225,20 @@ def test_a_probe_pass_past_the_request_ceiling_stops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from ildottore.cli import wiring
+    from ildottore.core.budgets import BudgetLedger
     from ildottore.shared.models import Target
 
     flaky = _FlakyProbeTarget()
     monkeypatch.setattr(wiring, "build_probe_adapter", lambda *_a, **_k: flaky)
     monkeypatch.setattr("ildottore.core.execute.RetryPolicy.delay_for", _no_delay)
+    ledger = BudgetLedger(max_requests=20)
     with pytest.raises(wiring.ProbeCeilingReached) as reached:
         wiring.fingerprint_probe(
             None,  # type: ignore[arg-type]
             Target(id="live", type="chatbot"),  # type: ignore[arg-type]
-            max_requests=20,
+            ledger=ledger,
         )
-    assert flaky.sends == 20 == reached.value.requests
+    assert flaky.sends == 20 == reached.value.requests == ledger.spend().requests
 
 
 def _no_delay(_self: object, _index: int) -> float:
@@ -547,6 +549,7 @@ def test_a_resumed_probe_pass_at_the_ceiling_records_what_it_spent(
     from ildottore.cli import wiring
     from ildottore.cli.exit_codes import ExitCode
     from ildottore.cli.run import execute_run
+    from ildottore.core.budgets import BudgetLedger
     from ildottore.store.run_sqlite import SqliteRunStore
     from tests.cli.conftest import make_spec as cli_spec
     from tests.cli.conftest import write_scope, write_spec_tree, write_target
@@ -573,6 +576,10 @@ def test_a_resumed_probe_pass_at_the_ceiling_records_what_it_spent(
 
     def at_ceiling(_scope: object, _target: object, **kw: object) -> wiring.ProbePass:
         calls.append(kw)
+        ledger = kw["ledger"]
+        assert isinstance(ledger, BudgetLedger)
+        for _ in range(5):  # what the pass sent before the ceiling stopped it
+            ledger.debit_request()
         raise wiring.ProbeCeilingReached(5, "requests ceiling")
 
     monkeypatch.setattr(wiring, "fingerprint_probe", at_ceiling)
@@ -580,7 +587,9 @@ def test_a_resumed_probe_pass_at_the_ceiling_records_what_it_spent(
     opts.budget_requests = int(before["requests"]) + 30
     with pytest.raises(ValueError, match=r"probe pass .* reached the --budget-requests ceiling"):
         execute_run(opts, specs)
-    assert calls[0]["max_requests"] == 30, "the ceiling left after the prior spend"
+    ceiling = calls[0]["ledger"]
+    assert isinstance(ceiling, BudgetLedger)
+    assert ceiling.snapshot().max_requests == 30, "the ceiling left after the prior spend"
     with SqliteRunStore(tmp_path / "runs.sqlite") as store:
         after = store.get_run_spend(run_id) or {}
     assert after["requests"] == before["requests"] + 5
@@ -958,7 +967,7 @@ def test_the_fail_on_error_lists_info() -> None:
 def test_sigterm_and_sighup_become_an_interrupt_and_are_restored() -> None:
     import signal
 
-    from ildottore.cli.run import _termination_as_interrupt
+    from ildottore.cli.run import _interrupt_as_ctrl_c, _termination_as_interrupt
 
     def custom(_signum: int, _frame: object) -> None:
         return None
@@ -967,8 +976,9 @@ def test_sigterm_and_sighup_become_an_interrupt_and_are_restored() -> None:
     before_hup = signal.signal(signal.SIGHUP, custom)
     try:
         with _termination_as_interrupt():
-            assert signal.getsignal(signal.SIGTERM) is signal.default_int_handler
-            assert signal.getsignal(signal.SIGHUP) is signal.default_int_handler
+            # What the handler does is tested in tests/cli/test_termination_signals.py (A-60).
+            assert signal.getsignal(signal.SIGTERM) is _interrupt_as_ctrl_c
+            assert signal.getsignal(signal.SIGHUP) is _interrupt_as_ctrl_c
         assert signal.getsignal(signal.SIGTERM) is custom
         assert signal.getsignal(signal.SIGHUP) is custom
     finally:
@@ -1111,6 +1121,7 @@ def test_every_surface_names_both_reasons_a_spec_was_not_exercised() -> None:
     finding = make_finding(spec.id).model_copy(update={"attempts": [failed]})
     terminal = " ".join(coverage_lines([finding], {spec.id: spec}))
     assert "a reply over the size cap" in terminal and "could not be decoded" in terminal
+    assert "nested too deeply" in terminal
     from ildottore.cli import wiring
 
     reporter = wiring.build_reporter(ReportFormat.HTML, specs={spec.id: spec})
@@ -1118,6 +1129,7 @@ def test_every_surface_names_both_reasons_a_spec_was_not_exercised() -> None:
     text = " ".join(html.decode().split())
     assert "got no reply that could be scored" in text
     assert "every send ended in an environment error" in text
+    assert "nested too deeply" in text
 
 
 def test_a_failed_partial_write_leaves_the_previous_report_and_no_partial(
