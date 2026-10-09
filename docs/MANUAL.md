@@ -209,8 +209,11 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   id) is left readable in every report, in both copies of a finding the JSON report carries, so
   a custom spec id reads the same in every run and `dottore diff` can match it. Error messages
   the CLI prints go through the same redactor, which cannot tell a sha256 from a 64-hex
-  key. The part of an absolute path that exists on this machine is exempt from the
-  entropy rule, and so is a path that exists written whole at the start of the message or
+  key. The class an error is written with (`aborted on AdapterProductError: ...`, an attempt's
+  `ResponseTooLarge: ...`) always reads: every exception class the scanner defines has a name
+  the entropy rule leaves as it is, and a test holds it (u01 A-63). The part of an absolute
+  path that exists on this machine is exempt from the entropy rule, and so is a path that
+  exists written whole at the start of the message or
   after a space, a quote, a comma, a semicolon or an opening bracket: relative to the
   working directory too (as one word), with a space or a bracket in a directory name of
   an absolute path, before a `:` or a `.` (a temp or CI workspace directory, or a report

@@ -231,21 +231,21 @@ def test_a_cli_error_keeps_the_digest_it_computed_readable_unless_it_is_a_creden
     import hashlib
 
     from ildottore.cli.app import _masked
-    from ildottore.policy.errors import ChecksumMismatchError
+    from ildottore.policy.errors import ScopeChecksumError
     from ildottore.redactor import register_known_secret
 
     typed = hashlib.sha256(b"a key typed in the checksum field").hexdigest()
     actual = hashlib.sha256(b"scope body").hexdigest()
-    shown = _masked(ChecksumMismatchError(typed, actual))
+    shown = _masked(ScopeChecksumError(typed, actual))
     assert actual in shown
     assert typed not in shown
 
     hex_key = hashlib.sha256(b"a registered hex credential").hexdigest()
     register_known_secret(hex_key)
-    assert hex_key not in _masked(ChecksumMismatchError(actual, hex_key))
+    assert hex_key not in _masked(ScopeChecksumError(actual, hex_key))
     part = hashlib.sha256(b"registered inside a digest").hexdigest()
     register_known_secret(part[8:40])
-    assert part not in _masked(ChecksumMismatchError(actual, part)), "a secret inside one"
+    assert part not in _masked(ScopeChecksumError(actual, part)), "a secret inside one"
     assert f"{part}.json" not in _masked(ValueError(f"artifact {part}.json is missing"))
 
 
@@ -372,9 +372,9 @@ def test_a_checksum_mismatch_does_not_quote_the_recorded_value() -> None:
     """The redactor masked a real sha256 recorded there about 19 times in 20, so the recorded
     value mostly appeared in clear when it was not a digest: a key typed by mistake."""
 
-    from ildottore.policy.errors import ChecksumMismatchError
+    from ildottore.policy.errors import ScopeChecksumError
 
-    message = str(ChecksumMismatchError("ab" * 32, "c" * 64))
+    message = str(ScopeChecksumError("ab" * 32, "c" * 64))
     assert "ab" * 32 not in message
     assert "c" * 64 in message
 

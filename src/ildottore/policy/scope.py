@@ -19,7 +19,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ildottore import safe_yaml
-from ildottore.policy.errors import ChecksumMismatchError, ScopeError
+from ildottore.policy.errors import ScopeChecksumError, ScopeError
 from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.files import read_text_capped
 
@@ -194,7 +194,7 @@ def load_scope_with_digest(
     * Parses YAML with a **safe** loader - no code execution, no network.
     * Validates the :class:`Scope` model (default-deny: unknown fields rejected).
     * If a ``checksum`` is present, verifies it via ``verifier`` (SHA-256 by
-      default); a mismatch raises :class:`ChecksumMismatchError` (S4 tamper).
+      default); a mismatch raises :class:`ScopeChecksumError` (S4 tamper).
     * ``require_checksum=True`` rejects a scope that omits its checksum.
 
     Never performs network I/O (``docs/02 §4``).
@@ -262,7 +262,7 @@ def load_scope_with_digest(
     body = stripped.encode("utf-8")
     if scope.checksum is not None:
         if not verifier.verify(body, scope.checksum):
-            raise ChecksumMismatchError(scope.checksum, verifier.compute(body))
+            raise ScopeChecksumError(scope.checksum, verifier.compute(body))
     elif require_checksum:
         raise ScopeError(f"scope file {file_path} is missing a required checksum")
 

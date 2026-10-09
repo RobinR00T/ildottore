@@ -604,6 +604,42 @@ depth limit checked first; one count per document; the repository's files; and i
 bounded at 30 s, the keys the scanner walks for `lint` and `calibrate` on chains 98 and 320 deep,
 under 1 million, and for `lint` on chains at the limit holding 300 texts each, under 12 million).
 
+**A-63 An error's class name is never masked by the redactor (added 2026-10-09).** The terminal, the
+stored evidence and the reports get an error through the redactor, and some messages write an error
+with its class: an attempt's error and an adapter's last failure (`<class>: <message>`), a halt
+reason (`aborted on <class>: <message>`), the unreachable reason, which quotes the first attempt's
+error, a probe recorded as failed (`<layer>/<probe>: <class>`) and a mutator's error in the carrier
+layer. The high-entropy rule masks a token of 16 characters or more, not shaped as a separated
+identifier or path, at 3.7 bits a character or more, so such a class name reads
+`«REDACTED:high_entropy:<digest>»` there: the failure class is lost and the line reads as if a
+secret had been masked. PR #87 renamed four of the WebSocket adapter's, which reached the CLI error
+and the evidence. A walk of the package's 45 exception classes on `f12ba83` found four more, none of
+which any message wrote with its class: `ChecksumMismatchError` (21 characters, 3.78 bits),
+`ProbeCeilingReached` (19, 3.72), `BudgetExhaustedAfterReply` (25, 3.97) and `_ImpossibleFigure`
+(17, 3.73). Raised from a mock target's adapter, the first read `error: run on mock-t did not
+complete: aborted on «REDACTED:high_entropy:2559426b»: scope checksum mismatch: ...` on the terminal
+and in `summary.status.reason`. They are `ScopeChecksumError` (18, 3.57), `ProbeCeilingHit` (15),
+`ReplyOverBudget` (15) and `_UnreadableLogprob` (18, 3.61), named for what `readable_logprob`
+refuses (a string that spells a number, a bool, anything that is not a JSON number, as well as a
+figure no model produces); `ChecksumMismatchError`, which `ildottore.policy` exported in 0.1.0,
+stays as an alias of the same class, so code that imports or catches it still works. The rule is not
+changed: a name is chosen that it keeps, as a figure is written so the phone rule keeps it (u08 A-6,
+u12 A-61). Checked by `tests/policy/test_redactor_error_class_names.py` (CI Gate 3), which imports
+every module of the package, takes every class `BaseException.__subclasses__` reaches that the
+package defines, and fails on any whose name `redact_text` changes, alone or in six lines shaped as
+those messages write it. A class written inside a function body exists only once the function runs,
+so whether that walk sees it depends on which tests ran first: every class written in a function
+body, at any depth, is read from the source instead and its name checked in the same lines (there
+are none; a test shows the pass finds one in an `if`, in a function inside a function and in a
+method). On `f12ba83` two of its four tests fail: the walk, naming the four in 24 lines, and the
+alias. It replaces #87's test, which read the WebSocket adapter's `__all__` only. Not covered: the
+names of other packages' exceptions, which cannot be renamed: of 216 distinct names in Python's
+builtins, the standard-library modules the adapters use and the ten declared dependencies, the rule
+masks 12, among them httpx's `TooManyRedirects` (never raised: no send follows a redirect, and the
+adapters catch only `TimeoutException` and `TransportError`), websockets' `InvalidProxyStatus` and
+`InvalidProxyMessage` (an `InvalidHandshake`, reworded without its class) and six of pydantic's
+(`PydanticSchemaGenerationError` among them); nor a plugin's own.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).
