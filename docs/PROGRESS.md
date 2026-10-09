@@ -62,7 +62,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   resume under a ceiling above 1.8e308, as on `main`; closed by #89, see the merge note below).
   Clause A-36 (u08, pointer in u09). Left open, unchanged: a figure up to 2^53 is
   believed, so a target can still end a campaign early on the token ceiling. Found by the audit
-  and left as its own task: a `logprob` no float holds still makes `-sV` exit 1 (adapter, u04).
+  and fixed by #74 (u04 A-39): a `logprob` no float holds made `-sV` exit 1 (adapter).
   `make gates` green: 2,452 tests, coverage 96.51%, lint 0 errors on 75 specs; 52 of the 101
   new tests fail on `0501752`, and 24 of 24 mutants of the fix are killed.
 - Merge note (2026-10-09, `origin/main` merged in, with #89, A-55 in u12): `run` now refuses a

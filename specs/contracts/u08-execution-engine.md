@@ -230,7 +230,7 @@ through `is_amount` for the same reason (`fingerprint` and `run -sV` exited 1 th
 Not claimed: a figure up to `2**53` is believed, as a provider's bill is, so a target can still
 report more than it used and halt the campaign on the token ceiling, or less and free its
 reservation; that trust is unchanged. Nor does it cover a reply's `logprob`, which the adapter
-reads (u04) and which still crashes `-sV` the same way (found by this clause's audit, open).
+reads: u04 A-39 does (found by this clause's audit, fixed by PR #74).
 `tests/cli/test_usage_figures.py` (through the CLI, both directions),
 `tests/core/test_usage_figures.py` (each shape at the boundary, the reading order, the floor),
 `tests/shared/test_amounts.py`.

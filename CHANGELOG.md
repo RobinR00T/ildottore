@@ -111,9 +111,8 @@ versioning: [SemVer](https://semver.org/).
   2^1024 could, on a resume under a token ceiling above 1.8e308 (exit 1, as on `main`). Merge
   note (#89, A-55): `run` now refuses such a ceiling, and a resume from that store under 2^53
   halts on the ceiling with exit 3 and sends nothing (measured after the merge), so it is no
-  longer open. Not in this change, found by its audit and present on
-  `main`: a `logprob` in a reply that no float holds still makes `fingerprint` and `run -sV` exit 1
-  (it is read in the adapter, u04). Tests: `tests/cli/test_usage_figures.py` (through the CLI, both
+  longer open. Found by its audit and fixed by PR #74 (u04 A-39): a `logprob` in a reply that no
+  float holds made `fingerprint` and `run -sV` exit 1 (it is read in the adapter). Tests: `tests/cli/test_usage_figures.py` (through the CLI, both
   directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
   `tests/shared/test_amounts.py`.
 
