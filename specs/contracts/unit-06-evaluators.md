@@ -74,6 +74,11 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
 - Determinism: judge at `temperature=0` + fixed seed ⇒ stable verdict on replay. (As built: only
   the first judge pass is at temperature 0, and no pass sends a seed; `dottore replay` re-reads
   stored verdicts and does not call the judge again.)
+- **`logprob_membership` scores only figures a model produces (u04 §7 A-39, added 2026-10-07):**
+  a `TokenLogprob` from any adapter whose figure is not a finite number at or below zero makes
+  the verdict `inconclusive: capability_unavailable`, never a score; scored, a positive figure
+  read as "likely memorized". The OpenAI adapter already reads such a block as no block, so this
+  guards an adapter that builds its own figures (`tests/evaluators/test_data_leak.py`).
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden
