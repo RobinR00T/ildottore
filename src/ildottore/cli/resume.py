@@ -121,8 +121,8 @@ def load_resume_run(
     if not result.attempts and _requests_spent(run_db, run_id) <= 0:
         raise ValueError(
             f"no stored attempts for run {run_id!r} under {evidence_root}: nothing to resume. "
-            "Check the run id and --evidence-root; a run that sent nothing has nothing to "
-            "continue."
+            "Check the run id and --evidence-root; a run whose run store records no request "
+            "spent has nothing to continue."
         )
     if run_db is not None and Path(run_db).is_file():
         # Each artifact verifies against its own name, so an edited one renamed to its new

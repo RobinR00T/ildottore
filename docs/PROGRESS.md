@@ -3,7 +3,7 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
-## State, 2026-10-07 (midday): a halted run keeps what it paid for, and resumes
+## State, 2026-10-09: a halted run keeps what it paid for, and resumes (PR #66, begun 2026-10-07)
 
 - On `fix/resume-halt-mid-batch` (on main `0501752`, after #61): a request ceiling that stopped a
   run inside an identity sweep or between two attempts of a batch stored nothing for that spec,
@@ -23,11 +23,21 @@ The carryover ledger. Every agent session updates this so context survives even 
   others, a resume that published a PASS over a missing verdict and a deterministic fail lost at
   the judge; all fixed (the CHANGELOG lists them), then a delta audit and a pre-merge audit
   (verdict: merge) whose findings are fixed too; 30 mutants of the fix all caught. With `--judge`
-  a reply stored without a verdict is paid for twice (re-sent, not re-judged). Open:
-  `--estimate` does not price the identity sweep on main (PR #60 does; three strict `xfail`s
-  hand the match to whoever lands second), the attempts axis counts an attempt whose first
-  request was refused, and a Ctrl-C still drops the batch in flight. `make gates` green: 2386
-  tests (main `0501752`: 2351), coverage 96.50%, `dottore lint` 0/0 over 75 specs.
+  a reply stored without a verdict is paid for twice (re-sent, not re-judged). Open: the attempts
+  axis counts an attempt whose first request was refused, and a Ctrl-C (or a SIGTERM or SIGHUP,
+  which stop a run as Ctrl-C does, A-60) still drops the batch in flight. `make gates` green on
+  its branch: 2386 tests (main `0501752`: 2351), coverage 96.50%, `dottore lint` 0/0 over 75 specs.
+  Stacked on `e02b0b6` (main `6401ee2` with #62, #64, #82, #90, #67, #69, #74, #88, #60 and #68,
+  the tree main holds before this squash): `cli/run.py` (imports, the estimate call),
+  `core/runner.py` (`__all__`, the breach line, which keeps the `figures` form of
+  `fix/halt-reason-figures` and this branch's notes) and the MANUAL's `--estimate` row conflicted,
+  each resolved keeping both sides. With #60's sweep priced, the three strict `xfail`s pass (3
+  passed under `--runxfail`) and the marker is gone. The pre-merge audit's medium, fixed here: the
+  room check of the `-sV` refusals (A-48) priced every judge request of the battery, so with
+  `--judge` it did not offer a "drop -sV" that fitted; it now takes off the judge's share as
+  `--estimate --resume` does, each share clamped at zero (two `--judge` cases in
+  `tests/cli/test_resume_sv_advice.py`, one failing without the fix). `make gates` green there:
+  3,955 tests, coverage 97.31%.
 
 ## State, 2026-10-07 (midday): one refused `-sV` probe reply no longer stops the run
 

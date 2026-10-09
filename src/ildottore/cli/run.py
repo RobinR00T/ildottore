@@ -733,11 +733,22 @@ def _fits_without_probes(
 
     ``spent`` is the spend the campaign has on record; what the resume does not send again is
     :func:`_answered_requests` over these ``plans``, the identity sweep of a spec it will not
-    sweep again included (A-34), so the rest is priced as ``--estimate --resume`` prices it.
+    sweep again included (A-34), and the judge's requests for the attempts it keeps
+    (:func:`_judge_requests_kept`), so the rest is priced as ``--estimate --resume`` prices it.
+    Each share is clamped at zero on its own: the judge's share used to be priced whole, so a
+    "drop -sV" that fitted was not offered with ``--judge``, and one share's surplus must not
+    pay for the other's rest.
     """
 
     done = _answered_requests(resume_from, specs, plans=plans, runs=runs)
-    return all(spent + max(0, plan.estimate.total_requests - done) <= ceiling for plan in plans)
+    judge_done = _judge_requests_kept(resume_from, specs)
+    return all(
+        spent
+        + max(0, plan.estimate.requests - done)
+        + max(0, plan.estimate.judge_requests - judge_done)
+        <= ceiling
+        for plan in plans
+    )
 
 
 def _no_judge_warning(

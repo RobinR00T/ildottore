@@ -254,14 +254,6 @@ def test_a_run_halted_inside_the_identity_sweep_is_resumed_with_its_spend(
     assert [a["attempt_id"] for a in attempts] == ["DL-XTENANT-001::identity#0"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="main does not price the identity sweep in --estimate; PR #60 "
-    "(fix/authz-leak-identity-sweep) does. Whoever lands second runs "
-    "`pytest --runxfail -k prices_the_sweep` on this file, expects 3 passed, and removes "
-    "this marker (if #60 prints the sweep on a line `_still_to_send` does not read, the "
-    "three stay quietly xfailed: teach it that line).",
-)
 @pytest.mark.parametrize(("runs", "ceiling"), [(1, 1), (1, 2), (2, 3)])
 def test_the_estimate_of_a_resume_after_a_sweep_halt_prices_the_sweep(
     tmp_path: Path, stub: tuple[int, dict[str, Any]], runs: int, ceiling: int
@@ -390,7 +382,9 @@ def test_a_run_that_spent_no_request_is_still_refused(
     assert _spent(tmp_path, run_id) == 0
     resumed = cli.invoke(app, [*base, "--resume", run_id])
     assert resumed.exit_code == 3
-    assert "a run that sent nothing has nothing to continue" in resumed.output
+    assert "a run whose run store records no request spent has nothing to continue" in (
+        resumed.output
+    )
     assert state["target"] == 0
 
 

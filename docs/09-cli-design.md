@@ -177,7 +177,8 @@ Still refused: a run that spent nothing, an `--evidence-root` holding none of th
 run store journals for the run (pending ones included), and an empty tree for a run that
 predates the journal (it does not record the scope it went out under), whose silence proves
 nothing. `--estimate --resume` takes off the judge's requests for the attempts the resume keeps,
-as it took off the target's; it does not price an identity sweep (PR #60 does).
+as it took off the target's, and prices an identity sweep since PR #60; the room check behind
+the `-sV` refusals' "drop -sV" advice takes off the same judge share.
 
 ## 3. Example invocations (the red-teamer's cheat sheet)
 
