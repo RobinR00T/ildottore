@@ -198,6 +198,43 @@ it is the point.
 `tests/core/test_halt_figures.py` (property tests over every count below 10**18, over elapsed
 times and over the rounding direction) and `tests/cli/test_halt_figures_cli.py`.
 
+**A-36 A figure the target reports is checked where it is read (added 2026-10-07).** A reply's
+`usage` is the target's JSON, and a JSON number has no bound. A 400-digit `prompt_tokens` was
+trued into the ledger and `dottore run` exited 1 on `OverflowError` when the store persisted the
+spend through `float()`, with no report written; a figure past `2**53` was believed and halted
+the campaign on the token ceiling after one reply. `_reported_total` now reads a figure only
+when `shared.amounts.is_count` holds: a JSON integer from 0 to `2**53`, past which a float no
+longer holds every integer (the spend is persisted as a float), and far beyond any one bill. An
+unreadable figure
+is skipped as an absent one, so the next shape is read; a sum past `2**53` is no usage; with no
+readable shape the reservation stands. A prompt-cache figure is summed only into a pair, and one
+that is there and unreadable makes the pair a floor: trued up to, never down. (Before, one that
+was not a non-negative integer was read as 0 and trued the reservation down past tokens the reply
+says it billed; read as no usage, the first version of this clause, it kept a 513-token
+reservation below a pair of 100,005: pre-commit audit.) The
+ledger takes no guard of its own: nothing a reply or this tool hands it can grow past what
+`float()` converts (a reservation is bounded by `MAX_SAMPLING_TOKENS` and the request's own text,
+a clamp by the ceiling, a reply's figure by `is_count`, and a resume from the largest float, the
+most this tool wrote before #89, goes past it by a few replies' worth, which `float()` rounds). A
+run store edited by hand was the exception: the store's `is_amount` accepts an integer up to
+`2**1024 - 2**970 - 1`, past the largest float, and a resume from it under a token ceiling above
+1.8e308 added tokens until `float()` raised (exit 1, the same on the base). The bound is per
+figure: a campaign's total can pass `2**53`, and the store then rounds it (by 2 tokens in 5.4e16,
+measured before #89), it does not fail. Merge note (#89, A-55 in u12): every token ceiling is now
+at most `2**53`, so a total passes it only by what replies sent together add once it is crossed
+(two replies of `2**53 - 1` at `--concurrency 6`, measured after the merge), and the hand-edited
+store, resumed under `2**53`, halts on the ceiling with exit 3 and sends nothing (measured after
+the merge): that exception is closed. One reply of `2**53` fills the largest ceiling, which is how
+the CLI test below believes it. The `-sV` guardrail layer reads `moderation_latency_ms`
+through `is_amount` for the same reason (`fingerprint` and `run -sV` exited 1 the same way; u09).
+Not claimed: a figure up to `2**53` is believed, as a provider's bill is, so a target can still
+report more than it used and halt the campaign on the token ceiling, or less and free its
+reservation; that trust is unchanged. Nor does it cover a reply's `logprob`, which the adapter
+reads (u04) and which still crashes `-sV` the same way (found by this clause's audit, open).
+`tests/cli/test_usage_figures.py` (through the CLI, both directions),
+`tests/core/test_usage_figures.py` (each shape at the boundary, the reading order, the floor),
+`tests/shared/test_amounts.py`.
+
 **A-59 A prior's attempts are checked against the plan without building the plan (added
 2026-10-08).** Three places ask whether a started spec's stored attempts hold every planned attempt
 (each mutation, `n` times): the halt path of a resume, which publishes a finished spec's prior
