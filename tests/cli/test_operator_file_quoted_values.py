@@ -35,7 +35,7 @@ from ildottore.cli.wiring import load_target, resolve_auth_ref, shown_auth_ref, 
 from ildottore.policy import authorize_target, load_scope
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.scope import Endpoint
-from ildottore.redactor import Redactor
+from ildottore.redactor import Redactor, visible_controls
 from ildottore.shared.config_errors import (
     MAX_PROBLEM_CHARS,
     _repr_head,
@@ -557,10 +557,11 @@ NOT_ALLOWED_TARGET = live_target(TAG_ID).replace(LIVE_URL, NOT_ALLOWED_ENDPOINT)
 NOT_ALLOWED_SCOPE = SCOPE_HEAD + scope_entry(TAG_ID, live=True).replace(
     '/v1/chat/completions"]', '/x"]'
 )
+#: The listed id is the id itself, as the terminal writes a format character out (u12 §6, #51).
 NOT_ALLOWED_CUTS = (
     cut_of(NOT_ALLOWED_ENDPOINT),
     cut_of(TAG_ID),
-    f"The scope authorizes: {TAG_ID}.",
+    f"The scope authorizes: {visible_controls(TAG_ID)}.",
 )
 
 
@@ -586,7 +587,7 @@ def _run_stdio(tmp_path: Path) -> Case:
         None,
         "stdio command not authorized",
         cut_of(TAG_ID),
-        f"{TAG_ID} (stdio command not authorized for",
+        f"{visible_controls(TAG_ID)} (stdio command not authorized for",
         'commands: ["python server.py"]',
     )
 
@@ -614,15 +615,19 @@ def test_a_refusal_quotes_a_value_of_the_file_up_to_300_characters(
     line = next((x for x in lines if case.reason in x), None)
     assert line is not None, [x[:300] for x in lines]
     # Length first, so the base fails on the defect (a line of 500 KB to 2 MB), not the text.
-    assert len(line) < 2_500, len(line)
+    # 5,000, not 2,500, since #51 writes a format character out: the two ids of 128 tag
+    # characters that a refusal names whole, the head and the list, take 1,280 each.
+    assert len(line) < 5_000, len(line)
     assert all(str(path) in line for path in case.files), line
     assert all(cut in line for cut in case.cuts), line
     assert "REDACTED" not in line, line
-    # A cut keeps the first 299 characters of an id's repr after its quote: the first 300,
-    # anywhere in the output with Rich's line folding undone, are an id quoted whole, which a
-    # second quote of the same id, cut, on the line would hide (audits of A-57).
+    # A cut keeps the first 299 characters of an id's repr after its quote: the quote and the
+    # 300 after it, anywhere in the output with Rich's line folding undone, are an id quoted
+    # whole, which a second quote of the same id, cut, on the line would hide (audits of A-57).
+    # The quote is looked for too since #51 writes the id out where a refusal names it whole
+    # (128 characters), in the same escapes as its repr and without the quote.
     flat = (result.stdout + result.stderr).replace("\n", "")
-    assert all(repr(tag)[1:301] not in flat for tag in (TAG_ID, TAG_NAME)), line
+    assert all(repr(tag)[:301] not in flat for tag in (TAG_ID, TAG_NAME)), line
 
 
 #: A file that is not UTF-8, as each command reads it: one byte 0xff after a valid first line.
@@ -731,19 +736,26 @@ def low_limit() -> Iterator[None]:
 
 
 @pytest.mark.parametrize(
-    ("load", "body"),
+    ("load", "body", "refusal"),
     [
         # The anchor inside the list: a label before it would be refused first.
-        (load_labels, "y: [&a " + "a" * 6_000 + ", " + ALIASES[1:] + "\n"),
+        (
+            load_labels,
+            "y: [&a " + "a" * 6_000 + ", " + ALIASES[1:] + "\n",
+            "spec 'y' has an invalid verdict",
+        ),
+        # A-51 read such a `provider` as no provider; since u12 A-53 the top-level check refuses
+        # it as not text.
         (
             target_uses_mock,
             f"{ANCHOR}id: t\ntype: chatbot\nprovider: {ALIASES}\ntransport: stdio\n",
+            "failed validation: provider: Input should be a valid string",
         ),
     ],
     ids=["labels-verdict", "target-provider"],
 )
 def test_a_list_of_aliases_is_not_turned_into_text(
-    tmp_path: Path, load: Callable[[Path], object], body: str
+    tmp_path: Path, load: Callable[[Path], object], body: str, refusal: str
 ) -> None:
     # `str()` of it wrote about 675 MB of text before the value was checked (audit of A-51).
     path = tmp_path / "file.yaml"
@@ -751,8 +763,9 @@ def test_a_list_of_aliases_is_not_turned_into_text(
     loaded, reference = peak_of(lambda: safe_yaml.safe_load(path.read_text(encoding="utf-8")))
     assert isinstance(loaded, dict)
 
-    _, peak = peak_of(lambda: load(path))
+    refused, peak = peak_of(lambda: load(path))
 
+    assert isinstance(refused, ValueError) and refusal in str(refused), refused
     assert peak < reference + 3_000_000, (peak, reference)
 
 
@@ -770,9 +783,16 @@ def test_an_integer_label_key_is_refused_as_a_key_not_as_its_verdict(tmp_path: P
 
 @pytest.mark.usefixtures("low_limit")
 def test_an_integer_key_or_provider_of_a_target_is_not_turned_into_text(tmp_path: Path) -> None:
+    # A-51 read such a `provider` and `transport` as no provider; since u12 A-53 the top-level
+    # check refuses both as not text, naming the file and never writing the number out.
     path = tmp_path / "target.yaml"
     path.write_text(f"id: t\ntype: chatbot\nprovider: {HEX}\ntransport: {HEX}\n", "utf-8")
-    assert target_uses_mock(path) is True
+    with pytest.raises(ValueError) as caught:
+        target_uses_mock(path)
+    assert str(caught.value) == (
+        f"target file {path} failed validation: provider: Input should be a valid string; "
+        "transport: Input should be a valid string"
+    )
 
     case = _with(_run(tmp_path, TARGET + f"seeded_setup:\n  ? {HEX}\n  : x\n"), 0, "")
     result = runner.invoke(app, case.args)
@@ -1018,7 +1038,7 @@ def test_a_stdio_target_is_real_only_with_a_command(
 
 
 def test_a_transport_of_aliases_is_not_turned_into_text(tmp_path: Path) -> None:
-    # `provider` is checked first, so it says `mcp` here and `transport` is the one read.
+    # `provider` says `mcp`, so `transport` is the one value the top-level check refuses.
     path = tmp_path / "target.yaml"
     path.write_text(
         f"{ANCHOR}id: t\ntype: agent\nprovider: mcp\ntransport: {ALIASES}\ncommand: [s]\n",
@@ -1027,9 +1047,13 @@ def test_a_transport_of_aliases_is_not_turned_into_text(tmp_path: Path) -> None:
     loaded, reference = peak_of(lambda: safe_yaml.safe_load(path.read_text(encoding="utf-8")))
     assert isinstance(loaded, dict)
 
-    uses_mock, peak = peak_of(lambda: target_uses_mock(path))
+    refused, peak = peak_of(lambda: target_uses_mock(path))
 
-    assert uses_mock is True
+    # A-51 read it as no transport; since u12 A-53 the top-level check refuses it as not text.
+    assert isinstance(refused, ValueError)
+    assert str(refused) == (
+        f"target file {path} failed validation: transport: Input should be a valid string"
+    )
     assert peak < reference + 3_000_000, (peak, reference)
 
 

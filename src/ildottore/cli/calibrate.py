@@ -23,6 +23,7 @@ import yaml
 
 from ildottore import safe_yaml
 from ildottore.cli.diff import load_findings
+from ildottore.redactor import visible_controls
 from ildottore.shared.config_errors import quoted, yaml_problem
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import VerdictStatus
@@ -177,10 +178,12 @@ def render_calibration(report: CalibrationReport) -> str:
         f"  precision {_pct(report.precision)}  recall {_pct(report.recall)}  "
         f"(tp={report.tp} fp={report.fp} fn={report.fn} tn={report.tn}; fail = positive)",
     ]
+    # The report's spec ids are spec ids (`diff.load_findings`); a labels file's are any text.
     for spec_id, got, want in report.disagreements:
         lines.append(f"  DISAGREE {spec_id}: scanner={got.value} operator={want.value}")
     if report.only_in_labels:
-        lines.append(f"  uncovered (labelled, not in report): {', '.join(report.only_in_labels)}")
+        uncovered = visible_controls(", ".join(report.only_in_labels))
+        lines.append(f"  uncovered (labelled, not in report): {uncovered}")
     if report.only_in_report:
         lines.append(f"  unlabelled (in report, no label): {', '.join(report.only_in_report)}")
     return "\n".join(lines)

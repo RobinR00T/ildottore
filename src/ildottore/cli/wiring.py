@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from pydantic import ValidationError
+from pydantic import ConfigDict, StrictStr, ValidationError, create_model
 
 from ildottore.adapters import (
     AnthropicAdapter,
@@ -42,6 +42,7 @@ from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
+from ildottore.core.execute import default_is_env_error
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
@@ -297,11 +298,17 @@ def build_fingerprint_engine() -> FingerprintEngine:
     import them. It is what makes ``-sV`` change the battery rather than only name the model:
     the planner orders each spec's mutators by what this target demonstrably still
     understands (``fingerprint.layers.carrier``).
+
+    A probe whose reply comes back refused (an environment failure the attack phase would not
+    retry, by its own predicate) is a failed probe (u09 §7 A-35, OD-23): one such reply used to
+    stop ``run -sV`` before any attack while it only failed an attempt without it.
     """
 
     registry = build_mutator_registry()
     carriers = [registry.get(name) for name in registry.names() if name != IDENTITY_MUTATOR]
-    return FingerprintEngine(layers=[*default_layers(), CarrierLayer(carriers)])
+    return FingerprintEngine(
+        layers=[*default_layers(), CarrierLayer(carriers)], is_env_error=default_is_env_error
+    )
 
 
 def build_probe_adapter(
@@ -1007,8 +1014,38 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
 # --- target.yaml -------------------------------------------------------------------
 
 
+#: The fields of :class:`Target` that are text (``str | None``). ``load_target`` hands them to
+#: ``Target`` as written, so anything else there was read as absent (A-53).
+_TEXT_FIELDS = tuple(
+    name for name, field in Target.model_fields.items() if field.annotation == str | None
+)
+
+_TOP_LEVEL_FIELDS: dict[str, Any] = {
+    **{
+        name: ((StrictStr | None) if name in _TEXT_FIELDS else Any, None)
+        for name in Target.model_fields
+    },
+    "mock_scenario": (Any, None),
+}
+_TargetFileTopLevel = create_model(
+    "_TargetFileTopLevel",
+    __config__=ConfigDict(extra="forbid"),
+    __doc__=(
+        "The top level of a target file: the fields of :class:`Target`, which ``load_target`` "
+        "reads, and ``mock_scenario``, which :func:`load_mock_scenario` reads; text where "
+        "``Target`` holds text, ``null`` as absent, each block left to its reader. Built from "
+        "``Target``, so a field added there is a key the file may hold without a second list to "
+        "keep in step (pre-merge audit: another branch's ``websocket`` field was refused by one)."
+    ),
+    **_TOP_LEVEL_FIELDS,
+)
+
+
 def _read_target_yaml(path: Path) -> dict[str, Any]:
     """Parse a ``target.yaml`` into a raw mapping (shared by every reader below).
+
+    Its top level is checked against :class:`_TargetFileTopLevel`, so every reader refuses the
+    same file: a key none of them reads, or text written as something else (A-53).
 
     A syntax error is re-raised as ``ValueError``, like :func:`load_scope` already does.
     ``yaml.YAMLError`` does not derive from ``ValueError``, so it used to escape the CLI
@@ -1028,6 +1065,16 @@ def _read_target_yaml(path: Path) -> dict[str, Any]:
         raise ValueError(f"target file {path} is not valid YAML: {yaml_problem(exc)}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} must be a mapping at top level")
+    # Every reader below took what it knew and dropped the rest, so `endpont:` for `endpoint`
+    # left a live target with no endpoint and `target_uses_mock` ran it on the offline mock
+    # (nothing sent to it, the mock's replies scored), and `tools: true` under a `capabilities:`
+    # that lost its indent was ignored (A-53, OD-31). Key and reason only, as in the A-45 lines.
+    try:
+        _TargetFileTopLevel.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} failed validation: {validation_problems(exc)}"
+        ) from exc
     return raw
 
 
@@ -1149,12 +1196,13 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         raise ValueError(
             f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"
         ) from exc
-    name = raw.get("name") if isinstance(raw.get("name"), str) else None
+    # Text or absent: `_read_target_yaml` refuses anything else, once read as absent (A-53).
+    name = raw.get("name")
 
-    provider = raw.get("provider") if isinstance(raw.get("provider"), str) else None
-    endpoint = raw.get("endpoint") if isinstance(raw.get("endpoint"), str) else None
-    model = raw.get("model") if isinstance(raw.get("model"), str) else None
-    auth_ref = raw.get("auth_ref") if isinstance(raw.get("auth_ref"), str) else None
+    provider = raw.get("provider")
+    endpoint = raw.get("endpoint")
+    model = raw.get("model")
+    auth_ref = raw.get("auth_ref")
     sampling_raw = raw.get("sampling_defaults")
     sampling = None
     if sampling_raw is not None:
@@ -1168,7 +1216,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
                 f"{validation_problems(exc)}"
             ) from exc
 
-    transport = raw.get("transport") if isinstance(raw.get("transport"), str) else None
+    transport = raw.get("transport")
     command_raw = raw.get("command")
     command: list[str] | None = None
     if command_raw is not None:
@@ -1319,20 +1367,16 @@ def _uses_mock(raw: dict[str, Any]) -> bool:
         return True
     # A stdio MCP target authorizes by command line, not an endpoint URL, so it is a real
     # over-the-wire (subprocess) target even though it declares no ``endpoint``.
-    # Text only, as `load_target` reads them: `str` raised on a number too long to write out
-    # (A-40), and no other value could have read as `mcp` or `stdio`.
-    provider = _lowered(raw.get("provider"))
-    transport = _lowered(raw.get("transport"))
+    # Text or absent: `_read_target_yaml` refuses anything else (A-53), where `str` raised on a
+    # number too long to write out (A-40).
+    provider = (raw.get("provider") or "").strip().lower()
+    transport = (raw.get("transport") or "").strip().lower()
     if provider == "mcp" and transport == "stdio" and raw.get("command"):
         return False
     endpoint = raw.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint:
         return True
     return endpoint.startswith("mock://")
-
-
-def _lowered(value: object) -> str:
-    return value.strip().lower() if isinstance(value, str) else ""
 
 
 # --- the runner --------------------------------------------------------------------

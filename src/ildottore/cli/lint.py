@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ildottore.redactor import visible_controls
 from ildottore.registry import LintCode, LintError, LintReport, Severity
 from ildottore.registry import lint as _lint
 
@@ -77,8 +78,10 @@ def render_text(report: LintReport) -> str:
 
 
 def _fmt_line(err: LintError, level: str) -> str:
-    loc = err.spec_id or err.path or "-"
-    return f"[{level}] {err.code} ({loc}): {err.message}"
+    # A pack's file names and values, written out: a file named `x\n::error ...` printed a
+    # line GitHub Actions reads as a workflow command (pre-merge audit of PR #49).
+    loc = visible_controls(err.spec_id or err.path or "-")
+    return f"[{level}] {err.code} ({loc}): {visible_controls(err.message)}"
 
 
 def run_lint(paths: list[Path], *, as_json: bool = False) -> tuple[int, str]:

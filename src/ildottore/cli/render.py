@@ -18,7 +18,9 @@ from dataclasses import dataclass
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
+from ildottore.redactor import visible_controls
 from ildottore.reporting.summary import (
     ATLAS_MATRIX_RELEASE,
     OWASP_LLM_EDITION,
@@ -187,7 +189,12 @@ def coverage_lines(
             [
                 f"WARNING: {len(cov.off_universe)} framework value(s) outside their pinned "
                 "universe were NOT counted: "
-                + ", ".join(f"{sid} {field}={value!r}" for sid, field, value in cov.off_universe)
+                # A pack's free text, printed without markup since PR #51: `rich` no longer eats
+                # the `[warning]` of `##[warning]x`, so the log command is written out here.
+                + ", ".join(
+                    f"{sid} {field}={visible_controls(repr(value))}"
+                    for sid, field, value in cov.off_universe
+                )
             ]
             if cov.off_universe
             else []
@@ -224,7 +231,10 @@ def comparison_table(
     table = Table(title="Il Dottore: model comparison (band per spec x target)")
     table.add_column("Spec", style="cyan")
     for target_id in comparison.target_ids:
-        table.add_column(target_id, justify="center")
+        # A target id is the operator's text, printed as it is: `[/]` in it raised `MarkupError`
+        # and the run wrote no report, and `escape` alone still read `:warning:` as an emoji and
+        # changed backslashes (pre-merge audit of the control-characters block, and its delta).
+        table.add_column(Text(visible_controls(target_id)), justify="center")
     for spec_id in comparison.spec_ids:
         row = [spec_id]
         for target_id in comparison.target_ids:
@@ -257,7 +267,13 @@ class ProgressPrinter:
         not noise: it is the one line that tells the operator the report below is partial.
         """
 
-        Console(stderr=True, no_color=self._console.no_color, highlight=False).print(message)
+        # As text, on its own line: it quotes a target's error. `rich` read `[/]` in it as
+        # markup (`MarkupError`, a traceback before the reports were written), `:warning:` as
+        # an emoji, and wrapped it at 80 columns in a CI log, where a wrap can start a line
+        # with `::error` (pre-merge audit of PR #49). Its lines are the caller's.
+        Console(stderr=True, no_color=self._console.no_color, highlight=False).print(
+            message, markup=False, emoji=False, soft_wrap=True
+        )
 
     def progress(self, index: int, total: int, spec_id: str, finding: Finding) -> None:
         """Print one progress line (suppressed under ``-q``)."""
@@ -283,5 +299,6 @@ class ProgressPrinter:
         matrix = comparison_table(findings, specs)
         if matrix is not None:
             self._console.print(matrix)
+        # Plain and unwrapped, like `error`: the off-universe line quotes a pack's values.
         for line in coverage_lines(findings, specs, planned_specs=planned_specs):
-            self._console.print(line)
+            self._console.print(line, markup=False, emoji=False, soft_wrap=True)
