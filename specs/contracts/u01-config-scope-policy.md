@@ -347,7 +347,10 @@ turns them into text: `str()` of a list of aliases took about 675 MB of resident
 MB traced by the test on `a0bca70`), and of an integer past 4,300 digits it raised Python's own
 `Exceeds the limit (4300 digits)` error, naming no file (delta audit); a labels key or a
 `seeded_setup` key that is such an integer is refused as A-40 (#81) words it, and a `seeded_setup`
-key that is text or a date is written as `str()` writes it (a date stays `2024-01-01`). An endpoint
+key that is text or a date is written as `str()` writes it (a date stays `2024-01-01`). A `provider`
+or `transport` that is not text, read as no provider here, is refused since u12 A-53 by the target
+file's top-level check, naming the file and still without turning it into text; the tests of an
+integer `provider` and of a `transport` of aliases expect that refusal now. An endpoint
 or a `base_url` that urllib cannot read (a bracket, a host NFKC turns into a path, a port that is
 not a number or has thousands of digits) raised urllib's or Python's error with no file named, and
 for a host NFKC turns into a path, a bracketed host that is not an IP address or a port that is not

@@ -45,7 +45,9 @@ def _truncate_a_run(tmp_path: Path) -> tuple[RunOptions, list[Path], str]:
     ceiling bites depends on how the scheduler interleaves them: locally three attempts were
     stored, in CI zero were, and the first version of this helper therefore passed on my
     machine and failed on the runner with a missing evidence directory. Serialised, exactly
-    ``budget_requests`` attempts complete and there is always something to resume from.
+    ``budget_requests`` attempts complete and there is always something to resume from. (The
+    missing tree was the halt dropping the replies its batches had received, fixed on
+    2026-10-07: every reply is stored now, so serial keeps the run the same on every machine.)
     """
 
     target = write_target(tmp_path, mock_scenario="vulnerable")

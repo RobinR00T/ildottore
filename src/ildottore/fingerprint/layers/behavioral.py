@@ -15,7 +15,7 @@ self-report is never allowed to silently win (contract §7 spoofing honesty).
 from __future__ import annotations
 
 from ildottore.fingerprint.attribution import encode_signal
-from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, seed_for
+from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, ProbeFailed, seed_for
 from ildottore.fingerprint.probes import BEHAVIORAL_BATTERY, build_request
 from ildottore.fingerprint.signatures import SignaturePack
 from ildottore.shared.models import (
@@ -80,7 +80,12 @@ class BehavioralLayer:
         responses: dict[str, ModelResponse] = {}
         for probe in BEHAVIORAL_BATTERY:
             request = _seeded(build_request(probe), ctx.target_id, probe.name)
-            responses[probe.kind] = await adapter.send(request)
+            try:
+                responses[probe.kind] = await adapter.send(request)
+            except ProbeFailed:
+                # Unanswered: the other probes are still sent and counted, and this one adds
+                # no text to match. The engine records the failure (§7 A-35).
+                continue
 
         out: list[FingerprintEvidence] = []
         out.extend(self._self_report_evidence(responses))
