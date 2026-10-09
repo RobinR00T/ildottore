@@ -535,10 +535,9 @@ class CampaignRunner:
         for outcome in results:
             if isinstance(outcome, BudgetExhausted):
                 if breach is None:  # first breach wins; they all name the same ceiling
-                    breach = (
-                        f"budget ceiling reached on {outcome.axis!r} "
-                        f"(limit {outcome.limit}, attempted {outcome.attempted})"
-                    )
+                    # Figures from `figures`, not formatted here: written bare, the one that
+                    # stopped the run read as a phone number and every surface masked it.
+                    breach = f"budget ceiling reached on {outcome.axis!r} ({outcome.figures})"
             elif isinstance(outcome, Exception):
                 if error is None:
                     error = f"aborted on {type(outcome).__name__}: {outcome}"

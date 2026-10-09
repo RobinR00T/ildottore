@@ -559,7 +559,14 @@ deliberately chosen over `2` even when the partial run found confirmed exploits,
 scan itself is not a measurement you can act on: the specs that never ran are the ones you
 know nothing about. The findings are still written to every report. If your pipeline treats
 `3` as "infrastructure, retry", read `summary.status.reason` before retrying: it names the
-breached axis and how many specs never ran.
+breached axis, its ceiling, the figure that would have crossed it and how many specs never ran,
+for example `stub: budget ceiling reached on 'max_tokens' (limit 500,000, attempted
+9,007,199,254,740,992); 1 of 1 specs never ran or did not finish`. The figures are written in
+digit groups, seconds with three decimals and a count from 10**18 up as a magnitude
+(`1.000e+300`), because the reason is masked like everything else the tool prints and a bare
+figure that long reads as a phone number to the redactor. A shortened figure is rounded away
+from the ceiling (the attempted figure up, the limit down), so the attempted figure always
+reads larger than the limit.
 
 A resume with `-sV` records what its probe pass sent as soon as the pass ends, whether it
 finished, reached the request ceiling, stopped on an error (a probe with no answer after its

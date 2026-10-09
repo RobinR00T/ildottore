@@ -3,6 +3,30 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (afternoon): the figure that stopped a run, masked as a phone number
+
+- Found by the audit of `fix/usage-figure-overflow`; fixed on `fix/halt-reason-figures`. A
+  budget halt printed `(limit 500000, attempted «REDACTED:phone»)` on the terminal and in all
+  four reports, because the reason is masked and a bare figure of nine characters or more is a
+  phone number to the redactor (a Luhn-valid one, a card). Measured on main: every stop at the
+  default 1,800 s wall ceiling (`1800.123456`), a target reporting 2**53 tokens, and the limit
+  itself under `--budget-tokens 1000000000`. `BudgetExhausted` now writes its figures in digit
+  groups, seconds to three decimals and a count from 10**18 up as a magnitude, rounded away from
+  the ceiling; the runner takes them from `BudgetExhausted.figures`. The redactor is untouched
+  (several sessions are changing it) and the reason is not exempted: a phone number the target
+  wrote stays masked, and the terminal line is now tested to mask the reason. A card-shaped
+  usage figure prints grouped, on purpose (A-6). The pre-commit audit (181,584 figure cases
+  fuzzed through the redactor, none masked) found a crossed ceiling printed as an equal one and
+  the untested terminal mask; the delta audit found the first still alive in the ledger, which
+  rounded the elapsed time to six decimals before the figure was written (1,800.0000004 s
+  printed as 1,800.000), and a negative float written wrong (unreachable). All fixed. Not in
+  this change: a usage figure past the float range (above about 1.8e308) crashes the run on
+  main while its spend is stored
+  (`store/run_sqlite.py`), fixed by PR #67; the spec the halt cut stores nothing on main, fixed
+  by PR #66, which also edits the breach line in `runner.py`; and the resume refusal names a
+  `--budget-wall-s` flag that does not exist (it is `--budget-wall`), fixed by PR #72
+  (`fix/resume-wall-flag-name`, merged 2026-10-08).
+
 ## State, 2026-10-07 (midday): a usage figure no float holds
 
 - Found by the pre-commit audit of `fix/target-deep-json`, fixed on `fix/usage-figure-overflow`,

@@ -101,7 +101,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | Clause | Unit | The claim it makes checkable |
 |---|---|---|
 | A-1..A-3 | u09 | benign is a predicate over the carrier, the probe discriminates, declared cost equals real cost |
-| A-4..A-6 | u08 | the wall budget measures time, every send passes the rate gate, a halt says why |
+| A-4..A-6 | u08 | the wall budget measures time, every send passes the rate gate, a halt says why, in figures the redactor keeps |
 | A-59 | u08 | a prior's attempts are counted against the plan from what is stored, never by building the plan, so a resume costs what the run stored, whatever `--runs` says |
 | A-24 | u12 | a resume is bound to its campaign: battery, target, route, sample size and money |
 | A-45 | u12 | a target file's `capabilities` or `sampling_defaults` refusal names the file, the field and the reason on one line, never the value |

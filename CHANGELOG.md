@@ -5,6 +5,34 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (the figure that stopped a run was masked as a phone number)
+
+- **A halted run hid the figure that halted it.** The halt reason (`budget ceiling reached on
+  '<axis>' (limit L, attempted A)`) is masked before the terminal and every report see it, and
+  the redactor reads a bare figure of nine characters or more as a phone number (a Luhn-valid one
+  of 13 to 19 digits as a card). So `dottore run` and its JSON, HTML, SARIF and JUnit reports
+  printed `attempted «REDACTED:phone»` for exactly the number the operator needed: on every stop
+  at the default 1,800 s wall ceiling (`1800.123456`), for any token figure past 99,999,999 (a
+  target reporting `usage.total_tokens` of 2**53), and for the limit itself under
+  `--budget-tokens 1000000000`. The figures are now written in digit groups
+  (`(limit 500,000, attempted 9,007,199,254,740,992)`, from a stub run), seconds with three
+  decimals (`1,800.124`: with six, `800.123456` after the group separator is a phone number
+  again), and a count from 10**18 up as a magnitude (`1.000e+300`), so a hostile figure cannot
+  fill the line. A shortened figure is rounded away from the ceiling (the figure that crossed it
+  up, the ceiling down), so a crossed ceiling never reads as an equal one: rounded to the
+  nearest, 1,800.0004 s printed `attempted 1,800.000 would exceed limit 1,800`, and the ledger no
+  longer rounds the elapsed time to six decimals before the halt figure is written. A figure
+  past Python's 4,300-digit `str` limit (a run whose second spec is told 4,300 nines) no longer
+  raises `ValueError` from inside the exception meant to halt the run; that run still exits 1
+  later, while storing its spend, which PR #67 fixes. The `-sV` probe
+  pass's ceiling error (exit 3) carries the same figures. The reason is not exempted from the
+  redactor: a key in an aborted run's reason is still masked on the terminal and in every report
+  (a test now covers the terminal line, which nothing did). The one thing the grouping lets
+  through is the figure itself: a target that reports a card-shaped usage figure
+  (4,111,111,111,111,111) sees it printed, grouped, where it was `«REDACTED:card»`, because
+  showing that figure is the point. A pipeline that parses `summary.status.reason` reads grouped
+  figures from now on. Contract u08, clause A-6 amended.
+
 ### Fixed (a figure in a reply's usage that no float holds)
 
 - **A 400-digit token count in a reply stopped `dottore run` with exit 1.** The ledger trued its
