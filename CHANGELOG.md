@@ -34,11 +34,12 @@ versioning: [SemVer](https://semver.org/).
   `provider: mpc` runs on the offline mock, where its `mcp` suite scores a PASS with exit 0; a key
   inside `capabilities` is A-50's (#78); the line lists the first 20 problems, then `and N more`,
   as #76 has `validation_problems` do (20,000 unknown keys gave a 788,937-byte line before it, and
-  872 bytes since, for a file named `t.yaml`). A number as `provider` or `transport`, which A-40
-  (above) read as no provider, is refused as not text, and A-40's two tests of it, and two of
-  A-51's (#86, an integer `provider` and a `transport` of aliases), now expect the refusal.
-  Contract u12 A-53; `tests/cli/test_target_top_level_keys.py` (43 of its 90 tests fail on
-  `9b8b511`, this branch's base).
+  790 bytes since, for a file named `t.yaml`). A number as `provider` or `transport`, which A-40
+  (below) read as no provider, is refused as not text, and A-40's two tests of it, and two of
+  A-51's (#86, an integer `provider` and a `transport` of aliases), now expect the refusal, as a
+  third (a `provider` of aliases, which measured only the memory) does. Contract u12 A-53;
+  `tests/cli/test_target_top_level_keys.py` (43 of its 90 tests fail on `9b8b511`, this branch's
+  base).
 
 ### Fixed (a reply's logprob figure that no model produces stops nothing and decides nothing)
 

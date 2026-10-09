@@ -589,7 +589,8 @@ of A-40's, because the command exits 0; 17 because the reader does not raise; 1 
 `_TEXT_FIELDS` does not exist). Merged with #86 (A-51), two of its tests in
 `test_operator_file_quoted_values.py` (a `provider` and `transport` that are integers, a `transport`
 of aliases), which expected `target_uses_mock` to route the file to the mock, now expect this
-refusal, still under A-51's bound (the value never written out). The other 47 guard what stays
+refusal, still under A-51's bound (the value never written out), and the `provider` of aliases case
+of a third, which measured only the memory, checks the refusal too. The other 47 guard what stays
 (every legal key passes the check, a file with each key the manual lists loads, a null text field
 is absent, `id` and `type` keep their own refusals) and that the redactor leaves each test value
 readable, and one loads every target file
@@ -621,13 +622,13 @@ clause, and said so rather than pinned:
   is masked only by the redactor's own rules;
 * unknown keys are listed on the one line as `validation_problems` lists any block's problems
   since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 unknown keys
-  give a line of 872 bytes for a file named `t.yaml`, where before #76 they gave 788,937 bytes in
+  give a line of 790 bytes for a file named `t.yaml`, where before #76 they gave 788,937 bytes in
   a 189 KB file);
 * a run halted before this change with such a key resumes once the key is deleted (it was never
   read, so the target is the same: measured end to end, exit 0, still on the mock for a lost
   endpoint) and is refused as another target once the key is corrected to the one meant; that
-  refusal's advice to restore the target as it was cannot be followed, since that file no longer
-  loads.
+  refusal's advice to restore the target as it was is followed by deleting the key, since the file
+  as written no longer loads.
 
 **A-49 A report finding that fails validation is refused on one line that names the report and gives
 each problem's place and reason, never the value (added 2026-10-07).** `diff.load_findings` handed
@@ -696,6 +697,19 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
+  file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
+  as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in
+  `dottore fleet` before anything is written. Alternatives: keep dropping them in silence (main
+  until A-50: a typo of `tools` takes the tool specs out of the plan); warn and go on (the warning
+  goes where the run's output goes, and a CI log nobody reads loses the same specs); refuse the
+  unknown key and keep `false` as none (the one shape an operator may write on purpose to mean
+  "none", though `{}` or leaving the key out says it too). A file that loads on main and is refused
+  now holds a key `Capabilities` does not know or a `capabilities` of `false`, `0`, `[]` or `""`; no
+  file of the repository does. Reversal: the filter and the `or {}` in `_target_from` (called by
+  `load_target` and `read_target_file` since #77), `dict[str, bool]` in `FleetTarget` and
+  `**entry.capabilities` in `_target_doc` (dropping the `Capabilities` import in `cli/fleet.py`),
+  and `tests/cli/test_target_capabilities_strict.py` removed.
 - **OD-31** (decided 2026-10-08 by the owner: refuse both, as built; A-53): whether a target file's
   top level refuses a key no reader reads and a `name`, `provider`, `endpoint`, `model`, `auth_ref`
   or `transport` that is not text, or keeps dropping them. Built: both refused before anything is
@@ -710,20 +724,6 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
   repository does. Reversal: the `_TargetFileTopLevel` check in `_read_target_yaml`, the six
   `isinstance(..., str) else None` reads in `load_target` and the `_lowered` reads in
   `target_uses_mock`.
-
-- **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
-  file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
-  as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in
-  `dottore fleet` before anything is written. Alternatives: keep dropping them in silence (main
-  until A-50: a typo of `tools` takes the tool specs out of the plan); warn and go on (the warning
-  goes where the run's output goes, and a CI log nobody reads loses the same specs); refuse the
-  unknown key and keep `false` as none (the one shape an operator may write on purpose to mean
-  "none", though `{}` or leaving the key out says it too). A file that loads on main and is refused
-  now holds a key `Capabilities` does not know or a `capabilities` of `false`, `0`, `[]` or `""`; no
-  file of the repository does. Reversal: the filter and the `or {}` in `_target_from` (called by
-  `load_target` and `read_target_file` since #77), `dict[str, bool]` in `FleetTarget` and
-  `**entry.capabilities` in `_target_doc` (dropping the `Capabilities` import in `cli/fleet.py`),
-  and `tests/cli/test_target_capabilities_strict.py` removed.
 - **OD-32** how far `--runs` may go (2026-10-07). **Decided 2026-10-08 by the owner: the runner
   counts what is stored instead of building the plan (A-59, u08), and `--runs` keeps its `2**53`
   bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The
