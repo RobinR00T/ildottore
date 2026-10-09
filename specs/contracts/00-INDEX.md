@@ -133,6 +133,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-43 | u01 | an operator's file is read up to 1 MiB, its validation errors are listed up to 20 and cut at 300 characters, and `fleet` writes no file it could not read back |
 | A-56 | u01 | no two of a fleet's ids differ only by case, on every file system, so no generated target file overwrites another; each refusal locates its entries |
 | A-21..A-22 | u14 | a test asserts the claim against the real collaborator, and is deterministic |
+| A-36 | u08 (and u09) | a figure the target reports (token usage, moderation latency) is checked where it is read, and nothing the tool writes takes the ledger past what a float converts |
 | A-47 | u04 | a reply that holds half a character (a lone surrogate) is read as U+FFFD where it is parsed, in a tool call's arguments too, and judged: one such reply no longer aborts the campaign, and a leak with a half before, after or between its words still fails |
 | A-48 | u12 | a refusal's advice is advice the tool would accept; a resume is checked for being the same campaign before money |
 

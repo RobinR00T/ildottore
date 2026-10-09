@@ -3,6 +3,37 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-07 (midday): a usage figure no float holds
+
+- Found by the pre-commit audit of `fix/target-deep-json`, fixed on `fix/usage-figure-overflow`,
+  built on #61 (merged as `0501752`) because it reuses #61's spend predicate: a reply whose
+  `usage.prompt_tokens` (or any token figure the ledger reads) is a 400-digit integer made
+  `dottore run` exit 1 on `OverflowError` when the spend was persisted, with no report, and one
+  past 2^53 halted the campaign on the token ceiling after one reply. A 400-digit
+  `moderation_latency_ms` made `fingerprint` and `run -sV` exit 1 the same way. Both readers now
+  check the figure where it is read (`ildottore.shared.amounts`: `is_count`, a JSON integer from 0
+  to 2^53, for tokens; `is_amount`, #61's predicate moved there, for the latency and the stored
+  spend). An unreadable token figure is skipped and the next shape read; a reply with no readable
+  shape keeps the reservation; a pair beside an unreadable cache figure is a floor. An unreadable
+  latency is `null`. The ledger takes no guard: nothing a reply or the tool hands it can pass
+  what `float()` converts (a run store edited by hand to an integer just under 2^1024 could, on a
+  resume under a ceiling above 1.8e308, as on `main`; closed by #89, see the merge note below).
+  Clause A-36 (u08, pointer in u09). Left open, unchanged: a figure up to 2^53 is
+  believed, so a target can still end a campaign early on the token ceiling. Found by the audit
+  and left as its own task: a `logprob` no float holds still makes `-sV` exit 1 (adapter, u04).
+  `make gates` green: 2,452 tests, coverage 96.51%, lint 0 errors on 75 specs; 52 of the 101
+  new tests fail on `0501752`, and 24 of 24 mutants of the fix are killed.
+- Merge note (2026-10-09, `origin/main` merged in, with #89, A-55 in u12): `run` now refuses a
+  `--budget-*` past 2^53, so the CLI test that believed 2^53 under `--budget-tokens 2**60` failed
+  with exit 3. It now passes `--budget-tokens 2**53`: one reply of 2^53 is trued in and fills the
+  ceiling exactly, and the next send is refused (exit 3, one request served, 2^53 recorded). The
+  `<` boundary mutant of `is_count` fails it: the figure ignored, both specs run and the run exits
+  0 (measured). The texts that leaned on a ceiling past 2^53 carry the same note (CHANGELOG,
+  A-36, MANUAL): a total passes 2^53 only by replies sent together (two of 2^53 - 1 at
+  `--concurrency 6`, measured), and the hand-edited store near 2^1024 resumed under 2^53 halts with
+  exit 3 and sends nothing (measured), so that case is closed. `make gates` green after the merge:
+  3,443 tests, coverage 97.10%, lint 0 errors on 75 specs.
+
 ## State, 2026-10-07 (evening): A-40's path printed a key as written
 
 - PR #81 (A-40) squash-merged as `c3e70d8` after three audits. Its finding printed the keys on
