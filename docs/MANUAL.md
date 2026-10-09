@@ -199,7 +199,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   behind a registered, masked or empty user too (not yet behind a user holding a raw `@`, nor
   behind a registered credential that runs across the URL's `://`, `:` or `@`), and registered
   credentials that overlap in the text are masked as one. Two cases are masked less well than
-  before PR #56, a trade-off the owner accepted for its merge (a follow-up issue tracks them):
+  before PR #56, a trade-off the owner accepted for its merge (issue #96 tracks them):
   a registered credential holding an `@` across a URL's `@` lets the URL rule read on to a later
   `@`, so a labelled value written after the URL (`,password=<value>`) keeps its tail readable
   and the host is reported wrong; and two overlapping registered credentials, masked as one run,

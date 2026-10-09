@@ -670,7 +670,7 @@ versioning: [SemVer](https://semver.org/).
   readable instead (`key-ABCD1234` and `1234://bob`). Each needs a target writing a registered
   credential that holds a URL separator. The last two are regressions against the
   redactor before this change, which the owner accepted for the merge (2026-10-09);
-  a follow-up issue tracks them. Also open, on main too: a raw `@` in the user or
+  issue #96 tracks them. Also open, on main too: a raw `@` in the user or
   in an unregistered password of a URL leaves the password, or its part after the
   `@`, readable (`myadmin@srv:<password>@localhost`, an Azure-style login); the
   labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its

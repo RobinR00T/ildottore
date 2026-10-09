@@ -21,10 +21,17 @@ The carryover ledger. Every agent session updates this so context survives even 
   get a handler of their own so they pass under `nohup`, and "Until 2026-10-08" and "on main
   `e4d6c83`" read "In older versions". Merged `main` at `fb9a8a8` (#69, #74 and the others of the
   day), then the stack of #88, #60, #68 and #66 (`4475b6e`, the tree main holds since #66 landed
-  as `be2a762`), and added four lows of the #66 re-audit: a test of the room check's clamp on the target share (it
-  fails with the clamp removed), the resume of a sweeping spec whose only reply went unjudged (`(3,
-  2)`, priced exactly), "of a spec that uses `semantic_judge`" in A-48, and the MANUAL's
-  `--estimate` row and `dottore(1)` reworded. Left open: the hang itself (a fix would change how
+  as `be2a762`), and added four lows of the #66 re-audit: a test of the room check's clamp on the
+  target share (it fails with the clamp removed), the resume of a sweeping spec whose only reply
+  went unjudged (`(3, 2)`, priced exactly), "of a spec that uses `semantic_judge`" in A-48, and
+  the MANUAL's `--estimate` row and `dottore(1)` reworded. Stacked last on `84e0229` (2026-10-09:
+  `main` at `be2a762` with #56, #57, #51, #54, #70 and #87, the tree main holds before this
+  squash): only this entry and the CHANGELOG's conflicted, and A-61 holds on the redactor #56 and
+  #57 rebuilt (an all-digit id is still masked as a phone, one letter among the twelve still
+  leaves it readable). #56's notes now name issue #96 as the one that tracks its two accepted
+  regressions. `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 4618
+  tests, 97.60% coverage, 75 specs lint OK, four import contracts kept, self-scan, bandit and
+  pip-audit clean. Left open: the hang itself (a fix would change how
   every stop works: raising from a loop callback of its own loses a signal that arrives as the last
   loop stops, and cancelling the run's task as asyncio does for Ctrl-C needs a handle on the task
   `asyncio.run` creates), and an old all-digit run's reports, and those of its resumes, which keep
@@ -278,7 +285,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   overlapping registered credentials masked as one run can cover a separator that main's
   one-at-a-time replacement left (main leaves part of the second credential readable there).
   Each needs a target writing a registered credential that holds a URL separator. The owner accepted
-  the last two for the merge (2026-10-09); a follow-up issue tracks them. Also open, on main too: a
+  the last two for the merge (2026-10-09); issue #96 tracks them. Also open, on main too: a
   raw `@` in a URL's user or unregistered password leaves the password, or its part after the `@`,
   readable (`myadmin@srv:<password>@localhost`); the labelled-secret rule stops at a mask
   (`api_key=<registered credential><tail>` keeps its tail), and a registered credential that is

@@ -194,8 +194,8 @@ credential holding the URL's `://`, `:` or `@` across it still breaks the rule. 
 before A-31, or across the `@` lets it read on to a later `@`, so a labelled value after the URL
 loses its tail, which was masked before A-31; and two overlapping credentials masked as one run can
 cover a separator that the one-at-a-time replacement before A-31 left, and leave a URL password
-readable that it masked. The owner accepted those two regressions for the merge of PR #56; a
-follow-up issue tracks them. A pass that joined the password to such a credential was backed out
+readable that it masked. The owner accepted those two regressions for the merge of PR #56;
+issue #96 tracks them. A pass that joined the password to such a credential was backed out
 after the audits of its two versions each found a new hole in it. Not yet every rule either: the
 labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its tail
 readable, as before A-31. Nor every key: the key pattern's 16 KB bound counts each mask inside the
