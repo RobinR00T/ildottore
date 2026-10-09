@@ -408,6 +408,20 @@ def _non_json_values(data: object) -> list[str]:
     return found
 
 
+def non_json_values(data: object) -> list[str]:
+    """:func:`_non_json_values` for the operator's files that must be JSON too.
+
+    The ``websocket:`` block of a target file is a set of JSON frame templates, and YAML builds
+    the same values there. They passed the loader (pre-merge audit of PR #87): a date in a
+    template stopped the run when the frame was written (exit 3, ``TypeError``), NaN went on the
+    wire as ``NaN``, which is not JSON, and half a character in ``vars`` raised
+    ``UnicodeEncodeError`` out of ``run`` from the target's digest. The CLI's target loader runs
+    this walk over the block, with the same messages a spec gets.
+    """
+
+    return _non_json_values(data)
+
+
 def _entries(container: dict[Any, Any] | list[Any]) -> Iterator[tuple[object, object]]:
     """``(key, value)`` of a mapping, ``(index, value)`` of a list."""
 

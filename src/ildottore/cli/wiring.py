@@ -70,7 +70,7 @@ from ildottore.policy import (
 )
 from ildottore.policy.scope import MAX_ID_CHARS
 from ildottore.redactor import register_known_secret
-from ildottore.registry import LintError, Registry, load_paths
+from ildottore.registry import LintError, Registry, load_paths, non_json_values
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.config_errors import cut, listed, quoted, validation_problems, yaml_problem
@@ -1329,7 +1329,12 @@ def _websocket_spec(
     rendered with no request (``headers``, ``handshake.send``, ``session.start``),
     ``{{token}}`` without an ``auth_ref``, a query template that carries neither ``{{prompt}}``
     nor ``{{messages}}``, an upgrade header the library writes itself (``Host``,
-    ``Connection``, ``Upgrade``, ``Sec-WebSocket-*``), and ``one_query_in_flight: false``.
+    ``Connection``, ``Upgrade`` and :data:`~ildottore.adapters.websocket.RESERVED_HEADERS`' five
+    ``Sec-WebSocket-`` headers), ``one_query_in_flight: false``, a value JSON cannot hold
+    anywhere in the block (a date, a set, bytes, NaN, half a character: the walk a spec gets,
+    A-54), and a ``ws://`` or ``wss://`` endpoint on any other provider (an HTTP adapter cannot
+    dial it). Each refusal names the field; a name the operator wrote (a
+    header, a placeholder) is cut as every refusal of the operator's files cuts it (A-51).
     """
 
     is_websocket = (provider or "").strip().lower() == "websocket"
@@ -1339,6 +1344,15 @@ def _websocket_spec(
                 f"target file {path} is provider websocket and has no 'websocket' block; declare "
                 "message, response and (usually) handshake (docs/MANUAL.md §4.2)"
             )
+        if urlsplit((endpoint or "").strip()).scheme.lower() in ("ws", "wss"):
+            # The allowlist authorizes ws and wss since this adapter, so the REST adapter got
+            # past the gate and posted HTTP to the socket, credential included, four times per
+            # attempt, and `run` exited 3 (pre-merge audit of PR #87).
+            raise ValueError(
+                f"target file {path}: a ws:// or wss:// endpoint is dialled only by provider "
+                "websocket, with a 'websocket' block declaring its wire shape "
+                "(docs/MANUAL.md §4.2)"
+            )
         return None
     if not is_websocket:
         raise ValueError(
@@ -1346,6 +1360,14 @@ def _websocket_spec(
         )
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} 'websocket' must be a mapping")
+    # Before the model reads it: the templates are free-form JSON, so a date stopped the run when
+    # the frame was written, NaN went on the wire, and half a character raised out of `run` from
+    # the target's digest (pre-merge audit of PR #87).
+    not_json = non_json_values({"websocket": raw})
+    if not_json:
+        raise ValueError(
+            f"target file {path} 'websocket' holds a value JSON cannot hold: {'; '.join(not_json)}"
+        )
     try:
         spec = WebSocketSpec.model_validate(raw)
     except ValidationError as exc:
@@ -1381,7 +1403,7 @@ def _websocket_spec(
         )
     in_vars = sorted(placeholders(list(spec.vars.values())))
     if in_vars:
-        names = ", ".join("{{" + name + "}}" for name in in_vars)
+        names = _placeholder_names(in_vars)
         raise ValueError(
             f"target file {path}: websocket.vars carries {names}; vars are plain values and "
             "are never rendered, so a placeholder there would go on the wire literally"
@@ -1389,14 +1411,14 @@ def _websocket_spec(
     reserved_headers = sorted(name for name in spec.headers if name.lower() in RESERVED_HEADERS)
     if reserved_headers:
         raise ValueError(
-            f"target file {path}: websocket.headers sets {', '.join(reserved_headers)}, which "
+            f"target file {path}: websocket.headers sets {listed(reserved_headers)}, which "
             "the WebSocket library writes itself; remove it"
         )
     handshake = spec.handshake.send if spec.handshake is not None else {}
     connection_only = placeholders([handshake, spec.session.start, spec.headers])
     misplaced = sorted((connection_only & RESERVED) - CONNECTION_PLACEHOLDERS)
     if misplaced:
-        names = ", ".join("{{" + name + "}}" for name in misplaced)
+        names = _placeholder_names(misplaced)
         raise ValueError(
             f"target file {path}: websocket headers, handshake.send and session.start are sent "
             f"before any query, so they may use only {{{{token}}}} and vars, not {names}"
@@ -1404,7 +1426,7 @@ def _websocket_spec(
     used = connection_only | placeholders(spec.message.send)
     unknown = sorted(used - RESERVED - set(spec.vars))
     if unknown:
-        names = ", ".join("{{" + name + "}}" for name in unknown)
+        names = _placeholder_names(unknown)
         raise ValueError(
             f"target file {path}: websocket templates use {names}, which is neither a reserved "
             "placeholder (token, prompt, system_prompt, messages) nor declared under "
@@ -1421,6 +1443,12 @@ def _websocket_spec(
             "{{messages}}, so no attack text would reach the target"
         )
     return spec
+
+
+def _placeholder_names(names: list[str]) -> str:
+    """``{{a}}, {{b}}``: placeholder names a refusal lists, each cut and at most 20 (A-51)."""
+
+    return listed(names, show=lambda name: cut("{{" + name + "}}"))
 
 
 def load_mock_scenario(path: Path) -> str:

@@ -13,7 +13,7 @@ from .linter import lint, lint_packs, uncompilable_patterns
 from .loader import LoadResult, load_path, load_paths
 from .pack import FLAGGED_FAMILIES, LoadedPack
 from .registry import Registry, SpecNotFoundError, SuiteNotFoundError
-from .schema import SafeLoadError, safe_load_yaml, validate_attack_spec_schema
+from .schema import SafeLoadError, non_json_values, safe_load_yaml, validate_attack_spec_schema
 
 __all__ = [
     "DEFAULT_STUB_TABLE",
@@ -36,6 +36,7 @@ __all__ = [
     "lint_packs",
     "load_path",
     "load_paths",
+    "non_json_values",
     "safe_load_yaml",
     "uncompilable_patterns",
     "validate_attack_spec_schema",

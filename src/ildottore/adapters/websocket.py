@@ -32,6 +32,13 @@ than 8 characters, which the redactor cannot mask by value, is refused before an
 query send and the handshake sat outside the turn timeout; a lost conversation was retried and
 debited three times for nothing; and ``equals``/``final_value`` read ``1``, ``1.0`` and ``true``
 as one value.
+
+The pre-merge audit (2026-10-09) found and this module now closes: a frame was parsed with a
+plain ``json.loads``, so half a character escaped in it reached the evidence store and aborted
+the campaign (frames now go through ``bounded_loads`` and ``well_formed_json`` as every reply
+does, A-47); a tool call's JSON-text arguments were not measured (``check_argument_nesting``);
+a text frame that is not UTF-8 (close code 1007) was retried; and a socket that failed to open
+was dialled again inside one send even when the runner owns the retries.
 """
 
 from __future__ import annotations
@@ -51,13 +58,16 @@ from ildottore.adapters.base import (
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
+    ResponseTooDeep,
     ResponseTooLarge,
+    ResponseUndecodable,
     RetryConfig,
     redact_ids,
 )
 from ildottore.adapters.rest import get_path
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
+from ildottore.shared.config_errors import quoted
 from ildottore.shared.models import (
     Capabilities,
     JsonDict,
@@ -66,6 +76,9 @@ from ildottore.shared.models import (
     WebSocketExpect,
     WebSocketSpec,
 )
+from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.toolcalls import check_argument_nesting
+from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
     "CONNECTION_PLACEHOLDERS",
@@ -84,6 +97,7 @@ __all__ = [
     "WebSocketClosed",
     "WebSocketConversationLost",
     "WebSocketFrameTooDeep",
+    "WebSocketFrameUndecodable",
     "WebSocketServerError",
     "WebSocketTooManyConversations",
     "WebSocketTurnOverflow",
@@ -125,9 +139,13 @@ RESERVED_HEADERS: Final = frozenset(
 #: Frames read in one turn before the turn is abandoned: a server that streams forever is
 #: bounded by this as well as by the timeout, and so is the transcript the evidence keeps.
 MAX_FRAMES_PER_TURN: Final = 4096
-#: Nesting a received frame may have. The evidence store serializes an attempt with pydantic,
-#: which refuses about 250 levels, and ``json.loads`` overflows the stack near 1000: a frame
-#: past either aborted the campaign instead of this attempt (pre-commit audit, F1).
+#: Nesting a received frame may have. The whole frame is filed in the attempt's ``raw_ids``, a
+#: few levels down, and the evidence store serializes the attempt with pydantic, which refuses
+#: a value nested 255 levels; ``_scrub`` below walks the frame by recursion too (Python stops at
+#: 1000 frames). A frame past either aborted the campaign instead of this attempt (pre-commit
+#: audit, F1). The parse itself is ``shared.nesting.bounded_loads``, which refuses a text nested
+#: past 100 levels before ``json.loads`` sees it (that one recurses only past some 116,000 on
+#: 3.14 and some 10,000 on 3.12), so this tighter bound is checked on the parsed frame.
 MAX_FRAME_DEPTH: Final = 64
 #: Conversations whose connection is held at once. A live conversation is never evicted (it
 #: used to be, closing a socket mid-turn: pre-commit audit, F4): past this, a new conversation
@@ -143,6 +161,9 @@ _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 _CLOSE_TIMEOUT_S: Final = 2.0
 #: Close code websockets sends when a frame is larger than ``max_size``.
 _MESSAGE_TOO_BIG: Final = 1009
+#: Close code websockets sends when a text frame is not UTF-8 (raw ``ED A0 80``, half a
+#: character, included): the same frame would come back on a retry.
+_INVALID_PAYLOAD: Final = 1007
 
 
 class WebSocketClosed(AdapterEnvError):
@@ -167,8 +188,16 @@ class WebSocketTurnOverflow(ResponseTooLarge):
     """A turn over the byte cap or the frame cap: inconclusive and not retried."""
 
 
-class WebSocketFrameTooDeep(ResponseTooLarge):
-    """A frame nested past :data:`MAX_FRAME_DEPTH`: inconclusive and not retried."""
+class WebSocketFrameTooDeep(ResponseTooDeep):
+    """A frame nested past :data:`MAX_FRAME_DEPTH`, or a tool call in it whose JSON-text
+    arguments nest past :data:`~ildottore.shared.nesting.MAX_DEPTH`: inconclusive and not
+    retried, as a reply nested too deeply is on every other adapter."""
+
+
+class WebSocketFrameUndecodable(ResponseUndecodable):
+    """A text frame that is not UTF-8, which the library refuses by closing the connection
+    (1007): inconclusive and not retried. Retried, the same frame came back three more times,
+    each one debited (pre-merge audit of PR #87)."""
 
 
 class WebSocketConversationLost(WebSocketClosed):
@@ -437,16 +466,22 @@ class WebSocketAdapter:
         """Dial, handshake and start the session, retrying a failed open up to the cap.
 
         A failure before the query is sent (DNS, refused, a 503 at the upgrade, a close during
-        the handshake, no handshake reply in time) is retried ``reconnect.max_attempts`` more
-        times with the base backoff. A refused upgrade (any other 4xx, a redirect), a handshake
-        reply that does not satisfy ``expect`` and a malformed frame are product defects and
-        are not retried. Once a query is on the wire nothing here resends it: a close mid-turn
-        is an environment error the runner retries, debited like every send. The handshake and
-        session phase (sends and replies) runs under ``response.timeout_seconds``, as a turn
-        does, and under the turn's byte and frame caps.
+        the handshake, no handshake reply in time) is dialled again up to
+        ``reconnect.max_attempts`` more times with the base backoff, and never more often than
+        this adapter's own ``retry.max_retries``: a campaign builds every live adapter with no
+        retries of its own (``NO_ADAPTER_RETRIES``), so there each dial is one send the runner
+        paces, debits and retries. Re-dialled here, a socket that failed to open was dialled up
+        to ``max_attempts + 1`` times per debited request: 8 dials for 4 debits with
+        ``max_attempts: 1`` under the runner's retries (pre-merge audit of PR #87). A refused
+        upgrade (any other 4xx, a redirect), a handshake reply that does not satisfy ``expect``
+        and a malformed frame are product defects and are not retried. Once a query is on the
+        wire nothing here resends it: a close mid-turn is an environment error the runner
+        retries, debited like every send. The handshake and session phase (sends and replies)
+        runs under ``response.timeout_seconds``, as a turn does, and under the turn's byte and
+        frame caps.
         """
 
-        attempts = self.spec.reconnect.max_attempts + 1
+        attempts = max(0, min(self.spec.reconnect.max_attempts, self.retry.max_retries)) + 1
         timeout = self.spec.response.timeout_seconds
         last = ""
         for attempt in range(attempts):
@@ -568,7 +603,7 @@ class WebSocketAdapter:
             if not _satisfies(frame, expect):
                 raise AdapterProductError(
                     f"{self.id}: the {what} reply did not satisfy expect "
-                    f"({expect.path!r} == {expect.equals!r})"
+                    f"({quoted(expect.path)} == {quoted(expect.equals)})"
                 )
             return
         raise WebSocketTurnOverflow(
@@ -614,7 +649,7 @@ class WebSocketAdapter:
                         if error is not None:
                             raise WebSocketServerError(
                                 f"{self.id}: the server answered with an error frame "
-                                f"({reading.error_path}: {self._shown(error)})"
+                                f"({quoted(reading.error_path)}: {self._shown(error)})"
                             )
                     fragment = get_path(frame, reading.text_path)
                     if isinstance(fragment, str):
@@ -622,7 +657,9 @@ class WebSocketAdapter:
                     if reading.tool_calls_path is not None:
                         raw_calls = get_path(frame, reading.tool_calls_path)
                         if isinstance(raw_calls, list):
-                            calls.extend(dict(c) for c in raw_calls if isinstance(c, Mapping))
+                            calls.extend(
+                                self._tool_call(c) for c in raw_calls if isinstance(c, Mapping)
+                            )
                     if reading.usage_path is not None:
                         raw_usage = get_path(frame, reading.usage_path)
                         if isinstance(raw_usage, Mapping):
@@ -644,13 +681,13 @@ class WebSocketAdapter:
                     )
         except TimeoutError as exc:
             raise WebSocketTurnTimeout(
-                f"{self.id}: no final frame ({reading.final_path}) within "
+                f"{self.id}: no final frame ({quoted(reading.final_path)}) within "
                 f"{reading.timeout_seconds}s"
             ) from exc
 
         if not parts:
             raise AdapterProductError(
-                f"{self.id}: no frame of the turn carried text at path {reading.text_path!r}"
+                f"{self.id}: no frame of the turn carried text at path {quoted(reading.text_path)}"
             )
         finish = get_path(final, reading.final_path) if final is not None else None
         recorded = frames if whole else frames[start:]
@@ -701,6 +738,11 @@ class WebSocketAdapter:
                 raise WebSocketTurnOverflow(
                     f"{self.id}: a frame exceeded {self.max_frame_bytes} bytes; not read further"
                 ) from exc
+            if sent is not None and sent.code == _INVALID_PAYLOAD:
+                raise WebSocketFrameUndecodable(
+                    f"{self.id}: a text frame was not UTF-8 and the connection was closed (1007); "
+                    "not evaluated"
+                ) from exc
             # The close reason is the server's text: scrubbed and redacted before it is
             # quoted (a credential in it reached attempt.error: pre-commit audit, F5).
             raise WebSocketClosed(
@@ -714,8 +756,12 @@ class WebSocketAdapter:
             f"{self.id}: a frame is nested deeper than {MAX_FRAME_DEPTH} levels; not evaluated"
         )
         try:
-            frame = json.loads(raw)
-        except RecursionError as exc:
+            # Parsed as every other adapter parses a reply: the nesting measured before the
+            # parse, and half a character (a lone surrogate escaped in a string) read as U+FFFD,
+            # since no UTF-8 writer downstream takes it (A-47; pre-merge audit of PR #87: a
+            # plain json.loads let one such frame abort the campaign).
+            frame = well_formed_json(bounded_loads(raw))
+        except NestedTooDeeply as exc:
             raise too_deep from exc
         except ValueError as exc:
             raise AdapterProductError(
@@ -727,6 +773,22 @@ class WebSocketAdapter:
             raise too_deep
         frames.append({"direction": "received", "frame": _scrub(frame, self.api_key)})
         return frame, len(raw.encode("utf-8"))
+
+    def _tool_call(self, call: Mapping[str, Any]) -> JsonDict:
+        """A tool call read from a frame, refused when its JSON-text arguments nest too deeply.
+
+        The frame's own parse never opens arguments carried as a JSON string; the evaluators
+        and the in-band tool loop do (``shared.toolcalls.call_arguments``), so they are measured
+        here, as the base adapter measures them (pre-merge audit of PR #87).
+        """
+
+        try:
+            check_argument_nesting(call)
+        except NestedTooDeeply as exc:
+            raise WebSocketFrameTooDeep(
+                f"{self.id}: a frame has a tool call whose arguments are {exc}; not evaluated"
+            ) from exc
+        return dict(call)
 
     def _ignored(self, frame: Mapping[str, Any]) -> bool:
         kind = get_path(frame, self.spec.response.type_path)
