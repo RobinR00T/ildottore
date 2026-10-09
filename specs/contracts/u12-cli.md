@@ -346,8 +346,8 @@ Python prints "Exception ignored" and drops it, and the run goes on: in CI the `
 `tests/cli/test_probe_pass_spend.py` saw a resume keep sending after its SIGTERM (41 requests
 served where 25 were expected, `WeakSet._remove` in the child's stderr; three first attempts on
 two PRs: #72's runs 37755261302 and 37758633140 and #82's run 37689645382, Linux, Python 3.11.16
-and 3.11.17), and on main `e4d6c83` a SIGTERM or SIGHUP raised inside a weakref callback under
-`asyncio.run` is dropped every time. Ctrl-C was never dropped there:
+and 3.11.17), and in older versions a SIGTERM or SIGHUP raised inside a weakref callback under
+`asyncio.run` was dropped every time. Ctrl-C was never dropped there:
 inside `asyncio.run` the SIGINT handler is asyncio's, which cancels the run instead of raising.
 SIGTERM and SIGHUP now call whatever SIGINT handler is in place at that moment, so inside the
 event loop the first of them cancels the run as Ctrl-C does (a second, or one after the run's task
@@ -358,10 +358,43 @@ that embeds `execute_run` and gives Ctrl-C a handler that does nothing, or one i
 ignored SIGHUP still stays ignored (`nohup`). Outside the event loop (planning, the store writes,
 the reports) a signal still raises where the main thread is, so one landing in a callback there
 is dropped, as Ctrl-C is in any Python program; with SIGINT ignored that holds inside the loop
-too. The requests are sent inside the loop. Checked by `tests/cli/test_termination_signals.py`:
-SIGTERM, SIGHUP and, as a control, SIGINT raised inside a real weakref callback under
-`asyncio.run` (the first two fail on `e4d6c83`); SIGTERM and SIGHUP outside a loop with SIGINT at
-its default and ignored; and SIGTERM inside a loop with SIGINT ignored.
+too, and there a signal can also land in one of asyncio's own callbacks (gather's, which wakes
+the task awaiting it) and leave that task with nothing to wake it: `asyncio.run` cancels the
+other tasks as it closes, so the run stops sending, but the process waits for that task until a
+second signal, and the stuck part's spend is recorded only when Python collects the task
+(pre-merge audit of #94; measured through `execute_run` with SIGINT ignored and the first SIGTERM
+raised inside the runner's gather: it waited for the second, sent 3 s later, and the spend was
+written as the process exited). It is documented and not fixed, because each fix in view changes how
+every stop works and is not a follow-up's to make: raising from a loop callback of its own would
+avoid both, but one that arrives as the last loop stops would then be queued on a loop that does not
+run again, and lost; cancelling the run's task without raising, as asyncio does for Ctrl-C, needs a
+handle on the task `asyncio.run` creates and its own review. The MANUAL says to send the signal
+again. The requests are sent inside the loop. Checked by `tests/cli/test_termination_signals.py`:
+SIGTERM, SIGHUP and, as a control, SIGINT raised inside a real weakref callback under `asyncio.run`
+(the first two fail on `e4d6c83`); SIGTERM and SIGHUP outside a loop with SIGINT at its default and
+ignored; SIGTERM inside a loop with SIGINT ignored; and a SIGTERM raised inside gather's callback,
+which takes a second one with SIGINT ignored (ten turns of the closing loop later the task is still
+cancelled and not done) and not with SIGINT at its default; the second is queued from inside the
+first, so no clock decides it, and the stuck task is collected inside the test. The SIGHUP cases
+give SIGHUP a handler of its own first, so they hold when the suite runs under `nohup`.
+
+**A-61 A run id is never masked as a phone number (added 2026-10-09).** A run id was `run-` and the
+first 12 hexadecimal digits of a UUID4. When all twelve came out decimal, (10/16) ** 12 of the draws
+or about one run in 281, the redactor every report and every CLI error goes through read them as a
+phone number: the JSON report named the run `run-«REDACTED:phone»`, in `run.run_id` and in every
+evidence reference, and `dottore replay` refused the id read back from it (`error: unsafe run_id:
+'run-«REDACTED:phone»'`, exit 3). `new_run_id` draws again when the twelve are all decimal. The
+redactor keeps its rule: excusing `run-` would let a target hide a 12-digit number behind four
+letters, and with one letter among the twelve none of its default rules matches (a phone's digits
+have to fill a word from edge to edge, a card needs 13 digits). The id keeps its shape, so a run
+minted before, all digits or not, resumes and replays by the name of its evidence directory; the
+reports it wrote keep the mask, and so do the reports of its resumes, which keep its id. Checked by
+`tests/cli/test_run_id_digits.py`: the UUID source made to draw twelve decimal digits first, through
+`run -oJ` and a `replay` of the id read back from the report; an all-digit id of an older version,
+masked in its report and replayed by its directory name; 2,000 ids minted from draws weighted
+towards decimal digits (693 drawn again), each left as it is by the redactor, alone, quoted in a
+message and in a path; and one letter in each of the twelve places. 3 of its 15 tests fail on
+`6401ee2`.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
@@ -554,12 +587,23 @@ halted on `--budget-tokens` is still told about requests, as on `0501752`; the e
 retries (the multi-identity sweep was the other omission until A-34, u08, priced it; the check
 subtracts a finished spec's sweep as `--estimate --resume` does), so a followed "drop -sV" at an
 exact fit can still halt; with `--judge` the check takes off the judge's two requests for each
-attempt the resume keeps, as `--estimate --resume` does since #66 (it priced the battery's whole
-judge share, so a "drop -sV" that fitted was not offered: pre-merge audit of #66); the test
-grammar does not read a piece written as a sentence of its own ahead of the advice; the advice names
-`-sV` where the invocation said `-A`, which implies it; and the stored mode is read by truthiness,
-as the planning-mode check reads it, so the advice and the check agree on a value that is not a
-boolean.
+attempt the resume keeps of a spec that uses `semantic_judge`, as `--estimate --resume` does since
+#66 (it priced the battery's whole judge share, so a "drop -sV" that fitted was not offered:
+pre-merge audit of #66), and clamps the target's share and the judge's at zero each on its own, so
+that one's surplus does not pay for the other's rest (`tests/core/test_authz_leak_corroboration.py`,
+re-audit of #66); the test grammar does not read a piece written as a sentence of its own ahead of
+the advice; the advice names `-sV` where the invocation said `-A`, which implies it; and the stored
+mode is read by truthiness, as the planning-mode check reads it, so the advice and the check agree
+on a value that is not a boolean.
+
+The resume's pre-check writes its figures as the halt reason writes the figure that stopped a run
+(#69, u08 A-6), with the same helper, `budgets.budget_figure`: grouped (`has already spent
+123,456,789 of its 123,456,805-request ceiling, and -sV would send 17 more`), and from 10**18 as a
+magnitude rounded away from the ceiling (a stored spend of 2**1000 reads `1.072e+301`, where grouped
+it was 402 characters: a stored spend is bounded only by what a float holds). Bare, from nine digits
+the redactor every CLI error goes through read each as a phone number, and the operator got
+`«REDACTED:phone»` for both figures to compare (2026-10-09; the last test of the file, whose three
+cases fail on `6401ee2`).
 
 **A-55 Every integer flag of `run` is bounded above as well as below, and so is a live run's pace
 against the wall-clock ceiling (added 2026-10-07).** `--runs` had a lower bound only, and the plan

@@ -266,6 +266,28 @@ def test_the_estimate_of_a_resume_after_a_sweep_halt_prices_the_sweep(
     assert got["estimate"] == got["resume_sent"]
 
 
+@pytest.mark.parametrize("ceiling", [3, 4])
+def test_a_sweeping_spec_whose_only_reply_went_unjudged_sweeps_and_is_judged_again(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], ceiling: int
+) -> None:
+    """#60 with #66: the sweep (2) and the one attempt (3) went out, then the ceiling refused the
+    judge's first request (3) or its second (4). The reply is stored without a verdict, so the
+    spec is not finished: the resume sweeps again, sends the attempt again and judges it, and
+    `--estimate --resume` prices exactly that (re-audit of #66)."""
+
+    port, state = stub
+    base = _command(tmp_path, port, "DL-XTENANT-001", runs=1, judge=True)
+    got = _halt_estimate_resume(tmp_path, state, base, ["--budget-requests", str(ceiling)])
+
+    assert got["sent_by_halt"] == got["spent_by_halt"] == ceiling
+    assert [(a["attempt_id"], a["verdict"]) for a in got["stored"]] == [
+        ("DL-XTENANT-001::identity#0", None)
+    ]
+    assert got["resume_sent"] == (3, 2)
+    assert got["estimate"] == got["resume_sent"], "--estimate --resume prices what is sent"
+    assert got["spent_after"] == ceiling + 3 + 2
+
+
 # --- a halt inside a batch of attempts --------------------------------------------------------
 
 

@@ -8,7 +8,6 @@ evidence) then replay by run id.
 from __future__ import annotations
 
 import asyncio
-import uuid
 from pathlib import Path
 
 from click.testing import Result
@@ -18,6 +17,7 @@ from ildottore.cli import replay as replay_mod
 from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
+from ildottore.cli.run import new_run_id
 from ildottore.store.run_sqlite import SqliteRunStore
 
 from .conftest import deep_json, make_spec, write_scope, write_target
@@ -39,7 +39,7 @@ def _run_campaign_to_evidence(tmp_path: Path) -> tuple[Path, str]:
         run_db=tmp_path / "runs.sqlite",
         n=1,
     )
-    run_id = f"run-{uuid.uuid4().hex[:12]}"
+    run_id = new_run_id()  # as the CLI mints it, never twelve decimal digits (A-61)
     asyncio.run(built.runner.run(run_id=run_id, target=target, specs=specs))
     return evidence_root, run_id
 

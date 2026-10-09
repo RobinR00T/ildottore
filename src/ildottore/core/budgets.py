@@ -36,6 +36,7 @@ __all__ = [
     "BudgetLedger",
     "BudgetSnapshot",
     "Spend",
+    "budget_figure",
 ]
 
 
@@ -51,16 +52,16 @@ class BudgetExhausted(RuntimeError):
         self.limit = limit
         self.attempted = attempted
         super().__init__(
-            f"budget exhausted on {axis!r}: attempted {_figure(attempted, up=True)} "
-            f"would exceed limit {_figure(limit, up=False)}"
+            f"budget exhausted on {axis!r}: attempted {budget_figure(attempted, up=True)} "
+            f"would exceed limit {budget_figure(limit, up=False)}"
         )
 
     @property
     def figures(self) -> str:
-        """``limit X, attempted Y`` for a halt reason, both written by :func:`_figure`."""
+        """``limit X, attempted Y`` for a halt reason, both written by :func:`budget_figure`."""
 
-        limit = _figure(self.limit, up=False)
-        return f"limit {limit}, attempted {_figure(self.attempted, up=True)}"
+        limit = budget_figure(self.limit, up=False)
+        return f"limit {limit}, attempted {budget_figure(self.attempted, up=True)}"
 
 
 #: From here on a count prints as a magnitude: no real spend gets near it, and its digits alone
@@ -68,8 +69,11 @@ class BudgetExhausted(RuntimeError):
 _MAGNITUDE_FROM = 10**18
 
 
-def _figure(value: int | float, *, up: bool) -> str:
+def budget_figure(value: int | float, *, up: bool) -> str:
     """A budget figure as a halt message writes it, in a shape the redactor leaves alone.
+
+    Public, because a refusal before anything is sent writes its figures the same way: the CLI's
+    ``--resume -sV`` pre-check printed its spend and ceiling bare (u12 A-48).
 
     Every surface masks the halt reason (SEC-01), and written bare a figure of nine characters
     or more is a phone number to the redactor (a Luhn-valid one of 13 to 19 digits, a card), so
@@ -86,7 +90,7 @@ def _figure(value: int | float, *, up: bool) -> str:
     """
 
     if value < 0:  # no ceiling or spend is negative; written right all the same
-        return "-" + _figure(-value, up=not up)
+        return "-" + budget_figure(-value, up=not up)
     if isinstance(value, float):
         if not math.isfinite(value):
             return str(value)
@@ -235,7 +239,7 @@ class BudgetLedger:
         elapsed = self.elapsed_s()
         if elapsed > self._max_wall_s:
             # Unrounded: `round(elapsed, 6)` put 1,800.0000004 s back ON a 1,800 s ceiling, and
-            # the halt read "attempted 1,800.000 would exceed limit 1,800" (`_figure` rounds).
+            # the halt read "attempted 1,800.000 would exceed limit 1,800" (`budget_figure` rounds).
             raise BudgetExhausted("max_wall_s", self._max_wall_s, elapsed)
 
     # --- discrete axes -------------------------------------------------------
@@ -348,7 +352,7 @@ class BudgetLedger:
         elapsed = self.elapsed_s()
         if elapsed > self._max_wall_s:
             # Unrounded: `round(elapsed, 6)` put 1,800.0000004 s back ON a 1,800 s ceiling, and
-            # the halt read "attempted 1,800.000 would exceed limit 1,800" (`_figure` rounds).
+            # the halt read "attempted 1,800.000 would exceed limit 1,800" (`budget_figure` rounds).
             raise BudgetExhausted("max_wall_s", self._max_wall_s, elapsed)
 
 

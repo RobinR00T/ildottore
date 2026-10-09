@@ -544,3 +544,38 @@ def test_a_resume_refused_for_money_leaves_the_journal_as_it_found_it(
     # with no adoption at all.
     written = {sha for _, sha, state in _journal(tmp_path) if state == "written"}
     assert halted and halted <= written, "the resume that goes through adopts what it resumed from"
+
+
+@pytest.mark.parametrize(
+    ("spent", "written"),
+    # A stored spend is bounded only by what a float holds (the store keeps it as one; 2**1000 is
+    # a float exactly): grouped, 2**1000 is 402 characters, and its magnitude is rounded up.
+    [(123_456_789, "123,456,789"), (10**20, "1.000e+20"), (2**1000, "1.072e+301")],
+    ids=["nine-digits", "past-10**18", "a-float-of-302-digits"],
+)
+def test_a_spend_and_ceiling_of_nine_digits_are_written_out_not_masked(
+    tmp_path: Path, spent: int, written: str
+) -> None:
+    """The refusal printed the spend and the ceiling bare, and the CLI's redactor reads nine
+    digits or more as a phone number: "has already spent «REDACTED:phone» of its
+    «REDACTED:phone»-request ceiling", the two figures the operator had to compare. They are
+    written as the halt reason writes its figures (u08 A-6, #69): grouped, and from 10**18 as a
+    magnitude."""
+
+    _setup(tmp_path)
+    run_id = _halt(tmp_path, "-sV", "--budget-requests", str(PROBES + HALT))
+    with SqliteRunStore(tmp_path / "state" / "runs.sqlite") as store:
+        store.save_run_context(run_id, spend={"requests": spent})
+    ceiling = 123_456_789 + PROBES - 1
+
+    refused = CliRunner().invoke(
+        app, [*_base(tmp_path), "--resume", run_id, "-sV", "--budget-requests", str(ceiling)]
+    )
+
+    assert refused.exit_code == ExitCode.ERROR, refused.stderr
+    assert "REDACTED" not in refused.stderr, refused.stderr
+    (error,) = _errors(refused)
+    assert (
+        f"has already spent {written} of its 123,456,805-request ceiling, and -sV would send "
+        f"{PROBES} more before any attack traffic"
+    ) in error, error

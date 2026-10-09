@@ -5,6 +5,68 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a run id of twelve decimal digits, masked as a phone number)
+
+- **About one run in 281 was named `run-«REDACTED:phone»`.** A run id is `run-` and the first 12
+  hexadecimal digits of a UUID4. When all twelve came out decimal, (10/16) ** 12 of the draws, the
+  redactor that every report and every CLI error goes through read them as a phone number: the JSON
+  report named the run that way in `run.run_id` and in every evidence reference, and `dottore
+  replay` refused the id read back from it (`error: unsafe run_id: 'run-«REDACTED:phone»'`, exit 3),
+  as `--resume` did. A test that replays the id it reads back from a report failed as often
+  (`tests/cli/test_hostile_nesting.py::test_arguments_at_the_limit_go_through_the_deepest_path_a_reply_reaches`).
+  Such a draw is now drawn again (`new_run_id`). The redactor keeps its phone rule, since excusing
+  `run-` would let a target hide a 12-digit number behind four letters; with one letter among the
+  twelve none of its default rules matches. The id keeps its shape, so a run an older version named
+  with twelve digits still resumes and replays by the name of its directory under `--evidence-root`;
+  the reports it wrote keep the mask, and so do the reports of its resumes, which keep its id.
+  Contract u12 A-61; `tests/cli/test_run_id_digits.py` (15 tests, 3 fail on `6401ee2`); MANUAL and
+  `dottore(1)` say where the id is, and `tests/cli/test_replay.py` mints its run id with
+  `new_run_id`. The MANUAL (its `--resume` row and the replay section) and
+  `docs/16-live-validation.md` said a halt message names the run id; neither the halt message nor
+  `summary.status.reason` does. They now say where it is: the JSON report's `run.run_id` (the SARIF,
+  JUnit and HTML reports carry it too) and the name of the run's evidence directory.
+
+### Fixed (a `--resume -sV` refusal's figures, and the #94 pre-merge audit's leftovers)
+
+- **The `--resume -sV` pre-check wrote its figures out.** The refusal added by #83 printed the spend
+  and the ceiling bare, and from nine digits the redactor read each as a phone number: "has already
+  spent «REDACTED:phone» of its «REDACTED:phone»-request ceiling". They are written as the halt
+  reason writes the figure that stopped a run (#69, u08 A-6), by the same helper, now public as
+  `budgets.budget_figure`: grouped (`has already spent 123,456,789 of its 123,456,805-request
+  ceiling, and -sV would send 17 more`), and from 10**18 as a magnitude rounded away from the
+  ceiling (`has already spent 1.072e+301` for a stored spend of 2**1000, 402 characters grouped; a
+  stored spend is bounded only by what a float holds). u12 A-48; three cases in
+  `tests/cli/test_resume_sv_advice.py`, which fail on `6401ee2`.
+- **With Ctrl-C ignored, a SIGTERM can also leave a run waiting as it stops** (documented, not
+  changed). A SIGTERM or SIGHUP that lands in one of asyncio's own callbacks (gather's, which wakes
+  the task awaiting it) leaves that task with nothing to wake it: `asyncio.run` cancels the other
+  tasks as it closes, so the run stops sending, but the process waits until a second signal, and the
+  stuck part's spend is recorded only when Python collects the task (measured through `execute_run`:
+  it waited for the second SIGTERM, sent 3 s later, and the spend was written as the process
+  exited). The docs said only that the run goes on. Raising from a loop callback of its own would
+  avoid both, but a signal that arrives as the last loop stops would then be lost, and cancelling
+  the run's task as asyncio does for Ctrl-C needs a handle on the task `asyncio.run` creates: both
+  change how every stop works, so u12 A-60 and the MANUAL now say what happens and to send the
+  signal again, and a test pins it (a second SIGTERM is needed with SIGINT ignored, and not with
+  SIGINT at its default). No clock decides the test: the second signal is queued from inside the
+  first, and the stuck task is collected inside the test.
+- **The SIGHUP tests pass under `nohup`.** `nohup make test` hands the suite SIGHUP ignored, an
+  ignored SIGHUP stays ignored (as `nohup dottore run` needs), and three SIGHUP cases of
+  `tests/cli/test_termination_signals.py` failed. A fixture gives SIGHUP a handler that does nothing
+  for every test of the file.
+- "Until 2026-10-08" (MANUAL) and "on main `e4d6c83`" (u12 A-60) read "In older versions" now; the
+  commit stays where it names what a test fails on.
+- **Four lows of the re-audit of #66, on the stack with #60.** The `-sV` room check clamps the
+  target's share and the judge's at zero each on its own, and a test now holds it: a plan that
+  prices fewer target requests than the resume keeps lent the surplus to the judge's share with the
+  clamp removed, and 5 spent plus 4 judge requests left fitted a ceiling of 8
+  (`tests/core/test_authz_leak_corroboration.py`). A sweeping spec whose only reply was stored
+  without a verdict (`DL-XTENANT-001`, `--runs 1 --judge`, ceilings 3 and 4) is resumed with the
+  sweep, the attempt and its two judge requests, `(3, 2)`, and `--estimate --resume` prices exactly
+  that (`tests/cli/test_resume_halted_mid_batch.py`). u12 A-48 and the MANUAL's `--estimate` row say
+  the judge's share is for a spec that uses `semantic_judge`, and the row says "kept" for what a
+  resume does not send again, in one sentence; the `--resume` entry of `dottore(1)` is reflowed.
+
 ### Added (a chat endpoint that only speaks WebSocket: `provider: websocket`)
 
 - **A template-driven WebSocket adapter** (`adapters/websocket.py`, on `websockets>=14.0`,
@@ -608,7 +670,7 @@ versioning: [SemVer](https://semver.org/).
   readable instead (`key-ABCD1234` and `1234://bob`). Each needs a target writing a registered
   credential that holds a URL separator. The last two are regressions against the
   redactor before this change, which the owner accepted for the merge (2026-10-09);
-  a follow-up issue tracks them. Also open, on main too: a raw `@` in the user or
+  issue #96 tracks them. Also open, on main too: a raw `@` in the user or
   in an unregistered password of a URL leaves the password, or its part after the
   `@`, readable (`myadmin@srv:<password>@localhost`, an Azure-style login); the
   labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its
