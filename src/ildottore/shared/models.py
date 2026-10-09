@@ -276,6 +276,11 @@ class Capabilities(_Frozen):
     multi_identity: bool = False
     multimodal: bool = False
     audio: bool = False
+    # Whether the target takes a `temperature` and a `top_p` (u12 A-68). The one capability that
+    # is not false unless set: ``None`` (not declared) is the default rule, under which they are
+    # sent except to a model ``adapters.anthropic.MODELS_WITHOUT_SAMPLING`` lists; ``False`` sends
+    # neither to any model, ``True`` sends them to a listed one too.
+    sampling: bool | None = None
 
 
 class SeededSetup(_Frozen):

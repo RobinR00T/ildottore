@@ -19,6 +19,7 @@ target.yaml (no ``endpoint``, or a ``mock_scenario``) still routes to the mock e
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 
 from ildottore.adapters.mock import MockScenario
@@ -89,5 +90,14 @@ def fingerprint_target(
     # A live target's sampling_defaults fills what PROBE_SAMPLING leaves unset, and the adapter's
     # own rule drops what it does not send, as under `run -sV` (OD-39, u12 A-66).
     adapter = wiring.with_sent_sampling(adapter, real_target)
+    if real_target is not None and not wiring.takes_sampling(real_target)[0]:
+        # Said before the pass, as `run -sV` says it (u12 A-68): the probes go out with no
+        # temperature, so the fingerprint is as repeatable as the model's own sampling.
+        print(
+            f"note: {target.id} is sent no temperature or top_p "
+            f"({wiring.takes_sampling(real_target)[1]}): the probes go out at the model's own "
+            "sampling, so the fingerprint is not temperature-0 repeatable",
+            file=sys.stderr,
+        )
     engine = wiring.build_fingerprint_engine()
     return asyncio.run(engine.run(adapter))

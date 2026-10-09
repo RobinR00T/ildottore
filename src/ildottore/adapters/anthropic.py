@@ -16,21 +16,56 @@ MVP-2 if Anthropic ships per-token logprobs.
 from __future__ import annotations
 
 import base64
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar, Final
 
 from ildottore.adapters.base import AdapterProductError, BaseAdapter
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
-__all__ = ["AnthropicAdapter", "sent_sampling"]
+__all__ = ["MODELS_WITHOUT_SAMPLING", "AnthropicAdapter", "sent_sampling", "takes_no_sampling"]
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _DEFAULT_MAX_TOKENS = 1024
 
+#: The Claude models that take no ``temperature`` and no ``top_p`` (u12 A-68), by model-id
+#: family, the one place the scanner keeps them. Read in Anthropic's API reference as bundled with
+#: the claude-api skill (cached 2026-09-25), not tested against the live API: Opus 4.7, Opus 4.8,
+#: Opus 5 and Opus 5.5, the Fable and Mythos 5 families answer either with HTTP 400; Sonnet 5 and
+#: Sonnet 5.5 answer any value but the default with HTTP 400, and the scanner pins temperature 0.
+#: Opus 4.6, Sonnet 4.6, Haiku 4.5 and older take one of the two. A family matches its id exactly
+#: or followed by ``-``, ``@`` or ``.`` (``claude-opus-5`` matches ``claude-opus-5-5``, not
+#: ``claude-opus-50``), after a gateway prefix ending in ``anthropic.`` (Bedrock's). A model not
+#: listed here, a new one included, is sent sampling until its file says ``sampling: false``; the
+#: capability overrides this list either way.
+MODELS_WITHOUT_SAMPLING: Final = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+)
 
-def sent_sampling(sampling: Sampling) -> Sampling:
+_GATEWAY_PREFIX = re.compile(r"^(?:[a-z0-9-]+\.)*anthropic\.")
+
+
+def takes_no_sampling(model: str | None) -> bool:
+    """True when ``model`` is of a family :data:`MODELS_WITHOUT_SAMPLING` lists."""
+
+    if not model:
+        return False
+    model_id = _GATEWAY_PREFIX.sub("", model.strip().lower())
+    return any(
+        model_id == family or model_id[len(family) : len(family) + 1] in ("-", "@", ".")
+        for family in MODELS_WITHOUT_SAMPLING
+        if model_id.startswith(family)
+    )
+
+
+def sent_sampling(sampling: Sampling, *, sampling_enabled: bool = True) -> Sampling:
     """The sampling a Messages API request carries, from what it was asked to carry (u12 A-66).
 
     One function for the wire and for the record: ``_build_request`` sends exactly this, and the
@@ -40,11 +75,16 @@ def sent_sampling(sampling: Sampling) -> Sampling:
     * ``seed``: the Messages API has none (``capabilities().seed`` is false);
     * ``top_p`` beside a ``temperature``: Anthropic's API reference refuses the pair on every
       Claude 4 model (HTTP 400; read in the reference bundled with the claude-api skill, cached
-      2026-09-25, not tested against the live API). Every request the scanner makes sets a
-      temperature (a spec's own, temperature 0 for a spec that declares none, the probes' 0, the
-      judge's 0 and 0.5), so a ``top_p``, a spec's own or a target file's ``sampling_defaults``,
-      is dropped and the temperature kept. Before, a spec with ``top_p`` (six shipped ones) or a
-      ``top_p`` in the block stopped the campaign at its first request.
+      2026-09-25, not tested against the live API). Every request the scanner makes to a model
+      that takes sampling sets a temperature (a spec's own, temperature 0 for a spec that
+      declares none, the probes' 0, the judge's 0 and 0.5), so a ``top_p``, a spec's own or a
+      target file's ``sampling_defaults``, is dropped and the temperature kept. Before, a spec
+      with ``top_p`` (six shipped ones) or a ``top_p`` in the block stopped the campaign at its
+      first request.
+
+    ``sampling_enabled`` false (a model that takes no sampling, u12 A-68) drops the
+    ``temperature`` and the ``top_p`` too: the model then samples at its own default, so its
+    replies are not temperature-0 deterministic.
 
     ``max_tokens`` is recorded as asked; with none the adapter sends its default of 1024, which
     is not recorded.
@@ -53,7 +93,11 @@ def sent_sampling(sampling: Sampling) -> Sampling:
     drop: dict[str, None] = {}
     if sampling.seed is not None:
         drop["seed"] = None
-    if sampling.top_p is not None and sampling.temperature is not None:
+    if not sampling_enabled:
+        for name in ("temperature", "top_p"):
+            if getattr(sampling, name) is not None:
+                drop[name] = None
+    elif sampling.top_p is not None and sampling.temperature is not None:
         drop["top_p"] = None
     return sampling.model_copy(update=drop) if drop else sampling
 
@@ -73,6 +117,10 @@ class AnthropicAdapter(BaseAdapter):
     multi_identity_enabled: bool = False
     multimodal_enabled: bool = True
     anthropic_version: str = _ANTHROPIC_VERSION
+    #: False for a model that takes no ``temperature`` or ``top_p`` (u12 A-68): neither is sent.
+    sampling_enabled: bool = True
+    #: A 400 that names a sampling parameter is refused in words that name the capability.
+    sends_sampling: ClassVar[bool] = True
 
     @property
     def _endpoint_path(self) -> str:
@@ -232,7 +280,11 @@ class AnthropicAdapter(BaseAdapter):
         return {"role": role, "content": content}
 
     def _build_request(self, request: ModelRequest) -> tuple[dict[str, Any], dict[str, str]]:
-        sampling = sent_sampling(request.sampling) if request.sampling is not None else None
+        sampling = (
+            sent_sampling(request.sampling, sampling_enabled=self.sampling_enabled)
+            if request.sampling is not None
+            else None
+        )
         max_tokens = _DEFAULT_MAX_TOKENS
         if sampling is not None and sampling.max_tokens is not None:
             max_tokens = sampling.max_tokens

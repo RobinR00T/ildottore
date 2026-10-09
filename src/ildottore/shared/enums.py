@@ -121,6 +121,7 @@ class Capability(StrEnum):
     MULTI_IDENTITY = "multi_identity"
     MULTIMODAL = "multimodal"
     AUDIO = "audio"
+    SAMPLING = "sampling"
 
 
 class RequiresCapability(StrEnum):

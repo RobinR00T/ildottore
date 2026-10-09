@@ -26,11 +26,12 @@ time - contract §4 KEEP; live probing is u09 fingerprint).
 from __future__ import annotations
 
 import asyncio
+import re
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import httpx
 
@@ -58,6 +59,7 @@ __all__ = [
     "ResponseTooLarge",
     "ResponseUndecodable",
     "RetryConfig",
+    "SamplingRefused",
     "map_logprobs",
     "read_capped",
     "redact_ids",
@@ -142,6 +144,38 @@ class AdapterProductError(AdapterError):
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
+
+
+class SamplingRefused(AdapterProductError):
+    """A 400 whose error names a sampling parameter the request sent (u12 A-68).
+
+    Not retried, as no 4xx is: the same request is refused the same way. It is a product error,
+    so the campaign stops at the first one, now in words that name the fix: a model that takes
+    no ``temperature`` or ``top_p`` (Anthropic's API reference lists Opus 4.7 and later, Sonnet 5
+    and the Fable models) needs ``sampling: false`` under the target file's ``capabilities``.
+    Before, the error said only ``non-retryable HTTP 400``. The target's own error text is not
+    quoted, only which of the parameters it names.
+    """
+
+
+#: The request fields a model can refuse as sampling, as an error body names them.
+_SAMPLING_PARAMS: tuple[str, ...] = ("temperature", "top_p", "top_k")
+
+
+def _sampling_params_named(raw: bytes) -> list[str]:
+    """The sampling parameters a 400's JSON error names (``error.message``, ``error.param``)."""
+
+    try:
+        payload = bounded_loads(raw)
+    except ValueError:
+        return []
+    error = payload.get("error") if isinstance(payload, Mapping) else None
+    if not isinstance(error, Mapping):
+        return []
+    text = " ".join(
+        value for value in (error.get("message"), error.get("param")) if isinstance(value, str)
+    ).lower()
+    return [name for name in _SAMPLING_PARAMS if re.search(rf"\b{name}\b", text)]
 
 
 #: The ``Content-Encoding`` values :func:`read_capped` decodes itself, with the ``wbits`` zlib
@@ -523,7 +557,7 @@ class BaseAdapter(ABC):
                 await self._maybe_backoff(attempt, attempts)
                 continue
 
-            return self._handle_final_response(response, raw)
+            return self._handle_final_response(response, raw, body=body)
 
         raise AdapterEnvError(
             f"{self.id}: exhausted {attempts} attempt(s) to {self._request_path}: "
@@ -548,7 +582,13 @@ class BaseAdapter(ABC):
 
         return await read_capped(response, f"{self.id}: response from {self._request_path}")
 
-    def _handle_final_response(self, response: httpx.Response, raw: bytes) -> ModelResponse:
+    #: True for an adapter that puts sampling on the wire (OpenAI, Anthropic), whose 400 naming
+    #: a sampling parameter it sent is a :class:`SamplingRefused` (u12 A-68).
+    sends_sampling: ClassVar[bool] = False
+
+    def _handle_final_response(
+        self, response: httpx.Response, raw: bytes, *, body: Mapping[str, Any] | None = None
+    ) -> ModelResponse:
         """Classify a non-retryable response: 2xx → parse, else product defect."""
 
         if response.is_success:
@@ -579,6 +619,16 @@ class BaseAdapter(ABC):
 
         # A non-retryable 4xx (auth, bad request) is a product/config defect -
         # not something a retry will fix, and not to be masked as a flake.
+        sent = [name for name in ("temperature", "top_p") if body is not None and name in body]
+        named = _sampling_params_named(raw) if response.status_code == 400 else []
+        if self.sends_sampling and sent and named:
+            raise SamplingRefused(
+                f"{self.id}: non-retryable HTTP 400 from {self._request_path}: the target "
+                f"refused the request's sampling (its error names {', '.join(named)}; the request "
+                f"sent {' and '.join(sent)}). A model that takes no temperature or top_p needs "
+                "`sampling: false` under capabilities in its target file; the scanner then sends "
+                "neither, and its replies are not temperature-0 deterministic"
+            )
         raise AdapterProductError(
             f"{self.id}: non-retryable HTTP {response.status_code} from {self._request_path}"
         )

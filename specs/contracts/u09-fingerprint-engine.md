@@ -61,7 +61,9 @@ only - no jailbreak payloads, scope-allowlist-gated.
   probe (a `seed` only with `capabilities.seed: true`; on Anthropic neither, since that adapter
   sends no seed and no `top_p` beside the probe's temperature 0) and `probes/` records what went
   out; temperature 0 and the 512-token cap are the probe's own and win. The engine itself is
-  unchanged.
+  unchanged. To a target that takes no sampling (u12 A-68) the probes go out with no
+  temperature at all: the fingerprint is then only as repeatable as the model's own sampling,
+  and `run -sV` and `dottore fingerprint` say so.
 - DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always
   disables). Resolved as built: `-sV` (and `-A`) imply adaptive ordering; there is no
   `--no-adaptive` flag (`00-INDEX.md` OD-5). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs

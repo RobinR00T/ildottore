@@ -13,13 +13,35 @@ import base64
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from ildottore.adapters.base import AdapterProductError, BaseAdapter, map_logprobs
 from ildottore.shared.media import render_media_part
-from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
+from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
-__all__ = ["OpenAIAdapter"]
+__all__ = ["OpenAIAdapter", "sent_sampling"]
+
+
+def sent_sampling(
+    sampling: Sampling, *, sampling_enabled: bool = True, seed_enabled: bool = True
+) -> Sampling:
+    """The sampling a chat/completions request carries, from what it was asked to carry.
+
+    One function for the wire and for the record, as the Anthropic adapter's (u12 A-66). Without
+    ``seed_enabled`` no ``seed`` goes out; without ``sampling_enabled`` (a target file's
+    ``capabilities.sampling: false``, u12 A-68) neither ``temperature`` nor ``top_p`` does, for a
+    model that refuses them (a reasoning model behind an OpenAI-compatible endpoint, or a Claude
+    model behind a gateway): it then samples at its own default, so its replies are not
+    temperature-0 deterministic.
+    """
+
+    drop = [
+        name
+        for name in (("temperature", "top_p") if not sampling_enabled else ())
+        + (("seed",) if not seed_enabled else ())
+        if getattr(sampling, name) is not None
+    ]
+    return sampling.model_copy(update=dict.fromkeys(drop)) if drop else sampling
 
 
 @dataclass
@@ -40,6 +62,10 @@ class OpenAIAdapter(BaseAdapter):
     multi_identity_enabled: bool = False
     multimodal_enabled: bool = False
     audio_enabled: bool = False
+    #: False when the target file says ``sampling: false`` (u12 A-68): no temperature, no top_p.
+    sampling_enabled: bool = True
+    #: A 400 that names a sampling parameter is refused in words that name the capability.
+    sends_sampling: ClassVar[bool] = True
 
     @property
     def _endpoint_path(self) -> str:
@@ -172,15 +198,18 @@ class OpenAIAdapter(BaseAdapter):
 
         sampling = request.sampling
         if sampling is not None:
+            # Only forward a seed when this adapter declares seed support; never fabricate one
+            # (contract §4 KEEP); and no temperature or top_p to a model that takes none (A-68).
+            sampling = sent_sampling(
+                sampling, sampling_enabled=self.sampling_enabled, seed_enabled=self.seed_enabled
+            )
             if sampling.temperature is not None:
                 body["temperature"] = sampling.temperature
             if sampling.top_p is not None:
                 body["top_p"] = sampling.top_p
             if sampling.max_tokens is not None:
                 body["max_tokens"] = sampling.max_tokens
-            # Only forward a seed when this adapter declares seed support; never
-            # fabricate one (contract §4 KEEP).
-            if sampling.seed is not None and self.seed_enabled:
+            if sampling.seed is not None:
                 body["seed"] = sampling.seed
 
         if self.logprobs_enabled:

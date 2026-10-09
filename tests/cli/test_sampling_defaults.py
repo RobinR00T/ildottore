@@ -572,8 +572,8 @@ def test_the_dry_run_says_what_the_block_fills_and_where_it_is_not_sent(
     unsent = CliRunner().invoke(app, _run(tmp_path, "--dry-run"))
     assert unsent.exit_code == 0, unsent.output
     assert (
-        "sampling: stub's sampling_defaults is not sent (nothing in it goes out through provider "
-        "rest)" in unsent.output
+        "sampling: stub's sampling_defaults is not sent (provider rest carries no sampling "
+        "field)" in unsent.output
     ), unsent.output
 
 

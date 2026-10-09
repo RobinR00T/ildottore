@@ -469,8 +469,75 @@ REST target, the offline mock, and an Anthropic `-sV` pass (no block was sent th
 * the Anthropic adapter sends `max_tokens` 1024 for a request with none and records none, while
   the ledger reserves 512 for it, as before;
 * Claude models that take no `temperature` or `top_p` at all (the same reference lists Opus 4.7
-  and later, Sonnet 5 and the Fable models) refuse every request the scanner makes, the
-  temperature 0 it pins included: a defect older than this clause, not changed here.
+  and later, Sonnet 5 and the Fable models) refused every request the scanner makes, the
+  temperature 0 it pins included: a defect older than this clause, fixed by A-68.
+
+**A-68 A target that takes no temperature or top_p is sent neither, says what that costs, and a
+400 that refuses its sampling names the fix (added 2026-10-09).** Anthropic's API reference (read
+in the reference bundled with the claude-api skill, cached 2026-09-25; not tested against the live
+API) says Claude Opus 4.7, Opus 4.8, Opus 5 and Opus 5.5 and the Fable and Mythos 5 families answer
+a `temperature` or a `top_p` with HTTP 400, and Sonnet 5 and Sonnet 5.5 any value but the
+default. The scanner pins temperature 0 on every spec, probe and judge request, so every
+`provider: anthropic` campaign against those models stopped at its first request with
+`non-retryable HTTP 400 from /v1/messages`, and nothing said why. Built:
+* **a capability** `capabilities.sampling` (`Capabilities.sampling: bool | None`, u00; the
+  `Capability` enum gains `sampling`), the one that is not false unless set. Left out, the
+  default rule (`wiring.takes_sampling`): a `provider: anthropic` target whose model is of a family
+  `adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists (`claude-opus-4-7`, `claude-opus-4-8`,
+  `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`, `claude-mythos-5`) takes none, every
+  other target takes them; `false` sends neither to any model, through the OpenAI adapter too;
+  `true` sends them to a listed one. A family matches its id whole (`claude-opus-5` covers
+  `claude-opus-5-5`, not `claude-opus-50`), case-insensitively, after a gateway prefix ending in
+  `anthropic.` (Bedrock's). The list is the one place the scanner keeps those models, and the
+  capability overrides it either way; a model it does not name is sent sampling. It is applied to
+  `provider: anthropic` only: the reference is the Messages API's, and a gateway that serves a
+  Claude model through `provider: openai` says `sampling: false` itself;
+* **neither on the wire nor in the record:** the adapters build their requests through their own
+  `sent_sampling` (`sampling_enabled=False` drops `temperature` and `top_p`; `max_tokens` still
+  goes out, the seed follows A-66), and the runner and `wiring._AsSent` record through the same
+  rule (A-66), so an attempt's and a probe's sampling hold no temperature. Each also records, under
+  `request.metadata.sampling_not_sent`, the fields its spec, probe or block asked for that did not
+  go out (on every Anthropic attempt whose spec sets a `seed`, the seed too), so a reader does not
+  take a missing temperature for one nobody asked for;
+* **said where the numbers are read:** such a target samples at its own default, so its replies,
+  the reproducibility a report measures over `--runs`, a `-sV` fingerprint and the judge's two
+  passes are not temperature-0 deterministic. The run says so on stderr before it sends anything,
+  never silenced by `-q` (`note: <id> is sent no temperature or top_p (<why>): it samples at its
+  own default, so its replies are not temperature-0 deterministic`; `the --judge model <id> ...`
+  for the judge); `--dry-run` on a `sampling:` and a `judge sampling:` line; `-sn` on a `sampling:`
+  line; `run -sV` appends `[probes sent with no temperature: not temperature-0 repeatable]` to the
+  fingerprint line; `dottore fingerprint` says it on stderr; `dottore replay` counts the attempt
+  artifacts that went out with no temperature under its pooled rate;
+* **a refusal that names the fix:** a 400 from an adapter that sends sampling (OpenAI, Anthropic)
+  whose JSON error names `temperature`, `top_p` or `top_k` (in `error.message` or `error.param`),
+  for a request that sent a temperature or a top_p, is `SamplingRefused`, a product error, so not
+  retried and the campaign stops at the first one, as before, but with `the target refused the
+  request's sampling (its error names temperature; the request sent temperature). A model that
+  takes no temperature or top_p needs `sampling: false` under capabilities in its target file;
+  the scanner then sends neither, and its replies are not temperature-0 deterministic`. The
+  target's own error text is not quoted;
+* **resume:** declared, the capability is part of the target's digest, so adding it to the file of
+  a halted run refuses the resume ("a different target"); left out, it is not (`shared.digest`
+  drops `capabilities.sampling` when it is null, as it drops an absent `seeded_setup`), so every
+  run stored before it resumes, and one that a listed model stopped at its first request resumes
+  sending no sampling. The list itself is code: a model added to it later changes what a resume
+  sends, and the one it would change is a model whose first request was refused.
+`tests/cli/test_models_without_sampling.py` (40 tests, through a loopback stub whose Anthropic
+endpoints refuse any `temperature` or `top_p`, as the reference says those models do; the error
+text is the stub's own): 37 fail on `00b2fca`, this branch's base; the 3 that pass there check that
+a non-boolean `sampling` is refused, which the base does as an unknown key. With the capability
+declared `true` on a listed model, and with a model the list does not name, one request goes out
+and the refusal names the fix; through `provider: openai` with `sampling: false` the stub is sent
+no temperature; the probes, `dottore fingerprint`, an Anthropic judge on a listed model,
+`--dry-run`, `-sn` and `replay` say it; the list is matched whole (18 ids); the digest of a target
+that does not declare the capability is the one `00b2fca` computed. Outside the clause, and said so
+rather than pinned:
+* the HTML, SARIF and JUnit reports carry no run-level word for it; the JSON report carries it
+  in each attempt's `request.metadata` and in the run's target (`capabilities.sampling` when
+  declared);
+* `top_k` is never sent by any adapter, so `sampling: false` has nothing to drop there;
+* a model the list does not name costs one refused request before the operator declares the
+  capability, and the list follows Anthropic's reference, not a call to the Models API.
 
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the

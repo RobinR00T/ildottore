@@ -96,6 +96,22 @@ out, and `--dry-run` prints, per field, on how many specs the block fills it (a 
 `temperature` fills none of the shipped battery, whose specs all set theirs). A run an older
 version started resumes without the block, as it started, and says so. See the MANUAL, §4.2.
 
+### Can I scan a Claude model that takes no temperature?
+
+Yes. Anthropic's API reference (read as bundled with the claude-api skill, cached 2026-09-25, not
+tested against the live API) says Claude Opus 4.7 and later, Sonnet 5 and Sonnet 5.5, and the Fable
+and Mythos 5 families refuse a `temperature` or a `top_p` (HTTP 400), and the scanner pins
+temperature 0, so every request to them was refused and the campaign stopped at the first one. A
+`provider: anthropic` target of those families is now sent neither, from a list kept in one place
+(`adapters.anthropic.MODELS_WITHOUT_SAMPLING`); `capabilities.sampling: false` says the same of
+any other target (a newer Claude model, a reasoning model behind an OpenAI-compatible endpoint, a
+Claude model behind a gateway), and `true` overrides the list. The cost is determinism: the model
+samples at its own default, so its replies, the reproducibility over `--runs` and a `-sV`
+fingerprint are not temperature-0 deterministic. The run says so before it sends, `--dry-run`, `-sn`
+and the `-sV` line say it too, each attempt records `request.metadata.sampling_not_sent`, and
+`dottore replay` counts those attempts. A model the list does not know is refused at its first
+request with the advice to set `sampling: false`, not a bare `HTTP 400`.
+
 ### Can the judge itself be fooled by a prompt injection?
 
 That is assumed and defended. The judge gets a per-call random tripwire token; it is flagged

@@ -5,6 +5,52 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a Claude model that takes no temperature or top_p could not be scanned)
+
+- **Every campaign against Claude Opus 4.7 and later, Sonnet 5 and the Fable models stopped at its
+  first request.** Anthropic's API reference (read in the reference bundled with the claude-api
+  skill, cached 2026-09-25; not tested against the live API) says Opus 4.7, Opus 4.8, Opus 5 and
+  Opus 5.5 and the Fable and Mythos 5 families answer a `temperature` or a `top_p` with HTTP 400,
+  and Sonnet 5 and Sonnet 5.5 any value but the default; the scanner pins temperature 0 on every
+  spec, probe and judge request, and the error said only `non-retryable HTTP 400 from
+  /v1/messages`. A target file's new `capabilities.sampling` says whether the target takes them.
+  Left out, a `provider: anthropic` target whose model is of a family
+  `adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists (`claude-opus-4-7`, `claude-opus-4-8`,
+  `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`, `claude-mythos-5`, each matched whole,
+  after a gateway prefix such as Bedrock's `anthropic.`) is sent neither, and every other target
+  is sent them; `false` sends neither to any model, through the OpenAI adapter too (a reasoning
+  model, or a Claude model behind a gateway); `true` sends them to a listed one. `max_tokens`
+  still goes out. Contract u12 A-68.
+- **Such a run says it is not temperature-0 deterministic.** The model samples at its own default,
+  so its replies, the reproducibility over `--runs`, a `-sV` fingerprint and the judge's two passes
+  are not pinned. The run says so on stderr before it sends (never silenced by `-q`), as do
+  `--dry-run` (`sampling:` and `judge sampling:` lines), `-sn`, the `-sV` fingerprint line,
+  `dottore fingerprint` and `dottore replay` (which counts the attempts sent with no temperature).
+  Each stored attempt and probe records the sampling it went out with and, under
+  `request.metadata.sampling_not_sent`, the fields its spec, probe or block asked for that did not
+  go out (on Anthropic, a spec's `seed` too).
+- **A 400 that refuses the request's sampling names the fix.** From the OpenAI or the Anthropic
+  adapter, a 400 whose JSON error names `temperature`, `top_p` or `top_k`, for a request that sent
+  a temperature or a top_p, is `SamplingRefused`: not retried, as no 4xx is, and the campaign stops
+  as before, but with `the target refused the request's sampling (its error names temperature;
+  the request sent temperature). A model that takes no temperature or top_p needs `sampling:
+  false` under capabilities in its target file`. The target's own error text is not quoted.
+- **Resume.** Declared, the capability is part of the target's digest, so adding it to the file of
+  a halted run refuses the resume; left out, it is not, so every stored run keeps its digest
+  (measured: the digest of a target that does not declare it is the one `00b2fca` computed), and a
+  run a listed model stopped at its first request resumes sending no sampling.
+- `tests/cli/test_models_without_sampling.py`: 40 tests through a loopback stub whose Anthropic
+  endpoints refuse any `temperature` or `top_p`; 37 fail on `00b2fca`, and the 3 that pass there
+  check that a non-boolean `sampling` is refused, which the base does as an unknown key.
+  `tests/adapters/test_websocket_audit.py` and `tests/core/test_seeded_setup.py` leave the new
+  null field out of their pre-field digests.
+  Docs: MANUAL §4.2 ("Models that take no sampling", with a table), the `dottore fingerprint` and
+  `dottore replay` sections, the FAQ, USAGE, `dottore(1)`, `dottore-scope(5)`, `docs/01`, `03`
+  and `10`, `examples/target.openai.yaml` and `examples/README.md` (Scenario D), and the u00,
+  u04, u06, u08, u09 and u12 contracts. Left open: the HTML, SARIF and JUnit reports carry no
+  run-level word for it (the JSON report carries it per attempt), and a model the list does not
+  name costs one refused request before its file declares the capability.
+
 ### Changed (a target file's `sampling_defaults` is sent, as a fallback: OD-39)
 
 - **`sampling_defaults` reaches the wire.** The block was parsed, validated and kept in the

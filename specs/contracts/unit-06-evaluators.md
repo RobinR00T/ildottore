@@ -79,7 +79,9 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   only with `capabilities.seed: true` there); the judge's temperature and `top_p` 1.0 win, and an
   Anthropic judge is sent no `top_p` beside its temperature (Claude 4 models refuse the pair, and
   every judge request was refused before). The evaluator itself is unchanged; its unused
-  `_JUDGE_SAMPLING`, with a `seed=0` nothing sent, is removed.)
+  `_JUDGE_SAMPLING`, with a `seed=0` nothing sent, is removed. A judge that takes no sampling,
+  u12 A-68, is sent neither its temperatures nor its `top_p`: its two passes are then two samples
+  at the model's default, and the run says so.)
 - **`logprob_membership` scores only figures a model produces (u04 §7 A-39, added 2026-10-07):**
   a `TokenLogprob` from any adapter whose figure is not a finite number at or below zero makes
   the verdict `inconclusive: capability_unavailable`, never a score; scored, a positive figure

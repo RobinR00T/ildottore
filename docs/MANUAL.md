@@ -372,7 +372,8 @@ and format characters written out (a line break as `␊`), and a key that is not
 pydantic renders it (`on:` as `1`). What can be read
 is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
 `top_p` have no range check. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
-`logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set, so a `tool:` written
+`logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set, and `sampling`,
+which has a default rule of its own (below, "Models that take no sampling"), so a `tool:` written
 for `tools:` is refused (`tool: Extra inputs are not permitted`); older versions ignored it, and
 the target ran with tools off and without the specs that need them. A `capabilities` that is
 not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
@@ -409,15 +410,55 @@ there, and the offline mock sends nothing.
 with no `max_tokens` at all the adapter sends 1024. It sends no `top_p` beside a `temperature`
 either: Anthropic's API reference says every Claude 4 model answers the pair with HTTP 400 (read
 in the reference bundled with the claude-api skill, cached 2026-09-25, and not tested against
-the live API). Every request the scanner makes sets a temperature (a spec's own, temperature 0
-for a spec that declares none, the probes' 0, the judge's 0 and 0.5), so on an Anthropic target
-or judge no `top_p` goes out at all: not the block's, not the 1.0 six shipped specs set
+the live API). Every request the scanner makes to a target that takes sampling (below) sets a
+temperature (a spec's own, temperature 0 for a spec that declares none, the probes' 0, the
+judge's 0 and 0.5), so on an Anthropic target or judge no `top_p` goes out at all: not the block's, not the 1.0 six shipped specs set
 themselves (`EMB-INVERSION-PROBE-001`, `EMB-NEIGHBOR-LEAK-001`, `EMB-XTENANT-RETRIEVAL-001`,
 `PI-DIRECT-001`, `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`), not the judge's 1.0; the
 temperature is kept. Before, a block `top_p`, or one of those specs, stopped an Anthropic campaign
 at its first request (`non-retryable HTTP 400`, exit 3), and an Anthropic judge was refused on
 every request. 1.0 is `top_p`'s own default, so dropping the specs' and the judge's changes
 nothing they ask for; a block `top_p` below 1 is not applied there, and `--dry-run` says so.
+
+**Models that take no sampling.** The same reference says Claude Opus 4.7, Opus 4.8, Opus 5 and
+Opus 5.5 and the Fable and Mythos 5 families refuse a `temperature` or a `top_p` outright (HTTP
+400), and Sonnet 5 and Sonnet 5.5 any value but the default; the scanner pins temperature 0, so
+every request to them was refused and the campaign stopped at the first one, saying only
+`non-retryable HTTP 400`. `capabilities.sampling` says whether a target takes them:
+
+| `capabilities.sampling` | `provider: anthropic` | `provider: openai` |
+|---|---|---|
+| left out (or `null`) | not sent to a model of a family `adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists (`claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`, `claude-mythos-5`, each matched whole, so `claude-opus-5` covers `claude-opus-5-5`, after a gateway prefix such as Bedrock's `anthropic.`); sent to any other | sent |
+| `false` | not sent | not sent (a reasoning model, or a Claude model behind an OpenAI-compatible gateway, which the list does not cover) |
+| `true` | sent, to a listed model too | sent |
+
+The list is the one place the scanner keeps those models, from that reference (cached
+2026-09-25, not tested against the live API); a model it does not name, a newer one included, is
+sent sampling until its file says `sampling: false`. Not sent means no `temperature` and no `top_p`
+go out with any request to that target, the attacks, the `-sV` probes and, for a `--judge` file
+that says so or names a listed model, the judge's; `max_tokens` still goes out, and the seed
+follows the rules above. The model then samples at its own default, so its replies are **not
+temperature-0 deterministic**: the reproducibility a report measures over `--runs` is over that
+sampling, a `-sV` fingerprint is as repeatable as the model is, and the judge's two passes are two
+samples at that default. The run says so before it sends anything, on stderr and never silenced by
+`-q` (`note: <id> is sent no temperature or top_p (model claude-opus-5-5 takes none, per
+adapters.anthropic.MODELS_WITHOUT_SAMPLING; set capabilities.sampling: true to send them): it
+samples at its own default, so its replies are not temperature-0 deterministic`), as do
+`--dry-run` (on a `sampling:` line, and on a `judge sampling:` line for the judge), `-sn`, the
+`-sV` fingerprint line (`[probes sent with no temperature: not temperature-0 repeatable]`) and
+`dottore fingerprint` (on stderr). The evidence records it: each attempt's and probe's sampling
+holds no temperature, and its `request.metadata.sampling_not_sent` lists the fields the spec, the
+probe or the block asked for that did not go out (on every Anthropic attempt with a `seed`, the
+seed too); `dottore replay` counts the attempts sent with no temperature under its pooled rate. A
+400 whose error names `temperature`, `top_p` or `top_k` when the request sent one of them is
+refused, not retried (a 4xx never is), in words that name the fix (`the target refused the
+request's sampling (its error names temperature; the request sent temperature). A model that takes
+no temperature or top_p needs `sampling: false` under capabilities in its target file`), where it
+said `non-retryable HTTP 400`; the target's own error text is not quoted. Declared, the capability
+is part of the target's digest, so adding it to the file of a halted run refuses the resume ("a
+different target"): start a fresh run, as a run that met that 400 stopped at its first request.
+Left out, it is not part of the digest, so a run halted before this capability existed against a
+listed model (it stopped at its first request) resumes, and sends no sampling.
 
 `--dry-run` says what goes out, per field and over the specs it would send (`sampling:
 local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of 10 specs (a
@@ -769,7 +810,7 @@ required.
 
 | Flag | Meaning |
 |------|---------|
-| `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
+| `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities (and, for a target that takes no sampling, a `sampling:` line, §4.2) and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
 | `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). A probe whose reply comes back **refused** (over 4 MiB, in an encoding the adapters do not decode, or nested more than 100 levels deep, and from a WebSocket target a frame refused as §4.2 says or a 1007 or 1009 close the server starts: what makes an attack attempt inconclusive without a retry) is a failed probe: its layer gives no evidence from it, the fingerprint is built from the replies that came back, a `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` line on stderr names each one as `layer/probe: ErrorClass` (never silenced by `-q`), the fingerprint line ends `[N of 17 probes got no usable reply]`, and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a timeout, a refused connection, after its retries) still stops the run before any attack with its cause (exit 3): the target is not answering. So do a refusal by the scope and a 200 that is not JSON. Before, one refused probe reply stopped the run before any attack too (OD-23). The run's `started_at` is stamped before the probe pass |
 | `-A` | aggressive: implies `-sV` and `--deep`, so it fingerprints first and runs at `-T2` unless you pass `-T`. There is no separate `--adaptive` flag: mutator ordering is adaptive only when a fingerprint exists, that is with `-sV` or `-A` |
 
@@ -784,7 +825,7 @@ required.
 | `--concurrency INT` | max concurrent specs |
 | `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the `max_tokens` the send goes out with (the spec's own, else the target file's `sampling_defaults`, OD-39) or, with none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0). A figure is read only when it is a JSON integer from 0 to 2^53, past which a float no longer holds every integer: one that is negative, larger, or written with a fraction or an exponent is skipped like an absent one and the next shape is read (`total_tokens`, then `tokens`, then input plus output, then prompt plus completion); a sum past 2^53 is no usage, and with no readable shape the reservation stands. A prompt-cache figure is summed only into a pair, and one that is there and unreadable makes the pair a floor: the reservation is trued up to it, never down. (A 400-digit figure made `run` exit 1 with no report, and one past 2^53 halted the campaign on the token ceiling, until 2026-10-07.) Up to 2^53 a figure is believed, as a bill is: a target can report more than it used and halt the run on the ceiling (one reply of 2^53 fills even the largest ceiling these flags take, 2^53 too). Tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a request that has none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
-| `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine. A target file with `sampling_defaults` gets `sampling:` lines: what the block fills and what of it does not go out, and an Anthropic target the specs' own `top_p` it does not get; a `--judge` file, `judge sampling:` lines (§4.2) |
+| `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine. A target file with `sampling_defaults` gets `sampling:` lines: what the block fills and what of it does not go out, and an Anthropic target the specs' own `top_p` it does not get; a target that takes no sampling, a line that says so and that its replies are not temperature-0 deterministic; a `--judge` file, `judge sampling:` lines (§4.2) |
 | `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is the JSON report's `run.run_id` (the SARIF, JUnit and HTML reports carry it too) and the name of the run's directory under `--evidence-root`; neither the halt message nor `summary.status.reason` names it. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. That it is the same campaign (target, route, judge, planning mode, `--runs`, battery, evidence) is checked first, the budget after (against the campaign's `--runs`), and a resume refused before it sends anything writes nothing. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run. The planning mode is adaptive when the campaign ran with `-sV`, `-A` or `--deep`, and a resume has to keep it: the refusal names those flags, to leave out or to put back (the run store does not record which of them set it). With `-sV`, a request ceiling the campaign's spend leaves too small for the 17 probes is refused before they are sent, and the refusal offers dropping `-sV` (or the `-A` that implies it) only when the campaign did not plan adaptively and the ceiling holds the rest of it without the probes, priced as `--estimate` prices it; otherwise it says to raise `--budget-requests`. A halt keeps every reply the target gave: the attempts a batch had answered when the ceiling stopped it are stored (they were lost until 2026-10-07, and the resume sent them and paid for them again), and a reply whose evaluation the ceiling stopped (the judge's request refused) keeps a deterministic check's fail when it has one (that decides without the judge, and the verdict says the judge was not consulted) and is otherwise stored without a verdict, then sent again and judged by the resume. With `--judge`, a reply stored without a verdict is paid for twice: the resume sends it again rather than judging the stored one (a design choice; re-judging is a possible follow-up). A run that spent requests and stored no reply (for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start with its spend carried; one whose run store records no request spent is refused, and so is an `--evidence-root` that holds none of the artifacts the run store journals for the run, or an empty tree for a run that predates that journal. A run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them, and stderr says so (§4.2, OD-39) |
 | `--resume-unverified` | resume a run whose integrity record is missing; its ceiling then covers this invocation only |
 | `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. On a live target whose scope gives it two or more identities it also prices the identity sweep: one request per identity for each spec that sweeps them (`DL-XTENANT-001`, and `EMB-XTENANT-RETRIEVAL-001` when the target declares `multi_identity` and its scene is not sent in-band), which it left out until PR #60 (merged 2026-10-09). Its output tokens are each send's `max_tokens` (the spec's own, else the target file's `sampling_defaults`, OD-39) or 512. With `--resume` it subtracts the requests already done, the sweep of a spec whose attempts are all kept (answered and judged, or failed in a way a retry would repeat), which the runner does not sweep again, and, with `--judge`, the judge's two requests for each kept attempt of a spec that uses `semantic_judge`, so it prices what the resume sends. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
@@ -932,6 +973,13 @@ the first such reply. When every probe is refused there is no fingerprint: the l
 `error:`, nothing is printed on stdout, and the exit is 3. A probe that gets no answer at all (a
 closed port, a 503 or a timeout after the retries), a refusal by the scope or a 200 that is not
 JSON still exits 3, with the cause.
+
+A target that takes no sampling (§4.2, "Models that take no sampling": a listed Claude model, or
+`capabilities.sampling: false`) is probed with no temperature, so its fingerprint is as repeatable
+as the model's own sampling; the command says so on stderr before the pass (`note: <id> is sent no
+temperature or top_p (...): the probes go out at the model's own sampling, so the fingerprint is
+not temperature-0 repeatable`), and `run -sV` appends `[probes sent with no temperature: not
+temperature-0 repeatable]` to its fingerprint line.
 
 ### `dottore fleet`, expand and optionally scan a fleet
 
@@ -1117,6 +1165,12 @@ before 2026-10-04 and never resumed since), a spec with no recorded finding cann
 and a spec whose findings were stored before 2026-10-03 with masked digests is replayed without
 the check (the rest of the run is checked); and resuming a run with an older version, then again
 with this one, can be refused, because the older version does not journal what it writes.
+
+Under the pooled rate, replay counts the attempts that went out with no temperature (a target
+that takes no sampling, §4.2): `N of M attempt artifact(s) went out with no temperature (the target
+takes none: request.metadata.sampling_not_sent), so they are not temperature-0 deterministic and
+the rate is over the model's own sampling`. It reads that from what each attempt recorded, so a
+run stored before 2026-10-09 never shows it.
 Probes are hash-checked but not part of the manifest. The last line is the **pooled** rate
 over every attempt of the run, all specs and variants together; a report's reproducibility is
 per spec and takes the best variant, so the two can differ on the same run. On a `--runs 2`

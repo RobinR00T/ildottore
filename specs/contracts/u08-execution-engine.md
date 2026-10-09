@@ -63,7 +63,10 @@ concretes:
   that declares no `sampling`; `CampaignRunner(sent_sampling=...)` is the adapter's own rule for
   what of it goes out (Anthropic: no `seed`, no `top_p` beside a temperature), applied before the
   attempt is recorded, so the record is what was sent. The single-turn send, the multi-turn
-  conversation and the identity sweep all take both.)
+  conversation and the identity sweep all take both. Since u12 A-68 the rule can drop the
+  temperature and the top_p of a target that takes no sampling, and every stored attempt lists
+  what its spec asked for and did not go out under `request.metadata.sampling_not_sent`
+  (`SAMPLING_NOT_SENT`, `unsent_fields`).)
 - KEEP: **env vs product failure** (`AGENTS.md §2`): rate-limit/timeout/5xx ⇒ retry w/ backoff
   then skip-as-`inconclusive`; a real exploited response ⇒ `fail`. Never mask a defect as a flake.
 - KEEP: budgets are hard ceilings; adaptive/escalation attempts count against them; on breach

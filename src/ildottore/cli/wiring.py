@@ -40,8 +40,10 @@ from ildottore.adapters import (
     WebSocketAdapter,
 )
 from ildottore.adapters.anthropic import sent_sampling as anthropic_sent_sampling
+from ildottore.adapters.anthropic import takes_no_sampling
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
+from ildottore.adapters.openai import sent_sampling as openai_sent_sampling
 from ildottore.adapters.websocket import (
     CONNECTION_PLACEHOLDERS,
     MESSAGES,
@@ -57,7 +59,14 @@ from ildottore.core.execute import default_is_env_error
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
-from ildottore.core.runner import CampaignRunner, IdentityProbe, PolicyGate, fill_sampling
+from ildottore.core.runner import (
+    SAMPLING_NOT_SENT,
+    CampaignRunner,
+    IdentityProbe,
+    PolicyGate,
+    fill_sampling,
+    unsent_fields,
+)
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
 from ildottore.fingerprint import FingerprintEngine
 from ildottore.fingerprint.layers import CarrierLayer, default_layers
@@ -135,6 +144,7 @@ __all__ = [
     "scope_endpoint_of",
     "sent_sampling_for",
     "shown_auth_ref",
+    "takes_sampling",
     "target_uses_mock",
     "utc_timestamp",
     "with_sent_sampling",
@@ -742,6 +752,8 @@ def build_real_adapter(
     # corporate proxy) hosts the same API under a prefix, and discarding it both sent the
     # wrong URL and tripped the allowlist built from the declared one.
     declared_path = parts.path or None
+    # A model that takes no temperature or top_p is sent neither (u12 A-68).
+    takes = takes_sampling(target)[0]
     if provider == "openai":
         return OpenAIAdapter(
             id=target.id,
@@ -751,6 +763,7 @@ def build_real_adapter(
             model=target.model,
             **extra,
             path_override=declared_path,
+            sampling_enabled=takes,
         )
     if provider == "anthropic":
         return AnthropicAdapter(
@@ -761,6 +774,7 @@ def build_real_adapter(
             model=target.model,
             **extra,
             path_override=declared_path,
+            sampling_enabled=takes,
         )
     template = RestTemplate(path=parts.path or "/")
     return RestAdapter(
@@ -848,6 +862,28 @@ def _provider(target: Target) -> str:
     return (target.provider or "").strip().lower()
 
 
+def takes_sampling(target: Target) -> tuple[bool, str | None]:
+    """Whether ``target`` is sent a ``temperature`` and a ``top_p``, and why not (u12 A-68).
+
+    The file's ``capabilities.sampling`` decides when it says so. Left out, the default rule:
+    a ``provider: anthropic`` target whose model is of a family
+    :data:`ildottore.adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists takes none (Anthropic's
+    API reference says those models refuse them with HTTP 400), every other target takes them.
+    ``False`` means its replies are sampled at the model's own default: not temperature-0
+    deterministic. Only the OpenAI and Anthropic adapters send sampling at all.
+    """
+
+    declared = target.capabilities.sampling
+    if declared is not None:
+        return declared, (None if declared else "capabilities.sampling is false")
+    if _provider(target) == "anthropic" and takes_no_sampling(target.model):
+        return False, (
+            f"model {target.model} takes none, per adapters.anthropic.MODELS_WITHOUT_SAMPLING; "
+            "set capabilities.sampling: true to send them"
+        )
+    return True, None
+
+
 def sampling_fallback(target: Target) -> Sampling | None:
     """What of ``target``'s ``sampling_defaults`` a live send to it can carry (OD-39, u12 A-66).
 
@@ -866,6 +902,8 @@ def sampling_fallback(target: Target) -> Sampling | None:
     sent = set(_SAMPLING_FIELDS_SENT.get(_provider(target), frozenset()))
     if not target.capabilities.seed:
         sent.discard("seed")
+    if not takes_sampling(target)[0]:
+        sent -= {"temperature", "top_p"}  # a model that takes neither (A-68)
     kept = {
         name: value
         for name, value in target.sampling_defaults.model_dump(exclude_none=True).items()
@@ -879,13 +917,21 @@ def sent_sampling_for(target: Target | None) -> Callable[[Sampling], Sampling] |
 
     Anthropic's (:func:`ildottore.adapters.anthropic.sent_sampling`): no ``seed``, and no
     ``top_p`` beside a temperature. The same function builds the request on the wire, so a
-    record made through this rule is what went out (u12 A-66). The OpenAI adapter sends what it
-    is asked; a REST template, an MCP server and a WebSocket target send no sampling, and their
-    attempts keep recording the spec's own, as before.
+    record made through this rule is what went out (u12 A-66). To a target that takes no
+    sampling (:func:`takes_sampling`, u12 A-68) neither adapter sends a ``temperature`` or a
+    ``top_p``. Otherwise the OpenAI adapter sends what it is asked; a REST template, an MCP server
+    and a WebSocket target send no sampling, and their attempts keep recording the spec's own, as
+    before.
     """
 
-    if target is not None and _provider(target) == "anthropic":
-        return anthropic_sent_sampling
+    if target is None:
+        return None
+    takes = takes_sampling(target)[0]
+    provider = _provider(target)
+    if provider == "anthropic":
+        return lambda sampling: anthropic_sent_sampling(sampling, sampling_enabled=takes)
+    if provider == "openai" and not takes:
+        return lambda sampling: openai_sent_sampling(sampling, sampling_enabled=False)
     return None
 
 
@@ -909,13 +955,16 @@ class _AsSent:
         return self.inner.id
 
     async def send(self, request: ModelRequest) -> ModelResponse:
-        sampling = request.sampling
+        asked = request.sampling
         if self.fallback is not None:
-            sampling = fill_sampling(sampling or Sampling(), self.fallback)
-        if sampling is not None and self.wire is not None:
-            sampling = self.wire(sampling)
+            asked = fill_sampling(asked or Sampling(), self.fallback)
+        sampling = self.wire(asked) if asked is not None and self.wire is not None else asked
         if sampling is not request.sampling:
-            request = request.model_copy(update={"sampling": sampling})
+            update: dict[str, object] = {"sampling": sampling}
+            dropped = unsent_fields(asked, sampling)
+            if dropped:  # the record says what did not go out (A-68)
+                update["metadata"] = {**(request.metadata or {}), SAMPLING_NOT_SENT: dropped}
+            request = request.model_copy(update=update)
         return await self.inner.send(request)
 
     def capabilities(self) -> Capabilities:

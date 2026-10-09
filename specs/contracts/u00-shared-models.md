@@ -54,6 +54,11 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   values only, not the mapping).
 - KEEP: `logprobs` absent ⇒ `ModelResponse.logprobs is None` (ADR-0005); `Capabilities.logprobs`
   reports availability. No provider-specific fields (byte offsets dropped in MVP-1).
+- `Capabilities.sampling: bool | None` (added 2026-10-09, u12 A-68, additive): whether the target
+  takes a `temperature` and a `top_p`. The one capability that is not false unless set: `None` is
+  the composition root's default rule (a known-model list for `provider: anthropic`, else true).
+  The target digest leaves it out when `None`, so digests of targets that do not declare it are
+  unchanged; the `Capability` enum gains `sampling`, kept 1:1 with the model.
 - KEEP: `inconclusive` reason strings (`capability_unavailable`, `blocked_by_policy`,
   `judge_compromised`) are a typed literal/enum on `Verdict`, not free text (`docs/01 §4`).
 - DECIDE (OD-1, ADR-0005 Accepted): `TokenLogprob.top` shape: kept as `list[tuple[str,float]]|None`
