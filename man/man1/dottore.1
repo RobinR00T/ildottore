@@ -73,6 +73,10 @@ Re-read a run from stored evidence, sending nothing. When the run store
 default .dottore/runs.sqlite) holds the run, the attempts are also checked against the
 hashes its findings recorded: an artifact added, replaced or deleted after the run is
 refused (exit 3). Without such a store the replay says on stderr that this was not checked.
+The run id is the JSON report's run.run_id and the name of the run's directory under
+.BR --evidence-root ;
+a run an older version named with 12 decimal digits, masked as a phone number in its reports,
+replays by that name.
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);

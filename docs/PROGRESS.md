@@ -3,6 +3,23 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
+
+- On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of
+  the draws or about one run in 281, was masked as a phone number in every report and CLI error,
+  so `dottore replay` and `--resume` refused the id read back from the JSON report, and two tests
+  that do that (`tests/cli/test_hostile_nesting.py`, `tests/test_invalid_spec_patterns.py`)
+  flaked as often. `new_run_id` draws again; the redactor's phone rule is unchanged, and old ids of
+  any shape replay by their directory name (u12 A-61, `tests/cli/test_run_id_digits.py`, 3 of 15
+  fail on `6401ee2`). Also: the `--resume -sV` pre-check groups its spend and ceiling (`{:,}`, as
+  PR #69 does for the halt reason; u12 A-48); and from the #94 pre-merge audit, with Ctrl-C
+  ignored a SIGTERM in one of asyncio's callbacks can leave the run waiting for a second signal as
+  it closes (the docs said only that it goes on; documented in u12 A-60 and the MANUAL and pinned
+  by a test, not changed, because raising from a callback of its own would lose a signal that
+  arrives as the last loop stops), the SIGHUP tests get a handler of their own so they pass under
+  `nohup`, and "Until 2026-10-08" and "on main `e4d6c83`" read "In older versions". Left open:
+  the hang itself, and an old all-digit run's reports, which keep the mask.
+
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 
 - First noted on main by PR #57 (open on 2026-10-09), reproduced end to end by the pre-commit audit

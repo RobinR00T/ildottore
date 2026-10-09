@@ -84,6 +84,7 @@ __all__ = [
     "budgets_for",
     "estimate_plan",
     "execute_run",
+    "new_run_id",
     "resolve_target_plans",
     "select_specs",
 ]
@@ -668,6 +669,24 @@ def fingerprint_probe_count() -> int:
     return sum(
         getattr(layer, "probe_count", 1) for layer in wiring.build_fingerprint_engine().layers
     )
+
+
+def new_run_id() -> str:
+    """A fresh run id: ``run-`` and 12 hexadecimal digits of a UUID4, at least one a letter.
+
+    Twelve decimal digits after ``run-`` are a phone number to the redactor, which every report
+    and every error the CLI prints go through: (10/16) ** 12 of the draws, about one run in 281,
+    was named ``run-«REDACTED:phone»`` in its JSON report, and ``dottore replay`` refused the id
+    read back from it. Such a draw is drawn again. The redactor keeps its rule, since excusing
+    ``run-`` would let a target hide a 12-digit number behind four letters, and the id keeps its
+    shape, so an id minted before, all digits or not, still resumes and replays by the name of
+    its evidence directory.
+    """
+
+    while True:
+        suffix = uuid.uuid4().hex[:12]
+        if not suffix.isdigit():
+            return f"run-{suffix}"
 
 
 def _probe_pass_remedy(adaptive_campaign: bool, *, attack_room: bool) -> str:
@@ -1414,9 +1433,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                         done=_answered_requests(resume_from, selected),
                     ),
                 )
+                # Grouped: bare, a figure of nine digits or more reached the operator as
+                # «REDACTED:phone», through the redactor every error goes through.
                 raise ValueError(
-                    f"run {opts.resume!r} has already spent {prior_spend.requests} of its "
-                    f"{ceiling}-request ceiling, and -sV would send {probes} more before any "
+                    f"run {opts.resume!r} has already spent {prior_spend.requests:,} of its "
+                    f"{ceiling:,}-request ceiling, and -sV would send {probes:,} more before any "
                     "attack traffic. Three sequential resumes used to run a whole probe pass "
                     f"each, past an exhausted ceiling. {remedy}."
                 )
@@ -1476,9 +1497,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # pass happens first and its evidence has to file under the run it belongs to. A resumed
     # campaign keeps the original id (the evidence and the run store are keyed by it).
     run_ids = {
-        loaded.target.id: (
-            opts.resume if opts.resume is not None else f"run-{uuid.uuid4().hex[:12]}"
-        )
+        loaded.target.id: (opts.resume if opts.resume is not None else new_run_id())
         for loaded in loaded_targets
     }
 
@@ -1919,7 +1938,7 @@ def _run_one_target(
     # it, and a new id would file the continuation as a separate, equally partial run. The
     # caller mints it (the probe pass needs it first), and falls back for direct callers.
     if run_id is None:
-        run_id = resume_from.run_id if resume_from is not None else f"run-{uuid.uuid4().hex[:12]}"
+        run_id = resume_from.run_id if resume_from is not None else new_run_id()
     campaign_run_id = run_id
     built = wiring.build_runner(
         scope=scope,

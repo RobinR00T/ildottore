@@ -540,11 +540,13 @@ Ctrl-C, SIGTERM (what `timeout`, `docker stop`, systemd and CI timeouts send) an
 a run the same way: the requests in flight are cancelled and the spend is recorded, so a run that
 had started its attack traffic can be resumed (a fresh run stopped in its `-sV` probe pass has
 nothing to resume). An ignored SIGHUP stays ignored, so `nohup dottore run ...` survives a logout;
-a SIGKILL stops it without recording what the unfinished part spent. Until 2026-10-08 a SIGTERM
+a SIGKILL stops it without recording what the unfinished part spent. In older versions a SIGTERM
 or SIGHUP that arrived while requests were being sent could be dropped if Python was running a
 cleanup callback at that instant, and the run went on. That can still happen when Ctrl-C is
-ignored, as for a job a script starts with `&`: if such a job keeps running after a SIGTERM, send
-it again (a SIGKILL would stop it without recording what the unfinished part spent).
+ignored, as for a job a script starts with `&`, and there a signal at such an instant can also
+stop the sending but leave the process waiting, as it shuts down, for a task nothing will wake.
+If such a job keeps running, or does not exit, after a SIGTERM, send it again: the second one
+stops it (a SIGKILL would stop it without recording what the unfinished part spent).
 
 A halted run can be finished with `dottore run --resume <run-id>` instead of being started
 over: the attempts the target already answered are not re-sent, those that ended in an
@@ -771,6 +773,12 @@ Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`).
 ```
 dottore replay RUN_ID [--evidence-root PATH] [--run-db PATH]
 ```
+
+`RUN_ID` is the JSON report's `run.run_id`, the id a halt message names, and the name of the
+run's directory under `--evidence-root`: `run-` and 12 hexadecimal digits, at least one of them a
+letter. In older versions about one run in 281 got 12 decimal digits, which the reports and the
+CLI's errors mask as a phone number (`run-«REDACTED:phone»`, refused by replay with `error: unsafe
+run_id`); such a run replays and resumes by the name of its directory.
 
 Re-reads a run from stored evidence without re-sending anything. Each artifact is verified
 against its content hash and, when the run store at `--run-db` (default

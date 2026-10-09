@@ -5,6 +5,48 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a run id of twelve decimal digits, masked as a phone number)
+
+- **About one run in 281 was named `run-«REDACTED:phone»`.** A run id is `run-` and the first 12
+  hexadecimal digits of a UUID4. When all twelve came out decimal, (10/16) ** 12 of the draws, the
+  redactor that every report and every CLI error goes through read them as a phone number: the
+  JSON report named the run that way in `run.run_id` and in every evidence reference, and
+  `dottore replay` refused the id read back from it (`error: unsafe run_id:
+  'run-«REDACTED:phone»'`, exit 3), as `--resume` did. Two tests that read the id back from a
+  report failed as often (`tests/cli/test_hostile_nesting.py` replays it,
+  `tests/test_invalid_spec_patterns.py` resumes it). Such a draw is now drawn again
+  (`new_run_id`). The redactor keeps its phone rule, since excusing `run-` would let a target
+  hide a 12-digit number behind four letters; with one letter among the twelve none of its default
+  rules matches. The id keeps its shape, so a run an older version named with twelve digits still
+  resumes and replays by the name of its directory under `--evidence-root`, and the reports it
+  wrote keep the mask. Contract u12 A-61; `tests/cli/test_run_id_digits.py` (15 tests, 3 fail on
+  `6401ee2`); MANUAL and `dottore(1)` say where the id is.
+
+### Fixed (a `--resume -sV` refusal's figures, and the #94 pre-merge audit's leftovers)
+
+- **The `--resume -sV` pre-check wrote its figures out.** The refusal added by #83 printed the
+  spend and the ceiling bare, and from nine digits the redactor read each as a phone number: "has
+  already spent «REDACTED:phone» of its «REDACTED:phone»-request ceiling". They are grouped now
+  (`has already spent 123,456,789 of its 123,456,805-request ceiling, and -sV would send 17
+  more`), as PR #69 groups the figure that stopped a run. u12 A-48; one test in
+  `tests/cli/test_resume_sv_advice.py`, which fails on `6401ee2`.
+- **With Ctrl-C ignored, a SIGTERM can also leave a run waiting as it stops** (documented, not
+  changed). A SIGTERM or SIGHUP that lands in one of asyncio's own callbacks (gather's, which
+  wakes the task awaiting it) leaves that task with nothing to wake it: `asyncio.run` cancels the
+  other tasks as it closes, so the run stops sending, but the process waits until a second signal,
+  and the stuck part's spend is recorded only when Python collects the task (measured through
+  `execute_run`: it waited for the second SIGTERM, sent 3 s later, and the spend was written as
+  the process exited). The docs said only that the run goes on. Raising from a loop callback of
+  its own would avoid both, but a signal that arrives as the last loop stops would then be lost,
+  so u12 A-60 and the MANUAL now say what happens and to send the signal again, and a test pins it
+  (a second SIGTERM is needed with SIGINT ignored, and not with SIGINT at its default).
+- **The SIGHUP tests pass under `nohup`.** `nohup make test` hands the suite SIGHUP ignored, an
+  ignored SIGHUP stays ignored (as `nohup dottore run` needs), and three SIGHUP cases of
+  `tests/cli/test_termination_signals.py` failed. A fixture gives SIGHUP a handler that does
+  nothing for every test of the file.
+- "Until 2026-10-08" (MANUAL) and "on main `e4d6c83`" (u12 A-60) read "In older versions" now;
+  the commit stays where it names what a test fails on.
+
 ### Fixed (a reply that holds half a character)
 
 - **One reply with a lone surrogate aborted the whole campaign.** JSON lets a string escape any

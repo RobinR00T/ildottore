@@ -10,6 +10,10 @@ SIGTERM and SIGHUP now do what Ctrl-C would do at that moment.
 
 The signal is raised inside a real weakref callback, deterministically: `signal.raise_signal`
 runs the Python handler before it returns, so the handler runs inside the callback.
+
+SIGHUP is given a handler that does nothing for every test here (`sighup_handled`): under `nohup`
+it is ignored, and an ignored SIGHUP stays ignored, so the SIGHUP cases failed under `nohup make
+test` (pre-merge audit of #94).
 """
 
 from __future__ import annotations
@@ -35,6 +39,26 @@ def _signal_inside_a_weakref_callback(signum: int) -> None:
     ref = weakref.ref(referent, lambda _ref: signal.raise_signal(signum))
     del referent  # the callback runs here; whatever it raises, Python only prints
     assert ref() is None
+
+
+def _does_nothing(_signum: int, _frame: object) -> None:
+    return None
+
+
+@pytest.fixture(autouse=True)
+def sighup_handled() -> Iterator[None]:
+    """SIGHUP with a handler of its own, as a terminal leaves it, whatever the suite runs under.
+
+    `_termination_as_interrupt` leaves an ignored SIGHUP ignored, which is what `nohup dottore
+    run` needs, and `nohup` hands the suite SIGHUP ignored: the three SIGHUP cases then raised
+    nothing and failed. This is the disposition the context manager replaces and puts back.
+    """
+
+    previous = signal.signal(signal.SIGHUP, _does_nothing)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGHUP, previous)
 
 
 @pytest.fixture
@@ -97,3 +121,49 @@ def test_a_termination_signal_in_a_loop_with_ctrl_c_ignored_still_interrupts() -
     finally:
         signal.signal(signal.SIGINT, previous)
     assert not finished
+
+
+@pytest.mark.parametrize("sigint", ["default", "ignored"])
+def test_with_ctrl_c_ignored_a_sigterm_in_an_asyncio_callback_waits_for_a_second(
+    sigint: str,
+) -> None:
+    """What is left open (u12 A-60, the MANUAL): with Ctrl-C ignored a SIGTERM raises where the
+    main thread is, and raised inside one of asyncio's own callbacks (here gather's, reading a
+    result) it leaves the gather unfinished and the task awaiting it with nothing to wake it.
+    `asyncio.run` cancels every other task as it closes, then waits for that one until a second
+    signal (scheduled here 0.2 s on). With Ctrl-C at its default, asyncio's handler cancels the
+    run instead of raising, and the first signal is enough. If this fails because the first is
+    enough with Ctrl-C ignored too, the docs that say to send the signal again are out of date."""
+
+    signals: list[str] = []
+    finished: list[bool] = []
+
+    class _SignalOnResult(asyncio.Future[None]):
+        def result(self) -> None:
+            if not signals:
+                signals.append("first")
+                signal.raise_signal(signal.SIGTERM)
+            return super().result()
+
+    def second() -> None:
+        signals.append("second")
+        signal.raise_signal(signal.SIGTERM)
+
+    async def campaign() -> None:
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.2, second)  # runs only if the loop is still running then
+        child = _SignalOnResult(loop=loop)
+        loop.call_soon(child.set_result, None)
+        await asyncio.gather(child)
+        finished.append(True)
+
+    previous = signal.signal(
+        signal.SIGINT, signal.default_int_handler if sigint == "default" else signal.SIG_IGN
+    )
+    try:
+        with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+            asyncio.run(campaign())
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    assert not finished
+    assert signals == (["first"] if sigint == "default" else ["first", "second"])

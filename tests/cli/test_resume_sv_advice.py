@@ -446,3 +446,28 @@ def test_a_resume_refused_for_money_leaves_the_journal_as_it_found_it(
     # with no adoption at all.
     written = {sha for _, sha, state in _journal(tmp_path) if state == "written"}
     assert halted and halted <= written, "the resume that goes through adopts what it resumed from"
+
+
+def test_a_spend_and_ceiling_of_nine_digits_are_written_out_not_masked(tmp_path: Path) -> None:
+    """The refusal printed the spend and the ceiling bare, and the CLI's redactor reads nine
+    digits or more as a phone number: "has already spent «REDACTED:phone» of its
+    «REDACTED:phone»-request ceiling", the two figures the operator had to compare. They are
+    grouped, as PR #69 groups the figure that stopped a run in the halt reason."""
+
+    _setup(tmp_path)
+    run_id = _halt(tmp_path, "-sV", "--budget-requests", str(PROBES + HALT))
+    with SqliteRunStore(tmp_path / "state" / "runs.sqlite") as store:
+        store.save_run_context(run_id, spend={"requests": 123_456_789})
+    ceiling = 123_456_789 + PROBES - 1
+
+    refused = CliRunner().invoke(
+        app, [*_base(tmp_path), "--resume", run_id, "-sV", "--budget-requests", str(ceiling)]
+    )
+
+    assert refused.exit_code == ExitCode.ERROR, refused.stderr
+    assert "REDACTED" not in refused.stderr, refused.stderr
+    (error,) = _errors(refused)
+    assert (
+        f"has already spent 123,456,789 of its {ceiling:,}-request ceiling, and -sV would send "
+        f"{PROBES} more before any attack traffic"
+    ) in error, error
