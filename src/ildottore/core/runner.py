@@ -52,7 +52,7 @@ from ildottore.core.execute import (
 from ildottore.core.metering import SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import build_plan
-from ildottore.core.reproduce import DEFAULT_N, attempt_id_for, reproduce
+from ildottore.core.reproduce import DEFAULT_N, planned_attempts_held, reproduce
 from ildottore.core.setup_delivery import (
     IN_BAND,
     SEEDED,
@@ -558,12 +558,9 @@ class CampaignRunner:
                 prior = prior_by_spec.get(spec.id)
                 if prior is None or spec.id in reported:
                     continue
-                planned = {
-                    attempt_id_for(spec.id, mutation, index)
-                    for mutation in mutators_by_spec.get(spec.id, ["identity"])
-                    for index in range(self._n)
-                }
-                if planned <= {a.attempt_id for a in prior.attempts}:
+                mutators = mutators_by_spec.get(spec.id, ["identity"])
+                done = {a.attempt_id for a in prior.attempts}
+                if self._holds_plan(done, spec.id, mutators):
                     findings.append(self._prior_finding(spec, target, prior))
                     reported.add(spec.id)
         if error is not None:
@@ -571,6 +568,22 @@ class CampaignRunner:
         if breach is not None:
             return findings, breach, "budget_exhausted"
         return findings, None, None
+
+    def _holds_plan(
+        self, done: set[str] | frozenset[str], spec_id: str, mutators: Sequence[str]
+    ) -> bool:
+        """Whether ``done`` holds every planned attempt of the spec (each mutation, ``n`` times).
+
+        Counted from ``done``, never by building the plan: a set of mutators x ``n`` ids per
+        started spec grew without end on a resume of a run stored with a huge ``--runs`` (A-59).
+        """
+
+        planned = len(set(mutators)) * max(self._n, 0)  # a negative n plans nothing, as before
+        # Fewer stored ids than the plan cannot hold it: the sweep reads the run-wide set, so
+        # this spares a scan of every spec's attempts (pre-commit audit of A-59).
+        return len(done) >= planned and (
+            planned_attempts_held(done, spec_id, mutators, self._n) == planned
+        )
 
     def _gated_prior(
         self, spec: AttackSpec, target: Target, prior: Finding, mutators: list[str], gap: str
@@ -584,13 +597,10 @@ class CampaignRunner:
         critical turned into an unscored inconclusive (delta audit of B).
         """
 
-        planned = {
-            attempt_id_for(spec.id, mutation, index)
-            for mutation in mutators
-            for index in range(self._n)
-        }
         done = {a.attempt_id for a in prior.attempts}
-        if planned <= done:
+        sent = planned_attempts_held(done, spec.id, mutators, self._n)
+        planned = len(set(mutators)) * max(self._n, 0)  # a negative n plans nothing, as before
+        if sent == planned:
             return self._prior_finding(spec, target, prior)
         return Finding(
             spec_id=spec.id,
@@ -601,7 +611,7 @@ class CampaignRunner:
             attempts=_one_per_attempt_id(list(prior.attempts)),
             evidence=_unique_refs(list(prior.evidence)),
             reasoning=(
-                f"{gap}; the resumed run had sent {len(planned & done)} of {len(planned)} "
+                f"{gap}; the resumed run had sent {sent:,} of {planned:,} "
                 "attempts before this check existed: they are kept as evidence and not scored, "
                 "and nothing more was sent"
             ),
@@ -892,12 +902,7 @@ class CampaignRunner:
 
         if self._identity_adapters is None or not _is_multi_identity(spec):
             return None, {}
-        planned = {
-            attempt_id_for(spec.id, mutation, index)
-            for mutation in mutators
-            for index in range(self._n)
-        }
-        if planned and planned <= completed:
+        if mutators and self._n >= 1 and self._holds_plan(completed, spec.id, mutators):
             return None, {}
         probes = list(self._identity_adapters(target))
         if len(probes) < 2:

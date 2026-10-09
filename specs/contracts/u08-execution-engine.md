@@ -198,6 +198,49 @@ it is the point.
 `tests/core/test_halt_figures.py` (property tests over every count below 10**18, over elapsed
 times and over the rounding direction) and `tests/cli/test_halt_figures_cli.py`.
 
+**A-59 A prior's attempts are checked against the plan without building the plan (added
+2026-10-08).** Three places ask whether a started spec's stored attempts hold every planned attempt
+(each mutation, `n` times): the halt path of a resume, which publishes a finished spec's prior
+finding; the seeding gate, which scores a prior that holds its plan and says how much of it was sent
+otherwise; and the multi-identity sweep, skipped when every attempt is stored. Each built the set of
+`mutators x n` attempt ids and tested inclusion, so the work grew with `--runs`, not with what was
+stored. With the `2**53` that `run` and the run store accept (A-55, u12), a resume of a run whose
+count was edited to 10^7 took 3.5 s and 1.3 GiB with one spec started, 16.3 s and 3.7 GiB with two,
+and one of `2**53 + 1` was still growing at 3.7 GB after 4.5 minutes on `2f6201a` (OD-32, decided by
+the owner on 2026-10-08: the runner counts what is stored, and `--runs` keeps its bound). So
+`core/reproduce.planned_attempts_held` counts the planned attempts in a stored set by reading it
+once, accepting an id only in the exact form `attempt_id_for` writes (this spec's prefix, a planned
+mutation, an index of ASCII digits without a leading zero inside the plan), so a corrupt store's id
+is ignored, never fatal. An index wider than the plan's last one is passed over before it is
+converted: 10,000 stored indexes of 4,300 digits cost 4 s per check, and now 0.05 s. A run count
+the interpreter cannot write out (past its digit limit; only a library caller can pass one, as
+`run` and the run store stop at `2**53`) takes that limit as the widest index, keeps that cost, and
+does not count a longer index, which `attempt_id_for` could not write either. The three places
+compare the count with the plan's size, `len(set(mutators)) x n` (the sweep only when something is
+planned, as before; a negative `n`, which only a library caller can pass, plans nothing, as
+before). A set smaller than the plan is answered without reading it, since the sweep's is the
+run-wide set of every spec. The gate's message prints both counts with thousands separators, which
+also stops the report redactor masking a count of 9 digits or more as a phone number, as it did on
+`76de469`. The work follows the stored attempts: a resume of a stored count of 10^6, 10^7, 10^8 or
+`2**53` took 0.7 to 1.0 s and 71 MiB, with one spec started or with two. The pre-commit audit found
+no verdict that changed on 200 combinations of specs, `n` and ceilings, nor a count that differed
+from the set's on 60,000 inputs. The delta audits found no verdict that changed from the CLI; what
+they found is fixed here: the negative `n`, the cost of a wide index, the widest index one digit
+off at 10, 100 or 1,000 (untested until then), a test that read the environment's digit limit, and
+wording that claimed more than the counters see. Checked by `tests/core/test_planned_attempts.py`
+(29 tests, 19 failing on `76de469`: 15 because the count is not there, 2 because the runner's
+predicate is not, and 2 because the runner built more than 10,000 ids, counted and stopped there
+instead of growing; the 10 that pass pin what is unchanged: a gated prior holding its plan, with a
+mutation listed twice too, scored as before, and the sweep skipped only when every attempt of this
+spec is stored, not another spec's, and run when nothing is planned) and by
+`tests/cli/test_resume_integrity.py`, where a halted run resumed with the largest stored count
+builds no planned id (failing on `76de469` the same way). The counters watch `attempt_id_for` under
+the runner's name and in its module, so a plan built another way (an f-string, an alias) is not
+counted there; the equivalence and verdict tests still pin the answer. Every targeted mutant dies
+but four equivalent ones, which give the same counts: dropping the early answer (it only costs the
+read), dropping the `runs <= 0` return or making it `runs < 0`, and reading the widest index from
+`runs` instead of `runs - 1`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
