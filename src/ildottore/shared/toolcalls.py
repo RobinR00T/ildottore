@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.wellformed import well_formed_json
 
 __all__ = ["call_arguments", "call_id", "call_name", "check_argument_nesting"]
 
@@ -43,6 +44,8 @@ def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
     :data:`~ildottore.shared.nesting.MAX_DEPTH`. A live reply carrying one never gets here:
     its adapter refuses it (:func:`check_argument_nesting`), so only a call from elsewhere (a
     fixture) can read as ``{}`` for its depth, where ``json.loads`` raised ``RecursionError``.
+    A lone surrogate escaped in that string reads as U+FFFD, as it does in the reply around
+    it (A-47).
     """
 
     value = _raw_arguments(call)
@@ -50,7 +53,7 @@ def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
         return dict(value)
     if isinstance(value, str):
         try:
-            parsed = bounded_loads(value)
+            parsed = well_formed_json(bounded_loads(value))
         except ValueError:
             return {}
         return dict(parsed) if isinstance(parsed, dict) else {}
