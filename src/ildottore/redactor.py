@@ -228,10 +228,23 @@ _URL_USERINFO: Final = re.compile(
 
 
 def overlaps_known_secret(value: str) -> bool:
-    """True if ``value`` is, contains, or is part of a credential this process registered."""
+    """True if ``value`` is, contains, or is part of a credential this process registered.
+
+    Part of one only from ``_KNOWN_MIN_LEN`` characters, the floor below which nothing is
+    registered either: a caller masking `x` because a password holds an `x` would tell the
+    reader so (pre-commit audit of the spec file names).
+    """
 
     with _KNOWN_LOCK:
-        return any(value in secret or secret in value for secret in _KNOWN_SECRETS)
+        return any(
+            secret in value or (len(value) >= _KNOWN_MIN_LEN and value in secret)
+            for secret in _KNOWN_SECRETS
+        )
+
+
+#: The mask for a value a caller keeps out of the redactor that is part of a registered
+#: credential. Written outright: the entropy rule passes an id-shaped name such as a spec file's.
+CREDENTIAL_MASK: Final = _MASK_TEMPLATE.format(type="credential")
 
 
 def mask_url_passwords(text: str) -> str:

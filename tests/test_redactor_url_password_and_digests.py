@@ -48,13 +48,6 @@ def _hmac8(value: str) -> str:
     return hmac.new(_SALT.encode(), value.encode(), hashlib.sha256).hexdigest()[:8]
 
 
-@pytest.fixture
-def no_known_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Registered credentials are process-wide: a test's own do not outlive it."""
-
-    monkeypatch.setattr(redactor_mod, "_KNOWN_SECRETS", set())
-
-
 @contextmanager
 def _registered(*values: str) -> Iterator[None]:
     """`no_known_secrets` for a Hypothesis example (a function fixture is not reset per example)."""
