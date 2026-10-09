@@ -142,7 +142,8 @@ def test_with_ctrl_c_ignored_a_sigterm_in_an_asyncio_callback_waits_for_a_second
     No clock decides it: the second signal is queued from inside the first's callback, so it runs
     on the loop `asyncio.run` drives as it closes, however slow the machine (a timer set before the
     first signal made 3 of 4 cases fail after a 0.25 s stall, pre-merge audit). With Ctrl-C at its
-    default it is a timer 5 s on, which the closed loop never runs; it fails the test if it does.
+    default it is a timer 5 s on, which the closed loop never runs; it fails the test only if the
+    run is still waiting ten turns after it fires.
     """
 
     signals: list[str] = []

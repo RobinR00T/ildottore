@@ -20,8 +20,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   u12 A-60 and the MANUAL and pinned by a test that no clock decides, not changed), the SIGHUP tests
   get a handler of their own so they pass under `nohup`, and "Until 2026-10-08" and "on main
   `e4d6c83`" read "In older versions". Merged `main` at `fb9a8a8` (#69, #74 and the others of the
-  day), then the stack of #88, #60, #68 and #66 (`4475b6e`, the tree main holds once #66 lands), and
-  added four lows of the #66 re-audit: a test of the room check's clamp on the target share (it
+  day), then the stack of #88, #60, #68 and #66 (`4475b6e`, the tree main holds since #66 landed
+  as `be2a762`), and added four lows of the #66 re-audit: a test of the room check's clamp on the target share (it
   fails with the clamp removed), the resume of a sweeping spec whose only reply went unjudged (`(3,
   2)`, priced exactly), "of a spec that uses `semantic_judge`" in A-48, and the MANUAL's
   `--estimate` row and `dottore(1)` reworded. Left open: the hang itself (a fix would change how
