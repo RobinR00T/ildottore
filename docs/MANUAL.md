@@ -714,7 +714,8 @@ a JSON-schema message can quote the offending value (cut at 300 characters), and
 schema errors are listed per file. A number too long for Python to write out (more than
 `sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
 `f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
-digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included), and
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included; a key on
+its path, or on any JSON-schema error's, that is not printable is written as `repr`), and
 nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
 as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
 `mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An
@@ -820,7 +821,16 @@ regression is present, so it is CI-gateable like `run`. A report covering severa
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
 complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
-what the JSON parser holds), with the file named. `dottore calibrate REPORT LABELS` applies the
+what the JSON parser holds), with the file named. A finding that does not validate (a `status` that
+is not a verdict, a field of the wrong type, a key a finding does not have) is refused on one line
+that names the report and gives the place and the reason of each of its problems (the first such
+finding, by its index), never the value written: `error: the report /abs/bad.json failed validation:
+findings.0.status: Input should be 'pass', 'fail' or 'inconclusive'`. At most 20 problems are listed
+and the rest counted. A key a finding does not have is part of the place and goes through the
+redactor like the rest of the message: an email or a known token format in it is masked, but a key
+of hex digits or a short password often prints as written, and a control character reaches the
+terminal as written (a line break splits the line). What can be read is taken as read (`"confirmed":
+"yes"` is true). `dottore calibrate REPORT LABELS` applies the
 same one-target rule and the same refusals, counts agreement as an exact status match, prints an
 undefined precision or recall as `n/a` and floors its percentages (99.6% is shown as 99%, not
 100%).

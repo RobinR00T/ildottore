@@ -54,6 +54,76 @@ versioning: [SemVer](https://semver.org/).
   directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
   `tests/shared/test_amounts.py`.
 
+### Fixed (a key on a finding's path, printed as written)
+
+- **`dottore lint` and `dottore coverage` exited 1 with a `UnicodeEncodeError` traceback** when the
+  path to a number too long to write out (A-40, #81) went through a key holding a lone surrogate
+  (`"a\ud800b"` in YAML): the finding printed the key as written, and stdout's strict UTF-8 encoder
+  refuses it (on a terminal or a pipe alike). On these paths main before #81 did not crash. A
+  newline in such a key forged a second finding line and an escape sequence reached the terminal raw
+  (reported by the pre-merge audit of #81, left for this follow-up). A part of the path that is not
+  printable is now written as `repr` (`setup/'a\ud800b': a number too long ...`), as #80 writes a
+  key that is not printable. A key Python counts as printable reads as written (Spanish, Chinese);
+  one holding a zero-width or bidi mark, an ideographic space or a no-break space is written as
+  `repr` too. The location of every other JSON-schema error follows the same rule. A lone surrogate
+  in a key under `step_arg_patterns`, the same traceback before #81 too, is closed on main by A-54
+  (#89), which reports the key before the schema runs; what this change still does there is stop
+  control characters: a key `a\n[ERROR] SCHEMA (FAKE-001): forged` under `step_arg_patterns` made
+  `dottore lint` print a forged second finding line, and it now prints as `'a\n[ERROR]...'`
+  (pre-merge audit of #90). Found by the pre-merge audit of #80 and the delta audit of
+  `fix/spec-non-json-values`. Still open: a newline or another control character in a key that
+  pydantic names, or in the spec `id`, still forges a finding line or reaches the terminal raw (#89
+  handles only an `id` UTF-8 cannot encode).
+
+### Fixed (a report finding that failed validation printed pydantic's error, value included)
+
+- **A finding in a JSON run report that pydantic could not read printed pydantic's own error.** A
+  finding with `"status": "maybe-later"` made `dottore diff bad.json empty.json` and `dottore
+  calibrate bad.json labels.yaml` print four lines (`error: 1 validation error for Finding`, the
+  field, `input_value='maybe-later'` and a pydantic docs URL): the report's value quoted and no file
+  named, so the operator could not tell which of the two reports it was. Exit 3 was already right.
+  Both commands now give one line of the kind the scope, fleet, policy-pack and target loaders give:
+  `error: the report /abs/bad.json failed validation: findings.0.status: Input should be 'pass',
+  'fail' or 'inconclusive'`: the first finding that fails, by its index (a bare list of findings is
+  addressed as `findings` too), with its problems (the model's fields first, then the keys it does
+  not have), at most 20 and the rest counted, the value never. Not changed, and written in the
+  clause: the report's other refusals keep their form (an object without `findings` prints `error:
+  'findings'`, a `summary` that is not an object, unless empty or zero, `error: 'int' object has no
+  attribute 'get'` or the like, both without the file; the refusals of several targets or of two
+  findings for one spec quote the ids the report holds); a key a finding does not know is part of
+  the place and goes through the redactor (what it recognises there, such as an email, is masked),
+  and is otherwise printed as pydantic renders it, control characters included, until #51 is in; and
+  what pydantic can read is taken as read (`confirmed: "yes"` is true). A first version validated
+  every finding together to list them all and peaked at 1,116 MiB instead of 135 MiB on a 12 MB
+  report (pre-commit audit); the findings are validated one at a time, as before, at about 6% more
+  CPU on a valid report. Contract u12 A-49; `tests/cli/test_diff_report_validation.py` (24 of its 31
+  tests fail on `de392e1`, 23 on the defect and one because the helper it counts is not there; of
+  the 7 that pass, 6 check that the CLI's redactor leaves each test value readable, so that the CLI
+  tests can fail on any mask in the output, and one checks memory, which the base also keeps low).
+  Found by the pre-commit audit of A-45 (`fix/target-file-validation`).
+
+### Fixed (a SARIF fixture under `tests/` would have been ignored)
+
+- **`.gitignore` re-included no SARIF file under `tests/`.** The rule `!tests/**/*.sarif` had
+  its comment after it on the same line, and git reads no trailing comments, so the pattern was
+  the rule and the comment together and re-included nothing: `git check-ignore -v --no-index
+  tests/fx/a.sarif` named `.gitignore:29:*.sarif`. The comment now has a line of its own above
+  the rule; a `.sarif` file under `tests/` is no longer ignored (unless a directory rule such as
+  `build/` or `__pycache__/` excludes its folder), while a root `x.sarif`, `src/x.sarif` and
+  `reports/x.sarif` still are. No SARIF file is tracked under `tests/` (the reporting snapshot
+  is `golden.sarif.json`, which `*.sarif` never matched), so nothing was lost, and no tracked
+  file becomes ignored. It was the only line of the file with a comment after a pattern.
+
+### Fixed (a worktree's `.venv` link showed as untracked)
+
+- **`.gitignore` ignored `.venv` only as a directory** (`.venv/`), and a git worktree that reuses
+  the main checkout's venv through a symlink has a file there, as git sees it: `git status`
+  listed `?? .venv` and a `git add -A` would have committed the link. The rule is now `.venv`,
+  which matches the directory and everything under it, and the link; no tracked file is newly
+  ignored. `AGENTS.md` §4 records the worktree setup: the link, `PYTHONPATH` pointing at the
+  worktree's `src` (without it the steps that import the package run the main checkout's code,
+  and the coverage gate reads 0%), and no `make venv` or `make install` there.
+
 ### Fixed (a reply that holds half a character)
 
 - **One reply with a lone surrogate aborted the whole campaign.** JSON lets a string escape any
@@ -599,12 +669,13 @@ versioning: [SemVer](https://semver.org/).
   value built in code is named by its type. At most 20 are listed and the rest counted, a set or a
   pair is the finding and what it holds is not walked, a container shared through an alias is
   reported once, a key on this check's paths that is not printable is written as its `repr` (A-40's
-  own paths print keys as written until its follow-up lands), and a value in a field the schema
-  types (`name: 2026-01-01`) gets this message instead of the schema's `datetime.date(2026, 1, 1) is
-  not of type 'string'`. A key that is not a string is A-44's finding (below), reported before this
-  check runs. None of the 75 shipped specs holds such a value (none of the 129 YAML files of the
-  repository that load is flagged). Found on 2026-10-07 by the pre-commit audit of
-  `fix/huge-int-repr` (finding F6). Clause A-54 (u02); `tests/registry/test_non_json_values.py`.
+  paths and the locations of JSON-schema errors do too since #90, while a spec id UTF-8 can encode
+  is still printed as written), and a value in a field the schema types (`name: 2026-01-01`) gets
+  this message instead of the schema's `datetime.date(2026, 1, 1) is not of type 'string'`. A key
+  that is not a string is A-44's finding (below), reported before this check runs. None of the 75
+  shipped specs holds such a value (none of the 129 YAML files of the repository that load is
+  flagged). Found on 2026-10-07 by the pre-commit audit of `fix/huge-int-repr` (finding F6). Clause
+  A-54 (u02); `tests/registry/test_non_json_values.py`.
 - **`--runs` past what a float holds exited 1 with a traceback.** `dottore run ... --dry-run --runs
   <4,300 nines>` (and `--estimate`, and the run) gave `OverflowError: int too large to convert to
   float` where the plan multiplied its token estimate by the budget headroom: from 305 nines with
@@ -853,9 +924,9 @@ versioning: [SemVer](https://semver.org/).
   a string; write it in quotes, without a tag`. At most 20 are listed and the rest counted, a key
   that is a number too long to write out is reported first by the check of the section below, and a
   key on the path that is not printable (an escape sequence, a newline, a bidi control) is written
-  as its `repr`, so it cannot forge a finding line (the spec id and the paths of other schema errors
-  print as written, as before). Found on 2026-10-07 by the session on `fix/huge-int-repr`. Clause
-  A-44 (u02).
+  as its `repr`, so it cannot forge a finding line (A-40's paths and the locations of JSON-schema
+  errors do too since #90, while a spec id UTF-8 can encode is still printed as written). Found on
+  2026-10-07 by the session on `fix/huge-int-repr`. Clause A-44 (u02).
 - **Keys of two types in one mapping crashed the schema check itself.** `step_arg_patterns: {5: 1,
   a: 2}` gave two schema errors whose paths were sorted, an int against a str: `TypeError` and
   exit 1. The key check runs first, so the schema never sees such a mapping.
@@ -1037,7 +1108,7 @@ versioning: [SemVer](https://semver.org/).
   in the output, because a first `987654321` was masked as a phone number and the check proved
   nothing). Found on `fix/huge-int-repr`. The same shape remains in `dottore diff` and `dottore
   calibrate` on a report whose finding does not validate (pre-commit audit); left for its own
-  change.
+  change (A-49).
 
 ### Fixed (a file nested past what the CLI can hold)
 
