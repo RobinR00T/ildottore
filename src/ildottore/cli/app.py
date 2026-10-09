@@ -42,6 +42,7 @@ from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
 from ildottore.policy.errors import PolicyError
 from ildottore.redactor import (
+    CREDENTIAL_MASK,
     Redactor,
     holds_known_secret_part,
     known_secret_parts,
@@ -290,6 +291,16 @@ def _masked(exc: BaseException) -> str:
     carried = [
         d for d in getattr(exc, "digests", ()) if isinstance(d, str) and _SHA256.fullmatch(d)
     ]
+    # A spec file a load refusal names (`spec_files` on SpecLoadError) is a relative path to an
+    # entry under a spec root, a name whoever wrote the tree chose (the operator or a pack's
+    # author), not a value of this run. It is kept only with no token character of the entropy
+    # rule (`[\w+/=-]`) on either side: keeping the tail of a longer token would leave its head
+    # on its own, short enough to pass the rule's length floor in clear.
+    names = sorted(
+        {re.escape(n) for n in getattr(exc, "spec_files", ()) if isinstance(n, str) and n},
+        key=len,
+        reverse=True,
+    )
     # URL passwords first, on the whole text, so a 64-hex password is never kept as a digest.
     text = plain.redact_text(mask_url_passwords(str(exc)))
     paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
@@ -298,14 +309,19 @@ def _masked(exc: BaseException) -> str:
         + "|".join([_ARTIFACT_NAME, *carried])
         + r")\b"
         + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
+        + "".join(f"|(?<![\\w+/=-]){n}(?![\\w+/=-])" for n in names)
         + ")"
     )
-    # A kept token holding 8 consecutive characters of a registered credential goes back to the
-    # entropy rule: `sk-<64 hex>` and `<64 hex>-v2` contain one (re-audit of the digest change),
-    # and so does `<dir>/report-<part of the key>.json`, which the old test, "inside the key or
-    # holding it whole", missed (delta audit of A-38). Judged on its own when main's rule kept
-    # it; a whole path holding one is not kept at all, so that stretch of the message is read
-    # exactly as without A-38 (kept and judged whole, a long path diluted the part).
+    # A kept token holding 8 consecutive characters of a registered credential is masked:
+    # `sk-<64 hex>` and `<64 hex>-v2` contain one (re-audit of the digest change), and so does
+    # `<dir>/report-<part of the key>.json`, which the old test, "inside the key or holding it
+    # whole", missed (delta audit of A-38). Outright, because the entropy rule passes an
+    # id-shaped spec file name and a low-entropy hex run. Judged on its own when main's rule
+    # kept it; a whole path holding one is not kept at all, so that stretch of the message is
+    # read exactly as without A-38 (kept and judged whole, a long path diluted the part). What is
+    # kept is decided where the pattern matched, in context: re-matching each piece of a split
+    # on its own let a piece equal to a name pass with the token it was glued to before it
+    # (pre-commit audit of the spec file names).
     parts = known_secret_parts()
     held: dict[str, bool] = {}
 
@@ -330,7 +346,7 @@ def _masked(exc: BaseException) -> str:
     for start, end in merged:
         kept = text[start:end]
         shown.append(_entropy_masked(entropy, text[done:start]))
-        shown.append(entropy.redact_text(kept) if holds_secret(kept) else kept)
+        shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
         done = end
     shown.append(_entropy_masked(entropy, text[done:]))
     return "".join(shown)
