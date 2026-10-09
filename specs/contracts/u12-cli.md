@@ -77,7 +77,9 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   in `exit_codes.py`: no side effects, table-tested.
 - All terminal output honors the central redactor; secrets/PII never printed (`AGENTS.md §2`).
   (As built, for errors, `cli/app._masked`: URL passwords are masked first, on the whole text.
-  A 64-hex value is then kept readable in exactly two cases: an evidence file name
+  Besides the existing part of an absolute path, a path that exists, written whole, is kept
+  out of the entropy rule (A-38); the name of a file that does not exist is not (OD-25).
+  Outside one, a 64-hex value is kept readable in exactly two cases: an evidence file name
   (`<sha256>.json`), and a digest the error itself carries as one the tool computed (the
   `digests` attribute: on a scope checksum mismatch the digest computed from the body; the
   `checksum:` value the operator typed is not quoted at all; on a tamper refusal the hash the
@@ -88,7 +90,7 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   token character of the entropy rule (`[\w+/=-]`) is glued to it where it matched; what the
   loader quotes from inside the file goes through the redactor (the name is the spec tree
   author's choice, the operator's or an installed pack's, not a value of the run). A kept token
-  that is part of a credential the process registered, from 8 characters, prints as
+  that holds 8 consecutive characters of a credential the process registered prints as
   `«REDACTED:credential»` (one that contains a registered credential loses it to the value rule
   first), and every other 64-hex value goes through the redactor. An error
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
@@ -375,6 +377,28 @@ spend figure that is not a finite, non-negative number and a stored `--runs` tha
 beside the target digest or not a positive whole number (an infinity or a list was a traceback
 and exit 1, a negative spend was taken as spent, `true` resumed at one run, a missing count at
 the invocation's default).
+
+**A-38 A CLI error names the operator's existing file, and reads the rest of the message as before
+(added 2026-10-07).** Besides the existing part of an absolute path up to the first whitespace, a
+quote, a bracket, a comma or a semicolon (main's rule, with main's `Path.exists` calls and no cap),
+`_masked` keeps out of the entropy rule a path that exists written whole: absolute, or relative to
+the working directory as one word; read directory by directory, so a directory holding a space or a
+bracket is read whole; starting and ending between characters the entropy rule does not join into a
+token, so every other token is judged exactly as before. Two kept parts that only touch are judged
+apart. A kept text holding 8 consecutive characters of a registered credential prints as
+`«REDACTED:credential»`, as every kept token does (§6), and a whole path holding one is not kept.
+A report named after a commit SHA read `«REDACTED:high_entropy»` before a colon, relative, or under
+a directory with a space, and `dottore diff` printed the key in an incomplete report's reason that
+`calibrate` masked (audits of PR #61).
+Three versions that kept more (the name an `OSError` quotes, the existing directories of a missing
+path through a space, a `//` or a `/./`) printed keys that main masked and were withdrawn (OD-25;
+pre-commit, delta and pre-merge audits). `diff`'s incomplete-report refusal goes through `_masked`.
+The whole-path walk costs at most 1,024 filesystem lookups and 65,536 checks, and no walk starts
+inside what another already read; main's rule walks each distinct token once and holds no path
+between tokens (a 1 MiB message that cost 524,032 lookups costs 2,048; held, the paths took 1.3 GiB
+where main took 21 MiB). Main's rule stopped at a cap printed a value main masked (audit of the
+cap). Checked by `tests/cli/test_masked_paths.py`, and by a differential fuzz against main:
+no key main masked printed, in 120,000 messages.
 
 **A-42 A run parses each target file once (added 2026-10-07).** `dottore run` and `dottore
 fingerprint` parse a target file once per time it is named (`wiring.read_target_file`), and the
@@ -716,8 +740,8 @@ validations, and one checks that loading 2,000 bad findings peaks no higher in `
 reading their JSON, which caught two checks of every finding by another route that got past the
 count (delta audit). A check by another route that keeps pydantic's exceptions without listing their
 errors is seen by neither (457 and 375 MiB on the same report, pre-merge audit); that gap is written
-here, not tested. The path is absolute with no colon after it, so the CLI keeps it readable, except
-where it cuts every message's path short (a path holding a space or one of `()[],;'"`, until #70)
+here, not tested. The path is absolute with no colon after it, so the CLI keeps it readable, a path
+holding a space or one of `()[],;'"` too since #70 (A-38), which before cut it short
 (`tests/cli/test_diff_report_validation.py`: 24 of its 31 tests fail on `de392e1`, 23 on the defect
 and the one that counts the validations because the helper it counts is not there; of the 7 that
 pass, 6 check that the redactor leaves each test value readable, so that the CLI tests can fail on
@@ -764,6 +788,15 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-25** the name of a file that does not exist in a CLI error (a mistyped report named after a
+  commit SHA): print it, or keep it masked. Built reversibly (2026-10-07, A-38): masked, as on main,
+  its existing directories printed up to the first whitespace, a quote, a bracket, a comma or a
+  semicolon. Printing the name an `OSError` carries when it looks like a file's (an extension, a
+  directory that exists) printed an `sk-ant-` key given as `<key>.json` and an Azure connection
+  string in the pre-commit audit. Alternatives: print the directory and the extension and mask the
+  stem unless it is a 40- or 64-hex run (a hex key typed as a path would then print); or print a
+  name only when it is the command line's own argument.
+
 - **OD-20** (open, 2026-10-07): a JSON output printed to a CI log can still carry a runner's
   log command (`##[cmd]`, `##vso[`), because JSON keeps every value as it is (§6). A = leave
   it, documented; B = write the `[` of `##<letters>[` as `\u005b` in every JSON output, which

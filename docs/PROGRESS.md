@@ -3,6 +3,36 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09: CLI errors keep the operator's file names (PR #70, begun 2026-10-07)
+
+- PR #70 (`fix/cli-masked-paths`, `tests/cli/test_masked_paths.py`, clause A-38): besides main's
+  rule, `_masked` keeps an existing path written whole, absolute or relative (one word, from the
+  working directory), before a colon or a period and through directories with a space or
+  `()[],;'"`, between characters the entropy rule does not join into a token, so the rest of
+  the message is read as on main; only the whole-path walk is capped (1,024 lookups, 65,536
+  checks). `dottore diff`'s
+  incomplete-report refusal goes through `_masked`, as `calibrate`'s does. Found by the audits of
+  PR #61. Three audits found the fix printing keys main masked while it kept more than whole
+  paths (the name an `OSError` quotes, the existing directories of a missing path through a
+  space, a `//` or a `/./`), so it was rebuilt on main's rule; a differential fuzz of 120,000
+  messages finds no such key now. The delta audit of the rebuild found main's rule calling
+  `os.path.exists` where main called `Path.exists` (which raises on 3.11 and 3.12), cached checks
+  left uncounted, and touching parts merged; all three fixed. The audit of that fix found the cap
+  stopping main's rule, which then printed a value main masked; main's rule has no cap now, makes
+  main's lookups or fewer and, after the final audit (a cache of every path took 1.3 GiB where
+  main took 21 MiB), holds nothing between tokens. Open for the owner: OD-25, printing the name
+  of a file that does not exist. PR #51, which landed just before this one, touches the same S6
+  row and `diff` refusal lines: stacked on it, `_masked` applies `visible_controls` last and the
+  refusal's own wrapper is gone.
+- Stacked on `6ac7c95` (main `fb9a8a8` with #88, #60, #68, #66, #56, #57, #51 and #54, the
+  tree main holds before this squash; this worktree had resolved a merge of `a40e596` only, so
+  the stacking brought in everything newer). `cli/app.py` (imports, `_masked`'s last line, the
+  `diff` refusal), `cli/diff.py`, the manual and the S6 row conflicted, each resolved keeping both
+  sides; the stacked CHANGELOG had kept #82's old note on report paths beside this branch's
+  rewrite of it, and one is left. A-49 no longer says the CLI cuts a report path holding a space
+  short, and this branch's "until #51" sentences are in the past tense. `make gates` green there:
+  4,425 tests, coverage 97.50%.
+
 ## State, 2026-10-09: log commands in the middle of a line (PR #54, begun 2026-10-07)
 
 - PR #54, on `fix/cli-legacy-workflow-commands` (`tests/test_terminal_log_commands.py`), stacked

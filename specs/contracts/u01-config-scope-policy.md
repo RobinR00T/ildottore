@@ -414,7 +414,8 @@ the offset of the first bad byte in the file, in the spec loader's words (`not U
 N)`), exit 3 in `run`, `fleet`, `calibrate` and `fingerprint`: they raised `read_text`'s own
 `UnicodeDecodeError`, which named no file (`error: 'utf-8' codec can't decode byte 0xff in position
 15: invalid start byte`). The path is shown as the CLI shows every path (A-38): an existing absolute
-one as written, a relative one through the redactor, which masks a directory name that looks random.
+one as written, a relative one as written when it exists and is one word, any other through the
+redactor, which masks a directory name that looks random.
 A valid file's text, and so a scope checksum, is unchanged. Not covered: the stdio advice's command
 line, which is meant to be copied exactly, is written whole; so is a target's endpoint wherever a
 run that has started prints it (the plan, the reports and the run store), and a labels spec id where
