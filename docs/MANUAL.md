@@ -107,9 +107,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   target sent them, the escape included, and read as U+FFFD once parsed. Over an MCP SSE stream,
   which is decoded as text first, each raw byte of one reads as U+FFFD, as any other invalid
   UTF-8 there does. Like a zero-width space, half a character inside a word splits it: a leak
-  split that way is not matched by `regex_absence`, a canary split that way is not found by
-  `secret_leakage`, and a registered credential split that way is not masked as that
-  credential. A body that is not valid UTF-8 in any other way
+  split that way is not matched by `regex_absence` and a canary split that way is not found by
+  `secret_leakage`, while a registered credential split that way is still masked whole, as one
+  split by a zero-width space is (redact-at-rest, below). A body that is not valid UTF-8 in any
+  other way
   (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD) and an
   MCP stdio line (skipped, so the call times out).
 - **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
@@ -176,7 +177,13 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   trailing CR from a Windows-edited `.env` used to be quoted, in clear, by the transport error
   that rejected it). A key with a control character **inside** it (a newline from a pasted
   value) is refused before any request, with an error that names the variable and never the
-  value. Values shorter than 8 characters are not registered. The 8-hex digest after a mask is
+  value. Values shorter than 8 characters are not registered. A registered credential is also
+  found when the text splits it with a newline, a tab or another control character, with an
+  invisible format character (a zero-width space, a soft hyphen, a word joiner, a byte order
+  mark, a bidi control, a tag character), or with U+FFFD, the replacement character half a
+  character in a reply is read as: the stretch it covers is masked with the same
+  digest as the credential written in one piece. One split by a space or another
+  printable character (U+FFFD aside) is not. The 8-hex digest after a mask is
   salted per process, so a report cannot be used to confirm a guessed password; set
   `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose: a digest is computed over
   the value as written (a private key's too, whatever is registered inside it, when the key

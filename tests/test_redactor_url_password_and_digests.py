@@ -307,7 +307,9 @@ def test_a_hashed_pattern_of_the_operator_digests_the_text_as_written(before: st
         (("0123456789abcdef", "456789ab"), "0123456789abcdef", "0123456789abcdef"),  # inside
         (("456789ab", "0123456789abcdef"), "0123456789abcdef", "0123456789abcdef"),
         (("abababab",), "ababababab", "abababab"),  # a credential overlapping itself
-        (("aaaaaaaa1111", "aaaaaaaa1111\r"), "aaaaaaaa1111\r", "aaaaaaaa1111\r"),  # contained
+        # Contained. (A key read with a trailing CR is A-32's: the text holds a control
+        # character, and the CR form is named by its plain form, `test_redactor_split_credentials`.)
+        (("aaaaaaaa1111", "aaaaaaaa1111b"), "aaaaaaaa1111b", "aaaaaaaa1111b"),
     ],
 )
 @pytest.mark.usefixtures("no_known_secrets")

@@ -3,6 +3,55 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09: a registered credential split by characters that do not show (PR #57, begun 2026-10-07)
+
+- On `fix/redactor-split-credentials` (`tests/test_redactor_split_credentials.py`): the redactor
+  masks a registered credential split by control characters or by format characters (Unicode
+  Cf) whole, with the unsplit digest, in `redact_text` itself, so the reports, the evidence
+  store, the run store and the terminal no longer keep it in two readable halves (found by the
+  audit of PR #51, on main). In a text holding such a character the whole match by value runs
+  on the text with them dropped, and overlapping credentials are masked as one; text without one
+  is redacted byte for byte as on main unless a registered credential holds one (differential
+  fuzz: 0 differences in 2,079,091 texts). A
+  lone surrogate no longer crashes `_digest` (the same line as PR #51). The owner decided on
+  2026-10-07 that the terminal writes the format characters out too: that goes to PR #51, where
+  `visible_controls` lives. The pre-commit audit found one regression of mine (a short credential
+  with invisible characters inside was no longer masked as written) and seven low items (a value
+  padded with spaces masking prose, a digest that followed the hash seed, a periodic credential
+  costing a search per character, a registered `\x00` breaking a stash token, on main, tests that
+  could not fail, doc claims), all fixed. The delta audit found that my first fix let a short
+  credential break a longer one (up to 7 characters readable), and the pre-merge audit that the
+  second left up to 6 of a short one readable; short and long matches are masked as one union now,
+  every occurrence of a short one included (its delta audit: one overlapping itself lost its second
+  occurrence under a longer match).
+  Filed apart, on main: the JSON report keeps a dict key a target wrote raw, and a lone surrogate
+  in a reply aborts the campaign in the evidence store (fixed since by PR #79, A-47). `make gates`
+  on the branch, before the merge below: 2,380 tests (78 new), coverage 96.44%.
+- Merged with main at `6401ee2` (2026-10-09). U+FFFD is a splitter now (`_REPLACEMENT_RANGES` in
+  `_INVISIBLE_RANGES`), as PR #79's merge note asked: #79 reads half a character in a reply as
+  U+FFFD before the redactor runs, so on the two together a credential split by one kept both
+  halves in the evidence and `r.json`. Two new `_SPLITTERS` cases and a CLI case in
+  `tests/cli/test_lone_surrogate.py` (the escape, the raw bytes, a U+FFFD the target wrote) fail
+  without the range, all five. #79's sentences that said such a credential is not masked (MANUAL,
+  the threat-model row, the CHANGELOG, u04 A-47 and OD-28) now say it is. The clause is u01
+  A-32, not A-31: PR #56, which lands just before this one, defines its own A-31 (main has
+  neither number). `make gates` on the merge: 3,529 tests, coverage 97.15%.
+- Stacked on `2250b30` (main `fb9a8a8` with #88, #60, #68, #66 and #56, the tree main holds
+  before this squash). `redactor.py` conflicted in four places, resolved as #56's notes asked:
+  #56's `_credential_runs` (tokens keyed by the stretch) runs in a text without a splitter, the
+  split match runs after it and alone in a text with one, `_mask_matches` passes each stretch as
+  written to `_keep` and keys its tokens by it (so a private key holding a split credential keeps
+  the digest A-31 gives it), one delimiter guard in `register_known_secret`, and one naming rule
+  for a run (`_longest`, the length as it shows) in both matches. #56's overlap case for a key
+  read with a trailing CR expected the CR form's own digest, which this branch's
+  `test_a_key_read_with_a_trailing_cr_is_masked_as_its_plain_form` rules out (A-32): that case
+  now checks a contained credential without a control character. Differential fuzz of the
+  merge against `2250b30`, 20,000 generated texts: 0 differences in the 9,635 without a
+  splitter, and in the 10,365 with one, a registered credential readable once the splitters are
+  dropped in 6,380 outputs of `2250b30` and in none of the merge's. The index row is
+  A-29..A-32, and the CHANGELOG's open case of two credentials overlapping in plain text is
+  closed by #56. `make gates` green there: 4,095 tests, coverage 97.35%.
+
 ## State, 2026-10-09: a URL password behind a registered user; masks that depended on the process (PR #56, begun 2026-10-07)
 
 - PR #56, branch `fix/redactor-url-userinfo-pem-digest` on `0f936b6`
@@ -46,9 +95,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   credential of any text holding a control character, and every PEM holds a newline, so on the
   terminal a key's digest is computed over the credential's mask while the reports compute it
   over the credential: the two digests differ (nothing leaks). Masking only the runs that hold a
-  control character fixes it. PR #57 (split credentials) rewrites the same loop and also numbers
-  its clause A-31: the second to merge renumbers to A-32 and passes the stretch as written to
-  `_keep`.
+  control character fixes it. PR #57 (split credentials), which lands right after this one,
+  rewrites the same loop: its clause is A-32, and it passes the stretch as written to `_keep`.
 - Stacked on `08ac9f8` (main `fb9a8a8` with #88, #60, #68 and #66, the tree main holds before
   this squash): only CHANGELOG and PROGRESS conflicted. The pre-merge audit's LOWs are applied
   here: the playbook no longer counts the clauses, A-31 and S6 compare with the redactor before
@@ -327,7 +375,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 
-- First noted on main by PR #57 (open on 2026-10-09), reproduced end to end by the pre-commit audit
+- First noted on main by PR #57 (split credentials), reproduced end to end by the pre-commit audit
   of `fix/hostile-logprob`, and fixed on `fix/lone-surrogate-reply`: a reply carrying a lone
   surrogate (escaped, or its raw bytes `ED A0 80`) in its text, `id`, `model` echo, a logprob token
   or a tool call made `run` exit 3 with every spec unrun and no evidence (the evidence store's

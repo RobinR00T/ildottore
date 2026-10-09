@@ -94,7 +94,10 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
   redactor alone caught such a value only by its entropy; the `fleet --judge` mismatch follows
-  the same rule.)
+  the same rule. A registered credential split by control or format characters (Unicode Cf), or
+  by U+FFFD (what half a character in a reply reads as, u04 A-47), is masked whole by the
+  redactor itself (`redact_text`, since PR #57; u01 A-32), with the digest of the unsplit
+  credential, on the terminal as in the reports: it used to print in two readable halves.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces

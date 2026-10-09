@@ -204,6 +204,25 @@ Checks: `tests/test_redactor_url_password_and_digests.py` (twelve hash seeds in 
 digests against an HMAC computed in the test, the evidence store's leak guard, a property over
 URL shapes, credentials holding a URL's separators inside the user or the password).
 
+**A-32 A registered credential is matched with the characters that do not show ignored (added
+2026-10-07).** In a text holding a control character (C0, DEL, C1, U+2028, U+2029, a lone
+surrogate), a format character (Unicode Cf, pinned to Unicode 16.0) or U+FFFD (what half a
+character in a reply reads as where the reply is parsed, u04 A-47), `redact_text` finds each
+registered credential in the text with those characters dropped, and the stretch it covers, the
+characters inside included, becomes the mask an unsplit occurrence gets, with the same digest;
+overlapping credentials are masked as one, named by the longest as it shows (the first to start on
+a tie), and a credential too short to be matched without those characters is matched as written and
+masked with what it overlaps. Split by a newline or a zero-width space a credential was kept in two
+readable halves in every report, in the evidence and on the terminal, while split by `\x00` it was
+masked (audit of PR #51). Text without such a character is redacted byte for byte as before, unless
+a registered credential itself holds one (a differential fuzz against main is the check, run before
+a change to this match is merged), redaction stays a fixed point, and the match is linear in time
+and memory: the terminal-only first version took about 140 MB a megabyte of control characters.
+Checks: `tests/test_redactor_split_credentials.py` (every Cf character of the running Python, the
+JSON report, evidence, run store and CLI paths, a property test for the fixed point, memory and
+scaling on multi-megabyte hostile text), and in `tests/cli/test_lone_surrogate.py` a credential
+split by half a character in a reply (escaped, as raw bytes, or a U+FFFD the target wrote).
+
 **A-37 Every YAML file is measured with its aliases expanded, by one measure (added 2026-10-07).** A
 scope, target, fleet, labels, policy pack or signature pack file holding more than 100,000 nodes
 with every alias counted where it is used (a text one more node per 64 characters), nested deeper

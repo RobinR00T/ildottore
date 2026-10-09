@@ -179,7 +179,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
   evidence); a multi-turn spec sends the reply on in its next request and the `--judge` request
   quotes it, and httpx raised the same error encoding either (the judge received nothing); sqlite
   refuses it too, and pydantic's JSON serializer with `PydanticSerializationError` (first noted on
-  main by PR #57, open on 2026-10-09; reproduced end to end by the pre-commit audit of
+  main by PR #57 (split credentials); reproduced end to end by the pre-commit audit of
   `fix/hostile-logprob`, 2026-10-07; `dottore fingerprint`, which writes nothing, exited 0). Every
   reply is now made well formed where it is parsed (`shared.wellformed.well_formed_json`: the base
   adapter's body, so OpenAI, Anthropic and the REST template, and the MCP adapter's JSON body, SSE
@@ -210,10 +210,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   way (`PI-DIRECT-001` is inconclusive and `run` exits 0, where the leak written plainly fails it
   and exits 2), `secret_leakage` misses a split canary and passes, and the spec falls to its other
   evaluators (`SP-LEAK-001` is inconclusive without `--judge` and passes when the judge says
-  secure), and a registered credential split that way is not masked as the credential (each half
-  stays readable unless the entropy rule takes it) until the fix for split credentials (PR #57, open
-  on 2026-10-09) reads U+FFFD as a splitter, which the owner approved on 2026-10-07 for whichever of
-  the two lands second (OD-28); invalid UTF-8 that is not an encoded surrogate (one `FF` byte, a
+  secure), while a registered credential split that way is masked whole since the fix for split
+  credentials (PR #57, merged after this clause) reads U+FFFD as a splitter (u01 A-32), as the owner
+  approved on 2026-10-07 for whichever of the two landed second (OD-28); invalid UTF-8 that is not
+  an encoded surrogate (one `FF` byte, a
   multibyte character cut short) is still a body that is not JSON and stops the campaign on the base
   adapter and the MCP JSON body, while over an MCP SSE stream it reads as U+FFFD and on an MCP stdio
   line the line is skipped and the call times out; the walks visit the whole parsed reply: on 4 MiB
@@ -290,6 +290,6 @@ reads as U+FFFD, since httpx decodes the stream as text.
   space does today, so a leak split that way is missed by `regex_absence` (inconclusive, exit 0) and
   a canary by `secret_leakage` (`SP-LEAK-001` passes when a judge says secure, where refusing the
   reply would have left it inconclusive), left as its own task for the evaluators; a registered
-  credential split that way is masked once PR #57 (open on 2026-10-09) reads U+FFFD as a splitter,
-  which the owner approved for whichever of the two lands second. Not built: an evidence field
+  credential split that way is masked whole, since PR #57 reads U+FFFD as a splitter (u01 A-32), as
+  the owner approved for whichever of the two landed second. Not built: an evidence field
   saying a reply was altered (an additive `ModelResponse` field, u00); U+FFFD is the mark.
