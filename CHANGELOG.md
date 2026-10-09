@@ -87,9 +87,11 @@ versioning: [SemVer](https://semver.org/).
   credentials, masked as one run, can cover a separator that main's one-at-a-time replacement
   left, so a password main masked stays readable while main left part of the second credential
   readable instead (`key-ABCD1234` and `1234://bob`). Each needs a target writing a registered
-  credential that holds a URL separator. Also open, on main too: a raw `@`
-  in the user or in an unregistered password of a URL leaves the password, or its part after
-  the `@`, readable (`myadmin@srv:<password>@localhost`, an Azure-style login); the
+  credential that holds a URL separator. The last two are regressions against the
+  redactor before this change, which the owner accepted for the merge (2026-10-09);
+  a follow-up issue tracks them. Also open, on main too: a raw `@` in the user or
+  in an unregistered password of a URL leaves the password, or its part after the
+  `@`, readable (`myadmin@srv:<password>@localhost`, an Azure-style login); the
   labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its
   tail readable, and a registered credential that is a label word (`password`) hides the label
   from it; repeated `BEGIN PRIVATE KEY` markers before one `END` cost 3.4 s a megabyte.

@@ -115,8 +115,9 @@ def test_a_url_password_holding_a_registered_credential_is_masked_whole(password
 def test_a_credential_holding_a_stash_delimiter_does_not_cross_a_url_separator() -> None:
     """Registered as the text reads it (`password@db`) it crossed the URL's `@` (pre-merge audit).
 
-    The rest of the password before it was readable, where main, which never matched such a
-    credential, masked the whole password. A form holding a delimiter is not registered now.
+    The rest of the password before it was readable, where the redactor before A-31, which never
+    matched such a credential, masked the whole password. A form holding a delimiter is not
+    registered now.
     """
 
     register_known_secret("pass" + chr(1) + "word@db")
@@ -468,7 +469,7 @@ def _in_a_process(child: str, text: str, credentials: tuple[str, ...], seed: int
 def test_the_redaction_does_not_depend_on_the_hash_seed(
     text: str, credentials: tuple[str, ...]
 ) -> None:
-    """Twelve seeds split six and six on main for the key, seven and five for the overlap."""
+    """Twelve seeds split six and six before A-31 for the key, seven and five for the overlap."""
 
     for value in credentials:
         register_known_secret(value)

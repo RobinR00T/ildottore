@@ -3,7 +3,7 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
-## State, 2026-10-07 (night): a URL password behind a registered user; masks that depended on the process
+## State, 2026-10-09: a URL password behind a registered user; masks that depended on the process (PR #56, begun 2026-10-07)
 
 - PR #56, branch `fix/redactor-url-userinfo-pem-digest` on `0f936b6`
   (`tests/test_redactor_url_password_and_digests.py`): two defects already on main, found by the
@@ -33,10 +33,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   a later `@`, so a labelled value after the URL loses its tail where main masked it; and two
   overlapping registered credentials masked as one run can cover a separator that main's
   one-at-a-time replacement left (main leaves part of the second credential readable there).
-  Each needs a target writing a registered credential that holds a URL separator; whether to
-  accept that is the owner's call. Also open, on main too: a raw `@` in a URL's user or
-  unregistered password leaves the password, or its part after the `@`, readable
-  (`myadmin@srv:<password>@localhost`); the labelled-secret rule stops at a mask
+  Each needs a target writing a registered credential that holds a URL separator. The owner accepted
+  the last two for the merge (2026-10-09); a follow-up issue tracks them. Also open, on main too: a
+  raw `@` in a URL's user or unregistered password leaves the password, or its part after the `@`,
+  readable (`myadmin@srv:<password>@localhost`); the labelled-secret rule stops at a mask
   (`api_key=<registered credential><tail>` keeps its tail), and a registered credential that is
   a label word (`password`) hides the label from it; repeated `BEGIN PRIVATE KEY` markers before
   one `END` cost 3.4 s a megabyte. Python 3.11, the version CI runs, was not available here.
@@ -49,6 +49,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   control character fixes it. PR #57 (split credentials) rewrites the same loop and also numbers
   its clause A-31: the second to merge renumbers to A-32 and passes the stretch as written to
   `_keep`.
+- Stacked on `08ac9f8` (main `fb9a8a8` with #88, #60, #68 and #66, the tree main holds before
+  this squash): only CHANGELOG and PROGRESS conflicted. The pre-merge audit's LOWs are applied
+  here: the playbook no longer counts the clauses, A-31 and S6 compare with the redactor before
+  A-31 instead of "main", and the manual, S6, A-31 and the CHANGELOG name the two accepted
+  regressions. `make gates` green there: 4,012 tests, coverage 97.32%.
 
 ## State, 2026-10-09: a halted run keeps what it paid for, and resumes (PR #66, begun 2026-10-07)
 
