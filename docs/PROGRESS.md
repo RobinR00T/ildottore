@@ -18,6 +18,69 @@ The carryover ledger. Every agent session updates this so context survives even 
   pydantic names, or in the spec `id`, still forges a finding line (#89 handles only an `id` UTF-8
   cannot encode).
 
+## State, 2026-10-07 (evening): a report finding's validation error (A-49)
+
+- On `fix/diff-report-validation` (`tests/cli/test_diff_report_validation.py`): `dottore diff` and
+  `dottore calibrate` on a report whose finding does not validate (a `status` of `maybe-later`)
+  printed pydantic's raw error over four lines, with the value and a docs URL and without the file;
+  found by the pre-commit audit of A-45. `diff.load_findings` raises `the report <absolute path>
+  failed validation: findings.1.status: ...` for the first finding that fails, at most 20 problems;
+  a first version that validated all the findings together peaked at 1,116 MiB instead of 135 MiB on
+  a 12 MB report. Exit 3 as before. Left as they are and written in clause A-49: the report's other
+  refusals (`error: 'findings'` for an object without `findings`, a `summary` that is not an object,
+  unless empty or zero), keys printed as pydantic renders them (through the redactor), and lax
+  reading (`"yes"` is true).
+
+## State, 2026-10-07 (midday): a SARIF fixture under `tests/` is no longer ignored
+
+- Found by the pre-commit audit of `fix/gitignore-venv-symlink` (PR #62): on `main` at
+  `0f936b6`, `.gitignore` line 30 was `!tests/**/*.sarif` with its comment after it on the same
+  line. Git reads no trailing comments, so the negation was the rule and the comment together
+  and re-included nothing: a SARIF fixture added under `tests/` would have been ignored with no
+  warning, the class of bug that broke CI on 2026-07-08 ("CI GREEN on GitHub Actions" below).
+  On `fix/gitignore-sarif-negation` the comment has a line of its own above the rule.
+- Checked with `git check-ignore --no-index`: `tests/fx/a.sarif`, `tests/a.sarif` and
+  `tests/reporting/fixtures/reports/x.sarif`, all three ignored before by `.gitignore:29:*.sarif`,
+  are no longer ignored; a root `x.sarif`, `src/x.sarif`, `reports/x.sarif` and
+  `evidence/x.sarif` still are. With real files, `git status` lists `tests/fx/a.sarif` and not
+  the root one. A folder a directory rule excludes stays excluded (`tests/build/x.sarif`,
+  `tests/__pycache__/x.sarif`): git cannot re-include a file under an excluded directory.
+  `git ls-files -ci --exclude-standard` is empty before and after. No SARIF file is tracked
+  under `tests/` (the reporting snapshot is `golden.sarif.json`, which `*.sarif` never
+  matched), so nothing was lost. Note for the next check: `git check-ignore -v` exits 0 for a
+  path a `!` rule matches, because it prints that rule, so read the rule it names, or drop `-v`
+  and read the exit code.
+- Every other line of `.gitignore` checked by a Python scan for a comment after a pattern and
+  for trailing whitespace: none. `!specs/scope.example.yaml` has no comment and works as
+  written; it re-includes a file no rule excludes (`/scope.yaml` is root-anchored and the name
+  differs), so it changes nothing today and stays.
+- PR #62 changes `.gitignore` at line 8 only, so the two branches do not collide in that file;
+  both insert at the top of CHANGELOG `[Unreleased]` and of this ledger, so whichever merges
+  second rebases and keeps both entries.
+
+## State, 2026-10-07 (morning): a worktree's `.venv` link is ignored
+
+- The pre-merge audit of PR #60 found every worktree showing `?? .venv`: worktrees reuse the
+  main checkout's venv through a symlink, git sees a symlink as a file, and `.gitignore` had
+  `.venv/`, which matches directories only, so a `git add -A` would have committed the link. On
+  `fix/gitignore-venv-symlink` the rule is `.venv` (the directory and everything under it, and
+  the link). Checked: in a worktree with the link, `git status --porcelain` no longer lists it
+  and `git check-ignore -v .venv` names `.gitignore:10:.venv`; a real `.venv/` directory, a
+  nested one and the files inside stay ignored; no tracked file becomes ignored (0 before and
+  after). Nothing depends on the directory-only form: CI checks out without a venv, the Makefile
+  hands ruff, mypy and bandit explicit paths (pytest takes `testpaths`), mypy's `^\.venv/`
+  exclude is a regex of its own, and what does read `.gitignore` (ruff walking `src tests`,
+  `tests/test_yaml_duplicate_keys.py` through `git ls-files --exclude-standard`, an sdist
+  build) sees no difference between `.venv/` and `.venv`.
+- The worktree setup was practice, not written anywhere in the repo; it is now in `AGENTS.md`
+  §4: the link, `PYTHONPATH=<worktree>/src` (without it the steps that import the package run
+  the main checkout's code and the coverage gate reads 0%, measured), and no `make venv` or
+  `make install` in a worktree (the venv is shared).
+- Found by the pre-commit audit, not fixed here (its own branch): `.gitignore` line 32,
+  `!tests/**/*.sarif` followed by a comment on the same line, re-includes nothing, because git
+  reads no trailing comments; a SARIF fixture added under `tests/` would be ignored. None is
+  tracked today. `venv/` keeps its trailing slash: nothing here creates a `venv` link.
+
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 
 - First noted on main by PR #57 (open on 2026-10-09), reproduced end to end by the pre-commit audit
@@ -540,8 +603,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
   the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
   `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
-  the value quoted, no file name); not fixed here. `tests/cli/test_target_file_validation.py`: 19
-  of its 24 tests fail on `0501752`, the other 5 guard that each test value survives the redactor.
+  the value quoted, no file name); not fixed here (A-49).
+  `tests/cli/test_target_file_validation.py`: 19 of its 24 tests fail on `0501752`, the other 5
+  guard that each test value survives the redactor.
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 

@@ -26,6 +26,55 @@ versioning: [SemVer](https://semver.org/).
   pydantic names, or in the spec `id`, still forges a finding line or reaches the terminal raw (#89
   handles only an `id` UTF-8 cannot encode).
 
+### Fixed (a report finding that failed validation printed pydantic's error, value included)
+
+- **A finding in a JSON run report that pydantic could not read printed pydantic's own error.** A
+  finding with `"status": "maybe-later"` made `dottore diff bad.json empty.json` and `dottore
+  calibrate bad.json labels.yaml` print four lines (`error: 1 validation error for Finding`, the
+  field, `input_value='maybe-later'` and a pydantic docs URL): the report's value quoted and no file
+  named, so the operator could not tell which of the two reports it was. Exit 3 was already right.
+  Both commands now give one line of the kind the scope, fleet, policy-pack and target loaders give:
+  `error: the report /abs/bad.json failed validation: findings.0.status: Input should be 'pass',
+  'fail' or 'inconclusive'`: the first finding that fails, by its index (a bare list of findings is
+  addressed as `findings` too), with its problems (the model's fields first, then the keys it does
+  not have), at most 20 and the rest counted, the value never. Not changed, and written in the
+  clause: the report's other refusals keep their form (an object without `findings` prints `error:
+  'findings'`, a `summary` that is not an object, unless empty or zero, `error: 'int' object has no
+  attribute 'get'` or the like, both without the file; the refusals of several targets or of two
+  findings for one spec quote the ids the report holds); a key a finding does not know is part of
+  the place and goes through the redactor (what it recognises there, such as an email, is masked),
+  and is otherwise printed as pydantic renders it, control characters included, until #51 is in; and
+  what pydantic can read is taken as read (`confirmed: "yes"` is true). A first version validated
+  every finding together to list them all and peaked at 1,116 MiB instead of 135 MiB on a 12 MB
+  report (pre-commit audit); the findings are validated one at a time, as before, at about 6% more
+  CPU on a valid report. Contract u12 A-49; `tests/cli/test_diff_report_validation.py` (24 of its 31
+  tests fail on `de392e1`, 23 on the defect and one because the helper it counts is not there; of
+  the 7 that pass, 6 check that the CLI's redactor leaves each test value readable, so that the CLI
+  tests can fail on any mask in the output, and one checks memory, which the base also keeps low).
+  Found by the pre-commit audit of A-45 (`fix/target-file-validation`).
+
+### Fixed (a SARIF fixture under `tests/` would have been ignored)
+
+- **`.gitignore` re-included no SARIF file under `tests/`.** The rule `!tests/**/*.sarif` had
+  its comment after it on the same line, and git reads no trailing comments, so the pattern was
+  the rule and the comment together and re-included nothing: `git check-ignore -v --no-index
+  tests/fx/a.sarif` named `.gitignore:29:*.sarif`. The comment now has a line of its own above
+  the rule; a `.sarif` file under `tests/` is no longer ignored (unless a directory rule such as
+  `build/` or `__pycache__/` excludes its folder), while a root `x.sarif`, `src/x.sarif` and
+  `reports/x.sarif` still are. No SARIF file is tracked under `tests/` (the reporting snapshot
+  is `golden.sarif.json`, which `*.sarif` never matched), so nothing was lost, and no tracked
+  file becomes ignored. It was the only line of the file with a comment after a pattern.
+
+### Fixed (a worktree's `.venv` link showed as untracked)
+
+- **`.gitignore` ignored `.venv` only as a directory** (`.venv/`), and a git worktree that reuses
+  the main checkout's venv through a symlink has a file there, as git sees it: `git status`
+  listed `?? .venv` and a `git add -A` would have committed the link. The rule is now `.venv`,
+  which matches the directory and everything under it, and the link; no tracked file is newly
+  ignored. `AGENTS.md` §4 records the worktree setup: the link, `PYTHONPATH` pointing at the
+  worktree's `src` (without it the steps that import the package run the main checkout's code,
+  and the coverage gate reads 0%), and no `make venv` or `make install` there.
+
 ### Fixed (a reply that holds half a character)
 
 - **One reply with a lone surrogate aborted the whole campaign.** JSON lets a string escape any
@@ -1010,7 +1059,7 @@ versioning: [SemVer](https://semver.org/).
   in the output, because a first `987654321` was masked as a phone number and the check proved
   nothing). Found on `fix/huge-int-repr`. The same shape remains in `dottore diff` and `dottore
   calibrate` on a report whose finding does not validate (pre-commit audit); left for its own
-  change.
+  change (A-49).
 
 ### Fixed (a file nested past what the CLI can hold)
 
