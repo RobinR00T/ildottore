@@ -94,19 +94,21 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   quotes an `auth_ref` only when it is a reference (it contains `://`, as `env://NAME` does); a
   literal pasted where a reference belongs prints as "a literal value (not shown)", because the
   redactor alone caught such a value only by its entropy; the `fleet --judge` mismatch follows
-  the same rule. Last, after every mask, `_masked` writes every control character out
-  (`redactor.visible_controls`: C0 and DEL as control pictures, C1, U+2028, U+2029, lone
-  surrogates and format characters (Unicode Cf, since 2026-10-07) as Python escapes), and a
-  registered credential split by control or format characters is masked whole before the redactor
-  runs (`Redactor.mask_split_credentials`). The other terminal paths that print what a pack, a
-  report or a target wrote do the same (`Redactor.for_terminal` where the text is redacted), the
-  `rich` lines of a run are printed as plain, unwrapped text, the `--compare` table prints target
-  ids as text, and `diff`/`calibrate` refuse a report spec id that is not a spec id: no line of
-  those paths starts with such text, except a `replay` line, which starts with an attempt or probe
-  id read from the evidence tree. The JSON outputs escape every control character (`fingerprint`
-  escapes DEL and non-ASCII inside pydantic's own output). This does not stop the legacy `##[cmd]`
-  form a GitHub runner reads anywhere in a line, and it does not cover the operator's own values
-  in the plan lines.)
+  the same rule. A registered credential split by control or format characters (Unicode Cf), or
+  by U+FFFD (what half a character in a reply reads as, u04 A-47), is masked whole by the
+  redactor itself (`redact_text`, since PR #57; u01 A-32), with the digest of the unsplit
+  credential, on the terminal as in the reports: it used to print in two readable halves. Last,
+  after every mask, `_masked` writes every control character out (`redactor.visible_controls`:
+  C0 and DEL as control pictures, C1, U+2028, U+2029, lone surrogates and format characters
+  (Unicode Cf, since PR #51) as Python escapes; U+FFFD, which shows, is printed as it is). The
+  other terminal paths that print what a pack, a report or a target wrote do the same
+  (`Redactor.for_terminal` where the text is redacted), the `rich` lines of a run are printed as
+  plain, unwrapped text, the `--compare` table prints target ids as text, and `diff`/`calibrate`
+  refuse a report spec id that is not a spec id: no line of those paths starts with such text,
+  except a `replay` line, which starts with an attempt or probe id read from the evidence tree.
+  The JSON outputs escape every control character (`fingerprint` escapes DEL and non-ASCII inside
+  pydantic's own output). This does not stop the legacy `##[cmd]` form a GitHub runner reads
+  anywhere in a line, and it does not cover the operator's own values in the plan lines.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces
@@ -191,7 +193,12 @@ Amended 2026-10-03 (audit F6 / F-7): the multi-identity sweep and the `--judge` 
 two remaining exceptions (ten identities under a ceiling of two; `--budget-requests 5` sent 15
 with a judge). The sweep debits the ledger and is skipped on a resume of a finished spec; the
 judge is wrapped in `core.metering.MeteredAdapter`, bound to the campaign's ledger and pacer,
-and the estimate and the derived ceilings count it.
+and the estimate and the derived ceilings count it. Amended 2026-10-07 (A-34): the estimate
+and the derived ceilings count the identity sweep too, one send per scope identity for each
+spec that sweeps, which they had never done; `--estimate --resume` subtracts it for a spec whose
+every planned attempt is answered, as the runner then skips the sweep, counted from what is stored
+as the runner counts it (A-59, u08), and the room check of the `-sV` refusals (A-48) reads the
+same figure.
 
 **A-24 A resume is bound to its campaign: the battery, the target, the route, the sample size
 and the money (added 2026-09-22, widened the same night after audit).** Every one of these was
@@ -242,6 +249,42 @@ runner hands it to the store however the campaign stops (a ceiling, an abort, Ct
 or SIGHUP, which `execute_run` turns into Ctrl-C), and a resumed run's `-sV` probe pass is
 recorded however it ends (A-46). A SIGKILL still loses the dead half's spend; the resume then
 opens at whatever was last recorded: the trade against a database write per request.
+
+**A halt keeps what it paid for, and a run that spent is resumable (amended 2026-10-07).** A
+request ceiling that stopped a run inside `DL-XTENANT-001`'s identity sweep, or between two
+attempts of one batch, stored nothing for that spec: the attempts the batch had answered went
+down with the exception, the run store recorded requests the evidence did not show, and
+`--resume` refused the run as one that "sent nothing", so its spend was stranded under an id
+nothing could continue (delta audit of `fix/authz-leak-identity-sweep`, reproduced on main
+`0f936b6`: three requests sent, then the refusal). The runner now stores every reply its batch
+received before the halt (u08, budget gates), and a run whose run store records a request spent
+is resumed even with no attempt stored, every spec from the start, its spend carried. Refused
+still, each for the reason that is then true: a run that recorded no request spent; an empty
+`--evidence-root` when the artifact journal holds any digest for the run, `pending` included
+(from the tree alone that looks the same, and resuming would send everything again; a `pending`
+digest is a write begun and never confirmed, on another tree or failed on this one, and the
+message says both, where the first version called it "not the tree the run wrote"); and an
+empty tree for a run that does not record the scope it went out under (D-17, built after the
+journal), which may predate the journal, so its silence proves nothing (the last two from the
+pre-commit audit, which had a pre-journal run and a pending-only journal resumed from the wrong
+tree). An attempt is **kept** by a resume (not sent again, A-11's sweep skip, and what
+`--estimate --resume` subtracts) when it has a reply and a verdict, or failed in a way a retry
+would repeat; a reply stored without a verdict, its evaluation stopped by the ceiling refusing
+the judge's request, is sent again and judged (with `--judge` that reply is paid for twice: it
+is re-sent rather than re-judged, a design choice; judging the stored reply on resume is a
+possible follow-up, and would save that one target request). A run halted by this
+version is not for an older one to resume: it would keep the unjudged reply and score the spec
+without it (pre-merge audit). A prior spec is **finished** (published by a
+halted resume, scored by the seeding gate) only when every planned attempt has a verdict.
+`--estimate --resume` subtracts what is kept, the judge's two requests per kept attempt of a
+spec it reads included (it priced the whole battery's judge, 12 for a resume that sent 8), so it
+prices what the resume sends, an identity sweep included since A-34 (u08, PR #60: the three
+sweeping shapes, a strict `xfail` until both had landed, are plain tests now), and the room
+check of the `-sV` refusals (A-48) takes off the same judge share. A finished run does not store
+the sweep's replies either, so a halted sweep leaves only its spend. Checked through the real CLI by
+`tests/cli/test_resume_halted_mid_batch.py`: every halt-then-resume test asserts the halted run's
+spend, the final spend and the resume's sends as the loopback stub counted them, and the estimate
+wherever it is exact.
 
 **A-46 A resumed run records what its `-sV` probe pass sent, however the pass ends (added
 2026-10-07).** The pass runs outside the runner's ledger, and only the request ceiling recorded
@@ -412,8 +455,9 @@ bool]` in `FleetTarget` with `**entry.capabilities` in `_target_doc` (the `Capab
 `cli/fleet.py` then goes, or ruff fails), undo it, with this test file removed. Outside the clause,
 and said so rather than pinned (pre-commit, delta and pre-merge audits):
 * a top-level key a target file does not know (`endpont:`, or `tools: true` under a
-  `capabilities:` left empty by a lost indent) is still dropped without a word, and so is a `name`,
-  `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text;
+  `capabilities:` left empty by a lost indent) was still dropped without a word, and so was a
+  `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text: both are
+  refused since A-53;
 * a fleet entry's `capabilities` that is not a mapping, `null` included, was refused and still is,
   now in pydantic's words for a model (`Input should be a valid dictionary or instance of
   Capabilities`), where a target file reads `null` as none;
@@ -466,7 +510,8 @@ again ("halted with adaptive planning off and this invocation asks for on"); on 
 `tests/cli/test_resume_sv_advice.py` follows every piece of advice each of these refusals gives,
 through the CLI, and asserts that each is an invocation that goes through, not a second refusal;
 each test pins the advice it expects, and a flag the advice names that its grammar cannot turn into
-an invocation fails it. 20 of its 24 tests fail on `0501752`; the other four guard what did not
+an invocation fails it. 20 of its first 24 tests fail on `0501752`, and one of the two `--judge`
+cases #66 adds fails without its room-check fix; the other four guard what did not
 change (a campaign that recorded no planning mode may still drop `-sV` when the ceiling holds the
 rest, and a resume refused for the wall-clock or the request ceiling leaves the journal as it found
 it). Limits, written here rather than fixed in a test: the advice answers the check that refused, so
@@ -476,12 +521,15 @@ does not hold the rest of the campaign halts (measured with 6 spent and 3 to sen
 and 8), as any resume did on `0501752`; "whichever it ran with" asks the operator for what the run
 store does not keep (one flag for the three); the advice reads the request axis only, so a campaign
 halted on `--budget-tokens` is still told about requests, as on `0501752`; the estimate leaves out
-the multi-identity sweep of a live target with two or more identities and retries, so a followed
-"drop -sV" at an exact fit can still halt, and it over-prices a resume's rest with `--judge` (the
-safe direction); the test grammar does not read a piece written as a sentence of its own ahead of
-the advice; the advice names `-sV` where the invocation said `-A`, which implies it; and the stored
-mode is read by truthiness, as the planning-mode check reads it, so the advice and the check agree
-on a value that is not a boolean.
+retries (the multi-identity sweep was the other omission until A-34, u08, priced it; the check
+subtracts a finished spec's sweep as `--estimate --resume` does), so a followed "drop -sV" at an
+exact fit can still halt; with `--judge` the check takes off the judge's two requests for each
+attempt the resume keeps, as `--estimate --resume` does since #66 (it priced the battery's whole
+judge share, so a "drop -sV" that fitted was not offered: pre-merge audit of #66); the test
+grammar does not read a piece written as a sentence of its own ahead of the advice; the advice names
+`-sV` where the invocation said `-A`, which implies it; and the stored mode is read by truthiness,
+as the planning-mode check reads it, so the advice and the check agree on a value that is not a
+boolean.
 
 **A-55 Every integer flag of `run` is bounded above as well as below, and so is a live run's pace
 against the wall-clock ceiling (added 2026-10-07).** `--runs` had a lower bound only, and the plan
@@ -556,6 +604,143 @@ Outside the clause, and said so rather than pinned:
 * `--rate inf` turns pacing off (the limiter reads its interval as 0) and the dry run prints `inf
   req/s ceiling`; `--timeout inf` and `--timeout 1e308` are accepted.
 
+**A-53 A target file's top level holds only the keys its readers read, and text where they read
+text; anything else is refused before anything is sent (added 2026-10-07; OD-31 decided).**
+`load_target`, `target_uses_mock` and `load_mock_scenario` each took the keys they knew from the
+file's top level with `raw.get(...)` and never looked at the rest, and `load_target` read a `name`,
+`provider`, `endpoint`, `model`, `auth_ref` or `transport` that was not text as absent. So a
+misspelled key was dropped without a word, and when it was the endpoint, or the endpoint was written
+as a list, a live target had no endpoint and `target_uses_mock` sent the run to the offline mock: on
+`2f6201a`, `run` of a live target with `endpont:` sent it nothing and scored the `bare` mock's
+replies (one spec: inconclusive, exit 0; the full battery: a FAIL on `DOS-TOKEN-AMP-001` and a PASS
+on `MCP-TOOLPOISON-001`, exit 1, as on `c3e70d8`), and its dry run said `authorized at` the scope's
+base URL, with no word about the endpoint or the mock. A `capabilities:` whose children lost their
+indent read as no capabilities with `tools`, `rag` and `memory` ignored at the top level: a `type:
+model` target with all three planned 34 specs with 39 skipped for a capability, against 59 and 8,
+and nothing named the keys. A model id YAML reads as a number (`model: 20240613`) was read as no
+model. Now `_read_target_yaml`, which every reader goes through, checks the top level against
+`_TargetFileTopLevel` and refuses, on one line in the A-45 form, `target file <path> failed
+validation: endpont: Extra inputs are not permitted` (`model: Input should be a valid string`; a key
+that is not text: `1: Keys should be strings`), never the value:
+* the keys are the fields of `Target` (`id`, `type`, `name`, `provider`, `endpoint`, `model`,
+  `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`) and
+  `mock_scenario`; the model is built from `Target`, and `_TEXT_FIELDS` is its `str | None` fields,
+  so a field added there is a key the file may hold, as text when it is text, and a test checks that
+  `load_target` hands every field of `Target` to it (a field it did not read would be accepted and
+  dropped); another test passes each key through the check. The pre-merge audit found that a list
+  kept by hand refused the `websocket` field #87 adds: 35 tests failed on the two merged, none once
+  the model was built from `Target`;
+* `name`, `provider`, `endpoint`, `model`, `auth_ref` and `transport` are text (`StrictStr`, so
+  `!!binary` bytes are refused too) or absent: the key with nothing after it, `null` or `~`,
+  as before; an empty string is text, so `endpoint: ""` still routes to the mock; a number as
+  `provider` or `transport`, which A-40 read as no provider (`5`, or one too long to write out),
+  is refused as not text;
+* every reader refuses a file this check refuses, with the same line, so `target_uses_mock` no
+  longer routes such a file to the mock (a file `load_target` refuses for another reason, a bad
+  `capabilities` say, is refused by `load_target` alone, which `run` and `fingerprint` call before
+  they route); `dottore fleet` writes only these keys (a test runs it on both shipped fleets and
+  loads what it writes).
+
+`tests/cli/test_target_top_level_keys.py`: 43 of its 90 tests fail on `9b8b511`, this branch's base,
+and so do A-40's two tests of a number as `provider` or `transport` in `test_huge_numbers.py`, which
+expected exit 0 and now expect this refusal. Each fails on the old behavior (25 of the 43, and both
+of A-40's, because the command exits 0; 17 because the reader does not raise; 1 because
+`_TEXT_FIELDS` does not exist). Merged with #86 (A-51), two of its tests in
+`test_operator_file_quoted_values.py` (a `provider` and `transport` that are integers, a `transport`
+of aliases), which expected `target_uses_mock` to route the file to the mock, now expect this
+refusal, still under A-51's bound (the value never written out), and the `provider` of aliases case
+of a third, which measured only the memory, checks the refusal too. The other 47 guard what stays
+(every legal key passes the check, a file with each key the manual lists loads, a null text field
+is absent, `id` and `type` keep their own refusals) and that the redactor leaves each test value
+readable, and one loads every target file
+under `examples/`, `specs/` and `tests/` and every target block of the docs and man pages through
+the three readers. Refusing is the owner's decision (OD-31), as the smallest reversible change: the
+`_TargetFileTopLevel` check in `_read_target_yaml`, and the six `isinstance(..., str) else None`
+reads of `load_target` and the `_lowered` reads of `target_uses_mock` (A-40) it made dead, which
+come back with it. Outside the
+clause, and said so rather than pinned:
+* a misspelled value is still read as written, without a word: `provider: opnai` with an
+  endpoint routes to the REST adapter (as the manual says of any provider but `openai`,
+  `anthropic` and `mcp`), and a stdio MCP target, which has no endpoint, with `transport: stido`
+  or `provider: mpc` runs on the offline mock, where the `mcp` suite's spec scores PASS with exit
+  0 (measured here and on `2f6201a` alike): the outcome this clause closes for a key, left open
+  for a value;
+* the keys inside a block are its reader's: a key `capabilities` does not know was dropped on
+  `2f6201a` and is refused by A-50 since #78; `sampling_defaults` and `seeded_setup` already
+  refuse theirs;
+* `id` and `type` keep their own refusals, which quote what was written (A-45), and a file with
+  an unknown key and no `id` is refused on the key;
+* a key that only holds an anchor for a `<<` merge (`x-defaults: &d`, `.base: &b`) is a key like
+  any other and is refused, though such a file loaded on `2f6201a`; a map merged inline (`<<:
+  {...}`) still loads;
+* a key is printed as the location, as A-45 says of any key: one that is not text as pydantic
+  renders it (`on:` as `1`, `~:` as `None`, a `!!binary` key as `b'...'`, a number too long to
+  write out as `<unprintable int object>`), an empty key, or one holding a lone surrogate, as
+  `<root>`, its control and format characters written out since #51 (before, a line break in a key
+  split the one line, and the second could start with anything), and a credential pasted as a key
+  is masked only by the redactor's own rules;
+* unknown keys are listed on the one line as `validation_problems` lists any block's problems
+  since #76: the first 20, then `and N more`, each path cut at 300 characters (20,000 unknown keys
+  give a line of 790 bytes for a file named `t.yaml`, where before #76 they gave 788,937 bytes in
+  a 189 KB file);
+* a run halted before this change with such a key resumes once the key is deleted (it was never
+  read, so the target is the same: measured end to end, exit 0, still on the mock for a lost
+  endpoint) and is refused as another target once the key is corrected to the one meant; that
+  refusal's advice to restore the target as it was is followed by deleting the key, since the file
+  as written no longer loads.
+
+**A-49 A report finding that fails validation is refused on one line that names the report and gives
+each problem's place and reason, never the value (added 2026-10-07).** `diff.load_findings` handed
+each finding of a JSON run report to `Finding.model_validate` without catching its
+`ValidationError`. That error is a `ValueError`, so the handlers of `dottore diff` and `dottore
+calibrate` caught it (exit 3 was already right) and printed pydantic's own text: several lines
+(`error: 1 validation error for Finding`, the field, `input_value='maybe-later'` and a docs URL)
+that quoted the report's value and did not say which of the two files it was in, while the other
+loaders give one line through `shared/config_errors.validation_problems` (`scope file <path> failed
+validation: <field>: <reason>`, `fleet file <path> ...`, `policy pack <path> ...`, `target file
+<path> '<block>' ...`; pre-commit audit of A-45). The findings are still validated one at a time,
+and the first that fails raises a plain `ValueError`: `the report <absolute path> failed validation:
+findings.1.status: Input should be 'pass', 'fail' or 'inconclusive'`, with that finding's index (a
+bare list of findings is addressed as `findings` too) and its problems, the model's fields in the
+model's order and then the keys it does not have in the report's order, at most 20 and the rest
+counted, the spec loader's figure. A first version validated them all together to list every bad
+finding, and the pre-commit audit measured what that built: every error of every finding before 20
+were listed, 1,116 MiB against 135 MiB on a 12 MB report. Two tests hold it: one counts the
+validations, and one checks that loading 2,000 bad findings peaks no higher in `tracemalloc` than
+reading their JSON, which caught two checks of every finding by another route that got past the
+count (delta audit). A check by another route that keeps pydantic's exceptions without listing their
+errors is seen by neither (457 and 375 MiB on the same report, pre-merge audit); that gap is written
+here, not tested. The path is absolute with no colon after it, so the CLI keeps it readable, except
+where it cuts every message's path short (a path holding a space or one of `()[],;'"`, until #70)
+(`tests/cli/test_diff_report_validation.py`: 24 of its 31 tests fail on `de392e1`, 23 on the defect
+and the one that counts the validations because the helper it counts is not there; of the 7 that
+pass, 6 check that the redactor leaves each test value readable, so that the CLI tests can fail on
+any mask in the output and on any 8-character piece of a value, and the memory test passes because
+the base stops at the first bad finding too). Outside the clause, and said so rather than pinned:
+* the report's other refusals keep their form, among them: an object without `findings` prints
+  `error: 'findings'`, and a `summary` that is not an object and not empty or zero (a number, text,
+  a list, `true`) prints `error: '<type>' object has no attribute 'get'`, exit 3 and no file named,
+  while an empty or zero one (`0`, `""`, `[]`, `false`, `null`) reads as no summary; `<path>:
+  expected a JSON run report or a list of findings` has a colon after the path as typed; and the
+  refusals of a report with several targets or two findings for one spec, and of two reports about
+  different targets, quote the target ids and the spec id the reports hold; and a finding whose
+  `spec_id` is not a spec id (#51) is refused as `the report <absolute path> holds '<id>', which is
+  not a spec id; is this a run report?`, its control and format characters written out;
+* a key a finding does not know is part of the place and goes through the CLI's redactor with the
+  rest of the line: what the redactor recognises in it (an email, a known token format, a labelled
+  secret, a run of high enough entropy) is masked, while a key of hex digits often is not, and the
+  mask can take the `findings.0.` before it or the `: ` after it, while a short password-like key
+  (`hunter2`) prints as written; it is printed as pydantic renders it, its control and format
+  characters written out since #51 (before, a key holding a line break split the line), and cut
+  past 300 characters since #76 (before, a key of 1 MiB printed 1 MiB);
+* the finding that fails still builds all of its own errors before 20 are listed, as on the base
+  (one finding with a million keys it does not have peaks over 1 GiB on both, by an amount that
+  varies from run to run, and the base also printed 195 MB of error text);
+* the wrapper that gives the index costs CPU on a valid report: 1.07 s against 1.00 s to load
+  100,000 findings (best of 3), with the same peak memory;
+* what pydantic can read is taken as read: `confirmed: "yes"` is true and `risk.impact: "2"` is 2;
+* the labels file `calibrate` reads is not a report and keeps its own refusals.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -573,6 +758,14 @@ Outside the clause, and said so rather than pinned:
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
+- **OD-23** (shared with u09, 2026-10-07): what `run -sV` / `-A` and `dottore fingerprint` do
+  when one probe's reply comes back refused. Built reversibly as option A: the probe fails, a
+  `warning:` line on stderr names it (never silenced by `-q`), the fingerprint line ends
+  `[N of 17 probes got no usable reply]`, the run goes on and its exit is the attack's
+  (`dottore fingerprint` exits 0 with the flag in its JSON, or 3 with an `error:` line when
+  every probe was refused); before, exit 3 before any attack. A probe that gets no answer at
+  all still exits 3 with its cause. Options, and why isolating every environment failure was
+  withdrawn: u09 §9 and `00-INDEX.md`.
 - **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
   file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
   as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in
@@ -586,6 +779,20 @@ Outside the clause, and said so rather than pinned:
   `load_target` and `read_target_file` since #77), `dict[str, bool]` in `FleetTarget` and
   `**entry.capabilities` in `_target_doc` (dropping the `Capabilities` import in `cli/fleet.py`),
   and `tests/cli/test_target_capabilities_strict.py` removed.
+- **OD-31** (decided 2026-10-08 by the owner: refuse both, as built; A-53): whether a target file's
+  top level refuses a key no reader reads and a `name`, `provider`, `endpoint`, `model`, `auth_ref`
+  or `transport` that is not text, or keeps dropping them. Built: both refused before anything is
+  sent, by every reader of the file. Alternatives: keep the silence (main until A-53: `endpont:`
+  runs a live target on the offline mock and scores its replies); warn and go on (the warning goes
+  where the run's output goes, and a CI log nobody reads runs on the mock just the same); refuse
+  only the text fields that are not text and warn on an unknown key (an unknown key costs the same
+  as a lost endpoint when it is the endpoint); accept a key that only holds an anchor under a prefix
+  (`x-`, as Compose does). A file that loads on main and is refused now holds a key outside
+  `Target`'s fields and `mock_scenario` (an anchor holder included), or one of those six fields as
+  anything but text (a number, a boolean, a date, a list, a map, a set or bytes); no file of the
+  repository does. Reversal: the `_TargetFileTopLevel` check in `_read_target_yaml`, the six
+  `isinstance(..., str) else None` reads in `load_target` and the `_lowered` reads in
+  `target_uses_mock`.
 - **OD-32** how far `--runs` may go (2026-10-07). **Decided 2026-10-08 by the owner: the runner
   counts what is stored instead of building the plan (A-59, u08), and `--runs` keeps its `2**53`
   bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The

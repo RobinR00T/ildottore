@@ -518,3 +518,43 @@ def test_fingerprint_finishes_on_a_reply_with_a_lone_surrogate(tmp_path: Path, p
     _ended(result, 0)
     assert requests
     _well_formed(result.stdout.encode("utf-8"))
+
+
+#: A credential the run registers from the identity's ``auth_ref``: 18 characters no shape rule
+#: matches, and its two halves.
+_KEY = "Zq7vR2mK9pL4xW8nT3"
+_KEY_HEAD, _KEY_TAIL = _KEY[:9], _KEY[9:]
+
+
+@pytest.mark.usefixtures("no_known_secrets")
+@pytest.mark.parametrize("split", ["escape", "raw-bytes", "literal"])
+def test_a_registered_credential_split_by_half_a_character_is_masked_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, split: str
+) -> None:
+    """Half a character reaches the redactor as U+FFFD, which the match by value drops as it
+    drops a zero-width space (u01 A-32): neither half of the credential is readable in the
+    report, the evidence, the run store or the output. With U+FFFD not one of its splitters,
+    both halves were (the merge of PR #57 with PR #79). A U+FFFD the target writes itself splits
+    the credential the same way."""
+
+    monkeypatch.setenv("ILDOTTORE_SPLIT_KEY", _KEY)
+    said = f"{_REFUSAL} {_KEY_HEAD}@{_KEY_TAIL}"
+    body = {
+        "escape": _reply(text=_text(said.replace("@", _HIGH))),
+        "raw-bytes": _raw(said, _RAW_HIGH),
+        "literal": _reply(text=_text(said.replace("@", _BS + "ufffd"))),
+    }[split]
+    with _serving(_serve(body), []) as port:
+        args = _run(tmp_path, port, _SPECS)
+        scope, target = tmp_path / "scope.yaml", tmp_path / "target.yaml"
+        scope.write_text(scope.read_text().replace("env://NONE", "env://ILDOTTORE_SPLIT_KEY"))
+        target.write_text(target.read_text() + 'auth_ref: "env://ILDOTTORE_SPLIT_KEY"\n')
+        result = CliRunner().invoke(app, args)
+
+    _ended(result, 0)
+    report = (tmp_path / "r.json").read_text(encoding="utf-8")
+    evidence = json.dumps(_evidence(tmp_path), ensure_ascii=False)
+    stored = (tmp_path / "runs.sqlite").read_bytes().decode("latin-1")
+    for kept in (report, evidence, stored, result.output):
+        assert _KEY_HEAD not in kept and _KEY_TAIL not in kept
+    assert "REDACTED:credential:" in report

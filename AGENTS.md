@@ -128,6 +128,10 @@ Full method: `docs/00-ai-build-playbook.md`.
   dormant for months because the runner never populated `EvalContext.identities`. When an
   evaluator needs cross-attempt or cross-identity context, wire the execution that feeds it (or
   mark it explicitly latent in `docs/12`), do not ship the evaluator alone and call it done.
+  It happened again (2026-10-07): `EMB-XTENANT-RETRIEVAL-001` declared `authz_leak` without
+  requiring `multi_identity`, the sweep keyed on the requirement, and the golden harness, which
+  drives only `evaluators[0]`, could not see it. Key the execution on the evaluator a spec
+  declares, not on a field the author may leave out.
 - **New adapters/transports keep the charter.** MCP discovery is read-only (never `tools/call`);
   stdio spawns only a scope-authorized exact command; both are allowlist-gated. Do not add a
   capability (real tool invocation, arbitrary subprocess) that breaks safe-by-design/§2.
@@ -154,6 +158,14 @@ Full method: `docs/00-ai-build-playbook.md`.
     not hand-run a subset.
   - Individually: `ruff check . && ruff format --check . && mypy src` · `pytest -q` (coverage
     gate ≥85% core) · `dottore lint specs/` · `lint-imports` · `python -m tests.selfscan.run`
+  - **In a git worktree,** reuse the main checkout's venv (`ln -s <main checkout>/.venv .venv`)
+    and run the wall as `PYTHONPATH=<worktree>/src make gates`. The venv's editable install
+    points at the main checkout's `src`: without `PYTHONPATH`, the steps that import the package
+    (import-linter, spec lint, the tests, the self-scan) run main's code and the coverage gate
+    reads 0%; ruff, mypy and bandit read the worktree's files by path either way. Never run
+    `make venv` or `make install` in a worktree: the venv is shared, and a reinstall there would
+    repoint its editable install at that worktree's `src`. `.gitignore` ignores the link
+    (`.venv`, no trailing slash: git sees a symlink as a file).
 - **Tests taxonomy:** `docs/07` (schema, unit, property/Hypothesis, adapter cassettes,
   golden-target detection accuracy, evaluator P/R, judge robustness, determinism replay,
   reporting/SARIF, E2E, boundaries, safety-negative, metamorphic).

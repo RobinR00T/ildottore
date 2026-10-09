@@ -21,6 +21,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ValidationError
+
+from ildottore.shared.config_errors import validation_problems
 from ildottore.shared.digits import described
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import SPEC_ID_PATTERN, Finding
@@ -138,6 +141,29 @@ def incomplete_reason(path: Path) -> str | None:
 _SPEC_ID = re.compile(SPEC_ID_PATTERN)
 
 
+class _LocatedFinding(BaseModel):
+    """One finding keyed by its index in the report, so an error reads ``findings.<index>...``."""
+
+    findings: dict[int, Finding]
+
+
+def _validate_finding(path: Path, index: int, raw: object) -> Finding:
+    """The report's finding at ``index``, or a one-line refusal that never quotes its value.
+
+    pydantic's own text spread over several lines, quoted the report's value and did not say which
+    of the two files it was in (A-49). One finding at a time, as before, stopping at the first that
+    fails: validating them all together built every error of every finding to list 20 (1,116 MiB
+    against 135 MiB on a 12 MB report, pre-commit audit). The path is written as `_read_report`
+    writes it: absolute, with no colon after it.
+    """
+
+    try:
+        return _LocatedFinding.model_validate({"findings": {index: raw}}).findings[index]
+    except ValidationError as exc:
+        problems = validation_problems(exc, limit=20)  # the spec loader's figure
+        raise ValueError(f"the report {path.absolute()} failed validation: {problems}") from exc
+
+
 def load_findings(path: Path) -> dict[str, Finding]:
     """Load a JSON run report and index its findings by spec id, for ONE target.
 
@@ -155,7 +181,7 @@ def load_findings(path: Path) -> dict[str, Finding]:
     raw_findings = data["findings"] if isinstance(data, dict) else data
     if not isinstance(raw_findings, list):
         raise ValueError(f"{path}: expected a JSON run report or a list of findings")
-    findings = [Finding.model_validate(raw) for raw in raw_findings]
+    findings = [_validate_finding(path, index, raw) for index, raw in enumerate(raw_findings)]
     # Every row of `dottore diff` starts with a spec id, so a report holding `::error ...` there
     # printed a line a CI runner reads as a workflow command, control characters or not
     # (pre-commit audit of the control-characters block). A report this tool wrote holds spec

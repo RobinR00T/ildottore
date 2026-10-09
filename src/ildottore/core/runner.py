@@ -71,6 +71,7 @@ from ildottore.core.setup_delivery import (
 from ildottore.shared.enums import (
     MIN_VARIANT_ATTEMPTS,
     SETUP_NOT_REACHED,
+    EvaluatorType,
     InconclusiveReason,
     VerdictStatus,
 )
@@ -115,6 +116,8 @@ __all__ = [
     "TestPlanBuilder",
     "answered_attempt_ids",
     "resume_progress",
+    "sweeps_identities",
+    "unjudged_attempt_ids",
 ]
 
 _BLOCKED = "blocked_by_policy"
@@ -524,6 +527,7 @@ class CampaignRunner:
                         completed=completed,
                         prior=prior_by_spec.get(spec.id),
                         seeding=(seeding or {}).get(spec.id),
+                        abort=abort,
                     )
                 except BudgetExhausted:
                     raise
@@ -535,13 +539,15 @@ class CampaignRunner:
         for outcome in results:
             if isinstance(outcome, BudgetExhausted):
                 if breach is None:  # first breach wins; they all name the same ceiling
+                    # Figures from `figures`, not formatted here: written bare, the one that
+                    # stopped the run read as a phone number and every surface masked it.
                     breach = (
-                        f"budget ceiling reached on {outcome.axis!r} "
-                        f"(limit {outcome.limit}, attempted {outcome.attempted})"
+                        f"budget ceiling reached on {outcome.axis!r} ({outcome.figures})"
+                        + _notes(outcome)
                     )
             elif isinstance(outcome, Exception):
                 if error is None:
-                    error = f"aborted on {type(outcome).__name__}: {outcome}"
+                    error = f"aborted on {type(outcome).__name__}: {outcome}" + _notes(outcome)
             elif isinstance(outcome, BaseException):
                 raise outcome  # KeyboardInterrupt / cancellation are not campaign outcomes
             elif outcome is not None:
@@ -560,8 +566,9 @@ class CampaignRunner:
                 if prior is None or spec.id in reported:
                     continue
                 mutators = mutators_by_spec.get(spec.id, ["identity"])
-                done = {a.attempt_id for a in prior.attempts}
-                if self._holds_plan(done, spec.id, mutators):
+                # Judged, not merely stored: a reply the ceiling stored without a verdict
+                # would be scored as if it had never been sent.
+                if self._holds_plan(_settled_attempt_ids(prior.attempts), spec.id, mutators):
                     findings.append(self._prior_finding(spec, target, prior))
                     reported.add(spec.id)
         if error is not None:
@@ -598,11 +605,11 @@ class CampaignRunner:
         critical turned into an unscored inconclusive (delta audit of B).
         """
 
+        if self._holds_plan(_settled_attempt_ids(prior.attempts), spec.id, mutators):
+            return self._prior_finding(spec, target, prior)
         done = {a.attempt_id for a in prior.attempts}
         sent = planned_attempts_held(done, spec.id, mutators, self._n)
         planned = len(set(mutators)) * max(self._n, 0)  # a negative n plans nothing, as before
-        if sent == planned:
-            return self._prior_finding(spec, target, prior)
         return Finding(
             spec_id=spec.id,
             target_id=target.id,
@@ -641,12 +648,17 @@ class CampaignRunner:
         completed: set[str],
         prior: Finding | None = None,
         seeding: str | None = None,
+        abort: asyncio.Event | None = None,
     ) -> Finding | None:
         """Policy-gate then mutate → reproduce → evaluate → score → persist one spec.
 
         On resume, ``prior`` is this spec's finding from the partial run: its already-persisted
         attempts/verdicts/evidence seed the lists so the re-scored finding covers the FULL run
         (fresh + prior), never just the not-yet-completed remainder (audit M11).
+
+        ``abort`` is the campaign's stop signal, set here the moment a batch raises a product
+        error, before its answered attempts are evaluated: evaluating them (the judge can be
+        slow) used to let another spec start in the meantime (pre-commit audit).
         """
 
         endpoint = self._endpoint_for(target, spec)
@@ -715,13 +727,13 @@ class CampaignRunner:
 
         # Seed from the prior partial run so completed attempts are merged, not lost.
         attempts: list[Attempt] = list(prior.attempts) if prior is not None else []
-        verdicts: list[Verdict] = [a.verdict for a in attempts if a.verdict is not None]
         evidence_refs: list[EvidenceRef] = list(prior.evidence) if prior is not None else []
         try:
-            # Multi-identity specs (authz_leak, audit M14): send the attack once as each authorized
-            # identity and collect {identity_id: response} + the canary -> owner map, so authz_leak
-            # can flag a tenant-scoped canary reaching a non-owner identity. Empty for a single-
-            # identity target, so authz_leak stays honestly capability_unavailable there.
+            # Multi-identity specs and the ones that declare authz_leak (audit M14,
+            # ``sweeps_identities``): send the attack once as each authorized identity and
+            # collect {identity_id: response} + the canary -> owner map, so authz_leak can flag a
+            # tenant-scoped canary reaching a non-owner identity. None when nothing was swept (a
+            # single-identity target, say), so authz_leak stays honestly capability_unavailable.
             identities_map, canary_owners = await self._gather_identities(
                 target,
                 spec,
@@ -732,28 +744,68 @@ class CampaignRunner:
                 completed=completed,
             )
             for mutation in mutators:
-                # An in-band scene runs as a conversation (the tool rounds are its sends), except
-                # with media, whose turn the history cannot carry yet: one round, tools attached.
-                if multi_turn or (scene is not None and not spec.attack.media):
-                    results = await self._reproduce_multi_turn(
-                        spec, adapter, mutation, ledger, completed, scene=scene
-                    )
-                else:
-                    results = await self._reproduce_single_turn(
-                        spec, adapter, mutation, base_prompt, ledger, completed, scene=scene
-                    )
-                for result in results:
+                # Filled as each attempt completes, so a halt in the middle of the batch (a
+                # ceiling, a product error) leaves the attempts it had answered in hand. They
+                # used to go down with the exception, unstored: the spend recorded them, the
+                # evidence did not, and the resume sent them again and paid for them twice.
+                batch: list[AttemptResult] = []
+                halt: Exception | None = None
+                try:
+                    # An in-band scene runs as a conversation (the tool rounds are its sends),
+                    # except with media, whose turn the history cannot carry yet: one round,
+                    # tools attached.
+                    if multi_turn or (scene is not None and not spec.attack.media):
+                        await self._reproduce_multi_turn(
+                            spec, adapter, mutation, ledger, completed, scene=scene, into=batch
+                        )
+                    else:
+                        await self._reproduce_single_turn(
+                            spec,
+                            adapter,
+                            mutation,
+                            base_prompt,
+                            ledger,
+                            completed,
+                            scene=scene,
+                            into=batch,
+                        )
+                except Exception as exc:
+                    halt = exc
+                    if abort is not None and not isinstance(exc, (BudgetExhausted, MediaError)):
+                        abort.set()  # no new spec starts while these attempts are judged
+                for result in batch:
                     attempt = (
                         _tagged_seeded(result.attempt, seeded_tools) if seeded else result.attempt
                     )
-                    verdict = await self._evaluate(
-                        spec,
-                        attempt,
-                        env_error=result.env_error,
-                        identities=identities_map,
-                        canary_owners=canary_owners,
-                        target=target,
-                    )
+                    verdict: Verdict | None = None
+                    try:
+                        verdict = await self._evaluate(
+                            spec,
+                            attempt,
+                            env_error=result.env_error,
+                            identities=identities_map,
+                            canary_owners=canary_owners,
+                            target=target,
+                        )
+                    except Exception as exc:
+                        # The ceiling that stopped the batch refuses the judge's request too.
+                        # The reply is stored without a verdict, which a resume does not count
+                        # as answered (``_completed_attempt_ids``): it sends it again and judges
+                        # it, rather than publishing a verdict the judge never gave. The first
+                        # halt is the reason; an evaluator's own error is not swallowed by it
+                        # (pre-commit audit), it travels as a note the reason quotes.
+                        if halt is None:
+                            halt = exc
+                        elif not isinstance(exc, BudgetExhausted):
+                            error = f"{type(exc).__name__}: {exc}"
+                            note = f"evaluating a stored reply also raised {error}"
+                            # Once, not once per reply of the batch, nor when it is the halt.
+                            if error != f"{type(halt).__name__}: {halt}" and note not in getattr(
+                                halt, "__notes__", []
+                            ):
+                                halt.add_note(note)
+                        if abort is not None and not isinstance(exc, BudgetExhausted):
+                            abort.set()
                     stored = attempt.model_copy(update={"verdict": verdict})
                     ref = self._evidence.put(run_id, stored)
                     # A re-send that failed byte-identically lands on the artifact the prior
@@ -761,7 +813,8 @@ class CampaignRunner:
                     if all(ref.sha256 != known.sha256 for known in evidence_refs):
                         evidence_refs.append(ref)
                     attempts.append(stored)
-                    verdicts.append(verdict)
+                if halt is not None:
+                    raise halt
         except MediaError as exc:
             # A malformed multimodal carrier is an authoring defect (the linter rejects it), but if
             # one reaches here it must fail THIS spec as inconclusive, never abort the campaign
@@ -786,6 +839,7 @@ class CampaignRunner:
         completed: set[str],
         *,
         scene: InBandSetup | None = None,
+        into: list[AttemptResult] | None = None,
     ) -> list[AttemptResult]:
         """Reproduce one (spec, mutation) as N single-turn sends (the classic path)."""
 
@@ -806,6 +860,7 @@ class CampaignRunner:
             now=self._now,
             completed=completed,
             pacer=self._pacer,
+            into=into,
         )
 
     async def _reproduce_multi_turn(
@@ -817,6 +872,7 @@ class CampaignRunner:
         completed: set[str],
         *,
         scene: InBandSetup | None = None,
+        into: list[AttemptResult] | None = None,
     ) -> list[AttemptResult]:
         """Reproduce one (spec, mutation) as N pinned multi-turn conversations (u08).
 
@@ -859,6 +915,7 @@ class CampaignRunner:
             completed=completed,
             pacer=self._pacer,
             setup=scene,
+            into=into,
         )
 
     # --- multi-identity (authz_leak, audit M14) ------------------------------
@@ -890,10 +947,14 @@ class CampaignRunner:
     ) -> tuple[dict[str, ModelResponse] | None, dict[str, str]]:
         """Send the attack as each authorized identity; collect responses + owner map.
 
-        Returns ``(identities, canary_owners)`` for a multi_identity spec when the injected
-        provider yields >=2 identities, else ``(None, {})`` so authz_leak stays honestly
-        capability_unavailable. Each identity sends with its own credential; a per-identity
-        send failure drops that identity rather than sinking the whole spec.
+        Returns ``(identities, canary_owners)`` when a sweep was made: for a spec that
+        :func:`sweeps_identities`, when the injected provider yields >=2 identities. Each
+        identity sends with its own credential; a per-identity send failure drops that identity
+        rather than sinking the whole spec, and the answers are returned even when fewer than
+        two came back, so authz_leak stays capability_unavailable and the combiner keeps it
+        (it used to return ``(None, {})`` as if nothing had been swept, the check was set aside,
+        and a leak tenant A's reply showed passed when tenant B's send failed: pre-commit audit
+        of the sweep for ``EMB-XTENANT-RETRIEVAL-001``). ``(None, {})`` means no sweep.
 
         Each send is paced AND debited: the sweep took no ledger, so ten identities went out
         under a ceiling of two and the run reported ``complete`` (audit 2026-10-03, F-7). And
@@ -901,7 +962,7 @@ class CampaignRunner:
         to evaluate, so the sweep is skipped instead of being re-sent (F6).
         """
 
-        if self._identity_adapters is None or not _is_multi_identity(spec):
+        if self._identity_adapters is None or not sweeps_identities(spec, target):
             return None, {}
         if mutators and self._n >= 1 and self._holds_plan(completed, spec.id, mutators):
             return None, {}
@@ -912,8 +973,7 @@ class CampaignRunner:
         identities: dict[str, ModelResponse] = {}
         owners: dict[str, str] = {}
         for probe in probes:
-            scene = in_band_setup(spec) if delivers_in_band(spec, target) else None
-            request = _build_request(spec, base_prompt, scene=scene).model_copy(
+            request = _build_request(spec, base_prompt).model_copy(
                 update={"identity": probe.identity_id}
             )
             try:
@@ -932,8 +992,6 @@ class CampaignRunner:
             identities[probe.identity_id] = response
             if probe.canary:
                 owners[probe.canary.replace("{{run_id}}", run_id)] = probe.identity_id
-        if len(identities) < 2:
-            return None, {}
         return identities, owners
 
     # --- evaluation ----------------------------------------------------------
@@ -979,7 +1037,7 @@ class CampaignRunner:
         per_evaluator = await self._run_evaluators(
             spec, attempt.request, response, identities, canary_owners, granted_tools=granted
         )
-        combined = _combine_verdicts(per_evaluator, spec)
+        combined = _combine_verdicts(per_evaluator, spec, swept=identities is not None)
         # Only a verdict that is not a fail is in doubt: a reply that leaks without the tool
         # was called still leaked (a deterministic fail always decides, OD-19; the first
         # version ran this before the evaluators and hid a printed canary, delta audit).
@@ -1002,7 +1060,7 @@ class CampaignRunner:
                 ),
                 evaluator_type="aggregate",
             )
-        return combined
+        return _note_not_consulted(combined, per_evaluator)
 
     async def _run_evaluators(
         self,
@@ -1019,10 +1077,20 @@ class CampaignRunner:
         A configured evaluator type absent from the registry yields an
         ``inconclusive`` verdict for that entry (never a silent skip - the linter
         catches unknown types at load; at run time we surface it as inconclusive).
+
+        An evaluator whose request a ceiling refuses (the judge, metered on the campaign's
+        ledger) is recorded as not consulted and the others still run: a deterministic fail
+        decides without it (OD-19), so it is returned and stored. It used to go down with the
+        halt, and the resume's re-send of a reply that had leaked was scored instead (pre-commit
+        audit). The refusal is not raised then: if anything is left to send, its debit is refused
+        the same way; if nothing is, the campaign is complete, every verdict being decided, and
+        the aggregate's reasoning says the judge was not consulted. Without a deterministic fail
+        the refusal is raised, and the reply is stored unjudged.
         """
 
         canaries = list(spec.setup.canaries or []) if spec.setup is not None else []
         verdicts: list[Verdict] = []
+        refused: BudgetExhausted | None = None
         for config in spec.evaluators:
             type_name = config.type.value
             if not self._evaluators.has(type_name):
@@ -1051,7 +1119,24 @@ class CampaignRunner:
                 canary_owners=canary_owners or {},
                 granted_tools=list(granted_tools or []),
             )
-            verdicts.append(await evaluator.evaluate(ctx))
+            try:
+                verdicts.append(await evaluator.evaluate(ctx))
+            except BudgetExhausted as exc:
+                refused = refused or exc
+                verdicts.append(
+                    Verdict(
+                        status=VerdictStatus.INCONCLUSIVE,
+                        confidence=0.0,
+                        reasoning=f"{_NOT_CONSULTED}{exc}",
+                        evaluator_type=type_name,
+                        inconclusive_reason=InconclusiveReason.CAPABILITY_UNAVAILABLE,
+                    )
+                )
+        if refused is not None and not any(
+            v.status is VerdictStatus.FAIL and v.evaluator_type != "semantic_judge"
+            for v in verdicts
+        ):
+            raise refused
         return verdicts
 
     # --- scoring + finding assembly -----------------------------------------
@@ -1234,6 +1319,46 @@ def _is_multi_identity(spec: AttackSpec) -> bool:
     return any(str(getattr(r, "value", r)) == "multi_identity" for r in (spec.requires or []))
 
 
+def _declares_authz_leak(spec: AttackSpec) -> bool:
+    return any(e.type is EvaluatorType.AUTHZ_LEAK for e in spec.evaluators)
+
+
+def sweeps_identities(spec: AttackSpec, target: Target) -> bool:
+    """True when the attack is also sent once as each scope identity of ``target``.
+
+    A spec that requires ``multi_identity`` is. A spec that only declares ``authz_leak``
+    (``EMB-XTENANT-RETRIEVAL-001`` requires ``rag`` and nothing else) is when the target
+    declares ``multi_identity``: the sweep used to ask for the requirement alone, so that
+    spec's ``authz_leak`` never had two identities to compare, even on a target that offered
+    them. Never when the spec's scene goes in-band (OD-18 A): every identity would carry the
+    same scene, another tenant's document included, and a model echoing it read as "A received
+    B-only data" from context the scanner put there itself (pre-commit audit). The sweep still
+    needs two identities in the scope; with fewer it sends nothing. The CLI prices these sends
+    from the same question.
+    """
+
+    if delivers_in_band(spec, target):
+        return False
+    return _is_multi_identity(spec) or (
+        target.capabilities.multi_identity and _declares_authz_leak(spec)
+    )
+
+
+def _uncompared_authz_leak(verdict: Verdict, spec: AttackSpec) -> bool:
+    """``authz_leak`` with fewer than two identities, on a spec that does not require them.
+
+    There it corroborates the spec's own checks, so with no sweep behind it its absence cannot
+    decide: kept, it held ``EMB-XTENANT-RETRIEVAL-001`` inconclusive on every single-identity
+    target unless a deterministic check failed, a secure reply included.
+    """
+
+    return (
+        verdict.evaluator_type == EvaluatorType.AUTHZ_LEAK.value
+        and verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+        and not _is_multi_identity(spec)
+    )
+
+
 def _base_prompt(spec: AttackSpec) -> str:
     """The base carrier text to mutate (user_prompt | carrier | first turn)."""
 
@@ -1361,7 +1486,32 @@ def _build_request(
     )
 
 
-def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec) -> Verdict:
+def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec, *, swept: bool = False) -> Verdict:
+    """Combine per-evaluator verdicts, an ``authz_leak`` with nothing to compare set aside first.
+
+    An ``authz_leak`` that had fewer than two identities (:func:`_uncompared_authz_leak`) on a
+    spec that does not require ``multi_identity`` only corroborates. With no identity sweep
+    behind it (``swept`` false: a target without ``multi_identity``, a scope with one
+    identity, the offline mock, an in-band scene) it is left out, so the spec's other checks
+    decide. After a sweep that got fewer than two answers it is kept: the identity that did
+    answer may have shown a leak. Either way the verdict says which. Alone, it stays.
+    """
+
+    uncompared = [v for v in verdicts if _uncompared_authz_leak(v, spec)]
+    if not uncompared or len(uncompared) == len(verdicts):
+        return _combine_decisive(verdicts, spec)
+    if swept:
+        combined = _combine_decisive(verdicts, spec)
+        note = "authz_leak kept: fewer than two identities answered the identity sweep"
+    else:
+        combined = _combine_decisive(
+            [v for v in verdicts if not _uncompared_authz_leak(v, spec)], spec
+        )
+        note = "authz_leak set aside: no identity sweep ran"
+    return combined.model_copy(update={"reasoning": f"{combined.reasoning}; {note}"})
+
+
+def _combine_decisive(verdicts: list[Verdict], spec: AttackSpec) -> Verdict:
     """Combine per-evaluator verdicts by one fixed, role-aware rule.
 
     ``spec.evaluator_logic`` is NOT read: a deterministic fail decides, else an inconclusive,
@@ -1444,6 +1594,30 @@ def _combine_verdicts(verdicts: list[Verdict], spec: AttackSpec) -> Verdict:
         matched=_union_matched(verdicts),
         evaluator_type="aggregate",
     )
+
+
+#: Reasoning prefix of an evaluator a ceiling refused (``_run_evaluators``).
+_NOT_CONSULTED = "not consulted: "
+
+
+def _note_not_consulted(combined: Verdict, verdicts: list[Verdict]) -> Verdict:
+    """The aggregate, saying which evaluator a ceiling kept from being consulted.
+
+    Only the aggregate is stored, so a judge the ceiling refused next to a deterministic fail
+    left no trace in the evidence (delta audit): the verdict was right and silent about it.
+    """
+
+    skipped = [v for v in verdicts if v.reasoning.startswith(_NOT_CONSULTED)]
+    if not skipped:
+        return combined
+    note = f"{skipped[0].evaluator_type} {skipped[0].reasoning}"
+    return combined.model_copy(update={"reasoning": f"{combined.reasoning}; {note}"})
+
+
+def _notes(exc: BaseException) -> str:
+    """What else went wrong while a halt was being handled, for the halt's reason."""
+
+    return "".join(f"; {note}" for note in getattr(exc, "__notes__", []))
 
 
 def _base(mutation: str) -> str:
@@ -1569,6 +1743,11 @@ def _completed_attempt_ids(run: TestRun | None) -> set[str]:
     count, so a run that halted after a network outage could never be finished with fresh
     answers; resuming only re-scored the inconclusives. Every error an attempt records is an
     environment error: a product error propagates.
+
+    Nor is a reply stored without a verdict: the ceiling that stopped its batch also refused the
+    judge's request, so it was never judged. Kept, it would be scored as nothing; sent again, it
+    is judged like the others (the request it costs is on the ledger). Every artifact written
+    before this rule carries a verdict, so it changes nothing for them.
     """
 
     if run is None:
@@ -1576,9 +1755,12 @@ def _completed_attempt_ids(run: TestRun | None) -> set[str]:
     ids: set[str] = set()
     for finding in run.findings:
         for attempt in finding.attempts:
+            if attempt.response is not None:
+                if attempt.verdict is not None:
+                    ids.add(attempt.attempt_id)
             # An error that would repeat identically (a reply over the size cap) is kept too:
             # re-sending it on every resume spends a request for the same refusal.
-            if attempt.response is not None or (attempt.error or "").endswith(NOT_RETRYABLE_MARK):
+            elif (attempt.error or "").endswith(NOT_RETRYABLE_MARK):
                 ids.add(attempt.attempt_id)
     return ids
 
@@ -1599,6 +1781,24 @@ def resume_progress(run: TestRun | None) -> tuple[int, int]:
     return (len(answered), len(seen - answered))
 
 
+def unjudged_attempt_ids(run: TestRun | None) -> set[str]:
+    """Ids a resume sends again because their reply was stored without a verdict.
+
+    Part of ``resume_progress``'s ``to_resend``, named apart so the resume can say why: these
+    did not end in an environment error, the ceiling stopped their evaluation.
+    """
+
+    if run is None:
+        return set()
+    answered = _completed_attempt_ids(run)
+    return {
+        a.attempt_id
+        for finding in run.findings
+        for a in finding.attempts
+        if a.response is not None and a.verdict is None and a.attempt_id not in answered
+    }
+
+
 def _unique_refs(refs: list[EvidenceRef]) -> list[EvidenceRef]:
     """Evidence references with each artifact once (by digest), in order."""
 
@@ -1612,16 +1812,39 @@ def _unique_refs(refs: list[EvidenceRef]) -> list[EvidenceRef]:
 
 
 def _one_per_attempt_id(attempts: list[Attempt]) -> list[Attempt]:
-    """One attempt per id, the answered one when an id has several (a re-sent attempt).
+    """One attempt per id, the answered and judged one when an id has several (a re-send).
 
     A resume re-sends an attempt that ended in an environment error under the same id, so the
     finding can hold the failed try and its re-send. Both artifacts stay cited as evidence;
-    only one is the attempt that is scored, as in ``replay`` (``ReplayResult.n``).
+    only one is the attempt that is scored, as in ``replay`` (``ReplayResult.n``). A reply
+    stored without a verdict (its evaluation stopped by a ceiling) is sent again too, and the
+    re-send is the one scored, judged or ended in an environment error; the first answer stays
+    cited.
     """
 
     kept: dict[str, Attempt] = {}
     for attempt in attempts:
         current = kept.get(attempt.attempt_id)
-        if current is None or (current.response is None and attempt.response is not None):
+        if current is None or _answer_rank(attempt) > _answer_rank(current):
             kept[attempt.attempt_id] = attempt
     return list(kept.values())
+
+
+def _answer_rank(attempt: Attempt) -> tuple[bool, bool, bool]:
+    """Which artifact of one attempt id is the attempt: answered and judged, then judged.
+
+    A verdict outranks a bare reply: when the re-send of a reply stored without a verdict ends
+    in an environment error, the error's inconclusive is the attempt. Ranking the reply first
+    scored the spec without that attempt at all, and a resume published a PASS from the one
+    verdict left (pre-commit audit). An unjudged reply is the attempt only when nothing else is.
+    """
+
+    answered = attempt.response is not None
+    judged = attempt.verdict is not None
+    return (answered and judged, judged, answered)
+
+
+def _settled_attempt_ids(attempts: Sequence[Attempt]) -> set[str]:
+    """Ids with a stored verdict: a prior spec is finished only when every planned id is one."""
+
+    return {a.attempt_id for a in attempts if a.verdict is not None}

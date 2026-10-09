@@ -7,10 +7,9 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 - The owner decided on 2026-10-07 (in the session that built it) that format characters (Unicode
   Cf: zero-width characters, the soft hyphen, bidi controls, the byte order mark, tag characters)
-  are written out on the terminal too, in PR #51: `visible_controls` writes them as Python escapes
-  and `mask_split_credentials` ignores them. The reports keep such a credential readable until a
-  separate change masks it in `redact_text` itself; the second of the two to merge drops
-  `mask_split_credentials`.
+  are written out on the terminal too, in PR #51: `visible_controls` writes them as Python escapes.
+  This branch's terminal-only match of a split credential (`mask_split_credentials`) was dropped
+  when it was stacked on PR #57, which masks such a credential in `redact_text` itself (A-32).
 - The pre-merge audit of PR #51 found no blocker. Its follow-ups, and those of the delta audit
   after them, are fixed here: the "no --judge" warning wrote the operator's target id raw (and is
   on one line now); `--compare` read a target id as markup (`[/]` raised `MarkupError` and no
@@ -30,9 +29,378 @@ The carryover ledger. Every agent session updates this so context survives even 
   written-out id, bounds its line at 5,000 characters and looks for a whole `repr` with its quote
   (u01 A-51 and A-57 say so). `make gates`: 3,571 tests (229 from this PR), coverage 97.12%.
 
+## State, 2026-10-09: a registered credential split by characters that do not show (PR #57, begun 2026-10-07)
+
+- On `fix/redactor-split-credentials` (`tests/test_redactor_split_credentials.py`): the redactor
+  masks a registered credential split by control characters or by format characters (Unicode
+  Cf) whole, with the unsplit digest, in `redact_text` itself, so the reports, the evidence
+  store, the run store and the terminal no longer keep it in two readable halves (found by the
+  audit of PR #51, on main). In a text holding such a character the whole match by value runs
+  on the text with them dropped, and overlapping credentials are masked as one; text without one
+  is redacted byte for byte as on main unless a registered credential holds one (differential
+  fuzz: 0 differences in 2,079,091 texts). A
+  lone surrogate no longer crashes `_digest` (the same line as PR #51). The owner decided on
+  2026-10-07 that the terminal writes the format characters out too: that goes to PR #51, where
+  `visible_controls` lives. The pre-commit audit found one regression of mine (a short credential
+  with invisible characters inside was no longer masked as written) and seven low items (a value
+  padded with spaces masking prose, a digest that followed the hash seed, a periodic credential
+  costing a search per character, a registered `\x00` breaking a stash token, on main, tests that
+  could not fail, doc claims), all fixed. The delta audit found that my first fix let a short
+  credential break a longer one (up to 7 characters readable), and the pre-merge audit that the
+  second left up to 6 of a short one readable; short and long matches are masked as one union now,
+  every occurrence of a short one included (its delta audit: one overlapping itself lost its second
+  occurrence under a longer match).
+  Filed apart, on main: the JSON report keeps a dict key a target wrote raw, and a lone surrogate
+  in a reply aborts the campaign in the evidence store (fixed since by PR #79, A-47). `make gates`
+  on the branch, before the merge below: 2,380 tests (78 new), coverage 96.44%.
+- Merged with main at `6401ee2` (2026-10-09). U+FFFD is a splitter now (`_REPLACEMENT_RANGES` in
+  `_INVISIBLE_RANGES`), as PR #79's merge note asked: #79 reads half a character in a reply as
+  U+FFFD before the redactor runs, so on the two together a credential split by one kept both
+  halves in the evidence and `r.json`. Two new `_SPLITTERS` cases and a CLI case in
+  `tests/cli/test_lone_surrogate.py` (the escape, the raw bytes, a U+FFFD the target wrote) fail
+  without the range, all five. #79's sentences that said such a credential is not masked (MANUAL,
+  the threat-model row, the CHANGELOG, u04 A-47 and OD-28) now say it is. The clause is u01
+  A-32, not A-31: PR #56, which lands just before this one, defines its own A-31 (main has
+  neither number). `make gates` on the merge: 3,529 tests, coverage 97.15%.
+- Stacked on `2250b30` (main `fb9a8a8` with #88, #60, #68, #66 and #56, the tree main holds
+  before this squash). `redactor.py` conflicted in four places, resolved as #56's notes asked:
+  #56's `_credential_runs` (tokens keyed by the stretch) runs in a text without a splitter, the
+  split match runs after it and alone in a text with one, `_mask_matches` passes each stretch as
+  written to `_keep` and keys its tokens by it (so a private key holding a split credential keeps
+  the digest A-31 gives it), one delimiter guard in `register_known_secret`, and one naming rule
+  for a run (`_longest`, the length as it shows) in both matches. #56's overlap case for a key
+  read with a trailing CR expected the CR form's own digest, which this branch's
+  `test_a_key_read_with_a_trailing_cr_is_masked_as_its_plain_form` rules out (A-32): that case
+  now checks a contained credential without a control character. Differential fuzz of the
+  merge against `2250b30`, 20,000 generated texts: 0 differences in the 9,635 without a
+  splitter, and in the 10,365 with one, a registered credential readable once the splitters are
+  dropped in 6,380 outputs of `2250b30` and in none of the merge's. The index row is
+  A-29..A-32, and the CHANGELOG's open case of two credentials overlapping in plain text is
+  closed by #56. `make gates` green there: 4,095 tests, coverage 97.35%.
+
+## State, 2026-10-09: a URL password behind a registered user; masks that depended on the process (PR #56, begun 2026-10-07)
+
+- PR #56, branch `fix/redactor-url-userinfo-pem-digest` on `0f936b6`
+  (`tests/test_redactor_url_password_and_digests.py`): two defects already on main, found by the
+  pre-commit audit of `fix/cli-control-chars` with differential fuzzing against `d19b221`. A
+  registered credential as a URL's user left the password readable when the host had no dot (the
+  URL rule refused a user already set aside as a stash token), and the digest of a private-key
+  mask was computed over stash tokens whose numbers depend on the masks before the key and on a
+  set's iteration order, so it changed with `PYTHONHASHSEED`. Fixed with the case the same order
+  decided: one of two overlapping registered credentials masked, the other's tail readable. Also
+  fixed, on main too: `redis://:<password>@host` kept its password, and a registered credential
+  holding `\x01` could break a stash token (its raw forms are no longer registered). New clause
+  A-31 in the u01 contract (a mask depends only on what it masks).
+- Five audits by subagent: pre-commit (100,000 differential cases; the first URL rule took about
+  640 MB on a 4 MB reply, possessive now), a delta, pre-merge (2.1 million cases and the real CLI
+  offline: no password in any report, the evidence or stderr, where main printed them) and two
+  more deltas. The pre-merge audit found one case the PR made worse: a credential holding a
+  delimiter, registered as the text reads it (`password@db`), crossed a URL's `@`. The two versions
+  of a pass that joined the password to a credential crossing a URL separator each opened new
+  holes (a password tail behind credentials holding `:` and `@`; then a labelled secret after the
+  URL swallowed into the mask and a quadratic shape), all from reading the URL before knowing
+  where the credentials are. The pass was backed out; a form holding a delimiter is no longer
+  registered (main registered it, but it never matched the text as read), which closes the
+  regression. 24 mutants of the final fix, each caught. `make gates` green on `0f936b6`: 2,359
+  tests (2,302 on main), coverage 96.41%.
+- Open: a registered credential across a URL's `://`, `:` or `@` breaks the URL rule. It stops it
+  and leaves the rest of the password readable, as on main; or, across the `@`, lets it read on to
+  a later `@`, so a labelled value after the URL loses its tail where main masked it; and two
+  overlapping registered credentials masked as one run can cover a separator that main's
+  one-at-a-time replacement left (main leaves part of the second credential readable there).
+  Each needs a target writing a registered credential that holds a URL separator. The owner accepted
+  the last two for the merge (2026-10-09); a follow-up issue tracks them. Also open, on main too: a
+  raw `@` in a URL's user or unregistered password leaves the password, or its part after the `@`,
+  readable (`myadmin@srv:<password>@localhost`); the labelled-secret rule stops at a mask
+  (`api_key=<registered credential><tail>` keeps its tail), and a registered credential that is
+  a label word (`password`) hides the label from it; repeated `BEGIN PRIVATE KEY` markers before
+  one `END` cost 3.4 s a megabyte. Python 3.11, the version CI runs, was not available here.
+- PR #51 also edits `redactor.py`. Its `mask_split_credentials` masked every registered
+  credential of any text holding a control character, and every PEM holds a newline, so on the
+  terminal a key's digest would have been computed over the credential's mask while the reports
+  computed it over the credential (nothing leaks). It is gone: stacked on PR #57, #51 leaves the
+  split match to `redact_text`, whose tokens record each stretch as written, so the terminal and
+  the reports give a key one digest. PR #57 (split credentials), which lands right after this one,
+  rewrites the same loop: its clause is A-32, and it passes the stretch as written to `_keep`.
+- Stacked on `08ac9f8` (main `fb9a8a8` with #88, #60, #68 and #66, the tree main holds before
+  this squash): only CHANGELOG and PROGRESS conflicted. The pre-merge audit's LOWs are applied
+  here: the playbook no longer counts the clauses, A-31 and S6 compare with the redactor before
+  A-31 instead of "main", and the manual, S6, A-31 and the CHANGELOG name the two accepted
+  regressions. `make gates` green there: 4,012 tests, coverage 97.32%.
+
+## State, 2026-10-09: a halted run keeps what it paid for, and resumes (PR #66, begun 2026-10-07)
+
+- On `fix/resume-halt-mid-batch` (on main `0501752`, after #61): a request ceiling that stopped a
+  run inside an identity sweep or between two attempts of a batch stored nothing for that spec,
+  and `--resume` refused the run as one that "sent nothing" (found by the delta audit of
+  `fix/authz-leak-identity-sweep`; on main, `DL-XTENANT-001 --runs 2 --budget-requests 3` sent 3
+  and stored 0, and `PI-DIRECT-001 --runs 3 --budget-requests 2` sent 2 and stored 0). Decided
+  and built: every reply the target gave is stored when its batch returns or a halt stops it,
+  judged when the ceiling leaves room; when the ceiling refuses the judge, a deterministic fail is
+  kept (OD-19) and any other reply is stored without a verdict, which the resume sends again and
+  judges. A run that spent requests and stored no reply resumes from the start with its spend
+  carried; one that spent none, an `--evidence-root` lacking what the journal holds (pending
+  rows included), and an empty tree for a run older than the journal are refused.
+  `--estimate --resume` now takes off the judge's share of the kept attempts (it priced 12 judge
+  requests for a resume that sent 8). Measured through the CLI against a loopback stub, halted
+  spend plus the resume's sends equals the final spend in every shape (1+3, 2+3, 3+3, 2+7, 7+12
+  with a judge, 1+5 on the token ceiling). The pre-commit audit (two auditors) found, among
+  others, a resume that published a PASS over a missing verdict and a deterministic fail lost at
+  the judge; all fixed (the CHANGELOG lists them), then a delta audit and a pre-merge audit
+  (verdict: merge) whose findings are fixed too; 30 mutants of the fix all caught. With `--judge`
+  a reply stored without a verdict is paid for twice (re-sent, not re-judged). Open: the attempts
+  axis counts an attempt whose first request was refused, and a Ctrl-C (or a SIGTERM or SIGHUP,
+  which stop a run as Ctrl-C does, A-60) still drops the batch in flight. `make gates` green on
+  its branch: 2386 tests (main `0501752`: 2351), coverage 96.50%, `dottore lint` 0/0 over 75 specs.
+  Stacked on `e02b0b6` (main `6401ee2` with #62, #64, #82, #90, #67, #69, #74, #88, #60 and #68,
+  the tree main holds before this squash): `cli/run.py` (imports, the estimate call),
+  `core/runner.py` (`__all__`, the breach line, which keeps the `figures` form of
+  `fix/halt-reason-figures` and this branch's notes) and the MANUAL's `--estimate` row conflicted,
+  each resolved keeping both sides. With #60's sweep priced, the three strict `xfail`s pass (3
+  passed under `--runxfail`) and the marker is gone. The pre-merge audit's medium, fixed here: the
+  room check of the `-sV` refusals (A-48) priced every judge request of the battery, so with
+  `--judge` it did not offer a "drop -sV" that fitted; it now takes off the judge's share as
+  `--estimate --resume` does, each share clamped at zero (two `--judge` cases in
+  `tests/cli/test_resume_sv_advice.py`, one failing without the fix). `make gates` green there:
+  3,955 tests, coverage 97.31%.
+
+## State, 2026-10-07 (midday): one refused `-sV` probe reply no longer stops the run
+
+- On `fix/sv-probe-env-error` (`tests/fingerprint/test_probe_failures.py`,
+  `tests/cli/test_probe_env_error.py`, clause A-35 in `u09`): with `-sV` or `-A`, a probe reply
+  the adapters refuse as an environment failure (over 4 MiB, undecodable) stopped the run with
+  exit 3 before any attack, while without `-sV` it failed one attempt (pre-commit audit of
+  `fix/target-deep-json`). Now a reply that comes back refused (`retryable = False`, by the
+  attack phase's own predicate) is a failed probe: its layer gives no evidence from it, the
+  fingerprint is built from the rest (`probes_failed`, `probe_errors=[...]`), stderr says so,
+  and the run goes on. A probe that gets no answer at all (503, timeout, refused connection)
+  still stops the pass with its cause, as before: the first version isolated those too and its
+  pre-commit audit measured 25.5 minutes of probing on a target that never replies (92 s
+  before) and `dottore fingerprint` exiting 0 on a closed port; it also found refused replies
+  letting a constant target skip the constant check (closed). The delta audit found a 401 with
+  a body over 4 MiB read as a refused reply (now classified by its status in `read_capped`,
+  which also stops the attack phase treating it as inconclusive), `dottore fingerprint` exiting
+  0 when every probe is refused (now 3), and A-35 promising more than it holds: a partial pass
+  can still break a tie a full one leaves unknown. Its real domain, measured over 12,276
+  passes: it never names more than the same probes answered with an empty reply. The pre-merge
+  audit (PR #68; no high or medium) found refusals of varied replies getting a target flagged
+  constant (now never claimed once an attributing reply is refused; a refused carrier does not
+  count, the delta audit's last catch), an unreproducible figure (replaced by the
+  measurement above), and three untested behaviours (tested). A 200 that is not JSON still
+  stops the pass (OD-21). Mutation passes (17 mutants, then 6 and 6 for the first two audits'
+  findings, every one caught but an equivalent one) found the one-probe layers' own handling
+  redundant with the engine's, so it is not there. Open for the owner as OD-23.
+  `fix/target-deep-json` documents this gap as open in four places (CHANGELOG, MANUAL "Bounded
+  replies", `docs/02`, `u04` §4) that flip when the second of the two merges: flipped in the
+  merge with `main`, where PR #65 landed first, and `ResponseTooDeep` is now a failed probe too.
+
+## State, 2026-10-09: `authz_leak` fed where it is declared (PR #60, begun 2026-10-07)
+
+- `EMB-XTENANT-RETRIEVAL-001` (requires `rag`) declares `authz_leak` to corroborate across
+  identities, but the identity sweep ran only for a spec that required `multi_identity`, so the
+  evaluator never had two identities and its `capability_unavailable` held the spec
+  `inconclusive` unless a deterministic check failed, a secure reply included. In the
+  2026-10-06 local pass it was one of the 30 inconclusive (one attempt held by `authz_leak`
+  alone, the other by a compromised judge). Found by the pre-commit audit of OD-18 B; it
+  predates it. Option chosen: keep `requires: [rag]` (the spec still runs on single-identity RAG
+  targets) and sweep for a spec that declares `authz_leak` when the target declares
+  `multi_identity` (`sweeps_identities`), never over an in-band scene; with no sweep that check
+  is set aside and named in the verdict, after a sweep short of two answers it is kept.
+  `DL-XTENANT-001` (requires `multi_identity`) is unchanged. The estimate now prices the sweep,
+  one request per scope identity on a live route, which it never did for `DL-XTENANT-001`
+  either, and `--estimate --resume` leaves it out for a finished spec: with one identity every
+  `docs/16` §3 figure is unchanged (re-measured), with two the last row is 784. Clause A-34
+  (u08). The pre-commit audit found the half-failed sweep that passed a seen leak and the
+  in-band sweep that read the scanner's own context as a leak; both fixed before the commit.
+  `make gates` green: 2,320 tests, coverage 96.46%.
+  Open, not decided here: the sweep is one observation per spec, scored on every attempt, so a
+  cross-identity fail counts as reproduced on all of them, and its replies are not stored as
+  evidence (a confirmed critical can cite no reply that shows the leak); and a scope identity's
+  `canary` binds `{{run_id}}`, which a seeded deployment cannot hold (it would need the
+  `run_token`).
+  Merged with main at `a40e596` (#93's A-59 and #83's A-48 among what landed since its base,
+  #58): the runner merged cleanly (the sweep's skip uses `_holds_plan`, its predicate
+  `sweeps_identities`); the `--estimate --resume` figure now counts a finished spec with
+  `planned_attempts_held` instead of building `mutators x runs` ids (A-59), and the room check of
+  the `-sV` refusals reads that figure, so it no longer prices a finished spec's sweep again
+  (A-48's limit now names retries only). One test pins both. Stacked on `9d7e7a7` (main `6401ee2`
+  with #62, #64, #82, #90, #67, #69, #74 and #88, the tree main holds before this squash): only the
+  ledgers conflicted. `make gates` green there: 3,842 tests, coverage 97.23%.
+
+## State, 2026-10-07 (evening): a target file's top-level keys
+
+- On `fix/target-unknown-top-level-keys` (u12 A-53; OD-31, decided by the owner on 2026-10-08:
+  refuse both), from the "outside the clause" list of A-50: the three readers of a target file took
+  the top-level keys they knew and dropped the rest, and read a `name`, `provider`, `endpoint`,
+  `model`, `auth_ref` or `transport` that was not text as absent. So `endpont:` ran a live target on
+  the offline mock, sending it nothing (one spec: inconclusive, exit 0; the full battery: a FAIL and
+  a PASS, exit 1; measured on `2f6201a` and `c3e70d8`), and `capabilities:` children that lost their
+  indent were ignored (34 specs planned instead of 59 on a `type: model` target). Built reversibly:
+  `_read_target_yaml` checks the top level against `Target`'s fields and `mock_scenario`, text where
+  text is read, and every reader refuses on the A-45 line naming the file and the key. Every target
+  file and target block of the repository, and what `dottore fleet` writes, still load (new test).
+  Left open, written in the clause: a misspelled value (`provider: opnai` goes to the REST adapter,
+  and `transport: stido` on a stdio MCP target runs it on the offline mock, where its `mcp` suite
+  scores a PASS with exit 0). `tests/cli/test_target_top_level_keys.py`: 43 of its 90 tests fail on
+  `9b8b511`. A number as `provider` or `transport`, which A-40 (#81) read as no provider, is refused
+  as not text; A-40's two tests of it now expect that. The check is built from `Target`'s fields, so
+  the `websocket` field #87 adds is legal when it lands (pre-merge audit: a list kept by hand failed
+  35 tests on the two merged).
+
+## State, 2026-10-07 (afternoon): a logprob figure no model produces
+
+- On `fix/hostile-logprob`: a reply whose logprob (or one of its `top_logprobs`) was a 400-digit
+  integer, a list or an object made `dottore fingerprint` and `run -sV` exit 1 with a traceback
+  and no report, and `run` abort with exit 3; a positive token figure scored
+  `DL-MEMORIZE-DIVERGENCE-001` "likely memorized"; NaN and infinities reached the report as
+  non-JSON tokens. A figure is now read only when it is a finite JSON number at or below zero; an
+  entry's own figure that is not (named token or not) makes the block read as no block, so the
+  attempt and its text evaluators go on and the membership spec is inconclusive, and an
+  alternative that is not costs only its token's alternatives (u04 §7 A-39,
+  `tests/cli/test_logprob_figures.py`). Open for the owner (OD-24): the whole block versus only
+  the bad entry, a positive figure counted as impossible, and whether the evidence should say the
+  block was unreadable rather than absent. Found by the audits, both since closed on main: a
+  lone surrogate in a token or the reply's text, which aborted `run` (exit 3,
+  `UnicodeEncodeError`), now reads as U+FFFD (A-47, PR #79), and a token nested about 100,000
+  levels deep, which overflowed `str()`, is refused with its reply as nested too deeply, so it
+  fails one attempt, not the campaign (PR #65).
+
+## State, 2026-10-07 (afternoon): the figure that stopped a run, masked as a phone number
+
+- Found by the audit of `fix/usage-figure-overflow`; fixed on `fix/halt-reason-figures`. A
+  budget halt printed `(limit 500000, attempted «REDACTED:phone»)` on the terminal and in all
+  four reports, because the reason is masked and a bare figure of nine characters or more is a
+  phone number to the redactor (a Luhn-valid one, a card). Measured on main: every stop at the
+  default 1,800 s wall ceiling (`1800.123456`), a target reporting 2**53 tokens, and the limit
+  itself under `--budget-tokens 1000000000`. `BudgetExhausted` now writes its figures in digit
+  groups, seconds to three decimals and a count from 10**18 up as a magnitude, rounded away from
+  the ceiling; the runner takes them from `BudgetExhausted.figures`. The redactor is untouched
+  (several sessions are changing it) and the reason is not exempted: a phone number the target
+  wrote stays masked, and the terminal line is now tested to mask the reason. A card-shaped
+  usage figure prints grouped, on purpose (A-6). The pre-commit audit (181,584 figure cases
+  fuzzed through the redactor, none masked) found a crossed ceiling printed as an equal one and
+  the untested terminal mask; the delta audit found the first still alive in the ledger, which
+  rounded the elapsed time to six decimals before the figure was written (1,800.0000004 s
+  printed as 1,800.000), and a negative float written wrong (unreachable). All fixed. Not in
+  this change: a usage figure past the float range (above about 1.8e308) crashes the run on
+  main while its spend is stored
+  (`store/run_sqlite.py`), fixed by PR #67; the spec the halt cut stores nothing on main, fixed
+  by PR #66, which also edits the breach line in `runner.py`; and the resume refusal names a
+  `--budget-wall-s` flag that does not exist (it is `--budget-wall`), fixed by PR #72
+  (`fix/resume-wall-flag-name`, merged 2026-10-08).
+
+## State, 2026-10-07 (midday): a usage figure no float holds
+
+- Found by the pre-commit audit of `fix/target-deep-json`, fixed on `fix/usage-figure-overflow`,
+  built on #61 (merged as `0501752`) because it reuses #61's spend predicate: a reply whose
+  `usage.prompt_tokens` (or any token figure the ledger reads) is a 400-digit integer made
+  `dottore run` exit 1 on `OverflowError` when the spend was persisted, with no report, and one
+  past 2^53 halted the campaign on the token ceiling after one reply. A 400-digit
+  `moderation_latency_ms` made `fingerprint` and `run -sV` exit 1 the same way. Both readers now
+  check the figure where it is read (`ildottore.shared.amounts`: `is_count`, a JSON integer from 0
+  to 2^53, for tokens; `is_amount`, #61's predicate moved there, for the latency and the stored
+  spend). An unreadable token figure is skipped and the next shape read; a reply with no readable
+  shape keeps the reservation; a pair beside an unreadable cache figure is a floor. An unreadable
+  latency is `null`. The ledger takes no guard: nothing a reply or the tool hands it can pass
+  what `float()` converts (a run store edited by hand to an integer just under 2^1024 could, on a
+  resume under a ceiling above 1.8e308, as on `main`; closed by #89, see the merge note below).
+  Clause A-36 (u08, pointer in u09). Left open, unchanged: a figure up to 2^53 is
+  believed, so a target can still end a campaign early on the token ceiling. Found by the audit
+  and fixed by #74 (u04 A-39): a `logprob` no float holds made `-sV` exit 1 (adapter).
+  `make gates` green: 2,452 tests, coverage 96.51%, lint 0 errors on 75 specs; 52 of the 101
+  new tests fail on `0501752`, and 24 of 24 mutants of the fix are killed.
+- Merge note (2026-10-09, `origin/main` merged in, with #89, A-55 in u12): `run` now refuses a
+  `--budget-*` past 2^53, so the CLI test that believed 2^53 under `--budget-tokens 2**60` failed
+  with exit 3. It now passes `--budget-tokens 2**53`: one reply of 2^53 is trued in and fills the
+  ceiling exactly, and the next send is refused (exit 3, one request served, 2^53 recorded). The
+  `<` boundary mutant of `is_count` fails it: the figure ignored, both specs run and the run exits
+  0 (measured). The texts that leaned on a ceiling past 2^53 carry the same note (CHANGELOG,
+  A-36, MANUAL): a total passes 2^53 only by replies sent together (two of 2^53 - 1 at
+  `--concurrency 6`, measured), and the hand-edited store near 2^1024 resumed under 2^53 halts with
+  exit 3 and sends nothing (measured), so that case is closed. `make gates` green after the merge:
+  3,443 tests, coverage 97.10%, lint 0 errors on 75 specs.
+
+## State, 2026-10-07 (evening): A-40's path printed a key as written
+
+- PR #81 (A-40) squash-merged as `c3e70d8` after three audits. Its finding printed the keys on
+  the path as written: a newline forged a finding line (its pre-merge audit, left for later) and,
+  found by two audits of sibling branches, a lone surrogate made `dottore lint` and `coverage`
+  exit 1 with a `UnicodeEncodeError` traceback (on these paths main before #81 did not). On
+  `fix/huge-int-followups`: a path part that is not printable is written as `repr`, as #80 does,
+  and so is every schema error's location. A surrogate key under `step_arg_patterns`, which crashed
+  lint before #81 too, is closed on main by A-54 (#89) before the schema runs; there it still stops
+  control characters (a newline in such a key forged a second finding line; pre-merge audit of #90).
+  Left for the owner: a too-long number under a target file's `sampling_defaults` (pre-existing: the
+  live run exits 3 unnamed in `target_digest`); a newline or another control character in a key that
+  pydantic names, or in the spec `id`, still forges a finding line (#89 handles only an `id` UTF-8
+  cannot encode).
+
+## State, 2026-10-07 (evening): a report finding's validation error (A-49)
+
+- On `fix/diff-report-validation` (`tests/cli/test_diff_report_validation.py`): `dottore diff` and
+  `dottore calibrate` on a report whose finding does not validate (a `status` of `maybe-later`)
+  printed pydantic's raw error over four lines, with the value and a docs URL and without the file;
+  found by the pre-commit audit of A-45. `diff.load_findings` raises `the report <absolute path>
+  failed validation: findings.1.status: ...` for the first finding that fails, at most 20 problems;
+  a first version that validated all the findings together peaked at 1,116 MiB instead of 135 MiB on
+  a 12 MB report. Exit 3 as before. Left as they are and written in clause A-49: the report's other
+  refusals (`error: 'findings'` for an object without `findings`, a `summary` that is not an object,
+  unless empty or zero), keys printed as pydantic renders them (through the redactor), and lax
+  reading (`"yes"` is true).
+
+## State, 2026-10-07 (midday): a SARIF fixture under `tests/` is no longer ignored
+
+- Found by the pre-commit audit of `fix/gitignore-venv-symlink` (PR #62): on `main` at
+  `0f936b6`, `.gitignore` line 30 was `!tests/**/*.sarif` with its comment after it on the same
+  line. Git reads no trailing comments, so the negation was the rule and the comment together
+  and re-included nothing: a SARIF fixture added under `tests/` would have been ignored with no
+  warning, the class of bug that broke CI on 2026-07-08 ("CI GREEN on GitHub Actions" below).
+  On `fix/gitignore-sarif-negation` the comment has a line of its own above the rule.
+- Checked with `git check-ignore --no-index`: `tests/fx/a.sarif`, `tests/a.sarif` and
+  `tests/reporting/fixtures/reports/x.sarif`, all three ignored before by `.gitignore:29:*.sarif`,
+  are no longer ignored; a root `x.sarif`, `src/x.sarif`, `reports/x.sarif` and
+  `evidence/x.sarif` still are. With real files, `git status` lists `tests/fx/a.sarif` and not
+  the root one. A folder a directory rule excludes stays excluded (`tests/build/x.sarif`,
+  `tests/__pycache__/x.sarif`): git cannot re-include a file under an excluded directory.
+  `git ls-files -ci --exclude-standard` is empty before and after. No SARIF file is tracked
+  under `tests/` (the reporting snapshot is `golden.sarif.json`, which `*.sarif` never
+  matched), so nothing was lost. Note for the next check: `git check-ignore -v` exits 0 for a
+  path a `!` rule matches, because it prints that rule, so read the rule it names, or drop `-v`
+  and read the exit code.
+- Every other line of `.gitignore` checked by a Python scan for a comment after a pattern and
+  for trailing whitespace: none. `!specs/scope.example.yaml` has no comment and works as
+  written; it re-includes a file no rule excludes (`/scope.yaml` is root-anchored and the name
+  differs), so it changes nothing today and stays.
+- PR #62 changes `.gitignore` at line 8 only, so the two branches do not collide in that file;
+  both insert at the top of CHANGELOG `[Unreleased]` and of this ledger, so whichever merges
+  second rebases and keeps both entries.
+
+## State, 2026-10-07 (morning): a worktree's `.venv` link is ignored
+
+- The pre-merge audit of PR #60 found every worktree showing `?? .venv`: worktrees reuse the
+  main checkout's venv through a symlink, git sees a symlink as a file, and `.gitignore` had
+  `.venv/`, which matches directories only, so a `git add -A` would have committed the link. On
+  `fix/gitignore-venv-symlink` the rule is `.venv` (the directory and everything under it, and
+  the link). Checked: in a worktree with the link, `git status --porcelain` no longer lists it
+  and `git check-ignore -v .venv` names `.gitignore:10:.venv`; a real `.venv/` directory, a
+  nested one and the files inside stay ignored; no tracked file becomes ignored (0 before and
+  after). Nothing depends on the directory-only form: CI checks out without a venv, the Makefile
+  hands ruff, mypy and bandit explicit paths (pytest takes `testpaths`), mypy's `^\.venv/`
+  exclude is a regex of its own, and what does read `.gitignore` (ruff walking `src tests`,
+  `tests/test_yaml_duplicate_keys.py` through `git ls-files --exclude-standard`, an sdist
+  build) sees no difference between `.venv/` and `.venv`.
+- The worktree setup was practice, not written anywhere in the repo; it is now in `AGENTS.md`
+  §4: the link, `PYTHONPATH=<worktree>/src` (without it the steps that import the package run
+  the main checkout's code and the coverage gate reads 0%, measured), and no `make venv` or
+  `make install` in a worktree (the venv is shared).
+- Found by the pre-commit audit, not fixed here (its own branch): `.gitignore` line 32,
+  `!tests/**/*.sarif` followed by a comment on the same line, re-includes nothing, because git
+  reads no trailing comments; a SARIF fixture added under `tests/` would be ignored. None is
+  tracked today. `venv/` keeps its trailing slash: nothing here creates a `venv` link.
+
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 
-- First noted on main by PR #57 (open on 2026-10-09), reproduced end to end by the pre-commit audit
+- First noted on main by PR #57 (split credentials), reproduced end to end by the pre-commit audit
   of `fix/hostile-logprob`, and fixed on `fix/lone-surrogate-reply`: a reply carrying a lone
   surrogate (escaped, or its raw bytes `ED A0 80`) in its text, `id`, `model` echo, a logprob token
   or a tool call made `run` exit 3 with every spec unrun and no evidence (the evidence store's
@@ -114,7 +482,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   advice and miscounted figures; its delta round (no regression, 2,367 tests green) a ceiling one
   request past the spend, a ceiling of 0 and advice written ahead of the words the test reads; its
   third round (no regression, 2,374 tests green) one untested refusal case; all fixed here. What
-  `--estimate` does not price (the multi-identity sweep, which the open #60 adds to the estimate,
+  `--estimate` does not price (the multi-identity sweep, which #60 added to the estimate,
   and retries) can still halt a followed "drop -sV" at an exact fit; written in A-48. Left open, a
   question for the owner: the recorded planning mode is one flag for `-sV`, `-A` and `--deep`, so a
   campaign run with `-sV` resumes with `--deep` in its place (measured: it goes through), and its
@@ -165,8 +533,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   taken out again (Ctrl-C, `fork`, queueing), so lint and a run still draw that line a few
   levels apart, and in a selection of more than 512 patterns a spec nested 482 to 487 deep ends
   `inconclusive` with no reason in the report (documented in `compile_spec_pattern` and A-33; a
-  per-process cache would close it). The message quotes with `ascii`; until PR #51 and PR #54
-  merge, the lint text line does not go through `visible_controls`, so a `##[` in a pattern is
+  per-process cache would close it). The message quotes with `ascii`; the lint text line goes
+  through `visible_controls` since PR #51, and until PR #54 merges a `##[` in a pattern is
   printed as written, as in every other lint message on `main`. Open for the owner as OD-22:
   refuse the run (as built, like F-10) or skip only that spec (like `setup_not_seeded`); reuse
   `EVALUATOR_MISCONFIGURED` (as built) or a code of its own.
@@ -184,7 +552,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   Found while writing it and left as its own task: a top-level key a target file does not know
   (`endpont:`, or a `capabilities` block whose indent was lost) and a `name`, `provider`,
   `endpoint`, `model`, `auth_ref` or `transport` that is not text are still dropped without a
-  word. `tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`.
+  word (refused since A-53, PR #88; see the entry above).
+  `tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`.
   Pre-commit, delta and pre-merge audits found nothing high or medium and no open PR that combines
   into wrong behavior; their lows (key order in what `fleet` writes, keys printed as pydantic
   renders them, a long line until #76, how a halted run resumes, the reversal recipe) are written
@@ -342,12 +711,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   refused before the dry run, a live run whose pace (a `-T` template's too) is under one request per
   wall-clock ceiling (`--budget-wall 0` included) is refused (`--rate 1e-308` was a traceback, and
   once that was bounded, a live run that never stopped), and the run store refuses a stored `--runs`
-  past `2**53`, which a resume inherits (u12 A-55; `--runs` of 305 nines used to exit 1). Until
-  A-40's follow-up (#90) lands, its own paths print keys as written. Left open: the wall-clock
-  ceiling is not a deadline at an accepted pace (each concurrent spec waits its interval, the `-sV`
-  probe pass reads no ceiling); a resume builds a set of mutators x runs attempt ids for each
-  started spec, so how far `--runs` may go is the owner's call (OD-32); `--rate inf` turns pacing
-  off.
+  past `2**53`, which a resume inherits (u12 A-55; `--runs` of 305 nines used to exit 1). A-40's
+  paths and the locations of JSON-schema errors write a key that is not printable as `repr` since
+  #90; a spec id UTF-8 can encode is still printed as written. Left open: the wall-clock ceiling is
+  not a deadline at an accepted pace (each concurrent spec waits its interval, the `-sV` probe pass
+  reads no ceiling); a resume builds a set of mutators x runs attempt ids for each started spec, so
+  how far `--runs` may go is the owner's call (OD-32); `--rate inf` turns pacing off.
 
 ## State, 2026-10-07 (evening): YAML nesting refused where it is written
 
@@ -552,8 +921,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
   the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
   `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
-  the value quoted, no file name); not fixed here. `tests/cli/test_target_file_validation.py`: 19
-  of its 24 tests fail on `0501752`, the other 5 guard that each test value survives the redactor.
+  the value quoted, no file name); not fixed here (A-49).
+  `tests/cli/test_target_file_validation.py`: 19 of its 24 tests fail on `0501752`, the other 5
+  guard that each test value survives the redactor.
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 

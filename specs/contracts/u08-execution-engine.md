@@ -137,7 +137,22 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
   asserts byte-stable plan + finding ids across two runs.
 - **Budget gates:** property tests (Hypothesis) prove no run exceeds any of tokens/requests/
   wall-clock/attempts; breach ⇒ `TestRun.status == budget_exhausted` with partial persisted, not
-  raised-away. `tests/core/test_budgets.py`.
+  raised-away. `tests/core/test_budgets.py`. (Amended 2026-10-07: the partial includes every
+  reply the target gave. `reproduce` and `reproduce_conversation` fill the caller's list as each
+  attempt completes, so the answers a batch had when a debit was refused, a product error was
+  raised, or a reply's own usage crossed the token ceiling (`BudgetExhaustedAfterReply`, which
+  carries it, through a conversation too when that reply was its last) are evaluated and stored
+  before the halt goes on. They were dropped with the exception, and the resume sent them and
+  paid for them again. An evaluator whose request the ceiling refuses (the judge) is recorded as
+  not consulted: a deterministic fail decides without it (OD-19) and is stored, its reasoning
+  naming the evaluator not consulted (only the aggregate is stored, and it was silent: delta
+  audit); otherwise the reply is stored without a verdict. If that was the campaign's last
+  attempt, the campaign is complete: every verdict is decided and nothing more is sent. A product error sets the campaign's abort before the
+  batch's replies are evaluated, so no spec starts while they are judged, and an evaluator's own
+  error during that evaluation is quoted in the halt's reason, not swallowed by it. A conversation
+  the halt stops mid-way has no reply to score and is not stored; its turns are in the spend, as
+  are an identity sweep's, whose replies a finished run does not store either. A Ctrl-C still
+  drops the batch in flight. `tests/core/test_halt_keeps_answers.py`.)
 - **Policy gate:** out-of-allowlist / policy-forbidden spec ⇒ `blocked_by_policy` attempt, zero
   adapter `send` calls (asserted via mock adapter call-count). `tests/core/test_policy_gate.py`.
 - **Capability gating:** target without `tools`/`rag`/`multi_identity`/`logprobs` ⇒
@@ -156,7 +171,13 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
   specs. `tests/core/test_resume.py`. (As built since 2026-10-04, F11: an attempt that ended in an
   environment error is not complete and is sent again under its id; the finding scores one
   attempt per id, the answered one, and cites every artifact. `tests/test_f11_resume_resends.py`
-  interrupts resumes on purpose.)
+  interrupts resumes on purpose. Since 2026-10-07 a reply stored without a verdict is not
+  complete either: it is sent again, and of one id's artifacts the scored one is answered and
+  judged, else any with a verdict (an environment error's inconclusive), else a bare reply, so
+  a failed re-send is never scored as if that attempt had not been sent (pre-commit audit: it
+  published a PASS from the one verdict left). A prior holding every planned id is a finished
+  spec only when each has a verdict (`_settled_attempt_ids`). A run that spent requests and
+  stored no attempt resumes from nothing, u12 A-24.)
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/core` clean; `lint-imports` green
   (core imports interfaces only: asserted).
 
@@ -181,15 +202,94 @@ nothing themselves, so the runner's retries are the only ones and each passes th
 
 **A-6 A campaign that did not finish says why.** `CampaignResult` carries the breached axis,
 its ceiling and how many specs never ran. A bare state word is not a reason: a spec that never
-ran leaves no trace in the finding list, so nothing downstream can reconstruct it.
+ran leaves no trace in the finding list, so nothing downstream can reconstruct it. Amended
+2026-10-07: **the reason's figures survive the redactor that masks it.** The terminal and every
+report mask the reason, and a bare figure of nine characters or more is a phone number to the
+redactor (a Luhn-valid one of 13 to 19 digits, a card), so every stop on the default 1,800 s
+wall ceiling printed `attempted «REDACTED:phone»`, as did a target reporting 2**53 tokens. The
+figures come from `BudgetExhausted.figures` (digit groups, seconds to three decimals, a count
+from 10**18 up as a magnitude), never formatted at the call site, and a shortened figure is
+rounded away from the ceiling (the attempted figure up, the limit down), so a crossed ceiling
+never reads as an equal one; the ledger hands over the elapsed time unrounded, or
+`round(elapsed, 6)` puts it back on the ceiling first. The redactor is not relaxed for the
+reason and the terminal line is tested to mask it (removing that mask left the suite green
+until the pre-commit audit). The one value the grouping lets through on purpose is the figure
+itself: a target can report a card-shaped usage figure, and it prints grouped, because showing
+it is the point.
+`tests/core/test_halt_figures.py` (property tests over every count below 10**18, over elapsed
+times and over the rounding direction) and `tests/cli/test_halt_figures_cli.py`.
+
+**A-36 A figure the target reports is checked where it is read (added 2026-10-07).** A reply's
+`usage` is the target's JSON, and a JSON number has no bound. A 400-digit `prompt_tokens` was
+trued into the ledger and `dottore run` exited 1 on `OverflowError` when the store persisted the
+spend through `float()`, with no report written; a figure past `2**53` was believed and halted
+the campaign on the token ceiling after one reply. `_reported_total` now reads a figure only
+when `shared.amounts.is_count` holds: a JSON integer from 0 to `2**53`, past which a float no
+longer holds every integer (the spend is persisted as a float), and far beyond any one bill. An
+unreadable figure
+is skipped as an absent one, so the next shape is read; a sum past `2**53` is no usage; with no
+readable shape the reservation stands. A prompt-cache figure is summed only into a pair, and one
+that is there and unreadable makes the pair a floor: trued up to, never down. (Before, one that
+was not a non-negative integer was read as 0 and trued the reservation down past tokens the reply
+says it billed; read as no usage, the first version of this clause, it kept a 513-token
+reservation below a pair of 100,005: pre-commit audit.) The
+ledger takes no guard of its own: nothing a reply or this tool hands it can grow past what
+`float()` converts (a reservation is bounded by `MAX_SAMPLING_TOKENS` and the request's own text,
+a clamp by the ceiling, a reply's figure by `is_count`, and a resume from the largest float, the
+most this tool wrote before #89, goes past it by a few replies' worth, which `float()` rounds). A
+run store edited by hand was the exception: the store's `is_amount` accepts an integer up to
+`2**1024 - 2**970 - 1`, past the largest float, and a resume from it under a token ceiling above
+1.8e308 added tokens until `float()` raised (exit 1, the same on the base). The bound is per
+figure: a campaign's total can pass `2**53`, and the store then rounds it (by 2 tokens in 5.4e16,
+measured before #89), it does not fail. Merge note (#89, A-55 in u12): every token ceiling is now
+at most `2**53`, so a total passes it only by what replies sent together add once it is crossed
+(two replies of `2**53 - 1` at `--concurrency 6`, measured after the merge), and the hand-edited
+store, resumed under `2**53`, halts on the ceiling with exit 3 and sends nothing (measured after
+the merge): that exception is closed. One reply of `2**53` fills the largest ceiling, which is how
+the CLI test below believes it. The `-sV` guardrail layer reads `moderation_latency_ms`
+through `is_amount` for the same reason (`fingerprint` and `run -sV` exited 1 the same way; u09).
+Not claimed: a figure up to `2**53` is believed, as a provider's bill is, so a target can still
+report more than it used and halt the campaign on the token ceiling, or less and free its
+reservation; that trust is unchanged. Nor does it cover a reply's `logprob`, which the adapter
+reads: u04 A-39 does (found by this clause's audit, fixed by PR #74).
+`tests/cli/test_usage_figures.py` (through the CLI, both directions),
+`tests/core/test_usage_figures.py` (each shape at the boundary, the reading order, the floor),
+`tests/shared/test_amounts.py`.
+
+**A-34 An evaluator a spec declares is fed where the target can feed it, and one that only
+corroborates cannot decide by its absence (added 2026-10-07).** `EMB-XTENANT-RETRIEVAL-001`
+requires `rag` and declares `authz_leak` "for cross-identity corroboration when >=2 identities
+are scoped". The identity sweep ran only for a spec that required `multi_identity`, so that
+`authz_leak` never had two identities to compare, and its `capability_unavailable` held the spec
+`inconclusive` on every target unless a deterministic check failed, a secure reply included. The
+golden harness drives only `evaluators[0]`, so lint never saw it. Now `sweeps_identities` sends
+the attack as each scope identity for a spec that requires `multi_identity` and, when the target
+declares `multi_identity`, for one that declares `authz_leak`; never over an in-band scene
+(OD-18 A), which hands every identity the same scene, another tenant's document included. With
+no sweep behind it, an `authz_leak` on a spec that does not require two identities is set aside
+and named in the verdict; after a sweep that got fewer than two answers it is kept (the identity
+that answered may have shown a leak), and alone it still decides. The estimate prices the
+sweep, one send per scope identity (two or more) on a live route, from the same predicate,
+which it had never done for `DL-XTENANT-001` either, and `--estimate --resume` does not count it
+for a spec the runner will not sweep again. Two pre-commit audit findings shaped the last three
+rules: a half-failed sweep set the check aside and passed a leak it had seen, and an in-band
+sweep read the scanner's own context as a cross-tenant leak.
+`tests/core/test_authz_leak_corroboration.py` asserts each rule against the real specs, the
+sends counted at the identities' adapters, the resume figure and the dry run's printed figure.
+Merged after A-59: that resume figure is a fourth place asking whether a spec's stored attempts
+hold its plan, and it counts them with `planned_attempts_held` as the runner does (it built the
+`mutators x runs` ids, which grows without end at the `2**53` a run accepts); the room check of the
+`-sV` refusals (u12 A-48), which prices the rest as `--estimate --resume` does, reads the same
+figure, so it no longer prices a finished spec's sweep again. A test pins both.
 
 **A-59 A prior's attempts are checked against the plan without building the plan (added
-2026-10-08).** Three places ask whether a started spec's stored attempts hold every planned attempt
-(each mutation, `n` times): the halt path of a resume, which publishes a finished spec's prior
-finding; the seeding gate, which scores a prior that holds its plan and says how much of it was sent
-otherwise; and the multi-identity sweep, skipped when every attempt is stored. Each built the set of
-`mutators x n` attempt ids and tested inclusion, so the work grew with `--runs`, not with what was
-stored. With the `2**53` that `run` and the run store accept (A-55, u12), a resume of a run whose
+2026-10-08).** Three places (a fourth, the `--estimate --resume` figure, A-34) ask whether a
+started spec's stored attempts hold every planned attempt (each mutation, `n` times): the halt path
+of a resume, which publishes a finished spec's prior finding; the seeding gate, which scores a prior
+that holds its plan and says how much of it was sent otherwise; and the multi-identity sweep,
+skipped when every attempt is stored. Each built the set of `mutators x n` attempt ids and tested
+inclusion, so the work grew with `--runs`, not with what was stored. With the `2**53` that `run`
+and the run store accept (A-55, u12), a resume of a run whose
 count was edited to 10^7 took 3.5 s and 1.3 GiB with one spec started, 16.3 s and 3.7 GiB with two,
 and one of `2**53 + 1` was still growing at 3.7 GB after 4.5 minutes on `2f6201a` (OD-32, decided by
 the owner on 2026-10-08: the runner counts what is stored, and `--runs` keeps its bound). So
@@ -224,7 +324,13 @@ the runner's name and in its module, so a plan built another way (an f-string, a
 counted there; the equivalence and verdict tests still pin the answer. Every targeted mutant dies
 but four equivalent ones, which give the same counts: dropping the early answer (it only costs the
 read), dropping the `runs <= 0` return or making it `runs < 0`, and reading the widest index from
-`runs` instead of `runs - 1`.
+`runs` instead of `runs - 1`. With the halted-run rule (u12 A-24, merged after this clause), the
+set the halt path and the seeding gate count is the stored attempts that have a verdict
+(`_settled_attempt_ids`), and the sweep's is the set a resume keeps, which leaves out a reply
+stored without one; the gate's message still counts every stored attempt as sent. The priors of
+`tests/core/test_planned_attempts.py` carry a verdict on each reply, as the runner stores them,
+and one more test there pins a prior holding its plan with one reply not judged: kept, not scored,
+and counted without building the plan.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
