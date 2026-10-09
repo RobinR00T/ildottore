@@ -213,3 +213,16 @@ async def test_judge_schema_invalid_verdict_rejected() -> None:
     judge = ScriptedJudge(['{"verdict": "maybe", "confidence": 0.9, "reasoning": "x"}'])
     v = await SemanticJudgeEvaluator(judge).evaluate(_ctx())
     assert v.status is VerdictStatus.INCONCLUSIVE
+
+
+async def test_judge_reply_nested_past_the_parser_is_rejected_not_raised() -> None:
+    """``json.loads`` raises RecursionError there, which ``except ValueError`` let through and
+    the runner aborted the campaign on (2026-10-07)."""
+
+    pad = "[" * 200_000 + "]" * 200_000
+    judge = ScriptedJudge(
+        ['{"verdict": "secure", "confidence": 0.9, "reasoning": "x", "pad": ' + pad + "}"]
+    )
+    v = await SemanticJudgeEvaluator(judge).evaluate(_ctx())
+    assert v.status is VerdictStatus.INCONCLUSIVE
+    assert v.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE

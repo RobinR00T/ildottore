@@ -23,7 +23,14 @@ from ildottore.cli.main import app
 from ildottore.cli.run import RunOptions, execute_run
 from ildottore.store.run_sqlite import SqliteRunStore
 
-from .conftest import deep_json, make_spec, write_scope, write_spec_tree, write_target
+from .conftest import (
+    LONG_OPTION,
+    deep_json,
+    make_spec,
+    write_scope,
+    write_spec_tree,
+    write_target,
+)
 
 _BUDGET = 6
 
@@ -49,10 +56,10 @@ def _opts(tmp_path: Path, spec_dir: Path, **kw: object) -> RunOptions:
     return opts
 
 
-def _halted_run(tmp_path: Path, spec_dir: Path) -> str:
-    """Run until the request ceiling halts it; return the run id."""
+def _halted_run(tmp_path: Path, spec_dir: Path, **kw: object) -> str:
+    """Run until the request ceiling halts it; return the run id. ``kw`` as in :func:`_opts`."""
 
-    outcome = execute_run(_opts(tmp_path, spec_dir), [spec_dir])
+    outcome = execute_run(_opts(tmp_path, spec_dir, **kw), [spec_dir])
     assert outcome.exit_code == ExitCode.ERROR, "the ceiling should have halted the run"
     assert (tmp_path / "ev").is_dir(), (
         "precondition: the halted run stored evidence. If this fails, the ceiling stopped the "
@@ -354,7 +361,16 @@ def test_a_spend_record_that_is_not_an_amount_is_corrupt(tmp_path: Path, spend: 
         '"runs":null,',
         "",
     ],
-    ids=["list", "infinity", "text", "bool", "fraction", "zero", "null", "missing"],
+    ids=[
+        "list",
+        "infinity",
+        "text",
+        "bool",
+        "fraction",
+        "zero",
+        "null",
+        "missing",
+    ],
 )
 def test_a_stored_runs_value_that_is_not_a_count_is_corrupt(tmp_path: Path, runs: str) -> None:
     """`int()` of a list or an infinity was a traceback and exit 1, a string was quoted in the
@@ -380,6 +396,78 @@ def test_a_stored_runs_value_that_is_not_a_count_is_corrupt(tmp_path: Path, runs
         with pytest.raises(ValueError, match="context_json holds no runs value") as caught:
             execute_run(opts, [spec_dir])
         assert "sk-quoted" not in str(caught.value)
+
+
+@pytest.mark.parametrize(("runs", "corrupt"), [(2**53, False), (2**53 + 1, True), (10**400, True)])
+def test_a_stored_runs_count_is_read_up_to_the_flag_bound(
+    tmp_path: Path, runs: int, corrupt: bool
+) -> None:
+    """Checked in the store, not through a resume: on ``2f6201a`` a resume of ``2**53 + 1``
+    built a set of that many attempt ids per spec and was still growing at 3.7 GB when it was
+    stopped after 4.5 minutes (A-55, OD-32), and one of 400 digits was an OverflowError in the
+    plan, a traceback and exit 1. Through a resume, a regression could hang the suite."""
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        raw = store._conn.execute(
+            "SELECT context_json FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        assert '"runs":3,' in raw, "precondition: the stored form the replacement edits"
+        edited = raw.replace('"runs":3,', f'"runs":{runs},')
+        store._conn.execute(_SET_COLUMN["context_json"], (edited, run_id))
+        store._conn.commit()
+        if corrupt:
+            with pytest.raises(ValueError, match="context_json holds no runs value"):
+                store.get_run_context(run_id)
+        else:
+            context = store.get_run_context(run_id)
+            assert context is not None and context["runs"] == runs
+
+
+def test_a_resume_of_the_largest_stored_count_checks_its_priors_without_building_the_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The halt path asked whether each started spec held every planned attempt by building the
+    set of mutators x runs ids: with the `2**53` the store accepts, a resume grew without end
+    (3.7 GB after 4.5 minutes on `2f6201a`, OD-32). The ids `attempt_id_for` builds are counted
+    and stopped past 10,000, so a runner that builds the plan with it fails here at once instead
+    of taking the machine with it (A-59); a plan written another way is not counted here."""
+
+    import importlib
+
+    import ildottore.core.runner as runner_mod
+    from ildottore.core.reproduce import attempt_id_for
+
+    calls = [0]
+
+    def counting(spec_id: str, mutation: str, run_index: int) -> str:
+        calls[0] += 1
+        if calls[0] > 10_000:
+            raise AssertionError("the runner built more than 10,000 planned attempt ids")
+        return attempt_id_for(spec_id, mutation, run_index)
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        raw = store._conn.execute(
+            "SELECT context_json FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        assert '"runs":3,' in raw, "precondition: the stored form the replacement edits"
+        edited = raw.replace('"runs":3,', f'"runs":{2**53},')
+        store._conn.execute(_SET_COLUMN["context_json"], (edited, run_id))
+        store._conn.commit()
+    # The runner, and anything that reaches the builder through its module: the resume's own
+    # sends are a few hundred ids at most under this ceiling.
+    monkeypatch.setattr(runner_mod, "attempt_id_for", counting, raising=False)
+    monkeypatch.setattr(
+        importlib.import_module("ildottore.core.reproduce"), "attempt_id_for", counting
+    )
+
+    outcome = execute_run(_opts(tmp_path, spec_dir, resume=run_id, budget_requests=100), [spec_dir])
+
+    assert outcome.exit_code == ExitCode.ERROR, "the request ceiling halts the resume again"
+    assert calls[0] < 10_000
 
 
 def test_the_offline_scenario_cannot_be_flipped_under_a_resume(tmp_path: Path) -> None:
@@ -470,8 +558,17 @@ def test_the_wall_ceiling_refusal_also_lands_before_the_probe_pass(tmp_path: Pat
     it claims was fixed, reintroduced by the fix for it.
     """
 
+    from ildottore.cli.run import fingerprint_probe_count
+
+    # Halted WITH -sV: a resume with -sV of a campaign run without it is refused for its
+    # planning mode first, before any ceiling is looked at (u12 A-48).
     spec_dir = _specs(tmp_path)
-    run_id = _halted_run(tmp_path, spec_dir)
+    run_id = _halted_run(
+        tmp_path,
+        spec_dir,
+        fingerprint_first=True,
+        budget_requests=fingerprint_probe_count() + _BUDGET,
+    )
     with SqliteRunStore(tmp_path / "runs.sqlite") as store:
         store.save_run_context(run_id, spend={"wall_s": 100000.0})
 
@@ -502,6 +599,52 @@ def test_the_wall_ceiling_refusal_also_lands_before_the_probe_pass(tmp_path: Pat
         wiring_mod.fingerprint_probe = original  # type: ignore[assignment]
 
     assert sent == []
+
+
+def test_the_wall_ceiling_refusal_names_a_flag_dottore_run_accepts(tmp_path: Path) -> None:
+    """The refusal told the operator to raise `--budget-wall-s`, and `dottore run` answers that
+    with "No such option": the flag is `--budget-wall` (pre-commit audit of
+    `fix/halt-reason-figures`, 2026-10-07).
+
+    The advice is followed here as an operator would follow it. Every flag the refusal names is
+    read from `dottore run`'s own parameters, not from a string copied into this test, and
+    raising the flags it names past what the campaign spent lets the resume through.
+    """
+
+    import typer
+
+    spec_dir = _specs(tmp_path)
+    run_id = _halted_run(tmp_path, spec_dir)
+    with SqliteRunStore(tmp_path / "runs.sqlite") as store:
+        store.save_run_context(run_id, spend={"wall_s": 100000.0})
+    resume = [
+        "run",
+        *("-t", str(tmp_path / "target.yaml"), "--scope", str(tmp_path / "scope.yaml")),
+        *("--spec-path", str(spec_dir), "--resume", run_id, "--budget-requests", "100"),
+        *("--concurrency", "1", "-q", "--evidence-root", str(tmp_path / "ev")),
+        *("--run-db", str(tmp_path / "runs.sqlite")),
+    ]
+
+    refused = CliRunner().invoke(app, resume)
+
+    assert refused.exit_code == ExitCode.ERROR, (refused.exception, refused.stderr)
+    errors = [line for line in refused.stderr.splitlines() if line.startswith("error:")]
+    assert len(errors) == 1 and "wall-clock ceiling" in errors[0], refused.stderr
+    named = set(LONG_OPTION.findall(errors[0]))
+    assert named, f"the refusal names no flag to raise: {errors[0]}"
+    run = typer.main.get_command(app).commands["run"]  # type: ignore[attr-defined]
+    accepted = {opt for param in run.params for opt in (*param.opts, *param.secondary_opts)}
+    assert named <= accepted, f"`dottore run` has no option {sorted(named - accepted)}"
+
+    raised = CliRunner().invoke(
+        app, [*resume, *(arg for f in sorted(named) for arg in (f, "200000"))]
+    )
+
+    assert "wall-clock ceiling" not in raised.stderr, raised.stderr
+    assert raised.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}, (
+        raised.exception,
+        raised.stderr,
+    )
 
 
 # --- the third audit round (2026-09-23) ---------------------------------------------
@@ -610,8 +753,10 @@ def test_a_resume_with_an_exhausted_ceiling_refuses_before_probing(tmp_path: Pat
 
     from ildottore.cli.run import fingerprint_probe_count
 
+    # Halted WITH -sV, as in the test above: 17 probes, then 6 requests of attack traffic.
+    spent = fingerprint_probe_count() + _BUDGET
     spec_dir = _specs(tmp_path)
-    run_id = _halted_run(tmp_path, spec_dir)
+    run_id = _halted_run(tmp_path, spec_dir, fingerprint_first=True, budget_requests=spent)
 
     sent: list[str] = []
     import ildottore.cli.wiring as wiring_mod
@@ -625,7 +770,7 @@ def test_a_resume_with_an_exhausted_ceiling_refuses_before_probing(tmp_path: Pat
                     tmp_path,
                     spec_dir,
                     resume=run_id,
-                    budget_requests=_BUDGET + fingerprint_probe_count() - 1,
+                    budget_requests=spent + fingerprint_probe_count() - 1,
                     fingerprint_first=True,
                 ),
                 [spec_dir],
