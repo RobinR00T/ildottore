@@ -30,6 +30,67 @@ The carryover ledger. Every agent session updates this so context survives even 
   written-out id, bounds its line at 5,000 characters and looks for a whole `repr` with its quote
   (u01 A-51 and A-57 say so). `make gates`: 3,571 tests (229 from this PR), coverage 97.12%.
 
+## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
+
+- First noted on main by PR #57 (open on 2026-10-09), reproduced end to end by the pre-commit audit
+  of `fix/hostile-logprob`, and fixed on `fix/lone-surrogate-reply`: a reply carrying a lone
+  surrogate (escaped, or its raw bytes `ED A0 80`) in its text, `id`, `model` echo, a logprob token
+  or a tool call made `run` exit 3 with every spec unrun and no evidence (the evidence store's
+  content hash encodes it) and `run -sV` exit 3 with no report; a multi-turn spec and the `--judge`
+  request failed in httpx encoding the reply into the next request. Every reply is now made well
+  formed where it is parsed (`shared.wellformed`, the base and MCP adapters, the MCP stdio line
+  decoded with `surrogatepass`), in place, and so are a tool call's arguments (`call_arguments`): a
+  lone surrogate reads as U+FFFD and the attempt is judged as usual, so a leak with a half before,
+  after or between its words still fails; a half inside a word a pattern looks for splits it as a
+  zero-width space does (same verdicts, pinned by a test). Contract u04 A-47. OD-28 decided on
+  2026-10-07, the owner leaving the choice to the build: U+FFFD, not deleting the half (UTR #36 rev.
+  15, 3.5 on deleting code points and 3.6.2 on ill-formed input; deleting would show the evaluators
+  text no consumer sees), nor a marker, nor an inconclusive attempt (six characters would hide a
+  leak); the owner also approved the #57 merge note and the helper's home in `shared/`. Nine audits
+  in four rounds (pre-commit, delta, pre-merge, a last delta): the fix copied every reply; copying
+  only a reply with a surrogate gave a target 2.8 times the peak for three bytes; a generator per
+  level of the in-place fix made a clean reply nested 115,000 levels cost four times main's peak
+  (now a cheap scan first, and a fix in place only when a surrogate is there); the deep tests parsed
+  50,000 and 100,000 levels with `json.loads`, which 3.11 (the CI's version) cannot, and failed CI
+  (now built in Python); MCP stdio still timed out on the raw bytes; and the docs promised more than
+  the code (a split canary passes with a judge that says secure; one `FF` byte does not stop an MCP
+  SSE or stdio target; one long string with a half costs 3 times the parse's peak). A pre-merge
+  round of two on `73e471a` (2026-10-09) found no defect in the code and every call site killed by
+  mutation, but the evidence keeps a tool call's arguments text as sent (the escape included), a
+  leak split inside a word is missed as with a zero-width space (now pinned by a test and written
+  down), no test held U+DBFF, U+DFFF or a reply that is one string, and some merge notes and figures
+  were stale; all corrected. Merge notes, in PR #79: with PR #57 (open) a credential split by a half
+  is masked only once U+FFFD is in #57's `_INVISIBLE_RANGES` (adding it to its splitter lists alone
+  fails #57's own consistency test); PR #65, merged 2026-10-08, meets this branch at four call sites
+  (five parse paths: the MCP JSON body and SSE event share one), merged here as
+  `well_formed_json(bounded_loads(...))` with its `NestedTooDeeply` branch first and the stdio line
+  still decoded with `surrogatepass`, so a reply nested past 100 levels is refused before it is
+  walked; #65's fifth `bounded_loads`, the judge's verdict, stays unwrapped (A-47: the judge's
+  reasoning is neither persisted nor printed); PR #74's A-39 and its PROGRESS entry call this open;
+  MANUAL conflicts with #68 (keeping both hunks repeats a line); PR #87's WebSocket adapter parses
+  its frames with its own `json.loads`, which needs the same `well_formed_json` once both are in. A
+  spec file whose YAML holds the escape is refused by lint and run since #89. Left as their own
+  tasks: older ways one reply stops a campaign that the ingress audit found on main (an MCP session
+  id that is not ASCII, an SSE charset or line separator, one invalid UTF-8 byte that is not a
+  surrogate, and a non-finite number sent back, which the pre-merge audit could not reproduce
+  through an OpenAI tool call; JSON nested in a tool call's or the judge's text no longer stops one
+  since #65). `tests/cli/test_lone_surrogate.py` (30 of 37 fail on `main` at `a40e596`),
+  `tests/adapters/test_lone_surrogate_replies.py` (9 of 9), `tests/shared/test_wellformed.py`.
+
+## State, 2026-10-08 (evening): a SIGTERM or SIGHUP dropped inside a callback
+
+- Found in CI on PR #72 (the `[sigterm]` case of `tests/cli/test_probe_pass_spend.py`, 41 requests
+  served where 25 were expected; three times on two PRs, #72 and #82, on Linux with Python 3.11)
+  and fixed on
+  `fix/sigterm-lost-in-callback`: `execute_run` mapped SIGTERM and SIGHUP to
+  `signal.default_int_handler`, whose KeyboardInterrupt raised inside a weakref callback is printed
+  and dropped, so the run went on. Ctrl-C never was, because inside `asyncio.run` it goes to
+  asyncio's handler, which cancels. Now SIGTERM and SIGHUP call the SIGINT handler in place at that
+  moment, and raise as before only when SIGINT has none (ignored, a job a script starts with `&`). Left as
+  it is: with Ctrl-C ignored, and outside the event loop (where no request is sent), a signal in a
+  callback can still be dropped, as Ctrl-C can in any Python program. Contract u12 A-60;
+  `tests/cli/test_termination_signals.py`, 2 of its 8 tests fail on `e4d6c83`.
+
 ## State, 2026-10-07 (afternoon): a refused `--resume -sV` whose advice was refused in turn
 
 - Found by the pre-commit audit of `fix/resume-wall-flag-name` and fixed on
@@ -62,7 +123,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   truthiness (`"false"` reads as on), where a wrong-typed `runs` or spend is refused as corrupt; and
   only the request axis is read, so a campaign halted on `--budget-tokens` is told about requests.
 
-## State, 2026-10-08: a hostile reply nested too deeply fails one attempt (PR #65, open)
+## State, 2026-10-08: a hostile reply nested too deeply fails one attempt (PR #65, merged)
 
 - On `fix/target-deep-json` (PR #65): a target reply whose brackets balance and nest past 100
   levels (`shared.nesting.MAX_DEPTH`), however deep, is `ResponseTooDeep`, an environment failure
