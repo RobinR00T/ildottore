@@ -21,6 +21,7 @@ import json
 from ildottore.fingerprint.attribution import encode_signal
 from ildottore.fingerprint.base import PROBE_SAMPLING, ProbeContext, seed_for
 from ildottore.fingerprint.signatures import SignaturePack
+from ildottore.shared.amounts import is_amount
 from ildottore.shared.models import (
     FingerprintEvidence,
     ModelRequest,
@@ -123,11 +124,17 @@ class GuardrailLayer:
 
 
 def _latency_ms(response: ModelResponse) -> float | None:
-    """Extract a moderation latency if the adapter reported one; else ``None``."""
+    """Extract a moderation latency if the adapter reported one; else ``None``.
+
+    The figure is the target's, so it is read only when it is a finite, non-negative number a
+    float can hold: a 400-digit integer made ``float()`` raise ``OverflowError`` and
+    ``dottore fingerprint`` and ``run -sV`` exit 1, and an infinity, a NaN or a negative
+    figure was recorded as a latency (2026-10-07).
+    """
 
     usage = response.usage or {}
     raw = usage.get("moderation_latency_ms")
-    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+    if is_amount(raw):
         return float(raw)
     return None
 

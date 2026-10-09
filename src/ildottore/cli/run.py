@@ -34,7 +34,7 @@ import stat
 import sys
 import unicodedata
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,7 +48,14 @@ from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetLedger, Spend
 from ildottore.core.planner import DEFAULT_PLAN_BUDGETS, IDENTITY_MUTATOR, build_plan
-from ildottore.core.runner import CampaignResult, answered_attempt_ids, resume_progress
+from ildottore.core.reproduce import planned_attempts_held
+from ildottore.core.runner import (
+    CampaignResult,
+    answered_attempt_ids,
+    resume_progress,
+    sweeps_identities,
+    unjudged_attempt_ids,
+)
 from ildottore.core.setup_delivery import (
     MAX_TOOL_ROUNDS,
     delivers_in_band,
@@ -57,6 +64,7 @@ from ildottore.core.setup_delivery import (
     seeding_gap,
     trace_gap,
 )
+from ildottore.fingerprint import failed_probes
 from ildottore.policy import Scope, authorize_target
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.registry import uncompilable_patterns
@@ -354,6 +362,8 @@ class TargetPlan:
     # OD-18 B: specs that need the deployment's scene and that its target file does not declare
     # seeded. The runner reports them (`setup_not_seeded`) and sends nothing for them.
     not_seeded: list[tuple[str, str]] = field(default_factory=list)  # (spec id, reason)
+    # The scope identities a live run sends each sweeping spec as (fewer than two: no sweep).
+    identities: int = 0
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -385,6 +395,7 @@ def estimate_plan(
     judge: bool = False,
     target: Target | None = None,
     fixtures_hold_scene: bool = False,
+    identities: int = 0,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -395,6 +406,9 @@ def estimate_plan(
     A spec that needs a deployment's scene (OD-18 B) and is not declared seeded sends nothing,
     so it costs nothing, unless ``fixtures_hold_scene`` (the offline mock, whose fixtures are
     written for the scene).
+    ``identities`` is how many scope identities a live run sends the attack as, once each, for
+    every spec that :func:`~ildottore.core.runner.sweeps_identities` (fewer than two sends
+    nothing, as the runner's sweep does); those sends were never priced.
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
@@ -439,6 +453,8 @@ def estimate_plan(
                 + (json.dumps(scene.tools) if scene.tools else "")
             )
         requests = len(mutators) * runs * n_turns * sends_per_turn
+        if identities >= 2 and target is not None and sweeps_identities(spec, target):
+            requests += identities  # one plain send per identity: no scene, no rounds
         in_tokens = max(1, len(prompt) // 4)
         out_tokens = (
             spec.sampling.max_tokens
@@ -627,6 +643,13 @@ def resolve_target_plans(
         ]
         unseeded = {spec_id for spec_id, _ in not_seeded}
         runnable = [spec for spec in runnable if spec.id not in unseeded]
+        # The identity sweep is a live route's (the offline mock wires none, ``build_runner``).
+        scope_target = scope.target(target.id)
+        identities = (
+            len(scope_target.identities)
+            if scope_target is not None and not fixtures_hold_scene
+            else 0
+        )
         estimate = estimate_plan(
             runnable,
             runs,
@@ -634,6 +657,7 @@ def resolve_target_plans(
             judge=judge,
             target=target,
             fixtures_hold_scene=fixtures_hold_scene,
+            identities=identities,
         )
         plans.append(
             TargetPlan(
@@ -648,6 +672,7 @@ def resolve_target_plans(
                 budgets=budgets_for(estimate, rate_rps=rate_rps, overrides=budget_overrides),
                 mutators_by_spec=mutators_by_spec,
                 not_seeded=not_seeded,
+                identities=identities,
             )
         )
     return plans
@@ -695,14 +720,35 @@ def _probe_pass_remedy(adaptive_campaign: bool, *, attack_room: bool) -> str:
     return "Raise --budget-requests, or drop -sV"
 
 
-def _fits_without_probes(plans: list[TargetPlan], ceiling: int, *, spent: int, done: int) -> bool:
+def _fits_without_probes(
+    plans: list[TargetPlan],
+    ceiling: int,
+    *,
+    spent: int,
+    resume_from: TestRun | None,
+    specs: list[AttackSpec],
+    runs: int,
+) -> bool:
     """Whether the rest of every target's campaign fits ``ceiling`` with no probe pass.
 
-    ``spent`` is the spend the campaign has on record, ``done`` the requests a resume does not
-    send again (:func:`_answered_requests`); the rest is priced as ``--estimate`` prices it.
+    ``spent`` is the spend the campaign has on record; what the resume does not send again is
+    :func:`_answered_requests` over these ``plans``, the identity sweep of a spec it will not
+    sweep again included (A-34), and the judge's requests for the attempts it keeps
+    (:func:`_judge_requests_kept`), so the rest is priced as ``--estimate --resume`` prices it.
+    Each share is clamped at zero on its own: the judge's share used to be priced whole, so a
+    "drop -sV" that fitted was not offered with ``--judge``, and one share's surplus must not
+    pay for the other's rest.
     """
 
-    return all(spent + max(0, plan.estimate.total_requests - done) <= ceiling for plan in plans)
+    done = _answered_requests(resume_from, specs, plans=plans, runs=runs)
+    judge_done = _judge_requests_kept(resume_from, specs)
+    return all(
+        spent
+        + max(0, plan.estimate.requests - done)
+        + max(0, plan.estimate.judge_requests - judge_done)
+        <= ceiling
+        for plan in plans
+    )
 
 
 def _no_judge_warning(
@@ -762,12 +808,14 @@ def _print_estimate(
     quiet: bool = False,
     fingerprint_probes: int = 0,
     already_done: int = 0,
+    judge_already_done: int = 0,
 ) -> None:
     """Print the pre-run estimate, per target and totalled (skipped under --quiet).
 
     Per target on purpose: the previous version estimated the selection once and printed it
     once, so a two-target run understated the spend by half - an error in the direction that
-    costs the operator money.
+    costs the operator money. ``judge_already_done`` is the judge's share of a resume: the
+    requests it will not make for the attempts the resumed run keeps.
     """
 
     if quiet:
@@ -787,6 +835,13 @@ def _print_estimate(
             f"  + {judge_requests} request(s) to the --judge model (~{judge_tokens} tokens), "
             "paced and debited from the same ceilings"
         )
+        if judge_already_done:
+            # A resume judges only what it sends: the whole battery's judge was priced, so a
+            # resume after a judged half promised 12 judge requests and sent 8.
+            print(
+                f"  minus {judge_already_done} judge request(s) for the attempts the resumed "
+                f"run keeps (~{max(0, judge_requests - judge_already_done)} still to send)"
+            )
     print(
         f"  ~tokens: {tokens_in} in + {tokens_out} out "
         f"(~{tokens_in + tokens_out} total, rough gloss)"
@@ -1411,7 +1466,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                         provisional,
                         ceiling,
                         spent=prior_spend.requests,
-                        done=_answered_requests(resume_from, selected),
+                        resume_from=resume_from,
+                        specs=selected,
+                        runs=opts.runs,
                     ),
                 )
                 raise ValueError(
@@ -1420,15 +1477,35 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     "attack traffic. Three sequential resumes used to run a whole probe pass "
                     f"each, past an exhausted ceiling. {remedy}."
                 )
-        if not opts.quiet:
+        if not opts.quiet and not resume_from.findings:
+            # The run spent requests and stored no reply: an identity sweep, a -sV probe pass, a
+            # conversation cut mid-way, a first request that failed, a Ctrl-C mid-batch. It used
+            # to be refused as a run that "sent nothing", with its spend stranded under an id
+            # nothing could continue. The list is printed as examples: two audits in a row found
+            # one more cause than a closed list named.
+            spent = prior_spend.requests if prior_spend is not None else 0
+            print(
+                f"resume: {opts.resume} stored no answered attempt before it stopped, after "
+                f"{spent} request(s) that left none (for example an identity sweep, a -sV probe "
+                "pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C); "
+                "they count against the campaign's ceiling, and every spec is sent from the start"
+            )
+        elif not opts.quiet:
             done, again = resume_progress(resume_from)
+            unjudged = len(unjudged_attempt_ids(resume_from))
+            errored = again - unjudged
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
                 f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
                 "would repeat); they will not be re-sent"
                 + (
-                    f"; {again} that ended in an environment error will be sent again"
-                    if again
+                    f"; {errored} that ended in an environment error will be sent again"
+                    if errored
+                    else ""
+                )
+                + (
+                    f"; {unjudged} answered but not evaluated before the halt will be sent again"
+                    if unjudged
                     else ""
                 )
             )
@@ -1459,7 +1536,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     provisional or provisional_plans(),
                     opts.budget_requests,
                     spent=0,
-                    done=_answered_requests(resume_from, selected),
+                    resume_from=resume_from,
+                    specs=selected,
+                    runs=opts.runs,
                 ),
             )
             raise ValueError(
@@ -1534,7 +1613,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     provisional or provisional_plans(),
                     opts.budget_requests or 0,
                     spent=0,
-                    done=_answered_requests(resume_from, selected),
+                    resume_from=resume_from,
+                    specs=selected,
+                    runs=opts.runs,
                 ),
             )
 
@@ -1591,6 +1672,18 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 raise
             fingerprints[target.id] = probe_pass.fingerprint
             probes_sent[target.id] = probe_pass.requests
+            # A probe that got no usable reply is a failed probe, not the end of the run
+            # (OD-23): said on stderr, never silenced by -q, because the plan's order now comes
+            # from part of the pass. Plain print, as the resume notice: rich wrapped it at 80
+            # columns, cutting the evidence path in two, and would read a `[` in it as markup.
+            warning = probe_failure_warning(
+                f"-sV on {target.id}",
+                probe_pass.fingerprint,
+                probes=fingerprint_probe_count(),
+                tail=f". The exchanges are in {evidence_root / run_ids[target.id] / 'probes'}",
+            )
+            if warning is not None:
+                print(warning, file=sys.stderr)
     if fingerprints and not opts.quiet:
         # Which targets were fingerprinted against a canned offline mock rather than over the
         # wire. The line printed `family=meta-llama (confidence 0.67) version=llama-3-8b` for a
@@ -1601,6 +1694,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             family = fingerprint.family
             version = fingerprint.version
             scenario = offline.get(target_id)
+            failed = len(failed_probes(fingerprint))
             print(
                 f"fingerprint: {target_id} "
                 + (f"[offline mock: {scenario}] " if scenario is not None else "")
@@ -1613,6 +1707,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 + (
                     " [the target answered every attributing probe alike: no text signal]"
                     if "non_discriminating_target" in fingerprint.spoofing_flags
+                    else ""
+                )
+                + (
+                    f" [{failed} of {fingerprint_probe_count()} probes got no usable reply]"
+                    if failed
                     else ""
                 )
             )
@@ -1674,7 +1773,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             runs=opts.runs,
             quiet=opts.quiet,
             fingerprint_probes=(fingerprint_probe_count() if opts.fingerprint_first else 0),
-            already_done=_answered_requests(resume_from, selected),
+            already_done=_answered_requests(resume_from, selected, plans=plans, runs=opts.runs),
+            judge_already_done=_judge_requests_kept(resume_from, selected),
         )
         return RunOutcome(
             exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True, estimated=True
@@ -1844,6 +1944,43 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     )
 
 
+def probe_failure_warning(
+    subject: str,
+    fingerprint: ModelFingerprint,
+    *,
+    probes: int,
+    tail: str = "",
+    severity: str = "warning",
+) -> str | None:
+    """The stderr line for a fingerprint pass where some probes got no usable reply, or ``None``.
+
+    Names the probes and the error classes only (never an error's message, which can quote the
+    target's reply), the first three of them, and how many of the pass's ``probes`` failed
+    (u09 §7 A-35, OD-23). It promises nothing about what follows: with several targets, the
+    next one's probe pass can still stop the run (delta audit).
+    """
+
+    failed = failed_probes(fingerprint)
+    if not failed:
+        return None
+    shown = ", ".join(failed[:3]) + (f", and {len(failed) - 3} more" if len(failed) > 3 else "")
+    built = (
+        "none did, so the fingerprint is empty"
+        if every_probe_failed(fingerprint, probes)
+        else "the fingerprint is built from the replies that came back"
+    )
+    return (
+        f"{severity}: {subject}: {len(failed)} of {probes} probe(s) got no usable reply "
+        f"({shown}); {built}{tail}"
+    )
+
+
+def every_probe_failed(fingerprint: ModelFingerprint, probes: int) -> bool:
+    """True when no probe of a ``probes``-probe pass got a usable reply."""
+
+    return len(failed_probes(fingerprint)) >= probes
+
+
 def _refusal_for(scope: Scope, target: Target) -> str | None:
     """Why the scope does not authorize ``target``, or ``None`` when it does.
 
@@ -1994,12 +2131,20 @@ def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) 
     return prior
 
 
-def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> int:
+def _answered_requests(
+    resume_from: TestRun | None,
+    specs: list[AttackSpec],
+    *,
+    plans: Sequence[TargetPlan] = (),
+    runs: int = 0,
+) -> int:
     """The requests a resume will not send again: one per turn of every answered attempt.
 
     `--estimate --resume` subtracted an attempt count from a request count, so a multi-turn spec
     was priced at 15 still to send when 12 went out (pre-commit audit of F11). An in-band
-    attempt (OD-18) adds the tool rounds it played, which its request records.
+    attempt (OD-18) adds the tool rounds it played, which its request records. A spec whose
+    every planned attempt is answered also skips its identity sweep (the runner's F6), so the
+    sweep a plan priced for it is not sent again either.
     """
 
     if resume_from is None:
@@ -2021,7 +2166,48 @@ def _answered_requests(resume_from: TestRun | None, specs: list[AttackSpec]) -> 
                 total += turns_by_spec.get(finding.spec_id, 1) + (
                     rounds if isinstance(rounds, int) and not isinstance(rounds, bool) else 0
                 )
+    for plan in plans:
+        if plan.identities < 2:
+            continue
+        for spec in plan.selected:
+            mutators = plan.mutators_by_spec.get(spec.id) or _effective_mutators(spec)
+            # Counted from what is stored, as the runner counts it, never by building the plan:
+            # a set of mutators x runs ids grew without end at the 2**53 a run accepts (A-59).
+            planned = len(set(mutators)) * max(runs, 0)
+            if (
+                planned
+                and sweeps_identities(spec, plan.target)
+                and len(answered) >= planned
+                and planned_attempts_held(answered, spec.id, mutators, runs) == planned
+            ):
+                total += plan.identities
     return total
+
+
+def _judge_requests_kept(resume_from: TestRun | None, specs: list[AttackSpec]) -> int:
+    """The judge requests a resume will not make: the estimate's passes for each kept attempt.
+
+    The resume judges only the attempts it sends. A kept one is never judged again: an answered
+    one was judged by the halted run, and one that failed in a way a retry would repeat is never
+    judged at all. Both are in the battery the estimate priced, so both come off.
+    """
+
+    if resume_from is None:
+        return 0
+    judged = {
+        spec.id
+        for spec in specs
+        if any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators)
+    }
+    answered = answered_attempt_ids(resume_from)
+    kept = {
+        attempt.attempt_id
+        for finding in resume_from.findings
+        if finding.spec_id in judged
+        for attempt in finding.attempts
+        if attempt.attempt_id in answered
+    }
+    return JUDGE_PASSES * len(kept)
 
 
 def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool) -> None:

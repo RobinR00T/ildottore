@@ -82,7 +82,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   capped too. The adapters ask only for those two (`Accept-Encoding: gzip, deflate`); any other
   `Content-Encoding` (`br`, `zstd`, stacked encodings) or a corrupt or truncated body is refused
   as undecodable, also inconclusive and not retried, except on an error status, which is
-  classified by the status (a `401` stays a `401`). A reply whose brackets balance (as many
+  classified by the status (a `401` stays a `401`), and so is an error status whose body is over
+  the limit (before PR #68 a `401` with a 5 MB body was an inconclusive attempt where a short one
+  stops the run). A reply whose brackets balance (as many
   close as open) and nest more than 100 levels deep (objects and arrays, outside strings, read
   from the text before it is
   parsed, whether or not the rest is valid JSON; a provider's reply nests about 10), or a tool
@@ -90,8 +92,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   the rest of the scan goes on. Tool-call arguments whose brackets do not balance read as no
   arguments, as before; arguments whose brackets balance and nest past 100 are refused even when
   they are not JSON, so that reply is inconclusive instead of judged by the tool's name. During a
-  `-sV` or `-A` probe pass a reply refused on any of these grounds still stops the run before the
-  attack. A success reply that is not JSON (brackets that do not balance included), or holds an
+  `-sV` or `-A` probe pass, a 2xx reply refused on any of these grounds (its size, its encoding
+  or its nesting) fails that one probe and the run goes on (see `-sV` under `dottore run`). A
+  success reply that is not JSON (brackets that do not balance included), or holds an
   integer of more than 4,300 digits (which Python refuses to read), still stops the run (exit 3);
   over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
   times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
@@ -178,18 +181,30 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   found when the text splits it with a newline, a tab or another control character, with an
   invisible format character (a zero-width space, a soft hyphen, a word joiner, a byte order
   mark, a bidi control, a tag character), or with U+FFFD, the replacement character half a
-  character in a reply is read as: the stretch it covers is masked with the same digest as the
-  credential written in one piece. One split by a space or another printable character
-  (U+FFFD aside) is not. The 8-hex digest after a mask is
+  character in a reply is read as: the stretch it covers is masked with the same
+  digest as the credential written in one piece. One split by a space or another
+  printable character (U+FFFD aside) is not. The 8-hex digest after a mask is
   salted per process, so a report cannot be used to confirm a guessed password; set
-  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose. What the tool itself
-  generated (a sha256, the store's own path for it, an attempt id, the spec id) is left
-  readable in every report, in both copies of a finding the JSON report carries, so a custom
-  spec id reads the same in every run and `dottore diff` can match it. Error messages the CLI
-  prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The part of
-  an absolute path that exists on this machine is exempt from the entropy rule (a temp or CI
-  workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and labels
-  in it are still masked, and the rest of the path is redacted. Otherwise only
+  `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose: a digest is computed over
+  the value as written (a private key's too, whatever is registered inside it, when the key
+  pattern takes it whole: its 16 KB bound counts each mask inside the key as a stash token), so
+  with the salt pinned one value reads the same in every run. A password in a URL is masked
+  behind a registered, masked or empty user too (not yet behind a user holding a raw `@`, nor
+  behind a registered credential that runs across the URL's `://`, `:` or `@`), and registered
+  credentials that overlap in the text are masked as one. Two cases are masked less well than
+  before PR #56, a trade-off the owner accepted for its merge (a follow-up issue tracks them):
+  a registered credential holding an `@` across a URL's `@` lets the URL rule read on to a later
+  `@`, so a labelled value written after the URL (`,password=<value>`) keeps its tail readable
+  and the host is reported wrong; and two overlapping registered credentials, masked as one run,
+  can cover a URL's separator, so its password stays readable (`key-ABCD1234` and `1234://bob`
+  registered). Both need a target that writes a registered credential holding a URL separator.
+  What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
+  id) is left readable in every report, in both copies of a finding the JSON report carries, so
+  a custom spec id reads the same in every run and `dottore diff` can match it. Error messages
+  the CLI prints go through the same redactor, which cannot tell a sha256 from a 64-hex key. The
+  part of an absolute path that exists on this machine is exempt from the entropy rule (a temp
+  or CI workspace directory used to read `«REDACTED:high_entropy»`); emails, key shapes and
+  labels in it are still masked, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
   tamper refusal says the artifact's content now has, and, in a scope checksum mismatch, the
   digest of the scope body (`scope checksum mismatch: the scope body hashes to '<sha256>', not
@@ -284,6 +299,21 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 ```
 
 `id` and `type` are required; the rest are optional but needed for a live scan.
+The file holds these keys and no others: `id`, `type`, `name`, `provider`, `endpoint`, `model`,
+`auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup` and
+`mock_scenario` (below). Any other key is refused before anything is sent (exit 3), and so is a
+`name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is not text, on one line
+that names the file and the key, never the value: `error: target file target.yaml failed validation:
+endpont: Extra inputs are not permitted`. Until 2026-10-07 both were read as absent, so `endpont:`
+left a live target with no endpoint and the run went to the offline mock, which sent it nothing and
+scored the mock's replies, and keys of `capabilities` that lost their indent were ignored at the top
+level (owner's decision OD-31). Quote a model id YAML reads as a number, a date or a boolean
+(`model: "20240613"`). One of the six text fields with nothing after it, `null` or `~` is still
+absent. A key that only holds an anchor for a `<<` merge (`x-defaults: &d`) is refused like any
+other: write the merged map inline. The key is printed as the location, as pydantic renders it
+(`on:` as `1`, a `!!binary` key decoded), so a control character in it reaches the terminal as
+written, as below. A run halted before then with such a key resumes once you delete the key;
+correcting it to the key you meant changes the target, and the resume is refused.
 A value under `capabilities` or `sampling_defaults` that cannot be read as its field's type, a
 `max_tokens` outside 1 to its cap or a key either block does not know is refused before
 anything is sent (exit 3), on one line that names the file and gives the field and the reason of the
@@ -300,13 +330,24 @@ the target ran with tools off and without the specs that need them. A `capabilit
 not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
 included, unless it is null: to declare none, leave the key out or write `capabilities: {}` (owner's
 decision OD-29). A `capabilities:` with nothing under it is null too, so if the keys below it lost
-their indent they are top-level keys, which are still ignored without a word. A run an older
-version halted with such a key or value resumes once you delete it (or write `{}` for `false`),
-since it was never read; correcting a key to the one you meant changes the target, and the resume
-is refused.
+their indent they are top-level keys, which are refused as any other unknown key is (above). A run
+an older version halted with such a key or value resumes once you delete it (or write `{}` for
+`false`), since it was never read; correcting a key to the one you meant changes the target, and the
+resume is refused.
 `sampling_defaults` is parsed and kept in the target's digest but applied to nothing today:
 every shipped spec pins its own sampling (temperature 0 when a spec declares none), as do the
 judge and the `-sV` probes. Whether to apply it or drop it is open.
+
+`logprobs: true` under `capabilities` lets the spec that scores token logprobs run
+(`DL-MEMORIZE-DIVERGENCE-001`, through `logprob_membership`); without it that spec is skipped
+for capabilities. The OpenAI adapter asks for logprobs on every request whatever the file says,
+and reads a figure only when it is a JSON number that converts to a finite float at or below
+zero, as a `log p` is. A reply in which a token's figure is anything else (a string, a bool, a
+positive number, NaN, an infinity, or an integer no float holds) is read as carrying no logprob
+block: the membership spec is inconclusive and every spec is still judged on the reply's text.
+Such a figure among a token's alternatives drops only that token's alternatives, which are never
+scored. In older versions a 400-digit figure, a list or an object there made `fingerprint` and
+`run -sV` exit 1 with no report, and a positive token figure was scored as "likely memorized".
 
 `run` and `fingerprint` parse a target file once: the target the scope authorizes, its route and
 the target a live adapter sends to all come from that one parse, even if the file changes while the
@@ -485,7 +526,7 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
-| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). The run's `started_at` is stamped before the probe pass |
+| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 17 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +17 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). A probe whose reply comes back **refused** (over 4 MiB, in an encoding the adapters do not decode, or nested more than 100 levels deep: what makes an attack attempt inconclusive without a retry) is a failed probe: its layer gives no evidence from it, the fingerprint is built from the replies that came back, a `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` line on stderr names each one as `layer/probe: ErrorClass` (never silenced by `-q`), the fingerprint line ends `[N of 17 probes got no usable reply]`, and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a timeout, a refused connection, after its retries) still stops the run before any attack with its cause (exit 3): the target is not answering. So do a refusal by the scope and a 200 that is not JSON. Before, one refused probe reply stopped the run before any attack too (OD-23). The run's `started_at` is stamped before the probe pass |
 | `-A` | aggressive: implies `-sV` and `--deep`, so it fingerprints first and runs at `-T2` unless you pass `-T`. There is no separate `--adaptive` flag: mutator ordering is adaptive only when a fingerprint exists, that is with `-sV` or `-A` |
 
 **Judge and execution**
@@ -497,12 +538,12 @@ required.
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep` and `-A` imply 2; an explicit `-T` always wins); higher is faster/louder |
 | `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it). Every send passes it: the battery, each retry (a campaign's adapters do not retry on their own; the runner retries, paced and debited, so a 429 storm is not a burst), the `-sV` probes, the multi-identity sweep and the `--judge` model. Must be greater than 0: `0` or a negative rate is refused (exit 3) instead of silently switching pacing off. **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |
 | `--concurrency INT` | max concurrent specs |
-| `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the spec's `sampling.max_tokens` or, when it declares none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0); tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a spec that declares none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
+| `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the spec's `sampling.max_tokens` or, when it declares none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0). A figure is read only when it is a JSON integer from 0 to 2^53, past which a float no longer holds every integer: one that is negative, larger, or written with a fraction or an exponent is skipped like an absent one and the next shape is read (`total_tokens`, then `tokens`, then input plus output, then prompt plus completion); a sum past 2^53 is no usage, and with no readable shape the reservation stands. A prompt-cache figure is summed only into a pair, and one that is there and unreadable makes the pair a floor: the reservation is trued up to it, never down. (A 400-digit figure made `run` exit 1 with no report, and one past 2^53 halted the campaign on the token ceiling, until 2026-10-07.) Up to 2^53 a figure is believed, as a bill is: a target can report more than it used and halt the run on the ceiling (one reply of 2^53 fills even the largest ceiling these flags take, 2^53 too). Tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a spec that declares none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine |
-| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. That it is the same campaign (target, route, judge, planning mode, `--runs`, battery, evidence) is checked first, the budget after (against the campaign's `--runs`), and a resume refused before it sends anything writes nothing. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run. The planning mode is adaptive when the campaign ran with `-sV`, `-A` or `--deep`, and a resume has to keep it: the refusal names those flags, to leave out or to put back (the run store does not record which of them set it). With `-sV`, a request ceiling the campaign's spend leaves too small for the 17 probes is refused before they are sent, and the refusal offers dropping `-sV` (or the `-A` that implies it) only when the campaign did not plan adaptively and the ceiling holds the rest of it without the probes, priced as `--estimate` prices it; otherwise it says to raise `--budget-requests` |
+| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is in the halt message and in `summary.status.reason`. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. That it is the same campaign (target, route, judge, planning mode, `--runs`, battery, evidence) is checked first, the budget after (against the campaign's `--runs`), and a resume refused before it sends anything writes nothing. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run. The planning mode is adaptive when the campaign ran with `-sV`, `-A` or `--deep`, and a resume has to keep it: the refusal names those flags, to leave out or to put back (the run store does not record which of them set it). With `-sV`, a request ceiling the campaign's spend leaves too small for the 17 probes is refused before they are sent, and the refusal offers dropping `-sV` (or the `-A` that implies it) only when the campaign did not plan adaptively and the ceiling holds the rest of it without the probes, priced as `--estimate` prices it; otherwise it says to raise `--budget-requests`. A halt keeps every reply the target gave: the attempts a batch had answered when the ceiling stopped it are stored (they were lost until 2026-10-07, and the resume sent them and paid for them again), and a reply whose evaluation the ceiling stopped (the judge's request refused) keeps a deterministic check's fail when it has one (that decides without the judge, and the verdict says the judge was not consulted) and is otherwise stored without a verdict, then sent again and judged by the resume. With `--judge`, a reply stored without a verdict is paid for twice: the resume sends it again rather than judging the stored one (a design choice; re-judging is a possible follow-up). A run that spent requests and stored no reply (for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start with its spend carried; one whose run store records no request spent is refused, and so is an `--evidence-root` that holds none of the artifacts the run store journals for the run, or an empty tree for a run that predates that journal |
 | `--resume-unverified` | resume a run whose integrity record is missing; its ceiling then covers this invocation only |
-| `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
+| `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. On a live target whose scope gives it two or more identities it also prices the identity sweep: one request per identity for each spec that sweeps them (`DL-XTENANT-001`, and `EMB-XTENANT-RETRIEVAL-001` when the target declares `multi_identity` and its scene is not sent in-band), which it left out until PR #60 (merged 2026-10-09); with `--resume` it is not counted for a spec whose attempts are all answered, which the runner does not sweep again. With `--resume` it subtracts the requests already done and, with `--judge`, the judge's two requests for each attempt the resume keeps, so it prices what the resume sends. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
 | `--compare` | model-comparison matrix across targets (a band per spec x target), printed in the terminal and embedded in the JSON report. The matrix renders for **any** multi-target run; `--compare` states the intent and refuses a single target (exit 3) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a **mock** target. Refused (exit 3) on a live target: it sends nothing, and used to publish a clean report under the live target's name |
 
@@ -558,7 +599,16 @@ over: the attempts the target already answered are not re-sent, those that ended
 environment error (a timeout, a 5xx after retries) are sent again under the same attempt id
 (except an error a retry would repeat, such as a reply over the size cap or nested too deeply,
 recorded with `[not retryable]` and kept), and a resumed spec is scored over its full `--runs`,
-one attempt per id.
+one attempt per id. What a halted run keeps: every reply the target gave, stored when its batch
+returns or a halt stops it (a Ctrl-C still drops the batch in flight), a conversation whose last
+reply crossed the token ceiling included. Each is judged when the ceiling leaves room for the
+judge; when it does not, a reply a deterministic check already failed keeps that fail (it
+decides without the judge), and the others are stored without a verdict, which the resume sends
+again and judges. Its spend is in the run store. Nothing is stored for sends that made no reply,
+an identity sweep or a conversation stopped mid-way: the resume sends them again from the
+start, with their cost already counted against the ceiling. A run halted by this version is not
+for an older one to resume: it would keep a reply stored without a verdict and score the spec
+without it.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
 authorized but answered nothing at all (every attempt failed on transport). That code is
@@ -566,7 +616,14 @@ deliberately chosen over `2` even when the partial run found confirmed exploits,
 scan itself is not a measurement you can act on: the specs that never ran are the ones you
 know nothing about. The findings are still written to every report. If your pipeline treats
 `3` as "infrastructure, retry", read `summary.status.reason` before retrying: it names the
-breached axis and how many specs never ran.
+breached axis, its ceiling, the figure that would have crossed it and how many specs never ran,
+for example `stub: budget ceiling reached on 'max_tokens' (limit 500,000, attempted
+9,007,199,254,740,992); 1 of 1 specs never ran or did not finish`. The figures are written in
+digit groups, seconds with three decimals and a count from 10**18 up as a magnitude
+(`1.000e+300`), because the reason is masked like everything else the tool prints and a bare
+figure that long reads as a phone number to the redactor. A shortened figure is rounded away
+from the ceiling (the attempted figure up, the limit down), so the attempted figure always
+reads larger than the limit.
 
 A resume with `-sV` records what its probe pass sent as soon as the pass ends, whether it
 finished, reached the request ceiling, stopped on an error (a probe with no answer after its
@@ -619,6 +676,16 @@ name counts (not `finish_reason`, `system_fingerprint` or other fields compatibl
 copy). On a live target the capabilities in the fingerprint are the ones the target file
 declares, and a model name such as `meta-llama/Meta-Llama-3-8B-Instruct` reaches the metadata
 layer unmasked. Details in [`10-fingerprint.md`](10-fingerprint.md) §2, "Attribution rules".
+
+A probe whose reply comes back refused (over 4 MiB, an encoding the adapters do not decode,
+nested more than 100 levels deep) does not stop the command: the fingerprint is built from the
+replies that came back, `spoofing_flags` carries `probes_failed`, an evidence entry
+`probe_errors=[...]` lists each failed probe as `layer/probe: ErrorClass`, stderr says `warning:
+<target>: N of 17 probe(s) got no usable reply (...)`, and the exit is 0. Before, it exited 3 on
+the first such reply. When every probe is refused there is no fingerprint: the line starts
+`error:`, nothing is printed on stdout, and the exit is 3. A probe that gets no answer at all (a
+closed port, a 503 or a timeout after the retries), a refusal by the scope or a 200 that is not
+JSON still exits 3, with the cause.
 
 ### `dottore fleet`, expand and optionally scan a fleet
 
@@ -721,7 +788,8 @@ a JSON-schema message can quote the offending value (cut at 300 characters), and
 schema errors are listed per file. A number too long for Python to write out (more than
 `sys.get_int_max_str_digits()` digits, 4,300 by default; YAML builds one from `0x` and 4,000
 `f`) is a `SCHEMA` error at its path, `name: a number too long to write out (over 4300
-digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included), and
+digits)`, never quoted, wherever it sits (a `!!set`, `!!omap` or `!!pairs` included; a key on
+its path, or on any JSON-schema error's, that is not printable is written as `repr`), and
 nothing else in that file is checked; `run` refuses such a spec by name, in the dry run too. One
 as a labels key (`calibrate`), in a report (`diff`, `calibrate`) or as a target file's `type`,
 `mock_scenario` or `seeded_setup` key is refused naming the file, where printing it used to fail. An
@@ -807,8 +875,11 @@ attempts: 142  exploited: 142  pooled rate: 1.00 (every attempt of the run; a re
 ```
 
 A resume sends an attempt that ended in an environment error again under its id, so several
-artifacts can share one attempt id (the failed try and its re-send). Replay lists them all but
-counts one per id (the one that got an answer), and says so in a line above the totals: `(2 more artifacts share an attempt id with one listed above: one per id is
+artifacts can share one attempt id (the failed try and its re-send). A reply stored without a
+verdict (a ceiling stopped its evaluation) is sent again the same way, and listed with `?` for
+its verdict. Replay lists them all but counts one per id (the one that got an answer and a
+verdict, else any with a verdict, such as an environment error's inconclusive, else a bare
+reply), and says so in a line above the totals: `(2 more artifacts share an attempt id with one listed above: one per id is
 counted below)` (`1 more artifact shares` for one). Attack attempts and the
 recognition probes sent by `-sV` are listed apart: a probe is not an attempt, so it never enters
 the reproducibility ratio or the attempt count, but it is stored, hashed and replayable like
@@ -827,7 +898,16 @@ regression is present, so it is CI-gateable like `run`. A report covering severa
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
 complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
-what the JSON parser holds), with the file named. `dottore calibrate REPORT LABELS` applies the
+what the JSON parser holds), with the file named. A finding that does not validate (a `status` that
+is not a verdict, a field of the wrong type, a key a finding does not have) is refused on one line
+that names the report and gives the place and the reason of each of its problems (the first such
+finding, by its index), never the value written: `error: the report /abs/bad.json failed validation:
+findings.0.status: Input should be 'pass', 'fail' or 'inconclusive'`. At most 20 problems are listed
+and the rest counted. A key a finding does not have is part of the place and goes through the
+redactor like the rest of the message: an email or a known token format in it is masked, but a key
+of hex digits or a short password often prints as written, and a control character reaches the
+terminal as written (a line break splits the line). What can be read is taken as read (`"confirmed":
+"yes"` is true). `dottore calibrate REPORT LABELS` applies the
 same one-target rule and the same refusals, counts agreement as an exact status match, prints an
 undefined precision or recall as `n/a` and floors its percentages (99.6% is shown as 99%, not
 100%).
@@ -1301,8 +1381,9 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | Live findings all inconclusive | No `--judge`, so `semantic_judge` abstains. Pass a judge target; deterministic evaluators still fire. |
 | A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all. Selected alone they end in `nothing would be sent` (exit 3), whose message says so: "A spec blocked by policy needs a policy pack that enables it, and the CLI cannot load one today (open decision), so it cannot run from `dottore`." |
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
+| `warning: -sV on <target>: N of 17 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. |
-| `authz_leak` is `capability_unavailable` | A cross-tenant spec needs the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
+| `authz_leak` is `capability_unavailable` | It needs two identities to compare: the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`). The runner then sends as each identity, for a spec that requires `multi_identity` (`DL-XTENANT-001`) and for one that declares `authz_leak` to corroborate (`EMB-XTENANT-RETRIEVAL-001`), never over an in-band scene (a `type: model` target gets the spec's documents in every request, the other tenant's included). Without a sweep, the first stays `inconclusive`; the second is decided by its other evaluators, and its verdict says `authz_leak set aside: no identity sweep ran`. After a sweep where fewer than two identities answered, `authz_leak` stays `inconclusive` for both (the second's verdict says `authz_leak kept: fewer than two identities answered the identity sweep`), unless a deterministic check failed: check that every identity's credential and endpoint work. A spec that requires `multi_identity` and carries a scene (documents, tools or memory) is never swept on a `type: model` target, since the scene goes in-band, and stays `inconclusive` there unless a deterministic check failed. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
 | `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |

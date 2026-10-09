@@ -262,7 +262,16 @@ def test_completed_attempt_ids_counts_answers_not_errors() -> None:
 
     run = TestRun(run_id="r", findings=[finding])
     assert R._completed_attempt_ids(run) == set()
-    answered = a1.model_copy(update={"error": None, "response": ModelResponse(text="ok")})
+    # As stored: the runner writes an answered attempt with its verdict.
+    answered = a1.model_copy(
+        update={
+            "error": None,
+            "response": ModelResponse(text="ok"),
+            "verdict": Verdict(
+                status=VS.PASS, confidence=1.0, reasoning="ok", evaluator_type="refusal"
+            ),
+        }
+    )
     run = TestRun(run_id="r", findings=[finding.model_copy(update={"attempts": [a1, answered]})])
     assert R._completed_attempt_ids(run) == {"a1"}
     assert R.resume_progress(run) == (1, 0)

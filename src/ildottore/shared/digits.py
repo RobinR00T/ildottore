@@ -58,9 +58,12 @@ def path_text(path: tuple[object, ...]) -> str:
 
 def _part_text(part: object) -> str:
     try:
-        return str(part)
+        text = str(part)
     except ValueError:  # a key that is, or holds, a number too long to write out
         return "<number>" if isinstance(part, int) else "<value>"
+    # A key holding what is not printable is written as `repr`, as #80 writes one: a newline in it
+    # forged a finding line, a lone surrogate made lint exit 1 (`UnicodeEncodeError`).
+    return text if text.isprintable() else repr(text)
 
 
 def too_long_paths(data: object) -> Iterator[tuple[tuple[object, ...], bool]]:

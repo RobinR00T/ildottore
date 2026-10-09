@@ -153,11 +153,11 @@ def _shown_endpoint(endpoint: str) -> str:
     """The endpoint as an error may quote it: as urllib reads it, without what precedes the last
     ``@`` of its authority, cut.
 
-    The CLI masks a URL's password only in the ``user:password@`` shape, so an empty user, a
-    space in the password or a second ``@`` printed it (delta audit of A-51). It is read as
-    urllib reads it, its tabs and line breaks removed: urllib found an authority in
-    ``http:/<TAB>/user:password@host`` that a search for ``//`` missed (final audit). Found by
-    position, not by a pattern, so a long hostile endpoint costs one pass.
+    The CLI masks a URL's password only in the ``user:password@`` shape, so a space in the
+    password or a second ``@`` printed it, and an empty user did until A-31 (delta audit of
+    A-51). It is read as urllib reads it, its tabs and line breaks removed: urllib found an
+    authority in ``http:/<TAB>/user:password@host`` that a search for ``//`` missed (final
+    audit). Found by position, not by a pattern, so a long hostile endpoint costs one pass.
     """
 
     text = endpoint.translate(_URL_IGNORED)
