@@ -96,13 +96,18 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 .B id
 and
 .B type
-are required; the rest are needed only for a live scan.
+are required; the rest are needed only for a live scan. The file holds these keys and name,
+transport, command, seeded_setup and mock_scenario, and no others: any other key, or a name,
+provider, endpoint, model, auth_ref or transport that is not text, is refused before anything is
+sent, naming the file and the key. Quote a model id YAML reads as a number, a date or a boolean.
+A key that only holds an anchor for a << merge is refused like any other: write the merged map
+inline.
 .B capabilities
 takes tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal and audio, each
 false unless set; any other key, or a capabilities that is neither a mapping nor null (false and
 [] included), is refused before anything is sent. To declare none, leave it out or write {}. A
 capabilities line with nothing under it is null, so keys below it that lost their indent are
-top-level keys, which are still ignored.
+top-level keys, which are refused as any other unknown key is.
 .B sampling_defaults
 is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
 their own sampling.

@@ -157,6 +157,13 @@ against `specs/`.) What this file checks is the **ordering**; the scoring discri
 audit removed all three at once and the suite stayed green. Checked by
 `tests/fingerprint/test_carrier_measured_offline.py` and `tests/fingerprint/test_carrier_layer.py`.
 
+**A-36 (owned by u08) covers the guardrail layer's latency too (2026-10-07).**
+`moderation_latency_ms` is the target's own figure, so it is read through
+`shared.amounts.is_amount` (a finite, non-negative number a float can hold): a 400-digit
+integer, an infinity, a NaN or a negative figure is `null`. The 400-digit one made `float()`
+raise and `fingerprint` and `run -sV` exit 1; the others were recorded as latencies.
+`tests/fingerprint/test_latency_figure.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`); MUST NOT send any jailbreak /
   `test_only` payload: benign probes only. **This binds the carrier as well as the payload**
