@@ -262,12 +262,13 @@ hold its plan, and it counts them with `planned_attempts_held` as the runner doe
 figure, so it no longer prices a finished spec's sweep again. A test pins both.
 
 **A-59 A prior's attempts are checked against the plan without building the plan (added
-2026-10-08).** Three places ask whether a started spec's stored attempts hold every planned attempt
-(each mutation, `n` times): the halt path of a resume, which publishes a finished spec's prior
-finding; the seeding gate, which scores a prior that holds its plan and says how much of it was sent
-otherwise; and the multi-identity sweep, skipped when every attempt is stored. Each built the set of
-`mutators x n` attempt ids and tested inclusion, so the work grew with `--runs`, not with what was
-stored. With the `2**53` that `run` and the run store accept (A-55, u12), a resume of a run whose
+2026-10-08).** Three places (a fourth, the `--estimate --resume` figure, A-34) ask whether a
+started spec's stored attempts hold every planned attempt (each mutation, `n` times): the halt path
+of a resume, which publishes a finished spec's prior finding; the seeding gate, which scores a prior
+that holds its plan and says how much of it was sent otherwise; and the multi-identity sweep,
+skipped when every attempt is stored. Each built the set of `mutators x n` attempt ids and tested
+inclusion, so the work grew with `--runs`, not with what was stored. With the `2**53` that `run`
+and the run store accept (A-55, u12), a resume of a run whose
 count was edited to 10^7 took 3.5 s and 1.3 GiB with one spec started, 16.3 s and 3.7 GiB with two,
 and one of `2**53 + 1` was still growing at 3.7 GB after 4.5 minutes on `2f6201a` (OD-32, decided by
 the owner on 2026-10-08: the runner counts what is stored, and `--runs` keeps its bound). So

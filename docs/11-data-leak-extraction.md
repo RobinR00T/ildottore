@@ -57,7 +57,7 @@ design, with no spec yet. The design ids of the unbuilt rows are placeholders, n
   runs either way: on a target that declares `multi_identity` with ≥2 scope identities the
   sweep feeds it (never over an in-band scene, which would hand every identity the other
   tenant's document); with no sweep it is set aside and the spec's other evaluators decide
-  (`docs/04 §2`, since 2026-10-07).
+  (`docs/04 §2`, since PR #60, merged 2026-10-09).
 - **reference corpus (optional)**: operator-provided set for `verbatim_overlap`, stored as
   salted hashes / shingles: never the raw sensitive text.
 

@@ -3,7 +3,7 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
-## State, 2026-10-07 (morning): `authz_leak` fed where it is declared
+## State, 2026-10-09: `authz_leak` fed where it is declared (PR #60, begun 2026-10-07)
 
 - `EMB-XTENANT-RETRIEVAL-001` (requires `rag`) declares `authz_leak` to corroborate across
   identities, but the identity sweep ran only for a spec that required `multi_identity`, so the
@@ -32,8 +32,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   `sweeps_identities`); the `--estimate --resume` figure now counts a finished spec with
   `planned_attempts_held` instead of building `mutators x runs` ids (A-59), and the room check of
   the `-sV` refusals reads that figure, so it no longer prices a finished spec's sweep again
-  (A-48's limit now names retries only). One test pins both. `make gates` green after the merge:
-  3,361 tests, coverage 97.12%.
+  (A-48's limit now names retries only). One test pins both. Stacked on `9d7e7a7` (main `6401ee2`
+  with #62, #64, #82, #90, #67, #69, #74 and #88, the tree main holds before this squash): only the
+  ledgers conflicted. `make gates` green there: 3,842 tests, coverage 97.23%.
 
 ## State, 2026-10-07 (evening): a target file's top-level keys
 
@@ -290,7 +291,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   advice and miscounted figures; its delta round (no regression, 2,367 tests green) a ceiling one
   request past the spend, a ceiling of 0 and advice written ahead of the words the test reads; its
   third round (no regression, 2,374 tests green) one untested refusal case; all fixed here. What
-  `--estimate` does not price (the multi-identity sweep, which the open #60 adds to the estimate,
+  `--estimate` does not price (the multi-identity sweep, which #60 added to the estimate,
   and retries) can still halt a followed "drop -sV" at an exact fit; written in A-48. Left open, a
   question for the owner: the recorded planning mode is one flag for `-sV`, `-A` and `--deep`, so a
   campaign run with `-sV` resumes with `--deep` in its place (measured: it goes through), and its
