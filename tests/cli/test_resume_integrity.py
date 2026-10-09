@@ -56,10 +56,10 @@ def _opts(tmp_path: Path, spec_dir: Path, **kw: object) -> RunOptions:
     return opts
 
 
-def _halted_run(tmp_path: Path, spec_dir: Path) -> str:
-    """Run until the request ceiling halts it; return the run id."""
+def _halted_run(tmp_path: Path, spec_dir: Path, **kw: object) -> str:
+    """Run until the request ceiling halts it; return the run id. ``kw`` as in :func:`_opts`."""
 
-    outcome = execute_run(_opts(tmp_path, spec_dir), [spec_dir])
+    outcome = execute_run(_opts(tmp_path, spec_dir, **kw), [spec_dir])
     assert outcome.exit_code == ExitCode.ERROR, "the ceiling should have halted the run"
     assert (tmp_path / "ev").is_dir(), (
         "precondition: the halted run stored evidence. If this fails, the ceiling stopped the "
@@ -558,8 +558,17 @@ def test_the_wall_ceiling_refusal_also_lands_before_the_probe_pass(tmp_path: Pat
     it claims was fixed, reintroduced by the fix for it.
     """
 
+    from ildottore.cli.run import fingerprint_probe_count
+
+    # Halted WITH -sV: a resume with -sV of a campaign run without it is refused for its
+    # planning mode first, before any ceiling is looked at (u12 A-48).
     spec_dir = _specs(tmp_path)
-    run_id = _halted_run(tmp_path, spec_dir)
+    run_id = _halted_run(
+        tmp_path,
+        spec_dir,
+        fingerprint_first=True,
+        budget_requests=fingerprint_probe_count() + _BUDGET,
+    )
     with SqliteRunStore(tmp_path / "runs.sqlite") as store:
         store.save_run_context(run_id, spend={"wall_s": 100000.0})
 
@@ -744,8 +753,10 @@ def test_a_resume_with_an_exhausted_ceiling_refuses_before_probing(tmp_path: Pat
 
     from ildottore.cli.run import fingerprint_probe_count
 
+    # Halted WITH -sV, as in the test above: 17 probes, then 6 requests of attack traffic.
+    spent = fingerprint_probe_count() + _BUDGET
     spec_dir = _specs(tmp_path)
-    run_id = _halted_run(tmp_path, spec_dir)
+    run_id = _halted_run(tmp_path, spec_dir, fingerprint_first=True, budget_requests=spent)
 
     sent: list[str] = []
     import ildottore.cli.wiring as wiring_mod
@@ -759,7 +770,7 @@ def test_a_resume_with_an_exhausted_ceiling_refuses_before_probing(tmp_path: Pat
                     tmp_path,
                     spec_dir,
                     resume=run_id,
-                    budget_requests=_BUDGET + fingerprint_probe_count() - 1,
+                    budget_requests=spent + fingerprint_probe_count() - 1,
                     fingerprint_first=True,
                 ),
                 [spec_dir],

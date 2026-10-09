@@ -61,6 +61,64 @@ versioning: [SemVer](https://semver.org/).
   `run` refuses it when it loads (exit 3, nothing sent). The judge's reasoning, parsed from the
   judge's own text past its adapter, can still hold one; it is neither persisted nor printed.
 
+### Fixed (a refused `--resume -sV` whose advice was refused in turn)
+
+- **Each half of the advice worked for one kind of campaign only.** `dottore run --resume -sV` with
+  a request ceiling that the campaign's spend left too small for the 17 probes was refused (exit 3)
+  with "Raise --budget-requests, or drop -sV", and that refusal ran before the check of the
+  campaign's planning mode. Measured through the CLI on `0501752`: on a campaign halted without
+  `-sV`, raising the ceiling was refused again ("halted with adaptive planning off and this
+  invocation asks for on") and only dropping `-sV` went through; on one halted with `-sV` or
+  `--deep`, dropping `-sV` was refused again (the same refusal, "on" and "off" the other way) and
+  only raising went through. The checks that a resume continues the same campaign (target, route,
+  judge, planning mode, `--runs`, battery and evidence) now run before the wall-clock and
+  request-ceiling refusals, so a campaign run without `-sV` gets the planning-mode refusal first.
+  That refusal now names the flags that set the mode: "Resume without -sV, -A or --deep, or start a
+  fresh run", or "Resume with -sV, -A or --deep, whichever it ran with, or start a fresh run" (it
+  named none; the run store records the mode, not which of the three flags set it). The three
+  refusals of a probe pass that does not fit the request ceiling (the resume's pre-check, the
+  `--budget-requests` pre-flight and a pass that reaches the ceiling) offer dropping `-sV` only when
+  the ceiling would hold the rest of the campaign without the probes, priced as `--estimate
+  --resume` prices it, and the campaign is not one that must keep adaptive planning: not to a
+  campaign that recorded adaptive planning ("Raise --budget-requests (the campaign ran with adaptive
+  planning, which its resume has to keep)"), and not when the ceiling would not hold that rest ("...
+  (without the probes, it would still not hold the rest of the campaign)"): a resume whose spend
+  left one request of room halted after it, exit 3, keeping nothing, and a fresh run with a ceiling
+  below its battery, 0 included, halts before it ends. After a pass that reached the ceiling on a
+  resume with a spend on record, its sends are recorded and fill the ceiling. Two of the three said
+  "Raise the ceiling"; all name the flag now. The advice says `-sV` where the invocation said `-A`,
+  which implies it, and it reads the request axis only: a campaign halted on `--budget-tokens` is
+  still told about requests, as on `0501752`. What the estimate does not price can still halt a
+  followed "drop -sV" at an exact fit: the multi-identity sweep of a live target with two or more
+  identities (`--estimate` leaves it out on `0501752` too), and retries; with `--judge`, a resume's
+  rest is over-priced, so dropping `-sV` is sometimes not offered where it would complete.
+- **The ceilings those refusals read are the campaign's.** The provisional plan they are derived
+  from was resolved before the resume inherited the campaign's `--runs`, so without `--runs` a
+  derived ceiling was the invocation's default of 5, not the campaign's: with the shipped battery on
+  the offline mock the derived request ceiling is 2,000 up to `--runs 10` and 3,300 at `--runs 20`,
+  so a campaign run at `--runs 20` was refused against 2,000 (and at a slow pace its derived
+  wall-clock ceiling was the invocation's too). The inherited `--runs` now comes first.
+- **A resume refused before it sends writes nothing.** The campaign checks read the evidence that a
+  resume adopts into the artifact journal; the adoption now happens after the last refusal before
+  any traffic, the `--budget-requests` pre-flight included, so moving the checks up did not make a
+  refusal for money write to the run store. On `0501752` one did: a resume with no recorded spend,
+  refused by that pre-flight, had already adopted the evidence. And with `run`'s adoption turned
+  off, all 2,351 tests of `0501752` pass (the `--dry-run` test counts journal rows, and a resume
+  journals the attempts it sends): the new test checks the halted run's digests.
+- `tests/cli/test_resume_sv_advice.py` follows every piece of advice each of these refusals gives,
+  as an operator would, through the CLI, and asserts that each is an invocation that goes through,
+  not a second refusal; each test also pins the advice it expects, so a piece worded in a way the
+  test does not read cannot pass unfollowed (one written as a sentence of its own ahead of the
+  advice is not read). 20 of its 24 tests fail on `0501752`. Two tests of
+  `tests/cli/test_resume_integrity.py` resumed with `-sV` a campaign halted without it, which is now
+  refused for its planning mode first; they halt a campaign with `-sV`. `docs/MANUAL.md`, `USAGE.md`
+  and `man/man1/dottore.1` say what a resume has to keep and what each refusal offers. Contract u12
+  A-48. Found by the pre-commit audit of `fix/resume-wall-flag-name`; the pre-commit audit of this
+  change found the spent-ceiling case, the `--runs` order, the pre-flight's advice on a resume that
+  no test followed, and miscounted figures in these notes, its delta round a ceiling one request
+  past the spend, a ceiling of 0 and advice written ahead of the words the test reads, and a third
+  round a ProbeCeilingReached case no test covered and the limits above.
+
 ### Fixed (YAML nested more than 20 levels in flow style)
 
 - **Under the depth limit, flow nesting still cost on every token.** PyYAML's pure-Python scanner

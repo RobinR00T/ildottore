@@ -132,6 +132,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-56 | u01 | no two of a fleet's ids differ only by case, on every file system, so no generated target file overwrites another; each refusal locates its entries |
 | A-21..A-22 | u14 | a test asserts the claim against the real collaborator, and is deterministic |
 | A-47 | u04 | a reply that holds half a character (a lone surrogate) is read as U+FFFD where it is parsed, in a tool call's arguments too, and judged: one such reply no longer aborts the campaign, and a leak beside it still fails |
+| A-48 | u12 | a refusal's advice is advice the tool would accept; a resume is checked for being the same campaign before money |
 
 The pattern under most of them, worth stating once: **something counted or omitted what did
 not belong to it**, and the count was computed correctly and then dropped exactly where a human

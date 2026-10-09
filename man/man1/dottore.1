@@ -182,6 +182,10 @@ Finish a halted run; answered attempts are not re-sent, and those that ended in 
 environment error are sent again under the same attempt id (not one a retry would repeat,
 marked [not retryable]). A campaign that already spent its wall-clock ceiling is
 refused before anything is sent: raise --budget-wall, or start a fresh run.
+It must keep the campaign's planning mode (adaptive with -sV, -A or --deep), which is
+checked before any ceiling; with -sV, a request ceiling too small for the probe pass is
+refused: raise --budget-requests, or drop -sV only if the campaign did not plan adaptively
+and the ceiling holds the rest of it without the probes.
 .TP
 .B --resume-unverified
 Resume a run whose integrity record is missing (its ceiling then covers this invocation only).
