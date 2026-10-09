@@ -124,7 +124,7 @@ Comma-separated categories: pi, jailbreak, leakage, tool, rag, output, dos, safe
 Run or skip specific spec ids or globs (e.g. PI-*); repeatable.
 .TP
 .B --top-tests \fIN\fR
-Keep the N highest-signal specs.
+Keep the N highest-signal specs (1 to 2**53).
 .SS "Discovery and intensity"
 .TP
 .B -sn
@@ -153,20 +153,22 @@ wins). Higher is faster and louder.
 .SS "Pacing and budgets"
 .TP
 .B --rate \fIFLOAT\fR
-Max requests per second across the whole campaign (greater than 0). Not applied to an offline
-mock run, and the plan says so.
+Max requests per second across the whole campaign (greater than 0 and, on a live target, at
+least one request per wall-clock ceiling, as a -T template's pace must be). Not applied to an
+offline mock run, and the plan says so.
 .TP
 .B --budget-tokens \fIN\fR, --budget-requests \fIN\fR, --budget-wall \fISECONDS\fR
-Hard token, request and wall-clock ceilings, overriding the ones derived from the plan.
+Hard token, request and wall-clock ceilings, overriding the ones derived from the plan. From 0
+to 9007199254740992 (2**53).
 .TP
 .B --concurrency \fIN\fR
-Max concurrent specs.
+Max concurrent specs (1 to 2**53).
 .TP
 .B --timeout \fISECONDS\fR
 Per-attempt timeout.
 .TP
 .B --runs \fIN\fR
-Reproducibility runs (default 5).
+Reproducibility runs (default 5; 1 to 2**53).
 .SS "Plan, resume and smoke"
 .TP
 .B --dry-run
@@ -178,7 +180,12 @@ Print a pre-run cost estimate (requests and tokens); send nothing.
 .B --resume \fIRUN_ID\fR
 Finish a halted run; answered attempts are not re-sent, and those that ended in an
 environment error are sent again under the same attempt id (not one a retry would repeat,
-marked [not retryable]).
+marked [not retryable]). A campaign that already spent its wall-clock ceiling is
+refused before anything is sent: raise --budget-wall, or start a fresh run.
+It must keep the campaign's planning mode (adaptive with -sV, -A or --deep), which is
+checked before any ceiling; with -sV, a request ceiling too small for the probe pass is
+refused: raise --budget-requests, or drop -sV only if the campaign did not plan adaptively
+and the ceiling holds the rest of it without the probes.
 .TP
 .B --resume-unverified
 Resume a run whose integrity record is missing (its ceiling then covers this invocation only).

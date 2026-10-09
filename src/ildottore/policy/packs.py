@@ -32,8 +32,9 @@ from ildottore.config import SafetyFlags
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.errors import PolicyPackError
 from ildottore.policy.scope import Scope
-from ildottore.shared.config_errors import validation_problems, yaml_problem
+from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.enums import FLAGGED_FAMILIES, Category
+from ildottore.shared.files import read_text_capped
 from ildottore.shared.models import AttackSpec
 
 __all__ = [
@@ -90,8 +91,8 @@ def load_pack(path: str | Path) -> PolicyPack:
 
     file_path = Path(path)
     try:
-        raw_text = file_path.read_text(encoding="utf-8")
-    except OSError as exc:  # pragma: no cover - filesystem error surface
+        raw_text = read_text_capped(file_path)
+    except OSError as exc:  # over the 1 MiB cap (A-43), or a filesystem error
         raise PolicyPackError(f"cannot read policy pack {file_path}: {exc}") from exc
     try:
         data = safe_yaml.safe_load(raw_text)
@@ -170,19 +171,23 @@ def authorize_target(scope: Scope, target_id: str, endpoint: str) -> CheckResult
     ``endpoint`` must be the same string the runner will authorize, which is what
     ``cli.wiring.scope_endpoint_for`` produces: the scope's ``base_url`` for the target, or
     ``stdio://<command line>`` for a stdio MCP target.
+
+    The id and the endpoint are quoted up to 300 characters (``quoted``): a target id of a
+    million characters printed the refusal of ``run`` and of ``fingerprint`` at 2 MB, the id
+    once in the message and once in this reason (clause A-51).
     """
 
     target = scope.target(target_id)
     if target is None:
-        return _blocked(f"target {target_id!r} not in scope")
+        return _blocked(f"target {quoted(target_id)} not in scope")
     if endpoint.startswith("stdio://"):
         command = endpoint[len("stdio://") :]
         if command not in target.commands:
-            return _blocked(f"stdio command not authorized for {target_id!r}")
+            return _blocked(f"stdio command not authorized for {quoted(target_id)}")
         return _ALLOW
     allowlist = EndpointAllowlist.from_target(target)
     if not allowlist.is_allowed(endpoint):
-        return _blocked(f"endpoint {endpoint!r} not on allowlist for {target_id!r}")
+        return _blocked(f"endpoint {quoted(endpoint)} not on allowlist for {quoted(target_id)}")
     return _ALLOW
 
 

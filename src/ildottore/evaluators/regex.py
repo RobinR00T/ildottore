@@ -11,7 +11,9 @@ Polarity is fixed (``docs/04 §0``):
 Patterns come from the spec's :class:`~ildottore.shared.models.EvaluatorConfig.patterns`.
 An empty / missing pattern list is **ambiguous** - the evaluator cannot decide - so it
 returns ``inconclusive`` (confidence ``0.0``) rather than a fabricated pass (contract §4 KEEP).
-A malformed regex is likewise ``inconclusive`` (a spec-authoring defect, surfaced not masked).
+A malformed regex is likewise ``inconclusive`` (a spec-authoring defect, surfaced not masked),
+whatever ``re.compile`` raised for it (:mod:`ildottore.shared.patterns`); ``dottore lint``
+reports it and ``dottore run`` refuses the spec before sending (A-33).
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import re
 from ildottore.evaluators.base import BaseEvaluator
 from ildottore.shared.enums import EvaluatorType
 from ildottore.shared.models import EvalContext, Verdict
+from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 
 __all__ = ["RegexAbsenceEvaluator", "RegexPresenceEvaluator"]
 
@@ -33,9 +36,9 @@ def _compile(patterns: list[str]) -> tuple[list[re.Pattern[str]], str | None]:
             # Case-insensitive to match the spec authors' intent and the offline lint stub
             # (which uses re.IGNORECASE), a case-sensitive real evaluator silently missed
             # lowercase SQLi and false-fired on lowercase refusal markers (audit M5).
-            compiled.append(re.compile(pat, re.IGNORECASE))
-        except re.error as exc:
-            return [], f"invalid regex {pat!r}: {exc}"
+            compiled.append(compile_spec_pattern(pat))
+        except SpecPatternError as exc:
+            return [], f"invalid regex {quote(pat)}: {quote(str(exc))}"
     return compiled, None
 
 

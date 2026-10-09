@@ -27,6 +27,435 @@ The carryover ledger. Every agent session updates this so context survives even 
   OD-31 (several queries on one socket), OD-32 (a reconnect mid-conversation for a stateless
   server), OD-33 (a `websocket:` block in a fleet entry). Not built: binary frames, SSE or
   polled streams (declare them as `rest`), a session that survives a reconnect.
+
+## State, 2026-10-07 (afternoon): a refused `--resume -sV` whose advice was refused in turn
+
+- Found by the pre-commit audit of `fix/resume-wall-flag-name` and fixed on
+  `fix/resume-sv-ceiling-advice`: `run --resume -sV` with a request ceiling too small for the probe
+  pass was refused with "Raise --budget-requests, or drop -sV" before the planning-mode check, and
+  each half was refused again for one kind of campaign (measured through the CLI on `0501752`:
+  raising, on a campaign halted without `-sV`; dropping `-sV`, on one halted with `-sV` or
+  `--deep`). The campaign checks (target, route, judge, planning mode, `--runs`, battery, evidence)
+  now run before the wall-clock and request-ceiling refusals, and the campaign's `--runs` is
+  inherited before the plan those ceilings come from (a campaign at `--runs 20` was refused against
+  2,000 requests where its own derived ceiling was 3,300); the planning-mode refusal names `-sV`,
+  `-A` and `--deep`; the three probe-pass refusals offer dropping `-sV` only when it lets the resume
+  through (not on a campaign that planned adaptively, and only when the ceiling holds the rest of
+  the campaign without the probes, as `--estimate` prices it). The journal adoption moved past the
+  last refusal before traffic, so a resume refused before it sends writes nothing (on `0501752` the
+  `--budget-requests` pre-flight refused after adopting, when no spend was recorded; and no test
+  checked that `run` adopts at all, the new one checks the halted run's digests).
+  `tests/cli/test_resume_sv_advice.py` follows and pins every piece of advice through the CLI; 20 of
+  its 24 tests fail on `0501752`. Contract u12 A-48. The pre-commit audit of the change (a 120-case
+  matrix through the CLI) found the spent-ceiling case, the `--runs` order, an unfollowed pre-flight
+  advice and miscounted figures; its delta round (no regression, 2,367 tests green) a ceiling one
+  request past the spend, a ceiling of 0 and advice written ahead of the words the test reads; its
+  third round (no regression, 2,374 tests green) one untested refusal case; all fixed here. What
+  `--estimate` does not price (the multi-identity sweep, which the open #60 adds to the estimate,
+  and retries) can still halt a followed "drop -sV" at an exact fit; written in A-48. Left open, a
+  question for the owner: the recorded planning mode is one flag for `-sV`, `-A` and `--deep`, so a
+  campaign run with `-sV` resumes with `--deep` in its place (measured: it goes through), and its
+  second half runs the mutators in their declared order, with no fingerprint; the advice never
+  offers that swap. Also open, from `0501752`: a stored mode that is not a boolean is read by
+  truthiness (`"false"` reads as on), where a wrong-typed `runs` or spend is refused as corrupt; and
+  only the request axis is read, so a campaign halted on `--budget-tokens` is told about requests.
+
+## State, 2026-10-08: a hostile reply nested too deeply fails one attempt (PR #65, open)
+
+- On `fix/target-deep-json` (PR #65): a target reply whose brackets balance and nest past 100
+  levels (`shared.nesting.MAX_DEPTH`), however deep, is `ResponseTooDeep`, an environment failure
+  that is not retried:
+  that attempt is inconclusive and the scan goes on. Before, `json.loads` raised
+  `RecursionError` past the parser's stack (400 KB of `[`) and pydantic overflowed past about
+  255 levels when writing evidence (600 bytes), and either aborted the campaign at the first
+  request (exit 3). Covers the OpenAI, Anthropic and REST bodies, the MCP JSON body, SSE event
+  and stdio line, a tool call's JSON-string arguments and the judge's reply. The depth is read
+  from the text before parsing, so it does not depend on the Python version; brackets that do
+  not balance are "not JSON". Also: an MCP stdio line may be 4 MiB (64 KiB stopped the campaign
+  on a server with 300 tools), with 4 MiB in all per request. Four audits (before the commit,
+  a delta round on its fixes, before the merge, and a delta round on those follow-ups) found,
+  among others, a quadratic string pattern, a lost detection on unbalanced tool arguments and
+  carriage-return lines past the stdio total; all fixed, and the last round found only wording.
+  Found while fixing
+  the operator-file case on `fix/cli-deep-json` (PR #61, merged first as `0501752`).
+- **Left for separate fixes** (pre-commit audit, both also on `main`): with `-sV` or `-A`, one
+  refused reply in the probe pass stops the run before the attack; and a 400-digit token count in
+  `usage` crashes `dottore run` with a traceback (exit 1, no report). The first is in progress on
+  `fix/sv-probe-env-error` (OD-23).
+- **For the owner (OD-21, open):** a 200 whose body is not JSON still stops the whole campaign
+  (`AdapterProductError`, runner `aborted`, exit 3, one request sent): measured, not as the
+  finding assumed. Whether it should fail only its attempt, as a reply too deep now does, is a
+  decision, not a fix; the trade-off is a misconfigured endpoint caught at the first request.
+
+## State, 2026-10-08 (morning): a regex that does not compile is a lint finding (PR #63)
+
+- On `fix/lint-invalid-regex` (`tests/test_invalid_spec_patterns.py`, clause A-33 in `u02`): a
+  `regex_absence` or `regex_presence` pattern, or a `tool_sequence` `step_arg_patterns` entry,
+  that does not compile is one `EVALUATOR_MISCONFIGURED` error per pattern (at most 10 per
+  spec), with the spec id, instead of a `PatternError` traceback from the fixture stub (found by
+  the pre-commit audit of `fix/cli-legacy-workflow-commands`). `re.compile` also refuses with
+  `OverflowError`, `RecursionError`, `ValueError` and, under `-W error`, `FutureWarning`, which
+  aborted a whole `dottore run`; a run now refuses a selected spec whose regex does not compile
+  before sending, as it refuses a spec file that fails to load (F-10). Three audits, then three
+  delta audits: the stub crashed lint a level short of the nesting limit once `re`'s cache
+  dropped the pattern (now a finding); a compile thread that fixed the limit to one number was
+  taken out again (Ctrl-C, `fork`, queueing), so lint and a run still draw that line a few
+  levels apart, and in a selection of more than 512 patterns a spec nested 482 to 487 deep ends
+  `inconclusive` with no reason in the report (documented in `compile_spec_pattern` and A-33; a
+  per-process cache would close it). The message quotes with `ascii`; until PR #51 and PR #54
+  merge, the lint text line does not go through `visible_controls`, so a `##[` in a pattern is
+  printed as written, as in every other lint message on `main`. Open for the owner as OD-22:
+  refuse the run (as built, like F-10) or skip only that spec (like `setup_not_seeded`); reuse
+  `EVALUATOR_MISCONFIGURED` (as built) or a code of its own.
+
+## State, 2026-10-07 (evening): a typo under a target file's `capabilities`
+
+- On `fix/target-capabilities-strict` (u12 A-50; OD-29 decided): `load_target` dropped a
+  key `capabilities` does not know and read `false`, `0`, `[]` and `""` as no capabilities, so
+  `tool: true` written for `tools` took the specs that need tools out of the plan without a word
+  (40 specs planned instead of 59 on a chatbot with `rag` and `memory`, on `2f6201a`), and `dottore
+  fleet` copied the key into the target file it wrote, with exit 0. Built reversibly: both refused
+  before anything is sent, on the A-45 line that names the file and the key, never the value, and
+  `fleet` refuses the key before it writes. Every target and fleet file of the repository, and the
+  target and fleet blocks of the docs and man pages, load through the real loaders (new test).
+  Found while writing it and left as its own task: a top-level key a target file does not know
+  (`endpont:`, or a `capabilities` block whose indent was lost) and a `name`, `provider`,
+  `endpoint`, `model`, `auth_ref` or `transport` that is not text are still dropped without a
+  word. `tests/cli/test_target_capabilities_strict.py`: 19 of its 40 tests fail on `2f6201a`.
+  Pre-commit, delta and pre-merge audits found nothing high or medium and no open PR that combines
+  into wrong behavior; their lows (key order in what `fleet` writes, keys printed as pydantic
+  renders them, a long line until #76, how a halted run resumes, the reversal recipe) are written
+  in A-50. Merging next to #76 conflicts on `cli/fleet.py`'s imports (keep both). PR #78; the owner
+  chose option 1 (refuse both) on 2026-10-07.
+
+## State, 2026-10-08 (afternoon): OD-32 decided, a resume counts what is stored
+
+- On `fix/resume-planned-attempts` (u08 A-59): the owner decided OD-32 on 2026-10-08 as proposed,
+  the runner counts what is stored instead of building the plan, and `--runs` keeps its `2**53`
+  bound (A-55). The three places that built the set of `mutators x --runs` attempt ids (the halt
+  path of a resume, the seeding gate, the multi-identity sweep) now compare
+  `core/reproduce.planned_attempts_held` with the plan's size; a resume of a stored count of `2**53`
+  takes about a second and 71 MiB, where 10^7 took up to 16.3 s and 3.7 GiB. Open PRs #66 and #60
+  change the same lines (the halt path, the seeding gate, the sweep): whoever merges second keeps
+  the count, not the set.
+
+## State, 2026-10-08 (morning): a limit of its own for flow nesting (OD-30)
+
+- On `fix/yaml-flow-nesting-limit`, on `main` after #84 (`9b8b511`): the owner decided OD-30 on
+  2026-10-08, option A with a limit of 20. A list or a map written with brackets or braces inside 20
+  others written that way is now refused where it starts (A-58): chains of `[` 98 deep, accepted
+  under the limit of 100 at 2 to 3 times the time of a flat list, are refused at the 21st `[` in
+  0.01 s, and chains at the limit holding 300 texts each walk a fifth of the keys they did at 98
+  levels (11.4 million against 52.0); the limit bounds each token's walk, not a file's (a denser
+  file walks 21.0 million). Block nesting does not count; the repository nests at most 2 flow
+  levels. Converting the depth tests to block style uncovered that three alias-depth tests of #61
+  had, since #84, passed for the wrong reason (their anchors were written 101 deep, so they were
+  refused as written): fixed, and they now assert their written nesting. Also splits two glued
+  bullets (OD-33, from #84; a `Tests:` bullet, from #77). 22 of the 28 new tests fail on `9b8b511`;
+  nine mutants killed. To merge after #76, as agreed with its session.
+
+## State, 2026-10-08: a live fingerprint orders a live plan (run 2026-10-07)
+
+- PR #58 (OD-18 option B) squash-merged as `0f936b6`: with #50, OD-18 is complete. A live
+  `run -sV` on `PI-INDIRECT-TOOL-001` against the local `llama3.2:3b` sent `zero_width_inject`
+  before `nested_instruction`, against the declared order (`docs/16` §1). Noted by its audit,
+  not decided: the planner matches carrier names exactly, so `translate:es` (and the other
+  `translate:<lang>` variants) never moves forward when `translate` was recovered; whether one
+  language's comprehension should stand for another is a design question. Next in the owner's
+  order: hosted APIs (the owner's keys and models), then a deployed application, which needs
+  its operator's seeding (`examples/target.app.yaml`).
+
+## State, 2026-10-07 (afternoon): a refusal that named a flag `dottore run` does not have
+
+- Found by the pre-commit audit of `fix/halt-reason-figures` and fixed on
+  `fix/resume-wall-flag-name`: the `run --resume` refusal for a campaign that already spent its
+  wall-clock ceiling told the operator to raise `--budget-wall-s`, which `dottore run` answers with
+  "No such option"; the flag is `--budget-wall`. `tests/cli/test_resume_integrity.py` follows the
+  refusal's advice through the CLI (the flags it names are read from `dottore run`'s parameters, and
+  raising them lets the resume through), and `tests/cli/test_flags.py` fails on a long option (`--`,
+  not right after a letter, a digit, `_` or `-`, then a lowercase ASCII letter, read up to the first
+  character that is not a letter, a digit, `_` or `-`, so `--budget-wall_s` is not `--budget-wall`)
+  that a string literal under `src/ildottore` (docstrings aside) or a rendered help text names and
+  no command accepts: on `0501752` that was this flag and nothing else. Contract u12 §7 says so,
+  with no new clause number. Those two tests fail on `0501752` (a third checks that the scan catches
+  a refusal like this one and leaves docstrings out), and a message that names `--budget-requests`
+  instead, or no flag, fails the first. The MANUAL, USAGE and the man page now name the flag that
+  lifts the refusal. Left open as its own task, and fixed by #83 (u12 A-48): on a resume with `-sV`,
+  the request-ceiling refusal ran before the planning-mode check, so on a campaign halted without
+  `-sV` its advice to raise `--budget-requests` led to a second refusal (only dropping `-sV` worked
+  there). Noted: the error masker can mask a `--flag=VALUE` whose value is long, such as
+  `--budget-wall=SECONDS`, as a high-entropy value (`--budget-wall=60` is printed as written); no
+  message writes that form.
+
+## State, 2026-10-07 (night): ids bounded at 128 characters (OD-27 decided)
+
+- On `fix/operator-id-length`, stacked on `fix/operator-file-quoted-values` (#86),
+  `tests/cli/test_operator_id_length.py`: the owner delegated OD-27 and the choice was (a), a bound
+  when the file is loaded. A scope target's `id` and an identity's `name` are at most 128 characters
+  in the scope model (`policy.scope.MAX_ID_CHARS`), and `_target_from` (shared by `load_target` and
+  `read_target_file`) refuses a target or `--judge` file's longer `id` naming the file, so no run
+  prints a target id past 128 characters (A-51 had cut it in most refusals only). 128: twice a
+  fleet's 64, about six times the longest example id (21); no pattern. The audits of A-57
+  (2026-10-08) found that removing A-51's cases of a long id left 14 of the 19 sites that quote a
+  target id or an identity name unguarded, as an id of 128 characters can have a `repr` of 1,282
+  (`\U000e0001` each): those cases use such ids now, with a check that no id's `repr` appears whole
+  anywhere in the output (line breaks removed, in case Rich folds a message), and all 19 mutants are
+  killed. Not covered, found by those audits: spec ids (a pattern, no bound), `dottore diff` and
+  `calibrate` printing a report's target ids whole, a stored run with a longer id no longer
+  resumable, control characters in ids. 9 of the 11 new tests fail without the bound; 5 mutants of
+  the bound killed. Clause A-57 (u01).
+
+## State, 2026-10-07 (evening): a refusal quoted the operator's value whole
+
+- On `fix/operator-file-quoted-values`, stacked on `fix/operator-file-read-cap` (#76, head
+  `4a572f0`, which brings #81's A-40 from main: the huge-integer refusals of `calibrate` and
+  `seeded_setup` are A-40's, and `quoted` describes such a number in A-40's words),
+  `tests/cli/test_operator_file_quoted_values.py`: the two LOW findings of #76's pre-commit audit.
+  (1) Refusals written by hand quoted a value of the scope, target, fleet or labels file whole,
+  bounded only by the 1 MiB read (a 1 MB `type:` printed 1,000,108 bytes, an undefined alias of a
+  million characters about 1,000,100 in `run`, `calibrate` and `lint`). They now go through
+  `shared.config_errors.quoted` (the `repr` up to 300 characters, then `... (N characters)`, or `...
+  (N items)` for a list or mapping, never building a container's `repr` whole: 90 KB of aliases made
+  one of 200,080,000 characters), and `yaml_problem` cuts PyYAML's reason the same way. The sweep
+  found 24 such refusals, not the 4 reported, among them the authorization refusal of `run` and
+  `fingerprint` (2,000,108 bytes for one id) with the list of ids the scope authorizes (now 20, each
+  cut, `listed`) and two lists in `seeded_setup`. The pre-commit audit found that the enum lookup of
+  a target's `type` still built the whole `repr` (1.28 to 1.49 GB for a 90 KB file of aliases; now
+  refused before the lookup, 72 MB), the credential refusal's unbounded list of declared references
+  (885,131 bytes), the three `--resume` refusals, an integer `repr` cannot write, two surviving
+  mutants and doc figures; the delta audit, that `str()` of a verdict, `provider` or `transport` of
+  aliases still wrote about 675 MB, a labels key that is a huge integer blamed on a valid verdict
+  (in the first commit only), nested aliases untested, the credential variable's name, and doc
+  figures; the pre-merge audit, that urllib's errors quoted an endpoint or `base_url` whole (900 KB,
+  no file; the allowlist now denies what it cannot read, as documented), four branches untested and
+  a date key of `seeded_setup` written differently; the last delta audit, a leading U+00A0 that let
+  urllib's error and the endpoint's password through (the loader now reads the endpoint as the gate
+  does) and an unreadable allowlist entry that denied its neighbours; the delta audit after that, an
+  unreadable entry still matching an IPvFuture literal and `fleet` printing a password the URL mask
+  misses; the final audit, a tab or line break between the slashes still hiding that password from
+  `fleet`; all fixed. Left, written in A-51: the adapter reads the endpoint unstripped (fails closed
+  at the first send). 84 of the 107 tests (the file's 106 and #76's changed reader test) fail on
+  `4a572f0`, each for its reason; of the 23 that pass, 4 were fixed first by #81 and 19 guard
+  behaviour that must not change; 74 of 76 mutants die (the 2 that live quote a fleet id, already
+  held to 64 characters). (2) A byte that is not UTF-8 in any operator file printed the codec's
+  error with no file name; `read_text_capped` now refuses it as an `OSError` (`EILSEQ`) with the
+  path and the offset, exit 3, as it refuses a file over the cap. Clause A-51 (u01; A-48 to A-50
+  were claimed the same evening by `fix/resume-sv-ceiling-advice`, `fix/diff-report-validation` and
+  `fix/target-capabilities-strict`). Open, OD-27: ids have no length bound, so a started run still
+  prints a target id whole (plan, progress, reports, run store), and `calibrate` lists uncovered
+  labels whole; proposed, a bound at load like the fleet's 64 characters. Merged with #76's
+  `fd50027` (main with #71, #75, #77, #80): #71's node cap refuses the stdio `command` of aliases
+  that was left open (200 MB and 1.09 GB from a 90 KB file on `a0bca70`), and the memory and integer
+  tests now use values under #71's and #77's caps.
+
+## State, 2026-10-07 (afternoon): operator files read up to 1 MiB
+
+- On `fix/operator-file-read-cap` (`tests/cli/test_operator_file_cap.py`): the scope, target,
+  fleet and labels files and the policy and signature packs are read up to 1 MiB
+  (`shared.files.read_text_capped`), a regular file refused on its size before the read, a pipe
+  or device read up to one byte past the cap; `dottore fleet` refuses to write a file over the
+  cap; and `validation_problems` lists 20 errors by default and cuts a path or reason past 300
+  characters. From the pre-commit audit of the alias-expansion cap: 100 MB of comments cost 39.5
+  s and 244 MB, a sparse gigabyte peaked at about 2 GiB (now 68 MiB), and a scope's error line
+  ran to 5,687,058 characters. The owner decided on 2026-10-07: 1 MiB, the spec loader's figure,
+  and any file type with a bounded read, so `--scope <(...)` keeps working (OD-26). The CLI test
+  found that the redactor masks a bare size of nine digits or more as a phone number (sizes now
+  carry thousands separators); this change's own pre-commit audit found the `fleet` scope over
+  the cap (it repeats each endpoint), and its delta audit a child memory measure that Linux
+  carries across `execve` (CI read 315 MiB; now `VmHWM`) and `fleet` holding every rendered file
+  at once. Since #73 a target file's `capabilities` and `sampling_defaults` errors get the same
+  20 and 300. Open (OD-26): the report JSON of `diff` and `calibrate` and the evidence artifacts
+  of `replay` and `--resume` are still read whole. Clause A-43 (u01).
+
+## State, 2026-10-07 (evening): spec values JSON cannot hold, and bounded integer flags
+
+- On `fix/spec-non-json-values` (finding F6 of the pre-commit audit of `fix/huge-int-repr`): a spec
+  value YAML builds and JSON cannot hold (an unquoted date or timestamp, `!!set`, an `!!omap` or
+  `!!pairs` entry, `!!binary`, `.nan`, `.inf`, half a character from an escape between U+D800 and
+  U+DFFF) is a `SCHEMA` finding at its path, checked before the schema and after A-40 (#81) and A-44
+  (#80), and a spec id holding half a character is no longer printed in the finding header (u02
+  A-54); `returns: 2026-01-01` used to pass lint and crash `run --dry-run` with a traceback and exit
+  1. Every integer flag of `run` and `fleet --run` is bounded at `2**53`, a negative `--budget-*` is
+  refused before the dry run, a live run whose pace (a `-T` template's too) is under one request per
+  wall-clock ceiling (`--budget-wall 0` included) is refused (`--rate 1e-308` was a traceback, and
+  once that was bounded, a live run that never stopped), and the run store refuses a stored `--runs`
+  past `2**53`, which a resume inherits (u12 A-55; `--runs` of 305 nines used to exit 1). Until
+  A-40's follow-up (#90) lands, its own paths print keys as written. Left open: the wall-clock
+  ceiling is not a deadline at an accepted pace (each concurrent spec waits its interval, the `-sV`
+  probe pass reads no ceiling); a resume builds a set of mutators x runs attempt ids for each
+  started spec, so how far `--runs` may go is the owner's call (OD-32); `--rate inf` turns pacing
+  off.
+
+## State, 2026-10-07 (evening): YAML nesting refused where it is written
+
+- On `fix/yaml-flow-nesting-depth`, on `main` after #71 (`df75d3d`): a finding of the pre-commit
+  audit of the construction-cost fix, the same on `main`. PyYAML's pure-Python scanner walks one
+  possible key per open flow level on every token, and the depth limit was measured only on the
+  composed document, so a 198 KB file of chains of `[` 320 deep was composed whole before it was
+  refused (11.3 s against 2.5 s for a flat list of as many texts, at a load average of 9 to 14).
+  Every loader now refuses a list or a map written inside 100 others where it starts (0.11 s, same
+  message and position), which can only refuse earlier what the measure refused later. Clause A-52
+  (u01). 18 of the 32 new tests fail on `5fdac72`, and thirteen mutants are all killed; the
+  pre-commit audit found no defect in the code (a differential fuzz of 14,800 documents through both
+  loaders: none accepted by one tree and refused by the other), and ten claims in the docs and tests
+  that promised more than the code, and one order no test pinned (a tag too long before the depth);
+  all corrected, and the delta audit five more wording slips, also corrected. The pre-merge audit
+  (main with #77 and every open PR) found no failure due to this change and one more claim, the
+  order in which refusals made while composing are reported (the order they are made, not the order
+  written), corrected with a test; and #87 numbering its own OD-30 to OD-33 in u04, which it has to
+  renumber. OD-30, decided by the owner on 2026-10-08: option A, built as A-58 (entry above);
+  libyaml's scanner, whose C composer would take the per-node checks with it, was not chosen. #77
+  (A-41 and A-42, merged first) edits the same `compose_node`: the merge kept both sides of four
+  additions (the module docstring, the constants, the class docstring, `__init__`), the method
+  itself merged cleanly, and both branches' tests pass together.
+
+## State, 2026-10-07 (evening): fleet target ids that differ only by case
+
+- Found by the delta audit of PR #76 and fixed on `fix/fleet-casefold-ids` (PR #85):
+  `materialize_fleet` refused a duplicate id only by exact equality, and each target is written to
+  `target-<id>.yaml`, so on APFS a fleet with `Prod` and `prod` wrote `prod` over `Prod`, listed
+  two target files and exited 0. The brief said the printed `dottore run` then scanned `prod`
+  twice; measured on `2f6201a`, it refuses instead (exit 3, "two target files declare the id
+  'prod'"), and so does `fleet --run`, a message about an id the fleet declared once. Ids equal
+  under `casefold()` are now refused on every file system before anything is written, and so is a
+  judge id spelled as a target's only up to case (it worked, with two scope entries that differ
+  only by case). Every refusal of the fleet's ids locates its entries as the validator does
+  (`targets.1.id`, from 0), because the CLI masks a high-entropy id such as
+  `Meta-Llama-3-70B-Instruct`, and the two judge refusals say when the id is the default `judge`.
+  Contract u01 A-56; the "everywhere" choice is OD-33, decided by the conductor and confirmed by
+  the owner the same evening. Checked and left exact: `run`'s duplicate check and `load_scope`'s
+  (A-20); no file of a run is named by a target id, the run store compares `<spec id>::<target
+  id>` case-sensitively, and two hand-written targets `Prod` and `prod` ran together with two run
+  ids, both in every report format. Two audit rounds so far, none high or medium: the pre-commit
+  one found masked ids, the default judge id, three surviving mutants, the judge's reason
+  misstated in FAQ and man page, and "no store key" being literally false; the delta one found my
+  first entry numbers counted from 1 where the validator of the same command counts from 0, "never
+  two ids a reader cannot tell apart" in MANUAL and man5 (`Ilama`, `llama`, `lIama` pass), three
+  more survivors (the default note for an explicit `id: judge`, ids swapped against their numbers,
+  a later twin reported as a duplicate) and the sibling judge message without the default note.
+  All fixed. The pre-merge round (combined trees with #76, #78 and #86, both merge orders) found
+  no failure of this PR's own; its conflicts are the expected ones (doc appends, a man5 paragraph
+  with #78, the two fleet messages with #86). Four lows, fixed: the agreed `quoted()` resolution
+  with #86 would have left one line at 101 columns (each id is now formatted once, in a variable,
+  so the switch is four assignments), the credential half of A-30 untested, MANUAL's "shares its
+  entry" without the condition, and the `--judge` file mismatch naming the default id with no
+  note. A fourth round on that fix compared 96,120 fleets and 3,024 CLI runs against the previous
+  head (the only difference was the intended note) and found two test gaps, closed: the note could
+  have spread to the endpoint or `auth_ref` row of the `--judge` refusal, and A-30's credential
+  half was tested with the key on one side only. Numbering: A-56 and OD-33 came from the session
+  keeping the count; the local branch `feat/websocket-adapter` uses OD-30 to OD-33 in u04 without
+  having claimed them, so it has to renumber.
+
+## State, 2026-10-07 (night): a load refusal names its spec file
+
+- On `fix/spec-load-error-names` (PR #49, opened on `d54097c` on 2026-10-06, merged with main at
+  `5fdac72`; `tests/cli/test_run_load_errors.py`): `dottore run` refusing a spec
+  that fails to load printed its path as `«REDACTED:high_entropy:…».yaml` (found by the #47
+  pre-merge audit); it names `attacks/DL-PII-ELICIT-001.yaml` now, kept only when it is an entry
+  on disk under a spec path, nothing the entropy rule reads as a token is glued to it, and it
+  does not overlap a registered credential. A kept token in a CLI error that is part of a
+  registered credential (from 8 characters) prints as `«REDACTED:credential»` instead of going
+  to the entropy rule. The pre-commit audit (3,996 cases main against branch, no secret exposed)
+  found two test gaps and four low items, all fixed; `no_known_secrets` moved to
+  `tests/conftest.py`. The pre-merge audit (73,812 cases of `_masked`, main against branch) found
+  no reason to block; its two wording items are fixed. `make gates` green: 2,702 tests (2,688 on
+  `5fdac72`), coverage 96.58%, `dottore lint` 0 errors over 75 specs, 14 suites, 1 pack.
+
+## State, 2026-10-07 (afternoon): YAML construction cost bounded under the size cap
+
+- Closes the construction costs left open just below. On `fix/yaml-construction-cost`, stacked on
+  `fix/yaml-alias-expansion-cap` (`982bfe4`): under the size cap, a base-60 integer (`1:59:59...`)
+  is built in time quadratic in its length, and integer keys that share one hash make a mapping
+  quadratic. A 1 MiB spec took `lint` 55 s and 24 s; `run --dry-run` accepted a 450 KB and a 1.3 MB
+  target after 37 s and 247 s, having parsed each four times (load average 6 to 10 on 15 cores).
+  Every loader now refuses, as it composes and before anything is built, a number written in more
+  than 1,000 characters and the key that takes a document past 1,000 keys that are numbers (a merged
+  key counted in each mapping it is merged into), in 1 to 1.5 s for each of those files; `run` and
+  `fingerprint` parse a target file once, so a piped target (`-t /dev/stdin`) works. Clauses A-41
+  (u01) and A-42 (u12). 112 of the 126 new tests fail on `982bfe4`. Twenty-seven distinct mutants of
+  the fix are all killed, among them the eight the audits found surviving. A first version counted
+  the keys only once the whole file was composed: refused, but the 1.3 MB target still took 3 to 11
+  s and its timing test was unstable on a loaded machine; counting each key as it is composed stops
+  at the 1,001st. The pre-commit audit (three auditors on a frozen copy) found no way past either
+  limit (40,000 keys sharing one hash refused in under a second in twenty forms) and no extra parse
+  on any path but a file named twice and the judge file of `fleet --run --judge`; what it found in
+  the tests and the docs is closed: shapes no test pinned (a number in a list, in flow or at the
+  root; keys in a flow mapping; a merge passed on), a resume, a judge file and a piped target no
+  test watched, and parse counts, timings and wording wider than measured. It also found a
+  pre-existing cost, left as its own task: flow nesting makes PyYAML's scanner pay per open level,
+  so 198 KB nested 95 deep costs 3 to 4 times a flat file, and one past the depth cap is refused
+  only after it is all composed (since taken on by #84, A-52). The pre-merge audit built main, #71
+  and this branch together:
+  conflicts only in the docs, every gate green, 2,489 tests; its four findings (tests for every
+  notation in every position, and three sentences) are closed. Left open: a file named twice is
+  parsed once per name (`-t X --judge X`), and `fleet --run --judge` parses its judge file twice; a
+  scope with a `checksum:` line is still parsed twice, by design (the second parse is the coverage
+  check); an operator file of plain text still costs its composition, 3 s for 6.3 MB under the size
+  cap; the byte cap is `fix/operator-file-read-cap`.
+
+## State, 2026-10-07 (afternoon): a spec key that is not a string
+
+- On `fix/lint-nonstring-arg-key` (clause A-44 in u02, `tests/registry/test_non_string_keys.py`):
+  YAML builds `5:` as an int, a bare `on:` as a bool, `~:` as null and `2026-10-07:` as a date,
+  and in a fixture's tool-call arguments such a key made `dottore lint` a traceback with exit 1
+  (the offline stub's `key.lower()`). Every mapping of a spec is now checked before the JSON
+  schema (not the keys of an `!!omap` or `!!pairs` entry, nor `!!set` members), and a key that is
+  not a string is a `SCHEMA` finding at its path. Swept over the 41 fixture tool calls with
+  arguments in the 75 shipped specs: on `0501752` an int key added after the others crashed lint
+  in 5 and passed unreported in 36 (6 and 35 added first); now all 41 are a finding. Keys of two
+  types in one mapping also crashed the sort of the schema errors, and a `!!binary` key passed
+  lint. `run` now refuses such a spec (exit 3, as any spec that does not load) where it used to
+  run it. Found by the session on `fix/huge-int-repr` (A-40, #81), which merged first: its check
+  runs first, this one after it, and the branch of this one for an int too long to write out was
+  dropped as unreachable. 76 of the 77 new tests fail on `0501752`. The pre-commit and delta
+  audits found no high or medium defect; the first listed pre-existing gaps between the lint stub
+  and the real `tool_call` evaluator (a confirm flag or forbidden key inside a list, an injection
+  in a nested value, `arguments` as a JSON string), left for a separate task.
+
+## State, 2026-10-07 (afternoon): a resumed probe pass recorded however it ends
+
+- Found by the delta audit of PR #68 and fixed on `fix/sv-probe-spend-on-stop`: on `run --resume
+  <id> -sV`, only the request ceiling wrote what the probe pass had sent to the run store. A probe
+  answered 503 three times left the store at 20 while the stub had served 23 (reproduced on main
+  `0501752`); a 401, a 200 that is not JSON, Ctrl-C, SIGTERM and a stop after a pass that
+  succeeded lost the pass too. The CLI now owns the pass's ledger and records prior spend plus the
+  pass as soon as it ends, success included (the store's per-axis maximum keeps each probe counted
+  once), and says the count on stderr when an error or a signal stops the pass. Three audit rounds
+  found signal windows: the write after a successful pass sat outside the handlers (a real SIGINT
+  a few milliseconds after the last probe lost all 17 in 2 of 16 tries; moved inside), and a
+  handler's own write has nothing after it (2 of 41 tries just after a 503 stop). Writing again on
+  that signal was built and withdrawn (on a locked store, one Ctrl-C after a pass that succeeded
+  waited 15.1 s instead of 9.8 for a record lost anyway); the window is written in the contract.
+  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not changed: a fresh
+  run's pass and a `--resume-unverified` run with no recorded spend record nothing; a signal during
+  a handler's write, a SIGKILL, or a write that fails (a warning) still leave the record low. Left open as a follow-up: the adapters
+  are built with no retries of their own, so the error that stops a probe pass, and an attack
+  attempt's evidence, say `exhausted 1 attempt(s)` after three sends. Merged in a scratch
+  repository with PR #66 and with PR #68, code, u12 and the index merge cleanly (only
+  `CHANGELOG.md` and `docs/PROGRESS.md` conflict) and the merged trees pass both PRs' tests and
+  these.
+
+## State, 2026-10-07 (afternoon): every YAML loader capped by expanded size
+
+- Closes the second item left open below. On `fix/yaml-alias-expansion-cap`, on main after #61: the
+  scope, target, fleet and labels files and the policy and signature packs had the depth limit but
+  no size cap with aliases expanded, which only the spec loader had (SEC-09). An 835-byte labels
+  file of doubling anchors ran `calibrate` past 25 s and 1.7 GB, and a `<<` merging the previous map
+  twice doubles the work inside PyYAML itself. All of them now share the spec loader's cap (100,000
+  nodes, a text one node per 64 characters) through one measure, `safe_yaml.check_expanded`: depth
+  and size in one pass over the node graph, each size saturating past the cap, too deep before too
+  large, refused at the node where the value crosses the limit, in 0.4 s and 71 MB. Two audits found
+  holes in the fix itself, all closed: unsaturated, the measure's own memory grew with the square of
+  an anchor chain; measuring only a fully composed document let a 3 MB file of plain texts cost 785
+  MB, and a list of aliases, uncounted, was still composed whole; and a `%TAG` prefix copied into
+  every node's tag held 187 MB for 1,000 nodes. Composition now stops at the cap (an alias counting
+  what it names; 1.4 s and 134 MB for that file) and a tag past 256 characters is refused. Clause
+  A-37 (u01). 34 of the 38 new tests fail on `0501752`. Twenty-three mutants of the fix are all
+  killed. Left open as their own tasks: construction costs under the cap (base-60 integers,
+  colliding integer keys, the target loaded four times per `run`; taken by the session "Bound YAML
+  construction cost under the node cap", stacked on this branch), a huge integer that crashes
+  `lint`, and no byte limit on the operator's files.
+
 ## State, 2026-10-07 (afternoon): a number too long to write out
 
 - On `fix/huge-int-repr` (`tests/cli/test_huge_numbers.py`, clause A-40 in u02): an int past
@@ -54,7 +483,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   `error:` line, `target file <path> '<block>' failed validation: <field>: <reason>`, no value.
   Contract u12 A-45 (A-43 and A-44 were claimed the same afternoon by `fix/operator-file-read-cap`
   and `fix/lint-nonstring-arg-key`). Left open, written in the clause: a key `capabilities` does
-  not know, or a `capabilities` that is empty or `false`, is dropped without a word; other
+  not know, or a `capabilities` that is empty or `false`, is dropped without a word (on
+  `fix/target-capabilities-strict`, A-50, the key is refused and so is a `capabilities` of `false`,
+  `0`, `[]` or `""`; see the evening entry); other
   refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
   the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
   `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,

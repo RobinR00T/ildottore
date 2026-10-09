@@ -11,7 +11,8 @@ Everything provider-agnostic lives here so each concrete adapter (``openai``,
   transport/timeout errors are retried with capped exponential backoff, then the
   attempt is *skipped* by re-raising as :class:`AdapterEnvError` (env, per
   ``AGENTS.md §2``). A malformed 200 body is a **product defect** →
-  :class:`AdapterProductError` (never masked as a flake).
+  :class:`AdapterProductError` (never masked as a flake); one nested too deeply to evaluate
+  is :class:`ResponseTooDeep`, an environment failure that is not retried.
 * **Logprob mapping** - :func:`map_logprobs` folds a provider-neutral token list
   into :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005 / OD-1).
 * **Redaction** - raw request/response ids are redacted through u01's redactor
@@ -24,7 +25,6 @@ time - contract §4 KEEP; live probing is u09 fingerprint).
 from __future__ import annotations
 
 import asyncio
-import json
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -41,6 +41,8 @@ from ildottore.shared.models import (
     ModelResponse,
     TokenLogprob,
 )
+from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.toolcalls import check_argument_nesting
 
 __all__ = [
     "ACCEPT_ENCODING",
@@ -49,6 +51,7 @@ __all__ = [
     "AdapterProductError",
     "BaseAdapter",
     "EndpointNotAllowed",
+    "ResponseTooDeep",
     "ResponseTooLarge",
     "ResponseUndecodable",
     "RetryConfig",
@@ -110,6 +113,21 @@ class ResponseUndecodable(AdapterEnvError):
     same on a retry. Before, httpx's own ``DecodingError`` escaped every adapter's handler
     (it is not a ``TransportError``), and the MCP adapter rebuilt an already decoded body
     under its ``gzip`` header and failed to decode it a second time.
+    """
+
+    is_env_error = True
+    retryable = False
+
+
+class ResponseTooDeep(AdapterEnvError):
+    """A reply nested deeper than :data:`~ildottore.shared.nesting.MAX_DEPTH`: not evaluated.
+
+    ``json.loads`` raises ``RecursionError`` on a body nested past its stack, which escaped the
+    ``except ValueError`` below, and the runner aborted the whole campaign on one 400 KB reply
+    of ``[``. A body it parses could abort it too: 300 levels (about 600 bytes) overflowed
+    pydantic's serializer when the evidence was written (2026-10-07). Like a reply over the
+    size cap, it is an environment failure of this attempt, which is inconclusive and is not
+    retried; a body that is not JSON at all is still a product defect.
     """
 
     is_env_error = True
@@ -490,15 +508,28 @@ class BaseAdapter(ABC):
         """Classify a non-retryable response: 2xx → parse, else product defect."""
 
         if response.is_success:
+            label = f"{self.id}: response from {self._request_path}"
             try:
-                payload = json.loads(raw)
+                payload = bounded_loads(raw)
+            except NestedTooDeeply as exc:
+                raise ResponseTooDeep(f"{label} is {exc}; not evaluated") from exc
             except ValueError as exc:  # non-JSON success body = malformed
                 raise AdapterProductError(
                     f"{self.id}: success response was not valid JSON: {exc}"
                 ) from exc
             if not isinstance(payload, Mapping):
                 raise AdapterProductError(f"{self.id}: success response JSON was not an object")
-            return self._parse_response(payload)
+            parsed = self._parse_response(payload)
+            # OpenAI carries a call's arguments as a JSON string, which the parse above never
+            # opened: the evaluators and the in-band tool loop do, so it is measured here.
+            for call in parsed.tool_calls:
+                try:
+                    check_argument_nesting(call)
+                except NestedTooDeeply as exc:
+                    raise ResponseTooDeep(
+                        f"{label} has a tool call whose arguments are {exc}; not evaluated"
+                    ) from exc
+            return parsed
 
         # A non-retryable 4xx (auth, bad request) is a product/config defect -
         # not something a retry will fix, and not to be masked as a flake.

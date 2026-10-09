@@ -12,7 +12,18 @@ declares many targets at once. Secrets are never written into any of them: keys 
 referenced by environment variable and resolved only at send time. A key written twice in one
 mapping is refused in all three, with where it was first written and where again, instead of
 keeping the last value. Keys brought in by a << merge can still be overridden; two << in one
-mapping are refused too, so merge several maps with one list (<<: [*a, *b]).
+mapping are refused too, so merge several maps with one list (<<: [*a, *b]). Each of the
+three, and a labels file of dottore calibrate, is read up to 1 MiB: a larger file is refused
+before any of it is read, and a pipe or other stream is read up to one byte past 1 MiB and
+refused if that byte comes (exit 3), so any of them can be a pipe. dottore fleet refuses to
+write a scope, target or judge file over 1 MiB (the judge file
+only when no --judge file replaces it). A scope, target or
+fleet file that fails validation lists at most 20 problems and counts the rest. A file that is
+not UTF-8 is refused with its name and the offset of its first bad byte (exit 3), and a refusal
+that quotes a value of the file quotes at most its first 300 characters and its size, and lists at
+most 20 of what the file declares (the advice for a stdio target excepted, which prints its
+command line whole to be copied). A target id, in a scope or a target file, and an identity name
+are at most 128 characters; a longer one is refused when the file is loaded.
 .SH "SCOPE FILE"
 The authorization record. No scanning command runs without it. Default-deny: any host or
 path not under a target's endpoints is never contacted. An optional top-level checksum
@@ -85,6 +96,12 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 and
 .B type
 are required; the rest are needed only for a live scan.
+.B capabilities
+takes tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal and audio, each
+false unless set; any other key, or a capabilities that is neither a mapping nor null (false and
+[] included), is refused before anything is sent. To declare none, leave it out or write {}. A
+capabilities line with nothing under it is null, so keys below it that lost their indent are
+top-level keys, which are still ignored.
 .B sampling_defaults
 is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
 their own sampling.
@@ -159,7 +176,15 @@ anthropic, otherwise rest.
 .B api_key_env
 names an environment variable, never the key itself. Each entry becomes a chatbot target (an
 mcp one an api target) with no seeded_setup, so a spec that needs documents, tools or memory is
-setup_not_seeded there; scan those with a target file.
+setup_not_seeded there; scan those with a target file. Each target is written to
+target-<id>.yaml, so two ids that differ only by case (Prod and prod) are refused on every file
+system. A judge id spelled as a target's only up to case is refused too (judge, the id of a
+judge block that names none, included), so that the generated scope never holds two ids that
+differ only by case. An entry's
+.B capabilities
+takes the target file's keys; its target file gets tools false (true for an mcp entry) and rag
+false unless the entry sets them, plus every key it sets, and a key capabilities does not know is
+refused before anything is written.
 .SH "SEE ALSO"
 .BR dottore (1)
 .PP
