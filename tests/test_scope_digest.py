@@ -300,7 +300,7 @@ def test_a_resume_with_sv_records_its_scope_before_the_probe_pass(
 
     def spy(*_args: object, **_kwargs: object) -> object:
         seen.append(_scopes(db, run_id))
-        raise wiring.ProbeCeilingReached(0, "stopped by the test")
+        raise wiring.ProbeCeilingHit(0, "stopped by the test")
 
     monkeypatch.setattr(wiring, "fingerprint_probe", spy)
     _resume(target, scope, db, run_id, tmp_path)
@@ -323,7 +323,7 @@ def test_resuming_a_run_recorded_before_scopes_marks_it_before_the_probes(
 
     def spy(*_args: object, **_kwargs: object) -> object:
         seen.append(_scopes(db, run_id))
-        raise wiring.ProbeCeilingReached(0, "stopped by the test")
+        raise wiring.ProbeCeilingHit(0, "stopped by the test")
 
     monkeypatch.setattr(wiring, "fingerprint_probe", spy)
     _resume(target, scope, db, run_id, tmp_path)

@@ -1679,7 +1679,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 # whole pass (2 of 16 real SIGINTs a few ms after the last probe, pre-commit
                 # audit). Interrupted here, the handler below writes it again.
                 _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
-            except wiring.ProbeCeilingReached as exc:
+            except wiring.ProbeCeilingHit as exc:
                 _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
                 raise ValueError(
                     f"the -sV probe pass on {target.id!r} reached the --budget-requests ceiling "

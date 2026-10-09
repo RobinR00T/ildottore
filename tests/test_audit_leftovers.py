@@ -232,7 +232,7 @@ def test_a_probe_pass_past_the_request_ceiling_stops(
     monkeypatch.setattr(wiring, "build_probe_adapter", lambda *_a, **_k: flaky)
     monkeypatch.setattr("ildottore.core.execute.RetryPolicy.delay_for", _no_delay)
     ledger = BudgetLedger(max_requests=20)
-    with pytest.raises(wiring.ProbeCeilingReached) as reached:
+    with pytest.raises(wiring.ProbeCeilingHit) as reached:
         wiring.fingerprint_probe(
             None,  # type: ignore[arg-type]
             Target(id="live", type="chatbot"),  # type: ignore[arg-type]
@@ -580,7 +580,7 @@ def test_a_resumed_probe_pass_at_the_ceiling_records_what_it_spent(
         assert isinstance(ledger, BudgetLedger)
         for _ in range(5):  # what the pass sent before the ceiling stopped it
             ledger.debit_request()
-        raise wiring.ProbeCeilingReached(5, "requests ceiling")
+        raise wiring.ProbeCeilingHit(5, "requests ceiling")
 
     monkeypatch.setattr(wiring, "fingerprint_probe", at_ceiling)
     opts.resume = run_id
@@ -654,7 +654,7 @@ def test_a_fresh_probe_pass_at_the_ceiling_exits_3_and_records_no_run(
     from tests.cli.test_resume_cmd import _opts
 
     def at_ceiling(_scope: object, _target: object, **kw: object) -> wiring.ProbePass:
-        raise wiring.ProbeCeilingReached(20, "requests ceiling")
+        raise wiring.ProbeCeilingHit(20, "requests ceiling")
 
     monkeypatch.setattr(wiring, "fingerprint_probe", at_ceiling)
     target = write_target(tmp_path, mock_scenario="vulnerable")

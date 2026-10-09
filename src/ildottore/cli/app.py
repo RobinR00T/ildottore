@@ -314,7 +314,7 @@ def _masked(exc: BaseException) -> str:
     plain = Redactor(entropy_threshold=math.inf)
     entropy = Redactor(patterns=[])
     # A bare digest stays readable only when the error itself carries it as one this tool
-    # computed (`digests` on ChecksumMismatchError and TamperError): the redactor cannot tell a
+    # computed (`digests` on ScopeChecksumError and TamperError): the redactor cannot tell a
     # sha256 from a 64-hex key, so keeping every bare 64-hex printed a raw key pasted as an
     # `auth_ref` in clear (third audit of the residuals). The rest is redacted in context,
     # labels included. The sha256 filter also keeps a malformed value out of the pattern.

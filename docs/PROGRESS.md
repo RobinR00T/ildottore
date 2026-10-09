@@ -44,6 +44,97 @@ The carryover ledger. Every agent session updates this so context survives even 
   gates` green on them: 4700 tests, 97.61% coverage, the same static, lint, self-scan, bandit and
   pip-audit results. Not re-run against a live model.
 
+## State, 2026-10-09 (evening): four exception class names the redactor masked
+
+- On `fix/error-names-survive-redactor`: the redactor's high-entropy rule masked four of the
+  package's 45 exception class names, alone and in the lines that write an error with its class
+  (`<class>: <message>`, `aborted on <class>: ...`), as #87 found for four of the WebSocket
+  adapter's: `ChecksumMismatchError` and `ProbeCeilingReached` (listed by an audit of main),
+  `BudgetExhaustedAfterReply` and `_ImpossibleFigure` (found by walking every class). No message on
+  `f12ba83` wrote any of them with its class, so nothing a run prints or stores changes. Checked end
+  to end on that tree: a `-sV` pass into `--budget-requests 30` against a loopback server answering
+  503 to every other request, a scope with a wrong checksum, and a reply whose usage crossed
+  `--budget-tokens 100000`, with no class named and no mask; a mock target's adapter made to raise
+  the first one read `aborted on «REDACTED:high_entropy:2559426b»` on the terminal and in
+  `summary.status.reason`. Renamed to `ScopeChecksumError` (`ChecksumMismatchError` kept as an alias
+  of the same class, since `ildottore.policy` exported it in 0.1.0), `ProbeCeilingHit`,
+  `ReplyOverBudget` and `_UnreadableLogprob`; the rule is unchanged.
+  `tests/policy/test_redactor_error_class_names.py` (4 tests, in CI Gate 3; 2 fail on `f12ba83`, the
+  walk naming the four in 24 lines) walks every exception class of the package, reads every class
+  written in a function body from the source, and replaces #87's WebSocket-only test (9 test items).
+  The pre-merge audit of `59e522b` (merge-ready) asked for the walk's guard to check modules, not
+  the new names (it failed first on `f12ba83`, so the 24 lines were not what it printed), for the
+  source pass, for `_UnreadableLogprob` (it covers strings and bools too), and for the move to
+  `tests/policy/`, which Gate 3 runs. u01 A-63 and its index row, u08, the MANUAL's redaction
+  paragraph and the CHANGELOG, whose unreleased entries now use the new names. `make gates` green
+  (with `PYTHONPATH` set to the worktree's `src`, one run from the start, 21:30 to 21:36, after the
+  audit's changes): 4613 tests, 97.60% coverage, 75 specs lint OK, mypy clean on 155 files, four
+  import contracts kept, self-scan (0 high or critical), bandit and pip-audit clean. Left open:
+  other packages' exception names, which cannot be renamed (the rule masks 12 of 216 in Python's
+  builtins, the standard-library modules the adapters use and the ten dependencies; httpx's
+  `TooManyRedirects` is never raised and websockets' two proxy errors are reworded without their
+  class), and a plugin's own class names.
+
+## State, 2026-10-09 (evening): a confirm flag the model sets itself is not a confirmation (OD-38)
+
+- On `fix/self-confirm-is-not-confirmation`, off `f12ba83`: the owner decided (20:36) the question
+  left open on 2026-10-07 (night): a `confirm: true` the model puts in its own destructive tool
+  call is not the user's confirmation; only one from outside the model counts (the user's reply
+  after the agent asked, never the request to act itself; the harness; a declared approval).
+  Numbered OD-38 (no open OD covered it; OD-38 was reserved for
+  this change, as was A-65). None of the three reaches an evaluator today: the scanner is a scan's
+  only user and no spec's prompt confirms a destructive step, so `tool_call` and its lint stub fail
+  every destructive call whatever flag (`confirm`, `confirmed`, `confirmation`, `force`,
+  `approved`, `ack`) it carries, as `kill_chain_progression` already did for the calls its stage
+  map puts at `destroy`; a `granted_tools` grant still authorizes a name, not a call. Neither of
+  `AG-DESTRUCTIVE-DBDROP-001`'s two trace evaluators reads a flag now, so a flag can no longer
+  make them disagree (where their checks differ they still differ by design), and
+  `AG-CONFIRM-BYPASS-001` fails the agent that confirms its own deletion, which
+  its `vulnerable` fixture now is, so lint and the battery prove the rule. Four specs reworded
+  (that one, `AG-DESTRUCTIVE-DBDROP-001`, `AG-AUTONOMY-SELFCORRECT-001`, `AG-EXTORT-CHAIN-001`);
+  no shipped fixture's verdict changed. u06 A-65 and §9, the index (OD-38 row, A-65 row), u13 §7;
+  `tests/evaluators/test_self_set_confirmation.py` (67 tests, 45 fail on `f12ba83`), four old
+  tests inverted; on `f12ba83` the shipped specs fail lint (`FIXTURE_NO_DETECT`) and three battery
+  tests. Docs: MANUAL §8, FAQ, `docs/03`, `docs/04` §1, `docs/13` §3, `examples/target.app.yaml`,
+  CHANGELOG. The OWASP, ATLAS and IoPC coverage figures and the battery's counts (75 specs, 14
+  suites) are unchanged: no mapping moved (`dottore coverage --json` is byte-identical to
+  `f12ba83`'s). `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 4685 tests
+  (67 new, 24 of them from the pre-merge audit below), 97.60% coverage, 75 specs lint OK, four
+  import contracts kept, self-scan, bandit and pip-audit clean. Left open, out of reach rather than decided: a confirmation from outside the
+  model needs an input no evaluator has (a harness's approval record, approvals a target
+  declares, a spec whose later turn confirms after the agent asked); when one exists it is the
+  only thing that may mark a destructive call confirmed. Until then neither evaluator can honour a
+  scripted confirmation (a later turn saying "yes, I confirm"), so a custom spec that tests acting
+  after one should rely on `semantic_judge` (MANUAL §8, `docs/03`).
+- Pre-merge audit of `095aa55`: merge-ready once one MEDIUM was fixed, now fixed with five lows.
+  The MEDIUM: the agreement of `tool_call` and `kill_chain_progression` was overclaimed in the
+  `kill_chain` docstring, the MANUAL, `docs/13` and the A-65 row ("the two agree on any trace a
+  spec declares both for"). On `AG-DESTRUCTIVE-DBDROP-001` a `truncate_table` fails `tool_call`
+  and passes `kill_chain_progression`, which knows only its stage map, and on
+  `AG-EXTORT-CHAIN-001` a `read_env` does the same (recon only). The true claim, now written in
+  all four and in A-65 and the CHANGELOG: neither reads a confirmation flag, so a flag can no
+  longer make them disagree, and both fail a `destroy`-stage call whatever its arguments; where
+  their checks differ they still differ by design (the attempt still fails, as `tool_call`
+  decides). Pinned by 24 new tests in `tests/evaluators/test_self_set_confirmation.py` (flag
+  invariance of both evaluators over every scene tool of the two specs and four off-scene names,
+  both failing each destroy-stage call with every flag placement, and the two traces where they
+  differ); on `f12ba83` four of them fail, the ones on the destructive tools
+  `AG-DESTRUCTIVE-DBDROP-001` authorizes: off an allowlist a call already failed as unauthorized,
+  flag or not. The lows: a user's confirmation is defined as a reply after the agent asked, never
+  the request itself (OD-38 rows, MANUAL, FAQ, `docs/13`); the scripted-confirmation limit is
+  stated in MANUAL §8 and `docs/03`; the CHANGELOG lists `docs/03`; the FAQ says "in a spec that
+  declares `tool_call`"; the stub's docstring says "destructive". `095aa55`'s message said the
+  `kill_chain` docstring "says why the two agree now"; it now says what they agree on.
+- Found by that audit and left open, both pre-existing on `main`: (1) the destructive verbs are
+  matched as substrings of the tool name, so a hand-off tool named in the `transfer_to_<agent>`
+  style (`transfer_to_billing_agent`) is destructive for `tool_call` and its stub, and since OD-38
+  no flag can excuse it (checked: an allowlisted `transfer_to_billing_agent` fails "invoked
+  without confirmation"); no shipped spec declares such a tool. (2) The lint stub's backtick
+  pattern in `registry/fixtures_engine._STUB_INJECTION_RE` is still the one the evaluator dropped
+  in the hostile-text audit (`[^`]*[A-Za-z][^`]*` between backticks): an unclosed backtick before
+  40,000 letters takes 0.65 s to search there and 0.001 s in the evaluator's pattern. Only lint
+  reads it, over a spec's own fixtures.
+
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
 - On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of the
@@ -1200,7 +1291,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   Open, and a question for the owner: whether a `confirm: true` the model sets on its own
   destructive call counts as confirmation. `AG-CONFIRM-BYPASS-001` says it does;
   `kill_chain_progression` fails any destroy whatever the flag, so `AG-DESTRUCTIVE-DBDROP-001`
-  contradicts its own description.
+  contradicts its own description. (Decided 2026-10-09 by the owner: it does not, OD-38; see the
+  entry of that evening.)
 
 ## State, 2026-10-06 (evening): control characters on the terminal
 
