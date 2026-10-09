@@ -578,6 +578,56 @@ Outside the clause, and said so rather than pinned:
 * `--rate inf` turns pacing off (the limiter reads its interval as 0) and the dry run prints `inf
   req/s ceiling`; `--timeout inf` and `--timeout 1e308` are accepted.
 
+**A-49 A report finding that fails validation is refused on one line that names the report and gives
+each problem's place and reason, never the value (added 2026-10-07).** `diff.load_findings` handed
+each finding of a JSON run report to `Finding.model_validate` without catching its
+`ValidationError`. That error is a `ValueError`, so the handlers of `dottore diff` and `dottore
+calibrate` caught it (exit 3 was already right) and printed pydantic's own text: several lines
+(`error: 1 validation error for Finding`, the field, `input_value='maybe-later'` and a docs URL)
+that quoted the report's value and did not say which of the two files it was in, while the other
+loaders give one line through `shared/config_errors.validation_problems` (`scope file <path> failed
+validation: <field>: <reason>`, `fleet file <path> ...`, `policy pack <path> ...`, `target file
+<path> '<block>' ...`; pre-commit audit of A-45). The findings are still validated one at a time,
+and the first that fails raises a plain `ValueError`: `the report <absolute path> failed validation:
+findings.1.status: Input should be 'pass', 'fail' or 'inconclusive'`, with that finding's index (a
+bare list of findings is addressed as `findings` too) and its problems, the model's fields in the
+model's order and then the keys it does not have in the report's order, at most 20 and the rest
+counted, the spec loader's figure. A first version validated them all together to list every bad
+finding, and the pre-commit audit measured what that built: every error of every finding before 20
+were listed, 1,116 MiB against 135 MiB on a 12 MB report. Two tests hold it: one counts the
+validations, and one checks that loading 2,000 bad findings peaks no higher in `tracemalloc` than
+reading their JSON, which caught two checks of every finding by another route that got past the
+count (delta audit). A check by another route that keeps pydantic's exceptions without listing their
+errors is seen by neither (457 and 375 MiB on the same report, pre-merge audit); that gap is written
+here, not tested. The path is absolute with no colon after it, so the CLI keeps it readable, except
+where it cuts every message's path short (a path holding a space or one of `()[],;'"`, until #70)
+(`tests/cli/test_diff_report_validation.py`: 24 of its 31 tests fail on `de392e1`, 23 on the defect
+and the one that counts the validations because the helper it counts is not there; of the 7 that
+pass, 6 check that the redactor leaves each test value readable, so that the CLI tests can fail on
+any mask in the output and on any 8-character piece of a value, and the memory test passes because
+the base stops at the first bad finding too). Outside the clause, and said so rather than pinned:
+* the report's other refusals keep their form, among them: an object without `findings` prints
+  `error: 'findings'`, and a `summary` that is not an object and not empty or zero (a number, text,
+  a list, `true`) prints `error: '<type>' object has no attribute 'get'`, exit 3 and no file named,
+  while an empty or zero one (`0`, `""`, `[]`, `false`, `null`) reads as no summary; `<path>:
+  expected a JSON run report or a list of findings` has a colon after the path as typed; and the
+  refusals of a report with several targets or two findings for one spec, and of two reports about
+  different targets, quote the target ids and the spec id the reports hold;
+* a key a finding does not know is part of the place and goes through the CLI's redactor with the
+  rest of the line: what the redactor recognises in it (an email, a known token format, a labelled
+  secret, a run of high enough entropy) is masked, while a key of hex digits often is not, and the
+  mask can take the `findings.0.` before it or the `: ` after it, while a short password-like key
+  (`hunter2`) prints as written; it is printed as pydantic renders it, control characters included,
+  so a key holding a line break still splits the line until the terminal writes them out (#51), and
+  whole until #76 cuts a place past 300 characters (a key of 1 MiB prints 1 MiB);
+* the finding that fails still builds all of its own errors before 20 are listed, as on the base
+  (one finding with a million keys it does not have peaks over 1 GiB on both, by an amount that
+  varies from run to run, and the base also printed 195 MB of error text);
+* the wrapper that gives the index costs CPU on a valid report: 1.07 s against 1.00 s to load
+  100,000 findings (best of 3), with the same peak memory;
+* what pydantic can read is taken as read: `confirmed: "yes"` is true and `risk.impact: "2"` is 2;
+* the labels file `calibrate` reads is not a report and keeps its own refusals.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

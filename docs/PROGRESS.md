@@ -20,6 +20,157 @@ The carryover ledger. Every agent session updates this so context survives even 
   `nohup`, and "Until 2026-10-08" and "on main `e4d6c83`" read "In older versions". Left open:
   the hang itself, and an old all-digit run's reports, which keep the mask.
 
+## State, 2026-10-07 (afternoon): a logprob figure no model produces
+
+- On `fix/hostile-logprob`: a reply whose logprob (or one of its `top_logprobs`) was a 400-digit
+  integer, a list or an object made `dottore fingerprint` and `run -sV` exit 1 with a traceback
+  and no report, and `run` abort with exit 3; a positive token figure scored
+  `DL-MEMORIZE-DIVERGENCE-001` "likely memorized"; NaN and infinities reached the report as
+  non-JSON tokens. A figure is now read only when it is a finite JSON number at or below zero; an
+  entry's own figure that is not (named token or not) makes the block read as no block, so the
+  attempt and its text evaluators go on and the membership spec is inconclusive, and an
+  alternative that is not costs only its token's alternatives (u04 §7 A-39,
+  `tests/cli/test_logprob_figures.py`). Open for the owner (OD-24): the whole block versus only
+  the bad entry, a positive figure counted as impossible, and whether the evidence should say the
+  block was unreadable rather than absent. Found by the audits, both since closed on main: a
+  lone surrogate in a token or the reply's text, which aborted `run` (exit 3,
+  `UnicodeEncodeError`), now reads as U+FFFD (A-47, PR #79), and a token nested about 100,000
+  levels deep, which overflowed `str()`, is refused with its reply as nested too deeply, so it
+  fails one attempt, not the campaign (PR #65).
+
+## State, 2026-10-07 (afternoon): the figure that stopped a run, masked as a phone number
+
+- Found by the audit of `fix/usage-figure-overflow`; fixed on `fix/halt-reason-figures`. A
+  budget halt printed `(limit 500000, attempted «REDACTED:phone»)` on the terminal and in all
+  four reports, because the reason is masked and a bare figure of nine characters or more is a
+  phone number to the redactor (a Luhn-valid one, a card). Measured on main: every stop at the
+  default 1,800 s wall ceiling (`1800.123456`), a target reporting 2**53 tokens, and the limit
+  itself under `--budget-tokens 1000000000`. `BudgetExhausted` now writes its figures in digit
+  groups, seconds to three decimals and a count from 10**18 up as a magnitude, rounded away from
+  the ceiling; the runner takes them from `BudgetExhausted.figures`. The redactor is untouched
+  (several sessions are changing it) and the reason is not exempted: a phone number the target
+  wrote stays masked, and the terminal line is now tested to mask the reason. A card-shaped
+  usage figure prints grouped, on purpose (A-6). The pre-commit audit (181,584 figure cases
+  fuzzed through the redactor, none masked) found a crossed ceiling printed as an equal one and
+  the untested terminal mask; the delta audit found the first still alive in the ledger, which
+  rounded the elapsed time to six decimals before the figure was written (1,800.0000004 s
+  printed as 1,800.000), and a negative float written wrong (unreachable). All fixed. Not in
+  this change: a usage figure past the float range (above about 1.8e308) crashes the run on
+  main while its spend is stored
+  (`store/run_sqlite.py`), fixed by PR #67; the spec the halt cut stores nothing on main, fixed
+  by PR #66, which also edits the breach line in `runner.py`; and the resume refusal names a
+  `--budget-wall-s` flag that does not exist (it is `--budget-wall`), fixed by PR #72
+  (`fix/resume-wall-flag-name`, merged 2026-10-08).
+
+## State, 2026-10-07 (midday): a usage figure no float holds
+
+- Found by the pre-commit audit of `fix/target-deep-json`, fixed on `fix/usage-figure-overflow`,
+  built on #61 (merged as `0501752`) because it reuses #61's spend predicate: a reply whose
+  `usage.prompt_tokens` (or any token figure the ledger reads) is a 400-digit integer made
+  `dottore run` exit 1 on `OverflowError` when the spend was persisted, with no report, and one
+  past 2^53 halted the campaign on the token ceiling after one reply. A 400-digit
+  `moderation_latency_ms` made `fingerprint` and `run -sV` exit 1 the same way. Both readers now
+  check the figure where it is read (`ildottore.shared.amounts`: `is_count`, a JSON integer from 0
+  to 2^53, for tokens; `is_amount`, #61's predicate moved there, for the latency and the stored
+  spend). An unreadable token figure is skipped and the next shape read; a reply with no readable
+  shape keeps the reservation; a pair beside an unreadable cache figure is a floor. An unreadable
+  latency is `null`. The ledger takes no guard: nothing a reply or the tool hands it can pass
+  what `float()` converts (a run store edited by hand to an integer just under 2^1024 could, on a
+  resume under a ceiling above 1.8e308, as on `main`; closed by #89, see the merge note below).
+  Clause A-36 (u08, pointer in u09). Left open, unchanged: a figure up to 2^53 is
+  believed, so a target can still end a campaign early on the token ceiling. Found by the audit
+  and fixed by #74 (u04 A-39): a `logprob` no float holds made `-sV` exit 1 (adapter).
+  `make gates` green: 2,452 tests, coverage 96.51%, lint 0 errors on 75 specs; 52 of the 101
+  new tests fail on `0501752`, and 24 of 24 mutants of the fix are killed.
+- Merge note (2026-10-09, `origin/main` merged in, with #89, A-55 in u12): `run` now refuses a
+  `--budget-*` past 2^53, so the CLI test that believed 2^53 under `--budget-tokens 2**60` failed
+  with exit 3. It now passes `--budget-tokens 2**53`: one reply of 2^53 is trued in and fills the
+  ceiling exactly, and the next send is refused (exit 3, one request served, 2^53 recorded). The
+  `<` boundary mutant of `is_count` fails it: the figure ignored, both specs run and the run exits
+  0 (measured). The texts that leaned on a ceiling past 2^53 carry the same note (CHANGELOG,
+  A-36, MANUAL): a total passes 2^53 only by replies sent together (two of 2^53 - 1 at
+  `--concurrency 6`, measured), and the hand-edited store near 2^1024 resumed under 2^53 halts with
+  exit 3 and sends nothing (measured), so that case is closed. `make gates` green after the merge:
+  3,443 tests, coverage 97.10%, lint 0 errors on 75 specs.
+
+## State, 2026-10-07 (evening): A-40's path printed a key as written
+
+- PR #81 (A-40) squash-merged as `c3e70d8` after three audits. Its finding printed the keys on
+  the path as written: a newline forged a finding line (its pre-merge audit, left for later) and,
+  found by two audits of sibling branches, a lone surrogate made `dottore lint` and `coverage`
+  exit 1 with a `UnicodeEncodeError` traceback (on these paths main before #81 did not). On
+  `fix/huge-int-followups`: a path part that is not printable is written as `repr`, as #80 does,
+  and so is every schema error's location. A surrogate key under `step_arg_patterns`, which crashed
+  lint before #81 too, is closed on main by A-54 (#89) before the schema runs; there it still stops
+  control characters (a newline in such a key forged a second finding line; pre-merge audit of #90).
+  Left for the owner: a too-long number under a target file's `sampling_defaults` (pre-existing: the
+  live run exits 3 unnamed in `target_digest`); a newline or another control character in a key that
+  pydantic names, or in the spec `id`, still forges a finding line (#89 handles only an `id` UTF-8
+  cannot encode).
+
+## State, 2026-10-07 (evening): a report finding's validation error (A-49)
+
+- On `fix/diff-report-validation` (`tests/cli/test_diff_report_validation.py`): `dottore diff` and
+  `dottore calibrate` on a report whose finding does not validate (a `status` of `maybe-later`)
+  printed pydantic's raw error over four lines, with the value and a docs URL and without the file;
+  found by the pre-commit audit of A-45. `diff.load_findings` raises `the report <absolute path>
+  failed validation: findings.1.status: ...` for the first finding that fails, at most 20 problems;
+  a first version that validated all the findings together peaked at 1,116 MiB instead of 135 MiB on
+  a 12 MB report. Exit 3 as before. Left as they are and written in clause A-49: the report's other
+  refusals (`error: 'findings'` for an object without `findings`, a `summary` that is not an object,
+  unless empty or zero), keys printed as pydantic renders them (through the redactor), and lax
+  reading (`"yes"` is true).
+
+## State, 2026-10-07 (midday): a SARIF fixture under `tests/` is no longer ignored
+
+- Found by the pre-commit audit of `fix/gitignore-venv-symlink` (PR #62): on `main` at
+  `0f936b6`, `.gitignore` line 30 was `!tests/**/*.sarif` with its comment after it on the same
+  line. Git reads no trailing comments, so the negation was the rule and the comment together
+  and re-included nothing: a SARIF fixture added under `tests/` would have been ignored with no
+  warning, the class of bug that broke CI on 2026-07-08 ("CI GREEN on GitHub Actions" below).
+  On `fix/gitignore-sarif-negation` the comment has a line of its own above the rule.
+- Checked with `git check-ignore --no-index`: `tests/fx/a.sarif`, `tests/a.sarif` and
+  `tests/reporting/fixtures/reports/x.sarif`, all three ignored before by `.gitignore:29:*.sarif`,
+  are no longer ignored; a root `x.sarif`, `src/x.sarif`, `reports/x.sarif` and
+  `evidence/x.sarif` still are. With real files, `git status` lists `tests/fx/a.sarif` and not
+  the root one. A folder a directory rule excludes stays excluded (`tests/build/x.sarif`,
+  `tests/__pycache__/x.sarif`): git cannot re-include a file under an excluded directory.
+  `git ls-files -ci --exclude-standard` is empty before and after. No SARIF file is tracked
+  under `tests/` (the reporting snapshot is `golden.sarif.json`, which `*.sarif` never
+  matched), so nothing was lost. Note for the next check: `git check-ignore -v` exits 0 for a
+  path a `!` rule matches, because it prints that rule, so read the rule it names, or drop `-v`
+  and read the exit code.
+- Every other line of `.gitignore` checked by a Python scan for a comment after a pattern and
+  for trailing whitespace: none. `!specs/scope.example.yaml` has no comment and works as
+  written; it re-includes a file no rule excludes (`/scope.yaml` is root-anchored and the name
+  differs), so it changes nothing today and stays.
+- PR #62 changes `.gitignore` at line 8 only, so the two branches do not collide in that file;
+  both insert at the top of CHANGELOG `[Unreleased]` and of this ledger, so whichever merges
+  second rebases and keeps both entries.
+
+## State, 2026-10-07 (morning): a worktree's `.venv` link is ignored
+
+- The pre-merge audit of PR #60 found every worktree showing `?? .venv`: worktrees reuse the
+  main checkout's venv through a symlink, git sees a symlink as a file, and `.gitignore` had
+  `.venv/`, which matches directories only, so a `git add -A` would have committed the link. On
+  `fix/gitignore-venv-symlink` the rule is `.venv` (the directory and everything under it, and
+  the link). Checked: in a worktree with the link, `git status --porcelain` no longer lists it
+  and `git check-ignore -v .venv` names `.gitignore:10:.venv`; a real `.venv/` directory, a
+  nested one and the files inside stay ignored; no tracked file becomes ignored (0 before and
+  after). Nothing depends on the directory-only form: CI checks out without a venv, the Makefile
+  hands ruff, mypy and bandit explicit paths (pytest takes `testpaths`), mypy's `^\.venv/`
+  exclude is a regex of its own, and what does read `.gitignore` (ruff walking `src tests`,
+  `tests/test_yaml_duplicate_keys.py` through `git ls-files --exclude-standard`, an sdist
+  build) sees no difference between `.venv/` and `.venv`.
+- The worktree setup was practice, not written anywhere in the repo; it is now in `AGENTS.md`
+  §4: the link, `PYTHONPATH=<worktree>/src` (without it the steps that import the package run
+  the main checkout's code and the coverage gate reads 0%, measured), and no `make venv` or
+  `make install` in a worktree (the venv is shared).
+- Found by the pre-commit audit, not fixed here (its own branch): `.gitignore` line 32,
+  `!tests/**/*.sarif` followed by a comment on the same line, re-includes nothing, because git
+  reads no trailing comments; a SARIF fixture added under `tests/` would be ignored. None is
+  tracked today. `venv/` keeps its trailing slash: nothing here creates a `venv` link.
+
 ## State, 2026-10-09: a reply that holds half a character (PR #79, begun 2026-10-07)
 
 - First noted on main by PR #57 (open on 2026-10-09), reproduced end to end by the pre-commit audit
@@ -332,12 +483,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   refused before the dry run, a live run whose pace (a `-T` template's too) is under one request per
   wall-clock ceiling (`--budget-wall 0` included) is refused (`--rate 1e-308` was a traceback, and
   once that was bounded, a live run that never stopped), and the run store refuses a stored `--runs`
-  past `2**53`, which a resume inherits (u12 A-55; `--runs` of 305 nines used to exit 1). Until
-  A-40's follow-up (#90) lands, its own paths print keys as written. Left open: the wall-clock
-  ceiling is not a deadline at an accepted pace (each concurrent spec waits its interval, the `-sV`
-  probe pass reads no ceiling); a resume builds a set of mutators x runs attempt ids for each
-  started spec, so how far `--runs` may go is the owner's call (OD-32); `--rate inf` turns pacing
-  off.
+  past `2**53`, which a resume inherits (u12 A-55; `--runs` of 305 nines used to exit 1). A-40's
+  paths and the locations of JSON-schema errors write a key that is not printable as `repr` since
+  #90; a spec id UTF-8 can encode is still printed as written. Left open: the wall-clock ceiling is
+  not a deadline at an accepted pace (each concurrent spec waits its interval, the `-sV` probe pass
+  reads no ceiling); a resume builds a set of mutators x runs attempt ids for each started spec, so
+  how far `--runs` may go is the owner's call (OD-32); `--rate inf` turns pacing off.
 
 ## State, 2026-10-07 (evening): YAML nesting refused where it is written
 
@@ -542,8 +693,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   refusals of the file quote what it says (`type`, `mock_scenario`, a `seeded_setup` tool name,
   the `id`); what pydantic can coerce is accepted. The pre-commit audit found the same shape in
   `dottore diff` and `dottore calibrate` (`Finding.model_validate` in `cli/diff.py`: several lines,
-  the value quoted, no file name); not fixed here. `tests/cli/test_target_file_validation.py`: 19
-  of its 24 tests fail on `0501752`, the other 5 guard that each test value survives the redactor.
+  the value quoted, no file name); not fixed here (A-49).
+  `tests/cli/test_target_file_validation.py`: 19 of its 24 tests fail on `0501752`, the other 5
+  guard that each test value survives the redactor.
 
 ## State, 2026-10-07 (morning): a file nested past what the CLI can hold
 
