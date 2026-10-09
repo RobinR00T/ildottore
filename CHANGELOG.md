@@ -32,6 +32,28 @@ versioning: [SemVer](https://semver.org/).
   tests can fail on any mask in the output, and one checks memory, which the base also keeps low).
   Found by the pre-commit audit of A-45 (`fix/target-file-validation`).
 
+### Fixed (a SARIF fixture under `tests/` would have been ignored)
+
+- **`.gitignore` re-included no SARIF file under `tests/`.** The rule `!tests/**/*.sarif` had
+  its comment after it on the same line, and git reads no trailing comments, so the pattern was
+  the rule and the comment together and re-included nothing: `git check-ignore -v --no-index
+  tests/fx/a.sarif` named `.gitignore:29:*.sarif`. The comment now has a line of its own above
+  the rule; a `.sarif` file under `tests/` is no longer ignored (unless a directory rule such as
+  `build/` or `__pycache__/` excludes its folder), while a root `x.sarif`, `src/x.sarif` and
+  `reports/x.sarif` still are. No SARIF file is tracked under `tests/` (the reporting snapshot
+  is `golden.sarif.json`, which `*.sarif` never matched), so nothing was lost, and no tracked
+  file becomes ignored. It was the only line of the file with a comment after a pattern.
+
+### Fixed (a worktree's `.venv` link showed as untracked)
+
+- **`.gitignore` ignored `.venv` only as a directory** (`.venv/`), and a git worktree that reuses
+  the main checkout's venv through a symlink has a file there, as git sees it: `git status`
+  listed `?? .venv` and a `git add -A` would have committed the link. The rule is now `.venv`,
+  which matches the directory and everything under it, and the link; no tracked file is newly
+  ignored. `AGENTS.md` §4 records the worktree setup: the link, `PYTHONPATH` pointing at the
+  worktree's `src` (without it the steps that import the package run the main checkout's code,
+  and the coverage gate reads 0%), and no `make venv` or `make install` there.
+
 ### Fixed (a reply that holds half a character)
 
 - **One reply with a lone surrogate aborted the whole campaign.** JSON lets a string escape any
