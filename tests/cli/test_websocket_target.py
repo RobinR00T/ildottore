@@ -8,24 +8,30 @@ session guard in ``tests/conftest.py`` refuses any other socket.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
+from websockets.asyncio.server import ServerConnection
+from websockets.exceptions import ConnectionClosed
 
 from ildottore.adapters import WebSocketAdapter
 from ildottore.cli import wiring
 from ildottore.cli.app import app
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.fingerprint import fingerprint_target
-from ildottore.cli.run import RunOptions, execute_run
+from ildottore.cli.run import RunOptions, execute_run, fingerprint_probe_count
+from ildottore.fingerprint import PROBES_FAILED_FLAG, failed_probes
 from ildottore.policy import Endpoint, EndpointAllowlist
 from ildottore.policy.errors import ScopeError
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import Target
 from ildottore.store.replay import replay_run
 from tests.ws_chat_server import TOKEN, FakeChatServer
+from tests.ws_raw_servers import HandlerServer, Log, auth_then, send_json
 
 from .conftest import make_spec, write_spec_tree
 
@@ -356,6 +362,118 @@ def test_fingerprint_probes_a_websocket_target_over_the_wire(
     assert (
         "non_discriminating_target" not in fingerprint.spoofing_flags
     )  # an echo answers each probe differently
+
+
+#: What the first query of a pass gets in the tests below: a refusal the attack phase reads as
+#: inconclusive without a retry, and the error class the probe pass then records.
+_REFUSED_FIRST: dict[str, tuple[str, Any]] = {
+    "a frame nested past 64 levels": (
+        "WebSocketFrameTooDeep",
+        lambda connection: connection.send('{"type":"delta","x":' + "[" * 70 + "]" * 70 + "}"),
+    ),
+    "a text frame that is not UTF-8": (
+        "WebSocketUndecodable",
+        lambda connection: connection.send(
+            b'{"type":"delta","delta":{"text":"\xed\xa0\x80"}}', text=True
+        ),
+    ),
+    "a 1009 close the server starts": (
+        "WebSocketClosed",
+        lambda connection: connection.close(1009, "query too large"),
+    ),
+}
+
+
+def _refusing_the_first_query(refusal: str) -> HandlerServer:
+    """Answers every query with its text back, but the first with ``refusal``."""
+
+    async def handler(connection: ServerConnection, log: Log) -> None:
+        async def on_query(conn: ServerConnection, message: dict[str, Any]) -> None:
+            if log.queries == 1:
+                await _REFUSED_FIRST[refusal][1](conn)
+                return
+            await send_json(conn, {"type": "delta", "delta": {"text": str(message["text"])}})
+            await send_json(conn, {"type": "done"})
+
+        with contextlib.suppress(ConnectionClosed):  # the 1009 close ends the server's loop
+            await auth_then(connection, log, on_query)
+
+    return HandlerServer(handler)
+
+
+@pytest.mark.parametrize("refusal", sorted(_REFUSED_FIRST))
+def test_a_refused_frame_fails_that_probe_and_the_pass_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refusal: str
+) -> None:
+    """#68 (u09 A-35) over a WebSocket: the refusal is the attack phase's one-attempt failure, so
+    it costs the probe, never the pass, and the refused probe is not sent again."""
+
+    monkeypatch.setenv("TEST_WS_TOKEN", TOKEN)
+    with _refusing_the_first_query(refusal) as server:
+        target = _write_target(tmp_path, endpoint=server.url)
+        scope = _write_scope(tmp_path, server)
+        fingerprint = fingerprint_target(target, scope)
+    assert failed_probes(fingerprint) == [f"metadata/self_id: {_REFUSED_FIRST[refusal][0]}"]
+    assert PROBES_FAILED_FLAG in fingerprint.spoofing_flags
+    assert server.log.queries == fingerprint_probe_count()
+
+
+def test_run_sv_goes_on_to_the_attack_after_a_refused_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("TEST_WS_TOKEN", TOKEN)
+    with _refusing_the_first_query("a frame nested past 64 levels") as server:
+        target = _write_target(tmp_path, endpoint=server.url)
+        scope = _write_scope(tmp_path, server)
+        specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+        outcome = execute_run(_opts(tmp_path, target, scope, fingerprint_first=True), [specs])
+    assert outcome.exit_code is not ExitCode.ERROR
+    assert len(outcome.findings) == 1
+    assert server.log.queries > fingerprint_probe_count()  # the attack went out after the pass
+    assert "1 of 17 probe(s) got no usable reply" in capsys.readouterr().err
+
+
+def test_a_close_reason_reaches_the_terminal_with_its_control_characters_written_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The server's reason is quoted in the error (second pre-merge audit); on the terminal it
+    goes through the path every CLI error does since #51, so an escape sequence or a line break
+    in it cannot repaint the screen or forge a line."""
+
+    monkeypatch.setenv("TEST_WS_TOKEN", TOKEN)
+    reason = "red\x1b[31m\x07\nsecond line"
+
+    async def handler(connection: ServerConnection, log: Log) -> None:
+        async def on_query(conn: ServerConnection, _message: dict[str, Any]) -> None:
+            await conn.close(1009, reason)
+
+        with contextlib.suppress(ConnectionClosed):
+            await auth_then(connection, log, on_query)
+
+    with HandlerServer(handler) as server:
+        target = _write_target(tmp_path, endpoint=server.url)
+        scope = _write_scope(tmp_path, server)
+        specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
+        result = CliRunner().invoke(
+            app,
+            [
+                "run",
+                "-t",
+                str(target),
+                "--scope",
+                str(scope),
+                "--spec-path",
+                str(specs),
+                "--evidence-root",
+                str(tmp_path / "ev"),
+                "--run-db",
+                str(tmp_path / "runs.sqlite"),
+            ],
+        )
+    assert result.exit_code == ExitCode.ERROR, result.output
+    (line,) = [entry for entry in result.stderr.splitlines() if entry.startswith("error:")]
+    assert "WebSocketClosed" in line and "red\u241b[31m\u2407\u240asecond line" in line
+    assert not any(char in result.stderr for char in "\x1b\x07")
 
 
 def test_dry_run_with_sv_sends_nothing_over_the_socket(

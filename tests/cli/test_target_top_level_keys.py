@@ -249,9 +249,10 @@ def test_the_cli_redactor_leaves_each_value_readable(case: str) -> None:
 
 
 def test_a_file_with_each_key_the_manual_lists_loads(tmp_path: Path) -> None:
-    """The thirteen keys docs/MANUAL.md section 4.2 lists, in one file, through every reader. A
-    field added to ``Target`` with its own rules (another branch's ``websocket`` needs
-    ``provider: websocket``) is covered key by key below, not by adding it here."""
+    """The keys docs/MANUAL.md section 4.2 lists but ``websocket``, thirteen, in one file, through
+    every reader. A field added to ``Target`` with its own rules (``websocket`` needs
+    ``provider: websocket``) is covered key by key below and in tests/cli/test_websocket_target.py,
+    not by adding it here."""
 
     path = tmp_path / "t.yaml"
     path.write_text(
@@ -367,8 +368,8 @@ def test_every_text_field_of_target_is_refused_as_bytes(tmp_path: Path) -> None:
 def test_every_legal_key_passes_the_top_level_check(tmp_path: Path, key: str) -> None:
     """Every field of :class:`Target`, and ``mock_scenario``, with nothing after it: what is
     tested is the top-level check alone, not each block's own reader. The check is built from
-    ``Target``, so a field added there (another branch adds ``websocket``) is legal at once
-    (pre-merge audit: a list kept by hand refused it)."""
+    ``Target``, so a field added there (``websocket``, from PR #87) is legal at once (pre-merge
+    audit: a list kept by hand refused it)."""
 
     path = tmp_path / "t.yaml"
     path.write_text(f"id: t\ntype: chatbot\n{key}:\n", encoding="utf-8")

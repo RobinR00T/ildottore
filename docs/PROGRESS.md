@@ -49,10 +49,18 @@ The carryover ledger. Every agent session updates this so context survives even 
   refused (A-44's walk), and the scope man page, the MANUAL and u04 match the code. 9 of the 16
   new tests fail on `abcf7d4`. Its verification (on `dceb587`): the same server close was still
   retried when it met a send rather than a receive (three retries, four debited sends, no
-  query); one helper classifies both now (6 more tests, 4 fail on `dceb587`). `make gates` green
-  (with `PYTHONPATH` set to the worktree's `src`): 3610 tests, 97.24% coverage, 75 specs
-  lint OK, four import contracts kept, self-scan, bandit and pip-audit clean with `websockets`
-  17.2 (BSD-3-Clause, no dependencies).
+  query); one helper classifies both now (6 more tests, 4 fail on `dceb587`).
+- Stacked on `1c5d1e2` (2026-10-09: `main` at `be2a762` with #56, #57, #51, #54 and #70, the
+  tree main holds before this squash): the MANUAL's "Bounded replies" (two hunks, #68's one-probe
+  rule and #57's credential sentence kept beside the WebSocket text) and §13 (the WebSocket rows
+  and #60's `authz_leak` row) conflicted, each resolved keeping both sides; the index held
+  OD-21 twice (main's copy dropped, the PR's, which adds the frame case, kept in main's place).
+  Follow-ups of the earlier PRs: `websocket` in the A-53 key lists (#88), the WebSocket
+  refusals named where #68's rule is stated, with 4 tests of the `-sV` pass, and a test that a
+  close reason reaches the terminal written out (#51). `make gates` green (with `PYTHONPATH` set
+  to the worktree's `src`): 4595 tests, 97.59% coverage, 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean with `websockets` 17.2 (BSD-3-Clause, no
+  dependencies).
 
 ## State, 2026-10-09: CLI errors keep the operator's file names (PR #70, begun 2026-10-07)
 

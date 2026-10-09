@@ -55,12 +55,13 @@ versioning: [SemVer](https://semver.org/).
   templates.
   `tests/ws_chat_server.py` is a loopback JSON-over-WebSocket server with seventeen behaviours;
   `tests/adapters/test_websocket.py` (42 tests), `tests/adapters/test_websocket_audit.py` (31),
-  `tests/adapters/test_websocket_premerge.py` (62) and `tests/cli/test_websocket_target.py` (29)
-  hold 164 tests (the gate with zero connections, the redirect, streaming, the final frame,
+  `tests/adapters/test_websocket_premerge.py` (62) and `tests/cli/test_websocket_target.py` (34)
+  hold 169 tests (the gate with zero connections, the redirect, streaming, the final frame,
   timeouts, errors, reconnects, one connection per conversation, the evidence on disk, a real
   campaign, its replay, a real `-sV` pass, and the audits' regressions). `make gates` (with
-  `PYTHONPATH` set to the worktree's `src`) after merging `main` at `6401ee2` and the pre-merge
-  fixes: 3610 tests, 97.24% coverage, 75 specs lint OK, bandit and pip-audit clean. Not built,
+  `PYTHONPATH` set to the worktree's `src`) stacked on `1c5d1e2` (`main` at `be2a762` with #56,
+  #57, #51, #54 and #70) with the pre-merge fixes: 4595 tests, 97.59% coverage, 75 specs lint
+  OK, bandit and pip-audit clean. Not built,
   open for the owner: a dedicated transcript field on `ModelResponse` (OD-34), several queries
   multiplexed on one socket (OD-35), a reconnect mid-conversation for a stateless server
   (OD-36), a `websocket:` block in a fleet entry (OD-37: `dottore fleet` infers `rest` from a
@@ -133,6 +134,20 @@ versioning: [SemVer](https://semver.org/).
   receive (the server acknowledged the auth frame and closed with 1009 at once: three retries,
   four debited sends, no query): one helper now classifies a close on both paths, with 6 more
   tests, 4 of which fail on `dceb587` (the other 2 pin that 1011 and 1001 are still retried).
+- **Stacked on the PRs merged after `6401ee2`** (2026-10-09, on `1c5d1e2`). #88 refuses a target
+  file's key that no reader reads: `websocket` is now in the key lists of the MANUAL (§4.2),
+  `dottore-scope(5)` and u12 A-53, and the loader takes the block, since that check is built
+  from `Target`. #68 fails one `-sV` probe, not the run, on a reply the adapters refuse: it does
+  the same for each WebSocket refusal (a frame nested past 64 levels, a text frame that is not
+  UTF-8, a 1007 or 1009 close the server starts), as the MANUAL (§3, the `-sV` row, §13) and u04
+  §4 now say, pinned by 4 tests in `tests/cli/test_websocket_target.py` that fail with the
+  isolation turned off. #51 writes control characters out in CLI errors: a server's close
+  reason, which the adapter quotes, reaches the terminal as `␛` and `␊`, pinned by a test that
+  fails when the run's error line skips `for_terminal`; the loader's refusals of the block print
+  a key with control characters written out too (checked by hand). Unchanged and checked: frames
+  go through `bounded_loads` and `well_formed_json` (A-47), `logprobs` is `None`, a reported
+  usage is trued up through `_reported_total`, and after #56 and #57 every exported error class
+  name still survives `redact_text` and the credential is still scrubbed from frames and errors.
 
 ### Fixed (a CLI error names the operator's file, and `diff` masks a report's reason)
 

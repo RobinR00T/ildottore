@@ -1065,7 +1065,7 @@ _TargetFileTopLevel = create_model(
         "reads, and ``mock_scenario``, which :func:`load_mock_scenario` reads; text where "
         "``Target`` holds text, ``null`` as absent, each block left to its reader. Built from "
         "``Target``, so a field added there is a key the file may hold without a second list to "
-        "keep in step (pre-merge audit: another branch's ``websocket`` field was refused by one)."
+        "keep in step (pre-merge audit: PR #87's ``websocket`` field was refused by one)."
     ),
     **_TOP_LEVEL_FIELDS,
 )

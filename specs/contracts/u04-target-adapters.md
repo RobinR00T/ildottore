@@ -89,7 +89,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
   300 levels (about 600 bytes) overflowing pydantic's serializer when the evidence was written.
   A body that is not JSON keeps the product-defect rule of §7 (open decision OD-21). A refused
   reply during the `-sV`/`-A` probe pass fails only that probe and the run goes on (u09 §7
-  A-35, OD-23).
+  A-35, OD-23), and so does each WebSocket refusal above, a 1007 or 1009 close the server starts
+  included, since each is an environment failure with `retryable = False`
+  (`tests/cli/test_websocket_target.py`).
 - KEEP: capabilities are **static per adapter+config** (declared), not inferred by probing at send
   time; live capability probing belongs to u09 fingerprint, not here.
 - DECIDE (OD-1, ADR-0005 Accepted): OpenAI `logprobs.content[].logprob`+`top_logprobs` vs Anthropic
