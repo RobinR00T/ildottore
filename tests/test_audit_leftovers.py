@@ -1120,6 +1120,7 @@ def test_every_surface_names_both_reasons_a_spec_was_not_exercised() -> None:
     finding = make_finding(spec.id).model_copy(update={"attempts": [failed]})
     terminal = " ".join(coverage_lines([finding], {spec.id: spec}))
     assert "a reply over the size cap" in terminal and "could not be decoded" in terminal
+    assert "nested too deeply" in terminal
     from ildottore.cli import wiring
 
     reporter = wiring.build_reporter(ReportFormat.HTML, specs={spec.id: spec})
@@ -1127,6 +1128,7 @@ def test_every_surface_names_both_reasons_a_spec_was_not_exercised() -> None:
     text = " ".join(html.decode().split())
     assert "got no reply that could be scored" in text
     assert "every send ended in an environment error" in text
+    assert "nested too deeply" in text
 
 
 def test_a_failed_partial_write_leaves_the_previous_report_and_no_partial(

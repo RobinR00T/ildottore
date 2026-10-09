@@ -319,8 +319,13 @@ def _costly_files(tmp_path: Path, case: str) -> tuple[list[str], Path, str]:
     target, scope = write_target(tmp_path), write_scope(tmp_path)
     if case == "run-base-60":  # the audit's 450 KB target, accepted after 37 s
         extra, reason = f"notes: {sexagesimal(450_000)}\n", NUMBER_TOO_LONG
-    else:  # an operator file has no byte cap: 45,000 keys, under the node cap
-        extra, reason = "extra:\n" + number_keys(45_000, indent="  "), TOO_MANY_NUMBER_KEYS
+    else:  # as many keys as the 1 MiB read cap holds (A-43), about 36,000, under the node cap
+        room = MAX_YAML_BYTES - len(target.read_text(encoding="utf-8")) - len("extra:\n")
+        keys: list[str] = []
+        while room >= len(key := f"  {(len(keys) + 1) * HASH_MODULUS}: 0\n"):
+            keys.append(key)
+            room -= len(key)
+        extra, reason = "extra:\n" + "".join(keys), TOO_MANY_NUMBER_KEYS
     target.write_text(target.read_text(encoding="utf-8") + extra, encoding="utf-8")
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
     args = ["run", "-t", str(target), "--scope", str(scope), "--spec-path", str(specs)]
