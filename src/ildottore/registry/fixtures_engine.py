@@ -21,6 +21,7 @@ import re
 from collections.abc import Callable
 
 from ildottore.shared import AttackSpec, EvaluatorLogic, EvaluatorType, FixtureCase, VerdictStatus
+from ildottore.shared.patterns import compile_spec_pattern
 
 # A stub evaluator: given the spec, the evaluator config and the fixture response, return a
 # verdict (fail = exploited). Deterministic, offline, no I/O.
@@ -49,7 +50,7 @@ def _regex_presence(spec: AttackSpec, ev: EvalInput) -> VerdictStatus:
     """Secure iff at least one declared pattern is present (e.g. a refusal marker)."""
     patterns = _patterns_for(spec, EvaluatorType.REGEX_PRESENCE)
     for pat in patterns:
-        if re.search(pat, ev.response, re.IGNORECASE):
+        if compile_spec_pattern(pat).search(ev.response):
             return VerdictStatus.PASS
     return VerdictStatus.FAIL
 
@@ -58,7 +59,7 @@ def _regex_absence(spec: AttackSpec, ev: EvalInput) -> VerdictStatus:
     """Secure iff none of the declared (forbidden) patterns appear."""
     patterns = _patterns_for(spec, EvaluatorType.REGEX_ABSENCE)
     for pat in patterns:
-        if re.search(pat, ev.response, re.IGNORECASE):
+        if compile_spec_pattern(pat).search(ev.response):
             return VerdictStatus.FAIL
     return VerdictStatus.PASS
 
@@ -140,8 +141,9 @@ def _stub_tool_args(call: dict[str, object]) -> dict[str, object]:
 
 
 def _stub_confirmed(args: dict[str, object]) -> bool:
+    # String keys only, as in the evaluator: a spec built in code can hold any key (A-44).
     for key, value in args.items():
-        if key.lower() in _STUB_CONFIRM_KEYS and bool(value):
+        if isinstance(key, str) and key.lower() in _STUB_CONFIRM_KEYS and bool(value):
             return True
         if isinstance(value, dict) and _stub_confirmed(value):
             return True
@@ -184,7 +186,7 @@ def _stub_forbidden_hit(args: dict[str, object], forbidden: frozenset[str]) -> b
     if not forbidden:
         return False
     for key, value in args.items():
-        if key.lower() in forbidden and bool(value):
+        if isinstance(key, str) and key.lower() in forbidden and bool(value):
             return True
         if isinstance(value, dict) and _stub_forbidden_hit(value, forbidden):
             return True
@@ -225,11 +227,18 @@ def _tool_call(spec: AttackSpec, ev: EvalInput) -> VerdictStatus:
 
 
 def _stub_step_arg_match(call: dict[str, object], pattern: str) -> bool:
-    """Whether any string argument value of ``call`` matches ``pattern`` (nested included)."""
+    """Whether any string argument value of ``call`` matches ``pattern`` (nested included).
+
+    Compiled once, before the walk, rather than at every level of it, and through the helper, so
+    a pattern that compiled when lint checked it but not here, a few frames deeper, is a
+    :class:`~ildottore.shared.patterns.SpecPatternError` the fixture proof reports (A-33).
+    """
+
+    compiled = compile_spec_pattern(pattern)
 
     def walk(value: object) -> bool:
         if isinstance(value, str):
-            return re.search(pattern, value, re.IGNORECASE) is not None
+            return compiled.search(value) is not None
         if isinstance(value, dict):
             return any(walk(v) for v in value.values())
         if isinstance(value, (list, tuple)):
