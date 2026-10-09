@@ -349,9 +349,15 @@ class SqliteRunStore:
         # converts a bad one; a missing one only beside a digest. Without a digest the target
         # refusal, which no flag waives, fires first and says what is wrong (audits of #61).
         expected = runs is not None or fields.get("target_digest") is not None
-        if expected and (isinstance(runs, bool) or not isinstance(runs, int) or runs < 1):
+        # At most 2**53, the bound `run` puts on the flag (`cli.run.MAX_FLAG_VALUE`, which this
+        # package cannot import): a resume inherits the count, and one of 400 digits was an
+        # OverflowError in the plan's float arithmetic, a traceback and exit 1 (A-55).
+        if expected and (
+            isinstance(runs, bool) or not isinstance(runs, int) or not 1 <= runs <= 2**53
+        ):
             raise CorruptRunContext(
-                "context_json holds no runs value, or one that is not a positive whole number. "
+                "context_json holds no runs value, or one that is not a whole number from 1 to "
+                "2**53. "
                 "An integrity record that cannot be read is not the same as one that was never "
                 "written: refusing rather than continuing."
             )

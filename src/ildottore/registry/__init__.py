@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
 from .fixtures_engine import DEFAULT_STUB_TABLE, EvalInput, StubEvaluator, evaluate_fixture
-from .linter import lint, lint_packs
+from .linter import lint, lint_packs, uncompilable_patterns
 from .loader import LoadResult, load_path, load_paths
 from .pack import FLAGGED_FAMILIES, LoadedPack
 from .registry import Registry, SpecNotFoundError, SuiteNotFoundError
@@ -37,5 +37,6 @@ __all__ = [
     "load_path",
     "load_paths",
     "safe_load_yaml",
+    "uncompilable_patterns",
     "validate_attack_spec_schema",
 ]
