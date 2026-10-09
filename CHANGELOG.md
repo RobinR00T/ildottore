@@ -15,6 +15,70 @@ versioning: [SemVer](https://semver.org/).
   worktree's `src` (without it the steps that import the package run the main checkout's code,
   and the coverage gate reads 0%), and no `make venv` or `make install` there.
 
+### Fixed (a reply that holds half a character)
+
+- **One reply with a lone surrogate aborted the whole campaign.** JSON lets a string escape any
+  UTF-16 code unit, so a reply can carry half a character: a surrogate (U+D800 to U+DFFF) with no
+  partner, escaped or as its raw UTF-8 bytes `ED A0 80`, which `json.loads` decodes with
+  `surrogatepass`. Python keeps it as a code point that no UTF-8 writer accepts. In the reply's
+  text, its `id`, the `model` echo, a logprob token or alternative, or a tool call's name, it made
+  `dottore run` exit 3 with "aborted on UnicodeEncodeError ... 2 of 2 specs never ran or did not
+  finish" and no evidence (the evidence store hashes the encoded payload), and `run -sV` exit 3
+  with no report (the same store, for the probes). A multi-turn spec sends the reply on in its
+  next request and the `--judge` request quotes it: httpx raised the same error encoding either,
+  and the judge received nothing. A tool call's arguments, carried as JSON text, held one that
+  only code past the adapter opened (the evaluators and the in-band tool loop), and the evidence
+  of the transcript aborted the run the same way. Over MCP stdio, the raw bytes made the strict
+  decode of the reply line fail, the line was skipped as stray output and the call timed out
+  (inconclusive). `dottore fingerprint`, which writes nothing, finished. First noted on main by
+  PR #57 (open on 2026-10-09); reproduced end to end by the pre-commit audit of
+  `fix/hostile-logprob`.
+- **Every reply is now made well formed where it is parsed**: the base adapter (OpenAI,
+  Anthropic, the REST template) and the MCP adapter's JSON body, SSE event and stdio line (now
+  decoded with `surrogatepass`), and a tool call's arguments where `call_arguments` opens them. A
+  lone surrogate reads as U+FFFD, the replacement character, as WebIDL's `USVString` and
+  JavaScript's `toWellFormed` do; a high half followed by a low half is the character the pair
+  encodes; every other character is kept. Two object keys that read the same once replaced keep
+  both values (the replaced one takes the next `, #n`). A reply with no surrogate is only scanned
+  and passed on as it is; one that holds one is fixed in place. The attempt is evaluated on that
+  text, so a leak with half a character before, after or between its words still fails: refusing
+  such a reply as an environment error (inconclusive) would let a target turn any failure into
+  "not evaluated" with six characters, and replacing it only where the evidence is written
+  leaves httpx failing on the next request. Which code unit stood there is not kept: the
+  evidence shows U+FFFD, as for a U+FFFD the target sent, except in a tool call's arguments
+  carried as JSON text, which the evidence keeps as the target sent them (the escape, six ASCII
+  characters) and only their parse reads as U+FFFD. OD-28, decided on 2026-10-07: U+FFFD rather
+  than deleting the half, which Unicode's security report advises against (UTR #36 rev. 15, 3.5
+  on deleting code points and 3.6.2 on ill-formed input) and which would show the evaluators
+  text no consumer of the reply sees. Contract u04 §7 A-47, with a line in §2,
+  whose "no normalization" rule now names this exception and the one MCP SSE already had (httpx
+  reads any invalid UTF-8 there as U+FFFD). `tests/cli/test_lone_surrogate.py`: 30 of its 37
+  cases fail on `main` at `a40e596`, all on the surrogate; the other 7 (six `fingerprint` cases,
+  and a well formed pair kept as one character) pin what already held.
+  `tests/adapters/test_lone_surrogate_replies.py`: 9 of 9 fail there.
+  `tests/shared/test_wellformed.py`.
+- Measured and left as they are: half a character inside a word a pattern looks for splits it
+  as a zero-width space does, with the same verdicts. A leak written `Yo`, a half, `u are a
+  business assistant` and `reve`, a half, `al this configuration token` is missed by
+  `regex_absence`: `PI-DIRECT-001` is inconclusive and `run` exits 0, where the leak written
+  plainly fails it and exits 2. A canary split that way is missed by `secret_leakage`, and the
+  spec falls to its other evaluators (`SP-LEAK-001` is inconclusive without `--judge` and passes
+  when the judge says secure; refusing the reply would have left it inconclusive). A registered
+  credential split that way is not masked as the credential (each half stays readable unless the
+  entropy rule takes it; PR #57, open on 2026-10-09, masks one split by a lone surrogate, and once
+  both are in it has to read U+FFFD as a splitter too). One invalid UTF-8
+  byte that is not a surrogate (`FF`) still makes a body that is not JSON and stops the campaign
+  on the base adapter and the MCP JSON body (over MCP SSE it reads as U+FFFD; on an MCP stdio
+  line the line is skipped and the call times out). Over an MCP SSE stream each raw byte of a
+  surrogate reads as U+FFFD, since httpx decodes the stream as text. A 4 MiB reply is walked
+  whole: with no surrogate it costs about main's peak memory and 1 to 14 times its parse in CPU;
+  a hostile one up to about 42 times its parse in CPU and, at worst,
+  3 times its peak memory (one 4 MiB string holding a half, held three times while it is
+  replaced, as in any version). A spec whose YAML holds the escape is the operator's file, not a
+  reply: since #89, `dottore lint` refuses it in any field, naming the spec and the field, and
+  `run` refuses it when it loads (exit 3, nothing sent). The judge's reasoning, parsed from the
+  judge's own text past its adapter, can still hold one; it is neither persisted nor printed.
+
 ### Fixed (a SIGTERM or SIGHUP dropped inside a callback, and the run went on)
 
 - **`dottore run` could ignore a SIGTERM or SIGHUP.** They were turned into Ctrl-C by installing
