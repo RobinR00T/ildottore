@@ -5,7 +5,7 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed (an attack prompt the provider's input filter refuses no longer stops the campaign: OD-41)
+### Changed (a prompt the provider's input filter refuses no longer stops the campaign: OD-41)
 
 - **The first prompt a provider's filter refused ended the scan.** Azure OpenAI's prompt filter
   answers a prompt it blocks with HTTP 400 and the error code `content_filter`; the adapters read

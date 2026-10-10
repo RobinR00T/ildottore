@@ -3,6 +3,22 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-10 (night): the pre-merge audit of `3d739f3` (OD-41), six lows closed
+
+- Merge-ready per the audit; closed on the same branch. L1: the resume test checks `--estimate
+  --resume` (5 done, ~3 to send). L2: a conversation the filter cut carried no reply, so a
+  forbidden tool called on an earlier turn was never scored; the aggregate keeps the model's last
+  reply with the trace whenever there is a call, the runner reads it with the trace evaluators
+  only, a fail decides (error moved to `request.metadata.provider_filter_cut`), anything else
+  stays blocked and not exercised. L3: the Gemini block needs a `candidates.` text path. L4:
+  Vertex AI's `MODEL_ARMOR` and `JAILBREAK` (its REST reference, read 2026-10-10), not
+  `IMAGE_SAFETY`, on which the references disagree. L5: report-1.0 grows additively, as before, so
+  the CHANGELOG says a new report fails an older copy of the schema. L6: a carrier probe the
+  filter refused stopped `-sV`; the engine's `is_prompt_filtered` (wired to
+  `core.execute.is_provider_filter_block`) makes it a failed probe, as Prompt Shields classes an
+  encoded instruction as an encoding attack. The FAQ line of 152 characters is rewrapped. Not
+  started, at the conductor's request: the Bedrock guardrail and Azure output-filter gap.
+
 ## State, 2026-10-10 (evening): a provider's input-filter refusal is a blocked attempt (OD-41)
 
 - On `feat/provider-filter-blocked-attempt`, from `main` at `92c7b11`: the owner decided
