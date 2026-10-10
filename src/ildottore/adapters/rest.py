@@ -22,6 +22,11 @@ from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 
 __all__ = ["RestAdapter", "RestTemplate", "get_path"]
 
+#: The ``PromptFeedback.blockReason`` values the Gemini API reference says blocked the prompt.
+_GEMINI_PROMPT_BLOCKS: frozenset[str] = frozenset(
+    {"SAFETY", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT"}
+)
+
 
 def get_path(payload: Any, path: str) -> Any:
     """Resolve a dotted path (``a.b.0.c``) into a nested JSON payload.
@@ -140,6 +145,31 @@ class RestAdapter(BaseAdapter):
         if self.api_key is not None:
             headers["authorization"] = f"Bearer {self.api_key}"
         return body, headers
+
+    def _prompt_blocked(self, payload: Mapping[str, Any]) -> tuple[str, str] | None:
+        """Gemini's prompt block, when the template's text path finds no text (OD-41).
+
+        The shape, sourced: the Gemini API reference, ``GenerateContentResponse``
+        (ai.google.dev/api/generate-content, read 2026-10-10): ``promptFeedback`` "Returns the
+        prompt's feedback related to the content filters", and ``PromptFeedback.blockReason``
+        "If set, the prompt was blocked and no candidates are returned". A blocked prompt is a
+        success body with no candidate, so the text path a Gemini template points at
+        (``candidates.0.content.parts.0.text``) is absent and the reply was a product error that
+        stopped the campaign. Recognised: no text at the path, and a ``blockReason`` the
+        reference says blocked the prompt (``SAFETY``, ``OTHER``, ``BLOCKLIST``,
+        ``PROHIBITED_CONTENT``); not ``IMAGE_SAFETY``, which the reference describes as
+        generated content, nor ``BLOCK_REASON_UNSPECIFIED``, "unused", nor a value it does not
+        list, which stays the product error it was. A body with text is a reply whatever else
+        it holds.
+        """
+
+        if get_path(payload, self.template.text_path) is not None:
+            return None
+        reason = get_path(payload, "promptFeedback.blockReason")
+        # A string first: the body is the target's, and a list there is unhashable.
+        if not isinstance(reason, str) or reason not in _GEMINI_PROMPT_BLOCKS:
+            return None
+        return "promptFeedback.blockReason", f"promptFeedback.blockReason {reason}"
 
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
         text = get_path(payload, self.template.text_path)

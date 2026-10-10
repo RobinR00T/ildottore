@@ -35,6 +35,7 @@ from ildottore.adapters import (
     AnthropicAdapter,
     MCPAdapter,
     OpenAIAdapter,
+    ProviderFilterBlock,
     RestAdapter,
     RestTemplate,
     RetryConfig,
@@ -351,8 +352,16 @@ def refused_request(exc: BaseException) -> bool:
     error code ``content_filter``, and stopped ``-sV`` on it (pre-merge audit of ``cd413c0``).
     It is the one input-filter signal the pass can see, and the profile reads it as unknown, not
     as an input filter (OD-40). A 3xx or a 5xx the retries do not cover is not one.
+
+    Since OD-41 the adapters raise Azure's refusal as a ``ProviderFilterBlock``, which carries its
+    status but is not an ``AdapterStatusError``, and Gemini's prompt block (a success body) as
+    one too: both are refusals of the prompt, so both are read here, and the failed probe is
+    named ``guardrail/guardrail_benign: ProviderFilterBlock``. On any other probe they still
+    stop the pass, as before.
     """
 
+    if isinstance(exc, ProviderFilterBlock):
+        return True
     return isinstance(exc, AdapterStatusError) and 400 <= exc.status_code < 500
 
 

@@ -170,7 +170,11 @@ async def execute_conversation(
 
     An env error on **any** turn aborts the conversation and returns an ``env_error``
     result whose attempt has ``response=None`` (the runner records ``inconclusive``, never
-    a fabricated fail from a half-finished dialogue).
+    a fabricated fail from a half-finished dialogue). So does a turn the provider's input filter
+    refused (OD-41): the conversation stops there, its result is ``filter_blocked`` and carries
+    that turn's error, and the runner records it ``inconclusive: blocked_by_provider_filter``.
+    The turns before it reached the model; the one it refused did not, so the dialogue never
+    reached the reply the spec scores.
 
     With an in-band ``setup`` (OD-18) the retrieved documents precede the first attacker turn
     (the memory seed is in ``system_prompt``, put there by the runner), every request carries
@@ -212,7 +216,11 @@ async def execute_conversation(
             tool_rounds=tool_rounds,
         )
         return AttemptResult(
-            attempt=attempt, env_error=True, retries=result.retries, errors=result.errors
+            attempt=attempt,
+            env_error=not result.filter_blocked,
+            filter_blocked=result.filter_blocked,
+            retries=result.retries,
+            errors=result.errors,
         )
 
     async def send(turn_index: int, suffix: str) -> AttemptResult:

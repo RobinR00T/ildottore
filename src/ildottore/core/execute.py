@@ -18,6 +18,14 @@ never imports the adapter concretes' exception types (contract §8). The default
 predicate recognizes the adapters' structural marker (an ``is_env_error`` attribute
 or the class-name convention) without importing them.
 
+A third class is neither (OD-41, u08 A-69): a prompt the provider's own input filter refused
+before the model saw it (Azure OpenAI's HTTP 400 ``content_filter``, Gemini's prompt block),
+which an adapter raises with a truthy ``blocked_by_provider_filter`` marker. The attempt is
+recorded as blocked, without a reply, and is not sent again (the same prompt is refused the same
+way); the send stays debited, its token reservation is released as for an environment error (no
+completion was produced), and the runner records it ``inconclusive: blocked_by_provider_filter``.
+It used to propagate as a product error and stop the whole campaign at the first one.
+
 The clock/sleep is injected (``sleep``) so tests run without real delays and the
 backoff schedule is deterministic (contract §7).
 """
@@ -34,6 +42,7 @@ from ildottore.core.pacing import RateLimiter
 from ildottore.shared.amounts import is_count
 from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
+from ildottore.shared.provider_filter import PROVIDER_FILTER_MARK
 
 __all__ = [
     "NOT_RETRYABLE_MARK",
@@ -42,6 +51,7 @@ __all__ = [
     "RetryPolicy",
     "default_is_env_error",
     "execute_attempt",
+    "is_provider_filter_block",
     "reserve_tokens",
 ]
 
@@ -76,11 +86,14 @@ class AttemptResult:
     successful send ``attempt.response`` is populated and ``env_error`` is ``None``;
     on an exhausted-retry env failure ``attempt.error`` holds the last error string
     and ``env_error`` is ``True`` - the runner maps that to
-    ``inconclusive`` (never a product ``fail``).
+    ``inconclusive`` (never a product ``fail``). ``filter_blocked`` is ``True`` when the
+    provider's input filter refused the prompt (OD-41): no response, the error carries
+    :data:`~ildottore.shared.provider_filter.PROVIDER_FILTER_MARK`, and ``env_error`` is ``False``.
     """
 
     attempt: Attempt
     env_error: bool = False
+    filter_blocked: bool = False
     retries: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -124,6 +137,17 @@ def default_is_env_error(exc: BaseException) -> bool:
     # errors set the ``is_env_error`` marker above, so this is only a last-resort heuristic.
     name = type(exc).__name__.lower()
     return name.endswith(("enverror", "timeouterror", "ratelimiterror", "ratelimit"))
+
+
+def is_provider_filter_block(exc: BaseException) -> bool:
+    """True when ``exc`` says the provider's input filter refused the prompt (OD-41).
+
+    Structural, as :func:`default_is_env_error` is: the adapters' ``ProviderFilterBlock`` sets
+    ``blocked_by_provider_filter = True``. Only ``True`` counts, so a mock's attribute of
+    another type is not read as one.
+    """
+
+    return getattr(exc, "blocked_by_provider_filter", None) is True
 
 
 async def execute_attempt(
@@ -188,6 +212,28 @@ async def execute_attempt(
         try:
             response = await _send_with_timeout(adapter, request, timeout_s, do_sleep)
         except BaseException as exc:
+            if is_provider_filter_block(exc):
+                # Before the env question: it is not one, and before OD-41 it propagated as a
+                # product error and stopped the campaign. Not retried: the same prompt is
+                # refused the same way. The request stays debited; no completion was billed.
+                if reserved:
+                    ledger.refund_tokens(reserved)
+                errors.append(f"{type(exc).__name__}: {exc}{PROVIDER_FILTER_MARK}")
+                return AttemptResult(
+                    attempt=_attempt(
+                        attempt_id,
+                        spec_id,
+                        mutation,
+                        request,
+                        sampling,
+                        response=None,
+                        error=errors[-1],
+                        latency_ms=None,
+                    ),
+                    filter_blocked=True,
+                    retries=send_index,
+                    errors=errors,
+                )
             if not is_env_error(exc):
                 raise
             # No completion was billed for a send that failed: release its reservation (the

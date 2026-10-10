@@ -18,7 +18,9 @@ Discipline the runner enforces (contract §2/§4 KEEP):
 * **Policy, mandatory.** A spec that fails the gate produces a ``blocked_by_policy`` finding
   and **zero** adapter sends.
 * **Env-vs-product.** A retry-exhausted env error is ``inconclusive``; only a real
-  exploited response is ``fail``.
+  exploited response is ``fail``. A prompt the provider's own input filter refused before the
+  model saw it is neither (OD-41, u08 A-69): ``inconclusive: blocked_by_provider_filter``, never
+  sent again, and the campaign goes on.
 * **Hard budgets.** Any :class:`~ildottore.core.budgets.BudgetExhausted` halts the
   campaign and yields a partial :class:`TestRun` marked ``budget_exhausted`` - never
   a silently-truncated ``complete``.
@@ -104,6 +106,7 @@ from ildottore.shared.protocols import (
     RunStore,
     TargetAdapter,
 )
+from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
 from ildottore.shared.toolcalls import call_name
 
 __all__ = [
@@ -802,6 +805,7 @@ class CampaignRunner:
                             spec,
                             attempt,
                             env_error=result.env_error,
+                            filter_blocked=result.filter_blocked,
                             identities=identities_map,
                             canary_owners=canary_owners,
                             target=target,
@@ -1049,6 +1053,7 @@ class CampaignRunner:
         attempt: Attempt,
         *,
         env_error: bool,
+        filter_blocked: bool = False,
         identities: dict[str, ModelResponse] | None = None,
         canary_owners: dict[str, str] | None = None,
         target: Target | None = None,
@@ -1061,8 +1066,24 @@ class CampaignRunner:
         the spec's ``evaluator_logic``: a deterministic fail always decides (OD-19, ADR-0010).
         ``identities`` +
         ``canary_owners`` (multi_identity) are threaded to authz_leak via the EvalContext.
+
+        A prompt the provider's input filter refused (``filter_blocked``, OD-41) is
+        ``inconclusive: blocked_by_provider_filter``, also without an evaluator: the model never
+        saw it, so it is not the model's refusal (a pass) and not an exploit (a fail).
         """
 
+        if filter_blocked:
+            return Verdict(
+                status=VerdictStatus.INCONCLUSIVE,
+                confidence=0.0,
+                reasoning=(
+                    f"{InconclusiveReason.BLOCKED_BY_PROVIDER_FILTER.value}: the provider's "
+                    "input filter refused the prompt before the model saw it, so there is no "
+                    "reply to evaluate: not a refusal by the model and not an exploit"
+                ),
+                evaluator_type="aggregate",
+                inconclusive_reason=InconclusiveReason.BLOCKED_BY_PROVIDER_FILTER,
+            )
         if env_error or attempt.response is None:
             return Verdict(
                 status=VerdictStatus.INCONCLUSIVE,
@@ -1202,6 +1223,7 @@ class CampaignRunner:
         risk = self._scorer.score(spec, verdicts, attempts)
         status = _dominant_status(verdicts)
         confirmed = _is_confirmed(status, attempts, spec)
+        blocked = len(blocked_attempt_ids(attempts))
         return Finding(
             spec_id=spec.id,
             target_id=target.id,
@@ -1214,7 +1236,7 @@ class CampaignRunner:
             confirmed=confirmed,
             attempts=attempts,
             evidence=evidence,
-            reasoning=_finding_reasoning(status, verdicts),
+            reasoning=_finding_reasoning(status, verdicts, blocked=blocked),
         )
 
     def _capability_skipped_finding(
@@ -1815,10 +1837,22 @@ def _is_confirmed(status: VerdictStatus, attempts: list[Attempt], spec: AttackSp
     return False
 
 
-def _finding_reasoning(status: VerdictStatus, verdicts: list[Verdict]) -> str:
+def _finding_reasoning(status: VerdictStatus, verdicts: list[Verdict], *, blocked: int = 0) -> str:
+    """The finding's one-line account, with how many attempts the provider's filter refused.
+
+    Those attempts are in the count of verdicts and never exploited (OD-41): the line says how
+    many so a spec whose every attempt was blocked does not read as a model that resisted.
+    """
+
     fails = sum(1 for v in verdicts if v.status is VerdictStatus.FAIL)
     total = len(verdicts)
-    return f"status={status.value}; {fails}/{total} attempt-verdicts exploited"
+    line = f"status={status.value}; {fails}/{total} attempt-verdicts exploited"
+    if blocked:
+        line += (
+            f"; {blocked}/{total} blocked by the provider's input filter before the model saw "
+            f"{'it' if blocked == 1 else 'them'}"
+        )
+    return line
 
 
 def _zero_risk(spec: AttackSpec) -> RiskScore:
@@ -1869,8 +1903,11 @@ def _completed_attempt_ids(run: TestRun | None) -> set[str]:
                 if attempt.verdict is not None:
                     ids.add(attempt.attempt_id)
             # An error that would repeat identically (a reply over the size cap) is kept too:
-            # re-sending it on every resume spends a request for the same refusal.
-            elif (attempt.error or "").endswith(NOT_RETRYABLE_MARK):
+            # re-sending it on every resume spends a request for the same refusal. So is a
+            # prompt the provider's input filter refused (OD-41): it would be refused again.
+            elif (attempt.error or "").endswith(NOT_RETRYABLE_MARK) or blocked_by_provider_filter(
+                attempt
+            ):
                 ids.add(attempt.attempt_id)
     return ids
 
