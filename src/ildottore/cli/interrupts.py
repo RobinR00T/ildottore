@@ -107,7 +107,19 @@ def stop_running_loop() -> bool:
     return True
 
 
-async def _result_of(task: asyncio.Task[_T]) -> _T:
+async def _drive(run: _Run, main: Coroutine[Any, Any, _T]) -> _T:
+    """The coroutine ``asyncio.Runner`` runs: it makes ``main`` a task and awaits it at once.
+
+    Made here and not before the loop starts, the task's first step runs only once this
+    coroutine awaits it, so a Ctrl-C (asyncio cancels this coroutine) always reaches it. Made
+    before, its first step ran first, a Ctrl-C there cancelled only this coroutine, and a second
+    one during the stop left the task pending, its spend written when Python collected it
+    (pre-merge audit of the A-60 fix).
+    """
+
+    loop = asyncio.get_running_loop()
+    task = loop.create_task(main)
+    run.drive(loop, task)
     return await task
 
 
@@ -118,9 +130,9 @@ def run_until_stopped(
 ) -> _T:
     """``asyncio.run(main)``, which a SIGTERM or SIGHUP stops as Ctrl-C does (u12 A-60).
 
-    ``main`` runs as a task created before the loop starts, so the handler can cancel it from the
-    first instant, and ``asyncio.Runner`` runs a coroutine that awaits it: Ctrl-C keeps asyncio's
-    own handler, which cancels that coroutine and through it the task. Raises KeyboardInterrupt
+    ``asyncio.Runner`` runs a coroutine that makes ``main`` a task and awaits it at once
+    (:func:`_drive`): Ctrl-C keeps asyncio's own handler, which cancels that coroutine and
+    through it the task, from its first step on. Raises KeyboardInterrupt
     once the loop is closed when a signal stopped the run, whether the task ended cancelled or
     had already finished, and before anything runs when a signal arrived since the campaign
     started (:func:`terminations_watched`). Outside the main thread no signal reaches it, and it
@@ -140,7 +152,6 @@ def run_until_stopped(
             return runner.run(main)
     run = _Run()
     outer = _running
-    scheduled = False
     try:
         _running = run
         # Read after arming: a signal before it, or one at this instant, is not lost.
@@ -148,19 +159,16 @@ def run_until_stopped(
             run.stopped = True
         else:
             with asyncio.Runner(loop_factory=loop_factory) as runner:
-                loop = runner.get_loop()
-                task = loop.create_task(main)
-                scheduled = True
-                run.drive(loop, task)
                 try:
-                    result = runner.run(_result_of(task))
+                    result = runner.run(_drive(run, main))
                 except asyncio.CancelledError:
                     if not run.stopped:
                         raise
     finally:
         _running = outer
-        if not scheduled:
-            main.close()
+        task = run.task
+        if task is None:
+            main.close()  # never made a task: stopped before, or cancelled before it was
         elif task.done() and not task.cancelled():
             # Retrieved here: a KeyboardInterrupt raised inside it (a second signal) propagates
             # past the coroutine that awaits it, and asyncio would log it as never retrieved.

@@ -390,6 +390,100 @@ def test_a_signal_dropped_outside_a_loop_still_stops_the_next(sigint: str) -> No
     assert ran == [True]
 
 
+class _AsyncioLog(logging.Handler):
+    """What asyncio logs during a test: a destroyed pending task, a never-retrieved exception."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage().splitlines()[0])
+
+
+@pytest.fixture
+def asyncio_log() -> Iterator[_AsyncioLog]:
+    handler = _AsyncioLog()
+    logger = logging.getLogger("asyncio")
+    logger.addHandler(handler)
+    try:
+        yield handler
+    finally:
+        logger.removeHandler(handler)
+
+
+def _in_a_loop() -> str:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return "outside a loop"
+    return "inside a loop"
+
+
+@pytest.mark.usefixtures("ctrl_c")
+def test_a_ctrl_c_in_the_campaigns_first_step_reaches_it(asyncio_log: _AsyncioLog) -> None:
+    """The task used to be made before the loop started, so its first step ran before the
+    coroutine `asyncio.Runner` runs had awaited it: a Ctrl-C there cancelled only that
+    coroutine, the campaign was cancelled later, as the loop closed, and a second Ctrl-C during
+    that stop left it pending, its `finally` (the runner's spend write) run when Python
+    collected it, outside any loop (pre-merge audit). The second Ctrl-C is a callback queued
+    during the stop, which awaits a future nothing sets: no clock decides it."""
+
+    events: list[str] = []
+
+    async def campaign() -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            signal.raise_signal(signal.SIGINT)  # in the first step, before any await
+            await loop.create_future()
+        except asyncio.CancelledError:
+            events.append("cancelled")
+            loop.call_soon(signal.raise_signal, signal.SIGINT)  # a second Ctrl-C, mid-stop
+            await loop.create_future()  # a stop that takes a while
+            raise
+        finally:
+            events.append(_in_a_loop())
+
+    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        run_until_stopped(campaign())
+    gc.collect()
+    assert events == ["cancelled", "inside a loop"]
+    assert asyncio_log.messages == []
+
+
+def test_a_signal_before_the_task_exists_cancels_it_when_it_is_made(sigint: str) -> None:
+    """Armed before the loop is made: a SIGTERM while `asyncio.Runner` makes it (here, from
+    the loop factory) is noted, and the task is cancelled as it is made, before its first step,
+    so the campaign never runs."""
+
+    ran: list[bool] = []
+
+    async def campaign() -> None:
+        ran.append(True)
+
+    def factory() -> asyncio.AbstractEventLoop:
+        signal.raise_signal(signal.SIGTERM)
+        return asyncio.SelectorEventLoop()
+
+    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        run_until_stopped(campaign(), loop_factory=factory)
+    assert not ran
+
+
+def test_a_cancellation_that_is_no_signal_stays_one() -> None:
+    """A campaign cancelled by something other than a signal ends as under `asyncio.run`: with
+    CancelledError, not KeyboardInterrupt."""
+
+    async def campaign() -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        task.cancel()
+        await asyncio.sleep(0)
+
+    with _termination_as_interrupt(), pytest.raises(asyncio.CancelledError):
+        run_until_stopped(campaign())
+
+
 def test_outside_the_main_thread_it_is_asyncio_run() -> None:
     results: list[int] = []
 
