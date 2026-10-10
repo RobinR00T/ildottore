@@ -202,6 +202,16 @@ _OPAQUE = "Zq8Xw3Yv6Ut1Sr4Qp7On"
             'secret="Hunter2Secret99"',
             f'redis://ops:{_URL}@[Secr3t@x://h@y-token] [abc123/secret=]"[Hunter2Secret99]"',
         ),
+        # The same where the tail does stop, before a `://` with a `:` and an `@` after it that
+        # the URL rule does not read in this pass (a `/` in the user): read again from that stop,
+        # `d-token` took `secret=` into its value; read from the value's end, it is masked.
+        (
+            ("Adm1n@2026",),
+            "redis://ops:Adm1n@2026-db,password=Secr3t@x://a/b:c@d-token abc123/"
+            'secret="Hunter2Secret99"',
+            f"redis://ops:{_URL}@[Secr3t@x://a/b:c@d-token]://a/b:c@d-token [abc123/secret=]"
+            '"[Hunter2Secret99]"',
+        ),
         # A plain word after a label and a path the entropy rule exempts stay as they are.
         (
             ("Adm1n@2026",),
