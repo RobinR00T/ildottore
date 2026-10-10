@@ -309,6 +309,59 @@ def test_no_url_password_survives_a_credential_across_a_separator(
         assert redactor.redact_text(out) == out
 
 
+# --- the CLI's errors ----------------------------------------------------------------------------
+
+_DIGEST = re.compile(r"(«REDACTED:[a-z_]+):[0-9a-f]{8}»")
+
+
+@pytest.mark.parametrize(
+    ("credentials", "text", "expected"),
+    [
+        (
+            ("Adm1n@2026",),
+            "connect failed: redis://ops:Adm1n@2026-db.internal:6379,password=Secr3t@Value99xyz",
+            f"connect failed: redis://ops:{_URL}@«REDACTED:labeled_secret»",
+        ),
+        # The URL rule run on the raw text took `Adm1n` and left `2026` of the credential.
+        (
+            ("Adm1n@2026",),
+            "connect failed: redis://ops:Adm1n@2026-db.internal:6379/0",
+            "connect failed: redis://ops:«REDACTED:credential»-db.internal:6379/0",
+        ),
+        (
+            ("ABCD:Sup3r",),
+            "connect failed: x://key-ABCD:Sup3rS3cretPw@h",
+            f"connect failed: x://key-«REDACTED:credential»{_URL}@h",
+        ),
+        (
+            ("key-ABCD1234", "1234://bob"),
+            "connect failed: x key-ABCD1234://bob:Sup3rS3cretPw@localhost y",
+            f"connect failed: x «REDACTED:credential»:{_URL}@localhost y",
+        ),
+        # The audit's case: `...«REDACTED:url_password»@ssw0rd!«REDACTED:email»/v1`.
+        (
+            ("P@ssw0rd!x",),
+            "connect failed: https://ops:P@ssw0rd!x@db.internal/v1",
+            "connect failed: https://ops:«REDACTED:credential»@db.internal/v1",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("no_known_secrets")
+def test_a_cli_error_is_masked_as_the_redactor_masks_it(
+    credentials: tuple[str, ...], text: str, expected: str
+) -> None:
+    """`cli/app._masked` ran the URL rule on the raw text before the redactor, and cut there a
+    registered credential holding an `@` or a `:`, which the redactor then no longer found
+    (pre-merge audit of #96)."""
+
+    from ildottore.cli.app import _masked
+
+    for value in credentials:
+        register_known_secret(value)
+    shown = _masked(ValueError(text))
+    assert _DIGEST.sub(r"\1»", shown) == expected
+
+
 # --- bounded in time and memory ---------------------------------------------------------------
 
 _MB = 1024 * 1024

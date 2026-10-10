@@ -48,7 +48,6 @@ from ildottore.redactor import (
     Redactor,
     holds_known_secret_part,
     known_secret_parts,
-    mask_url_passwords,
     visible_controls,
 )
 from ildottore.shared.schema_export import export_schemas
@@ -331,8 +330,13 @@ def _masked(exc: BaseException) -> str:
         key=len,
         reverse=True,
     )
-    # URL passwords first, on the whole text, so a 64-hex password is never kept as a digest.
-    text = plain.redact_text(mask_url_passwords(str(exc)))
+    # Every rule but the entropy fallback, URL passwords included, on the whole text, so a 64-hex
+    # password is never kept as a digest. The URL rule ran on its own first, on the raw text, and
+    # cut a registered credential holding an `@` or a `:` at it, so the redactor no longer found
+    # it: `https://ops:P@ssw0rd!x@db.internal/v1` with `P@ssw0rd!x` registered printed
+    # `ssw0rd!` (pre-merge audit of #96). The redactor's own URL rule runs after the registered
+    # credentials are set aside.
+    text = plain.redact_text(str(exc))
     paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
     keep = re.compile(
         r"(\b(?:"
