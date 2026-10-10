@@ -33,15 +33,14 @@ PROVIDER_FILTER_MARK = " [blocked_by_provider_filter]"
 def blocked_by_provider_filter(attempt: Attempt) -> bool:
     """True when the provider's input filter refused this attempt's prompt (no reply came back).
 
-    Read from the verdict's reason, or from the error's mark when the attempt carries no verdict.
+    Read from the verdict's reason; the error's mark is read only when the attempt carries no
+    verdict. A verdict is the runner's own word, while an environment error's tail can quote what
+    a target sent (a close reason, say), so a mark there does not make that error a block.
     """
 
     verdict = attempt.verdict
-    if (
-        verdict is not None
-        and verdict.inconclusive_reason is InconclusiveReason.BLOCKED_BY_PROVIDER_FILTER
-    ):
-        return True
+    if verdict is not None:
+        return verdict.inconclusive_reason is InconclusiveReason.BLOCKED_BY_PROVIDER_FILTER
     return attempt.response is None and (attempt.error or "").endswith(PROVIDER_FILTER_MARK)
 
 

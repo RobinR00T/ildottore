@@ -42,6 +42,7 @@ from ildottore.shared.models import (
     ModelResponse,
     Sampling,
     TestRun,
+    Verdict,
 )
 from ildottore.shared.provider_filter import PROVIDER_FILTER_MARK, blocked_by_provider_filter
 from ildottore.store.evidence_fs import FsEvidenceStore
@@ -331,3 +332,21 @@ def test_a_blocked_attempt_stored_without_a_verdict_is_kept_by_its_mark() -> Non
 
     assert blocked_by_provider_filter(attempt)
     assert answered_attempt_ids(run) == {"JB-REFUSAL-001::identity#0"}
+
+
+def test_an_environment_error_whose_tail_reads_like_the_mark_is_not_a_block() -> None:
+    """With a verdict, only its reason says blocked: an error's tail can quote a target."""
+
+    attempt = Attempt(
+        attempt_id="JB-REFUSAL-001::identity#0",
+        spec_id="JB-REFUSAL-001",
+        request=ModelRequest(prompt="p"),
+        error=f"WebSocketTurnTimeout: closed by the server: x{PROVIDER_FILTER_MARK}",
+        verdict=Verdict(
+            status=VerdictStatus.INCONCLUSIVE,
+            confidence=0.0,
+            reasoning="environment error after retries; attempt not evaluable",
+            evaluator_type="aggregate",
+        ),
+    )
+    assert not blocked_by_provider_filter(attempt)

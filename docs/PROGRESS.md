@@ -20,7 +20,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   JUnit, HTML and the terminal count it. A run all blocked is complete, not unreachable. The judge
   path is unchanged (`capability_unavailable`). The `-sV` benign probe's failure reads
   `ProviderFilterBlock`. With the stub and a judge: exit 0, 14 attack requests, 8 blocked, 12
-  judge requests. Tests: 7 CLI (4 fail on `92c7b11`), 45 adapter and 9 core (not collected on
+  judge requests. Tests: 7 CLI (4 fail on `92c7b11`), 45 adapter and 10 core (not collected on
   `92c7b11`). Left open: Bedrock's guardrail intervention (an HTTP 200 read as a reply), OpenAI's
   `invalid_prompt` 400 and Gemini's OpenAI-compatible endpoint (no documented shape); the `-sV`
   pass still stops on such a refusal of any probe but the benign one. Not run against a live

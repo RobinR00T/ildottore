@@ -67,7 +67,7 @@ versioning: [SemVer](https://semver.org/).
   rows, notes in u00 and u09. Tests: `tests/cli/test_provider_filter_campaign.py` (7, through the
   real CLI and a loopback stub: 4 fail on `92c7b11`, and the 3 that pass there pin that any other
   4xx still stops the campaign), `tests/adapters/test_provider_filter_block.py` (45) and
-  `tests/core/test_provider_filter_block.py` (9), neither of which collects on `92c7b11`;
+  `tests/core/test_provider_filter_block.py` (10), neither of which collects on `92c7b11`;
   `tests/adapters/test_status_error.py` sends a plain bad request where it sent Azure's body,
   `tests/cli/test_input_filter_probe.py` expects the new probe label, the redactor's class-name
   walk gains the blocked error's line, and the JSON report snapshot gains the key. Docs: MANUAL

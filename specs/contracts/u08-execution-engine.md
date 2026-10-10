@@ -389,9 +389,10 @@ is recorded as blocked by the provider's filter and the campaign goes on. The cr
 With the stub: exit 0 after 14 attack requests, 8 of them blocked (both identity attempts of
 `GUARD-INPUT-EVASION-001` and the 6 of `PI-DIRECT-001`), and 12 judge requests; `GUARD` passes
 (6 of 8 attempts reached the model and held), `PI-DIRECT-001` is inconclusive, 6 of 6 blocked.
-Checked by `tests/core/test_provider_filter_block.py` (9 tests: one send, the ledger, a true
-marker only, a conversation, the four spec-level cases, a resume and an attempt stored without a
-verdict), `tests/adapters/test_provider_filter_block.py` (45, u04) and
+Checked by `tests/core/test_provider_filter_block.py` (10 tests: one send, the ledger, a true
+marker only, a conversation, the four spec-level cases, a resume, an attempt stored without a
+verdict, and an environment error whose tail reads like the mark, which is not a block: with a
+verdict only its reason counts, since an error's tail can quote a target), `tests/adapters/test_provider_filter_block.py` (45, u04) and
 `tests/cli/test_provider_filter_campaign.py` (7, through the real CLI: the campaign, a run whose
 every attempt was blocked is complete and not unreachable, three other 4xx that still stop it, a
 resume halted by `--budget-requests 5` that counts the two blocked sends, keeps them and says so,
