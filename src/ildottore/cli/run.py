@@ -89,6 +89,7 @@ from ildottore.shared.models import (
     TestRun,
     TestRunSummary,
 )
+from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
 
 __all__ = [
     "CATEGORY_ALIASES",
@@ -1763,10 +1764,19 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             done, again = resume_progress(resume_from)
             unjudged = len(unjudged_attempt_ids(resume_from))
             errored = again - unjudged
+            # OD-41: a prompt the provider's input filter refused would be refused again.
+            blocked = len(
+                blocked_attempt_ids(a for finding in resume_from.findings for a in finding.attempts)
+            )
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
                 f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
                 "would repeat); they will not be re-sent"
+                + (
+                    f"; {blocked} of them the provider's input filter refused, kept as blocked"
+                    if blocked
+                    else ""
+                )
                 + (
                     f"; {errored} that ended in an environment error will be sent again"
                     if errored
@@ -2247,12 +2257,19 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     Unreachable means: attempts were made, **every** attempt failed on transport (an error
     and no response), and therefore nothing was actually evaluated. One flaky endpoint or one
     bad spec is not this, because the run still measured something.
+
+    A prompt the provider's input filter refused is not a transport failure (OD-41): the
+    provider answered it. A run whose every attempt it refused is complete, its specs
+    inconclusive, and the summary counts the blocked attempts; it is not "unreachable".
     """
 
     attempts = [a for finding in result.findings for a in finding.attempts]
     if not attempts:
         return None  # nothing was attempted: a barren plan, refused before the run
-    if any(a.error is None and a.response is not None for a in attempts):
+    if any(
+        (a.error is None and a.response is not None) or blocked_by_provider_filter(a)
+        for a in attempts
+    ):
         return None
     first = next((a.error for a in attempts if a.error), "no response")
     return (
