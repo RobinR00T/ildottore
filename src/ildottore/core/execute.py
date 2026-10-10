@@ -20,7 +20,7 @@ or the class-name convention) without importing them.
 
 A third class is neither (OD-41, u08 A-69): a prompt the provider's own input filter refused
 before the model saw it (Azure OpenAI's HTTP 400 ``content_filter``, Gemini's prompt block),
-which an adapter raises with a truthy ``blocked_by_provider_filter`` marker. The attempt is
+which an adapter raises with a ``blocked_by_provider_filter`` marker set to ``True``. The attempt is
 recorded as blocked, without a reply, and is not sent again (the same prompt is refused the same
 way); the send stays debited, its token reservation is released as for an environment error (no
 completion was produced), and the runner records it ``inconclusive: blocked_by_provider_filter``.
