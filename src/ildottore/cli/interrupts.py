@@ -174,27 +174,29 @@ def run_until_stopped(
 
     ``asyncio.Runner`` runs a coroutine that makes ``main`` a task and awaits it at once
     (:func:`_drive`): Ctrl-C keeps asyncio's own handler, which cancels that coroutine and
-    through it the task, from its first step on. Raises KeyboardInterrupt
-    once the loop is closed when a signal stopped the run, whether the task ended cancelled or
-    had already finished, and before anything runs when a signal arrived since the campaign
-    started (:func:`terminations_watched`). Outside the main thread no signal reaches it, and it
+    through it the task, from its first step on. Raises KeyboardInterrupt once the loop is
+    closed when a signal stopped the run, whether the task ended cancelled or had already
+    finished, and before anything runs when a signal arrived since the campaign started
+    (:func:`terminations_watched`). Outside the main thread no signal reaches it, and it
     is ``asyncio.run``. ``loop_factory`` is ``asyncio.Runner``'s.
     """
 
     global _running
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        pass
-    else:
-        main.close()
-        raise RuntimeError("run_until_stopped() cannot be called from a running event loop")
-    if threading.current_thread() is not threading.main_thread():
-        with asyncio.Runner(loop_factory=loop_factory) as runner:
-            return runner.run(main)
     run = _Run()
-    outer = _running
+    outer: _Run | None = None
+    armed = False
     try:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise RuntimeError("run_until_stopped() cannot be called from a running event loop")
+        if threading.current_thread() is not threading.main_thread():
+            with asyncio.Runner(loop_factory=loop_factory) as runner:
+                return runner.run(main)
+        outer = _running
+        armed = True  # before the next line: put back however this ends
         _running = run
         # Read after arming: a signal before it, or one at this instant, is not lost.
         if _received:
@@ -208,10 +210,13 @@ def run_until_stopped(
                     if not run.stopped:
                         raise
     finally:
-        _running = outer
+        if armed:
+            _running = outer
         task = run.task
         if task is None:
-            main.close()  # never made a task: stopped before, or cancelled before it was
+            # Never made a task (stopped before, cancelled before it was, or refused): closed,
+            # or Python warns it was never awaited. Closing one asyncio.run finished is a no-op.
+            main.close()
         elif task.done() and not task.cancelled():
             # Retrieved here: a KeyboardInterrupt raised inside it (a second signal) propagates
             # past the coroutine that awaits it, and asyncio would log it as never retrieved.
