@@ -163,10 +163,11 @@ class RestAdapter(BaseAdapter):
         (ai.google.dev/api/generate-content, read 2026-10-10): ``promptFeedback`` "Returns the
         prompt's feedback related to the content filters", and ``PromptFeedback.blockReason``
         "If set, the prompt was blocked and no candidates are returned"; Vertex AI's reference
-        says the same of its ``promptFeedback`` ("Only happens when no candidates were generated
-        due to content violations"). A blocked prompt is a success body with no candidate, so
-        the text path a Gemini template points at (``candidates.0.content.parts.0.text``) is
-        absent and the reply was a product error that stopped the campaign.
+        says the same of its ``promptFeedback``: it is sent only in the first stream chunk, and
+        only when no candidates were generated because of content violations. A blocked prompt is
+        a success body with no candidate, so the text path a Gemini template points at
+        (``candidates.0.content.parts.0.text``) is absent and the reply was a product error that
+        stopped the campaign.
 
         Recognised: a template whose ``text_path`` starts at ``candidates.``, where both
         references put the text (any other template is not reading a Gemini body, and a

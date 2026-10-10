@@ -41,7 +41,10 @@ def blocked_by_provider_filter(attempt: Attempt) -> bool:
     verdict = attempt.verdict
     if verdict is not None:
         return verdict.inconclusive_reason is InconclusiveReason.BLOCKED_BY_PROVIDER_FILTER
-    return attempt.response is None and (attempt.error or "").endswith(PROVIDER_FILTER_MARK)
+    # Not only a reply-less attempt: a conversation the filter cut keeps the model's last reply
+    # (A-69), and if its evaluation ever raised it must still read as blocked, not as an
+    # unjudged reply a resume sends again (post-audit nit).
+    return (attempt.error or "").endswith(PROVIDER_FILTER_MARK)
 
 
 def blocked_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:
