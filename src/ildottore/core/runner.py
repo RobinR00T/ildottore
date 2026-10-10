@@ -39,7 +39,7 @@ import contextlib
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.conversation import reproduce_conversation
@@ -107,6 +107,7 @@ from ildottore.shared.protocols import (
 from ildottore.shared.toolcalls import call_name
 
 __all__ = [
+    "SAMPLING_NOT_SENT",
     "CampaignResult",
     "CampaignRunner",
     "EvaluatorResolver",
@@ -115,9 +116,12 @@ __all__ = [
     "ScenarioProvider",
     "TestPlanBuilder",
     "answered_attempt_ids",
+    "fill_sampling",
     "resume_progress",
+    "spec_sampling",
     "sweeps_identities",
     "unjudged_attempt_ids",
+    "unsent_fields",
 ]
 
 _BLOCKED = "blocked_by_policy"
@@ -273,6 +277,9 @@ class CampaignRunner:
         send_meter: SendMeter | None = None,
         timestamp: Callable[[], str] | None = None,
         spend_sink: Callable[[Spend], None] | None = None,
+        sampling_defaults: Sampling | None = None,
+        sent_sampling: Callable[[Sampling], Sampling] | None = None,
+        sampling_asked: Sampling | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -330,6 +337,17 @@ class CampaignRunner:
         # recorded it only from a returned result, so a run interrupted with Ctrl-C left its
         # spend unrecorded and a resume's ceiling under-counted it (audit of F11, pre-existing).
         self._spend_sink = spend_sink
+        # The target file's ``sampling_defaults``, as the composition root passes it: only for
+        # an adapter that sends sampling, so what an attempt records is what went out (OD-39,
+        # u12 A-66). Each field fills what a spec leaves unset (:func:`spec_sampling`).
+        self._sampling_defaults = sampling_defaults
+        # What of a request's sampling the target's adapter puts on the wire (the Anthropic
+        # adapter never sends a seed, nor a top_p beside a temperature): applied before the
+        # attempt is recorded, so the record is the request that went out (u12 A-66).
+        self._sent_sampling = sent_sampling
+        # The target file's block as written, for the record of what was asked for and did not
+        # go out: `sampling_defaults` has already lost what the adapter never sends (A-68).
+        self._sampling_asked = sampling_asked
 
     async def run(
         self,
@@ -777,6 +795,7 @@ class CampaignRunner:
                     attempt = (
                         _tagged_seeded(result.attempt, seeded_tools) if seeded else result.attempt
                     )
+                    attempt = self._tagged_unsent(spec, attempt)
                     verdict: Verdict | None = None
                     try:
                         verdict = await self._evaluate(
@@ -844,7 +863,7 @@ class CampaignRunner:
         """Reproduce one (spec, mutation) as N single-turn sends (the classic path)."""
 
         mutated_prompt = self._apply_mutation(spec, mutation, base_prompt)
-        request = _build_request(spec, mutated_prompt, scene=scene)
+        request = _build_request(spec, mutated_prompt, scene=scene, sampling=self._sampling(spec))
         return await reproduce(
             adapter,
             request,
@@ -883,7 +902,7 @@ class CampaignRunner:
         single-turn path mutates it, and the tool rounds as further sends.
         """
 
-        sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
+        sampling = self._sampling(spec)
         system_prompt = spec.setup.system_prompt if spec.setup is not None else None
         if scene is not None:
             system_prompt = scene.system_prompt(system_prompt)
@@ -919,6 +938,34 @@ class CampaignRunner:
         )
 
     # --- multi-identity (authz_leak, audit M14) ------------------------------
+
+    def _sampling(self, spec: AttackSpec) -> Sampling:
+        """The sampling a request of ``spec`` goes out with: filled, then as the adapter sends."""
+
+        sampling = spec_sampling(spec, self._sampling_defaults)
+        return self._sent_sampling(sampling) if self._sent_sampling is not None else sampling
+
+    def _tagged_unsent(self, spec: AttackSpec, attempt: Attempt) -> Attempt:
+        """The attempt with :data:`SAMPLING_NOT_SENT` on its request, when a field did not go out.
+
+        The fields the spec and the target file's ``sampling_defaults``, as written, asked for
+        that did not go out (Anthropic's seed, a top_p beside a temperature, the temperature and
+        the top_p of a model that takes none, a block seed without ``capabilities.seed``, u12
+        A-68): the recorded sampling lacks them, and this says so in words, so a reader of the
+        evidence does not take a missing temperature for one nobody asked for.
+        """
+
+        written = (
+            self._sampling_asked if self._sampling_asked is not None else self._sampling_defaults
+        )
+        asked = spec_sampling(spec, written)
+        dropped = unsent_fields(asked, self._sampling(spec))
+        if not dropped:
+            return attempt
+        metadata: JsonDict = {**(attempt.request.metadata or {}), SAMPLING_NOT_SENT: dropped}
+        return attempt.model_copy(
+            update={"request": attempt.request.model_copy(update={"metadata": metadata})}
+        )
 
     def _param_accepted(self, mutation: str) -> bool:
         """True unless ``mutation`` carries a parameter its mutator declares it does not take.
@@ -973,7 +1020,7 @@ class CampaignRunner:
         identities: dict[str, ModelResponse] = {}
         owners: dict[str, str] = {}
         for probe in probes:
-            request = _build_request(spec, base_prompt).model_copy(
+            request = _build_request(spec, base_prompt, sampling=self._sampling(spec)).model_copy(
                 update={"identity": probe.identity_id}
             )
             try:
@@ -1447,10 +1494,73 @@ def _carrier_never_reached(spec: AttackSpec, attempt: Attempt, response: ModelRe
     return bool(carriers) and not carriers & answered
 
 
+#: Request metadata key listing the sampling fields asked for that did not go out (u12 A-68).
+SAMPLING_NOT_SENT: Final = "sampling_not_sent"
+
+
+def unsent_fields(asked: Sampling | None, sent: Sampling | None) -> list[str]:
+    """The fields ``asked`` sets that ``sent`` does not: what the adapter's rule dropped."""
+
+    if asked is None:
+        return []
+    return [
+        name
+        for name in type(asked).model_fields
+        if getattr(asked, name) is not None and (sent is None or getattr(sent, name) is None)
+    ]
+
+
+#: What a spec that declares no ``sampling`` is sent with, once the target file's
+#: ``sampling_defaults`` has filled what it holds: temperature 0, the scanner's own pin.
+_UNDECLARED_SAMPLING: Final = Sampling(temperature=0.0)
+
+
+def fill_sampling(own: Sampling, fallback: Sampling | None) -> Sampling:
+    """``own``, each field it leaves unset taken from ``fallback`` (OD-39, u12 A-66).
+
+    A field set in ``own`` always wins; ``fallback`` (a target file's ``sampling_defaults``)
+    fills only what is ``None``. Nothing to fill returns ``own`` itself, so a request with no
+    fallback is the object it was.
+    """
+
+    if fallback is None:
+        return own
+    fill = {
+        name: value
+        for name in type(own).model_fields
+        if getattr(own, name) is None and (value := getattr(fallback, name)) is not None
+    }
+    return own.model_copy(update=fill) if fill else own
+
+
+def spec_sampling(spec: AttackSpec, sampling_defaults: Sampling | None = None) -> Sampling:
+    """The sampling a request of ``spec`` goes out with, field by field (OD-39, u12 A-66).
+
+    Each of ``temperature``, ``top_p``, ``seed`` and ``max_tokens``: the spec's own value
+    first; then the target file's ``sampling_defaults`` (``sampling_defaults``, which the
+    composition root passes only for an adapter that sends sampling); then, for a spec that
+    declares no ``sampling`` at all, temperature 0; anything still unset is not sent, so the
+    provider's default applies. With no ``sampling_defaults`` this is what the runner always
+    sent: the spec's own block, or temperature 0.
+    """
+
+    if spec.sampling is not None:
+        return fill_sampling(spec.sampling, sampling_defaults)
+    return fill_sampling(fill_sampling(Sampling(), sampling_defaults), _UNDECLARED_SAMPLING)
+
+
 def _build_request(
-    spec: AttackSpec, prompt: str, *, scene: InBandSetup | None = None
+    spec: AttackSpec,
+    prompt: str,
+    *,
+    scene: InBandSetup | None = None,
+    sampling: Sampling | None = None,
 ) -> ModelRequest:
     """Build a :class:`ModelRequest` from a spec + mutated prompt (pinned sampling).
+
+    ``sampling`` is the runner's (``CampaignRunner._sampling``: the spec's own, filled from the
+    target file's ``sampling_defaults``, as the adapter sends it, OD-39); without one, the spec's
+    own (:func:`spec_sampling`).
 
     A ``multimodal`` spec's ``attack.media`` rides along as the declarative carrier (the adapter
     renders it for transport). For evidence, the request also records the SHA-256 of each rendered
@@ -1459,7 +1569,7 @@ def _build_request(
     it. Computing a hash is not transport rendering; the adapter still owns what goes on the wire.
     """
 
-    sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
+    sampling = sampling if sampling is not None else spec_sampling(spec)
     system_prompt = spec.setup.system_prompt if spec.setup is not None else None
     media = spec.attack.media
     metadata: JsonDict | None = {"media_sha256": media_digests(media)} if media else None

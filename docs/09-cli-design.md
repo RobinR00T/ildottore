@@ -15,7 +15,7 @@ are collected in §5, "Not implemented".
 |---|---|---|---|
 | `nmap <host>` | `dottore run <target.yaml>` | positional target file(s), or `-t` | built. The positional is a **file**: a URL or model id is read as a path and fails. `run` must be typed: there is no default subcommand (`dottore target.yaml` is "No such command") |
 | Host discovery `-sn` | Authorized endpoint + declared capabilities + what the battery would run. Sends nothing | `-sn` | built. A `discover` subcommand is not |
-| Service/version detect `-sV` | **Model & guardrail fingerprint** (which model, defenses, carrier comprehension) | `-sV`, or `dottore fingerprint <target.yaml>` | built (17 probes per target, printed in the plan; a probe whose reply is refused fails alone, said on stderr, and the run goes on; one that gets no answer stops it: OD-23) |
+| Service/version detect `-sV` | **Model & guardrail fingerprint** (which model, defenses, carrier comprehension) | `-sV`, or `dottore fingerprint <target.yaml>` | built (18 probes per target, printed in the plan; a probe whose reply is refused fails alone, said on stderr, and the run goes on; one that gets no answer stops it: OD-23) |
 | Port selection `-p 80,443` | Category selection | `-p pi,jailbreak,leakage` | built |
 | `--top-ports 100` | Top-N highest-signal tests | `--top-tests 20` | built |
 | Timing template `-T0..-T5` | Aggressiveness/rate template `-T0..-T5` | `-T4` | built |
@@ -117,7 +117,7 @@ record stores the planning mode, so a `--resume` that changes it is refused. `-A
 that does both. Measured with `--dry-run` on `examples/target.local.yaml` (a chat model with no
 tools, RAG or memory): no flag, `--deep` and `-A` each select the same 34 specs and 550
 requests; the pacing line reads 5.0 req/s with no flag and 2.0 with `--deep` or `-A`, and `-A`
-adds `+17 probe(s) per target`.
+adds `+18 probe(s) per target`.
 
 **`runs` comes from the command line.** A spec's own `runs:` and a suite's `default_runs:` are
 not read by the runner: every mutation variant of every spec is sent `--runs` times (default
@@ -231,7 +231,7 @@ battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and 
 Each of these was in the design and is **not** on the CLI today. Every flag in the list was
 tried on `run --quick --dry-run` and answered "No such option" (exit 3):
 
-- `--seed <int>` (determinism is pinned per spec in its `sampling`, not by a run flag).
+- `--seed <int>` (determinism is pinned per spec in its `sampling`, not by a run flag; a field a spec leaves unset is filled from the target file's `sampling_defaults`, OD-39).
 - `--allow-endpoint <host/prefix>` (extend the allowlist, audited). The scope file is the only
   way to authorize an endpoint.
 - `--unsafe-render` (render raw dangerous payloads in the report). `config.SafetyFlags` and the

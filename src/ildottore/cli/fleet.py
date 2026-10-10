@@ -270,7 +270,10 @@ def _target_doc(entry: FleetTarget) -> dict[str, object]:
 def _judge_doc(judge: FleetJudge) -> dict[str, object]:
     """Build ``judge.yaml`` from the fleet's declaration (serialized via safe_dump).
 
-    A judge is a model, sampled at temperature 0 so its verdict on the same reply is stable.
+    A judge is a model, sampled at temperature 0 so its verdict on the same reply is stable. The
+    judge sets that temperature itself (0, then 0.5 on its consistency pass) and ``top_p`` 1.0,
+    so the block's temperature applies when the file is scanned as a target; a ``max_tokens`` or
+    ``seed`` added to it reaches the judge too (OD-39, u12 A-66).
     """
 
     doc: dict[str, object] = {

@@ -76,7 +76,9 @@ refused (exit 3). Without such a store the replay says on stderr that this was n
 The run id is the JSON report's run.run_id and the name of the run's directory under
 .BR --evidence-root ;
 a run an older version named with 12 decimal digits, masked as a phone number in its reports,
-replays by that name.
+replays by that name. Attempts that went out with no temperature (a target that takes no
+sampling, dottore-scope(5)) are counted under the pooled rate: they are not temperature-0
+deterministic.
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
@@ -137,8 +139,10 @@ run. Sends nothing.
 .TP
 .B -sV
 Fingerprint before attacking, then order each spec's mutators by the carriers the target
-still understands. 17 probes per target, printed in the plan, paced by --rate; not sent under
---dry-run, --estimate or -sn.
+still understands. 18 probes per target, printed in the plan, paced by --rate; not sent under
+--dry-run, --estimate or -sn. To a target that takes no sampling (capabilities.sampling,
+dottore-scope(5)) the probes go out with no temperature, and the fingerprint line says it is
+not temperature-0 repeatable.
 .TP
 .B -A
 Aggressive: -sV plus --deep.
@@ -176,10 +180,13 @@ Reproducibility runs (default 5; 1 to 2**53).
 .SS "Plan, resume and smoke"
 .TP
 .B --dry-run
-Resolve and validate the plan, authorize every target; send nothing.
+Resolve and validate the plan, authorize every target; send nothing. Its sampling: and judge
+sampling: lines say what a target or judge file's sampling_defaults fills and what does not go
+out (dottore-scope(5)).
 .TP
 .B --estimate
-Print a pre-run cost estimate (requests and tokens); send nothing.
+Print a pre-run cost estimate (requests and tokens); send nothing. Output tokens are each
+send's max_tokens, the spec's own or the target file's sampling_defaults, or 512.
 .TP
 .B --resume \fIRUN_ID\fR
 Finish a halted run; answered attempts are not re-sent, and those that ended in an
@@ -196,6 +203,8 @@ It must keep the campaign's planning mode (adaptive with -sV, -A or --deep), whi
 checked before any ceiling; with -sV, a request ceiling too small for the probe pass is
 refused: raise --budget-requests, or drop -sV only if the campaign did not plan adaptively
 and the ceiling holds the rest of it without the probes.
+A run an older version started sent none of its target files' sampling_defaults, and resumes
+without them; stderr says so (dottore-scope(5)).
 .TP
 .B --resume-unverified
 Resume a run whose integrity record is missing (its ceiling then covers this invocation only).

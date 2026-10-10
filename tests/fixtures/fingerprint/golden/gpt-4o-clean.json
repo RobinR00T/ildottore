@@ -21,9 +21,10 @@
     "logprobs": false
   },
   "guardrails": {
-    "input_filter": false,
+    "benign_refused": false,
+    "input_filter": null,
     "moderation_latency_ms": null,
-    "output_filter": true,
+    "output_filter": false,
     "refusal_style": "polite-explain"
   },
   "evidence": [
@@ -94,7 +95,7 @@
     },
     {
       "layer": "guardrail",
-      "signal": "guardrail_profile={\"input_filter\": false, \"moderation_latency_ms\": null, \"output_filter\": true, \"refusal_style\": \"polite-explain\"}",
+      "signal": "guardrail_profile={\"benign_refused\": false, \"input_filter\": null, \"moderation_latency_ms\": null, \"output_filter\": false, \"refusal_style\": \"polite-explain\"}",
       "weight": 0.0
     },
     {

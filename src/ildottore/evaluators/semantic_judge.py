@@ -15,7 +15,9 @@ in its response to flip the verdict. Every mitigation in ``docs/04 §4`` is impl
 5. **Injection tripwire** - a control instruction the judge is told to ignore; if the parsed
    output shows it obeyed the tripwire (or flags an injection attempt), the run is discarded and
    marked ``judge_compromised`` → ``inconclusive`` (flagged for the operator).
-6. **temperature=0 + pinned params**, recorded in evidence.
+6. **temperature=0 on the first pass** (0.5 on the self-consistency passes) and ``top_p``
+   1.0, set on each request; the judge file's ``sampling_defaults`` fills the rest (OD-39).
+   The judge's requests are not stored as evidence; its verdict is, on the attempt.
 
 The judge model is reached **only** via :class:`ildottore.shared.protocols.TargetAdapter`
 (u04) - no provider SDK is imported here (contract §3/§8). The adapter is injected at
@@ -36,7 +38,7 @@ import secrets
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ildottore.adapters.base import AdapterError
+from ildottore.adapters.base import AdapterError, SamplingRefused
 from ildottore.evaluators.base import BaseEvaluator
 from ildottore.shared.enums import EvaluatorType, InconclusiveReason, VerdictStatus
 from ildottore.shared.models import EvalContext, ModelRequest, Sampling, Verdict
@@ -126,9 +128,6 @@ class SemanticJudgeEvaluator(BaseEvaluator):
 
     type = EvaluatorType.SEMANTIC_JUDGE.value
 
-    # temperature=0 + pinned params (docs/04 §4.6), recorded in evidence via the request.
-    _JUDGE_SAMPLING = Sampling(temperature=0.0, top_p=1.0, seed=0)
-
     def __init__(self, judge: TargetAdapter, *, passes: int = 2) -> None:
         """``judge`` is the injected judge-model adapter; ``passes`` is the self-consistency N."""
         self._judge = judge
@@ -152,6 +151,13 @@ class SemanticJudgeEvaluator(BaseEvaluator):
             )
             try:
                 response = await self._judge.send(request)
+            except SamplingRefused:
+                # A judge whose model refuses the request's sampling refuses every request the
+                # same way: read as an outage, it made every judged spec inconclusive and the run
+                # exited 0 without a word about the fix (29 refused judge requests in the
+                # pre-merge audit of A-68). It stops the run, naming `sampling: false`, as the
+                # target's own refusal does (u12 A-68).
+                raise
             except AdapterError as exc:
                 # Env/product adapter failure - inconclusive, not a fabricated verdict, and
                 # with a REASON. Without one the runner drops it like a judge that merely

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ildottore.policy.errors import ChecksumMismatchError, ScopeError
+from ildottore.policy.errors import ScopeChecksumError, ScopeError
 from ildottore.policy.scope import (
     Scope,
     Sha256Verifier,
@@ -93,7 +93,7 @@ def test_tampered_body_raises_checksum_mismatch(tmp_path: Path, scope_single_tex
     digest = hashlib.sha256(scope_single_text.encode("utf-8")).hexdigest()
     tampered = scope_single_text.replace("acme-bot", "evil-bot")
     path = _write(tmp_path, tampered + f'checksum: "{digest}"\n')
-    with pytest.raises(ChecksumMismatchError) as exc:
+    with pytest.raises(ScopeChecksumError) as exc:
         load_scope(path)
     assert exc.value.expected == digest
 

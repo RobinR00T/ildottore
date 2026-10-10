@@ -181,7 +181,8 @@ def test_the_terminal_still_masks_what_a_halt_reason_carries(
 
     output = _run(tmp_path, port, path=f"/v1/{key}/chat/completions")
 
-    assert "did not complete: aborted on AdapterProductError" in output
+    # A non-retryable 4xx is an AdapterProductError that carries its status (u09 A-67).
+    assert "did not complete: aborted on AdapterStatusError" in output
     assert "REDACTED:openai_key" in output
     assert key not in output
     for report in tmp_path.glob("report.*"):

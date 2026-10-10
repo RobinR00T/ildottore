@@ -4,6 +4,13 @@ provider: openai                     # OpenAI-compatible (Ollama)
 endpoint: "http://localhost:11434/v1/chat/completions"
 model: "llama3.2:3b"                 # `ollama pull llama3.2:3b`, a stronger model judges
 capabilities: { tools: false, rag: false }
+# The judge sets its own temperature (0, then 0.5 on its consistency pass) and top_p 1.0, so
+# this block fills only max_tokens and seed for it (OD-39); the temperature here applies when
+# the file is scanned as a target (-t). The scanned target's block never reaches the judge. A
+# seed goes out only with `seed: true` under capabilities (false unless set), and never to a
+# provider: anthropic judge, which also gets no top_p beside its temperature:
+#   capabilities: { tools: false, rag: false, seed: true }
+#   sampling_defaults: { temperature: 0.0, max_tokens: 400, seed: 7 }
 sampling_defaults: { temperature: 0.0 }
 # Passed via `--judge`. It backs the `semantic_judge` secondary evaluator; deterministic
 # evaluators still decide first. The judge is itself hardened against prompt injection

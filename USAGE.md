@@ -50,6 +50,14 @@ endpoint: "https://api.example.com/v1/chat/completions"
 model: "gpt-4o"
 auth_ref: "env://MY_API_KEY"        # never inline secrets
 capabilities: { tools: false, rag: false }
+# Optional: fills a sampling field a spec, a -sV probe or (in the judge's own file) the judge
+# leaves unset; a field they set wins. Sent by the openai and anthropic adapters only (anthropic:
+# no seed, and no top_p beside a temperature); a seed only with `seed: true` in capabilities.
+# sampling_defaults: { temperature: 0.0, top_p: 1.0 }
+# A model that takes no temperature or top_p (per Anthropic's API reference, not tested live:
+# Claude Opus 4.7 and later, Sonnet 5, the Fable and Mythos 5 families, sent none by default on
+# provider anthropic) is declared with `sampling: false` under capabilities; its replies are then
+# not temperature-0 deterministic.
 ```
 
 Run the quick triage battery and write all report formats:
@@ -113,15 +121,15 @@ dottore calibrate report.json labels.yaml
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |
 | `--spec` / `--exclude` | run/skip specific spec ids or globs (e.g. `PI-*`); repeatable |
 | `--top-tests N` | keep the N highest-signal specs |
-| `-sV` | fingerprint the model first, then order each spec's mutators by the carriers this target still understands (17 extra probes per target, printed in the plan, paced; never sent under `--dry-run`/`--estimate`/`-sn`) |
+| `-sV` | fingerprint the model first, then order each spec's mutators by the carriers this target still understands (18 extra probes per target, printed in the plan, paced; never sent under `--dry-run`/`--estimate`/`-sn`) |
 | `-sn` | discovery only: authorized endpoint + declared capabilities + what the battery would run. **Sends nothing** |
 | `-A` | aggressive: implies `-sV` + `--deep` (fingerprint first, then `-T2` unless you pass `-T`) |
 | `--runs N` | reproducibility runs (default 5; 1 to 9,007,199,254,740,992, `2**53`, as for `--top-tests`, `--concurrency` and the `--budget-*` flags, which take 0 too) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep`/`-A` imply 2; an explicit `-T` wins); higher is faster/louder |
 | `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 and, on a live target, at least one request per wall-clock ceiling, as a `-T` template's pace must be (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
-| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling, and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes |
-| `--dry-run` | resolve + validate, send nothing |
-| `--estimate` | print a pre-run cost estimate (requests + tokens); no sends |
+| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling, and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes; a run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them (stderr says so) |
+| `--dry-run` | resolve + validate, send nothing; a `sampling:` line says what the target file's `sampling_defaults` fills, or that it is not sent |
+| `--estimate` | print a pre-run cost estimate (requests + tokens); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512 |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent |

@@ -34,7 +34,7 @@ from collections.abc import Awaitable, Callable
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger
 from ildottore.core.execute import (
     AttemptResult,
-    BudgetExhaustedAfterReply,
+    ReplyOverBudget,
     RetryPolicy,
     default_is_env_error,
     execute_attempt,
@@ -195,7 +195,7 @@ async def execute_conversation(
     # conversation's last, the conversation is finished and travels with the halt; if another
     # send would follow, the conversation stops there unfinished (pre-commit audit: a one-send
     # in-band scene, or a final turn, crossing the ceiling was dropped and paid for twice).
-    crossed: BudgetExhaustedAfterReply | None = None
+    crossed: ReplyOverBudget | None = None
 
     def aborted(result: AttemptResult) -> AttemptResult:
         attempt = _aggregate_attempt(
@@ -246,7 +246,7 @@ async def execute_conversation(
                 now=now,
                 pacer=pacer,
             )
-        except BudgetExhaustedAfterReply as halt:
+        except ReplyOverBudget as halt:
             crossed = halt
             return halt.result
 
@@ -335,7 +335,7 @@ async def execute_conversation(
     )
     finished = AttemptResult(attempt=final, env_error=False, retries=0, errors=[])
     if crossed is not None:
-        raise BudgetExhaustedAfterReply(crossed, finished) from crossed
+        raise ReplyOverBudget(crossed, finished) from crossed
     return finished
 
 
@@ -417,7 +417,7 @@ async def reproduce_conversation(
 
     ``into`` is filled as each conversation completes, as in ``reproduce``, so a halt keeps the
     conversations already finished, including one whose last reply crossed a token ceiling
-    (``execute_conversation`` raises ``BudgetExhaustedAfterReply`` with it). One the halt stopped
+    (``execute_conversation`` raises ``ReplyOverBudget`` with it). One the halt stopped
     mid-way is not stored: it has no final reply to score (its turns are in the spend, and a
     resume sends it again from its first turn).
     """
@@ -453,7 +453,7 @@ async def reproduce_conversation(
                 pacer=pacer,
                 setup=setup,
             )
-        except BudgetExhaustedAfterReply as halt:
+        except ReplyOverBudget as halt:
             results.append(halt.result)
             raise
         results.append(result)

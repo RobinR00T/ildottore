@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger
-from ildottore.core.execute import BudgetExhaustedAfterReply, RetryPolicy, execute_attempt
+from ildottore.core.execute import ReplyOverBudget, RetryPolicy, execute_attempt
 from ildottore.core.reproduce import reproduce
 from ildottore.core.runner import (
     CampaignResult,
@@ -223,7 +223,7 @@ def test_reproduce_hands_back_the_answers_a_refused_debit_would_have_dropped() -
 
 def test_a_reply_over_the_token_ceiling_travels_with_the_halt() -> None:
     ledger = BudgetLedger(max_tokens=1000)
-    with pytest.raises(BudgetExhaustedAfterReply) as caught:
+    with pytest.raises(ReplyOverBudget) as caught:
         asyncio.run(
             execute_attempt(
                 Endpoint(usage={"total_tokens": 5000}),  # type: ignore[arg-type]

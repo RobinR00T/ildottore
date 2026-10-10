@@ -276,7 +276,7 @@ def test_the_preflight_of_a_resume_with_no_recorded_spend_gives_advice_that_goes
 
 
 #: Three judged specs at --runs 3, each attempt one request to the target and two to the judge
-#: (sent once the spec's three replies are in): 17 probes, two specs (18) and the third's three
+#: (sent once the spec's three replies are in): 18 probes, two specs (18) and the third's three
 #: replies (3), whose first judge request the ceiling refuses. Those three are stored without a
 #: verdict, so the resume sends them again (3) and judges them (6).
 JUDGED_HALT = PROBES + 21
@@ -322,8 +322,8 @@ def judge_endpoint() -> Iterator[str]:
 @pytest.mark.parametrize(
     ("ceiling", "expected"),
     [
-        # 38 spent and 9 requests of the campaign left: 47 holds them. Priced with every judge
-        # request of the battery (18), the rest was 21, so 59, and only raising was offered.
+        # 39 spent and 9 requests of the campaign left: 48 holds them. Priced with every judge
+        # request of the battery (18), the rest was 21, so 60, and only raising was offered.
         (JUDGED_HALT + 9, {RAISE, DROP}),
         (JUDGED_HALT + 8, {RAISE}),
     ],
@@ -415,12 +415,12 @@ def test_a_probe_pass_stopped_by_the_ceiling_gives_advice_that_goes_through(
     monkeypatch.setattr(wiring, "build_fingerprint_engine", lambda: _RetryingEngine(original()))
     _setup(tmp_path, specs=7 if case == "fresh-battery-past-the-ceiling" else 3)
     if case.startswith("resumed"):
-        # The pre-flight lets the 17 probes start (23 + 17 <= 41, or 17 <= 19 with no spend on
-        # record); their 20 requests do not fit.
+        # The pre-flight lets the 18 probes start (24 + 18 <= 43, or 18 <= 20 with no spend on
+        # record); their 21 requests do not fit.
         run_id = _halt(tmp_path, "-sV", "--budget-requests", str(PROBES + 3 + 3))
         no_spend = case == "resumed-no-recorded-spend"
         _forget(tmp_path, run_id, mode=case != "resumed", spend=no_spend)
-        ceiling = str(PROBES + 2) if no_spend else "41"
+        ceiling = str(PROBES + 2) if no_spend else str(2 * PROBES + 7)
         argv = [*_base(tmp_path), "--resume", run_id, "-sV", "--budget-requests", ceiling]
     else:
         (tmp_path / "state").mkdir()
@@ -472,7 +472,7 @@ def test_the_ceilings_a_resume_is_refused_against_are_the_campaigns_own(
         DEFAULT_PLAN_BUDGETS.model_copy(update={"max_requests": 10}),
     )
     _setup(tmp_path)
-    # 60 requests of attack traffic at --runs 20: the ceiling halts it after 17 probes, the
+    # 60 requests of attack traffic at --runs 20: the ceiling halts it after 18 probes, the
     # first spec's 20 attempts (a batch cut short stores nothing on 0501752) and 5 more.
     halted = CliRunner().invoke(
         app, [*_base(tmp_path, runs="20"), "-sV", "--budget-requests", str(PROBES + 25)]
@@ -480,7 +480,7 @@ def test_the_ceilings_a_resume_is_refused_against_are_the_campaigns_own(
     assert "budget ceiling reached" in halted.stderr, halted.stderr
     run_id = next(p.name for p in (tmp_path / "state" / "ev").iterdir() if p.is_dir())
 
-    # Derived at --runs 20 the ceiling is 90 (60 x 1.5), which holds 42 spent + 17 probes; at the
+    # Derived at --runs 20 the ceiling is 90 (60 x 1.5), which holds 43 spent + 18 probes; at the
     # invocation's default of 5 it was 22, and the resume was refused.
     estimate = CliRunner().invoke(
         app, [*_base(tmp_path, runs=None), "--resume", run_id, "-sV", "--estimate"]
@@ -576,6 +576,6 @@ def test_a_spend_and_ceiling_of_nine_digits_are_written_out_not_masked(
     assert "REDACTED" not in refused.stderr, refused.stderr
     (error,) = _errors(refused)
     assert (
-        f"has already spent {written} of its 123,456,805-request ceiling, and -sV would send "
+        f"has already spent {written} of its {ceiling:,}-request ceiling, and -sV would send "
         f"{PROBES} more before any attack traffic"
     ) in error, error

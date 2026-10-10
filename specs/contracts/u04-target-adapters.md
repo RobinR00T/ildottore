@@ -103,7 +103,17 @@ reads as U+FFFD, since httpx decodes the stream as text.
 2. `openai.py`: chat/completions over httpx; `seed`+`logprobs`+`top_logprobs`; map to `TokenLogprob`;
    capabilities (tools/json/vision/streaming/seed/logprobs = true, subject to config).
 3. `anthropic.py`: messages API; role/system-block placement verbatim; logprob mapping (per provider
-   support); `stop_reason` vocab preserved; capabilities.
+   support); `stop_reason` vocab preserved; capabilities. (Since 2026-10-09, u12 A-66: its
+   `sent_sampling` is what of a request's sampling goes out, no `seed` and no `top_p` beside a
+   `temperature`, since Anthropic's API reference says Claude 4 models refuse the pair with HTTP
+   400 (the reference bundled with the claude-api skill, cached 2026-09-25, not tested live);
+   `_build_request` sends it, and the composition root records attempts and probes through it.
+   Since the same day, u12 A-68: `sampling_enabled` false (a target that takes no sampling, as
+   `MODELS_WITHOUT_SAMPLING` lists Claude Opus 4.7 and later, Sonnet 5, and the Fable and Mythos 5
+   families) drops the `temperature` and the `top_p` too; the OpenAI adapter has the same switch
+   and its own `sent_sampling`; and a 400 whose JSON error names, as a parameter (`error.param`, a
+   quoted token, the first word of the message), a sampling field the request sent is
+   `SamplingRefused`, a product error that names the capability to set; the judge re-raises it.)
 4. `rest.py`: generic REST via a declarative request/response JSONPath template (long-tail); usually
    `logprobs=None`, `seed=False`; capabilities driven by template config.
 
@@ -113,7 +123,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `finish_reason`/`stop_reason`, provider request/response ids, echoed sampling config.
 - `Capabilities = {tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal,
   audio: bool}` (as built, `shared/models.py`: nine flags, `audio` added with the audio carrier,
-  and no `max_context_tokens` field). All must validate vs `schemas/`.
+  and no `max_context_tokens` field), and since 2026-10-09 `sampling: bool | None` (u12 A-68:
+  `None` is the default rule, not false). All must validate vs `schemas/`.
 - Cassettes live under `tests/adapters/cassettes/{openai,anthropic,rest}/`. (As built they are
   hand-written `{status_code, json}` response bodies served by `respx`, not recordings of real
   traffic, so there is no key to scrub; the MCP adapter's tests stub JSON-RPC inline.) Secrets

@@ -87,5 +87,10 @@ def target_digest(target: Target, *, mock_scenario: str | None = None) -> str:
     for optional in ("seeded_setup", "websocket"):
         if payload.get(optional) is None:
             payload.pop(optional, None)
+    # Likewise `capabilities.sampling` (u12 A-68): not declared, it is left out, so a run stored
+    # before the capability existed still resumes; declared, it is part of what answers.
+    capabilities = payload.get("capabilities")
+    if isinstance(capabilities, dict) and capabilities.get("sampling") is None:
+        capabilities.pop("sampling", None)
     payload["__route__"] = mock_scenario or "live"
     return _sha(payload)

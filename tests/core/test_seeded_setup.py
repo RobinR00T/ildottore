@@ -319,6 +319,8 @@ def test_a_stored_run_without_the_block_keeps_its_digest() -> None:
         for k, v in plain.model_dump(mode="json").items()
         if k not in digest._TARGET_COSMETIC and k not in ("seeded_setup", "websocket")
     }
+    # `capabilities.sampling` came later (u12 A-68) and is left out the same way when not declared.
+    before["capabilities"].pop("sampling")
     before["__route__"] = "live"
     assert target_digest(plain) == digest._sha(before)
     assert target_digest(plain) != target_digest(_target(SeededSetup(specs=["*"])))

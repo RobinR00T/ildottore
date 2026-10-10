@@ -64,6 +64,7 @@ dry-run: plan resolved, sent nothing.
     prompt_injection: 1
   skipped: 7 spec(s) on local-llama, capability not declared by the target
   blocked: 1 spec(s) on local-llama, refused by the policy pack
+  sampling: local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of 10 specs (a spec's own value wins)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
   budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
@@ -123,6 +124,15 @@ This scenario used to be written against the local scope with a parenthetical as
 reader to add the entry themselves, i.e. the command as printed did not work.
 
 Add `--dry-run` first if you want to see the plan and the cost before spending anything.
+
+A Claude model is scanned the same way with `provider: anthropic`, an
+`https://api.anthropic.com/v1/messages` endpoint and `env://ANTHROPIC_API_KEY`. Claude Opus 4.7
+and later, Sonnet 5 and Sonnet 5.5, and the Fable and Mythos 5 families take no `temperature` or
+`top_p` (Anthropic's API reference, not tested live by this project), so the scanner sends them
+neither, from the list in `adapters.anthropic.MODELS_WITHOUT_SAMPLING`, and the run and
+`--dry-run` say that their replies are not temperature-0 deterministic. A model the list does not name and that
+refuses them is declared with `sampling: false` under `capabilities`; `sampling: true` sends them
+to a listed one.
 
 ## Scenario E, scan a fleet
 
@@ -190,6 +200,7 @@ dry-run: plan resolved, sent nothing.
     prompt_injection: 1
   not seeded: 1 spec(s) on support-agent-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
     - PI-INDIRECT-RAG-001: setup_not_seeded: this spec needs documents, tools or memory in the deployment, and the target file does not declare them seeded (seeded_setup.specs)
+  sampling: support-agent-staging's sampling_defaults fills temperature 0.0 on 0 of 2 specs (a spec's own value wins)
   would send: 20 requests over 2 specs at runs=5
   pacing:  5.0 req/s ceiling (S8)
   budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
