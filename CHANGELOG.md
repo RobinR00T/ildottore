@@ -5,6 +5,76 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (an attack prompt the provider's input filter refuses no longer stops the campaign: OD-41)
+
+- **The first prompt a provider's filter refused ended the scan.** Azure OpenAI's prompt filter
+  answers a prompt it blocks with HTTP 400 and the error code `content_filter`; the adapters read
+  every non-retryable 4xx as a product error and the runner stopped on the first one. Against a
+  loopback stub that answers that body to prompts holding "instructions for" or "developer mode",
+  `dottore run --spec GUARD-INPUT-EVASION-001 --spec PI-DIRECT-001 --runs 2` on `92c7b11` exited
+  3 after one request ("aborted on AdapterStatusError: azure: non-retryable HTTP 400 from
+  /v1/chat/completions; 2 of 2 specs never ran or did not finish"). By the owner's decision of
+  2026-10-10 (17:33) the attempt is recorded as blocked by the provider's filter and the campaign
+  goes on: the same command, with `--judge` against the same stub, exits 0 after 14 attack
+  requests, 8 of them blocked, and 12 judge requests.
+- **Recognised only in a shape the provider documents.** Azure OpenAI: status 400 and `error.code`
+  exactly `content_filter` (Microsoft Learn, "Content filtering", Scenario 3), read by every
+  adapter built on `BaseAdapter` (openai, anthropic, rest). Gemini: a success body with no text at
+  a REST template's `text_path` whose `promptFeedback.blockReason` is `SAFETY`, `OTHER`,
+  `BLOCKLIST` or `PROHIBITED_CONTENT` (the Gemini API reference, `PromptFeedback`), which was a
+  product error that stopped the campaign too. Either raises the new `ProviderFilterBlock` (an
+  `AdapterProductError` with the status and the provider's code). Every other 4xx is the
+  `AdapterStatusError` it was and stops the campaign exactly as before: another code at 400, the
+  Azure body at 403 or 422, `content_filtered`, a body that is not JSON. Not read, for want of a
+  documented shape: a Bedrock guardrail intervention (an HTTP 200 with the guardrail's message,
+  read as a reply), OpenAI's `invalid_prompt` 400 (in forum reports, not in its error-code
+  reference), Gemini's OpenAI-compatible endpoint.
+- **How a blocked attempt is scored** (ADR-0011, a new `InconclusiveReason`): the model never saw
+  the prompt, so it is not a refusal and not an exploit. The attempt has no reply, its error
+  ends with `[blocked_by_provider_filter]` (the provider's own message and inner code are not
+  copied: the redactor masks `ResponsibleAIPolicyViolation`), and its verdict is `inconclusive:
+  blocked_by_provider_filter`. The spec follows the rule an environment error does: any `fail` is
+  a `fail` (needing review unless a variant failed on every attempt); a `pass` needs more than half
+  of the attempts to have passed; otherwise `inconclusive`. A blocked attempt is in the
+  reproducibility's `N` and never a success. A spec whose every attempt was blocked is
+  `inconclusive`, Info and not exercised, never a pass of the model; `--fail-on` gates only a
+  `fail`, as before. In the run above `GUARD-INPUT-EVASION-001` passes (6 of its 8 attempts
+  reached the model and held: its confusable, zero-width and leetspeak variants evade the stub's
+  words) and `PI-DIRECT-001` is inconclusive, 6 of 6 blocked.
+- **Not retried, debited, kept by a resume, re-derived by replay.** The same prompt is refused
+  the same way, so it is sent once; it is a request against `--budget-requests` and its token
+  reservation is released (no completion was produced); `--estimate` is unchanged. A resume keeps
+  it and says so (`; 2 of them the provider's input filter refused, kept as blocked`), and
+  `--estimate --resume` counts it as done. `dottore replay` lists it as `inconclusive
+  (blocked_by_provider_filter)` and counts it under the pooled rate. A conversation stops at the
+  turn the filter refused. A run whose every attempt was blocked is complete, not `unreachable`.
+- **Counted apart in every report.** The finding's reasoning adds `; 6/6 blocked by the provider's
+  input filter before the model saw them`; the JSON summary carries
+  `blocked_by_provider_filter: {attempts, specs}` (always; optional in report-1.0, whose schema
+  gains it); SARIF a `blocked_by_provider_filter` property on the run and on each result that has
+  any, and the count in the result's message; JUnit `blocked_by_provider_filter=<k>` in a passing
+  case's text; the HTML summary a line; the terminal summary `Blocked by the provider's input
+  filter: 8 attempt(s) in 2 spec(s) never reached the model (GUARD-INPUT-EVASION-001,
+  PI-DIRECT-001); they are inconclusive, not refusals by the model and not exploits`. With nothing
+  blocked only the JSON report changes (the key, with `0` and `[]`).
+- **The judge path is unchanged.** A judge request its own provider's filter refuses is an unusable
+  judge (`capability_unavailable`), as any judge adapter error is: the attempt is `inconclusive`
+  unless a deterministic evaluator fails, the attempt is not counted as blocked (the attack prompt
+  reached the model), and the campaign goes on. The `-sV` benign probe's failure now reads
+  `guardrail/guardrail_benign: ProviderFilterBlock` (it read `AdapterStatusError`); on any other
+  probe such a refusal still stops the pass.
+- Contract u08 A-69 (with halves in u04, u10, u11 and u12), OD-41 and ADR-0011, the `00-INDEX`
+  rows, notes in u00 and u09. Tests: `tests/cli/test_provider_filter_campaign.py` (7, through the
+  real CLI and a loopback stub: 4 fail on `92c7b11`, and the 3 that pass there pin that any other
+  4xx still stops the campaign), `tests/adapters/test_provider_filter_block.py` (45) and
+  `tests/core/test_provider_filter_block.py` (9), neither of which collects on `92c7b11`;
+  `tests/adapters/test_status_error.py` sends a plain bad request where it sent Azure's body,
+  `tests/cli/test_input_filter_probe.py` expects the new probe label, the redactor's class-name
+  walk gains the blocked error's line, and the JSON report snapshot gains the key. Docs: MANUAL
+  §9 ("Attack prompts the provider's input filter refuses") and the `run`, `fingerprint`,
+  `replay`, §10 and troubleshooting text, the FAQ, USAGE, `dottore(1)`, `docs/01`, `05`, `10` and
+  `12`, `examples/README.md` (Scenario D). Not run against a live Azure or Gemini endpoint.
+
 ### Fixed (a Claude model that takes no temperature or top_p could not be scanned)
 
 - **Every campaign against Claude Opus 4.7 and later, Sonnet 5, and the Fable and Mythos 5

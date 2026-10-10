@@ -3,6 +3,29 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-10 (evening): a provider's input-filter refusal is a blocked attempt (OD-41)
+
+- On `feat/provider-filter-blocked-attempt`, from `main` at `92c7b11`: the owner decided
+  (2026-10-10, 17:33) that an attack prompt the provider's own input filter refuses before the
+  model sees it no longer aborts the campaign (exit 3 after 1 request, measured on `92c7b11`
+  against a loopback stub answering Azure OpenAI's 400 `content_filter`). Built (u08 A-69,
+  ADR-0011, OD-41 closed): `adapters.base.ProviderFilterBlock` for Azure's 400 `content_filter`
+  (every `BaseAdapter`) and Gemini's `promptFeedback.blockReason` in a success body with no text
+  (REST), each shape cited in the code; every other 4xx unchanged. `execute_attempt` reads the
+  `blocked_by_provider_filter` marker: one send, debited, tokens released, the error marked
+  `[blocked_by_provider_filter]`; the runner's verdict is `inconclusive:
+  blocked_by_provider_filter` (a new `InconclusiveReason`), scored as an attempt without a reply
+  (a spec all blocked is inconclusive and not exercised, never a pass); a resume keeps it,
+  `dottore replay` re-derives it, and the JSON summary (`blocked_by_provider_filter`), SARIF,
+  JUnit, HTML and the terminal count it. A run all blocked is complete, not unreachable. The judge
+  path is unchanged (`capability_unavailable`). The `-sV` benign probe's failure reads
+  `ProviderFilterBlock`. With the stub and a judge: exit 0, 14 attack requests, 8 blocked, 12
+  judge requests. Tests: 7 CLI (4 fail on `92c7b11`), 45 adapter and 9 core (not collected on
+  `92c7b11`). Left open: Bedrock's guardrail intervention (an HTTP 200 read as a reply), OpenAI's
+  `invalid_prompt` 400 and Gemini's OpenAI-compatible endpoint (no documented shape); the `-sV`
+  pass still stops on such a refusal of any probe but the benign one. Not run against a live
+  Azure or Gemini endpoint.
+
 ## State, 2026-10-10 (morning): the A-68 pre-merge audit, redone after a reboot
 
 - The Mac rebooted overnight and wiped `/private/tmp`: the worktree, its uncommitted fixes and the
