@@ -96,12 +96,14 @@ versioning: [SemVer](https://semver.org/).
   separators, overlapping and nested pairs, `@`, `://` and `:` shapes, mask substrings, one
   holding a splitter), splitters, U+FFFD and stash delimiters inserted. Each output is checked to
   be main's with stretches replaced by masks only (a check that also caught the narrow fix).
-  Mine, on three runs of 300,000 texts (the last on the final tree): 0 texts where a character
-  main masks is readable, 0 errors, 0 fixed-point failures; in 120,443, 120,410 and 120,618 texts
-  a secret character main leaves readable is masked (in the first, a URL password in 109,599, a
-  labelled value in 19,159, a private key in 236). The auditor's, on three runs of 500,000
-  texts: 0 such texts, 0 errors, 0 fixed-point failures, 90,456, 91,056 and 90,707 texts closed;
-  on 20 texts of 4 MB in all, 0, and at most 1.11 times main's time. Earlier runs found the cases
+  On the final tree (`e3b4b8a`, the code since): mine, on 300,000 texts, 0 texts where a character
+  main masks is readable, 0 errors, 0 fixed-point failures, and in 120,167 texts a secret character
+  main leaves readable is masked (a URL password in 109,387, a labelled value in 19,295, a private
+  key in 237); the first auditor's, on 500,000, 0 such texts, 0 errors, 0 fixed-point failures,
+  90,531 texts closed; the re-auditor's (`fz`, its own generator), on 300,000, 0, 0 and 0, 47,111
+  texts closed. On the tree before the re-audit (`c8c8b86`) the same held on three runs of 300,000
+  of mine and of 500,000 of the auditor's, and on 20 texts of 4 MB in all (at most 1.11 times main's
+  time). Earlier runs found the cases
   quoted above (2 texts of 300,000 in a
   first version, 4 in the second), each fixed and now a test. Against the redactor before #56,
   on the auditor's 40,000 texts aimed at item 1 (hash seed 0, since the old redactor's order
@@ -117,15 +119,16 @@ versioning: [SemVer](https://semver.org/).
   across each separator, the labelled tail's limits the fuzzers found, chained values, the
   credential in the user, the email host, the CLI's errors, a Hypothesis property over URLs with one
   or two credentials across a separator, memory and linear time on 2 MB of hostile echoes;
-  48 cases, 32 of which fail on `f12ba83` and 13 on the first version of this fix, `924c276`), and
+  52 cases, 36 of which fail on `f12ba83` and 16 on the first version of this fix, `924c276`), and
   in `tests/cli/test_operator_file_quoted_values.py` the policy gate's refusal
-  and `shown_auth_ref` with a 308-character password (both fail on `f12ba83`). 24 mutants of the
-  fix: 21 caught, one of them by a hang; the 3 missed change nothing a test can see (a guard against
+  and `shown_auth_ref` with a 308-character password (both fail on `f12ba83`). 24 mutants of the fix
+  before the re-audit, 21 caught (one by a hang), and 5 of the re-audit's changes, all caught; the 3
+  missed change nothing a test can see (a guard against
   two of its masks overlapping, which they cannot; the label search starting after the userinfo's
   last mask, which only bounds its cost; an off-by-one where the URL rule cannot match from inside a
   mask). Docs:
   MANUAL, `docs/02` (S6), u01 A-31 and A-51, u12 §6, the contract index, PROGRESS. `make gates`
-  green: 4,668 tests (4,618 on `f12ba83`), coverage 97.63%, 75 specs lint OK, four import contracts
+  green: 4,671 tests (4,618 on `f12ba83`), coverage 97.63%, 75 specs lint OK, four import contracts
   kept, mypy clean on 155 files, self-scan, bandit and pip-audit clean. Left open after #96: where
   the URL rule did read a URL, its reading stands,
   so after a registered credential holding the user's `:` the rest of the user is shown
