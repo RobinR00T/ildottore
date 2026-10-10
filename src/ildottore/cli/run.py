@@ -1126,10 +1126,13 @@ def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
     raised, and raised in gather's callback it left the run waiting for a second signal as it
     closed (pre-merge audit of #94). Inside a loop of :func:`interrupts.run_until_stopped`, which
     every request is sent from, the first signal now cancels the run's task whatever Ctrl-C's
-    disposition, and KeyboardInterrupt is raised once the loop is closed; a second raises in
-    place. Outside one, it calls whatever SIGINT handler is in place and raises when there is
-    none, as before: a program that embeds ``execute_run`` and gives Ctrl-C a handler that does
-    nothing makes the signal do nothing there either; ``dottore`` does not.
+    disposition, and KeyboardInterrupt is raised once the loop is closed; a second of either kind
+    raises in place. Outside one, it calls whatever SIGINT handler is in place and raises when
+    there is none, and :func:`interrupts.terminations_watched` remembers it. A program that embeds
+    ``execute_run`` sees the difference: inside a loop SIGTERM and SIGHUP no longer call its own
+    Ctrl-C handler (only asyncio's), and one that its Ctrl-C handler ignores outside a loop still
+    stops the campaign, at its next loop or as its block ends; ``dottore`` has no handler of its
+    own.
     """
 
     if interrupts.stop_running_loop(frame):
