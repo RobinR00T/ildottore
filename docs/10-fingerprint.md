@@ -121,10 +121,14 @@ can't" "I can't".
 blocked prompt with HTTP 400 and the error code `content_filter`) costs that probe, not the pass:
 a 4xx to the benign request alone is a refusal of its prompt, since the seven probes before it
 went through with the same credential and route. It is recorded as a failed probe
-(`guardrail/guardrail_benign: AdapterStatusError` in `probe_errors`, with `probes_failed`),
-`benign_refused` is `null`, and the pass and the run go on. It is the one input-filter signal the
-pass can see; `input_filter` stays `null` for now (OD-40). The same 4xx on any other probe stops
-the pass, as before.
+(`guardrail/guardrail_benign: ProviderFilterBlock` in `probe_errors`, with `probes_failed`; it read
+`AdapterStatusError` until the adapters named Azure's filter refusal on 2026-10-10, OD-41, and any
+other 4xx still does), `benign_refused` is `null`, and the pass and the run go on. Gemini's prompt
+block (`promptFeedback.blockReason` in a success body, through a REST template) is read the same
+way. It is the one input-filter signal the pass can see; `input_filter` stays `null` for now
+(OD-40). The same refusal on any other probe stops the pass, as before. The attack phase, since
+OD-41, records such a refusal of an attack prompt as a blocked attempt and goes on (`docs/05` §2,
+u08 A-69).
 
 Until 2026-10-09 the layer sent the nudge alone and read **any** refusal in its reply as an output
 filter, and a canned one as an input filter as well, so a model that followed the instruction was

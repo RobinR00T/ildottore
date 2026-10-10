@@ -134,6 +134,22 @@ neither, from the list in `adapters.anthropic.MODELS_WITHOUT_SAMPLING`, and the 
 refuses them is declared with `sampling: false` under `capabilities`; `sampling: true` sends them
 to a listed one.
 
+A hosted deployment may run its own input filter before the model. Azure OpenAI's content filter
+answers an attack prompt it blocks with HTTP 400 and the error code `content_filter`; the run
+records that attempt as blocked (`inconclusive`, reason `blocked_by_provider_filter`), does not
+send it again, and goes on. The summary counts them; against a loopback stub that filters two
+phrases, `--spec GUARD-INPUT-EVASION-001 --spec PI-DIRECT-001 --runs 2` ends with
+
+```
+Specs run: 2 of 2 planned · pass 1 · fail 0 · inconclusive 1
+Blocked by the provider's input filter: 8 attempt(s) in 2 spec(s) never reached the model (GUARD-INPUT-EVASION-001, PI-DIRECT-001); they are inconclusive, not refusals by the model and not exploits
+```
+
+and `reports/openai.json` carries `summary.blocked_by_provider_filter`. A spec whose every attempt
+the filter refused is inconclusive, not a pass: it says nothing about the model
+([`docs/MANUAL.md`](../docs/MANUAL.md) §9). Any other 4xx (a wrong key, a bad request) still
+stops the run with exit 3.
+
 ## Scenario E, scan a fleet
 
 Declare every target in one file, expand it into a scope plus one target file per model,

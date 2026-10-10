@@ -276,7 +276,10 @@ first build, each reproduced, and added to the criterion:
   `cli.wiring.refused_request` (a 4xx),
   and the engine makes it a failed probe for the profile-only probes alone: `benign_refused`
   `null`, `probes_failed` with `guardrail/guardrail_benign: AdapterStatusError`, the pass and the
-  run go on. On any other probe it stops the pass, as before;
+  run go on. On any other probe it stops the pass, as before. (Since OD-41, 2026-10-10, u08 A-69:
+  the adapters raise Azure's `content_filter` 400 and Gemini's prompt block as
+  `ProviderFilterBlock`, which `refused_request` reads at any status, so that line names
+  `ProviderFilterBlock`; any other 4xx is still an `AdapterStatusError`.);
 - `output_filter` is `null` unless a reply carries a stop reason from the provider: not a REST
   template with no finish path, nor the `final` the WebSocket adapter writes, nor MCP's
   `mcp_discovery`, nor the offline mocks;
@@ -344,5 +347,6 @@ both).
   free-shaped, but `docs/10` and §6 name the key), or to set it from the one input-filter signal
   the pass can see: a 4xx to the benign request alone (Azure OpenAI's 400 `content_filter`),
   which since the pre-merge audit is a failed probe with `benign_refused: null` and is not read
-  as an input filter. The attack phase still stops a campaign on such a 4xx, as before (a
-  product error, F5; OD-21 leaves non-retryable 4xx out of its question). Owner: human.
+  as an input filter. The attack phase stopped a campaign on such a 4xx (a product error, F5;
+  OD-21 leaves non-retryable 4xx out of its question) until OD-41 (decided 2026-10-10): it now
+  records an attack prompt the filter refused as blocked and goes on (u08 A-69). Owner: human.
