@@ -61,7 +61,12 @@ versioning: [SemVer](https://semver.org/).
   case's text; the HTML summary a line; the terminal summary `Blocked by the provider's input
   filter: 8 attempt(s) in 2 spec(s) never reached the model (GUARD-INPUT-EVASION-001,
   PI-DIRECT-001); they are inconclusive, not refusals by the model and not exploits`. With nothing
-  blocked only the JSON report changes (the key, with `0` and `[]`).
+  blocked only the JSON report changes (the key, with `0` and `[]`). **Schema note:**
+  `blocked_by_provider_filter` is a new optional property of the summary, whose object admits no
+  other key, and `schema_version` stays `1.0`, as with `edition` and `status` before it (report-1.0
+  grows additively): a report from this version fails validation against an older copy of
+  `report-1.0.schema.json`, while reports from earlier versions still validate against the new
+  one. Validate with the copy shipped in this version.
 - **The judge path is unchanged.** A judge request its own provider's filter refuses is an unusable
   judge (`capability_unavailable`), as any judge adapter error is: the attempt is `inconclusive`
   unless a deterministic evaluator fails, the attempt is not counted as blocked (the attack prompt

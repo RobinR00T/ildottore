@@ -154,7 +154,10 @@ blocked_by_provider_filter` (ADR-0011): neither the model's refusal nor an explo
 that folded it into "inconclusive" could not tell a model that held from one that was never asked.
 The summary (`RunSummary.provider_filter`, read from the stored attempts by
 `shared.provider_filter`, never re-scored) is `blocked_by_provider_filter: {attempts, specs}` in
-the JSON report, always emitted and optional in report-1.0 (the schema gains it additively); SARIF
+the JSON report, always emitted and optional in report-1.0 (the schema gains it additively, and
+`schema_version` stays `1.0` as it did for `edition` and `status`: a new report fails an older copy
+of the schema, an older report validates against the new one; pre-merge audit of `3d739f3`, L5);
+SARIF
 adds `blocked_by_provider_filter` to `runs[0].properties` and to a result's `properties`, and
 `; <k> of <n> attempt(s) blocked by the provider's input filter before the model saw them` to its
 message, when there are any; JUnit adds ` blocked_by_provider_filter=<k>` to a passing case's
