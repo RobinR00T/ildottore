@@ -1400,7 +1400,12 @@ class Redactor:
         def _after(start: int, stop: int, value: str) -> None:
             end = _value_tail_end(text, start)
             _add(start, end, _labelled(value))
-            for m in _LABELED_SECRET.finditer(text, end, min(len(text), stop + 1)):
+            # Read on from where the value ends, not from where its tail stops: from a `://` the
+            # tail stopped before, the rest of the value was read for a label, which took the next
+            # label into its value (`...@x://h@y-token abc123/secret="<secret>"`, re-audit of #96).
+            found = _LABELLED_VALUE_END.search(text, start)
+            rest = len(text) if found is None else found.start()
+            for m in _LABELED_SECRET.finditer(text, rest, min(len(text), stop + 1)):
                 if not _PLAIN_WORD.match(m.group(1)):
                     _add(m.start(1), m.end(1), _labelled(m.group(1)))
 

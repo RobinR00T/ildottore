@@ -181,6 +181,16 @@ _OPAQUE = "Zq8Xw3Yv6Ut1Sr4Qp7On"
             'COVFTvuW1smkF")tok@j9 end',
             f"p://o:{_URL}@[7@tail://ops:]://ops:{_URL}@j9 end",
         ),
+        # The labelled rule runs again from where the value ends, not from a `://` the tail
+        # stopped before: from there it read a label in the value (`-token abc123/secret=`)
+        # and the secret after the next label was readable (re-audit of #96).
+        (
+            ("Adm1n@2026",),
+            "redis://ops:Adm1n@2026-db,password=Secr3t@x://h@y-token abc123/"
+            'secret="Hunter2Secret99"',
+            f"redis://ops:{_URL}@[Secr3t@x://h@y-token]://h@y-token [abc123/secret=]"
+            '"[Hunter2Secret99]"',
+        ),
         # A plain word after a label and a path the entropy rule exempts stay as they are.
         (
             ("Adm1n@2026",),
