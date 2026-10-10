@@ -251,11 +251,20 @@ async def _send_with_timeout(
     timeout_s: float | None,
     do_sleep: Callable[[float], Awaitable[None]],
 ) -> ModelResponse:
-    """Await ``adapter.send`` under an optional timeout (env error on expiry)."""
+    """Await ``adapter.send`` under an optional timeout (env error on expiry).
+
+    ``asyncio.timeout``, not ``asyncio.wait_for``: on Python 3.11 ``wait_for`` runs the send as a
+    task of its own and, when its caller is cancelled just as that send completes, returns the
+    reply and drops the cancellation (CPython gh-86296), so a spec a signal stopped at that
+    instant went on sending (pre-merge audit of the A-60 fix). ``asyncio.timeout`` awaits the
+    send in this task, where a cancellation always wins, and raises :class:`TimeoutError` on
+    expiry, as ``wait_for`` did; from 3.12 ``wait_for`` is built on it.
+    """
 
     if timeout_s is None:
         return await adapter.send(request)
-    return await asyncio.wait_for(adapter.send(request), timeout=timeout_s)
+    async with asyncio.timeout(timeout_s):
+        return await adapter.send(request)
 
 
 #: Appended to an attempt's error when the failure would repeat identically (``retryable =
