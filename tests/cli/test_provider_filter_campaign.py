@@ -372,6 +372,15 @@ def test_a_resume_keeps_the_blocked_attempts_and_says_so(
     run_id = _run_id(tmp_path)
     assert _spent(tmp_path, run_id) == 5, "the two blocked sends count against the ceiling"
 
+    # The estimate of the resume counts the two blocked attempts as done, and sends nothing.
+    estimate = cli.invoke(app, [*base, "--resume", run_id, "--estimate"])
+    assert estimate.exit_code == 0, estimate.output
+    assert "estimate: 8 requests over 1 spec-runs across 1 target(s) at runs=2" in estimate.output
+    assert (
+        "minus 5 request(s) already done in the resumed run (~3 still to send)" in estimate.output
+    )
+    assert (state["attack"], state["blocked"]) == (5, 2)
+
     done = cli.invoke(app, [*base, "--resume", run_id, "-oJ", str(tmp_path / "r.json")])
     assert done.exit_code == 0, done.output
     assert (
