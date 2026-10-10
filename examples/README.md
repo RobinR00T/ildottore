@@ -64,6 +64,7 @@ dry-run: plan resolved, sent nothing.
     prompt_injection: 1
   skipped: 7 spec(s) on local-llama, capability not declared by the target
   blocked: 1 spec(s) on local-llama, refused by the policy pack
+  sampling: local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of 10 specs (a spec's own value wins)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
   budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
@@ -123,6 +124,33 @@ This scenario used to be written against the local scope with a parenthetical as
 reader to add the entry themselves, i.e. the command as printed did not work.
 
 Add `--dry-run` first if you want to see the plan and the cost before spending anything.
+
+A Claude model is scanned the same way with `provider: anthropic`, an
+`https://api.anthropic.com/v1/messages` endpoint and `env://ANTHROPIC_API_KEY`. Claude Opus 4.7
+and later, Sonnet 5 and Sonnet 5.5, and the Fable and Mythos 5 families take no `temperature` or
+`top_p` (Anthropic's API reference, not tested live by this project), so the scanner sends them
+neither, from the list in `adapters.anthropic.MODELS_WITHOUT_SAMPLING`, and the run and
+`--dry-run` say that their replies are not temperature-0 deterministic. A model the list does not name and that
+refuses them is declared with `sampling: false` under `capabilities`; `sampling: true` sends them
+to a listed one.
+
+A hosted deployment may run its own input filter before the model. Azure OpenAI's content filter
+answers an attack prompt it blocks with HTTP 400 and the error code `content_filter`; the run
+records that attempt as blocked (`inconclusive`, reason `blocked_by_provider_filter`), does not
+send it again, and goes on. The summary counts them; against a loopback stub that filters two
+phrases and answers the `--judge` model a secure verdict, `--spec GUARD-INPUT-EVASION-001 --spec
+PI-DIRECT-001 --runs 2` ends with
+
+```
+Specs run: 2 of 2 planned · pass 1 · fail 0 · inconclusive 1
+Not exercised: 1 spec(s) got no reply that could be scored (...)
+Blocked by the provider's input filter: 8 attempt(s) in 2 spec(s) never reached the model (GUARD-INPUT-EVASION-001, PI-DIRECT-001); they are inconclusive, not refusals by the model and not exploits
+```
+
+and `reports/openai.json` carries `summary.blocked_by_provider_filter`. A spec whose every attempt
+the filter refused is inconclusive, not a pass: it says nothing about the model
+([`docs/MANUAL.md`](../docs/MANUAL.md) §9). Any other 4xx (a wrong key, a bad request) still
+stops the run with exit 3.
 
 ## Scenario E, scan a fleet
 
@@ -190,6 +218,7 @@ dry-run: plan resolved, sent nothing.
     prompt_injection: 1
   not seeded: 1 spec(s) on support-agent-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
     - PI-INDIRECT-RAG-001: setup_not_seeded: this spec needs documents, tools or memory in the deployment, and the target file does not declare them seeded (seeded_setup.specs)
+  sampling: support-agent-staging's sampling_defaults fills temperature 0.0 on 0 of 2 specs (a spec's own value wins)
   would send: 20 requests over 2 specs at runs=5
   pacing:  5.0 req/s ceiling (S8)
   budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)

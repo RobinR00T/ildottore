@@ -15,6 +15,8 @@ cases:
     refusal_style: i can't help with that
     tokenizer_glitch: claude-bpe-repair
     guardrail_nudge: i can't help with that
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: &id001
     raw: stop_reason role=assistant model=claude
   finish_reason: stop
@@ -34,6 +36,8 @@ cases:
     refusal_style: i can't help with that
     tokenizer_glitch: claude-bpe-repair
     guardrail_nudge: i can't help with that
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: *id001
   finish_reason: stop
 - case_id: claude-sonnet-4.x-clean
@@ -52,6 +56,8 @@ cases:
     refusal_style: i can't help with that
     tokenizer_glitch: claude-bpe-repair
     guardrail_nudge: i can't help with that
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: &id002
     raw: stop_reason role=assistant model=claude
   finish_reason: stop
@@ -71,6 +77,8 @@ cases:
     refusal_style: i can't help with that
     tokenizer_glitch: claude-bpe-repair
     guardrail_nudge: i can't help with that
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: *id002
   finish_reason: stop
 - case_id: gpt-4o-clean
@@ -97,6 +105,8 @@ cases:
     refusal_style: i'm sorry, but i can't help with that
     tokenizer_glitch: solidgoldmagikarp-artifact
     guardrail_nudge: i'm sorry, but i can't help with that
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: &id003
     raw: system_fingerprint finish_reason model=gpt
   finish_reason: stop
@@ -124,6 +134,8 @@ cases:
     refusal_style: i'm sorry, but i can't help with that
     tokenizer_glitch: solidgoldmagikarp-artifact
     guardrail_nudge: i'm sorry, but i can't help with that
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: *id003
   finish_reason: stop
 - case_id: gpt-4-turbo-clean
@@ -150,6 +162,8 @@ cases:
     refusal_style: i'm sorry, but i can't help with that
     tokenizer_glitch: solidgoldmagikarp-artifact
     guardrail_nudge: i'm sorry, but i can't help with that
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: &id004
     raw: system_fingerprint finish_reason model=gpt
   finish_reason: stop
@@ -177,6 +191,8 @@ cases:
     refusal_style: i'm sorry, but i can't help with that
     tokenizer_glitch: solidgoldmagikarp-artifact
     guardrail_nudge: i'm sorry, but i can't help with that
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: *id004
   finish_reason: stop
 - case_id: llama-3.1-70b-clean
@@ -192,6 +208,8 @@ cases:
     refusal_style: i cannot assist with that request
     tokenizer_glitch: llama-sentencepiece-tell
     guardrail_nudge: i cannot assist with that request
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: &id005
     raw: finish_reason=stop model=llama
   finish_reason: stop
@@ -208,6 +226,8 @@ cases:
     refusal_style: i cannot assist with that request
     tokenizer_glitch: llama-sentencepiece-tell
     guardrail_nudge: i cannot assist with that request
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: *id005
   finish_reason: stop
 - case_id: llama-3-8b-clean
@@ -223,6 +243,8 @@ cases:
     refusal_style: i cannot assist with that request
     tokenizer_glitch: llama-sentencepiece-tell
     guardrail_nudge: i cannot assist with that request
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: &id006
     raw: finish_reason=stop model=llama
   finish_reason: stop
@@ -239,5 +261,7 @@ cases:
     refusal_style: i cannot assist with that request
     tokenizer_glitch: llama-sentencepiece-tell
     guardrail_nudge: i cannot assist with that request
+    guardrail_benign: Find its process id with ps, then end it with kill, or kill -9 if
+      it ignores the first signal.
   metadata: *id006
   finish_reason: stop

@@ -189,22 +189,57 @@ digest and six another, and in one process the same key had another digest after
 set order decided which of two overlapping registered credentials was masked and left the other's
 tail readable; overlapping credentials are one run now, named after the longest. The URL rule holds
 when part of the URL is already masked: a URL's password stayed readable because its user was a
-registered credential, set aside before the rule ran. (Not across a separator: a registered
-credential holding the URL's `://`, `:` or `@` across it still breaks the rule. It stops it, as
-before A-31, or across the `@` lets it read on to a later `@`, so a labelled value after the URL
-loses its tail, which was masked before A-31; and two overlapping credentials masked as one run can
-cover a separator that the one-at-a-time replacement before A-31 left, and leave a URL password
-readable that it masked. The owner accepted those two regressions for the merge of PR #56;
-issue #96 tracks them. A pass that joined the password to such a credential was backed out
-after the audits of its two versions each found a new hole in it. Not yet every rule either: the
-labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>` keeps its tail
-readable, as before A-31. Nor every key: the key pattern's 16 KB bound counts each mask inside the
-key as a stash token whose length grows with the masks before it, so a key near the bound is
-masked as a key or not depending on the text before it, and one a single pass cannot take whole is
-masked as a key later, over its text with the masks inside it, or never; before A-31 too.)
+registered credential, set aside before the rule ran, and since #96 when a registered credential
+holds one of the URL's separators: one holding its `://` (two overlapping credentials masked as one
+run included, which covered the `://` that the one-at-a-time replacement before A-31 left), its
+`:`, or the password's `@` with no later `@` stopped the rule and left the password, or its part
+outside the credential, readable. The URL is read in the text as written (every registered
+credential written out, every other mask one neutral character), last in each pass, after every
+other rule, and what of its password is still readable becomes one `url_password` mask; a URL the
+rule read at a `://` in the text as it reads is left as the rule masked it, an email mask is read as
+holding an `@` (where the rule found no URL, the email rule took the password's tail and a dotted
+host as one address), and the `:` after the user of a URL the next pass can read stays out of the
+mask. A credential holding an `@` across the URL's `@`, in the user or the password, still lets the
+rule read on to a later `@`; when that `@` is a labelled value's, the URL mask takes the label and
+the value's head, and since #96, after the other rules of the pass and only where they left text
+readable, the rest of the value after the mask's `@` is masked as the value is, with its digest (the
+one the redactor before A-31 gave it when no other rule masked something inside the value first), up
+to a `://` that a `:` and then an `@` follow before any whitespace (what the rule needs to read a
+URL there, in this pass or the next: a mask only hides characters), and the labelled rule is run
+again from where the value ends (not from where the tail stops), without reading its tail for a
+label, as the redactor before A-31 read it (PR #56
+left the tail readable, and a label in it took the next label into its value: pre-merge audit of
+#96). The pre-merge audit's proposal for #96, leaving such a password to the other rules, left
+readable a character main masked in 15,239 of 300,000 differential texts (the password's head before
+the credential); the fix leaves none, and is checked by a differential fuzz against main before a
+change to these rules is merged. A pass that joined the password to such a credential before the
+other rules ran was backed out of PR #56 after the audits of its two versions each found a new hole
+in it. (Left open after #96: where the URL rule did read a URL, its reading stands, so after a
+registered credential holding the user's `:` the rest of the user is shown
+(`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which urllib
+reads as the password's head); a labelled value whose label sits in the user of a URL read through a
+mask or behind an empty user (both read since #56), or is glued to the word before it
+(`...3password="x@host.tld`, a label to no version), keeps what follows the URL's `@` readable as
+its host, where the redactor before #56 masked it whole or as an address; the rest of a labelled
+value after a URL mask stops before a `://` that a `:` and then an `@` follow before any whitespace
+(the shape the URL rule needs, in this pass or the next), so what of the value lies past that `://`
+is left to the other rules (`secret=AETw://0G1h9.mGle` and U+200B before `://u:<password>@h` shows
+`0G1h9.mGle`); a raw `@` in a URL's user or unregistered
+password leaves the password, or its part after the `@`, readable; and a URL whose `://` is split by
+an invisible character (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
+Not yet every
+rule either: the labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>`
+keeps its tail readable, as before A-31. Nor every key: the key pattern's 16 KB bound counts each
+mask inside the key as a stash token whose length grows with the masks before it, so a key near
+the bound is masked as a key or not depending on the text before it, and one a single pass cannot
+take whole is masked as a key later, over its text with the masks inside it, or never; before
+A-31 too.)
 Checks: `tests/test_redactor_url_password_and_digests.py` (twelve hash seeds in subprocesses,
 digests against an HMAC computed in the test, the evidence store's leak guard, a property over
-URL shapes, credentials holding a URL's separators inside the user or the password).
+URL shapes, credentials holding a URL's separators inside the user or the password), and
+`tests/test_redactor_url_separator_credentials.py` (#96: the issue's two cases, a credential
+across each separator, a property over URLs with one or two credentials across a separator, the
+labelled tail's limits the fuzz found, memory and linear time on 2 MB of hostile echoes).
 
 **A-32 A registered credential is matched with the characters that do not show ignored (added
 2026-10-07).** In a text holding a control character (C0, DEL, C1, U+2028, U+2029, a lone
@@ -351,14 +386,19 @@ this clause), and an invalid `mock_scenario`; a duplicated scope target id, a du
 name and an identity that shares a canary, with the id of the target they belong to; a labels entry
 with an invalid verdict (its spec id); two target files with one id in `run`; the target id and the
 endpoint in the authorization refusal (`policy.authorize_target`, so `run`, `fingerprint` and the
-engine's gate on each attempt), the target id that `run` and `fingerprint` write in front of it, and
+engine's gate on each attempt; since #96 the endpoint as `shared.config_errors.shown_endpoint`
+quotes one, below, since cut first a password whose `@` fell past the cut was not read as a URL's
+by the CLI's redactor, and 287 characters of a 308-character one were printed), the target id that
+`run` and `fingerprint` write in front of it, and
 the ids the scope authorizes, which they list after it (the first 20, each cut, then `and N more`:
 `shared.config_errors.listed`), since a target the scope names and refuses by endpoint or command
 came back whole there; the target id in the `--hardened`, stdio and credential refusals of `run`,
 and the references the scope declares, listed by the credential refusal (20, each as
 `shown_auth_ref` quotes it, and how many more: 3,000 references of 290 characters printed 885,131
 bytes), and the variable a reference names when its value holds a control character; an `auth_ref`
-reference wherever `shown_auth_ref` quotes one (a literal is still never shown); the target id, and
+reference wherever `shown_auth_ref` quotes one (a literal is still never shown; since #96 one
+holding
+an `@` is quoted as an endpoint is, without its userinfo); the target id, and
 the one the run store recorded, in the three refusals that bind `run --resume` to its target (an id
 of 900,000 characters printed 900,276 bytes); in `dottore fleet`, an endpoint with an invalid port,
 the judge id and the judge fields a `--judge` file gets wrong; and, cut as one text with
@@ -388,7 +428,8 @@ pins a port no URL has, so it matches nothing instead of raising and denying eve
 it (read as a bare host, it matched an IPvFuture literal that repeated it: second delta audit); and
 `dottore fleet` reads an endpoint stripped too and refuses an unreadable one, or one with a port it
 cannot read, or a `--judge` endpoint that differs, quoting it as urllib reads it, its tabs and line
-breaks removed, cut and without what precedes the last `@` of its authority (the
+breaks removed, cut and without what precedes the last `@` of its authority
+(`shared.config_errors.shown_endpoint` since #96, which the authorization refusal uses too; the
 CLI masks a password only in the `user:password@` shape, so a space or a second `@`
 printed it, and an empty user did until A-31; and a tab or a line break between the
 two slashes, which urllib removes, hid the authority from a search for `//`: final
@@ -603,6 +644,42 @@ in both loaders; every shape at 20 levels, siblings included, loading as plain P
 depth limit checked first; one count per document; the repository's files; and in a subprocess
 bounded at 30 s, the keys the scanner walks for `lint` and `calibrate` on chains 98 and 320 deep,
 under 1 million, and for `lint` on chains at the limit holding 300 texts each, under 12 million).
+
+**A-63 An error's class name is never masked by the redactor (added 2026-10-09).** The terminal, the
+stored evidence and the reports get an error through the redactor, and some messages write an error
+with its class: an attempt's error and an adapter's last failure (`<class>: <message>`), a halt
+reason (`aborted on <class>: <message>`), the unreachable reason, which quotes the first attempt's
+error, a probe recorded as failed (`<layer>/<probe>: <class>`) and a mutator's error in the carrier
+layer. The high-entropy rule masks a token of 16 characters or more, not shaped as a separated
+identifier or path, at 3.7 bits a character or more, so such a class name reads
+`«REDACTED:high_entropy:<digest>»` there: the failure class is lost and the line reads as if a
+secret had been masked. PR #87 renamed four of the WebSocket adapter's, which reached the CLI error
+and the evidence. A walk of the package's 45 exception classes on `f12ba83` found four more, none of
+which any message wrote with its class: `ChecksumMismatchError` (21 characters, 3.78 bits),
+`ProbeCeilingReached` (19, 3.72), `BudgetExhaustedAfterReply` (25, 3.97) and `_ImpossibleFigure`
+(17, 3.73). Raised from a mock target's adapter, the first read `error: run on mock-t did not
+complete: aborted on «REDACTED:high_entropy:2559426b»: scope checksum mismatch: ...` on the terminal
+and in `summary.status.reason`. They are `ScopeChecksumError` (18, 3.57), `ProbeCeilingHit` (15),
+`ReplyOverBudget` (15) and `_UnreadableLogprob` (18, 3.61), named for what `readable_logprob`
+refuses (a string that spells a number, a bool, anything that is not a JSON number, as well as a
+figure no model produces); `ChecksumMismatchError`, which `ildottore.policy` exported in 0.1.0,
+stays as an alias of the same class, so code that imports or catches it still works. The rule is not
+changed: a name is chosen that it keeps, as a figure is written so the phone rule keeps it (u08 A-6,
+u12 A-61). Checked by `tests/policy/test_redactor_error_class_names.py` (CI Gate 3), which imports
+every module of the package, takes every class `BaseException.__subclasses__` reaches that the
+package defines, and fails on any whose name `redact_text` changes, alone or in six lines shaped as
+those messages write it. A class written inside a function body exists only once the function runs,
+so whether that walk sees it depends on which tests ran first: every class written in a function
+body, at any depth, is read from the source instead and its name checked in the same lines (there
+are none; a test shows the pass finds one in an `if`, in a function inside a function and in a
+method). On `f12ba83` two of its four tests fail: the walk, naming the four in 24 lines, and the
+alias. It replaces #87's test, which read the WebSocket adapter's `__all__` only. Not covered: the
+names of other packages' exceptions, which cannot be renamed: of 216 distinct names in Python's
+builtins, the standard-library modules the adapters use and the ten declared dependencies, the rule
+masks 12, among them httpx's `TooManyRedirects` (never raised: no send follows a redirect, and the
+adapters catch only `TimeoutException` and `TransportError`), websockets' `InvalidProxyStatus` and
+`InvalidProxyMessage` (an `InvalidHandshake`, reworded without its class) and six of pydantic's
+(`PydanticSchemaGenerationError` among them); nor a plugin's own.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

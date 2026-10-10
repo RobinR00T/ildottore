@@ -16,7 +16,9 @@ capabilities:
   tools: false
   rag: true
   memory: false
-# sampling_defaults: not applicable, the frame templates carry no sampling fields.
+# sampling_defaults: accepted and never sent: the frame templates carry no sampling fields, so
+# neither the block nor a spec's own sampling reaches the socket (OD-39). `--dry-run` says so.
+#   sampling_defaults: { temperature: 0.0 }
 websocket:
   vars:                              # plain values the templates may use as {{name}}; never secrets
     client: "ildottore"

@@ -121,6 +121,7 @@ class Capability(StrEnum):
     MULTI_IDENTITY = "multi_identity"
     MULTIMODAL = "multimodal"
     AUDIO = "audio"
+    SAMPLING = "sampling"
 
 
 class RequiresCapability(StrEnum):
@@ -169,11 +170,15 @@ class InconclusiveReason(StrEnum):
     """Closed reason for an ``inconclusive`` verdict (``docs/01 §4``).
 
     Extensible only via ADR (contract §9). Seeded per ADR-0006 reconciliation.
+    ``blocked_by_provider_filter`` was added by ADR-0011 (OD-41, u08 A-69): the provider's own
+    input filter refused the prompt before the model saw it, so the attempt has no reply to
+    evaluate; it is neither the model's refusal nor an exploit.
     """
 
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
     BLOCKED_BY_POLICY = "blocked_by_policy"
     JUDGE_COMPROMISED = "judge_compromised"
+    BLOCKED_BY_PROVIDER_FILTER = "blocked_by_provider_filter"
 
 
 #: The reasoning prefix of an ``inconclusive`` verdict whose in-band scene never reached the model

@@ -18,7 +18,9 @@ Discipline the runner enforces (contract §2/§4 KEEP):
 * **Policy, mandatory.** A spec that fails the gate produces a ``blocked_by_policy`` finding
   and **zero** adapter sends.
 * **Env-vs-product.** A retry-exhausted env error is ``inconclusive``; only a real
-  exploited response is ``fail``.
+  exploited response is ``fail``. A prompt the provider's own input filter refused before the
+  model saw it is neither (OD-41, u08 A-69): ``inconclusive: blocked_by_provider_filter``, never
+  sent again, and the campaign goes on.
 * **Hard budgets.** Any :class:`~ildottore.core.budgets.BudgetExhausted` halts the
   campaign and yields a partial :class:`TestRun` marked ``budget_exhausted`` - never
   a silently-truncated ``complete``.
@@ -39,7 +41,7 @@ import contextlib
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.conversation import reproduce_conversation
@@ -104,9 +106,12 @@ from ildottore.shared.protocols import (
     RunStore,
     TargetAdapter,
 )
+from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
 from ildottore.shared.toolcalls import call_name
 
 __all__ = [
+    "PROVIDER_FILTER_CUT",
+    "SAMPLING_NOT_SENT",
     "CampaignResult",
     "CampaignRunner",
     "EvaluatorResolver",
@@ -115,9 +120,12 @@ __all__ = [
     "ScenarioProvider",
     "TestPlanBuilder",
     "answered_attempt_ids",
+    "fill_sampling",
     "resume_progress",
+    "spec_sampling",
     "sweeps_identities",
     "unjudged_attempt_ids",
+    "unsent_fields",
 ]
 
 _BLOCKED = "blocked_by_policy"
@@ -273,6 +281,9 @@ class CampaignRunner:
         send_meter: SendMeter | None = None,
         timestamp: Callable[[], str] | None = None,
         spend_sink: Callable[[Spend], None] | None = None,
+        sampling_defaults: Sampling | None = None,
+        sent_sampling: Callable[[Sampling], Sampling] | None = None,
+        sampling_asked: Sampling | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -330,6 +341,17 @@ class CampaignRunner:
         # recorded it only from a returned result, so a run interrupted with Ctrl-C left its
         # spend unrecorded and a resume's ceiling under-counted it (audit of F11, pre-existing).
         self._spend_sink = spend_sink
+        # The target file's ``sampling_defaults``, as the composition root passes it: only for
+        # an adapter that sends sampling, so what an attempt records is what went out (OD-39,
+        # u12 A-66). Each field fills what a spec leaves unset (:func:`spec_sampling`).
+        self._sampling_defaults = sampling_defaults
+        # What of a request's sampling the target's adapter puts on the wire (the Anthropic
+        # adapter never sends a seed, nor a top_p beside a temperature): applied before the
+        # attempt is recorded, so the record is the request that went out (u12 A-66).
+        self._sent_sampling = sent_sampling
+        # The target file's block as written, for the record of what was asked for and did not
+        # go out: `sampling_defaults` has already lost what the adapter never sends (A-68).
+        self._sampling_asked = sampling_asked
 
     async def run(
         self,
@@ -777,12 +799,14 @@ class CampaignRunner:
                     attempt = (
                         _tagged_seeded(result.attempt, seeded_tools) if seeded else result.attempt
                     )
+                    attempt = self._tagged_unsent(spec, attempt)
                     verdict: Verdict | None = None
                     try:
                         verdict = await self._evaluate(
                             spec,
                             attempt,
                             env_error=result.env_error,
+                            filter_blocked=result.filter_blocked,
                             identities=identities_map,
                             canary_owners=canary_owners,
                             target=target,
@@ -807,6 +831,8 @@ class CampaignRunner:
                         if abort is not None and not isinstance(exc, BudgetExhausted):
                             abort.set()
                     stored = attempt.model_copy(update={"verdict": verdict})
+                    if result.filter_blocked and verdict is not None:
+                        stored = _cut_by_filter(stored)
                     ref = self._evidence.put(run_id, stored)
                     # A re-send that failed byte-identically lands on the artifact the prior
                     # run already cited: cite it once.
@@ -844,7 +870,7 @@ class CampaignRunner:
         """Reproduce one (spec, mutation) as N single-turn sends (the classic path)."""
 
         mutated_prompt = self._apply_mutation(spec, mutation, base_prompt)
-        request = _build_request(spec, mutated_prompt, scene=scene)
+        request = _build_request(spec, mutated_prompt, scene=scene, sampling=self._sampling(spec))
         return await reproduce(
             adapter,
             request,
@@ -883,7 +909,7 @@ class CampaignRunner:
         single-turn path mutates it, and the tool rounds as further sends.
         """
 
-        sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
+        sampling = self._sampling(spec)
         system_prompt = spec.setup.system_prompt if spec.setup is not None else None
         if scene is not None:
             system_prompt = scene.system_prompt(system_prompt)
@@ -919,6 +945,34 @@ class CampaignRunner:
         )
 
     # --- multi-identity (authz_leak, audit M14) ------------------------------
+
+    def _sampling(self, spec: AttackSpec) -> Sampling:
+        """The sampling a request of ``spec`` goes out with: filled, then as the adapter sends."""
+
+        sampling = spec_sampling(spec, self._sampling_defaults)
+        return self._sent_sampling(sampling) if self._sent_sampling is not None else sampling
+
+    def _tagged_unsent(self, spec: AttackSpec, attempt: Attempt) -> Attempt:
+        """The attempt with :data:`SAMPLING_NOT_SENT` on its request, when a field did not go out.
+
+        The fields the spec and the target file's ``sampling_defaults``, as written, asked for
+        that did not go out (Anthropic's seed, a top_p beside a temperature, the temperature and
+        the top_p of a model that takes none, a block seed without ``capabilities.seed``, u12
+        A-68): the recorded sampling lacks them, and this says so in words, so a reader of the
+        evidence does not take a missing temperature for one nobody asked for.
+        """
+
+        written = (
+            self._sampling_asked if self._sampling_asked is not None else self._sampling_defaults
+        )
+        asked = spec_sampling(spec, written)
+        dropped = unsent_fields(asked, self._sampling(spec))
+        if not dropped:
+            return attempt
+        metadata: JsonDict = {**(attempt.request.metadata or {}), SAMPLING_NOT_SENT: dropped}
+        return attempt.model_copy(
+            update={"request": attempt.request.model_copy(update={"metadata": metadata})}
+        )
 
     def _param_accepted(self, mutation: str) -> bool:
         """True unless ``mutation`` carries a parameter its mutator declares it does not take.
@@ -973,7 +1027,7 @@ class CampaignRunner:
         identities: dict[str, ModelResponse] = {}
         owners: dict[str, str] = {}
         for probe in probes:
-            request = _build_request(spec, base_prompt).model_copy(
+            request = _build_request(spec, base_prompt, sampling=self._sampling(spec)).model_copy(
                 update={"identity": probe.identity_id}
             )
             try:
@@ -1002,6 +1056,7 @@ class CampaignRunner:
         attempt: Attempt,
         *,
         env_error: bool,
+        filter_blocked: bool = False,
         identities: dict[str, ModelResponse] | None = None,
         canary_owners: dict[str, str] | None = None,
         target: Target | None = None,
@@ -1014,8 +1069,36 @@ class CampaignRunner:
         the spec's ``evaluator_logic``: a deterministic fail always decides (OD-19, ADR-0010).
         ``identities`` +
         ``canary_owners`` (multi_identity) are threaded to authz_leak via the EvalContext.
+
+        A prompt the provider's input filter refused (``filter_blocked``, OD-41) is
+        ``inconclusive: blocked_by_provider_filter``, without an evaluator: the model never saw
+        it, so it is not the model's refusal (a pass) and not an exploit (a fail). A conversation
+        the filter cut after the model had called a tool carries that trace, and the spec's
+        trace evaluators read it: one that fails decides the attempt, a call already made being
+        an exploit the filter did not prevent; anything else leaves it blocked.
         """
 
+        if filter_blocked:
+            traced = await self._trace_before_block(
+                spec,
+                attempt,
+                identities=identities,
+                canary_owners=canary_owners,
+                target=target,
+            )
+            if traced is not None:
+                return traced
+            return Verdict(
+                status=VerdictStatus.INCONCLUSIVE,
+                confidence=0.0,
+                reasoning=(
+                    f"{InconclusiveReason.BLOCKED_BY_PROVIDER_FILTER.value}: the provider's "
+                    "input filter refused the prompt before the model saw it, so there is no "
+                    "reply to evaluate: not a refusal by the model and not an exploit"
+                ),
+                evaluator_type="aggregate",
+                inconclusive_reason=InconclusiveReason.BLOCKED_BY_PROVIDER_FILTER,
+            )
         if env_error or attempt.response is None:
             return Verdict(
                 status=VerdictStatus.INCONCLUSIVE,
@@ -1061,6 +1144,61 @@ class CampaignRunner:
                 evaluator_type="aggregate",
             )
         return _note_not_consulted(combined, per_evaluator)
+
+    async def _trace_before_block(
+        self,
+        spec: AttackSpec,
+        attempt: Attempt,
+        *,
+        identities: dict[str, ModelResponse] | None,
+        canary_owners: dict[str, str] | None,
+        target: Target | None,
+    ) -> Verdict | None:
+        """A fail on the tool calls a conversation made before the provider's filter cut it.
+
+        Only the trace evaluators (``tool_call``, ``tool_sequence``, ``kill_chain_progression``)
+        read it: a multi-turn spec's text is scored on its final reply, which the filter kept
+        from being written, while its trace is the whole conversation's (``core.conversation``).
+        Only a fail is returned: a trace that holds no forbidden call says nothing about the
+        turns the filter refused (OD-41, u08 A-69).
+        """
+
+        if attempt.response is None or not attempt.response.tool_calls:
+            return None
+        evaluators = [config for config in spec.evaluators if config.type in TRACE_EVALUATORS]
+        if not evaluators:
+            return None
+        response = (
+            canonical_tool_calls(attempt.response, target, spec)
+            if target is not None
+            else attempt.response
+        )
+        granted = (
+            target.seeded_setup.granted_tools
+            if target is not None and target.seeded_setup is not None
+            else []
+        )
+        verdicts = await self._run_evaluators(
+            spec.model_copy(update={"evaluators": evaluators}),
+            attempt.request,
+            response,
+            identities,
+            canary_owners,
+            granted_tools=granted,
+        )
+        fails = [v for v in verdicts if v.status is VerdictStatus.FAIL]
+        if not fails:
+            return None
+        return Verdict(
+            status=VerdictStatus.FAIL,
+            confidence=max(v.confidence for v in fails),
+            reasoning=(
+                f"{len(fails)} trace evaluator(s) reported exploited on the tool calls made "
+                "before the provider's input filter refused a later turn"
+            ),
+            matched=_union_matched(fails),
+            evaluator_type="aggregate",
+        )
 
     async def _run_evaluators(
         self,
@@ -1155,6 +1293,7 @@ class CampaignRunner:
         risk = self._scorer.score(spec, verdicts, attempts)
         status = _dominant_status(verdicts)
         confirmed = _is_confirmed(status, attempts, spec)
+        blocked = len(blocked_attempt_ids(attempts))
         return Finding(
             spec_id=spec.id,
             target_id=target.id,
@@ -1167,7 +1306,7 @@ class CampaignRunner:
             confirmed=confirmed,
             attempts=attempts,
             evidence=evidence,
-            reasoning=_finding_reasoning(status, verdicts),
+            reasoning=_finding_reasoning(status, verdicts, blocked=blocked),
         )
 
     def _capability_skipped_finding(
@@ -1447,10 +1586,73 @@ def _carrier_never_reached(spec: AttackSpec, attempt: Attempt, response: ModelRe
     return bool(carriers) and not carriers & answered
 
 
+#: Request metadata key listing the sampling fields asked for that did not go out (u12 A-68).
+SAMPLING_NOT_SENT: Final = "sampling_not_sent"
+
+
+def unsent_fields(asked: Sampling | None, sent: Sampling | None) -> list[str]:
+    """The fields ``asked`` sets that ``sent`` does not: what the adapter's rule dropped."""
+
+    if asked is None:
+        return []
+    return [
+        name
+        for name in type(asked).model_fields
+        if getattr(asked, name) is not None and (sent is None or getattr(sent, name) is None)
+    ]
+
+
+#: What a spec that declares no ``sampling`` is sent with, once the target file's
+#: ``sampling_defaults`` has filled what it holds: temperature 0, the scanner's own pin.
+_UNDECLARED_SAMPLING: Final = Sampling(temperature=0.0)
+
+
+def fill_sampling(own: Sampling, fallback: Sampling | None) -> Sampling:
+    """``own``, each field it leaves unset taken from ``fallback`` (OD-39, u12 A-66).
+
+    A field set in ``own`` always wins; ``fallback`` (a target file's ``sampling_defaults``)
+    fills only what is ``None``. Nothing to fill returns ``own`` itself, so a request with no
+    fallback is the object it was.
+    """
+
+    if fallback is None:
+        return own
+    fill = {
+        name: value
+        for name in type(own).model_fields
+        if getattr(own, name) is None and (value := getattr(fallback, name)) is not None
+    }
+    return own.model_copy(update=fill) if fill else own
+
+
+def spec_sampling(spec: AttackSpec, sampling_defaults: Sampling | None = None) -> Sampling:
+    """The sampling a request of ``spec`` goes out with, field by field (OD-39, u12 A-66).
+
+    Each of ``temperature``, ``top_p``, ``seed`` and ``max_tokens``: the spec's own value
+    first; then the target file's ``sampling_defaults`` (``sampling_defaults``, which the
+    composition root passes only for an adapter that sends sampling); then, for a spec that
+    declares no ``sampling`` at all, temperature 0; anything still unset is not sent, so the
+    provider's default applies. With no ``sampling_defaults`` this is what the runner always
+    sent: the spec's own block, or temperature 0.
+    """
+
+    if spec.sampling is not None:
+        return fill_sampling(spec.sampling, sampling_defaults)
+    return fill_sampling(fill_sampling(Sampling(), sampling_defaults), _UNDECLARED_SAMPLING)
+
+
 def _build_request(
-    spec: AttackSpec, prompt: str, *, scene: InBandSetup | None = None
+    spec: AttackSpec,
+    prompt: str,
+    *,
+    scene: InBandSetup | None = None,
+    sampling: Sampling | None = None,
 ) -> ModelRequest:
     """Build a :class:`ModelRequest` from a spec + mutated prompt (pinned sampling).
+
+    ``sampling`` is the runner's (``CampaignRunner._sampling``: the spec's own, filled from the
+    target file's ``sampling_defaults``, as the adapter sends it, OD-39); without one, the spec's
+    own (:func:`spec_sampling`).
 
     A ``multimodal`` spec's ``attack.media`` rides along as the declarative carrier (the adapter
     renders it for transport). For evidence, the request also records the SHA-256 of each rendered
@@ -1459,7 +1661,7 @@ def _build_request(
     it. Computing a hash is not transport rendering; the adapter still owns what goes on the wire.
     """
 
-    sampling = spec.sampling if spec.sampling is not None else Sampling(temperature=0.0)
+    sampling = sampling if sampling is not None else spec_sampling(spec)
     system_prompt = spec.setup.system_prompt if spec.setup is not None else None
     media = spec.attack.media
     metadata: JsonDict | None = {"media_sha256": media_digests(media)} if media else None
@@ -1705,10 +1907,47 @@ def _is_confirmed(status: VerdictStatus, attempts: list[Attempt], spec: AttackSp
     return False
 
 
-def _finding_reasoning(status: VerdictStatus, verdicts: list[Verdict]) -> str:
+#: Request metadata key of a conversation the provider's input filter cut after a tool call that
+#: failed it (OD-41): the refused turn's error, which the attempt's own ``error`` no longer holds.
+PROVIDER_FILTER_CUT = "provider_filter_cut"
+
+
+def _cut_by_filter(attempt: Attempt) -> Attempt:
+    """A filtered conversation's attempt as stored: blocked, or a fail on its earlier trace.
+
+    A fail keeps the reply and the trace it was decided on and is scored as any fail, so its error
+    (which the reproducibility reads as "not a success") moves to ``request.metadata``, under
+    :data:`PROVIDER_FILTER_CUT`, where the evidence still says the filter cut the conversation.
+    Any other verdict leaves the attempt as recorded.
+    """
+
+    if attempt.verdict is None or attempt.verdict.status is not VerdictStatus.FAIL:
+        return attempt
+    metadata: JsonDict = {**(attempt.request.metadata or {}), PROVIDER_FILTER_CUT: attempt.error}
+    return attempt.model_copy(
+        update={
+            "error": None,
+            "request": attempt.request.model_copy(update={"metadata": metadata}),
+        }
+    )
+
+
+def _finding_reasoning(status: VerdictStatus, verdicts: list[Verdict], *, blocked: int = 0) -> str:
+    """The finding's one-line account, with how many attempts the provider's filter refused.
+
+    Those attempts are in the count of verdicts and never exploited (OD-41): the line says how
+    many so a spec whose every attempt was blocked does not read as a model that resisted.
+    """
+
     fails = sum(1 for v in verdicts if v.status is VerdictStatus.FAIL)
     total = len(verdicts)
-    return f"status={status.value}; {fails}/{total} attempt-verdicts exploited"
+    line = f"status={status.value}; {fails}/{total} attempt-verdicts exploited"
+    if blocked:
+        line += (
+            f"; {blocked}/{total} blocked by the provider's input filter before the model saw "
+            f"{'it' if blocked == 1 else 'them'}"
+        )
+    return line
 
 
 def _zero_risk(spec: AttackSpec) -> RiskScore:
@@ -1759,8 +1998,11 @@ def _completed_attempt_ids(run: TestRun | None) -> set[str]:
                 if attempt.verdict is not None:
                     ids.add(attempt.attempt_id)
             # An error that would repeat identically (a reply over the size cap) is kept too:
-            # re-sending it on every resume spends a request for the same refusal.
-            elif (attempt.error or "").endswith(NOT_RETRYABLE_MARK):
+            # re-sending it on every resume spends a request for the same refusal. So is a
+            # prompt the provider's input filter refused (OD-41): it would be refused again.
+            elif (attempt.error or "").endswith(NOT_RETRYABLE_MARK) or blocked_by_provider_filter(
+                attempt
+            ):
                 ids.add(attempt.attempt_id)
     return ids
 

@@ -102,7 +102,7 @@ tree's attempts as this run's. Content-addressing still verified them; what did 
 that they belonged to the run being read.
 
 **A-23 Recognition traffic is evidence, stored apart from the attempts (added 2026-09-22).**
-A fingerprint pass sends 17 requests per target, and for as long as none of them was written
+A fingerprint pass sends 18 requests per target, and for as long as none of them was written
 down the evidence tree could not answer "what did this tool send my endpoint": the question the
 product exists to answer, and the reason a day's worth of probes carrying attack framing stayed
 invisible. Probes go to `<run>/probes/` through the same redact-hash-write path as attempts, so
@@ -111,6 +111,15 @@ kept out of `attempts/` because a probe is not an attempt: filing it as one woul
 reproducibility denominator, the resume skip set and the replay count, all published numbers.
 A send that fails is stored with its error, because "we sent this and got nothing back" is also
 evidence. Checked by `tests/cli/test_probe_evidence.py`.
+
+**A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) A replay re-derives a blocked
+attempt from what it stored.** An attempt the provider's input filter refused is stored with no
+response, the verdict `inconclusive: blocked_by_provider_filter` and an error ending in
+` [blocked_by_provider_filter]`. `ReplayResult.blocked_by_provider_filter()` counts those, one per
+attempt id, by the verdict's reason or, without a verdict, by the mark
+(`shared.provider_filter`); they stay in `N` and are never a success, as the runner scores them.
+`dottore replay` writes `inconclusive (blocked_by_provider_filter)` on their line and a footer line
+with the count. Checked by `tests/cli/test_provider_filter_campaign.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -

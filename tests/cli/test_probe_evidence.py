@@ -1,6 +1,6 @@
 """Recognition traffic is evidence (contract u10/u12, added 2026-09-22).
 
-A fingerprint pass is 17 requests per target and it left **no trace**: the evidence tree could
+A fingerprint pass is 18 requests per target and it left **no trace**: the evidence tree could
 not answer "what did this tool send my endpoint", which is the question the product exists to
 answer, and it is exactly what kept a day's worth of probes carrying attack framing invisible.
 
@@ -63,7 +63,7 @@ def test_a_fingerprint_pass_leaves_evidence(tmp_path: Path) -> None:
 def test_probes_never_touch_the_attempt_counts(tmp_path: Path) -> None:
     """The reproducibility ratio is over attack attempts, and must stay that way.
 
-    Filing a probe as an attempt would put 17 extra "runs" into the denominator of every
+    Filing a probe as an attempt would put 18 extra "runs" into the denominator of every
     spec's reproducibility, which is a scored, published number.
     """
 

@@ -18,6 +18,14 @@ never imports the adapter concretes' exception types (contract §8). The default
 predicate recognizes the adapters' structural marker (an ``is_env_error`` attribute
 or the class-name convention) without importing them.
 
+A third class is neither (OD-41, u08 A-69): a prompt the provider's own input filter refused
+before the model saw it (Azure OpenAI's HTTP 400 ``content_filter``, Gemini's prompt block),
+which an adapter raises with a ``blocked_by_provider_filter`` marker set to ``True``. The attempt is
+recorded as blocked, without a reply, and is not sent again (the same prompt is refused the same
+way); the send stays debited, its token reservation is released as for an environment error (no
+completion was produced), and the runner records it ``inconclusive: blocked_by_provider_filter``.
+It used to propagate as a product error and stop the whole campaign at the first one.
+
 The clock/sleep is injected (``sleep``) so tests run without real delays and the
 backoff schedule is deterministic (contract §7).
 """
@@ -34,14 +42,16 @@ from ildottore.core.pacing import RateLimiter
 from ildottore.shared.amounts import is_count
 from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
+from ildottore.shared.provider_filter import PROVIDER_FILTER_MARK
 
 __all__ = [
     "NOT_RETRYABLE_MARK",
     "AttemptResult",
-    "BudgetExhaustedAfterReply",
+    "ReplyOverBudget",
     "RetryPolicy",
     "default_is_env_error",
     "execute_attempt",
+    "is_provider_filter_block",
     "reserve_tokens",
 ]
 
@@ -76,22 +86,28 @@ class AttemptResult:
     successful send ``attempt.response`` is populated and ``env_error`` is ``None``;
     on an exhausted-retry env failure ``attempt.error`` holds the last error string
     and ``env_error`` is ``True`` - the runner maps that to
-    ``inconclusive`` (never a product ``fail``).
+    ``inconclusive`` (never a product ``fail``). ``filter_blocked`` is ``True`` when the
+    provider's input filter refused the prompt (OD-41): no response, the error carries
+    :data:`~ildottore.shared.provider_filter.PROVIDER_FILTER_MARK`, and ``env_error`` is ``False``.
     """
 
     attempt: Attempt
     env_error: bool = False
+    filter_blocked: bool = False
     retries: int = 0
     errors: list[str] = field(default_factory=list)
 
 
-class BudgetExhaustedAfterReply(BudgetExhausted):
+class ReplyOverBudget(BudgetExhausted):
     """A token ceiling crossed by the usage a reply reported, with that reply in hand.
 
     The provider billed those tokens, so the ledger records them and the campaign halts
     (``BudgetLedger.add_tokens``). The answered attempt rides on ``result`` so the caller can
     store it: it used to be dropped with the exception, and the resume sent it again and paid
     for it twice. Raised rather than returned, so a caller that does not look for it still halts.
+    Named so the redactor keeps the name: it masks ``BudgetExhaustedAfterReply`` as high
+    entropy, so an error line that wrote the class would read ``«REDACTED:high_entropy:...»``
+    (u01 A-63).
     """
 
     def __init__(self, cause: BudgetExhausted, result: AttemptResult) -> None:
@@ -123,6 +139,17 @@ def default_is_env_error(exc: BaseException) -> bool:
     return name.endswith(("enverror", "timeouterror", "ratelimiterror", "ratelimit"))
 
 
+def is_provider_filter_block(exc: BaseException) -> bool:
+    """True when ``exc`` says the provider's input filter refused the prompt (OD-41).
+
+    Structural, as :func:`default_is_env_error` is: the adapters' ``ProviderFilterBlock`` sets
+    ``blocked_by_provider_filter = True``. Only ``True`` counts, so a mock's attribute of
+    another type is not read as one.
+    """
+
+    return getattr(exc, "blocked_by_provider_filter", None) is True
+
+
 async def execute_attempt(
     adapter: TargetAdapter,
     request: ModelRequest,
@@ -144,7 +171,7 @@ async def execute_attempt(
     Returns an :class:`AttemptResult`. Raises :class:`BudgetExhausted` (from the
     ledger) straight through - the runner converts that into a ``budget_exhausted``
     halt; when the ceiling is crossed by the usage of a reply already received, the
-    exception is a :class:`BudgetExhaustedAfterReply` carrying the answered result, so
+    exception is a :class:`ReplyOverBudget` carrying the answered result, so
     the reply is stored rather than lost. A non-env exception propagates (a real
     product/harness defect must not be masked). Env errors are retried up to
     ``retry.max_retries`` then returned as an ``env_error`` result for the runner to record
@@ -185,6 +212,28 @@ async def execute_attempt(
         try:
             response = await _send_with_timeout(adapter, request, timeout_s, do_sleep)
         except BaseException as exc:
+            if is_provider_filter_block(exc):
+                # Before the env question: it is not one, and before OD-41 it propagated as a
+                # product error and stopped the campaign. Not retried: the same prompt is
+                # refused the same way. The request stays debited; no completion was billed.
+                if reserved:
+                    ledger.refund_tokens(reserved)
+                errors.append(f"{type(exc).__name__}: {exc}{PROVIDER_FILTER_MARK}")
+                return AttemptResult(
+                    attempt=_attempt(
+                        attempt_id,
+                        spec_id,
+                        mutation,
+                        request,
+                        sampling,
+                        response=None,
+                        error=errors[-1],
+                        latency_ms=None,
+                    ),
+                    filter_blocked=True,
+                    retries=send_index,
+                    errors=errors,
+                )
             if not is_env_error(exc):
                 raise
             # No completion was billed for a send that failed: release its reservation (the
@@ -238,7 +287,7 @@ async def execute_attempt(
             try:
                 _reconcile_tokens(ledger, response, reserved)
             except BudgetExhausted as exc:
-                raise BudgetExhaustedAfterReply(exc, answered) from exc
+                raise ReplyOverBudget(exc, answered) from exc
             return answered
 
     # Unreachable: the loop either returns or raises. Kept for type-completeness.

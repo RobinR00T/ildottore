@@ -102,11 +102,25 @@ async def test_system_placement_top_level(anthropic_allowlist: EndpointAllowlist
     assert body["system"] == "You are terse."
     assert body["messages"] == [{"role": "user", "content": "Hi."}]
     assert body["temperature"] == 0.2
-    assert body["top_p"] == 0.8
+    # Claude 4 models refuse top_p beside a temperature (u12 A-66): the temperature is kept.
+    assert "top_p" not in body
     assert body["max_tokens"] == 64
     assert route.calls.last.request.headers["anthropic-version"] == "2023-06-01"
     assert route.calls.last.request.headers["x-api-key"].startswith("sk-ant-")
     assert "seed" not in body  # no seed field on the Messages API
+
+
+@respx.mock
+async def test_top_p_alone_is_sent(anthropic_allowlist: EndpointAllowlist) -> None:
+    """Without a temperature a top_p is the one sampling field, and it goes out."""
+
+    route = respx.post(_URL).mock(return_value=_mock("messages_basic"))
+    await _adapter(anthropic_allowlist).send(
+        ModelRequest(prompt="Hi.", sampling=Sampling(top_p=0.8, seed=3))
+    )
+    body = json.loads(route.calls.last.request.content)
+    assert body["top_p"] == 0.8
+    assert "temperature" not in body and "seed" not in body
 
 
 @respx.mock

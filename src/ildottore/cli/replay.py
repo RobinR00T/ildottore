@@ -11,7 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ildottore.core.runner import SAMPLING_NOT_SENT
 from ildottore.redactor import visible_controls
+from ildottore.shared.models import Attempt
+from ildottore.shared.provider_filter import blocked_by_provider_filter
 from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
 
 __all__ = ["render_replay", "replay", "replay_checked"]
@@ -78,6 +81,8 @@ def render_replay(result: ReplayResult) -> str:
     lines = [f"run: {result.run_id}"]
     for attempt in result.attempts:
         status = attempt.verdict.status.value if attempt.verdict is not None else "?"
+        if blocked_by_provider_filter(attempt):  # OD-41: not the model's answer, nor its refusal
+            status = f"{status} (blocked_by_provider_filter)"
         # Read back from the evidence tree, written out as every other stored text is.
         fields = visible_controls(f"{attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}")
         lines.append(f"  {fields}  {status}")
@@ -104,4 +109,27 @@ def render_replay(result: ReplayResult) -> str:
         f"pooled rate: {result.reproducibility():.2f} (every attempt of the run; a report's "
         "reproducibility is per spec, best variant)"
     )
+    blocked = result.blocked_by_provider_filter()
+    if blocked:
+        lines.append(
+            f"  {blocked} of {result.n} attempt(s) the provider's input filter refused before the "
+            "model saw them (blocked_by_provider_filter): counted in N and never a success; "
+            "neither a refusal by the model nor an exploit"
+        )
+    # A model that takes no sampling was sent no temperature (u12 A-68): what each attempt
+    # recorded says so, and the rate above is then over the model's own default sampling.
+    unpinned = sum(1 for a in result.attempts if _no_temperature(a))
+    if unpinned:
+        lines.append(
+            f"  {unpinned} of {len(result.attempts)} attempt artifact(s) went out with no "
+            "temperature (the target takes none: request.metadata.sampling_not_sent), so they "
+            "are not temperature-0 deterministic and the rate is over the model's own sampling"
+        )
     return "\n".join(lines)
+
+
+def _no_temperature(attempt: Attempt) -> bool:
+    """True when ``attempt`` asked for a temperature that did not go out (A-68)."""
+
+    unsent = (attempt.request.metadata or {}).get(SAMPLING_NOT_SENT)
+    return isinstance(unsent, list) and "temperature" in unsent

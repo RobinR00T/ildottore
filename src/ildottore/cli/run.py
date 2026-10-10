@@ -35,7 +35,7 @@ import unicodedata
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -57,6 +57,7 @@ from ildottore.core.runner import (
     CampaignResult,
     answered_attempt_ids,
     resume_progress,
+    spec_sampling,
     sweeps_identities,
     unjudged_attempt_ids,
 )
@@ -82,10 +83,12 @@ from ildottore.shared.models import (
     Finding,
     ModelFingerprint,
     PlanBudgets,
+    Sampling,
     Target,
     TestRun,
     TestRunSummary,
 )
+from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
 
 __all__ = [
     "CATEGORY_ALIASES",
@@ -370,6 +373,13 @@ class TargetPlan:
     not_seeded: list[tuple[str, str]] = field(default_factory=list)  # (spec id, reason)
     # The scope identities a live run sends each sweeping spec as (fewer than two: no sweep).
     identities: int = 0
+    # What of the target file's `sampling_defaults` fills what a spec or a -sV probe
+    # leaves unset (OD-39): the fields its adapter sends, on a live route; None otherwise.
+    sampling_defaults: Sampling | None = None
+    # The `sampling:` lines of the dry run: what the block fills and what does not go out.
+    sampling_notes: list[str] = field(default_factory=list)
+    # Why a live target is sent no temperature or top_p (u12 A-68); None when it is, or offline.
+    no_sampling: str | None = None
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -402,6 +412,7 @@ def estimate_plan(
     target: Target | None = None,
     fixtures_hold_scene: bool = False,
     identities: int = 0,
+    sampling_defaults: Sampling | None = None,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -418,9 +429,10 @@ def estimate_plan(
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
-    are a deliberately rough gloss (prompt length / 4 for input; the spec's
-    ``sampling.max_tokens`` or 512 for output). No per-model pricing is known, so this
-    reports volume, not a dollar figure.
+    are a deliberately rough gloss (prompt length / 4 for input; for output the
+    ``max_tokens`` each send goes out with, the spec's own or else the target file's
+    ``sampling_defaults`` (``sampling_defaults``, OD-39), or 512). No per-model pricing is
+    known, so this reports volume, not a dollar figure.
     """
 
     total_requests = 0
@@ -462,11 +474,8 @@ def estimate_plan(
         if identities >= 2 and target is not None and sweeps_identities(spec, target):
             requests += identities  # one plain send per identity: no scene, no rounds
         in_tokens = max(1, len(prompt) // 4)
-        out_tokens = (
-            spec.sampling.max_tokens
-            if spec.sampling is not None and spec.sampling.max_tokens
-            else DEFAULT_COMPLETION_TOKENS
-        )
+        # The cap the send goes out with, the one the ledger reserves (`reserve_tokens`).
+        out_tokens = spec_sampling(spec, sampling_defaults).max_tokens or DEFAULT_COMPLETION_TOKENS
         total_requests += requests
         total_in += requests * in_tokens
         total_out += requests * out_tokens
@@ -592,6 +601,7 @@ def resolve_target_plans(
     adaptive: bool = False,
     budget_overrides: PlanBudgets | None = None,
     judge: bool = False,
+    apply_sampling_defaults: bool = True,
 ) -> list[TargetPlan]:
     """Resolve, per target, exactly what the run would do - without sending anything.
 
@@ -599,6 +609,8 @@ def resolve_target_plans(
     the planner's capability filter (a spec whose ``requires`` the target does not declare
     is skipped) and the policy gate (scope reachability, the engagement pack, layer-B and
     ``requires_policy`` capabilities). What survives both is what would be sent.
+    ``apply_sampling_defaults`` false prices it without the target file's
+    ``sampling_defaults``, as a resume of a run started before they were applied sends it.
     """
 
     pack = wiring.build_permissive_pack(specs)
@@ -633,6 +645,12 @@ def resolve_target_plans(
         # The offline mock replays the specs' fixtures, written for the scene, so it holds every
         # scene; a live deployment holds only those its operator declared seeded (OD-18 B).
         fixtures_hold_scene = loaded.uses_mock
+        # The live route sends the block's fields its adapter carries (OD-39); the mock, none.
+        sampling_defaults = (
+            wiring.sampling_fallback(target)
+            if apply_sampling_defaults and not loaded.uses_mock
+            else None
+        )
         # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
         # declared, a per-run canary with no run_token, two scene tools under one deployment
         # name, or a trace spec through an adapter that reads no tool calls.
@@ -664,6 +682,14 @@ def resolve_target_plans(
             target=target,
             fixtures_hold_scene=fixtures_hold_scene,
             identities=identities,
+            sampling_defaults=sampling_defaults,
+        )
+        notes = sampling_notes(
+            target,
+            runnable,
+            live=not loaded.uses_mock,
+            applied=apply_sampling_defaults,
+            fallback=sampling_defaults,
         )
         plans.append(
             TargetPlan(
@@ -679,9 +705,170 @@ def resolve_target_plans(
                 mutators_by_spec=mutators_by_spec,
                 not_seeded=not_seeded,
                 identities=identities,
+                sampling_defaults=sampling_defaults,
+                sampling_notes=notes,
+                no_sampling=None if loaded.uses_mock else no_sampling_note(target),
             )
         )
     return plans
+
+
+#: Why a field of a target file's ``sampling_defaults`` does not go out (OD-39, u12 A-66).
+_ANTHROPIC_TOP_P = "anthropic takes no top_p beside a temperature, and every request carries one"
+_SAMPLING_PROVIDERS = ("openai", "anthropic")
+
+
+def _unsent_reason(target: Target, name: str, *, takes: bool) -> str | None:
+    """Why ``name`` of ``target``'s block does not go out to it, or ``None`` when it may."""
+
+    provider = (target.provider or "").strip().lower()
+    if provider not in _SAMPLING_PROVIDERS:
+        return f"provider {provider or 'rest'} carries no sampling field"
+    if name in ("temperature", "top_p") and not takes:
+        return "the target takes no temperature or top_p"
+    if name == "seed" and provider == "anthropic":
+        return "the Messages API has none"
+    if name == "seed" and not target.capabilities.seed:
+        return "capabilities.seed is not true"
+    if name == "top_p" and provider == "anthropic":
+        return _ANTHROPIC_TOP_P
+    return None
+
+
+def no_sampling_note(target: Target) -> str | None:
+    """The line that says ``target`` is sent no temperature or top_p, and what that costs (A-68)."""
+
+    if (target.provider or "").strip().lower() not in _SAMPLING_PROVIDERS:
+        return None
+    takes, reason = wiring.takes_sampling(target)
+    if takes:
+        return None
+    return (
+        f"{target.id} is sent no temperature or top_p ({reason}): it samples at its own default, "
+        "so its replies are not temperature-0 deterministic"
+    )
+
+
+def sampling_notes(
+    target: Target,
+    specs: list[AttackSpec],
+    *,
+    live: bool,
+    applied: bool,
+    fallback: Sampling | None,
+) -> list[str]:
+    """The dry run's ``sampling:`` lines for one target: what its block fills, what never goes out.
+
+    Counted over ``specs`` through the adapter's own rule (:func:`wiring.sent_sampling_for`), so
+    a field the spec sets itself, or one the adapter drops, is not counted as filled. On an
+    Anthropic target the ``top_p`` the specs set themselves is said too: it is not sent beside
+    their temperature (Claude 4 models refuse the pair). A target that takes no sampling at all
+    (u12 A-68) is said first.
+    """
+
+    notes: list[str] = []
+    block = target.sampling_defaults
+    rule = wiring.sent_sampling_for(target) if live else None
+    takes = wiring.takes_sampling(target)[0]
+    total = len(specs)
+    unsampled = no_sampling_note(target) if live else None
+    if unsampled is not None:
+        notes.append(unsampled)
+    if block is not None and not live:
+        notes.append(f"{target.id}'s sampling_defaults is not sent (an offline mock sends nothing)")
+    elif block is not None and not applied:
+        notes.append(
+            f"{target.id}'s sampling_defaults is not sent (a resume of a run started before it "
+            "was applied)"
+        )
+    elif block is not None:
+        unsent: list[tuple[str, object, str]] = []
+        fills: list[str] = []
+        for name, value in block.model_dump(exclude_none=True).items():
+            reason = _unsent_reason(target, name, takes=takes)
+            if reason is not None:
+                unsent.append((name, value, reason))
+                continue
+            filled = 0
+            for spec in specs:
+                own = getattr(spec.sampling, name) if spec.sampling is not None else None
+                sent = spec_sampling(spec, fallback)
+                sent = rule(sent) if rule is not None else sent
+                if own is None and getattr(sent, name) == value:
+                    filled += 1
+            fills.append(f"{name} {value} on {filled} of {total}")
+        if fills:
+            notes.append(
+                f"{target.id}'s sampling_defaults fills {', '.join(fills)} specs (a spec's own "
+                "value wins)"
+            )
+        reasons = {reason for _, _, reason in unsent}
+        if unsent and not fills and len(reasons) == 1:
+            notes.append(f"{target.id}'s sampling_defaults is not sent ({reasons.pop()})")
+        elif unsent:
+            items = ", no ".join(f"{name} {value} ({reason})" for name, value, reason in unsent)
+            notes.append(f"{target.id}'s sampling_defaults sends no {items}")
+    if rule is not None and takes and (target.provider or "").strip().lower() == "anthropic":
+        own_top_p = sum(1 for s in specs if s.sampling is not None and s.sampling.top_p is not None)
+        if own_top_p:
+            notes.append(
+                f"{target.id} gets no top_p from the {own_top_p} of {total} specs that set one: "
+                "anthropic takes no top_p beside a temperature"
+            )
+    return notes
+
+
+def judge_sampling_notes(judge: Target, *, applied: bool) -> list[str]:
+    """The dry run's ``judge sampling:`` lines: what the judge file's block fills (OD-39).
+
+    The judge sets its temperature (0, then 0.5) and ``top_p`` 1.0, so its own file's block
+    fills only ``max_tokens`` and ``seed``; an Anthropic judge sends no ``top_p`` beside its
+    temperature, and a judge that takes no sampling (u12 A-68) neither.
+    """
+
+    notes: list[str] = []
+    takes = wiring.takes_sampling(judge)[0]
+    unsampled = no_sampling_note(judge)
+    if unsampled is not None:
+        notes.append(unsampled + "; its two passes are then two samples at that default")
+    if judge.sampling_defaults is not None:
+        written = judge.sampling_defaults.model_dump(exclude_none=True)
+        added = {
+            name: value
+            for name, value in written.items()
+            if name not in ("temperature", "top_p")
+            and _unsent_reason(judge, name, takes=takes) is None
+        }
+        if not applied:
+            notes.append(
+                f"{judge.id}'s sampling_defaults is not sent (a resume of a run started before "
+                "it was applied)"
+            )
+        elif (judge.provider or "").strip().lower() not in _SAMPLING_PROVIDERS:
+            reason = _unsent_reason(judge, "max_tokens", takes=takes)
+            notes.append(f"{judge.id}'s sampling_defaults is not sent ({reason})")
+        elif added:
+            filled = ", ".join(f"{name} {value}" for name, value in added.items())
+            notes.append(
+                f"{judge.id}'s sampling_defaults fills {filled} on every judge request (the "
+                "judge's own temperature and top_p win)"
+            )
+        else:
+            notes.append(
+                f"{judge.id}'s sampling_defaults fills nothing: the judge sets its own temperature "
+                "and top_p"
+            )
+        seed = written.get("seed")
+        reason = _unsent_reason(judge, "seed", takes=takes)
+        provider_sends = (judge.provider or "").strip().lower() in _SAMPLING_PROVIDERS
+        if applied and provider_sends and seed is not None and reason is not None:
+            notes.append(f"{judge.id}'s sampling_defaults sends no seed {seed} ({reason})")
+    if (judge.provider or "").strip().lower() == "anthropic" and takes:
+        notes.append(
+            f"{judge.id} gets no top_p (the judge's 1.0): anthropic takes no top_p beside a "
+            "temperature"
+        )
+    return notes
 
 
 def fingerprint_probe_count() -> int:
@@ -919,6 +1106,7 @@ def _print_dry_run_plan(
     sending: bool = False,
     detail: int = 0,
     filtered: bool = False,
+    judge_notes: list[str] | None = None,
 ) -> None:
     """Print the resolved plan (one line under ``--quiet``).
 
@@ -936,6 +1124,7 @@ def _print_dry_run_plan(
 
     requests = sum(p.estimate.requests for p in plans)
     specs = sum(len(p.selected) for p in plans)
+    judge_notes = judge_notes or []
     headline = "resolved, sending now." if sending else "plan resolved, sent nothing."
     label = "plan" if sending else "dry-run"
     if quiet:
@@ -994,6 +1183,10 @@ def _print_dry_run_plan(
             if detail >= 2:
                 for spec_id, reason in plan.not_seeded:
                     print(f"    - {spec_id}: {visible_controls(reason)}")
+        # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
+        # temperature reaches none of the shipped battery), and what never goes out (OD-39).
+        for note in plan.sampling_notes:
+            print(f"  sampling: {visible_controls(note)}")
         if detail >= 2:
             # What the operator plants: each seeded spec's own canary (run_token-<spec id>). The
             # canary is the pack author's text, written out as every such line is (u12 §6).
@@ -1008,6 +1201,8 @@ def _print_dry_run_plan(
             f"  judge:   +{judge_requests} request(s) to the --judge model, paced and debited "
             "from the same ceilings"
         )
+    for note in judge_notes:
+        print(f"  judge sampling: {visible_controls(note)}")
     if fingerprint_probes:
         print(
             f"  fingerprint: +{fingerprint_probes} probe(s) per target before the battery "
@@ -1052,6 +1247,8 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
         print(f"    provider:  {plan.target.provider or 'mock/offline'}")
         print(f"    model:     {plan.target.model or 'unknown'}")
         print(f"    declares:  {', '.join(caps) if caps else 'no optional capabilities'}")
+        if plan.no_sampling is not None:
+            print(f"    sampling:  {visible_controls(plan.no_sampling)}")
         print(
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "
@@ -1509,6 +1706,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     prior_spend: Spend | None = None
     resume_from: TestRun | None = None
     provisional: list[TargetPlan] | None = None
+    # The judge as it is sent to: the file, or a resume's continuation of how it started (A-68).
+    judge_runtime = judge_target
+    # Whether the target files' `sampling_defaults` go out (OD-39, u12 A-66): always for a fresh
+    # run; a resume continues as its run started (read in the resume block below).
+    apply_sampling_defaults = True
 
     def provisional_plans() -> list[TargetPlan]:
         # No fingerprint: it needs the probe pass, which SENDS (see the resume block below).
@@ -1526,6 +1728,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 max_wall_s=opts.budget_wall_s,
             ),
             judge=judge_target is not None,
+            apply_sampling_defaults=apply_sampling_defaults,
         )
 
     #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
@@ -1551,6 +1754,36 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             adopt=False,
         )
         adaptive_campaign = resume_mod.stored_adaptive(run_db, opts.resume) is True
+        # A run started before the block was applied (2026-10-09) recorded nothing and sent none
+        # of it, so its resume sends none either: two halves on two samplings would be scored as
+        # one campaign. stderr and never suppressed, as the --runs notice below (u12 A-66).
+        apply_sampling_defaults = resume_mod.stored_sampling_defaults(run_db, opts.resume) is True
+        unsent = _unsent_sampling_defaults(routes, judge_target)
+        if not apply_sampling_defaults and unsent:
+            print(
+                f"resume: {opts.resume} started before sampling_defaults was applied, so it "
+                f"continues as it started, without {' and '.join(unsent)} sampling_defaults; "
+                "a fresh run sends them",
+                file=sys.stderr,
+            )
+        # Sent a temperature when it started, or not (u12 A-68). With attempts kept, the resume
+        # continues as it started, so one campaign is not half pinned and half unpinned; with
+        # none kept nothing would mix, and it is sent as this version decides. Either way said.
+        kept, _ = resume_progress(resume_from)
+        stored_target, stored_judge = resume_mod.stored_takes_sampling(run_db, opts.resume)
+        real = routes[0][2][1]
+        if real is not None:
+            started = stored_target if stored_target is not None else True
+            continued = _continued_takes(opts.resume, real.id, started, real, kept=kept)
+            if continued is not None:
+                routes = [(routes[0][0], routes[0][1], (routes[0][2][0], continued))]
+                loaded_targets = [replace(loaded_targets[0], target=continued)]
+        if judge_target is not None:
+            started = stored_judge if stored_judge is not None else True
+            label = f"the --judge model {judge_target.id}"
+            continued = _continued_takes(opts.resume, label, started, judge_target, kept=kept)
+            if continued is not None:
+                judge_runtime = continued
         inherited = resume_mod.stored_runs(run_db, opts.resume)
         if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
             # stderr and never suppressed: this changes the denominator of the reproducibility
@@ -1619,10 +1852,19 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             done, again = resume_progress(resume_from)
             unjudged = len(unjudged_attempt_ids(resume_from))
             errored = again - unjudged
+            # OD-41: a prompt the provider's input filter refused would be refused again.
+            blocked = len(
+                blocked_attempt_ids(a for finding in resume_from.findings for a in finding.attempts)
+            )
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
                 f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
                 "would repeat); they will not be re-sent"
+                + (
+                    f"; {blocked} of them the provider's input filter refused, kept as blocked"
+                    if blocked
+                    else ""
+                )
                 + (
                     f"; {errored} that ended in an environment error will be sent again"
                     if errored
@@ -1637,8 +1879,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
 
     # -sV / -A: fingerprint before attacking, then let the plan use it.
     #
-    # NOT under --dry-run/--estimate/-sn: fingerprinting SENDS (ten probes per target), and
-    # those three commands promise the opposite. The guard used to exclude -sn only, so
+    # NOT under --dry-run/--estimate/-sn: fingerprinting SENDS (18 probes per target since u09
+    # A-67), and those three commands promise the opposite. The guard used to exclude -sn only, so
     # `--dry-run -sV` printed "dry-run: plan resolved, sent nothing." after posting ten live
     # requests with a real bearer token, and `--quick --dry-run` is the first command the
     # README teaches. A no-send promise has to hold for every combination, not the ones that
@@ -1701,10 +1943,22 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             rate_rps=pacing_rate,
             fingerprints={},
             adaptive=adaptive,
+            apply_sampling_defaults=apply_sampling_defaults,
         )
         no_judge = _no_judge_warning(preview, routes, judge_target)
     if no_judge:
         printer.error(no_judge)
+    if not sends_nothing:
+        # Before anything is sent and never silenced by -q: it changes what the numbers mean,
+        # the reproducibility over --runs and a -sV fingerprint included (u12 A-68). A dry run
+        # says it on its own `sampling:` line.
+        unsampled = [no_sampling_note(real) for _, _, (_, real) in routes if real is not None]
+        if judge_runtime is not None:
+            judged = no_sampling_note(judge_runtime)
+            unsampled.append(f"the --judge model {judged}" if judged else None)
+        for note in unsampled:
+            if note is not None:
+                print(f"note: {note}", file=sys.stderr)
 
     if not sends_nothing and opts.resume is not None and opts.fingerprint_first:
         # A resumed run has its row: with -sV the scope is recorded before the probe pass, its
@@ -1762,12 +2016,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     run_id=run_ids[target.id],
                     mock_scenario=mock_scenario,
                     ledger=probe_ledger,
+                    apply_sampling_defaults=apply_sampling_defaults,
                 )
                 # Inside the try: a signal landing between the pass and this write lost the
                 # whole pass (2 of 16 real SIGINTs a few ms after the last probe, pre-commit
                 # audit). Interrupted here, the handler below writes it again.
                 _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
-            except wiring.ProbeCeilingReached as exc:
+            except wiring.ProbeCeilingHit as exc:
                 _charge_probe_pass(run_db, run_ids[target.id], prior_spend, probe_ledger)
                 raise ValueError(
                     f"the -sV probe pass on {target.id!r} reached the --budget-requests ceiling "
@@ -1813,6 +2068,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         # mock, and the caveat that this is an offline fixture lived in six documents and not
         # in the one line anybody actually reads. An audit read it off the terminal as a result.
         offline = {target.id: scenario for _, target, (scenario, _) in routes if scenario}
+        unsampled_ids = {
+            target.id
+            for _, target, (_, real) in routes
+            if real is not None and no_sampling_note(real) is not None
+        }
         for target_id, fingerprint in sorted(fingerprints.items()):
             family = fingerprint.family
             version = fingerprint.version
@@ -1837,6 +2097,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     if failed
                     else ""
                 )
+                + (
+                    " [probes sent with no temperature: not temperature-0 repeatable]"
+                    if target_id in unsampled_ids
+                    else ""
+                )
             )
     plans = resolve_target_plans(
         scope=scope,
@@ -1852,6 +2117,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             max_wall_s=opts.budget_wall_s,
         ),
         judge=judge_target is not None,
+        apply_sampling_defaults=apply_sampling_defaults,
     )
 
     # A target with nothing left to run is refused, for the same reason an empty --spec
@@ -1919,6 +2185,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             filtered=bool(
                 opts.categories or opts.spec_globs or opts.exclude_globs or opts.top_tests
             ),
+            judge_notes=(
+                judge_sampling_notes(judge_runtime, applied=apply_sampling_defaults)
+                if judge_runtime is not None
+                else None
+            ),
         )
     elif pacing_rate is None and opts.rate is not None and not opts.quiet:
         # An ignored flag has to be announced on the path the operator is actually using.
@@ -1953,6 +2224,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             runs=opts.runs,
             judge=judge_target,
             adaptive=adaptive,
+            sampling_defaults_applied=apply_sampling_defaults,
+            takes_sampling=(
+                wiring.takes_sampling(real_target)[0] if real_target is not None else None
+            ),
+            judge_takes_sampling=(
+                wiring.takes_sampling(judge_runtime)[0] if judge_runtime is not None else None
+            ),
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         result = _run_one_target(
@@ -1967,7 +2245,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             n=opts.runs,
             mock_scenario=mock_scenario,
             real_target=real_target,
-            judge_target=judge_target,
+            judge_target=judge_runtime,
             budgets=plan.budgets,
             fingerprint=fingerprints.get(target.id),
             adaptive=adaptive,
@@ -1981,6 +2259,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 Spend(requests=probes_sent.get(target.id, 0))
             ),
             started_at=starts.get(target.id),
+            apply_sampling_defaults=apply_sampling_defaults,
         )
         results.append(result)
         _persist_run_spend(run_db, result)
@@ -2066,12 +2345,19 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     Unreachable means: attempts were made, **every** attempt failed on transport (an error
     and no response), and therefore nothing was actually evaluated. One flaky endpoint or one
     bad spec is not this, because the run still measured something.
+
+    A prompt the provider's input filter refused is not a transport failure (OD-41): the
+    provider answered it. A run whose every attempt it refused is complete, its specs
+    inconclusive, and the summary counts the blocked attempts; it is not "unreachable".
     """
 
     attempts = [a for finding in result.findings for a in finding.attempts]
     if not attempts:
         return None  # nothing was attempted: a barren plan, refused before the run
-    if any(a.error is None and a.response is not None for a in attempts):
+    if any(
+        (a.error is None and a.response is not None) or blocked_by_provider_filter(a)
+        for a in attempts
+    ):
         return None
     first = next((a.error for a in attempts if a.error), "no response")
     return (
@@ -2155,6 +2441,60 @@ def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None,
     return None, loaded.target
 
 
+def _continued_takes(
+    run_id: str, who: str, started: bool, target: Target, *, kept: int
+) -> Target | None:
+    """How a resume sends ``target`` sampling when that differs from how its run started (A-68).
+
+    ``started`` is what the run recorded (a run started before the record sent sampling, as every
+    version did before A-68). The same as this version decides: ``None``, nothing to say. Else,
+    with attempts kept, the target as it started (:func:`wiring.with_takes_sampling`), so one
+    campaign is not half pinned and half unpinned; with none kept, ``None``: nothing would mix,
+    and it is sent as this version decides. Both are said on stderr, never silenced by ``-q``.
+    """
+
+    now = wiring.takes_sampling(target)[0]
+    if started == now:
+        return None
+    # "A temperature": what taking sampling pins. A top_p goes out only where a spec or a block
+    # sets one, and never beside a temperature to Anthropic (A-66), so it is not named here.
+    as_started = "a temperature" if started else "no temperature or top_p"
+    as_now = "a temperature" if now else "no temperature or top_p"
+    if kept:
+        print(
+            f"resume: {run_id} sent {who} {as_started} when it started and keeps {kept} "
+            f"attempt(s) sent so, so it continues as it started; this version would send "
+            f"{as_now} (a fresh run does)",
+            file=sys.stderr,
+        )
+        return wiring.with_takes_sampling(target, started)
+    print(
+        f"resume: {run_id} sent {who} {as_started} when it started and keeps no attempt, so it "
+        f"is sent {as_now}, as this version decides",
+        file=sys.stderr,
+    )
+    return None
+
+
+def _unsent_sampling_defaults(
+    routes: list[tuple[Path, Target, tuple[str | None, Target | None]]],
+    judge: Target | None,
+) -> list[str]:
+    """Whose ``sampling_defaults`` this run would send, as the resume notice names them.
+
+    The live target's and the ``--judge`` model's, each when its adapter carries a field of it
+    (:func:`wiring.sampling_fallback`, OD-39); an offline route sends none.
+    """
+
+    owners = []
+    live = [real for _, _, (_, real) in routes if real is not None]
+    if any(wiring.sampling_fallback(real) is not None for real in live):
+        owners.append("the target file's")
+    if judge is not None and wiring.sampling_fallback(judge) is not None:
+        owners.append("the --judge file's")
+    return owners
+
+
 def _run_one_target(
     *,
     target: Target,
@@ -2176,6 +2516,7 @@ def _run_one_target(
     run_id: str | None = None,
     prior_spend: Spend | None = None,
     started_at: str | None = None,
+    apply_sampling_defaults: bool = True,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -2209,6 +2550,7 @@ def _run_one_target(
         judge_target=judge_target,
         # Recorded however the campaign stops, Ctrl-C included, so a resume's ceiling is right.
         spend_sink=lambda spend: _record_spend_quietly(run_db, campaign_run_id, spend),
+        apply_sampling_defaults=apply_sampling_defaults,
     )
     try:
         return interrupts.run_until_stopped(
@@ -2388,6 +2730,9 @@ def _persist_run_integrity(
     runs: int,
     judge: Target | None = None,
     adaptive: bool = False,
+    sampling_defaults_applied: bool = True,
+    takes_sampling: bool | None = None,
+    judge_takes_sampling: bool | None = None,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -2399,6 +2744,10 @@ def _persist_run_integrity(
     Everything here is known before the first request, so there is no reason to make a resume
     depend on the campaign finishing. What genuinely cannot be known in advance is the spend,
     and that is written separately, when the campaign stops.
+
+    ``sampling_defaults_applied`` says whether its target files' ``sampling_defaults`` go out
+    (OD-39): a run started before they were applied recorded nothing, and its resumes write
+    false, so every later resume continues as it started (u12 A-66).
     """
 
     from ildottore.store.run_sqlite import SqliteRunStore
@@ -2413,6 +2762,11 @@ def _persist_run_integrity(
                 "judge_digest": target_digest(judge) if judge is not None else None,
                 "adaptive": adaptive,
                 "runs": runs,
+                "sampling_defaults_applied": sampling_defaults_applied,
+                # Whether the live target and the judge are sent a temperature (u12 A-68), so a
+                # resume continues as the run started; None for an offline route or no judge.
+                "takes_sampling": takes_sampling,
+                "judge_takes_sampling": judge_takes_sampling,
             },
         )
 

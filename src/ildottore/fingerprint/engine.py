@@ -25,8 +25,12 @@ from ildottore.fingerprint.combine import SPOOF_FLAG, CombinedFingerprint, combi
 from ildottore.fingerprint.layers import default_layers
 from ildottore.fingerprint.layers.behavioral import SELF_REPORT_DETAIL
 from ildottore.fingerprint.layers.capability import capability_guess
-from ildottore.fingerprint.layers.carrier import CARRIER_PROBE_DETAIL, effective_mutators
-from ildottore.fingerprint.layers.guardrail import GUARDRAIL_PROFILE_DETAIL
+from ildottore.fingerprint.layers.carrier import (
+    CARRIER_PROBE_DETAIL,
+    CARRIER_PROBE_PREFIX,
+    effective_mutators,
+)
+from ildottore.fingerprint.layers.guardrail import GUARDRAIL_PROFILE_DETAIL, PROFILE_ONLY_PROBES
 from ildottore.fingerprint.signatures import SignaturePack, load_pack
 from ildottore.shared.models import (
     Capabilities,
@@ -65,6 +69,25 @@ class FingerprintEngine:
     predicate the attack phase classifies an attempt's error with
     (``core.execute.default_is_env_error``), which u09 may not import. ``None`` isolates
     nothing and every error goes through, as before.
+
+    ``is_request_refused`` decides which errors of a **profile-only** probe (the guardrail
+    layer's benign request, §7 A-67) are a failed probe too: the endpoint refused that one
+    request (the composition root's predicate: a 4xx), as Azure OpenAI's prompt filter does
+    with HTTP 400 ``content_filter``. Every other probe went through before it with the same
+    credential and route, so the refusal is about that prompt, and the profile reads it as
+    unknown. On any other probe the same error stops the pass, as before. ``None`` isolates
+    nothing more.
+
+    ``is_prompt_filtered`` decides which errors of a **carrier** probe are a failed probe: the
+    provider's own input filter refused it (the composition root's predicate: the adapters'
+    ``blocked_by_provider_filter`` marker, OD-41). A carrier sends an instruction through an
+    encoding (base64, rot13, leetspeak, homoglyphs), which Microsoft's Prompt Shields classes as a
+    user prompt attack, "Encoding attacks" (Microsoft Learn, "Prompt Shields in Azure AI Content
+    Safety", read 2026-10-10), so Azure's filter can refuse it after every other probe was
+    answered; the carrier layer leaves an unanswered carrier unmeasured (pre-merge audit of
+    ``3d739f3``, L6). Any other
+    error of a carrier, a 4xx the filter did not send included, stops the pass, as before.
+    ``None`` isolates nothing more.
     """
 
     def __init__(
@@ -73,10 +96,14 @@ class FingerprintEngine:
         layers: list[FingerprintLayer] | None = None,
         pack: SignaturePack | None = None,
         is_env_error: Callable[[BaseException], bool] | None = None,
+        is_request_refused: Callable[[BaseException], bool] | None = None,
+        is_prompt_filtered: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self._layers = layers if layers is not None else default_layers()
         self._pack = pack if pack is not None else load_pack()
         self._is_env_error = is_env_error
+        self._is_request_refused = is_request_refused
+        self._is_prompt_filtered = is_prompt_filtered
 
     @property
     def layers(self) -> list[FingerprintLayer]:
@@ -101,10 +128,18 @@ class FingerprintEngine:
         target_id = adapter.id
         ctx = ProbeContext(target_id=target_id, signature_pack=self._pack)
 
-        isolated = _ProbeIsolation(adapter, self._is_env_error)
+        isolated = _ProbeIsolation(
+            adapter,
+            self._is_env_error,
+            is_request_refused=self._is_request_refused,
+            profile_only=PROFILE_ONLY_PROBES,
+            is_prompt_filtered=self._is_prompt_filtered,
+        )
         # The carrier layer's probes are left out of the check: a target can answer carriers
         # differently (that is what comprehension measures) and every attributing probe alike.
-        recorder = _RecordingAdapter(isolated)
+        # So is the guardrail layer's benign request, whose reply no layer attributes from
+        # (§7 A-67): a filter blanking it would have made a constant target look varied.
+        recorder = _RecordingAdapter(isolated, skip=PROFILE_ONLY_PROBES)
         evidence: list[FingerprintEvidence] = []
         for layer in self._layers:
             target_for_layer = isolated if layer.layer == _CARRIER_LAYER else recorder
@@ -113,9 +148,10 @@ class FingerprintEngine:
                 evidence.extend(await layer.probe(target_for_layer, ctx))
             except ProbeFailed:
                 # A layer that lets a failed probe through loses its own evidence, not the pass:
-                # the one-probe layers (metadata, tokenizer, guardrail) and any third-party one.
-                # So an unanswered guardrail nudge leaves the guardrails unknown, never "no
-                # filter". The failure is already on record.
+                # the one-probe layers (metadata, tokenizer) and any third-party one. (The
+                # guardrail layer has two probes since §7 A-67 and catches it itself: with both
+                # unanswered the guardrails stay unknown, never "no filter".) The failure is
+                # already on record.
                 continue
 
         fused = combine(evidence)
@@ -160,6 +196,11 @@ class FingerprintEngine:
                 spoofing_flags=fused.spoofing_flags,
             )
         guardrails = _guardrails_from_evidence(evidence)
+        if constant and guardrails:
+            # Every attributing reply alike: the nudge's reply is the target's one reply, not an
+            # answer to the request to refuse, and the benign one reads nothing either (§7 A-67).
+            # A filter stop is the provider's, not the text's, and stands.
+            guardrails = {**guardrails, "refusal_style": None, "benign_refused": None}
         caps = capability_guess(adapter.capabilities())
         # The one key the PLANNER reads (``core.planner._order_family_effective``). Without
         # it, adaptive mode reordered nothing and ``-sV`` bought a fingerprint that changed
@@ -304,10 +345,19 @@ class _ProbeIsolation:
     """
 
     def __init__(
-        self, inner: TargetAdapter, is_env_error: Callable[[BaseException], bool] | None
+        self,
+        inner: TargetAdapter,
+        is_env_error: Callable[[BaseException], bool] | None,
+        *,
+        is_request_refused: Callable[[BaseException], bool] | None = None,
+        profile_only: frozenset[str] = frozenset(),
+        is_prompt_filtered: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self._inner = inner
         self._is_env_error = is_env_error
+        self._is_request_refused = is_request_refused
+        self._profile_only = profile_only
+        self._is_prompt_filtered = is_prompt_filtered
         self.id = inner.id
         #: The layer probing now, set by the engine before each layer runs.
         self.layer = ""
@@ -317,9 +367,14 @@ class _ProbeIsolation:
         try:
             return await self._inner.send(request)
         except Exception as exc:
-            if not self._refused(exc):
+            probe = str((request.metadata or {}).get("probe", "probe"))
+            if not (
+                self._refused(exc)
+                or self._refused_request(probe, exc)
+                or self._filtered_carrier(probe, exc)
+            ):
                 raise
-            failed = ProbeFailed(str((request.metadata or {}).get("probe", "probe")), exc)
+            failed = ProbeFailed(probe, exc)
             self.failures.append(f"{self.layer}/{failed}")
             raise failed from exc
 
@@ -333,20 +388,43 @@ class _ProbeIsolation:
             and getattr(exc, "retryable", True) is False
         )
 
+    def _refused_request(self, probe: str, exc: Exception) -> bool:
+        """A profile-only probe the endpoint refused (§7 A-67): that probe fails, not the pass."""
+
+        return (
+            probe in self._profile_only
+            and self._is_request_refused is not None
+            and self._is_request_refused(exc)
+        )
+
+    def _filtered_carrier(self, probe: str, exc: Exception) -> bool:
+        """A carrier the provider's input filter refused (OD-41): that carrier is unmeasured."""
+
+        return (
+            probe.startswith(CARRIER_PROBE_PREFIX)
+            and self._is_prompt_filtered is not None
+            and self._is_prompt_filtered(exc)
+        )
+
 
 class _RecordingAdapter:
     """Passes every probe through and keeps the reply texts, to see whether they ever differ.
 
     It also counts the probes whose reply came back refused, the ones the check could not read.
+    The probes named in ``skip`` (read for a profile only, never attributed from) pass through
+    unrecorded and uncounted, as a carrier does.
     """
 
-    def __init__(self, inner: TargetAdapter) -> None:
+    def __init__(self, inner: TargetAdapter, *, skip: frozenset[str] = frozenset()) -> None:
         self._inner = inner
+        self._skip = skip
         self.id = inner.id
         self.texts: list[str] = []
         self.refused = 0
 
     async def send(self, request: ModelRequest) -> ModelResponse:
+        if str((request.metadata or {}).get("probe", "")) in self._skip:
+            return await self._inner.send(request)
         try:
             response = await self._inner.send(request)
         except ProbeFailed:

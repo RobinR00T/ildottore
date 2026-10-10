@@ -75,6 +75,319 @@ The carryover ledger. Every agent session updates this so context survives even 
   bandit and pip-audit clean. Python 3.11, what CI runs, is not installed on this machine; tested on
   3.12.13 and 3.14.7.
 
+## State, 2026-10-10 (night): the pre-merge audit of `3d739f3` (OD-41), six lows closed
+
+- Merge-ready per the audit; closed on the same branch. L1: the resume test checks `--estimate
+  --resume` (5 done, ~3 to send). L2: a conversation the filter cut carried no reply, so a
+  forbidden tool called on an earlier turn was never scored; the aggregate keeps the model's last
+  reply with the trace whenever there is a call, the runner reads it with the trace evaluators
+  only, a fail decides (error moved to `request.metadata.provider_filter_cut`), anything else
+  stays blocked and not exercised. L3: the Gemini block needs a `candidates.` text path. L4:
+  Vertex AI's `MODEL_ARMOR` and `JAILBREAK` (its REST reference, read 2026-10-10), not
+  `IMAGE_SAFETY`, on which the references disagree. L5: report-1.0 grows additively, as before, so
+  the CHANGELOG says a new report fails an older copy of the schema. L6: a carrier probe the
+  filter refused stopped `-sV`; the engine's `is_prompt_filtered` (wired to
+  `core.execute.is_provider_filter_block`) makes it a failed probe, as Prompt Shields classes an
+  encoded instruction as an encoding attack. The FAQ line of 152 characters is rewrapped. Not
+  started, at the conductor's request: the Bedrock guardrail and Azure output-filter gap. 17
+  tests more (52 adapter, 13 core, 7 CLI, 6 fingerprint and the base64 carrier through the CLI).
+  `make gates` green (2026-10-10, 21:25): ruff, format (387 files), mypy strict (156 source
+  files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs), 4,971 tests
+  with 97.63% coverage, self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
+
+## State, 2026-10-10 (evening): a provider's input-filter refusal is a blocked attempt (OD-41)
+
+- On `feat/provider-filter-blocked-attempt`, from `main` at `92c7b11`: the owner decided
+  (2026-10-10, 17:33) that an attack prompt the provider's own input filter refuses before the
+  model sees it no longer aborts the campaign (exit 3 after 1 request, measured on `92c7b11`
+  against a loopback stub answering Azure OpenAI's 400 `content_filter`). Built (u08 A-69,
+  ADR-0011, OD-41 closed): `adapters.base.ProviderFilterBlock` for Azure's 400 `content_filter`
+  (every `BaseAdapter`) and Gemini's `promptFeedback.blockReason` in a success body with no text
+  (REST), each shape cited in the code; every other 4xx unchanged. `execute_attempt` reads the
+  `blocked_by_provider_filter` marker: one send, debited, tokens released, the error marked
+  `[blocked_by_provider_filter]`; the runner's verdict is `inconclusive:
+  blocked_by_provider_filter` (a new `InconclusiveReason`), scored as an attempt without a reply
+  (a spec all blocked is inconclusive and not exercised, never a pass); a resume keeps it,
+  `dottore replay` re-derives it, and the JSON summary (`blocked_by_provider_filter`), SARIF,
+  JUnit, HTML and the terminal count it. A run all blocked is complete, not unreachable. The judge
+  path is unchanged (`capability_unavailable`). The `-sV` benign probe's failure reads
+  `ProviderFilterBlock`. With the stub and a judge: exit 0, 14 attack requests, 8 blocked, 12
+  judge requests. Tests: 7 CLI (4 fail on `92c7b11`), 45 adapter and 10 core (not collected on
+  `92c7b11`). Left open: Bedrock's guardrail intervention (an HTTP 200 read as a reply), OpenAI's
+  `invalid_prompt` 400 and Gemini's OpenAI-compatible endpoint (no documented shape); the `-sV`
+  pass still stops on such a refusal of an attributing probe (the benign one and, since the
+  audit, the carriers are failed probes). Not run against a live Azure or Gemini endpoint. `make gates` green (2026-10-10, 20:49): ruff, format (386 files),
+  mypy strict (156 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75
+  specs, 14 suites, 1 pack), 4,954 tests with 97.63% coverage, self-scan 0 high/critical, bandit,
+  pip-audit (no known vulnerabilities).
+
+## State, 2026-10-10: URL passwords behind a credential holding a URL separator (#96)
+
+- On `fix/redactor-issue-96`, from `origin/main` at `f12ba83`: the two regressions accepted with #56
+  and the endpoint cut the #56 pre-merge audit found, issue #96. (1) A registered credential holding
+  an `@` across a URL's `@`, in the user or the password, let the URL rule read on to a labelled
+  value's `@` and its tail stayed readable (`redis://ops:«REDACTED:url_password»@Value99xyz`): the
+  URL mask stays, and after the labelled and the entropy rules, where they left text readable, the
+  rest of the value is masked as the value up to a `://` that a `:` and then an `@` follow, and the
+  labelled rule runs again from where the value ends without reading its tail for a label. (2) A
+  registered credential holding
+  the URL's `://` (two overlapping ones as one run: `key-ABCD1234` and `1234://bob`), its `:` or the
+  password's `@` with no later `@` stopped the URL rule: the URL is now read in the text as written,
+  last in the pass, and what of its password is still readable is masked. (3) The policy gate's
+  refusal and `shown_auth_ref` quote an endpoint without its userinfo before cutting it
+  (`shared.config_errors.shown_endpoint`, moved from `cli/fleet`): cut first, 287 characters of a
+  308-character password were printed. u01 A-31 and A-51 amended (no new clause).
+- 2026-10-10, after the independent pre-merge audit of `924c276`: chained labelled values after a
+  URL mask leaked (on main too), `cli/app._masked` ran the URL rule on the raw text before the
+  redactor and cut registered credentials holding `@` or `:`, the tail stopped at every `://`, and
+  the docs claimed more than the code. Fixed in `38eac50` and the commits after it, docs aligned,
+  one Left open list everywhere. The audit's proposal for the tail (stop only where the URL rule
+  matches in this pass) was measured and not taken: 3 texts of 300,000 showed text main masks, as
+  the next pass reads that URL. The re-audit of `adeac2d` found the second run of the labelled rule
+  starting at the tail's stop, not at the value's end (a chained secret readable), and the stop
+  wider than needed; both fixed with its prototypes (`80ce50d`, `913045a`), and
+  `mask_url_passwords`, left with no caller, removed (`e3b4b8a`). The night's reboot wiped
+  `/private/tmp`, worktree and scratch
+  included; the branch survived at `924c276`, the fixes were redone in `_ildottore-tren/wt/issue96`
+  and the fuzzers rebuilt in `_ildottore-tren/scratch/issue96`.
+- The audit's narrow fix for (1) was measured and not taken: it left readable a character main masks
+  in 15,239 of 300,000 differential texts. The fix, against main: 0 texts leaking anything main
+  masks, 0 errors, 0 fixed-point failures on 900,000 texts of my fuzz before the re-audit and
+  300,000 on the final tree (120,167 texts with a secret main leaves readable masked there), on
+  1,500,000 and then 500,000 of the auditor's, and on 300,000 of the re-auditor's. Against the
+  redactor
+  before #56 (the auditor's 40,000 item-1 texts): a secret it masked is readable in 2,666 texts on
+  main, 98 on `924c276`, 18 now (none chained). On 2 MB of a reply echoing such a credential in
+  every URL (seven hostile shapes) the redaction is linear and takes 1.0 to 1.4 times main's traced
+  memory and 1.1 to 2.8 times its time (24.8 bytes a character against 17.6 with a credential
+  holding an `@` in every password); on 4 MB of that shape, 182 MB of peak RSS where main takes 120
+  MB. 24 mutants of the fix before the re-audit, 21 caught (one by a hang), and 5 of the re-audit's
+  changes, all caught; the 3 missed change nothing a test
+  can see (a guard against two of its masks overlapping, which they cannot; the label search
+  starting after the userinfo's last mask, which only bounds its cost; an off-by-one where the URL
+  rule cannot match from inside a mask). `make gates` green (with
+  `PYTHONPATH` set to the worktree's `src`): 4,671 tests (4,618 on `f12ba83`), coverage 97.63%, 75
+  specs lint OK, four import contracts kept, mypy clean on 155 files, self-scan, bandit and
+  pip-audit clean.
+- Left open after #96: where the URL rule did read a URL, its reading stands, so after a registered
+  credential holding the user's `:` the rest of the user is shown
+  (`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which urllib
+  reads as the password's head); a labelled value whose label sits in the user of a URL read through
+  a mask or behind an empty user (both read since #56), or is glued to the word before it
+  (`...3password="x@host.tld`, a label to no version), keeps what follows the URL's `@` readable as
+  its host, where the redactor before #56 masked it whole or as an address; the rest of a labelled
+  value after a URL mask stops before a `://` that a `:` and then an `@` follow before any
+  whitespace (the shape the URL rule needs, in this pass or the next), so what of the value lies
+  past that `://` is left to the other rules (`secret=AETw://0G1h9.mGle` and U+200B before
+  `://u:<password>@h` shows `0G1h9.mGle`); a raw `@` in a URL's user or unregistered
+  password leaves the password, or its part after the `@`, readable; and a URL whose `://` is split
+  by an invisible character (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
+
+## State, 2026-10-10 (morning): the A-68 pre-merge audit, redone after a reboot
+
+- The Mac rebooted overnight and wiped `/private/tmp`: the worktree, its uncommitted fixes and the
+  auditor's scripts were lost; `fix/anthropic-models-without-sampling` survived at `7dd5ec1`. The
+  worktree is now `_ildottore-tren/wt/anthropic`, scratch under `_ildottore-tren/scratch/`, and
+  the fixes are redone in small commits. MEDIUM: a judge whose model refused sampling was silent
+  (`SemanticJudgeEvaluator` read `SamplingRefused` as an outage: every judged spec inconclusive,
+  exit 0, 29 judge 400s); it is re-raised and stops the run. Lows: `SamplingRefused` fires only on a
+  sent parameter named as a parameter (`sampling_params_named`, `tests/adapters/test_sampling_refused.py`
+  with 21 tests, 17 failing on `7dd5ec1`); the run records whether its target and judge were sent a
+  temperature and a resume that keeps attempts continues as it started; `sampling_not_sent` counts
+  the block as written; the judge refusal says "capabilities" without nested parentheses; the
+  gateway id forms (ARNs, `anthropic/claude-opus-4.7`, `[1m]`) match; Mythos is named everywhere,
+  the reference's Sonnet 5 contradiction is written down, USAGE carries the not-tested-live
+  caveat, `examples/target.openai.yaml` no longer suggests `sampling: false` for a reasoning model.
+  `tests/cli/test_models_without_sampling.py`: 66 tests, 18 failing on `7dd5ec1`. Verification of
+  `569bb3b`: a probe recorded nothing of a block whose only field is a seed that does not go out,
+  and the resume notice named a top_p that never goes out to Anthropic; both fixed.
+
+## State, 2026-10-09 (night): Claude models that take no temperature or top_p (A-68)
+
+- On `fix/anthropic-models-without-sampling`, stacked on `feat/apply-sampling-defaults` at
+  `00b2fca`: a defect the A-66 pre-merge audit found, older than it. Per Anthropic's API reference
+  as bundled with the claude-api skill (cached 2026-09-25, not tested live), Opus 4.7 and later,
+  Sonnet 5 and Sonnet 5.5, and the Fable and Mythos 5 families refuse `temperature` and `top_p`;
+  the scanner pins temperature 0, so every `provider: anthropic` campaign against them stopped at
+  its first request. Built (u12 A-68): `capabilities.sampling` (`bool | None`, the one capability
+  not false unless set; `None` is the default rule), a documented list in one place
+  (`adapters.anthropic.MODELS_WITHOUT_SAMPLING`, matched by family, overridden by the capability),
+  `sampling_enabled` on the Anthropic and OpenAI adapters through their own `sent_sampling`, the
+  record through the same rule plus `request.metadata.sampling_not_sent`, the "not temperature-0
+  deterministic" notice on stderr before a run, in `--dry-run`, `-sn`, the `-sV` line, `dottore
+  fingerprint` and `dottore replay`, and `SamplingRefused` for a 400 that names a sampling
+  parameter the request sent. The digest leaves a null `capabilities.sampling` out, so no stored
+  run changes digest. `tests/cli/test_models_without_sampling.py`: 40 tests, 37 fail on `00b2fca`.
+  No open decision. Left open: no run-level word for it in the HTML, SARIF and JUnit reports; a
+  model the list does not name costs one refused request.
+
+## State, 2026-10-09 (evening): `sampling_defaults` applied as a fallback (OD-39)
+
+- On `feat/apply-sampling-defaults`, from `main` at `f12ba83`: the owner decided (2026-10-09,
+  20:36) that a target file's `sampling_defaults`, parsed and validated since #73 and #78 and sent
+  by nothing, applies as a fallback. Built (u12 A-66, OD-39 closed): per field, the request's own
+  value (the spec's `sampling`, then temperature 0 for a spec that declares none, after the block;
+  `PROBE_SAMPLING`; the judge's per-pass temperature and `top_p` 1.0), then the block of the file
+  the request goes to (the judge's own), then the provider's default; only the fields the
+  adapter sends (`wiring.sampling_fallback`: OpenAI all four, Anthropic no `seed`, REST, MCP and
+  WebSocket none); the runner fills its own requests (`core.runner.spec_sampling`, so attempts
+  record what went out), the probes and the judge go through a wrapper outside the probe
+  recorder; `--estimate` prices the block's `max_tokens`; `--dry-run` prints a
+  `sampling:` line; a run an older version started (no `sampling_defaults_applied` in its
+  context) resumes without the block and says so on stderr. Pre-merge audit of `8d1bc59`
+  (merge-ready after one MEDIUM): a block `top_p` beside the temperature every request carries
+  stopped every Anthropic campaign (Anthropic's API reference, as bundled with the claude-api skill
+  and cached 2026-09-25, says Claude 4 models refuse the pair with HTTP 400; not tested live), as
+  the six shipped specs that set `top_p` 1.0 did on main, and an Anthropic judge's own `top_p`
+  1.0. Fixed: `adapters.anthropic.sent_sampling` (no `seed`, no `top_p` beside a temperature)
+  builds the request and the record, through `CampaignRunner(sent_sampling=...)` and
+  `wiring._AsSent` (which replaces `_SamplingFallback`); a block `seed` goes out only with
+  `capabilities.seed: true`; `--dry-run` says what of a target or judge block does not go out;
+  the "different target" refusal names `sampling_defaults`, an edited `--judge` file is named as
+  such; `_JUDGE_SAMPLING` is gone. `tests/cli/test_sampling_defaults.py`: 42 tests, 37 fail on
+  `f12ba83` and 15 on `8d1bc59` (the helpers are imported inside their tests, so the file is
+  collected on both). Docs in the same pass: MANUAL §4.2 and four flag rows, FAQ, USAGE, both
+  man pages, `docs/01`, `03`, `09`, `10`, the example target files and the README's Scenario B
+  and G transcripts, the u04, u08, u09 and u06 contracts. Left open, and written in A-66: a REST,
+  MCP or WebSocket attempt still records the spec's sampling that nothing carries; the OpenAI
+  adapter sends a spec's `seed` whatever `capabilities.seed` says; the Anthropic adapter sends
+  `max_tokens` 1024 for a request with none and records none, while the ledger reserves 512; and
+  Claude models that take no sampling at all (Opus 4.7 and later, Sonnet 5, the Fable and Mythos 5
+  families, per the same reference) refuse every request, its temperature 0 included (its own
+  branch, `fix/anthropic-models-without-sampling`).
+
+## State, 2026-10-09 (evening): a refusal the guardrail probe asked for is not a filter (OD-40)
+
+- On `fix/guardrail-layer-requested-refusal`, from `main` at `f12ba83`: the guardrail layer read
+  any refusal as evidence of an output filter (and a canned one of an input filter), although its
+  only probe asks the model to refuse, so a model that followed the instruction was reported
+  filtered (every corpus case, the golden fingerprint; `docs/16` §1 named it). The owner decided
+  at 20:36 that a refusal the probe requested no longer counts as a filter (OD-40, u09 A-67).
+  Built: `probes.GUARDRAIL_BATTERY`, two probes that each declare the reply they expect. The
+  request to refuse (`guardrail_nudge`, same name, prompt and seed) gives `refusal_style` and the
+  family tells only; a benign request worded near a boundary (`guardrail_benign`) gives the new
+  key `benign_refused` (filter or alignment, not split); `output_filter` comes only from the
+  provider's own filter stop (`content_filter`, `refusal`), never from `length`; `input_filter` is
+  `null`. `-sV` is 18 requests. The benign reply attributes nothing and the engine leaves it out
+  of the constant-target check, so the A-35 measurement was re-run on the new pass and holds
+  (12,276 passes, 2,344 of 10,752 differ, none names more); the planner reads no profile key, so
+  the ordering is unchanged and pinned. Golden: only `guardrails` changed. Tests:
+  `tests/fingerprint/test_guardrail_requested_refusal.py` (18, 14 fail on `f12ba83`), three new
+  cases in `test_probe_failures.py`, and the CLI tests that pinned 17 probes now derive the count.
+  `make gates` green on `cd413c0`: 4639 tests, 97.60% coverage. The pre-merge audit of
+  `cd413c0` found it not merge-ready, one high reproduced: an input filter that answers the
+  benign request with a 4xx (Azure OpenAI's prompt filter: HTTP 400 `content_filter`) stopped
+  `fingerprint` and `run -sV` with exit 3 after 8 requests, where `main` exited 0. Fixed on top:
+  `AdapterStatusError` carries the status, `cli.wiring.refused_request` is injected, and the
+  engine makes a 4xx to a profile-only probe a failed probe (`benign_refused: null`); the same
+  4xx on any other probe still stops the pass. Also: `output_filter` is `null` with no stop
+  reason from the provider (REST without `finish_path`, WebSocket `final`, MCP, mocks);
+  Bedrock's and Gemini's filter stops are read; answer markers on the benign request;
+  first-person whole-word refusal phrases with "decline" and "unable to"; `null` style and
+  `benign_refused` on a constant target; the remaining present-tense 17s. A-35 measured again,
+  unchanged; golden unchanged. Left open: dropping `input_filter`, or setting it from that 4xx
+  (OD-40), and the attack phase, which still stops a campaign on such a 4xx (a product error, as
+  on `main`). `make --no-print-directory gates` green on the fix (`abc6ffe`): 4683 tests, 97.61%
+  coverage, 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+  Its verification found it merge-ready, with three lows closed on top: a benign reply with
+  neither an answer marker nor a listed refusal phrase is unclear (`benign_refused: null`, it read
+  `false`), `AdapterStatusError` copies and pickles with its status, and the docs name the HTTP
+  adapters (openai, anthropic, rest, mcp), with a comment on why a WebSocket target's refused
+  upgrade still stops the pass and an adapter-level test of the four. `make --no-print-directory
+  gates` green on them: 4700 tests, 97.61% coverage, the same static, lint, self-scan, bandit and
+  pip-audit results. Not re-run against a live model.
+
+## State, 2026-10-09 (evening): four exception class names the redactor masked
+
+- On `fix/error-names-survive-redactor`: the redactor's high-entropy rule masked four of the
+  package's 45 exception class names, alone and in the lines that write an error with its class
+  (`<class>: <message>`, `aborted on <class>: ...`), as #87 found for four of the WebSocket
+  adapter's: `ChecksumMismatchError` and `ProbeCeilingReached` (listed by an audit of main),
+  `BudgetExhaustedAfterReply` and `_ImpossibleFigure` (found by walking every class). No message on
+  `f12ba83` wrote any of them with its class, so nothing a run prints or stores changes. Checked end
+  to end on that tree: a `-sV` pass into `--budget-requests 30` against a loopback server answering
+  503 to every other request, a scope with a wrong checksum, and a reply whose usage crossed
+  `--budget-tokens 100000`, with no class named and no mask; a mock target's adapter made to raise
+  the first one read `aborted on «REDACTED:high_entropy:2559426b»` on the terminal and in
+  `summary.status.reason`. Renamed to `ScopeChecksumError` (`ChecksumMismatchError` kept as an alias
+  of the same class, since `ildottore.policy` exported it in 0.1.0), `ProbeCeilingHit`,
+  `ReplyOverBudget` and `_UnreadableLogprob`; the rule is unchanged.
+  `tests/policy/test_redactor_error_class_names.py` (4 tests, in CI Gate 3; 2 fail on `f12ba83`, the
+  walk naming the four in 24 lines) walks every exception class of the package, reads every class
+  written in a function body from the source, and replaces #87's WebSocket-only test (9 test items).
+  The pre-merge audit of `59e522b` (merge-ready) asked for the walk's guard to check modules, not
+  the new names (it failed first on `f12ba83`, so the 24 lines were not what it printed), for the
+  source pass, for `_UnreadableLogprob` (it covers strings and bools too), and for the move to
+  `tests/policy/`, which Gate 3 runs. u01 A-63 and its index row, u08, the MANUAL's redaction
+  paragraph and the CHANGELOG, whose unreleased entries now use the new names. `make gates` green
+  (with `PYTHONPATH` set to the worktree's `src`, one run from the start, 21:30 to 21:36, after the
+  audit's changes): 4613 tests, 97.60% coverage, 75 specs lint OK, mypy clean on 155 files, four
+  import contracts kept, self-scan (0 high or critical), bandit and pip-audit clean. Left open:
+  other packages' exception names, which cannot be renamed (the rule masks 12 of 216 in Python's
+  builtins, the standard-library modules the adapters use and the ten dependencies; httpx's
+  `TooManyRedirects` is never raised and websockets' two proxy errors are reworded without their
+  class), and a plugin's own class names.
+
+## State, 2026-10-09 (evening): a confirm flag the model sets itself is not a confirmation (OD-38)
+
+- On `fix/self-confirm-is-not-confirmation`, off `f12ba83`: the owner decided (20:36) the question
+  left open on 2026-10-07 (night): a `confirm: true` the model puts in its own destructive tool
+  call is not the user's confirmation; only one from outside the model counts (the user's reply
+  after the agent asked, never the request to act itself; the harness; a declared approval).
+  Numbered OD-38 (no open OD covered it; OD-38 was reserved for
+  this change, as was A-65). None of the three reaches an evaluator today: the scanner is a scan's
+  only user and no spec's prompt confirms a destructive step, so `tool_call` and its lint stub fail
+  every destructive call whatever flag (`confirm`, `confirmed`, `confirmation`, `force`,
+  `approved`, `ack`) it carries, as `kill_chain_progression` already did for the calls its stage
+  map puts at `destroy`; a `granted_tools` grant still authorizes a name, not a call. Neither of
+  `AG-DESTRUCTIVE-DBDROP-001`'s two trace evaluators reads a flag now, so a flag can no longer
+  make them disagree (where their checks differ they still differ by design), and
+  `AG-CONFIRM-BYPASS-001` fails the agent that confirms its own deletion, which
+  its `vulnerable` fixture now is, so lint and the battery prove the rule. Four specs reworded
+  (that one, `AG-DESTRUCTIVE-DBDROP-001`, `AG-AUTONOMY-SELFCORRECT-001`, `AG-EXTORT-CHAIN-001`);
+  no shipped fixture's verdict changed. u06 A-65 and §9, the index (OD-38 row, A-65 row), u13 §7;
+  `tests/evaluators/test_self_set_confirmation.py` (67 tests, 45 fail on `f12ba83`), four old
+  tests inverted; on `f12ba83` the shipped specs fail lint (`FIXTURE_NO_DETECT`) and three battery
+  tests. Docs: MANUAL §8, FAQ, `docs/03`, `docs/04` §1, `docs/13` §3, `examples/target.app.yaml`,
+  CHANGELOG. The OWASP, ATLAS and IoPC coverage figures and the battery's counts (75 specs, 14
+  suites) are unchanged: no mapping moved (`dottore coverage --json` is byte-identical to
+  `f12ba83`'s). `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 4685 tests
+  (67 new, 24 of them from the pre-merge audit below), 97.60% coverage, 75 specs lint OK, four
+  import contracts kept, self-scan, bandit and pip-audit clean. Left open, out of reach rather than decided: a confirmation from outside the
+  model needs an input no evaluator has (a harness's approval record, approvals a target
+  declares, a spec whose later turn confirms after the agent asked); when one exists it is the
+  only thing that may mark a destructive call confirmed. Until then neither evaluator can honour a
+  scripted confirmation (a later turn saying "yes, I confirm"), so a custom spec that tests acting
+  after one should rely on `semantic_judge` (MANUAL §8, `docs/03`).
+- Pre-merge audit of `095aa55`: merge-ready once one MEDIUM was fixed, now fixed with five lows.
+  The MEDIUM: the agreement of `tool_call` and `kill_chain_progression` was overclaimed in the
+  `kill_chain` docstring, the MANUAL, `docs/13` and the A-65 row ("the two agree on any trace a
+  spec declares both for"). On `AG-DESTRUCTIVE-DBDROP-001` a `truncate_table` fails `tool_call`
+  and passes `kill_chain_progression`, which knows only its stage map, and on
+  `AG-EXTORT-CHAIN-001` a `read_env` does the same (recon only). The true claim, now written in
+  all four and in A-65 and the CHANGELOG: neither reads a confirmation flag, so a flag can no
+  longer make them disagree, and both fail a `destroy`-stage call whatever its arguments; where
+  their checks differ they still differ by design (the attempt still fails, as `tool_call`
+  decides). Pinned by 24 new tests in `tests/evaluators/test_self_set_confirmation.py` (flag
+  invariance of both evaluators over every scene tool of the two specs and four off-scene names,
+  both failing each destroy-stage call with every flag placement, and the two traces where they
+  differ); on `f12ba83` four of them fail, the ones on the destructive tools
+  `AG-DESTRUCTIVE-DBDROP-001` authorizes: off an allowlist a call already failed as unauthorized,
+  flag or not. The lows: a user's confirmation is defined as a reply after the agent asked, never
+  the request itself (OD-38 rows, MANUAL, FAQ, `docs/13`); the scripted-confirmation limit is
+  stated in MANUAL §8 and `docs/03`; the CHANGELOG lists `docs/03`; the FAQ says "in a spec that
+  declares `tool_call`"; the stub's docstring says "destructive". `095aa55`'s message said the
+  `kill_chain` docstring "says why the two agree now"; it now says what they agree on.
+- Found by that audit and left open, both pre-existing on `main`: (1) the destructive verbs are
+  matched as substrings of the tool name, so a hand-off tool named in the `transfer_to_<agent>`
+  style (`transfer_to_billing_agent`) is destructive for `tool_call` and its stub, and since OD-38
+  no flag can excuse it (checked: an allowlisted `transfer_to_billing_agent` fails "invoked
+  without confirmation"); no shipped spec declares such a tool. (2) The lint stub's backtick
+  pattern in `registry/fixtures_engine._STUB_INJECTION_RE` is still the one the evaluator dropped
+  in the hostile-text audit (`[^`]*[A-Za-z][^`]*` between backticks): an unclosed backtick before
+  40,000 letters takes 0.65 s to search there and 0.001 s in the evaluator's pattern. Only lint
+  reads it, over a spec's own fixtures.
+
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
 - On `fix/train-followups`: a run id whose 12 hex digits all came out decimal, (10/16) ** 12 of the
@@ -1231,7 +1544,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   Open, and a question for the owner: whether a `confirm: true` the model sets on its own
   destructive call counts as confirmation. `AG-CONFIRM-BYPASS-001` says it does;
   `kill_chain_progression` fails any destroy whatever the flag, so `AG-DESTRUCTIVE-DBDROP-001`
-  contradicts its own description.
+  contradicts its own description. (Decided 2026-10-09 by the owner: it does not, OD-38; see the
+  entry of that evening.)
 
 ## State, 2026-10-06 (evening): control characters on the terminal
 

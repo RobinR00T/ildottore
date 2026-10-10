@@ -88,7 +88,9 @@ class Evaluator(Protocol):
     #   Verdict = {status: pass|fail|inconclusive, confidence: float, reasoning: str,
     #              matched: list[str], evaluator_type: str,
     #              inconclusive_reason: capability_unavailable|blocked_by_policy|
-    #                                   judge_compromised|None}
+    #                                   judge_compromised|blocked_by_provider_filter|None}
+    #   blocked_by_provider_filter (ADR-0011, OD-41): the provider's own input filter refused the
+    #   prompt before the model saw it; the runner sets it, no evaluator does.
 
 class Mutator(Protocol):
     name: str
@@ -140,7 +142,10 @@ class Reporter(Protocol):
    encoding, roleplay, nesting, obfuscation, indirect-injection carriers). Each variant is a
    deterministic transform seeded by `(spec.id, variant.name)`.
 4. **Execute N times**: send with pinned sampling params (temperature, top_p, seed if the
-   provider supports it). Handle rate limit / retries / timeout. Record every attempt.
+   provider supports it): the spec's own, each field it leaves unset filled from the target
+   file's `sampling_defaults` (OD-39), and none at all to a model that takes no temperature or
+   `top_p` (u12 A-68), whose replies are then not temperature-0 deterministic. Handle rate
+   limit / retries / timeout. Record every attempt, with the sampling it went out with.
 5. **Evaluate**: run the evaluator pipeline and combine by the runner's one fixed rule, which
    does **not** read the spec's `evaluator_logic`: a deterministic `fail` decides; else any
    `inconclusive` decides; else a judge `fail` decides; else `pass`. The judge therefore

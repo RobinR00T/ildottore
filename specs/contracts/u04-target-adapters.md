@@ -103,7 +103,17 @@ reads as U+FFFD, since httpx decodes the stream as text.
 2. `openai.py`: chat/completions over httpx; `seed`+`logprobs`+`top_logprobs`; map to `TokenLogprob`;
    capabilities (tools/json/vision/streaming/seed/logprobs = true, subject to config).
 3. `anthropic.py`: messages API; role/system-block placement verbatim; logprob mapping (per provider
-   support); `stop_reason` vocab preserved; capabilities.
+   support); `stop_reason` vocab preserved; capabilities. (Since 2026-10-09, u12 A-66: its
+   `sent_sampling` is what of a request's sampling goes out, no `seed` and no `top_p` beside a
+   `temperature`, since Anthropic's API reference says Claude 4 models refuse the pair with HTTP
+   400 (the reference bundled with the claude-api skill, cached 2026-09-25, not tested live);
+   `_build_request` sends it, and the composition root records attempts and probes through it.
+   Since the same day, u12 A-68: `sampling_enabled` false (a target that takes no sampling, as
+   `MODELS_WITHOUT_SAMPLING` lists Claude Opus 4.7 and later, Sonnet 5, and the Fable and Mythos 5
+   families) drops the `temperature` and the `top_p` too; the OpenAI adapter has the same switch
+   and its own `sent_sampling`; and a 400 whose JSON error names, as a parameter (`error.param`, a
+   quoted token, the first word of the message), a sampling field the request sent is
+   `SamplingRefused`, a product error that names the capability to set; the judge re-raises it.)
 4. `rest.py`: generic REST via a declarative request/response JSONPath template (long-tail); usually
    `logprobs=None`, `seed=False`; capabilities driven by template config.
 
@@ -113,7 +123,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `finish_reason`/`stop_reason`, provider request/response ids, echoed sampling config.
 - `Capabilities = {tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal,
   audio: bool}` (as built, `shared/models.py`: nine flags, `audio` added with the audio carrier,
-  and no `max_context_tokens` field). All must validate vs `schemas/`.
+  and no `max_context_tokens` field), and since 2026-10-09 `sampling: bool | None` (u12 A-68:
+  `None` is the default rule, not false). All must validate vs `schemas/`.
 - Cassettes live under `tests/adapters/cassettes/{openai,anthropic,rest}/`. (As built they are
   hand-written `{status_code, json}` response bodies served by `respx`, not recordings of real
   traffic, so there is no key to scrub; the MCP adapter's tests stub JSON-RPC inline.) Secrets
@@ -252,6 +263,44 @@ reads as U+FFFD, since httpx decodes the stream as text.
   reasoning); a spec file whose YAML holds the escape is the operator's input, not a reply, and
   since PR #89 (u02) `dottore lint` refuses it in any field, naming the spec and the field, and
   `run` refuses it when it loads, naming the file (exit 3, nothing sent).
+- **A provider's input-filter refusal is a `ProviderFilterBlock`, and only in a documented shape
+  (added 2026-10-10, OD-41; the runner's half is u08 A-69).** (d) maps every non-retryable 4xx to
+  a product defect, and Azure OpenAI's prompt filter answers a prompt it blocks with one, so the
+  first attack it refused stopped the campaign. Read where the bytes are (ADR-0002), and cited in
+  the code:
+  - Azure OpenAI (`adapters.base.azure_prompt_filter`, in `BaseAdapter`, so the openai, anthropic
+    and rest adapters): HTTP 400 and `error.code` exactly `content_filter` (Microsoft Learn,
+    "Content filtering for Microsoft Foundry Models (classic)", Scenario 3, read 2026-10-10;
+    `innererror.code` `ResponsibleAIPolicyViolation` per the Azure OpenAI REST reference,
+    2024-10-21). The message names the status and the path, as an `AdapterStatusError`'s does,
+    then `the provider's input filter refused the prompt before the model saw it (error code
+    content_filter; filtered: <categories>)`, the categories `innererror.content_filter_result`
+    marks `filtered: true` (at most 8, each `[a-z][a-z_]{0,39}`). Neither the provider's message
+    nor its inner code is written: the redactor's entropy rule masks
+    `ResponsibleAIPolicyViolation`. Read before the sampling question (A-68): this 400 names the
+    prompt, not a parameter;
+  - Gemini (`RestAdapter._prompt_blocked`, through the `_prompt_blocked` hook every success body
+    goes through first): a template whose `text_path` starts at `candidates.`, where the Gemini
+    API and Vertex AI put the text (pre-merge audit of `3d739f3`, L3: any template was read, and
+    a `promptFeedback` key in a reply that is not Gemini's is not Gemini's block), no text at
+    that path, and `promptFeedback.blockReason` `SAFETY`, `OTHER`, `BLOCKLIST` or
+    `PROHIBITED_CONTENT` (the Gemini API reference, `PromptFeedback`: "If set, the prompt was
+    blocked and no candidates are returned") or `MODEL_ARMOR` or `JAILBREAK` (Vertex AI's REST
+    reference, `BlockedReason`, read 2026-10-10, L4); not `IMAGE_SAFETY` (Vertex: a prompt unsafe
+    for image generation; the Gemini API: candidates blocked; the two disagree on whether the
+    prompt was refused), either spelling of the unspecified value, or a value neither lists,
+    which stay the product error they were. The status is the reply's, 200.
+  `ProviderFilterBlock` is an `AdapterProductError` (not an `AdapterStatusError`) that carries
+  `status_code` and `code`, survives copy and pickle, and sets `blocked_by_provider_filter = True`,
+  the structural marker `core.execute` reads, and `retryable = False`. Every other 4xx is the
+  `AdapterStatusError` it was: another code at 400, the Azure body at 403 or 422, a body that is
+  not JSON or not an object. The MCP adapter (discovery only) and the WebSocket adapter do not
+  read it. Not recognised, for want of a documented shape: a Bedrock guardrail intervention (an
+  HTTP 200 with `stopReason` `guardrail_intervened`, a reply), OpenAI's `invalid_prompt` 400, and
+  Gemini behind its OpenAI-compatible endpoint. Checked by
+  `tests/adapters/test_provider_filter_block.py` (52 tests; it does not collect on `92c7b11`);
+  `tests/adapters/test_status_error.py` now sends a plain bad request, since the Azure body it
+  sent at 400 is a block.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
