@@ -64,6 +64,7 @@ dry-run: plan resolved, sent nothing.
     prompt_injection: 1
   skipped: 7 spec(s) on local-llama, capability not declared by the target
   blocked: 1 spec(s) on local-llama, refused by the policy pack
+  sampling: local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of 10 specs (a spec's own value wins)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
   budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
@@ -190,6 +191,7 @@ dry-run: plan resolved, sent nothing.
     prompt_injection: 1
   not seeded: 1 spec(s) on support-agent-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
     - PI-INDIRECT-RAG-001: setup_not_seeded: this spec needs documents, tools or memory in the deployment, and the target file does not declare them seeded (seeded_setup.specs)
+  sampling: support-agent-staging's sampling_defaults fills temperature 0.0 on 0 of 2 specs (a spec's own value wins)
   would send: 20 requests over 2 specs at runs=5
   pacing:  5.0 req/s ceiling (S8)
   budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)

@@ -4,6 +4,8 @@ provider: mcp                        # routes to the read-only MCP adapter (disc
 endpoint: "http://localhost:3000/mcp"   # the MCP Streamable-HTTP endpoint (POST target)
 capabilities:
   tools: true
+# sampling_defaults: accepted and never sent: MCP discovery carries no sampling (OD-39).
+#   sampling_defaults: { temperature: 0.0 }
 # The MCP adapter does initialize + tools/resources/prompts list and renders the advertised
 # metadata; it never calls a tool. Scan it with the `mcp` suite:
 #   dottore run --suite mcp -t examples/target.mcp.yaml --scope examples/scope.mcp.yaml

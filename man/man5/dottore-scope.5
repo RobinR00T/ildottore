@@ -112,9 +112,24 @@ false unless set; any other key, or a capabilities that is neither a mapping nor
 capabilities line with nothing under it is null, so keys below it that lost their indent are
 top-level keys, which are refused as any other unknown key is.
 .B sampling_defaults
-is parsed but applied to nothing today: every shipped spec, the judge and the -sV probes pin
-their own sampling, which the openai and anthropic adapters send (a REST template and a
-WebSocket target have no field for it).
+(temperature, top_p, max_tokens, seed) is a fallback, field by field (OD-39): a field the spec,
+the -sV probe or the judge sets goes out as set, a field it leaves unset is taken from this
+block, and one still unset is the provider's default. An attack takes the spec's sampling, then
+the block, then temperature 0 for a spec that declares no sampling. A probe keeps temperature 0
+and its 512-token cap, so the block adds only top_p and seed. The judge keeps temperature 0 (0.5
+on its second pass) and top_p 1.0, and takes max_tokens and seed from its own file's block, never
+the scanned target's. The block's seed goes out only when capabilities sets seed: true. Only
+the openai and anthropic adapters send sampling; a REST template, an MCP server and a WebSocket
+target carry no sampling field, by design, and the offline mock sends nothing. The anthropic
+adapter sends no seed, and no top_p beside a temperature: Anthropic's API reference (bundled
+with the claude-api skill, cached 2026-09-25, not tested against the live API) says every Claude
+4 model refuses the pair with HTTP 400, and every request the scanner makes sets a temperature,
+so no top_p reaches an anthropic target or judge, the block's, a spec's own or the judge's.
+Each attempt and probe records what went out, except that an attempt through a REST template,
+an MCP server or a WebSocket still records the spec's own sampling, which nothing carries.
+--dry-run prints what the block fills and what of it does not go out (for the --judge file
+too), and --estimate prices its max_tokens. A run an older version started sent none of the
+block, and its resume continues without it (stderr says so).
 .B auth_ref
 accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
 refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is

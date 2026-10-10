@@ -15,7 +15,9 @@ in its response to flip the verdict. Every mitigation in ``docs/04 §4`` is impl
 5. **Injection tripwire** - a control instruction the judge is told to ignore; if the parsed
    output shows it obeyed the tripwire (or flags an injection attempt), the run is discarded and
    marked ``judge_compromised`` → ``inconclusive`` (flagged for the operator).
-6. **temperature=0 + pinned params**, recorded in evidence.
+6. **temperature=0 on the first pass** (0.5 on the self-consistency passes) and ``top_p``
+   1.0, set on each request; the judge file's ``sampling_defaults`` fills the rest (OD-39).
+   The judge's requests are not stored as evidence; its verdict is, on the attempt.
 
 The judge model is reached **only** via :class:`ildottore.shared.protocols.TargetAdapter`
 (u04) - no provider SDK is imported here (contract §3/§8). The adapter is injected at
@@ -125,9 +127,6 @@ class SemanticJudgeEvaluator(BaseEvaluator):
     """Hardened LLM-as-judge (``docs/04 §4``). Judge model reached only via ``TargetAdapter``."""
 
     type = EvaluatorType.SEMANTIC_JUDGE.value
-
-    # temperature=0 + pinned params (docs/04 §4.6), recorded in evidence via the request.
-    _JUDGE_SAMPLING = Sampling(temperature=0.0, top_p=1.0, seed=0)
 
     def __init__(self, judge: TargetAdapter, *, passes: int = 2) -> None:
         """``judge`` is the injected judge-model adapter; ``passes`` is the self-consistency N."""

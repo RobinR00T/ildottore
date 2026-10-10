@@ -3,6 +3,41 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-09 (evening): `sampling_defaults` applied as a fallback (OD-39)
+
+- On `feat/apply-sampling-defaults`, from `main` at `f12ba83`: the owner decided (2026-10-09,
+  20:36) that a target file's `sampling_defaults`, parsed and validated since #73 and #78 and sent
+  by nothing, applies as a fallback. Built (u12 A-66, OD-39 closed): per field, the request's own
+  value (the spec's `sampling`, then temperature 0 for a spec that declares none, after the block;
+  `PROBE_SAMPLING`; the judge's per-pass temperature and `top_p` 1.0), then the block of the file
+  the request goes to (the judge's own), then the provider's default; only the fields the
+  adapter sends (`wiring.sampling_fallback`: OpenAI all four, Anthropic no `seed`, REST, MCP and
+  WebSocket none); the runner fills its own requests (`core.runner.spec_sampling`, so attempts
+  record what went out), the probes and the judge go through a wrapper outside the probe
+  recorder; `--estimate` prices the block's `max_tokens`; `--dry-run` prints a
+  `sampling:` line; a run an older version started (no `sampling_defaults_applied` in its
+  context) resumes without the block and says so on stderr. Pre-merge audit of `8d1bc59`
+  (merge-ready after one MEDIUM): a block `top_p` beside the temperature every request carries
+  stopped every Anthropic campaign (Anthropic's API reference, as bundled with the claude-api skill
+  and cached 2026-09-25, says Claude 4 models refuse the pair with HTTP 400; not tested live), as
+  the six shipped specs that set `top_p` 1.0 did on main, and an Anthropic judge's own `top_p`
+  1.0. Fixed: `adapters.anthropic.sent_sampling` (no `seed`, no `top_p` beside a temperature)
+  builds the request and the record, through `CampaignRunner(sent_sampling=...)` and
+  `wiring._AsSent` (which replaces `_SamplingFallback`); a block `seed` goes out only with
+  `capabilities.seed: true`; `--dry-run` says what of a target or judge block does not go out;
+  the "different target" refusal names `sampling_defaults`, an edited `--judge` file is named as
+  such; `_JUDGE_SAMPLING` is gone. `tests/cli/test_sampling_defaults.py`: 42 tests, 37 fail on
+  `f12ba83` and 15 on `8d1bc59` (the helpers are imported inside their tests, so the file is
+  collected on both). Docs in the same pass: MANUAL §4.2 and four flag rows, FAQ, USAGE, both
+  man pages, `docs/01`, `03`, `09`, `10`, the example target files and the README's Scenario B
+  and G transcripts, the u04, u08, u09 and u06 contracts. Left open, and written in A-66: a REST,
+  MCP or WebSocket attempt still records the spec's sampling that nothing carries; the OpenAI
+  adapter sends a spec's `seed` whatever `capabilities.seed` says; the Anthropic adapter sends
+  `max_tokens` 1024 for a request with none and records none, while the ledger reserves 512; and
+  Claude models that take no sampling at all (Opus 4.7 and later, Sonnet 5, the Fable models, per
+  the same reference) refuse every request, its temperature 0 included (its own branch,
+  `fix/anthropic-models-without-sampling`).
+
 ## State, 2026-10-09 (evening): a refusal the guardrail probe asked for is not a filter (OD-40)
 
 - On `fix/guardrail-layer-requested-refusal`, from `main` at `f12ba83`: the guardrail layer read

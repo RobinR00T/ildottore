@@ -57,6 +57,13 @@ concretes:
   `capability_unavailable`, not `blocked_by_policy`, on a target without the capability.)
 - KEEP: pin sampling (temperature/top_p/seed-if-supported) per attempt; record request/response
   ids + full sampling config; seed variants by `(spec.id, variant.name)` (`docs/01 §3-§5`).
+  (Since 2026-10-09, OD-39 and u12 A-66: `CampaignRunner(sampling_defaults=...)` takes what of
+  the target file's `sampling_defaults` the adapter sends, as the composition root passes it, and
+  `spec_sampling` fills each field the spec leaves unset from it, before temperature 0 for a spec
+  that declares no `sampling`; `CampaignRunner(sent_sampling=...)` is the adapter's own rule for
+  what of it goes out (Anthropic: no `seed`, no `top_p` beside a temperature), applied before the
+  attempt is recorded, so the record is what was sent. The single-turn send, the multi-turn
+  conversation and the identity sweep all take both.)
 - KEEP: **env vs product failure** (`AGENTS.md §2`): rate-limit/timeout/5xx ⇒ retry w/ backoff
   then skip-as-`inconclusive`; a real exploited response ⇒ `fail`. Never mask a defect as a flake.
 - KEEP: budgets are hard ceilings; adaptive/escalation attempts count against them; on breach

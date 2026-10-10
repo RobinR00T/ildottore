@@ -103,7 +103,11 @@ reads as U+FFFD, since httpx decodes the stream as text.
 2. `openai.py`: chat/completions over httpx; `seed`+`logprobs`+`top_logprobs`; map to `TokenLogprob`;
    capabilities (tools/json/vision/streaming/seed/logprobs = true, subject to config).
 3. `anthropic.py`: messages API; role/system-block placement verbatim; logprob mapping (per provider
-   support); `stop_reason` vocab preserved; capabilities.
+   support); `stop_reason` vocab preserved; capabilities. (Since 2026-10-09, u12 A-66: its
+   `sent_sampling` is what of a request's sampling goes out, no `seed` and no `top_p` beside a
+   `temperature`, since Anthropic's API reference says Claude 4 models refuse the pair with HTTP
+   400 (the reference bundled with the claude-api skill, cached 2026-09-25, not tested live);
+   `_build_request` sends it, and the composition root records attempts and probes through it.)
 4. `rest.py`: generic REST via a declarative request/response JSONPath template (long-tail); usually
    `logprobs=None`, `seed=False`; capabilities driven by template config.
 

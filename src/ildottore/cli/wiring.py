@@ -40,6 +40,7 @@ from ildottore.adapters import (
     RetryConfig,
     WebSocketAdapter,
 )
+from ildottore.adapters.anthropic import sent_sampling as anthropic_sent_sampling
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.adapters.websocket import (
@@ -57,7 +58,7 @@ from ildottore.core.execute import default_is_env_error
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
-from ildottore.core.runner import CampaignRunner, IdentityProbe, PolicyGate
+from ildottore.core.runner import CampaignRunner, IdentityProbe, PolicyGate, fill_sampling
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
 from ildottore.fingerprint import FingerprintEngine
 from ildottore.fingerprint.layers import CarrierLayer, default_layers
@@ -128,13 +129,16 @@ __all__ = [
     "real_adapter_factory",
     "request_url_for",
     "resolve_auth_ref",
+    "sampling_fallback",
     "scenario_adapter_factory",
     "scenario_judge_adapter",
     "scope_endpoint_for",
     "scope_endpoint_of",
+    "sent_sampling_for",
     "shown_auth_ref",
     "target_uses_mock",
     "utc_timestamp",
+    "with_sent_sampling",
 ]
 
 #: The offline mock-replay scenarios a ``target.yaml`` may select via ``mock_scenario``.
@@ -846,6 +850,116 @@ class _DeclaredCapabilities:
         return self.declared
 
 
+#: The providers whose adapter puts sampling on the wire: the OpenAI adapter sends
+#: ``temperature``, ``top_p``, ``max_tokens`` and ``seed``, the Anthropic one all but ``seed``
+#: (the Messages API has none) and no ``top_p`` beside a temperature
+#: (:func:`ildottore.adapters.anthropic.sent_sampling`). A REST template, an MCP server and a
+#: WebSocket target carry no sampling field, by design: their wire shape is the target file's
+#: or the protocol's.
+_SAMPLING_FIELDS_SENT: dict[str, frozenset[str]] = {
+    "openai": frozenset({"temperature", "top_p", "max_tokens", "seed"}),
+    "anthropic": frozenset({"temperature", "top_p", "max_tokens"}),
+}
+
+
+def _provider(target: Target) -> str:
+    return (target.provider or "").strip().lower()
+
+
+def sampling_fallback(target: Target) -> Sampling | None:
+    """What of ``target``'s ``sampling_defaults`` a live send to it can carry (OD-39, u12 A-66).
+
+    The block is a fallback: each field fills what the spec, the ``-sV`` probe or the judge
+    leaves unset. Only the fields the target's adapter sends are kept, so an attempt never
+    records a value that did not go out: none for a REST template, an MCP server or a WebSocket
+    target, no ``seed`` for Anthropic, and no ``seed`` for a file whose ``capabilities.seed`` is
+    not true (false unless set, as every capability): the file says the provider takes none.
+    ``None`` when nothing is left. The caller asks it of a live target only: the offline mock
+    sends nothing. What survives here can still be dropped by the adapter's own rule
+    (:func:`sent_sampling_for`): Anthropic sends no ``top_p`` beside a temperature.
+    """
+
+    if target.sampling_defaults is None:
+        return None
+    sent = set(_SAMPLING_FIELDS_SENT.get(_provider(target), frozenset()))
+    if not target.capabilities.seed:
+        sent.discard("seed")
+    kept = {
+        name: value
+        for name, value in target.sampling_defaults.model_dump(exclude_none=True).items()
+        if name in sent
+    }
+    return Sampling(**kept) if kept else None
+
+
+def sent_sampling_for(target: Target | None) -> Callable[[Sampling], Sampling] | None:
+    """The adapter's own rule for what of a request's sampling goes out, or ``None`` (as asked).
+
+    Anthropic's (:func:`ildottore.adapters.anthropic.sent_sampling`): no ``seed``, and no
+    ``top_p`` beside a temperature. The same function builds the request on the wire, so a
+    record made through this rule is what went out (u12 A-66). The OpenAI adapter sends what it
+    is asked; a REST template, an MCP server and a WebSocket target send no sampling, and their
+    attempts keep recording the spec's own, as before.
+    """
+
+    if target is not None and _provider(target) == "anthropic":
+        return anthropic_sent_sampling
+    return None
+
+
+@dataclass
+class _AsSent:
+    """An adapter whose every request carries its sampling as it goes out (OD-39, u12 A-66).
+
+    For the sends that are not the runner's own (the ``-sV`` probes, the ``--judge`` model): the
+    probe or the judge sets its sampling, ``fallback`` (the target file's ``sampling_defaults``)
+    fills what it leaves unset, and ``wire`` (the adapter's own rule) drops what the adapter
+    will not send. Wrapped outside a recorder, so the evidence holds the request as it goes out.
+    The runner does the same for its attempts (``CampaignRunner._sampling``).
+    """
+
+    inner: TargetAdapter
+    fallback: Sampling | None
+    wire: Callable[[Sampling], Sampling] | None
+
+    @property
+    def id(self) -> str:
+        return self.inner.id
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        sampling = request.sampling
+        if self.fallback is not None:
+            sampling = fill_sampling(sampling or Sampling(), self.fallback)
+        if sampling is not None and self.wire is not None:
+            sampling = self.wire(sampling)
+        if sampling is not request.sampling:
+            request = request.model_copy(update={"sampling": sampling})
+        return await self.inner.send(request)
+
+    def capabilities(self) -> Capabilities:
+        return self.inner.capabilities()
+
+
+def with_sent_sampling(
+    adapter: TargetAdapter, target: Target | None, *, apply_sampling_defaults: bool = True
+) -> TargetAdapter:
+    """``adapter`` sending each request's sampling as :class:`_AsSent` does, or as it is.
+
+    ``target`` is the live target (``None`` for the offline mock, which sends nothing). Its
+    ``sampling_defaults`` fills what a request leaves unset unless ``apply_sampling_defaults``
+    is false (a resume of a run started before the block was applied); the adapter's own rule
+    (:func:`sent_sampling_for`) applies either way. Wrap outside a recorder.
+    """
+
+    if target is None:
+        return adapter
+    fallback = sampling_fallback(target) if apply_sampling_defaults else None
+    wire = sent_sampling_for(target)
+    if fallback is None and wire is None:
+        return adapter
+    return cast("TargetAdapter", _AsSent(adapter, fallback, wire))
+
+
 @dataclass
 class _RecordingAdapter:
     """Wraps a probe adapter so every recognition exchange lands in the evidence store.
@@ -934,6 +1048,7 @@ def fingerprint_probe(
     run_id: str | None = None,
     mock_scenario: str | None = None,
     ledger: BudgetLedger | None = None,
+    apply_sampling_defaults: bool = True,
 ) -> ProbePass:
     """Fingerprint ``target`` through the adapter the campaign will use (``-sV``).
 
@@ -953,6 +1068,12 @@ def fingerprint_probe(
     The caller owns ``ledger`` so it can read what was sent however the pass ends: an
     environment or product error, Ctrl-C or SIGTERM end it with an exception that carries no
     count, and a resumed run lost those requests (u12 A-46). ``None`` is an unbounded ledger.
+
+    A live target's ``sampling_defaults`` fills what ``PROBE_SAMPLING`` leaves unset (``top_p``
+    and ``seed``; temperature 0 and the 512-token cap are the probe's own), and the adapter's
+    own rule drops what it does not send (on Anthropic, the ``top_p``), outside the recorder,
+    so ``probes/`` holds what went out (OD-39). ``apply_sampling_defaults`` false sends without
+    the block: a resume of a run started before the block was applied.
     """
 
     adapter = build_probe_adapter(
@@ -965,6 +1086,9 @@ def fingerprint_probe(
     if evidence is not None and run_id is not None:
         # Recording is innermost, so what is stored is every send that went on the wire.
         adapter = cast("TargetAdapter", _RecordingAdapter(adapter, evidence, run_id))
+    adapter = with_sent_sampling(
+        adapter, real_target, apply_sampling_defaults=apply_sampling_defaults
+    )
     meter = SendMeter()
     ledger = ledger if ledger is not None else BudgetLedger()
     metered = MeteredAdapter(inner=adapter, meter=meter)
@@ -977,7 +1101,11 @@ def fingerprint_probe(
 
 
 def build_judge_adapter(
-    scope: Scope, judge_target: Target, *, meter: SendMeter | None = None
+    scope: Scope,
+    judge_target: Target,
+    *,
+    meter: SendMeter | None = None,
+    apply_sampling_defaults: bool = True,
 ) -> TargetAdapter:
     """Build the over-the-wire adapter for the ``--judge`` model (contract §5, ADR-0002).
 
@@ -987,17 +1115,27 @@ def build_judge_adapter(
     verdicts instead of abstaining. A judge target absent from scope gets an empty
     allowlist (default-deny), so a misconfigured judge is refused rather than silently
     sending to an unauthorized endpoint.
+
+    The judge's own target file's ``sampling_defaults`` (never the scanned target's) fills what
+    the judge leaves unset: it sets ``temperature`` (0, then 0.5 for the consistency pass) and
+    ``top_p`` 1.0, so ``max_tokens`` and ``seed`` are what the block can add (OD-39). On an
+    Anthropic judge its ``top_p`` is not sent beside the temperature (the adapter's rule).
+    ``apply_sampling_defaults`` false sends without the block: a resume of a run started before
+    the block was applied.
     """
 
     scope_target = scope.target(judge_target.id)
     allowlist = EndpointAllowlist(scope_target.endpoints if scope_target is not None else [])
     api_key = _authorized_api_key(scope, judge_target)
+    defaults = apply_sampling_defaults
     if meter is None:
-        return build_real_adapter(judge_target, allowlist, api_key=api_key)
+        live = build_real_adapter(judge_target, allowlist, api_key=api_key)
+        return with_sent_sampling(live, judge_target, apply_sampling_defaults=defaults)
     # Metered: every judge send is paced and debited from the campaign's own ceilings, and
     # the wrapper owns the retries so none of them goes uncounted (F6 / F-7 / F10).
     inner = build_real_adapter(judge_target, allowlist, api_key=api_key, retry=NO_ADAPTER_RETRIES)
-    return MeteredAdapter(inner=inner, meter=meter)
+    sent = with_sent_sampling(inner, judge_target, apply_sampling_defaults=defaults)
+    return MeteredAdapter(inner=sent, meter=meter)
 
 
 def real_adapter_factory(
@@ -1607,6 +1745,7 @@ def build_runner(
     real_target: Target | None = None,
     judge_target: Target | None = None,
     spend_sink: Callable[[Spend], None] | None = None,
+    apply_sampling_defaults: bool = True,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -1624,6 +1763,11 @@ def build_runner(
     target, so the ``semantic_judge`` evaluator stays unregistered - it abstains
     (``inconclusive``) rather than fabricate a verdict (contract §4 KEEP), exactly the
     same honest default a ``bare`` mock run gets.
+
+    ``real_target``'s ``sampling_defaults`` (what of it the adapter sends,
+    :func:`sampling_fallback`) fills what each spec leaves unset, and the judge's own file's
+    fills what the judge leaves unset (OD-39). ``apply_sampling_defaults`` false sends neither:
+    a resume of a run started before the block was applied continues as it started.
     """
 
     resolved_pack = pack if pack is not None else build_permissive_pack(specs)
@@ -1639,7 +1783,11 @@ def build_runner(
     # semantic_judge unregistered (it abstains) and an offline run uses the scenario judge.
     meter = SendMeter() if judge_target is not None else None
     judge_adapter = (
-        build_judge_adapter(scope, judge_target, meter=meter) if judge_target is not None else None
+        build_judge_adapter(
+            scope, judge_target, meter=meter, apply_sampling_defaults=apply_sampling_defaults
+        )
+        if judge_target is not None
+        else None
     )
 
     if real_target is not None:
@@ -1693,6 +1841,14 @@ def build_runner(
         # ignoring a rate is correct rather than silent, because the CLI prints it.
         rate_rps=rate_rps,
         send_meter=meter,
+        sampling_defaults=(
+            sampling_fallback(real_target)
+            if real_target is not None and apply_sampling_defaults
+            else None
+        ),
+        # The adapter's own rule, applied whatever the block (Anthropic: no seed, no top_p
+        # beside a temperature), so each attempt records what went out (u12 A-66).
+        sent_sampling=sent_sampling_for(real_target),
     )
     return BuiltRunner(
         runner=runner,

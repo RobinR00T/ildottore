@@ -17,6 +17,8 @@ capabilities:
   tools: true
   rag: true
   memory: false
+# A fallback (OD-39): it fills only a spec that sets no temperature of its own, and every shipped
+# spec sets one. Add top_p, max_tokens or seed to fill those fields where a spec leaves them unset.
 sampling_defaults: { temperature: 0.0 }
 seeded_setup:
   # The specs whose scene the operator has put into this deployment: ids or fnmatch globs.

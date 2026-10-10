@@ -396,6 +396,82 @@ towards decimal digits (693 drawn again), each left as it is by the redactor, al
 message and in a path; and one letter in each of the twelve places. 3 of its 15 tests fail on
 `6401ee2`.
 
+**A-66 A target file's `sampling_defaults` fills, field by field, what a request's own sampling
+leaves unset, where the adapter sends sampling, and the evidence records what went out (added
+2026-10-09; OD-39 decided).** The block was parsed, validated (A-45, A-50) and kept in the
+target's digest, and no request carried it: an attack went out with the spec's own `sampling`
+(temperature 0 when a spec declares none), a `-sV` probe with `PROBE_SAMPLING` and the judge with
+its own, so `sampling_defaults: { top_p: 0.25 }` reached nothing and the manual said "applied to
+nothing today". The owner decided that it applies as a fallback. Built:
+* **precedence, per field** (`temperature`, `top_p`, `max_tokens`, `seed`): the request's own
+  value, then the block of the file the request goes to, then the provider's default. No CLI flag
+  sets sampling. An attack's own value is the spec's `sampling`, and a spec that declares none
+  goes out at temperature 0 once the block has filled what it holds
+  (`core.runner.spec_sampling`), so the block's temperature wins over the scanner's pin and loses
+  to the spec's; a probe's is `PROBE_SAMPLING` (temperature 0, 512 tokens), so the block adds
+  `top_p` and `seed`; the judge's is temperature 0, then 0.5, and `top_p` 1.0, so its own file's
+  block (never the scanned target's) adds `max_tokens` and `seed`;
+* **only what the adapter sends** (`wiring.sampling_fallback`): all four fields for `openai`,
+  all but `seed` for `anthropic`, none for a REST template, an MCP server or a WebSocket target
+  (by design: their wire shape has no sampling field) and none on the offline route; the block's
+  `seed` only to a file whose `capabilities.seed` is true (false unless set, as every
+  capability: the file says its provider takes a seed);
+* **the adapter's own rule** (`wiring.sent_sampling_for`, the same function the adapter builds
+  its request with): the Anthropic adapter sends no `seed` and no `top_p` beside a
+  `temperature`, the spec's own, the block's and the judge's alike
+  (`adapters.anthropic.sent_sampling`). Anthropic's API reference says every Claude 4 model
+  answers the pair with HTTP 400 (read in the reference bundled with the claude-api skill,
+  cached 2026-09-25; not tested against the live API), and every request the scanner makes sets
+  a temperature, so no `top_p` reaches an Anthropic target or judge. Found by the pre-merge audit
+  of `8d1bc59`: through a strict stub, `f12ba83` exit 0 and `8d1bc59` exit 3 with 0 of 10 specs
+  run on a block `top_p`; the six shipped specs that set `top_p` 1.0 themselves
+  (`EMB-INVERSION-PROBE-001`, `EMB-NEIGHBOR-LEAK-001`, `EMB-XTENANT-RETRIEVAL-001`,
+  `PI-DIRECT-001`, `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`) stopped such a campaign on
+  `f12ba83` too, and so did every request of an Anthropic judge (its `top_p` 1.0). 1.0 is
+  `top_p`'s default, so dropping theirs changes nothing they ask for; a block `top_p` below 1 is
+  not applied, and `--dry-run` says so;
+* **recorded as sent:** the runner fills its attempts itself and applies the adapter's rule
+  (`CampaignRunner._sampling`: the single-turn send, the multi-turn conversation, the identity
+  sweep), so an attempt's `sampling` and `request.sampling` are the request on the wire (on
+  Anthropic, without the `seed` and the `top_p` it did not send); the probes and the judge go
+  through `wiring._AsSent`, outside the probe recorder, so `probes/` holds the request as it went
+  out (the judge's requests are not stored, as before); `--estimate` and the token ceilings
+  derived from it price the block's `max_tokens`, the cap each send reserves; `--dry-run`
+  prints, per field, on how many specs the block fills it (counted through the adapter's rule),
+  what of it does not go out and why, the specs' own `top_p` an Anthropic target does not get,
+  and the same for the `--judge` file (`judge sampling:` lines), or that a block is not sent;
+* **a resume continues as its run started:** the run context records
+  `sampling_defaults_applied` (true for every run started now). A run an older version started
+  records nothing and sent none of the block, so its resume sends none either (the target's, the
+  judge's, the `-sV` probes'), prices without it, says so on stderr whenever a block would have
+  applied (`resume: <run id> started before sampling_defaults was applied, so it continues as it
+  started, without the target file's sampling_defaults; a fresh run sends them`, never silenced
+  by `-q`) and writes false, so every later resume agrees; a value that is not a boolean is a
+  corrupt record, refused (exit 3) before anything is sent. The adapter's rule applies to such a
+  resume too: a request with both is refused by every model the reference lists. The target
+  digest is unchanged, so a run without a block resumes as before, and an edited block is still
+  "a different target", whose refusal now names `sampling_defaults` among what may differ; an
+  edited `--judge` file is refused as "a different --judge file (its endpoint, model or
+  sampling_defaults differ)", where it said "stored a judge, now a judge".
+`tests/cli/test_sampling_defaults.py` (42 tests, through a loopback stub that keeps every body and
+whose Anthropic endpoints refuse `temperature` with `top_p` as the reference says Claude 4 models
+do: OpenAI, Anthropic, REST, a multi-turn conversation, the identity sweep, the judge of either
+provider, `dottore fingerprint` and `run -sV`, `--estimate`, `--dry-run`, five resumes and the
+corrupt record, the README's two dry runs, and the helpers, imported inside the tests that use
+them so the file is collected on a tree without them): 37 fail on `f12ba83` and 15 on `8d1bc59`.
+The 5 that pass on `f12ba83` are controls: no block, a spec with no `sampling` and no block, a
+REST target, the offline mock, and an Anthropic `-sV` pass (no block was sent there, so no
+`top_p`). Outside the clause, and said so rather than pinned:
+* the spec's own `sampling` is still recorded on an attempt through a REST template, an MCP
+  server or a WebSocket, which carries none of it, as on `f12ba83`;
+* the OpenAI adapter sends a spec's `seed` whatever `capabilities.seed` says (`seed_enabled` is
+  never wired from the file); only the block's follows the capability;
+* the Anthropic adapter sends `max_tokens` 1024 for a request with none and records none, while
+  the ledger reserves 512 for it, as before;
+* Claude models that take no `temperature` or `top_p` at all (the same reference lists Opus 4.7
+  and later, Sonnet 5 and the Fable models) refuse every request the scanner makes, the
+  temperature 0 it pins included: a defect older than this clause, not changed here.
+
 **An unverifiable resume is refused, not noticed.** The first version continued with a warning,
 and an audit showed why that is wrong: a run recorded before the digest column also predates the
 spend column, so the same resume that could not verify the battery was handed a brand-new budget
@@ -881,6 +957,21 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
   repository does. Reversal: the `_TargetFileTopLevel` check in `_read_target_yaml`, the six
   `isinstance(..., str) else None` reads in `load_target` and the `_lowered` reads in
   `target_uses_mock`.
+- **OD-39** (decided 2026-10-09 by the owner: apply it as a fallback; built, A-66): a target
+  file's `sampling_defaults`, parsed and validated since #73 and #78 and applied to nothing.
+  Decided: each field fills what the spec, the `-sV` probe or the judge leaves unset (the judge
+  from its own file), sent where the adapter sends sampling (OpenAI; Anthropic without `seed`
+  and with no `top_p` beside a temperature; a block `seed` only with `capabilities.seed: true`),
+  recorded as sent, and a run started before it resumes without it. Alternatives not taken: drop
+  the block (a file holding it refused or warned, as A-53 refuses an unknown key), or keep it
+  parsed and unsent, as documented on `f12ba83`. Reversal: the `sampling_defaults` argument of
+  `CampaignRunner`, `spec_sampling` and `fill_sampling` in `core/runner.py`, `sampling_fallback`
+  in `cli/wiring.py` (the `fallback` half of `_AsSent`), the `apply_sampling_defaults` threading
+  and the `sampling_defaults_applied` record in `cli/run.py` and `cli/resume.py`, and
+  `tests/cli/test_sampling_defaults.py`; a run started with it then resumes with it unsent. The
+  Anthropic rule (`sent_sampling`, the `sent_sampling` argument of `CampaignRunner`,
+  `sent_sampling_for` and `_AsSent`'s `wire`) is a fix of its own and stays: without it a spec
+  that sets `top_p` stops an Anthropic campaign, block or no block.
 - **OD-32** how far `--runs` may go (2026-10-07). **Decided 2026-10-08 by the owner: the runner
   counts what is stored instead of building the plan (A-59, u08), and `--runs` keeps its `2**53`
   bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The
