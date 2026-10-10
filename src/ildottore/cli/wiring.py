@@ -989,11 +989,14 @@ class _AsSent:
         if self.fallback is not None:
             asked = fill_sampling(asked or Sampling(), self.fallback)
         sampling = self.wire(asked) if asked is not None and self.wire is not None else asked
-        if sampling is not request.sampling:
+        # Counted before the request is compared: a block whose only field never goes out (a
+        # seed without `seed: true`) leaves the request as it was, and its probes recorded
+        # nothing of it (verification of 569bb3b).
+        written = self.written if self.written is not None else self.fallback
+        wanted = fill_sampling(request.sampling or Sampling(), written) if written else asked
+        dropped = unsent_fields(wanted, sampling)
+        if sampling is not request.sampling or dropped:
             update: dict[str, object] = {"sampling": sampling}
-            written = self.written if self.written is not None else self.fallback
-            wanted = fill_sampling(request.sampling or Sampling(), written) if written else asked
-            dropped = unsent_fields(wanted, sampling)
             if dropped:  # the record says what did not go out (A-68)
                 update["metadata"] = {**(request.metadata or {}), SAMPLING_NOT_SENT: dropped}
             request = request.model_copy(update=update)

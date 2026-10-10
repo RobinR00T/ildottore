@@ -2351,8 +2351,10 @@ def _continued_takes(
     now = wiring.takes_sampling(target)[0]
     if started == now:
         return None
-    as_started = "a temperature and a top_p" if started else "no temperature or top_p"
-    as_now = "a temperature and a top_p" if now else "no temperature or top_p"
+    # "A temperature": what taking sampling pins. A top_p goes out only where a spec or a block
+    # sets one, and never beside a temperature to Anthropic (A-66), so it is not named here.
+    as_started = "a temperature" if started else "no temperature or top_p"
+    as_now = "a temperature" if now else "no temperature or top_p"
     if kept:
         print(
             f"resume: {run_id} sent {who} {as_started} when it started and keeps {kept} "

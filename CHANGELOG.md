@@ -56,12 +56,16 @@ versioning: [SemVer](https://semver.org/).
   `SamplingRefused` fired on any whole word in the message; it fires only on a sent parameter
   named as a parameter now. A resume could mix pinned and unpinned attempts; it continues as its
   run started now. `sampling_not_sent` missed the block's fields the adapter never sends; it
-  counts the block as written now. The id forms above were not matched. The judge refusal reads
-  "a different --judge file, whose endpoint, model, capabilities or sampling_defaults differ".
-- `tests/cli/test_models_without_sampling.py` (64 tests, through a loopback stub whose Anthropic
+  counts the block as written now, a probe's too when the block's only field is a seed that does
+  not go out (the request came back unchanged and the record was skipped). The id forms above
+  were not matched. The judge refusal reads "a different --judge file, whose endpoint, model,
+  capabilities or sampling_defaults differ", and the resume notice names "a temperature", not
+  "a temperature and a top_p": a top_p goes out only where something sets one, and never beside a
+  temperature to Anthropic.
+- `tests/cli/test_models_without_sampling.py` (66 tests, through a loopback stub whose Anthropic
   endpoints refuse any `temperature` or `top_p`) and `tests/adapters/test_sampling_refused.py`
-  (21, through respx): 61 and 21 fail or do not collect on `00b2fca` (the 3 of the first that pass
-  check that a non-boolean `sampling` is refused, which the base does as an unknown key); 16 and
+  (21, through respx): 63 and 21 fail or do not collect on `00b2fca` (the 3 of the first that pass
+  check that a non-boolean `sampling` is refused, which the base does as an unknown key); 18 and
   17 fail on `7dd5ec1`. `tests/adapters/test_websocket_audit.py` and
   `tests/core/test_seeded_setup.py` leave the new null field out of their pre-field digests.
   Docs: MANUAL §4.2 ("Models that take no sampling", with a table), the `dottore fingerprint` and

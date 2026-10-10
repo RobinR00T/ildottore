@@ -18,7 +18,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   gateway id forms (ARNs, `anthropic/claude-opus-4.7`, `[1m]`) match; Mythos is named everywhere,
   the reference's Sonnet 5 contradiction is written down, USAGE carries the not-tested-live
   caveat, `examples/target.openai.yaml` no longer suggests `sampling: false` for a reasoning model.
-  `tests/cli/test_models_without_sampling.py`: 64 tests, 16 failing on `7dd5ec1`.
+  `tests/cli/test_models_without_sampling.py`: 66 tests, 18 failing on `7dd5ec1`. Verification of
+  `569bb3b`: a probe recorded nothing of a block whose only field is a seed that does not go out,
+  and the resume notice named a top_p that never goes out to Anthropic; both fixed.
 
 ## State, 2026-10-09 (night): Claude models that take no temperature or top_p (A-68)
 

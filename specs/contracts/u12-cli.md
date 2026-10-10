@@ -545,21 +545,21 @@ against those models stopped at its first request with `non-retryable HTTP 400 f
   its first request and kept nothing, so its resume sends no sampling; if a listed model did take
   the temperature, the run kept pinned attempts and its resume stays pinned. A run started by the
   first version of this clause (`7dd5ec1`, never released) recorded nothing and is read as pinned.
-`tests/cli/test_models_without_sampling.py` (64 tests, through a loopback stub whose Anthropic
+`tests/cli/test_models_without_sampling.py` (66 tests, through a loopback stub whose Anthropic
 endpoints refuse any `temperature` or `top_p`, as the reference says those models do; the error
 text is the stub's own) and `tests/adapters/test_sampling_refused.py` (21 tests, through respx):
-61 and all 21 fail or do not collect on `00b2fca`, this branch's base (the 3 of the first that
+63 and all 21 fail or do not collect on `00b2fca`, this branch's base (the 3 of the first that
 pass there check that a non-boolean `sampling` is refused, which the base does as an unknown
-key); on `7dd5ec1`, the first version, 16 and 17 fail (the 4 of the second that pass are 400s it
+key); on `7dd5ec1`, the first version, 18 and 17 fail (the 4 of the second that pass are 400s it
 already left alone, and a request that sent no sampling). With the capability declared `true` on a
 listed model, and with a model the list does not name, one request goes out and the refusal names
 the fix; a refusing judge stops the run after one judge request; through `provider: openai` with
 `sampling: false` the stub is sent no temperature; the probes, `dottore fingerprint`, an Anthropic
 judge on a listed model, `--dry-run`, `-sn` and `replay` say it; `sampling_not_sent` lists the
-block's fields on attempts and probes; the record of a run and two resumes that continue as they
-started; the list is matched in both directions (34 ids); the digest of a target that does not
-declare the capability is the one `00b2fca` computed. Outside the clause, and said so rather than
-pinned:
+block's fields on attempts and probes, a lone block `seed` included; the record of a run and
+two resumes that continue as they started; the list is matched in both directions (34 ids);
+the digest of a target that does not declare the capability is the one `00b2fca` computed.
+Outside the clause, and said so rather than pinned:
 * the HTML, SARIF and JUnit reports carry no run-level word for it; the JSON report carries it
   in each attempt's `request.metadata` and in the run's target (`capabilities.sampling` when
   declared);

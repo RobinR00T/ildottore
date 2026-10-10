@@ -256,6 +256,29 @@ def test_the_record_lists_what_the_block_asked_for_and_did_not_go_out(
         assert {"temperature", "top_p", "seed"} <= set(unsent), probe
 
 
+@pytest.mark.parametrize(
+    "block", ["{ seed: 9 }", "{ seed: 9, max_tokens: 70 }"], ids=["seed", "seed-max_tokens"]
+)
+def test_a_probe_records_a_block_seed_that_does_not_go_out(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]], block: str
+) -> None:
+    """Without `seed: true` the block's seed stays home. A probe already sets its temperature and
+    max_tokens, so nothing else of the block goes out, the request was left as it was, and all 17
+    probes recorded no sampling_not_sent (verification of 569bb3b)."""
+
+    port, seen = stub
+    _files(tmp_path, port, model="gpt-x", provider="openai", block=block)
+    result = CliRunner().invoke(app, _run(tmp_path, "-sV"))
+    assert result.exit_code == 0, result.output
+    probes_sent = seen[: fingerprint_probe_count()]
+    assert probes_sent and all("seed" not in body for _, body in probes_sent), probes_sent
+    probes = _stored(tmp_path, "probes")
+    assert len(probes) == fingerprint_probe_count()
+    for probe in probes:
+        assert (probe["request"]["sampling"] or {}).get("seed") is None, probe
+        assert probe["request"]["metadata"]["sampling_not_sent"] == ["seed"], probe
+
+
 def test_a_listed_model_declared_sampling_true_is_sent_it_and_the_refusal_names_the_fix(
     tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
 ) -> None:
@@ -593,7 +616,7 @@ def test_a_resume_with_attempts_kept_continues_as_its_run_started(
     assert resumed.exit_code == 0, resumed.output
     said = " ".join(resumed.stderr.split())
     assert (
-        f"resume: {run_id} sent stub a temperature and a top_p when it started and keeps 1 "
+        f"resume: {run_id} sent stub a temperature when it started and keeps 1 "
         "attempt(s) sent so, so it continues as it started; this version would send no "
         "temperature or top_p (a fresh run does)"
     ) in said, said

@@ -481,8 +481,9 @@ a temperature, and a resume whose record differs from what this version decides 
 before that record counts as sent, as every older version sent one) continues as it started when
 it keeps attempts, so one campaign is not half pinned and half unpinned, and is sent as this
 version decides when it keeps none; both are said on stderr (`resume: <run id> sent stub a
-temperature and a top_p when it started and keeps 3 attempt(s) sent so, so it continues as it
-started; this version would send no temperature or top_p (a fresh run does)`). If the reference
+temperature when it started and keeps 3 attempt(s) sent so, so it continues as it started; this
+version would send no temperature or top_p (a fresh run does)`; a top_p is not named, since one
+goes out only where a spec or a block sets it, and never beside a temperature to Anthropic). If the reference
 is right, a run of an older version against a listed model stopped at its first request and kept
 nothing, so its resume sends no sampling; if a listed model did take the temperature, the run kept
 pinned attempts, and its resume stays pinned. A run started by the first version of this
