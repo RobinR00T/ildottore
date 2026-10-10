@@ -81,8 +81,8 @@ versioning: [SemVer](https://semver.org/).
   separator, so the redactor no longer found it: `https://ops:P@ssw0rd!x@db.internal/v1` with
   `P@ssw0rd!x` registered printed `...«REDACTED:url_password»@ssw0rd!«REDACTED:email»/v1`, and
   `redis://ops:Adm1n@2026-db.internal:6379/0` printed `2026`. The redactor's own URL rule runs
-  after the registered credentials are set aside; that was the only call of
-  `mask_url_passwords` before the redactor.
+  after the registered credentials are set aside. That was the only call of
+  `mask_url_passwords` outside a test, which is removed with its test (re-audit of #96).
 - Checked by two differential fuzzers against `origin/main` (`f12ba83`): mine, and the
   independent auditor's (`afuzz`, rebuilt as it was), on texts mixing URLs with userinfo (empty,
   masked and registered users, passwords holding labels, registered values and raw `@`),

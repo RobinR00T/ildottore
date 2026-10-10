@@ -626,14 +626,6 @@ def holds_known_secret_part(value: str, parts: frozenset[str]) -> bool:
     )
 
 
-def mask_url_passwords(text: str) -> str:
-    """Mask only the password of every ``scheme://user:password@host`` in ``text``."""
-
-    return _URL_USERINFO.sub(
-        lambda m: m.group(1) + _MASK_TEMPLATE.format(type="url_password") + m.group(3), text
-    )
-
-
 def _known_secrets() -> list[str]:
     # Longest first, then by value: a set's iteration order changes with PYTHONHASHSEED, and two
     # credentials of one length came in either order (pre-commit audit of the control-characters
