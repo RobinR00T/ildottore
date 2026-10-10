@@ -74,8 +74,9 @@ about the model.
   `blocked_by_provider_filter: {attempts, specs}` (optional in report-1.0); SARIF, JUnit, HTML and
   the terminal summary say it where there are any.
 - Recognised only in shapes a provider documents: Azure OpenAI's 400 `content_filter`, and
-  Gemini's `promptFeedback.blockReason` in a success body with no candidate (through a REST
-  template). Every other 4xx stops the campaign exactly as before.
+  Gemini's and Vertex AI's `promptFeedback.blockReason` in a success body with no candidate
+  (through a REST template whose text path starts at `candidates.`). Every other 4xx stops the
+  campaign exactly as before.
 
 ## Left out, and why
 

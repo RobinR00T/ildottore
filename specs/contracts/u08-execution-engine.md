@@ -355,8 +355,9 @@ is recorded as blocked by the provider's filter and the campaign goes on. The cr
 - recognised only in a shape a provider documents, by the adapter that reads the bytes (u04): an
   HTTP 400 whose `error.code` is exactly `content_filter` (Azure OpenAI; any adapter built on
   `BaseAdapter`, so openai, anthropic and rest; not MCP, which sends no prompt), and a success body
-  with no text at a REST template's path whose `promptFeedback.blockReason` is `SAFETY`, `OTHER`,
-  `BLOCKLIST` or `PROHIBITED_CONTENT` (Gemini). Each raises `ProviderFilterBlock`, an
+  with no text at a REST template's path, rooted at `candidates.`, whose
+  `promptFeedback.blockReason` is `SAFETY`, `OTHER`, `BLOCKLIST` or `PROHIBITED_CONTENT` (Gemini)
+  or `MODEL_ARMOR` or `JAILBREAK` (Vertex AI). Each raises `ProviderFilterBlock`, an
   `AdapterProductError` with the status, the provider's code and the marker
   `blocked_by_provider_filter = True`; every other 4xx stays an `AdapterStatusError` and stops the
   campaign exactly as before (another code at 400, the Azure body at 403 or 422, `content_filtered`

@@ -280,10 +280,15 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `ResponsibleAIPolicyViolation`. Read before the sampling question (A-68): this 400 names the
     prompt, not a parameter;
   - Gemini (`RestAdapter._prompt_blocked`, through the `_prompt_blocked` hook every success body
-    goes through first): no text at the template's `text_path` and `promptFeedback.blockReason`
-    `SAFETY`, `OTHER`, `BLOCKLIST` or `PROHIBITED_CONTENT` (the Gemini API reference,
-    `PromptFeedback`: "If set, the prompt was blocked and no candidates are returned"); not
-    `IMAGE_SAFETY` (generated content), `BLOCK_REASON_UNSPECIFIED` or a value it does not list,
+    goes through first): a template whose `text_path` starts at `candidates.`, where the Gemini
+    API and Vertex AI put the text (pre-merge audit of `3d739f3`, L3: any template was read, and
+    a `promptFeedback` key in a reply that is not Gemini's is not Gemini's block), no text at
+    that path, and `promptFeedback.blockReason` `SAFETY`, `OTHER`, `BLOCKLIST` or
+    `PROHIBITED_CONTENT` (the Gemini API reference, `PromptFeedback`: "If set, the prompt was
+    blocked and no candidates are returned") or `MODEL_ARMOR` or `JAILBREAK` (Vertex AI's REST
+    reference, `BlockedReason`, read 2026-10-10, L4); not `IMAGE_SAFETY` (Vertex: a prompt unsafe
+    for image generation; the Gemini API: candidates blocked; the two disagree on whether the
+    prompt was refused), either spelling of the unspecified value, or a value neither lists,
     which stay the product error they were. The status is the reply's, 200.
   `ProviderFilterBlock` is an `AdapterProductError` (not an `AdapterStatusError`) that carries
   `status_code` and `code`, survives copy and pickle, and sets `blocked_by_provider_filter = True`,

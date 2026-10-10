@@ -19,10 +19,12 @@ versioning: [SemVer](https://semver.org/).
   requests, 8 of them blocked, and 12 judge requests.
 - **Recognised only in a shape the provider documents.** Azure OpenAI: status 400 and `error.code`
   exactly `content_filter` (Microsoft Learn, "Content filtering", Scenario 3), read by every
-  adapter built on `BaseAdapter` (openai, anthropic, rest). Gemini: a success body with no text at
-  a REST template's `text_path` whose `promptFeedback.blockReason` is `SAFETY`, `OTHER`,
-  `BLOCKLIST` or `PROHIBITED_CONTENT` (the Gemini API reference, `PromptFeedback`), which was a
-  product error that stopped the campaign too. Either raises the new `ProviderFilterBlock` (an
+  adapter built on `BaseAdapter` (openai, anthropic, rest). Gemini and Vertex AI: a success body
+  with no text at a REST template's `text_path`, which must start at `candidates.` (another
+  template is not reading a Gemini body), whose `promptFeedback.blockReason` is `SAFETY`, `OTHER`,
+  `BLOCKLIST` or `PROHIBITED_CONTENT` (the Gemini API reference, `PromptFeedback`) or Vertex AI's
+  `MODEL_ARMOR` or `JAILBREAK` (its REST reference, `BlockedReason`), which was a product error
+  that stopped the campaign too; not `IMAGE_SAFETY`, on which the two references disagree. Either raises the new `ProviderFilterBlock` (an
   `AdapterProductError` with the status and the provider's code). Every other 4xx is the
   `AdapterStatusError` it was and stops the campaign exactly as before: another code at 400, the
   Azure body at 403 or 422, `content_filtered`, a body that is not JSON. Not read, for want of a
