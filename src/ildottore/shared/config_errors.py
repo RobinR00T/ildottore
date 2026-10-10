@@ -32,6 +32,7 @@ __all__ = [
     "cut",
     "listed",
     "quoted",
+    "shown_endpoint",
     "validation_problems",
     "yaml_problem",
 ]
@@ -96,6 +97,34 @@ def quoted(value: object) -> str:
     if len(head) <= MAX_PROBLEM_CHARS:
         return head
     return f"{head[:MAX_PROBLEM_CHARS]}... ({len(cast('Sized', value))} items)"
+
+
+#: What urllib removes from a URL anywhere in it before reading it (the WHATWG rule).
+_URL_IGNORED = str.maketrans("", "", "\t\r\n")
+
+
+def shown_endpoint(endpoint: str) -> str:
+    """An endpoint as an error may quote it: as urllib reads it, without what precedes the last
+    ``@`` of its authority, cut as :func:`quoted` cuts it.
+
+    The CLI masks a URL's password only in the ``user:password@`` shape, so a space in the
+    password or a second ``@`` printed it, and an empty user did until A-31 (delta audit of
+    A-51). It is read as urllib reads it, its tabs and line breaks removed: urllib found an
+    authority in ``http:/<TAB>/user:password@host`` that a search for ``//`` missed (final
+    audit). Found by position, not by a pattern, so a long hostile endpoint costs one pass.
+    The userinfo goes before the cut: quoted whole and cut at 300 characters, an endpoint whose
+    password runs past the cut lost the ``@`` the redactor's URL rule needs, and the policy
+    gate's refusal printed 287 characters of a 308-character password (#96).
+    """
+
+    text = endpoint.translate(_URL_IGNORED)
+    start = text.find("//")  # a scheme-relative `//user:password@host` too
+    if start < 0:
+        return quoted(text)
+    start += 2
+    ends = [i for i in (text.find(c, start) for c in "/?#") if i >= 0]
+    at = text.rfind("@", start, min(ends, default=len(text)))
+    return quoted(text if at < 0 else text[:start] + text[at + 1 :])
 
 
 def listed(
