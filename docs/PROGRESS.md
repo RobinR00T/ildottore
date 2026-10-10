@@ -29,8 +29,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   and the fuzzers rebuilt in `_ildottore-tren/scratch/issue96`.
 - The audit's narrow fix for (1) was measured and not taken: it left readable a character main masks
   in 15,239 of 300,000 differential texts. The fix, against main: 0 texts leaking anything main
-  masks, 0 errors, 0 fixed-point failures on 600,000 texts of my fuzz (120,443 and 120,410 texts
-  with a secret main leaves readable masked) and on 1,000,000 of the auditor's. Against the redactor
+  masks, 0 errors, 0 fixed-point failures on 900,000 texts of my fuzz (120,443, 120,410 and 120,618 texts
+  with a secret main leaves readable masked) and on 1,500,000 of the auditor's. Against the redactor
   before #56 (the auditor's 40,000 item-1 texts): a secret it masked is readable in 2,666 texts on
   main, 98 on `924c276`, 18 now (none chained). PERF_FIGURES MUTANT_FIGURES `make gates` green (with
   `PYTHONPATH` set to the worktree's `src`): GATES_FIGURES.

@@ -91,12 +91,12 @@ versioning: [SemVer](https://semver.org/).
   separators, overlapping and nested pairs, `@`, `://` and `:` shapes, mask substrings, one
   holding a splitter), splitters, U+FFFD and stash delimiters inserted. Each output is checked to
   be main's with stretches replaced by masks only (a check that also caught the narrow fix).
-  Mine, on 300,000 texts and then 300,000 more: 0 texts where a character main masks is
-  readable, 0 errors, 0 fixed-point failures; in 120,443 (and 120,410) texts a secret character
-  main leaves readable is masked (a URL password in 109,599, a labelled value in 19,159, a
-  private key in 236). The auditor's, on 500,000 texts twice: 0 such texts, 0 errors, 0
-  fixed-point failures, 90,456 and 91,056 texts closed; on 20 texts of 4 MB in all, 0, and at
-  most 1.11 times main's time. Earlier runs found the cases quoted above (2 texts of 300,000 in a
+  Mine, on three runs of 300,000 texts (the last on the final tree): 0 texts where a character
+  main masks is readable, 0 errors, 0 fixed-point failures; in 120,443, 120,410 and 120,618 texts
+  a secret character main leaves readable is masked (in the first, a URL password in 109,599, a
+  labelled value in 19,159, a private key in 236). The auditor's, on three runs of 500,000
+  texts: 0 such texts, 0 errors, 0 fixed-point failures, 90,456, 91,056 and 90,707 texts closed;
+  on 20 texts of 4 MB in all, 0, and at most 1.11 times main's time. Earlier runs found the cases quoted above (2 texts of 300,000 in a
   first version, 4 in the second), each fixed and now a test. Against the redactor before #56,
   on the auditor's 40,000 texts aimed at item 1 (hash seed 0, since the old redactor's order
   followed it): a secret it masked is readable in 2,666 texts on main, 98 on the first version
@@ -107,7 +107,7 @@ versioning: [SemVer](https://semver.org/).
   across each separator, the labelled tail's limits the fuzzers found, chained values, the
   credential in the user, the email host, the CLI's errors, a Hypothesis property over URLs with one
   or two credentials across a separator, memory and linear time on 2 MB of hostile echoes;
-  TEST_FIGURES), and in `tests/cli/test_operator_file_quoted_values.py` the policy gate's refusal
+  45 cases, 30 of which fail on `f12ba83` and 11 on the first version of this fix, `924c276`), and in `tests/cli/test_operator_file_quoted_values.py` the policy gate's refusal
   and `shown_auth_ref` with a 308-character password (both fail on `f12ba83`). MUTANT_FIGURES Docs:
   MANUAL, `docs/02` (S6), u01 A-31 and A-51, u12 §6, the contract index, PROGRESS. `make gates`
   green: GATES_FIGURES. Left open after #96: where the URL rule did read a URL, its reading stands,
