@@ -567,8 +567,9 @@ def test_a_signal_while_the_handlers_are_set_leaves_none_behind() -> None:
 
 def test_a_signal_while_the_handlers_are_put_back_leaves_none_behind() -> None:
     """A SIGHUP right after SIGTERM's handler is put back, while SIGHUP's is still the
-    campaign's: it raised there and SIGHUP's stayed. Held back, it is delivered once both are
-    put back, to the handler SIGHUP had before the campaign."""
+    campaign's: it raised there and SIGHUP's stayed. Held back, it came while the campaign's
+    handler was in place, so the campaign takes it: both handlers are back, the one SIGHUP had
+    before is not called, and the campaign ends with KeyboardInterrupt."""
 
     original_term = signal.getsignal(signal.SIGTERM)
     hangups: list[int] = []
@@ -582,24 +583,54 @@ def test_a_signal_while_the_handlers_are_put_back_leaves_none_behind() -> None:
         def on_set(sig: int, handler: object) -> int | None:
             return signal.SIGHUP if sig == signal.SIGTERM and handler is original_term else None
 
-        with _signal_on_swap(on_set), _termination_as_interrupt():
+        with pytest.raises(KeyboardInterrupt), _signal_on_swap(on_set), _termination_as_interrupt():
             pass
         assert signal.getsignal(signal.SIGTERM) is original_term
         assert signal.getsignal(signal.SIGHUP) is before_campaign
-        assert hangups == [signal.SIGHUP]
+        assert hangups == []
     finally:
         signal.signal(signal.SIGHUP, previous_hup)
+
+
+def test_a_signal_before_the_handlers_are_held_still_leaves_none_behind() -> None:
+    """A SIGTERM as the handlers are about to be put back, before the hold takes effect: the
+    campaign's handler raises there, which skipped the rest (14 of about 6,000 points once the
+    swap was held). The handlers are put back again, then the KeyboardInterrupt goes on."""
+
+    from ildottore.cli import run as run_mod
+
+    original = signal.getsignal(signal.SIGTERM)
+    held = run_mod._signals_held_back
+    calls: list[int] = []
+
+    @contextmanager
+    def raising_first(signals: Any) -> Iterator[None]:
+        calls.append(len(calls))
+        if len(calls) == 2:  # the first try at putting them back, before it holds anything
+            signal.raise_signal(signal.SIGTERM)
+        with held(signals):
+            yield
+
+    run_mod._signals_held_back = raising_first  # type: ignore[assignment]
+    try:
+        with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
+            pass
+    finally:
+        run_mod._signals_held_back = held  # type: ignore[assignment]
+    assert calls == [0, 1, 2]
+    assert signal.getsignal(signal.SIGTERM) is original
 
 
 def test_the_handlers_are_set_and_put_back_where_signals_cannot_be_held(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Without `signal.pthread_sigmask` (Windows), nothing is held back, and the handlers are
-    still set for the campaign and put back after it."""
+    """Without `signal.pthread_sigmask` and `signal.sigpending` (Windows), nothing is held back,
+    and the handlers are still set for the campaign and put back after it."""
 
     from ildottore.cli.run import _interrupt_as_ctrl_c
 
-    monkeypatch.delattr(signal, "pthread_sigmask")
+    for name in ("pthread_sigmask", "sigpending", "sigwait"):
+        monkeypatch.delattr(signal, name)
     original = signal.getsignal(signal.SIGTERM)
     with _termination_as_interrupt():
         assert signal.getsignal(signal.SIGTERM) is _interrupt_as_ctrl_c

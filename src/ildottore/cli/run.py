@@ -1162,6 +1162,19 @@ def _signals_held_back(signals: Sequence[signal.Signals]) -> Iterator[None]:
         block(signal.SIG_SETMASK, previous)
 
 
+def _take_pending(signals: Sequence[signal.Signals]) -> bool:
+    """Accept any of ``signals`` that is pending (held back), and say whether one was."""
+
+    pending = getattr(signal, "sigpending", None)
+    accept = getattr(signal, "sigwait", None)
+    if pending is None or accept is None:
+        return False
+    waiting = pending() & set(signals)
+    for sig in waiting:
+        accept([sig])  # pending and held back: returns at once
+    return bool(waiting)
+
+
 @contextmanager
 def _termination_as_interrupt() -> Iterator[None]:
     """Turn SIGTERM and SIGHUP into Ctrl-C, for one campaign.
@@ -1196,9 +1209,26 @@ def _termination_as_interrupt() -> Iterator[None]:
                         break
             yield
         finally:
-            with _signals_held_back(held):
-                for sig, handler in previous.items():
-                    signal.signal(sig, handler)
+            # A signal that raises before the hold takes effect (the campaign's own handler, or
+            # Ctrl-C's) skipped the rest of this block and left a handler installed (14 of
+            # about 6,000 points once the swap was held): put them back again, then raise it.
+            interrupted: KeyboardInterrupt | None = None
+            while True:
+                try:
+                    with _signals_held_back(held):
+                        for sig, handler in previous.items():
+                            signal.signal(sig, handler)
+                        # One that came during the swap came while the campaign's handler was
+                        # in place: the campaign takes it, rather than the handler put back
+                        # (SIGTERM's default ends the process at once, with no exit code).
+                        if _take_pending(list(previous)):
+                            interrupts.note_termination()
+                except KeyboardInterrupt as exc:
+                    interrupted = exc
+                    continue
+                break
+            if interrupted is not None:
+                raise interrupted
 
 
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:

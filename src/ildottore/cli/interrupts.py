@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from types import FrameType
 from typing import Any, TypeVar
 
-__all__ = ["run_until_stopped", "stop_running_loop", "terminations_watched"]
+__all__ = ["note_termination", "run_until_stopped", "stop_running_loop", "terminations_watched"]
 
 _T = TypeVar("_T")
 
@@ -131,6 +131,14 @@ def terminations_watched() -> Iterator[None]:
         raise KeyboardInterrupt
 
 
+def note_termination() -> None:
+    """Note, for the campaign :func:`terminations_watched` is watching, that a signal came."""
+
+    global _received
+    if _received is not None:
+        _received = True
+
+
 def stop_running_loop(frame: FrameType | None = None) -> bool:
     """Note a SIGTERM or SIGHUP, and stop the loop :func:`run_until_stopped` drives.
 
@@ -138,9 +146,7 @@ def stop_running_loop(frame: FrameType | None = None) -> bool:
     when none is running, and the caller handles the signal itself. ``frame`` is the handler's.
     """
 
-    global _received
-    if _received is not None:
-        _received = True
+    note_termination()
     running = _running
     if running is None:
         return False
