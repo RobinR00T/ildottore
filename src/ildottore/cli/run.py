@@ -1132,7 +1132,7 @@ def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
     nothing makes the signal do nothing there either; ``dottore`` does not.
     """
 
-    if interrupts.stop_running_loop():
+    if interrupts.stop_running_loop(frame):
         return
     handler = signal.getsignal(signal.SIGINT)
     if callable(handler):

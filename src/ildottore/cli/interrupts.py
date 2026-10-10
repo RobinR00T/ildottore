@@ -19,9 +19,12 @@ again. A second signal raises in place, as a second Ctrl-C does.
 from __future__ import annotations
 
 import asyncio
+import functools
+import signal
 import threading
 from collections.abc import Callable, Coroutine, Iterator
 from contextlib import contextmanager
+from types import FrameType
 from typing import Any, TypeVar
 
 __all__ = ["run_until_stopped", "stop_running_loop", "terminations_watched"]
@@ -30,11 +33,14 @@ _T = TypeVar("_T")
 
 
 class _Run:
-    """One :func:`run_until_stopped`: its loop, the task it drives, and whether it was stopped."""
+    """One :func:`run_until_stopped`: its Runner, the tasks it drives, and whether it stopped."""
 
     def __init__(self) -> None:
+        self.runner: asyncio.Runner | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
+        #: The campaign's task, and the coroutine ``asyncio.Runner`` runs, which awaits it.
         self.task: asyncio.Task[Any] | None = None
+        self.outer: asyncio.Task[Any] | None = None
         self.stopped = False
 
     def drive(self, loop: asyncio.AbstractEventLoop, task: asyncio.Task[Any]) -> None:
@@ -46,11 +52,36 @@ class _Run:
         if self.stopped:
             task.cancel()
 
-    def stop(self) -> None:
+    def _asyncio_handles_ctrl_c(self, handler: object) -> bool:
+        """Whether ``handler`` is the Ctrl-C handler this run's ``asyncio.Runner`` installed."""
+
+        method = getattr(handler, "func", None)
+        return (
+            self.runner is not None
+            and isinstance(handler, functools.partial)
+            and getattr(method, "__self__", None) is self.runner
+        )
+
+    def stop(self, frame: FrameType | None) -> None:
         """Called from the signal handler: in the main thread, between two of its bytecodes."""
 
-        if self.stopped:
-            raise KeyboardInterrupt  # a second signal: the stop is not ending, as asyncio does
+        outer = self.outer
+        handler = signal.getsignal(signal.SIGINT)
+        if (
+            callable(handler)
+            and self._asyncio_handles_ctrl_c(handler)
+            and (outer is None or not outer.done())
+        ):
+            # Ctrl-C at its default: asyncio's own handler takes this signal too and counts it
+            # with Ctrl-C's, so the second of any two, whatever their kind, raises in place.
+            # It cancels the coroutine it runs, and through it the task, and wakes the loop.
+            self.stopped = True
+            handler(signal.SIGINT, frame)
+            return
+        # A second signal, or a stop already under way (that coroutine was cancelled): the stop
+        # is not ending, and this one raises in place, as asyncio does for a second Ctrl-C.
+        if self.stopped or (outer is not None and outer.cancelling()):
+            raise KeyboardInterrupt
         self.stopped = True
         loop, task = self.loop, self.task
         # Before the task exists, after it is done, or once the loop is closed, there is
@@ -90,11 +121,11 @@ def terminations_watched() -> Iterator[None]:
         _received = previous
 
 
-def stop_running_loop() -> bool:
+def stop_running_loop(frame: FrameType | None = None) -> bool:
     """Note a SIGTERM or SIGHUP, and stop the loop :func:`run_until_stopped` drives.
 
     ``True`` when a loop took the signal (a second one raises KeyboardInterrupt here); ``False``
-    when none is running, and the caller handles the signal itself.
+    when none is running, and the caller handles the signal itself. ``frame`` is the handler's.
     """
 
     global _received
@@ -103,7 +134,7 @@ def stop_running_loop() -> bool:
     running = _running
     if running is None:
         return False
-    running.stop()
+    running.stop(frame)
     return True
 
 
@@ -117,6 +148,7 @@ async def _drive(run: _Run, main: Coroutine[Any, Any, _T]) -> _T:
     (pre-merge audit of the A-60 fix).
     """
 
+    run.outer = asyncio.current_task()
     loop = asyncio.get_running_loop()
     task = loop.create_task(main)
     run.drive(loop, task)
@@ -159,6 +191,7 @@ def run_until_stopped(
             run.stopped = True
         else:
             with asyncio.Runner(loop_factory=loop_factory) as runner:
+                run.runner = runner
                 try:
                     result = runner.run(_drive(run, main))
                 except asyncio.CancelledError:

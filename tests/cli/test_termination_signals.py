@@ -184,6 +184,74 @@ def test_a_second_signal_raises_where_the_run_is(sigint: str) -> None:
     assert seen == ["KeyboardInterrupt"]
 
 
+@pytest.mark.usefixtures("ctrl_c")
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [("SIGINT", "SIGTERM"), ("SIGTERM", "SIGINT"), ("SIGINT", "SIGHUP"), ("SIGHUP", "SIGINT")],
+)
+def test_a_second_signal_of_the_other_kind_raises_too(first: str, second: str) -> None:
+    """Ctrl-C then SIGTERM, or SIGTERM then Ctrl-C: the second raises in place, as it did when
+    SIGTERM called asyncio's Ctrl-C handler (#94). The first version of the fix counted them
+    apart, and the second was one more cancellation (pre-merge audit). With Ctrl-C at its
+    default, a SIGTERM or SIGHUP inside the loop goes to asyncio's own handler, which counts
+    the two together."""
+
+    seen: list[str] = []
+
+    async def campaign() -> None:
+        await asyncio.sleep(0)
+        try:
+            signal.raise_signal(getattr(signal, first))
+            await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            try:
+                signal.raise_signal(getattr(signal, second))
+                seen.append("nothing raised in place")
+                await asyncio.sleep(0)
+            except BaseException as exc:
+                seen.append(type(exc).__name__)
+                raise
+            raise
+
+    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        run_until_stopped(campaign())
+    assert seen == ["KeyboardInterrupt"]
+
+
+def test_a_signal_after_a_stop_some_handler_began_raises() -> None:
+    """A program that embeds `execute_run` and gives Ctrl-C a handler of its own, one that
+    cancels the run: asyncio's is not there to count, and a SIGTERM after that cancellation is
+    read as the second signal of a stop under way, so it raises in place."""
+
+    seen: list[str] = []
+
+    def cancel_everything(_signum: int, _frame: object) -> None:
+        for task in asyncio.all_tasks(asyncio.get_running_loop()):
+            task.cancel()
+
+    async def campaign() -> None:
+        await asyncio.sleep(0)
+        try:
+            signal.raise_signal(signal.SIGINT)
+            await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            try:
+                signal.raise_signal(signal.SIGTERM)
+                seen.append("nothing raised in place")
+            except BaseException as exc:
+                seen.append(type(exc).__name__)
+                raise
+            raise
+
+    previous = signal.signal(signal.SIGINT, cancel_everything)
+    try:
+        with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+            run_until_stopped(campaign())
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    assert seen == ["KeyboardInterrupt"]
+
+
 def test_one_signal_inside_an_asyncio_callback_is_enough(sigint: str) -> None:
     """A SIGTERM raised inside one of asyncio's own callbacks (gather's, reading a result).
 
