@@ -33,7 +33,7 @@ import stat
 import sys
 import unicodedata
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1142,24 +1142,39 @@ def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
 
 
 @contextmanager
-def _signals_held_back(signals: Sequence[signal.Signals]) -> Iterator[None]:
+def _signals_held_back(signals: Sequence[signal.Signals]) -> Iterator[Callable[[], None]]:
     """Hold ``signals`` back while the handlers are swapped (POSIX; elsewhere nothing changes).
 
     A signal that arrived halfway through the swap ran the handler just installed, which
     raised before the next line recorded it, so a handler of the campaign stayed installed
     after ``execute_run`` returned (pre-merge audit of the A-60 fix: 38 of about 6,000 points).
     One held back is delivered when the swap is done, to whichever handler is then in place.
+    Only the main thread's mask changes: in a process with other threads, a signal sent to the
+    process can be taken by one of them meanwhile. Yields a function that lets them go at once,
+    for a caller that has nothing left to do while they are held; the block lets them go too.
     """
 
     block = getattr(signal, "pthread_sigmask", None)
     if block is None or not signals:
-        yield
+        yield _nothing_to_release
         return
     previous = block(signal.SIG_BLOCK, signals)
+    released = False
+
+    def release() -> None:
+        nonlocal released
+        if not released:
+            released = True
+            block(signal.SIG_SETMASK, previous)
+
     try:
-        yield
+        yield release
     finally:
-        block(signal.SIG_SETMASK, previous)
+        release()
+
+
+def _nothing_to_release() -> None:
+    return None
 
 
 def _take_pending(signals: Sequence[signal.Signals]) -> bool:
@@ -1216,14 +1231,19 @@ def _termination_as_interrupt() -> Iterator[None]:
             # Nothing comes before the try, where it would not be caught.
             while True:
                 try:
-                    with _signals_held_back(held):
+                    with _signals_held_back(held) as release:
                         for sig, handler in previous.items():
                             signal.signal(sig, handler)
-                        # One that came during the swap came while the campaign's handler was
-                        # in place: the campaign takes it, rather than the handler put back
-                        # (SIGTERM's default ends the process at once, with no exit code).
-                        if _take_pending(list(previous)):
-                            interrupts.note_termination()
+                        # One that came while the campaign's handler was in place, up to the
+                        # check below, is the campaign's, rather than the handler's put back
+                        # (SIGTERM's default ends the process at once, with no exit code): in
+                        # a process whose only thread is the main thread, since another can
+                        # take a signal the main thread holds back. One that comes after the
+                        # check goes to the handler put back; let go at once to keep that short.
+                        taken = _take_pending(list(previous))
+                        release()
+                    if taken:
+                        interrupts.note_termination()
                 except KeyboardInterrupt as exc:
                     interrupted = exc
                     continue

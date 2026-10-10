@@ -398,16 +398,18 @@ started. The SIGTERM and SIGHUP handlers are set and put back with Ctrl-C, SIGTE
 back (`pthread_sigmask`), what each replaces recorded before it is set: a signal halfway through the
 swap used to leave a handler of the campaign installed after `execute_run` returned (38 of about
 6,000 points in the audit's sweep). The put-back is retried when a signal raises just before the
-hold takes effect, and a signal held back during it is the campaign's (accepted with `sigwait` and
-noted), not the restored handler's, whose default would end the process with no exit code. A program
-that embeds `execute_run` sees the difference: inside a loop SIGTERM and SIGHUP no longer call its
-own Ctrl-C handler (only asyncio's), and one that its Ctrl-C handler ignores outside a loop still
-stops the campaign, at its next loop or as its block ends. An ignored SIGHUP still stays ignored
-(`nohup`). Outside the main thread no handler is set and `run_until_stopped` is `asyncio.run`. A
-send is bounded by `asyncio.timeout`, not `asyncio.wait_for`: on Python 3.11 `wait_for` returned a
-reply and dropped a cancellation that landed as the send completed (CPython gh-86296), so a spec a
-signal stopped at that instant went on sending (`core/execute.py`; from 3.12 `wait_for` is built on
-`asyncio.timeout`).
+hold takes effect, and one that arrives before the put-back's last check, in a process whose only
+thread is the main thread (another can take a signal the main thread holds back), is the campaign's
+(accepted with `sigwait` and noted), not the restored handler's, whose default would end the process
+with no exit code; the hold is let go right after that check, and one that comes in between goes to
+the handler put back. A program that embeds `execute_run` sees the difference: inside a loop SIGTERM
+and SIGHUP no longer call its own Ctrl-C handler (only asyncio's), and one that its Ctrl-C handler
+ignores outside a loop still stops the campaign, at its next loop or as its block ends. An ignored
+SIGHUP still stays ignored (`nohup`). Outside the main thread no handler is set and
+`run_until_stopped` is `asyncio.run`. A send is bounded by `asyncio.timeout`, not
+`asyncio.wait_for`: on Python 3.11 `wait_for` returned a reply and dropped a cancellation that
+landed as the send completed (CPython gh-86296), so a spec a signal stopped at that instant went on
+sending (`core/execute.py`; from 3.12 `wait_for` is built on `asyncio.timeout`).
 
 Swept with the audit's tool (a signal raised at every line event while the campaign's handler is in
 place, one forked child per point, over a probe pass and two campaigns of three gathered children

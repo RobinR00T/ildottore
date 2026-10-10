@@ -604,12 +604,12 @@ def test_a_signal_before_the_handlers_are_held_still_leaves_none_behind() -> Non
     calls: list[int] = []
 
     @contextmanager
-    def raising_first(signals: Any) -> Iterator[None]:
+    def raising_first(signals: Any) -> Iterator[Callable[[], None]]:
         calls.append(len(calls))
         if len(calls) == 2:  # the first try at putting them back, before it holds anything
             signal.raise_signal(signal.SIGTERM)
-        with held(signals):
-            yield
+        with held(signals) as release:
+            yield release
 
     run_mod._signals_held_back = raising_first  # type: ignore[assignment]
     try:

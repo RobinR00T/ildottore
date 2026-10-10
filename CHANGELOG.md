@@ -31,14 +31,15 @@ versioning: [SemVer](https://semver.org/).
   handlers could stay installed after `execute_run` returned (38 of about 6,000 points of the
   audit's sweep): they are set and put back with Ctrl-C, SIGTERM and SIGHUP held back
   (`pthread_sigmask`), what each replaces recorded first, the put-back retried when a signal beats
-  the hold, and a signal held back during it taken by the campaign. A signal Python dropped outside
-  a loop (in a weakref callback or a `__del__`) now keeps the campaign's next loop from starting
-  and, after its last loop, ends it with KeyboardInterrupt (exit 130) instead of the run's own exit
-  code; the loop is let go while the run is still armed, so a signal in its `__del__` is the run's;
-  and only the main thread watches, since a block in another thread reset what the main campaign had
-  noted. Swept again with the audit's tool, a signal at every line event: 8 of 31,030 points bad,
-  all at two lines that compile to NOP alone, where CPython never runs a signal handler (`2001e7f`:
-  50 of 6,032, 50 of 6,095 and 21 of 6,011 in its three SIGTERM arms).
+  the hold, and one that arrives before the put-back's last check, in a process whose only thread is
+  the main thread, taken by the campaign. A signal Python dropped outside a loop (in a weakref
+  callback or a `__del__`) now keeps the campaign's next loop from starting and, after its last
+  loop, ends it with KeyboardInterrupt (exit 130) instead of the run's own exit code; the loop is
+  let go while the run is still armed, so a signal in its `__del__` is the run's; and only the main
+  thread watches, since a block in another thread reset what the main campaign had noted. Swept
+  again with the audit's tool, a signal at every line event: 8 of 31,030 points bad, all at two
+  lines that compile to NOP alone, where CPython never runs a signal handler (`2001e7f`: 50 of
+  6,032, 50 of 6,095 and 21 of 6,011 in its three SIGTERM arms).
 - **A program that embeds `execute_run` sees two changes.** Inside a loop, SIGTERM and SIGHUP no
   longer call the program's own Ctrl-C handler (only asyncio's, when Ctrl-C is at its default); and
   one that the program's Ctrl-C handler ignores outside a loop still stops the campaign, at its next
