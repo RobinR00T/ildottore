@@ -121,7 +121,7 @@ dottore calibrate report.json labels.yaml
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |
 | `--spec` / `--exclude` | run/skip specific spec ids or globs (e.g. `PI-*`); repeatable |
 | `--top-tests N` | keep the N highest-signal specs |
-| `-sV` | fingerprint the model first, then order each spec's mutators by the carriers this target still understands (17 extra probes per target, printed in the plan, paced; never sent under `--dry-run`/`--estimate`/`-sn`) |
+| `-sV` | fingerprint the model first, then order each spec's mutators by the carriers this target still understands (18 extra probes per target, printed in the plan, paced; never sent under `--dry-run`/`--estimate`/`-sn`) |
 | `-sn` | discovery only: authorized endpoint + declared capabilities + what the battery would run. **Sends nothing** |
 | `-A` | aggressive: implies `-sV` + `--deep` (fingerprint first, then `-T2` unless you pass `-T`) |
 | `--runs N` | reproducibility runs (default 5; 1 to 9,007,199,254,740,992, `2**53`, as for `--top-tests`, `--concurrency` and the `--budget-*` flags, which take 0 too) |

@@ -769,7 +769,7 @@ on a value that is not a boolean.
 
 The resume's pre-check writes its figures as the halt reason writes the figure that stopped a run
 (#69, u08 A-6), with the same helper, `budgets.budget_figure`: grouped (`has already spent
-123,456,789 of its 123,456,805-request ceiling, and -sV would send 17 more`), and from 10**18 as a
+123,456,789 of its 123,456,806-request ceiling, and -sV would send 18 more`), and from 10**18 as a
 magnitude rounded away from the ceiling (a stored spend of 2**1000 reads `1.072e+301`, where grouped
 it was 402 characters: a stored spend is bounded only by what a float holds). Bare, from nine digits
 the redactor every CLI error goes through read each as a phone number, and the operator got
@@ -1020,7 +1020,7 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 - **OD-23** (shared with u09, 2026-10-07): what `run -sV` / `-A` and `dottore fingerprint` do
   when one probe's reply comes back refused. Built reversibly as option A: the probe fails, a
   `warning:` line on stderr names it (never silenced by `-q`), the fingerprint line ends
-  `[N of 17 probes got no usable reply]`, the run goes on and its exit is the attack's
+  `[N of 18 probes got no usable reply]`, the run goes on and its exit is the attack's
   (`dottore fingerprint` exits 0 with the flag in its JSON, or 3 with an `error:` line when
   every probe was refused); before, exit 3 before any attack. A probe that gets no answer at
   all still exits 3 with its cause. Options, and why isolating every environment failure was

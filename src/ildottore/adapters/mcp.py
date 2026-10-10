@@ -36,6 +36,7 @@ from ildottore.adapters.base import (
     MAX_RESPONSE_BYTES,
     AdapterEnvError,
     AdapterProductError,
+    AdapterStatusError,
     EndpointNotAllowed,
     ResponseTooDeep,
     ResponseTooLarge,
@@ -240,8 +241,9 @@ class MCPAdapter:
         response = await self._post_with_retries(client, body, headers)
 
         if not response.is_success:
-            raise AdapterProductError(
-                f"{self.id}: MCP {method} returned non-retryable HTTP {response.status_code}"
+            raise AdapterStatusError(
+                f"{self.id}: MCP {method} returned non-retryable HTTP {response.status_code}",
+                status_code=response.status_code,
             )
         payload = self._decode(response, method)
         if isinstance(payload, dict) and "error" in payload:

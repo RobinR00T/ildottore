@@ -68,7 +68,10 @@ What came back:
 * **The guardrail layer flagged nothing** (refusal style `unknown`), and there was no spoofing
   flag. Replayed by hand, the nudge drew a polite refusal worded with "decline", which the
   layer's phrase list lacks. Adding it would not help as the layer stands: it reads any refusal
-  as an output filter, and its probe asks the model to refuse.
+  as an output filter, and its probe asks the model to refuse. (Fixed on 2026-10-09, OD-40, u09
+  A-67: a refusal the probe asked for gives only its style, a second probe asks something benign
+  that should be answered, and only the provider's own filter stop marks an output filter; the
+  first-person "decline" phrases are on the list since the same day. Not re-run live since.)
 
 That is one small local model, not a calibration: it shows the probes reach a real model, that
 a split shows up, and two defects the offline mock could not surface (it ignores sampling); not
@@ -107,7 +110,7 @@ first contact.
 3. **`-sV` against a hosted model.** Offline, the ordering is measured against a decoder we
    wrote, which proves the chain and nothing about behaviour; the one live profile so far is a
    local 3B model's (§1, 2026-10-07). A hosted pass gives the first profile of a hosted
-   commercial model, and it is cheap: 17 requests per target.
+   commercial model, and it is cheap: 18 requests per target.
 4. **The input `_baseline_resistance` would need, if OD-17 keeps it.** Live verdict
    distributions are its only honest input, but nothing writes the key the hook reads and
    nothing reads the field it fills (`docs/10`), so a live run only collects the data; it does
@@ -122,7 +125,7 @@ battery of 75 specs at the default `runs=5`:
 |---|---|---|---|
 | A bare hosted model (`type: model`, no tools/rag/memory/multimodal) | 34 | 550 | ~395k |
 | A hosted model declaring `tools`, `rag` and `memory` (`type: model`, setup in-band, OD-18) | 59 | at most 1,260 | ~849k |
-| A fully capable deployment (`type: agent`, every capability declared, nothing declared seeded) | 41 | 585 (+17 with `-sV`) | ~412k |
+| A fully capable deployment (`type: agent`, every capability declared, nothing declared seeded) | 41 | 585 (+18 with `-sV`) | ~412k |
 | The same deployment declaring every scene seeded (`seeded_setup.specs: ["*"]`, OD-18 B) | 62 | 740 | ~497k |
 | ... and a `run_token` for the 5 specs whose canary has to be seeded | 67 | 780 | ~523k |
 
@@ -201,7 +204,7 @@ dottore run --deep --estimate -sV -t target.yaml --scope scope.yaml
 dottore run --spec PI-DIRECT-001 --runs 1 --budget-requests 5 \
   -t target.yaml --scope scope.yaml -oJ first-contact.json
 
-# 3. The recognition pass on its own: 17 requests, and this target's carrier profile.
+# 3. The recognition pass on its own: 18 requests, and this target's carrier profile.
 dottore fingerprint target.yaml --scope scope.yaml
 
 # 4. One suite, paced, with a ceiling you are comfortable paying twice.
