@@ -591,6 +591,55 @@ def test_a_signal_while_the_handlers_are_put_back_leaves_none_behind() -> None:
         signal.signal(signal.SIGHUP, previous_hup)
 
 
+def test_the_handlers_are_set_and_put_back_where_signals_cannot_be_held(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without `signal.pthread_sigmask` (Windows), nothing is held back, and the handlers are
+    still set for the campaign and put back after it."""
+
+    from ildottore.cli.run import _interrupt_as_ctrl_c
+
+    monkeypatch.delattr(signal, "pthread_sigmask")
+    original = signal.getsignal(signal.SIGTERM)
+    with _termination_as_interrupt():
+        assert signal.getsignal(signal.SIGTERM) is _interrupt_as_ctrl_c
+    assert signal.getsignal(signal.SIGTERM) is original
+
+
+def test_outside_the_main_thread_no_handler_is_set() -> None:
+    """Signals can be set only from the main thread: a campaign in another thread changes
+    nothing, and its block runs as it is."""
+
+    original = signal.getsignal(signal.SIGTERM)
+    seen: list[object] = []
+
+    def worker() -> None:
+        with _termination_as_interrupt():
+            seen.append(signal.getsignal(signal.SIGTERM))
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join()
+    assert seen == [original]
+    assert signal.getsignal(signal.SIGTERM) is original
+
+
+def test_outside_a_campaign_the_handler_notes_nothing() -> None:
+    """Called with no campaign watching and no loop running, the handler's entry point takes
+    nothing and says so; a later loop is not refused."""
+
+    from ildottore.cli.interrupts import stop_running_loop
+
+    ran: list[bool] = []
+
+    async def campaign() -> None:
+        ran.append(True)
+
+    assert stop_running_loop() is False
+    run_until_stopped(campaign())
+    assert ran == [True]
+
+
 class _AsyncioLog(logging.Handler):
     """What asyncio logs during a test: a destroyed pending task, a never-retrieved exception."""
 
