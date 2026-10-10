@@ -32,7 +32,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   masks, 0 errors, 0 fixed-point failures on 900,000 texts of my fuzz (120,443, 120,410 and 120,618 texts
   with a secret main leaves readable masked) and on 1,500,000 of the auditor's. Against the redactor
   before #56 (the auditor's 40,000 item-1 texts): a secret it masked is readable in 2,666 texts on
-  main, 98 on `924c276`, 18 now (none chained). PERF_FIGURES MUTANT_FIGURES `make gates` green (with
+  main, 98 on `924c276`, 18 now (none chained). On 2 MB of a reply echoing such a credential in every URL (seven hostile shapes) the redaction is linear and takes 1.0 to 1.4 times main's traced memory and 1.1 to 2.8 times its time (24.8 bytes a character against 17.6 with a credential holding an `@` in every password); on 4 MB of that shape, 182 MB of peak RSS where main takes 120 MB. 24 mutants of the fix: 21 caught, one of them by a hang; the 3 missed change nothing a test can see (a guard against two of its masks overlapping, which they cannot; the label search starting after the userinfo's last mask, which only bounds its cost; an off-by-one where the URL rule cannot match from inside a mask). `make gates` green (with
   `PYTHONPATH` set to the worktree's `src`): GATES_FIGURES.
 - Left open after #96: where the URL rule did read a URL, its reading stands, so after a registered
   credential holding the user's `:` the rest of the user is shown
