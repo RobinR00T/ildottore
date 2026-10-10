@@ -279,7 +279,16 @@ first build, each reproduced, and added to the criterion:
   run go on. On any other probe it stops the pass, as before. (Since OD-41, 2026-10-10, u08 A-69:
   the adapters raise Azure's `content_filter` 400 and Gemini's prompt block as
   `ProviderFilterBlock`, which `refused_request` reads at any status, so that line names
-  `ProviderFilterBlock`; any other 4xx is still an `AdapterStatusError`.);
+  `ProviderFilterBlock`; any other 4xx is still an `AdapterStatusError`. The same refusal of a
+  carrier probe is a failed probe too, since the pre-merge audit of `3d739f3` (L6): a carrier is
+  an instruction sent through an encoding, which Microsoft's Prompt Shields classes as a user
+  prompt attack ("Encoding attacks"), so Azure's filter could refuse one after every other probe
+  was answered and stop `-sV`. The engine's `is_prompt_filtered` (the composition root injects
+  `core.execute.is_provider_filter_block`) isolates a `carrier_*` probe the filter refused; the
+  carrier layer leaves it unmeasured. Any other error of a carrier, and the same refusal of an
+  attributing probe, stop the pass. Checked by `tests/fingerprint/test_carrier_filter_block.py`
+  (6 tests) and the base64 carrier through the real CLI in `tests/cli/test_input_filter_probe.py`,
+  exit 3 on `92c7b11`.);
 - `output_filter` is `null` unless a reply carries a stop reason from the provider: not a REST
   template with no finish path, nor the `final` the WebSocket adapter writes, nor MCP's
   `mcp_discovery`, nor the offline mocks;

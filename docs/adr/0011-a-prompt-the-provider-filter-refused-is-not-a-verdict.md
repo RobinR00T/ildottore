@@ -88,5 +88,7 @@ about the model.
   our usage policy") is reported in OpenAI's community forum for its reasoning models, and is not
   in OpenAI's error-code reference.
 - Gemini behind its OpenAI-compatible endpoint: no documented shape for a blocked prompt.
-- The fingerprint pass: it still stops on such a refusal of any probe but the guardrail layer's
-  benign request (u09 A-67).
+- The fingerprint pass: it still stops on such a refusal of an attributing probe. The guardrail
+  layer's benign request (u09 A-67) and, since the pre-merge audit of `3d739f3`, the carrier
+  probes (encoded instructions, which Prompt Shields classes as encoding attacks) are failed
+  probes instead.

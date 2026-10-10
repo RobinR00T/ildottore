@@ -1015,9 +1015,12 @@ stop reason from the provider on any reply (a REST template without `finish_path
 MCP target, the offline mocks) it is `null`. `input_filter` is always `null`. An input filter
 that answers the benign request with a 4xx (Azure OpenAI's prompt filter: HTTP 400,
 `content_filter`) is a failed probe, `guardrail/guardrail_benign: ProviderFilterBlock` (any other
-4xx: `AdapterStatusError`), with `benign_refused: null`, and the command goes on; the same refusal
-on another probe still exits 3. In the attack phase such a refusal is a blocked attempt and the
-campaign goes on (§9).
+4xx: `AdapterStatusError`), with `benign_refused: null`, and the command goes on. So is a carrier
+probe the filter refuses (a carrier is an instruction sent through an encoding, which Azure's
+Prompt Shields classes as an encoding attack): `carrier/carrier_base64_wrap: ProviderFilterBlock`,
+that carrier unmeasured and left out of `effective_mutators`. The same refusal of an attributing
+probe still exits 3. In the attack phase such a refusal is a blocked attempt and the campaign goes
+on (§9).
 On a target that answers every attributing probe alike, `refusal_style` and `benign_refused` are
 `null`. `false` is what two benign probes saw, not proof that there is no filter. Before, any
 refusal of the first probe was reported as an output filter (and a canned one as an input

@@ -208,9 +208,10 @@ style (`refusal_style`). The other asks a benign question near a boundary; if th
 `benign_refused` is `true`, which means a filter or the model's own alignment, and a benign probe
 cannot tell which. If an input filter rejects that question outright with a 4xx (Azure's prompt
 filter answers HTTP 400), the probe is listed as failed (`guardrail/guardrail_benign:
-ProviderFilterBlock`) and `benign_refused` is `null`; the fingerprint goes on. `input_filter` is always `null`. A `false` is what two benign probes saw,
-not proof that there is no filter: a filter that acts only on harmful content never acts on
-them. Until 2026-10-09 any refusal of the first probe was reported as an output filter, so a
+ProviderFilterBlock`) and `benign_refused` is `null`; the fingerprint goes on, as it does when
+the filter refuses a carrier probe (an encoded instruction). `input_filter` is always `null`. A
+`false` is what two benign probes saw, not proof that there is no filter: a filter that acts only
+on harmful content never acts on them. Until 2026-10-09 any refusal of the first probe was reported as an output filter, so a
 model that followed the instruction looked filtered ([`10-fingerprint.md`](10-fingerprint.md)
 §1, OD-40).
 

@@ -71,8 +71,16 @@ versioning: [SemVer](https://semver.org/).
   judge (`capability_unavailable`), as any judge adapter error is: the attempt is `inconclusive`
   unless a deterministic evaluator fails, the attempt is not counted as blocked (the attack prompt
   reached the model), and the campaign goes on. The `-sV` benign probe's failure now reads
-  `guardrail/guardrail_benign: ProviderFilterBlock` (it read `AdapterStatusError`); on any other
-  probe such a refusal still stops the pass.
+  `guardrail/guardrail_benign: ProviderFilterBlock` (it read `AdapterStatusError`).
+- **A carrier probe the filter refuses no longer stops `-sV`.** The carrier layer sends a benign
+  instruction through each encoding (base64, rot13, leetspeak, homoglyphs), which Microsoft's
+  Prompt Shields classes as a user prompt attack ("Encoding attacks"), so Azure's filter could
+  refuse a carrier after every other probe was answered and `-sV` exited 3 (pre-merge audit of
+  `3d739f3`, L6). Such a carrier is a failed probe now
+  (`carrier/carrier_base64_wrap: ProviderFilterBlock`), left unmeasured by the carrier layer, and
+  the pass goes on; the composition root injects `core.execute.is_provider_filter_block` as the
+  engine's `is_prompt_filtered`. Any other error of a carrier, and the same refusal of an
+  attributing probe, still stop the pass.
 - Contract u08 A-69 (with halves in u04, u10, u11 and u12), OD-41 and ADR-0011, the `00-INDEX`
   rows, notes in u00 and u09. Tests: `tests/cli/test_provider_filter_campaign.py` (7, through the
   real CLI and a loopback stub: 4 fail on `92c7b11`, and the 3 that pass there pin that any other

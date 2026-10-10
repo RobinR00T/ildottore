@@ -439,4 +439,5 @@ live Azure endpoint.
   intervention (an HTTP 200 whose output is the guardrail's message, read as a reply), OpenAI's
   `invalid_prompt` 400 (in forum reports, not in its error-code reference) and Gemini's
   OpenAI-compatible endpoint, for want of a documented shape; and the `-sV` pass, which still stops
-  on such a refusal of any probe but the benign one (u09 A-67). Owner: human.
+  on such a refusal of an attributing probe (the benign one, u09 A-67, and since the pre-merge
+  audit of `3d739f3` the carriers, are failed probes instead). Owner: human.
