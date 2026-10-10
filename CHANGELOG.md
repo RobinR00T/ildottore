@@ -18,18 +18,18 @@ versioning: [SemVer](https://semver.org/).
   goes on: the same command, with `--judge` against the same stub, exits 0 after 14 attack
   requests, 8 of them blocked, and 12 judge requests.
 - **Recognised only in a shape the provider documents.** Azure OpenAI: status 400 and `error.code`
-  exactly `content_filter` (Microsoft Learn, "Content filtering", Scenario 3), read by every
-  adapter built on `BaseAdapter` (openai, anthropic, rest). Gemini and Vertex AI: a success body
-  with no text at a REST template's `text_path`, which must start at `candidates.` (another
-  template is not reading a Gemini body), whose `promptFeedback.blockReason` is `SAFETY`, `OTHER`,
-  `BLOCKLIST` or `PROHIBITED_CONTENT` (the Gemini API reference, `PromptFeedback`) or Vertex AI's
-  `MODEL_ARMOR` or `JAILBREAK` (its REST reference, `BlockedReason`), which was a product error
-  that stopped the campaign too; not `IMAGE_SAFETY`, on which the two references disagree. Either raises the new `ProviderFilterBlock` (an
-  `AdapterProductError` with the status and the provider's code). Every other 4xx is the
-  `AdapterStatusError` it was and stops the campaign exactly as before: another code at 400, the
-  Azure body at 403 or 422, `content_filtered`, a body that is not JSON. Not read, for want of a
-  documented shape: a Bedrock guardrail intervention (an HTTP 200 with the guardrail's message,
-  read as a reply), OpenAI's `invalid_prompt` 400 (in forum reports, not in its error-code
+  exactly `content_filter` (Microsoft Learn, "Content filtering", Scenario 3), read by every adapter
+  built on `BaseAdapter` (openai, anthropic, rest). Gemini and Vertex AI: a success body with no
+  text at a REST template's `text_path`, which must start at `candidates.` (another template is not
+  reading a Gemini body), whose `promptFeedback.blockReason` is `SAFETY`, `OTHER`, `BLOCKLIST` or
+  `PROHIBITED_CONTENT` (the Gemini API reference, `PromptFeedback`) or Vertex AI's `MODEL_ARMOR` or
+  `JAILBREAK` (its REST reference, `BlockedReason`), which was a product error that stopped the
+  campaign too; not `IMAGE_SAFETY`, on which the two references disagree. Either raises the new
+  `ProviderFilterBlock` (an `AdapterProductError` with the status and the provider's code). Every
+  other 4xx is the `AdapterStatusError` it was and stops the campaign exactly as before: another
+  code at 400, the Azure body at 403 or 422, `content_filtered`, a body that is not JSON. Not read,
+  for want of a documented shape: a Bedrock guardrail intervention (an HTTP 200 with the guardrail's
+  message, read as a reply), OpenAI's `invalid_prompt` 400 (in forum reports, not in its error-code
   reference), Gemini's OpenAI-compatible endpoint.
 - **How a blocked attempt is scored** (ADR-0011, a new `InconclusiveReason`): the model never saw
   the prompt, so it is not a refusal and not an exploit. The attempt has no reply, its error
@@ -81,11 +81,21 @@ versioning: [SemVer](https://semver.org/).
   the pass goes on; the composition root injects `core.execute.is_provider_filter_block` as the
   engine's `is_prompt_filtered`. Any other error of a carrier, and the same refusal of an
   attributing probe, still stop the pass.
+- **Pre-merge audit of the first version (`3d739f3`): merge-ready, six lows closed.** L1: the
+  resume test checks `--estimate --resume` too. L2: a conversation the filter cut carried no
+  reply, so a forbidden tool the model had called on an earlier turn was never scored; the trace
+  is kept and read by the trace evaluators (above). L3: the Gemini block was read on any REST
+  template; it needs a `candidates.` text path now. L4: Vertex AI's `MODEL_ARMOR` and `JAILBREAK`
+  are read, from its reference. L5: the schema note above. L6: a carrier probe the filter refused
+  stopped `-sV`; it is a failed probe now (above).
 - Contract u08 A-69 (with halves in u04, u10, u11 and u12), OD-41 and ADR-0011, the `00-INDEX`
   rows, notes in u00 and u09. Tests: `tests/cli/test_provider_filter_campaign.py` (7, through the
   real CLI and a loopback stub: 4 fail on `92c7b11`, and the 3 that pass there pin that any other
-  4xx still stops the campaign), `tests/adapters/test_provider_filter_block.py` (45) and
-  `tests/core/test_provider_filter_block.py` (10), neither of which collects on `92c7b11`;
+  4xx still stops the campaign), `tests/adapters/test_provider_filter_block.py` (52) and
+  `tests/core/test_provider_filter_block.py` (13), neither of which collects on `92c7b11` (2 of the
+  latter's, the cut conversations with a tool call, fail on `3d739f3`),
+  `tests/fingerprint/test_carrier_filter_block.py` (6) and the base64 carrier through the real CLI
+  in `tests/cli/test_input_filter_probe.py` (exit 3 on `92c7b11`);
   `tests/adapters/test_status_error.py` sends a plain bad request where it sent Azure's body,
   `tests/cli/test_input_filter_probe.py` expects the new probe label, the redactor's class-name
   walk gains the blocked error's line, and the JSON report snapshot gains the key. Docs: MANUAL

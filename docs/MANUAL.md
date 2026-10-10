@@ -1740,9 +1740,9 @@ blocked by the provider's input filter before the model saw them`), and so does 
   `blocked_by_provider_filter` (`{"attempts": 8, "specs": ["GUARD-INPUT-EVASION-001",
   "PI-DIRECT-001"]}` in §9's run; `0` and `[]` when none were), a `blocked_by_provider_filter`
   property on the SARIF run and on each result that has any, with `; 6 of 6 attempt(s) blocked by
-  the provider's input filter before the model saw them` in its message, `blocked_by_provider_filter=2`
-  in a passing JUnit case's text (a skip or a failure quotes the finding's reasoning, which says
-  it), and a line under the HTML summary's counts.
+  the provider's input filter before the model saw them` in its message,
+  `blocked_by_provider_filter=2` in a passing JUnit case's text (a skip or a failure quotes the
+  finding's reasoning, which says it), and a line under the HTML summary's counts.
 - **HTML sections.** After the targets and the summary, the findings are listed in three
   sections: "Confirmed findings", "Needs review: unconfirmed exploits and undecided results",
   and "Not exploited or not tested" (passes and never-sent specs).

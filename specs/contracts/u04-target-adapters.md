@@ -298,7 +298,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
   read it. Not recognised, for want of a documented shape: a Bedrock guardrail intervention (an
   HTTP 200 with `stopReason` `guardrail_intervened`, a reply), OpenAI's `invalid_prompt` 400, and
   Gemini behind its OpenAI-compatible endpoint. Checked by
-  `tests/adapters/test_provider_filter_block.py` (45 tests; it does not collect on `92c7b11`);
+  `tests/adapters/test_provider_filter_block.py` (52 tests; it does not collect on `92c7b11`);
   `tests/adapters/test_status_error.py` now sends a plain bad request, since the Azure body it
   sent at 400 is a block.
 

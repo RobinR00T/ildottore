@@ -398,19 +398,22 @@ is recorded as blocked by the provider's filter and the campaign goes on. The cr
 - the identity sweep, which sends through the identities' adapters directly, drops an identity
   whose send raised, this one included, as before.
 With the stub: exit 0 after 14 attack requests, 8 of them blocked (both identity attempts of
-`GUARD-INPUT-EVASION-001` and the 6 of `PI-DIRECT-001`), and 12 judge requests; `GUARD` passes
-(6 of 8 attempts reached the model and held), `PI-DIRECT-001` is inconclusive, 6 of 6 blocked.
-Checked by `tests/core/test_provider_filter_block.py` (10 tests: one send and the ledger, a
-true marker only, a conversation, the four spec-level cases, a resume, an attempt stored without a
-verdict, and an environment error whose tail reads like the mark, which is not a block: with a
-verdict only its reason counts, since an error's tail can quote a target), `tests/adapters/test_provider_filter_block.py` (45, u04) and
-`tests/cli/test_provider_filter_campaign.py` (7, through the real CLI: the campaign, a run whose
-every attempt was blocked is complete and not unreachable, three other 4xx that still stop it, a
-resume halted by `--budget-requests 5` that counts the two blocked sends, keeps them and says so,
-`dottore replay`, and the judge). The first two files do not collect on `92c7b11` (no
-`ProviderFilterBlock`); in the third, 4 fail there and the 3 other-4xx cases pass, pinning what
-did not change; the judge test fails there only on the summary key it reads. Not re-run against a
-live Azure endpoint.
+`GUARD-INPUT-EVASION-001` and the 6 of `PI-DIRECT-001`), and 12 judge requests; `GUARD` passes (6 of
+8 attempts reached the model and held), `PI-DIRECT-001` is inconclusive, 6 of 6 blocked. Checked by
+`tests/core/test_provider_filter_block.py` (13 tests: one send and the ledger, a true marker only, a
+conversation, the four spec-level cases, a resume, an attempt stored without a verdict, an
+environment error whose tail reads like the mark, which is not a block (with a verdict only its
+reason counts, since an error's tail can quote a target), and three conversations the filter cut: a
+forbidden tool called before the cut fails the attempt, an authorized one leaves it blocked and not
+exercised, and one with no call carries no reply), `tests/adapters/test_provider_filter_block.py`
+(52, u04) and `tests/cli/test_provider_filter_campaign.py` (7, through the real CLI: the campaign, a
+run whose every attempt was blocked is complete and not unreachable, three other 4xx that still stop
+it, a resume halted by `--budget-requests 5` that counts the two blocked sends, which `--estimate
+--resume` counts as done and the resume keeps and names, `dottore replay`, and the judge). The first
+two files do not collect on `92c7b11` (no `ProviderFilterBlock`); in the third, 4 fail there and the
+3 other-4xx cases pass, pinning what did not change; the judge test fails there only on the summary
+key it reads. The two cut-conversation tests with a tool call fail on `3d739f3`, where the
+aggregate carried no reply. Not re-run against a live Azure endpoint.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is

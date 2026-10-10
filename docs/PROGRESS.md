@@ -24,8 +24,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   `92c7b11`). Left open: Bedrock's guardrail intervention (an HTTP 200 read as a reply), OpenAI's
   `invalid_prompt` 400 and Gemini's OpenAI-compatible endpoint (no documented shape); the `-sV`
   pass still stops on such a refusal of an attributing probe (the benign one and, since the
-  audit, the carriers are failed probes). Not run against a live
-  Azure or Gemini endpoint. `make gates` green (2026-10-10, 20:49): ruff, format (386 files),
+  audit, the carriers are failed probes). Not run against a live Azure or Gemini endpoint. `make gates` green (2026-10-10, 20:49): ruff, format (386 files),
   mypy strict (156 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75
   specs, 14 suites, 1 pack), 4,954 tests with 97.63% coverage, self-scan 0 high/critical, bandit,
   pip-audit (no known vulnerabilities).
