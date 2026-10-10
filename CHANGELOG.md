@@ -7,27 +7,38 @@ versioning: [SemVer](https://semver.org/).
 
 ### Fixed (URL passwords behind credentials that hold a URL separator, and endpoints cut first, #96)
 
-- **A labelled value after a URL keeps its tail masked (#96, the first regression accepted with
-  #56).** With a registered credential holding an `@` across a URL's `@` (`Adm1n@2026` in
-  `redis://ops:Adm1n@2026-db.internal:6379,password=Secr3t@Value99xyz`), the URL rule reads on
-  through the credential's mask to a later `@`, the labelled value's: the URL mask took the label
-  and the value's head, and the output was `redis://ops:«REDACTED:url_password»@Value99xyz`, the
-  tail readable, where the redactor before #56 masked the value whole. The URL mask stays, and
-  what follows its `@` up to where the value ends is masked as the value is, with its digest (the
-  one the redactor before #56 gave it): `redis://ops:«REDACTED:url_password»@«REDACTED:labeled_secret:<digest>»`.
-  It applies only when a mask in the password stands for a registered credential holding an `@`
-  (as written the URL ends there; with any other mask both readings end at the labelled value's
-  `@`, and its tail is the host, as unregistered). The tail is masked after every other rule of
-  the pass and stops before a `://`: the fuzz below found that run before the labelled rule it
-  took a label written after the value (`...@BT8Ibd/&TOKEN: <secret>`, the secret readable), and
-  that running through a `://` it took the next URL's scheme, which the URL rule reads in the
-  next pass.
+- **A labelled value after a URL keeps its tail masked, and the labelled values after it are read
+  as before #56 (#96, the first regression accepted with #56).** With a registered credential
+  holding an `@` across a URL's `@`, in the password (`Adm1n@2026` in
+  `redis://ops:Adm1n@2026-db.internal:6379,password=Secr3t@Value99xyz`) or in the user
+  (`ops@corp` in `redis://ops@corp;password:Secr3t@Value99xyz`), the URL rule reads on through
+  the credential's mask to a later `@`, the labelled value's: the URL mask took the label and the
+  value's head, and the output was `redis://ops:«REDACTED:url_password»@Value99xyz`, the tail
+  readable, where the redactor before #56 masked the value whole. The URL mask stays, and after
+  the labelled and the entropy rules, only where they left text readable, what follows its `@`
+  up to where the value ends is masked as the value is:
+  `redis://ops:«REDACTED:url_password»@«REDACTED:labeled_secret:<digest>»`. Its digest is the
+  one the redactor before #56 gave the value when no other rule masked something inside the
+  value first (a pattern or a URL); otherwise it is the digest of the value as written, where
+  the old redactor digested what that rule left of it. From where the value ends, the labelled
+  rule runs again without reading the tail for a label, as the redactor before #56 read the value
+  whole: read for one, a label in the tail took the next label into its value, and the secret
+  after it was readable, on main too (`,password=Secr3t@x-token abcdef/secret="Hunter2Secret99"`
+  printed `Hunter2Secret99`; the independent pre-merge audit of the first version of this fix).
+  The tail stops before a `://` that an `@` follows before any whitespace, where a URL can be
+  read in this pass or, once this pass's masks are stash tokens, in the next; any other `://` is
+  part of the value (stopped at every `://`, `password=Secr3t@hunter2://Secr3tTail99` left
+  `://Secr3tTail99` readable, found by the same audit, and stopped only where the URL rule reads
+  a URL in this pass, as it proposed, 3 texts of the 300,000 below showed text main masks). It
+  applies only when a mask in the userinfo stands for a registered credential holding an `@` (as
+  written the URL ends there; with any other mask both readings end at the labelled value's `@`,
+  and its tail is the host, as unregistered).
 - **The narrow fix the #56 pre-merge audit proposed was measured and not taken.** Leaving a
   password that holds such a credential to the other rules masks the issue's case, but the
   password's head before the credential then depends on them, and a labelled value inside the
   password takes the `@`: `redis://ops:AAAAAdm1n@2026-token=QQQQQQ@host` printed `AAAA` and
   `-token=`, which main masks. On the 300,000 texts of the fuzz below it left readable a
-  character main masks in 18,444 of them (10,415 of them a secret's).
+  character main masks in 15,239 of them (9,951 of them a secret's).
 - **A URL password behind a registered credential holding the URL's `://`, `:` or `@` is masked
   (#96, the second regression and its class).** The URL rule runs on the text with every
   registered credential set aside as a stash token, so a credential holding the URL's `://`
@@ -39,15 +50,19 @@ versioning: [SemVer](https://semver.org/).
   `x://key-ABCD:Sup3rS3cretPw@h` left `S3cretPw`), and one across the password's `@` with no
   later `@` (`redis://ops:abcAdm1n@2026-db.internal:6379/0` left `abc`). Last in each pass, after
   every other rule, the URL is now read in the text as written (every registered credential
-  written out, every other mask one neutral character) and what of its password is still
-  readable becomes one `url_password` mask: `x «REDACTED:credential:<digest>»:«REDACTED:url_password»@localhost y`.
-  A URL the URL rule read at a `://` the text holds is left as it masked it, and a credential cut
-  by the password's edges stays its own mask. Running last, it takes nothing another rule reads;
-  the pass PR #56 backed out joined the password to the credential before the other rules ran.
-  The text read as written is one entry of four 8-byte integers a mask (a list of tuples a piece
-  took the process to 270 MB on 4 MB of an echoed credential, where main took 122 MB), and the
-  step runs only when a registered credential in the text holds a `:`, a `/` or an `@` and the
-  text as written holds all three.
+  written out, every other mask one neutral character, an email mask an `@` between two: where
+  the URL rule found no URL, the email rule took the password's tail and a dotted host as one
+  address, and the head was readable) and what of its password is still readable becomes one
+  `url_password` mask: `x «REDACTED:credential:<digest>»:«REDACTED:url_password»@localhost y`.
+  A URL the URL rule read at a `://` the text holds is left as it masked it, the `:` after the
+  user of a URL the next pass can read stays out of the mask (masked, it kept that pass from
+  reading the URL), and a credential cut by the password's edges stays its own mask. Running
+  last, it takes nothing another rule reads; the pass PR #56 backed out joined the password to
+  the credential before the other rules ran. The text read as written is one entry of four
+  8-byte integers a mask (a list of tuples a piece took the process to 270 MB on 4 MB of an
+  echoed credential, where main took 122 MB), and the step runs only when a registered
+  credential in the text holds a `:`, a `/` or an `@` (or the email rule masked an address) and
+  the text as written holds all three.
 - **An endpoint is quoted without its userinfo before it is cut (#96, found by the #56 pre-merge
   audit).** The policy gate's refusal (`policy.authorize_target`, so `run`, `fingerprint` and the
   engine's gate on each attempt) quoted the endpoint whole and cut it at 300 characters before
@@ -60,39 +75,52 @@ versioning: [SemVer](https://semver.org/).
   Every other place that cuts text before the redactor reads it was checked: the JUnit
   reporter's 4,096-character cuts and the WebSocket adapter's 200 come after it, and the spec
   loader's messages cut at 120 and 100 quote spec files, not endpoints.
-- Checked by a differential fuzz against `origin/main` (`f12ba83`) in the pre-commit audit: texts
-  mixing URLs with userinfo (empty, masked and registered users, passwords holding labels,
-  registered values and raw `@`), labelled values after and inside URLs, PEM blocks, emails and
-  words, with registered credentials of hostile shapes (substrings of the text across the URL's
-  separators, overlapping pairs, `@`, `://` and `:` shapes, one holding a splitter), splitters,
-  U+FFFD and stash delimiters inserted. Each output was checked to be main's with stretches
-  replaced by masks only (a check that also caught the narrow fix), and by aligning both with the
-  input. On 300,000 texts: 0 texts where a character main masks is readable, 0 errors, 0
-  fixed-point failures; 106,895 outputs differ from main's, and in 104,893 texts a secret
-  character main leaves readable is masked (a URL password in 91,991, a labelled value in 19,799,
-  a private key in 257). A first run of 300,000 texts on other seeds found the two cases above
-  (2 texts); with them fixed it finds none.
-  Against the redactor before #56 (100,000 texts), main is not a superset in 22,077 texts: the fix
-  restores 5,379 of them whole and loses none main kept; the rest come from #56's and #57's
-  intended changes (mostly a host the old email rule took as an address's domain where the old
-  URL rule refused an empty or a registered user, and split credentials), or only the URL's `@`
-  shows where the old labelled rule took it into a value. On 2 MB of a reply echoing such a
-  credential in every URL the redaction is linear and takes 1.3 to 1.5 times main's memory and
-  about twice its time (25.9 bytes a character against 17.6, with a labelled tail in every URL).
+- **A CLI error is redacted whole by the redactor (#96, found by the independent pre-merge audit
+  of the first version of this fix).** `cli/app._masked` ran the URL rule on its own on the raw
+  text before the redactor, and cut a registered credential holding an `@` or a `:` at the URL's
+  separator, so the redactor no longer found it: `https://ops:P@ssw0rd!x@db.internal/v1` with
+  `P@ssw0rd!x` registered printed `...«REDACTED:url_password»@ssw0rd!«REDACTED:email»/v1`, and
+  `redis://ops:Adm1n@2026-db.internal:6379/0` printed `2026`. The redactor's own URL rule runs
+  after the registered credentials are set aside; that was the only call of
+  `mask_url_passwords` before the redactor.
+- Checked by two differential fuzzers against `origin/main` (`f12ba83`): mine, and the
+  independent auditor's (`afuzz`, rebuilt as it was), on texts mixing URLs with userinfo (empty,
+  masked and registered users, passwords holding labels, registered values and raw `@`),
+  labelled values after, inside and chained after URLs, PEM blocks, emails, phones, cards and
+  masks, with registered credentials of hostile shapes (substrings of the text across the URL's
+  separators, overlapping and nested pairs, `@`, `://` and `:` shapes, mask substrings, one
+  holding a splitter), splitters, U+FFFD and stash delimiters inserted. Each output is checked to
+  be main's with stretches replaced by masks only (a check that also caught the narrow fix).
+  Mine, on 300,000 texts and then 300,000 more: 0 texts where a character main masks is
+  readable, 0 errors, 0 fixed-point failures; in 120,443 (and 120,410) texts a secret character
+  main leaves readable is masked (a URL password in 109,599, a labelled value in 19,159, a
+  private key in 236). The auditor's, on 500,000 texts twice: 0 such texts, 0 errors, 0
+  fixed-point failures, 90,456 and 91,056 texts closed; on 20 texts of 4 MB in all, 0, and at
+  most 1.11 times main's time. Earlier runs found the cases quoted above (2 texts of 300,000 in a
+  first version, 4 in the second), each fixed and now a test. Against the redactor before #56,
+  on the auditor's 40,000 texts aimed at item 1 (hash seed 0, since the old redactor's order
+  followed it): a secret it masked is readable in 2,666 texts on main, 98 on the first version
+  of this fix (41 of them chained values) and 18 now, none of them chained: 8 a value after a
+  label glued to the word before it, 8 a URL read since #56 behind a masked or an empty user, 1
+  a tail stopped before a `://` an `@` follows, 1 a raw `@` in a password. PERF_FIGURES
 - Tests: `tests/test_redactor_url_separator_credentials.py` (the issue's two cases, a credential
-  across each separator, the labelled tail's limits the fuzz found, a Hypothesis property over
-  URLs with one or two credentials across a separator, memory and linear time on 2 MB of hostile
-  echoes; 30 cases, 17 of which fail on `f12ba83`), and in `tests/cli/test_operator_file_quoted_values.py`
-  the policy gate's refusal and `shown_auth_ref` with a 308-character password (both fail on
-  `f12ba83`). 14 mutants of the redactor fix: 12 caught, and the 2 missed change nothing a test
-  can see (the search for the label starts after the password's last mask only to bound its cost;
-  the URL rule cannot match from inside a mask). Docs: MANUAL, `docs/02` (S6), u01 A-31 and A-51,
-  u12 §6, the contract index, PROGRESS. `make gates` green: 4,650 tests (4,618 on `f12ba83`),
-  coverage 97.62%. Left open: where the URL rule did read a URL, its reading
-  stands, so after a registered credential holding the user's `:` the rest of the user is shown
-  (`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which
-  urllib reads as the password's head); a URL whose `://` is split by an invisible character
-  (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
+  across each separator, the labelled tail's limits the fuzzers found, chained values, the
+  credential in the user, the email host, the CLI's errors, a Hypothesis property over URLs with one
+  or two credentials across a separator, memory and linear time on 2 MB of hostile echoes;
+  TEST_FIGURES), and in `tests/cli/test_operator_file_quoted_values.py` the policy gate's refusal
+  and `shown_auth_ref` with a 308-character password (both fail on `f12ba83`). MUTANT_FIGURES Docs:
+  MANUAL, `docs/02` (S6), u01 A-31 and A-51, u12 §6, the contract index, PROGRESS. `make gates`
+  green: GATES_FIGURES. Left open after #96: where the URL rule did read a URL, its reading stands,
+  so after a registered credential holding the user's `:` the rest of the user is shown
+  (`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which urllib
+  reads as the password's head); a labelled value whose label sits in the user of a URL read through
+  a mask or behind an empty user (both read since #56), or is glued to the word before it
+  (`...3password="x@host.tld`, a label to no version), keeps what follows the URL's `@` readable as
+  its host, where the redactor before #56 masked it whole or as an address; the rest of a labelled
+  value after a URL mask stops before a `://` that an `@` follows before any whitespace, where a URL
+  can be read, so what lies between them is readable; a raw `@` in a URL's user or unregistered
+  password leaves the password, or its part after the `@`, readable; and a URL whose `://` is split
+  by an invisible character (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
 
 ### Fixed (a run id of twelve decimal digits, masked as a phone number)
 

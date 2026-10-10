@@ -195,26 +195,37 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `ILDOTTORE_REDACTION_SALT` to correlate masks across runs on purpose: a digest is computed over
   the value as written (a private key's too, whatever is registered inside it, when the key
   pattern takes it whole: its 16 KB bound counts each mask inside the key as a stash token), so
-  with the salt pinned one value reads the same in every run. A password in a URL is masked
-  behind a registered, masked or empty user too (not yet behind a user holding a raw `@`), and
-  registered credentials that overlap in the text are masked as one. Since issue #96 a password
-  is masked behind a registered credential that holds one of the URL's separators as well: one
-  holding its `://` (two overlapping ones masked as one run included: `key-ABCD1234` and
-  `1234://bob` registered, `x key-ABCD1234://bob:<password>@localhost` printed the password
-  until #96), its `:`, or the password's `@` with no later `@`; the URL is read as it is
-  written, and what of the password is still readable is masked as `url_password`. A registered
-  credential holding an `@` across the URL's `@` still lets the URL rule read on to a later `@`
+  with the salt pinned one value reads the same in every run. A password in a URL is masked behind a
+  registered, masked or empty user too (not yet behind a user holding a raw `@`), and registered
+  credentials that overlap in the text are masked as one. Since issue #96 a password is masked
+  behind a registered credential that holds one of the URL's separators as well: one holding its
+  `://` (two overlapping ones masked as one run included: `key-ABCD1234` and `1234://bob`
+  registered, `x key-ABCD1234://bob:<password>@localhost` printed the password until #96), its `:`,
+  or the password's `@` with no later `@`; the URL is read as it is written, and what of the
+  password is still readable is masked as `url_password`. A registered credential holding an `@`
+  across the URL's `@`, in the user or the password, still lets the URL rule read on to a later `@`
   (the host is reported wrong), but a labelled value written after the URL keeps its mask:
   `redis://ops:Adm1n@2026-db:6379,password=Secr3t@Value99xyz` reads
   `redis://ops:«REDACTED:url_password»@«REDACTED:labeled_secret:<digest>»`, where PR #56 left
-  `Value99xyz` readable. Left open: where the URL rule did read a URL, its reading stands, so
-  after a registered credential holding the user's `:` the rest of the user is shown
-  (`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which
-  urllib reads as the password's head). Each case needs a target that writes a registered
-  credential holding a URL separator. An error quotes an endpoint, and an `auth_ref` holding an
-  `@`, without what precedes the last `@` of its authority, before cutting it at 300
-  characters: cut first, the policy gate's refusal printed 287 characters of a 308-character
-  password whose `@` fell past the cut (#96).
+  `Value99xyz` readable, and the labelled values after it are read as the redactor before #56 read
+  them (`,password=Secr3t@x-token abcdef/secret="<secret>"` printed the last secret, on main too).
+  Each case needs a target that writes a registered credential holding a URL separator. Left open
+  after #96: where the URL rule did read a URL, its reading stands, so after a registered credential
+  holding the user's `:` the rest of the user is shown (`redis://ops:svc-keyXYZ:<password>@host`
+  with `ops:svc-key` registered shows `XYZ`, which urllib reads as the password's head); a labelled
+  value whose label sits in the user of a URL read through a mask or behind an empty user (both read
+  since #56), or is glued to the word before it (`...3password="x@host.tld`, a label to no version),
+  keeps what follows the URL's `@` readable as its host, where the redactor before #56 masked it
+  whole or as an address; the rest of a labelled value after a URL mask stops before a `://` that an
+  `@` follows before any whitespace, where a URL can be read, so what lies between them is readable;
+  a raw `@` in a URL's user or unregistered password leaves the password, or its part after the `@`,
+  readable; and a URL whose `://` is split by an invisible character (`s3:/<U+FEFF>/bob:...`) is
+  read by no URL rule. An error quotes an endpoint, and an `auth_ref` holding an `@`, without what
+  precedes the last `@` of its authority, before cutting it at 300 characters: cut first, the policy
+  gate's refusal printed 287 characters of a 308-character password whose `@` fell past the cut
+  (#96). An error is redacted whole by the redactor, URL passwords included: the URL rule run on its
+  own first cut a registered credential holding an `@` or a `:`
+  (`https://ops:P@ssw0rd!x@db.internal/v1` with `P@ssw0rd!x` registered printed `ssw0rd!`; #96).
   What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
   id) is left readable in every report, in both copies of a finding the JSON report carries, so
   a custom spec id reads the same in every run and `dottore diff` can match it. Error messages

@@ -196,18 +196,34 @@ run included, which covered the `://` that the one-at-a-time replacement before 
 outside the credential, readable. The URL is read in the text as written (every registered
 credential written out, every other mask one neutral character), last in each pass, after every
 other rule, and what of its password is still readable becomes one `url_password` mask; a URL the
-rule read at a `://` in the text as it reads is left as the rule masked it. A credential holding an
-`@` across the URL's `@` still lets the rule read on to a later `@`; when that `@` is a labelled
-value's, the URL mask takes the label and the value's head, and since #96 the rest of the value
-after the mask's `@` is masked as the value is, with its digest, after the other rules of the pass
-and up to a `://` (PR #56 left it readable; before A-31 the labelled rule masked the value whole).
-The pre-merge audit's proposal, leaving such a password to the other rules, left readable a
-character main masked in 18,444 of 300,000 differential texts (the password's head before the
-credential); the fix leaves none, and is checked by a differential fuzz against main before a
+rule read at a `://` in the text as it reads is left as the rule masked it, an email mask is read as
+holding an `@` (where the rule found no URL, the email rule took the password's tail and a dotted
+host as one address), and the `:` after the user of a URL the next pass can read stays out of the
+mask. A credential holding an `@` across the URL's `@`, in the user or the password, still lets the
+rule read on to a later `@`; when that `@` is a labelled value's, the URL mask takes the label and
+the value's head, and since #96, after the other rules of the pass and only where they left text
+readable, the rest of the value after the mask's `@` is masked as the value is, with its digest (the
+one the redactor before A-31 gave it when no other rule masked something inside the value first), up
+to a `://` that an `@` follows before any whitespace, and the labelled rule is run again from where
+the value ends, without reading its tail for a label, as the redactor before A-31 read it (PR #56
+left the tail readable, and a label in it took the next label into its value: pre-merge audit of
+#96). The pre-merge audit's proposal for #96, leaving such a password to the other rules, left
+readable a character main masked in 15,239 of 300,000 differential texts (the password's head before
+the credential); the fix leaves none, and is checked by a differential fuzz against main before a
 change to these rules is merged. A pass that joined the password to such a credential before the
 other rules ran was backed out of PR #56 after the audits of its two versions each found a new hole
-in it. (Left open: where the rule read a URL its reading stands, so after a credential holding the
-user's `:` the rest of the user, which urllib reads as the password's head, is shown. Not yet every
+in it. (Left open after #96: where the URL rule did read a URL, its reading stands, so after a
+registered credential holding the user's `:` the rest of the user is shown
+(`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which urllib
+reads as the password's head); a labelled value whose label sits in the user of a URL read through a
+mask or behind an empty user (both read since #56), or is glued to the word before it
+(`...3password="x@host.tld`, a label to no version), keeps what follows the URL's `@` readable as
+its host, where the redactor before #56 masked it whole or as an address; the rest of a labelled
+value after a URL mask stops before a `://` that an `@` follows before any whitespace, where a URL
+can be read, so what lies between them is readable; a raw `@` in a URL's user or unregistered
+password leaves the password, or its part after the `@`, readable; and a URL whose `://` is split by
+an invisible character (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
+Not yet every
 rule either: the labelled-secret rule stops at a mask, so `api_key=<registered credential><tail>`
 keeps its tail readable, as before A-31. Nor every key: the key pattern's 16 KB bound counts each
 mask inside the key as a stash token whose length grows with the masks before it, so a key near
