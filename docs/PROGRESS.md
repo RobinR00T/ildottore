@@ -17,7 +17,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   filter refused stopped `-sV`; the engine's `is_prompt_filtered` (wired to
   `core.execute.is_provider_filter_block`) makes it a failed probe, as Prompt Shields classes an
   encoded instruction as an encoding attack. The FAQ line of 152 characters is rewrapped. Not
-  started, at the conductor's request: the Bedrock guardrail and Azure output-filter gap.
+  started, at the conductor's request: the Bedrock guardrail and Azure output-filter gap. 17
+  tests more (52 adapter, 13 core, 7 CLI, 6 fingerprint and the base64 carrier through the CLI).
+  `make gates` green (2026-10-10, 21:25): ruff, format (387 files), mypy strict (156 source
+  files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs), 4,971 tests
+  with 97.63% coverage, self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
 
 ## State, 2026-10-10 (evening): a provider's input-filter refusal is a blocked attempt (OD-41)
 
