@@ -138,10 +138,12 @@ A hosted deployment may run its own input filter before the model. Azure OpenAI'
 answers an attack prompt it blocks with HTTP 400 and the error code `content_filter`; the run
 records that attempt as blocked (`inconclusive`, reason `blocked_by_provider_filter`), does not
 send it again, and goes on. The summary counts them; against a loopback stub that filters two
-phrases, `--spec GUARD-INPUT-EVASION-001 --spec PI-DIRECT-001 --runs 2` ends with
+phrases and answers the `--judge` model a secure verdict, `--spec GUARD-INPUT-EVASION-001 --spec
+PI-DIRECT-001 --runs 2` ends with
 
 ```
 Specs run: 2 of 2 planned · pass 1 · fail 0 · inconclusive 1
+Not exercised: 1 spec(s) got no reply that could be scored (...)
 Blocked by the provider's input filter: 8 attempt(s) in 2 spec(s) never reached the model (GUARD-INPUT-EVASION-001, PI-DIRECT-001); they are inconclusive, not refusals by the model and not exploits
 ```
 
