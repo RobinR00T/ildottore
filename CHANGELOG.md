@@ -47,7 +47,10 @@ versioning: [SemVer](https://semver.org/).
   it and says so (`; 2 of them the provider's input filter refused, kept as blocked`), and
   `--estimate --resume` counts it as done. `dottore replay` lists it as `inconclusive
   (blocked_by_provider_filter)` and counts it under the pooled rate. A conversation stops at the
-  turn the filter refused. A run whose every attempt was blocked is complete, not `unreachable`.
+  turn the filter refused; when the model had already called a tool, the attempt carries that
+  trace and the spec's trace evaluators read it, so a forbidden call made before the cut fails the
+  attempt (stored as any fail, the cut under `request.metadata.provider_filter_cut`), and anything
+  else leaves it blocked. A run whose every attempt was blocked is complete, not `unreachable`.
 - **Counted apart in every report.** The finding's reasoning adds `; 6/6 blocked by the provider's
   input filter before the model saw them`; the JSON summary carries
   `blocked_by_provider_filter: {attempts, specs}` (always; optional in report-1.0, whose schema

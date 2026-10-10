@@ -66,6 +66,10 @@ about the model.
   token reservation is released (no completion was produced); `--estimate` is unchanged. A resume
   keeps a blocked attempt without sending it again and says how many it kept; `dottore replay`
   re-derives it from what the attempt stored.
+- A conversation the filter cut on a later turn is blocked too, with one exception: a tool the
+  model had already called on an earlier turn was called, so the trace so far is kept and the
+  spec's trace evaluators read it; a forbidden call fails the attempt. The final reply a
+  multi-turn spec's text evaluators score was never written, so they are not run.
 - The finding's reasoning says how many attempts were blocked; the JSON summary carries
   `blocked_by_provider_filter: {attempts, specs}` (optional in report-1.0); SARIF, JUnit, HTML and
   the terminal summary say it where there are any.

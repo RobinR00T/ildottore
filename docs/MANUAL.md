@@ -1692,6 +1692,12 @@ provider's filter** and the campaign goes on (OD-41, ADR-0011):
   blocked attempt is in the reproducibility's `N` and never a success, and keeps its variant from
   confirming. A spec whose every attempt was blocked is `inconclusive` and not exercised, never a
   pass of the model; `--fail-on` gates only a `fail`, so it neither trips nor clears on one.
+- A multi-turn attack stops at the turn the filter refused. If the model had called a tool on
+  an earlier turn, that trace is kept and the spec's trace evaluators (`tool_call`,
+  `tool_sequence`, `kill_chain_progression`) read it: a forbidden call already made fails the
+  attempt, as an exploit the filter did not prevent (the refused turn is recorded under
+  `request.metadata.provider_filter_cut`); anything else leaves the attempt blocked. Text
+  evaluators are not run on it: a multi-turn spec's text is its final reply, never written.
 - It is not retried (the filter refuses the same prompt the same way), it is a request against
   `--budget-requests` (its token reservation is released: no completion was produced), a resume
   keeps it, and `--estimate` is unchanged.
