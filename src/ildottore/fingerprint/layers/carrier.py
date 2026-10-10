@@ -58,6 +58,7 @@ __all__ = [
     "CARRIER_DECOY",
     "CARRIER_MARKER",
     "CARRIER_PROBE_DETAIL",
+    "CARRIER_PROBE_PREFIX",
     "CARRIER_PROBE_PROMPT",
     "CarrierLayer",
     "effective_mutators",
@@ -67,6 +68,9 @@ __all__ = [
 
 _LAYER = "carrier"
 CARRIER_PROBE_DETAIL = "carrier_comprehension"
+#: What every carrier probe's name starts with (``carrier_<mutator>``): the engine reads it to
+#: let a provider's input filter refuse a carrier without stopping the pass (OD-41).
+CARRIER_PROBE_PREFIX = "carrier_"
 
 #: A marker with no semantic pull and no policy valence: the probe asks for it back, so the
 #: check is "did the instruction survive the transformation", nothing more.
@@ -196,7 +200,7 @@ class CarrierLayer:
         comprehension: dict[str, float] = {}
         broken: list[str] = []
         for mutator in self._mutators:
-            seed = seed_for(ctx.target_id, f"carrier_{mutator.name}")
+            seed = seed_for(ctx.target_id, f"{CARRIER_PROBE_PREFIX}{mutator.name}")
             try:
                 carried = mutator.mutate(CARRIER_PROBE_PROMPT, seed)
             except Exception as exc:
@@ -208,7 +212,7 @@ class CarrierLayer:
                 continue
             request = ModelRequest(
                 prompt=carried,
-                metadata={"probe": f"carrier_{mutator.name}", "seed": seed},
+                metadata={"probe": f"{CARRIER_PROBE_PREFIX}{mutator.name}", "seed": seed},
                 # ``PROBE_SAMPLING`` (temperature 0, a capped reply), as every probe: it sent no
                 # temperature, so a live server sampled each carrier once at its own default
                 # (1.0 on Ollama; first live pass, 2026-10-07).

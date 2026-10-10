@@ -143,7 +143,9 @@ def coverage_lines(
     tested). Pure (no TTY); the caller routes it to the console.
     """
 
-    cov = build_run_summary(findings, specs or {}, planned_specs=planned_specs).coverage
+    summary = build_run_summary(findings, specs or {}, planned_specs=planned_specs)
+    cov = summary.coverage
+    blocked = summary.provider_filter
     return [
         (
             f"Coverage - OWASP LLM Top 10 ({OWASP_LLM_EDITION}): "
@@ -179,10 +181,21 @@ def coverage_lines(
                 "could not carry; or a reply that never reached the tool carrying the scene; or "
                 "every send ended in an environment error, such as a network "
                 "failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could "
-                "not be decoded or one nested too deeply), so their framework codes are NOT "
-                "counted as covered"
+                "not be decoded or one nested too deeply, or was refused by the provider's input "
+                "filter), so their framework codes are NOT counted as covered"
             ]
             if cov.not_exercised
+            else []
+        ),
+        # OD-41: counted apart, because they are neither the model's refusals nor exploits.
+        *(
+            [
+                f"Blocked by the provider's input filter: {blocked.attempts} attempt(s) in "
+                f"{len(blocked.specs)} spec(s) never reached the model ("
+                + ", ".join(blocked.specs)
+                + "); they are inconclusive, not refusals by the model and not exploits"
+            ]
+            if blocked.attempts
             else []
         ),
         *(

@@ -2,7 +2,7 @@
 
 No network leaves the host (the session guard in ``tests/conftest.py`` allows loopback). The
 server runs on its own thread and event loop, so both async adapter tests and the synchronous
-CLI paths (``asyncio.run`` inside ``fingerprint_target`` and ``execute_run``) can dial it.
+CLI paths (the event loops ``fingerprint_target`` and ``execute_run`` run) can dial it.
 
 Its wire shape is the one ``examples/target.websocket.yaml`` declares: an ``auth`` frame
 answered by ``auth_ok``/``auth_failed``, an optional ``new_conversation`` frame, and a ``query``

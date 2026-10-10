@@ -78,7 +78,9 @@ The run id is the JSON report's run.run_id and the name of the run's directory u
 a run an older version named with 12 decimal digits, masked as a phone number in its reports,
 replays by that name. Attempts that went out with no temperature (a target that takes no
 sampling, dottore-scope(5)) are counted under the pooled rate: they are not temperature-0
-deterministic.
+deterministic. Attempts the provider's input filter refused are listed as
+.B "inconclusive (blocked_by_provider_filter)"
+and counted under the pooled rate.
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
@@ -266,6 +268,20 @@ confirmed exploits, so read summary.status.reason before treating 3 as a retryab
 infrastructure error.
 .PP
 Only an exploited (fail) finding trips the gate; pass and inconclusive never do.
+.PP
+SIGTERM and SIGHUP stop a run as Ctrl-C does, whether Ctrl-C itself is at its default or
+ignored (as for a job a script starts with &): the requests in flight are cancelled, the spend
+is recorded for --resume, and the exit status is 130. One signal is enough. A second, of either
+kind, before the first has stopped the run raises at once, as a second Ctrl-C does, and like a
+second Ctrl-C it can leave the run waiting for a third. An ignored SIGHUP stays ignored (nohup).
+
+.PP
+An attack prompt the provider's own input filter refuses before the model sees it (Azure
+OpenAI's HTTP 400 with the error code content_filter, Gemini's promptFeedback.blockReason) does
+not stop the run: the attempt is inconclusive with the reason blocked_by_provider_filter, is not
+sent again, and is counted in the summary ("Blocked by the provider's input filter: N
+attempt(s) in S spec(s) never reached the model"). A run whose every attempt was refused that way
+completed; it is not "every attempt failed on transport". Any other 4xx still exits 3.
 .SH FILES
 .TP
 .I scope.yaml

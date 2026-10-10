@@ -99,6 +99,25 @@ async def _raw_upgrade_server(
     return await asyncio.start_server(on_connect, "127.0.0.1", 0)
 
 
+def _holding_until(
+    done: asyncio.Event,
+) -> Callable[[asyncio.StreamReader, asyncio.StreamWriter], Awaitable[None]]:
+    """A connection handler that neither reads nor answers until ``done``, then drops it.
+
+    It used to sleep 30 s and leave the writer open: each test then took 30 s on 3.14, and on
+    3.12, where the stream protocol keeps a reference to the writer, ``server.wait_closed()``
+    never returned and the test hung (pre-merge audit of the A-60 fix).
+    """
+
+    async def hold(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            await done.wait()
+        finally:
+            writer.transport.abort()
+
+    return hold
+
+
 def _raw_adapter(port: int, **overrides: object) -> WebSocketAdapter:
     from ildottore.policy import Endpoint, EndpointAllowlist
 
@@ -343,8 +362,8 @@ async def test_a_credential_shorter_than_eight_characters_is_refused_before_any_
 
 
 async def test_a_server_that_never_reads_is_a_turn_timeout() -> None:
-    async def never_read(_reader: asyncio.StreamReader, _writer: asyncio.StreamWriter) -> None:
-        await asyncio.sleep(30)
+    done = asyncio.Event()
+    never_read = _holding_until(done)
 
     server = await _raw_upgrade_server(never_read)
     port = server.sockets[0].getsockname()[1]
@@ -355,6 +374,7 @@ async def test_a_server_that_never_reads_is_a_turn_timeout() -> None:
             await adapter.send(ModelRequest(prompt="p" * (16 * MIB)))
         assert time.monotonic() - started < 6.0
     finally:
+        done.set()
         server.close()
         await server.wait_closed()
 
@@ -510,8 +530,8 @@ async def test_raw_ids_are_redacted_in_memory() -> None:
 async def test_close_against_a_server_that_never_answers_the_close_frame_is_bounded() -> None:
     """M22: ``_close`` returns within its own timeout, whatever the server does."""
 
-    async def swallow(_reader: asyncio.StreamReader, _writer: asyncio.StreamWriter) -> None:
-        await asyncio.sleep(30)
+    done = asyncio.Event()
+    swallow = _holding_until(done)
 
     server = await _raw_upgrade_server(swallow)
     port = server.sockets[0].getsockname()[1]
@@ -525,6 +545,7 @@ async def test_close_against_a_server_that_never_answers_the_close_frame_is_boun
         await _close(connection)
         assert time.monotonic() - started < 4.0
     finally:
+        done.set()
         server.close()
         await server.wait_closed()
 

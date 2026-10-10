@@ -128,6 +128,7 @@ def test_inconclusive_reason_coverage() -> None:
         "capability_unavailable",
         "blocked_by_policy",
         "judge_compromised",
+        "blocked_by_provider_filter",
     }
 
 

@@ -24,7 +24,6 @@ state computed and then dropped somewhere a human looks):
 
 from __future__ import annotations
 
-import asyncio
 import fnmatch
 import json
 import os
@@ -34,15 +33,15 @@ import stat
 import sys
 import unicodedata
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import FrameType
 from typing import Any
 
+from ildottore.cli import interrupts, wiring
 from ildottore.cli import resume as resume_mod
-from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
 from ildottore.cli.render import ProgressPrinter
@@ -89,6 +88,7 @@ from ildottore.shared.models import (
     TestRun,
     TestRunSummary,
 )
+from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
 
 __all__ = [
     "CATEGORY_ALIASES",
@@ -1313,26 +1313,81 @@ def _validate_options(opts: RunOptions) -> None:
 
 
 def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
-    """Handle SIGTERM or SIGHUP as Ctrl-C would be handled at this moment (u12 A-60).
+    """Handle SIGTERM or SIGHUP as asyncio handles Ctrl-C, or as Ctrl-C is handled here (A-60).
 
     ``signal.default_int_handler`` raised KeyboardInterrupt wherever the main thread was, and
     inside a weakref callback Python prints "Exception ignored" and drops it: a SIGTERM sent
     with a probe on the wire left a resume sending (41 requests where 25 were expected, CI on
-    PRs #72 and #82). Inside ``asyncio.run`` the SIGINT handler is asyncio's, which cancels the
-    run on the first signal instead of raising, so that one cannot be dropped (a second, or one
-    after the run's task has finished, raises in place as before). With no Python handler for
-    SIGINT (ignored, as for a job a script starts with ``&``, where asyncio installs none) it
-    raises, as before, and can still be dropped in a callback. A program that embeds
-    ``execute_run`` and gives Ctrl-C a handler that does nothing, or installs one through
-    ``loop.add_signal_handler``, makes SIGTERM and SIGHUP do nothing either; ``dottore`` does
-    neither (pre-commit audit).
+    PRs #72 and #82). Calling asyncio's own Ctrl-C handler instead stopped that, but only while
+    Ctrl-C had a handler: with it ignored (a job a script starts with ``&``) the signal still
+    raised, and raised in gather's callback it left the run waiting for a second signal as it
+    closed (pre-merge audit of #94). Inside a loop of :func:`interrupts.run_until_stopped`, which
+    every request is sent from, the first signal now cancels the run's task whatever Ctrl-C's
+    disposition, and KeyboardInterrupt is raised once the loop is closed; a second of either kind
+    raises in place. Outside one, it calls whatever SIGINT handler is in place and raises when
+    there is none, and :func:`interrupts.terminations_watched` remembers it. A program that embeds
+    ``execute_run`` sees the difference: inside a loop SIGTERM and SIGHUP no longer call its own
+    Ctrl-C handler (only asyncio's), and one that its Ctrl-C handler ignores outside a loop still
+    stops the campaign, at its next loop or as its block ends; ``dottore`` has no handler of its
+    own.
     """
 
+    if interrupts.stop_running_loop(frame):
+        return
     handler = signal.getsignal(signal.SIGINT)
     if callable(handler):
         handler(signal.SIGINT, frame)
     else:
         signal.default_int_handler(signum, frame)
+
+
+@contextmanager
+def _signals_held_back(signals: Sequence[signal.Signals]) -> Iterator[Callable[[], None]]:
+    """Hold ``signals`` back while the handlers are swapped (POSIX; elsewhere nothing changes).
+
+    A signal that arrived halfway through the swap ran the handler just installed, which
+    raised before the next line recorded it, so a handler of the campaign stayed installed
+    after ``execute_run`` returned (pre-merge audit of the A-60 fix: 38 of about 6,000 points).
+    One held back is delivered when the swap is done, to whichever handler is then in place.
+    Only the main thread's mask changes: in a process with other threads, a signal sent to the
+    process can be taken by one of them meanwhile. Yields a function that lets them go at once,
+    for a caller that has nothing left to do while they are held; the block lets them go too.
+    """
+
+    block = getattr(signal, "pthread_sigmask", None)
+    if block is None or not signals:
+        yield _nothing_to_release
+        return
+    previous = block(signal.SIG_BLOCK, signals)
+    released = False
+
+    def release() -> None:
+        nonlocal released
+        if not released:
+            released = True
+            block(signal.SIG_SETMASK, previous)
+
+    try:
+        yield release
+    finally:
+        release()
+
+
+def _nothing_to_release() -> None:
+    return None
+
+
+def _take_pending(signals: Sequence[signal.Signals]) -> bool:
+    """Accept any of ``signals`` that is pending (held back), and say whether one was."""
+
+    pending = getattr(signal, "sigpending", None)
+    accept = getattr(signal, "sigwait", None)
+    if pending is None or accept is None:
+        return False
+    waiting = pending() & set(signals)
+    for sig in waiting:
+        accept([sig])  # pending and held back: returns at once
+    return bool(waiting)
 
 
 @contextmanager
@@ -1342,25 +1397,59 @@ def _termination_as_interrupt() -> Iterator[None]:
     The runner records its spend however it stops, but a SIGTERM (what `timeout`, `docker
     stop`, systemd, Kubernetes and CI timeouts send) or a SIGHUP killed the process outright,
     so the spend was lost there too (audit of the hygiene block). Restored afterwards; outside
-    the main thread, where signals cannot be set, nothing changes.
+    the main thread, where signals cannot be set, nothing changes. Ctrl-C, SIGTERM and SIGHUP
+    are held back while the handlers are set and while they are put back.
     """
 
+    names = ("SIGTERM", "SIGHUP")
+    mapped = [sig for sig in (getattr(signal, name, None) for name in names) if sig is not None]
+    held = [*mapped, signal.SIGINT]
     previous: dict[signal.Signals, Any] = {}
-    for name in ("SIGTERM", "SIGHUP"):
-        sig = getattr(signal, name, None)
-        # An ignored signal stays ignored: `nohup dottore run` set SIGHUP to SIG_IGN so a scan
-        # survives an SSH logout, and mapping it anyway aborted the scan on hangup.
-        if sig is None or signal.getsignal(sig) is signal.SIG_IGN:
-            continue
+    interrupted: KeyboardInterrupt | None = None
+    # Watched from before the first handler is set until after the last is put back, so a
+    # signal one of them takes always counts for this campaign.
+    with interrupts.terminations_watched():
         try:
-            previous[sig] = signal.signal(sig, _interrupt_as_ctrl_c)
-        except ValueError:
-            break
-    try:
-        yield
-    finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
+            with _signals_held_back(held):
+                for sig in mapped:
+                    current = signal.getsignal(sig)
+                    # An ignored signal stays ignored: `nohup dottore run` set SIGHUP to SIG_IGN
+                    # so a scan survives an SSH logout, and mapping it anyway aborted the scan.
+                    if current is signal.SIG_IGN:
+                        continue
+                    previous[sig] = current  # recorded first: put back however this ends
+                    try:
+                        signal.signal(sig, _interrupt_as_ctrl_c)
+                    except ValueError:  # not the main thread: nothing to set or put back
+                        del previous[sig]
+                        break
+            yield
+        finally:
+            # A signal that raises before the hold takes effect (the campaign's own handler, or
+            # Ctrl-C's) skipped the rest of this block and left a handler installed (14 of
+            # about 6,000 points once the swap was held): put them back again, then raise it.
+            # Nothing comes before the try, where it would not be caught.
+            while True:
+                try:
+                    with _signals_held_back(held) as release:
+                        for sig, handler in previous.items():
+                            signal.signal(sig, handler)
+                        # One that came while the campaign's handler was in place, up to the
+                        # check below, is the campaign's, rather than the handler's put back
+                        # (SIGTERM's default ends the process at once, with no exit code): in
+                        # a process whose only thread is the main thread, since another can
+                        # take a signal the main thread holds back. One that comes after the
+                        # check goes to the handler put back; let go at once to keep that short.
+                        taken = _take_pending(list(previous))
+                        release()
+                    if taken:
+                        interrupts.note_termination()
+                except KeyboardInterrupt as exc:
+                    interrupted = exc
+                    continue
+                break
+            if interrupted is not None:
+                raise interrupted
 
 
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
@@ -1763,10 +1852,19 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             done, again = resume_progress(resume_from)
             unjudged = len(unjudged_attempt_ids(resume_from))
             errored = again - unjudged
+            # OD-41: a prompt the provider's input filter refused would be refused again.
+            blocked = len(
+                blocked_attempt_ids(a for finding in resume_from.findings for a in finding.attempts)
+            )
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
                 f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
                 "would repeat); they will not be re-sent"
+                + (
+                    f"; {blocked} of them the provider's input filter refused, kept as blocked"
+                    if blocked
+                    else ""
+                )
                 + (
                     f"; {errored} that ended in an environment error will be sent again"
                     if errored
@@ -2247,12 +2345,19 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     Unreachable means: attempts were made, **every** attempt failed on transport (an error
     and no response), and therefore nothing was actually evaluated. One flaky endpoint or one
     bad spec is not this, because the run still measured something.
+
+    A prompt the provider's input filter refused is not a transport failure (OD-41): the
+    provider answered it. A run whose every attempt it refused is complete, its specs
+    inconclusive, and the summary counts the blocked attempts; it is not "unreachable".
     """
 
     attempts = [a for finding in result.findings for a in finding.attempts]
     if not attempts:
         return None  # nothing was attempted: a barren plan, refused before the run
-    if any(a.error is None and a.response is not None for a in attempts):
+    if any(
+        (a.error is None and a.response is not None) or blocked_by_provider_filter(a)
+        for a in attempts
+    ):
         return None
     first = next((a.error for a in attempts if a.error), "no response")
     return (
@@ -2448,7 +2553,7 @@ def _run_one_target(
         apply_sampling_defaults=apply_sampling_defaults,
     )
     try:
-        return asyncio.run(
+        return interrupts.run_until_stopped(
             built.runner.run(
                 run_id=run_id,
                 target=target,

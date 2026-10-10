@@ -172,6 +172,53 @@ async def test_timeout_is_env_error() -> None:
     assert result.env_error is True
 
 
+async def test_a_cancellation_as_the_send_completes_is_not_swallowed() -> None:
+    """The attempt is cancelled (a signal stopped the run) in the same turn its reply comes:
+    the cancellation wins. On Python 3.11 ``asyncio.wait_for`` returned the reply and dropped
+    the cancellation (CPython gh-86296), and the spec went on sending; the send is bounded by
+    ``asyncio.timeout`` now. No clock decides it: both happen in one callback, reply first."""
+
+    loop = asyncio.get_running_loop()
+    reply: asyncio.Future[ModelResponse] = loop.create_future()
+    sending = asyncio.Event()
+
+    class _Adapter:
+        id = "replying"
+
+        async def send(self, request: ModelRequest) -> ModelResponse:
+            sending.set()
+            return await reply
+
+        def capabilities(self):  # pragma: no cover - not used here
+            from ildottore.shared.models import Capabilities
+
+            return Capabilities()
+
+    attempt = loop.create_task(
+        execute_attempt(
+            _Adapter(),
+            _req(),
+            attempt_id="a1",
+            spec_id="S-1",
+            mutation="identity",
+            sampling=None,
+            ledger=BudgetLedger(),
+            timeout_s=5.0,
+            sleep=no_sleep,
+            now=lambda: 0.0,
+        )
+    )
+    await sending.wait()
+
+    def reply_and_stop() -> None:
+        reply.set_result(_resp())
+        attempt.cancel()
+
+    loop.call_soon(reply_and_stop)
+    with pytest.raises(asyncio.CancelledError):
+        await attempt
+
+
 async def test_budget_breach_during_send_propagates() -> None:
     adapter = FlakyAdapter(_resp(), fail_times=0, exc=_EnvError())
     ledger = BudgetLedger(max_requests=0)  # first debit breaches immediately

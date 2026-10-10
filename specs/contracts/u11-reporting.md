@@ -74,7 +74,8 @@ the state in each result's `properties.state`.
 ## §6 Data/wire shapes
 - JSON: `{schema_version, run: TestRun, findings: [Finding], summary: RunSummary}` where
   `RunSummary = {by_status, by_band, by_framework{owasp,atlas,nist}, model_comparison?,
-  repro_distribution, confidence_distribution, confirmed_count, needs_review_count}`.
+  repro_distribution, confidence_distribution, confirmed_count, needs_review_count}` (as built
+  also `coverage`, `status` and, since OD-41, `blocked_by_provider_filter: {attempts, specs}`).
 - SARIF: `sarif-2.1.0` root; one `run` per tool invocation; `results[]` with `ruleId`, `level`,
   `message`, `properties{band, risk_score, reproducibility, confidence, state}`.
 - JUnit: `<testsuites>`→`<testsuite name=framework>`→`<testcase name=spec_id>` with `<failure>`
@@ -109,7 +110,8 @@ survived. A test asserts `run <= total` and that a complete run has them equal.
 **A-13 A value that is not counted is reported.** A framework value outside its pinned universe
 never reaches a numerator **and** appears in `coverage.off_universe`; a spec that produced a
 finding without a reply that could be scored (nothing sent, or every send ended in an environment
-error) appears in `coverage.not_exercised` and is credited nothing.
+error or, since OD-41, was refused by the provider's input filter) appears in
+`coverage.not_exercised` and is credited nothing.
 A run does not lint, so silently dropping either is how a numerator shrinks with nobody told.
 
 **A-14 Every figure carries its edition, and percentages floor.** OWASP renumbered in 2026 and
@@ -145,6 +147,26 @@ One code was withdrawn from the classification entirely on the same grounds: `Co
 Control` was called unobservable in a target's replies while this repository ships fixtures in
 which an agent writes a cron entry calling a C2-shaped address. Checked by
 `tests/cli/test_coverage_cmd.py`.
+
+**A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) The attempts the provider's
+input filter refused are counted apart in every format.** Such an attempt is `inconclusive:
+blocked_by_provider_filter` (ADR-0011): neither the model's refusal nor an exploit, so a report
+that folded it into "inconclusive" could not tell a model that held from one that was never asked.
+The summary (`RunSummary.provider_filter`, read from the stored attempts by
+`shared.provider_filter`, never re-scored) is `blocked_by_provider_filter: {attempts, specs}` in
+the JSON report, always emitted and optional in report-1.0 (the schema gains it additively, and
+`schema_version` stays `1.0` as it did for `edition` and `status`: a new report fails an older copy
+of the schema, an older report validates against the new one; pre-merge audit of `3d739f3`, L5);
+SARIF
+adds `blocked_by_provider_filter` to `runs[0].properties` and to a result's `properties`, and
+`; <k> of <n> attempt(s) blocked by the provider's input filter before the model saw them` to its
+message, when there are any; JUnit adds ` blocked_by_provider_filter=<k>` to a passing case's
+detail, and a failure or a skip quotes the finding's reasoning, which says it; the HTML summary
+prints a line under the counts. A spec whose every attempt was blocked is in `not_exercised`, SARIF
+kind `open`, state `needs_review`. With none blocked, only the JSON report changes (the key, with 0
+and `[]`), so the golden JSON snapshot gains it and the SARIF, JUnit and HTML ones do not move.
+Checked by `tests/cli/test_provider_filter_campaign.py` (every format of one run, the JSON against
+the schema).
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.

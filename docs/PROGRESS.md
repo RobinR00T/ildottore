@@ -3,6 +3,186 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-10 (night): the verification audit's three LOWs
+
+- The verification audit of `5bd7c45` found it merge-ready, with three LOWs, closed one commit each.
+  `93575ef`: `run_until_stopped` disarms in a `finally`, since a Ctrl-C or a second signal raising
+  at a call of its cleanup left the run armed (the audit's Ctrl-C sweep: 27 points, now 12, all at a
+  line that compiles to NOP alone; its second-signal sweeps: none left); one test, which fails on
+  `5bd7c45`. `4020f8b`: the campaign takes a held-back signal only when it arrives before the
+  put-back's last check, in a process whose only thread is the main thread, and the docs say so; the
+  hold is let go right after that check. `3836753`: `_interrupt_as_ctrl_c`'s docstring says what a
+  program that embeds `execute_run` sees, as u12 A-60 does. `tests/cli/test_termination_signals.py`:
+  49 tests, 30 runs in a row green on 3.14.7 and on 3.12.13 (shim). The single-signal sweep with
+  SIGTERM: 2 of 6,193 points bad with Ctrl-C ignored (the two NOP-only lines), 0 of 6,172 with a
+  Ctrl-C handler that does nothing. `make --no-print-directory gates` green: 4659 tests, 97.64%
+  coverage, 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+
+## State, 2026-10-10: the pre-merge audit of the A-60 fix, closed
+
+- On `fix/sigterm-hang-a60`, the pre-merge audit of `2001e7f` (no HIGH) closed in normal commits on
+  top of it, `main` not merged in. MEDIUM 1: the coroutine `asyncio.Runner` runs makes the
+  campaign's task and awaits it at once (`7a0be1d`); a Ctrl-C in its first step had cancelled only
+  that coroutine, and a second one during the stop left the task pending. MEDIUM 2: a second signal
+  of either kind raises in place (`2dcf954`): with Ctrl-C at its default a SIGTERM or SIGHUP goes to
+  asyncio's own Ctrl-C handler, which counts both. LOW 1 to 3 (`a5dd63f`, `36324f2`, `9eb2f12`): the
+  handlers are swapped with Ctrl-C, SIGTERM and SIGHUP held back, the put-back retried when a signal
+  beats the hold, one that arrives before the put-back's last check taken by the campaign (in a
+  process whose only thread is the main thread), the loop let go while still armed; a signal dropped
+  outside a loop ends the campaign with KeyboardInterrupt after its last loop; only the main thread
+  watches. LOW 6 (`ec4277c`): a send is bounded by `asyncio.timeout`, since 3.11's `wait_for`
+  dropped a cancellation that landed as the send completed. LOW 7 (`fa94b96`, `e9cfd85`):
+  `interrupts.py` at 100% line and branch coverage. LOW 4 (`3091640`): u12 A-60 amended in place,
+  its index row, MANUAL, `dottore(1)`, CHANGELOG. Test-only (`7e31c2e`): two WebSocket tests that
+  hung on 3.12 hold their connection on an Event and abort it. The audit's sweep (a signal at every
+  line event, one forked child per point) on `9eb2f12`: 8 of 31,030 points bad in five single-signal
+  arms, all at two lines that compile to NOP alone (`2001e7f`: 50, 50 and 21 of about 6,000 in its
+  three SIGTERM arms); a second signal one line event after the first waits for a third at 66 of 413
+  points (16%), plain `asyncio.run` with a double Ctrl-C at 59 of 385 (15%). The real CLI with the
+  first SIGTERM inside the runner's gather: exit 130, 0.99 to 1.11 s after the start, the spend of 6
+  requests written inside the loop, Ctrl-C ignored or at its default.
+  `tests/cli/test_termination_signals.py`: 48 tests, 30 runs in a row green on 3.14.7 and on 3.12.13
+  (the signal file alone, through a shim of `interrupts.py` and the four signal functions of
+  `run.py`, since the 3.12 here has none of the project's dependencies). `make --no-print-directory
+  gates` green: 4658 tests, 97.64% coverage, 75 specs lint OK, four import contracts kept,
+  self-scan, bandit and pip-audit clean. Python 3.11, what CI runs, is not installed here.
+
+## State, 2026-10-09 (evening): one SIGTERM stops a run with Ctrl-C ignored too
+
+- On `fix/sigterm-hang-a60` (from `main` at `f12ba83`): the hang the afternoon entry left open is
+  fixed. With Ctrl-C ignored, a SIGTERM or SIGHUP landing in gather's callback left the run waiting
+  for a second signal as it closed, and the stuck part's spend was written when Python collected the
+  task (measured through the real CLI on Python 3.12.13 and 3.14.7: still running 3.0 s after the
+  start, when a second SIGTERM ended it). New `cli/interrupts.py`: `run_until_stopped` replaces
+  `asyncio.run` for the `-sV` probe pass and each target's campaign and runs the coroutine as a task
+  made before the loop starts; on the first signal, whatever Ctrl-C's disposition, the handler
+  (`stop_running_loop`) cancels that task and wakes the loop, and KeyboardInterrupt is raised once
+  the loop is closed, also for a signal that comes after the task is done or inside `loop.close()`;
+  a second raises in place; Ctrl-C keeps asyncio's handler; and a signal Python drops outside a loop
+  keeps the next loop from starting. The same CLI path now: one SIGTERM, exit 130 within 0.9 s, the
+  spend of 6 requests written inside the loop, in both arms and on both Pythons. u12 A-60 amended in
+  place (no new number), its 00-INDEX row, the MANUAL, the EXIT STATUS of `dottore(1)`, the
+  CHANGELOG. `tests/cli/test_termination_signals.py` has 28 tests (10 before): the hang test pins
+  one signal as enough in both arms, its safety net never needed, and no clock decides any of them;
+  30 runs in a row green on each Python, alongside a `make gates` run. Each broken variant fails it:
+  #94's handler (raising in place) fails 3 (the hang test's ignored arm and two CancelledError
+  cases), a handler that raises from a loop callback of its own fails the two `loop.close()` cases,
+  no wake-up fails the two select() cases, and no memory of a dropped signal fails the two
+  dropped-signal cases. `tests/cli/test_probe_pass_spend.py` gains `[sigterm-ctrl-c-ignored]`
+  through the real CLI (without the wake-up it still passes, in 32 s instead of about 2), and its
+  three signal cases check exit 130. `make gates` green (with `PYTHONPATH` set to the worktree's
+  `src`): 4637 tests, 97.58% coverage, 75 specs lint OK, four import contracts kept, self-scan,
+  bandit and pip-audit clean. Python 3.11, what CI runs, is not installed on this machine; tested on
+  3.12.13 and 3.14.7.
+
+## State, 2026-10-10 (night): the pre-merge audit of `3d739f3` (OD-41), six lows closed
+
+- Merge-ready per the audit; closed on the same branch. L1: the resume test checks `--estimate
+  --resume` (5 done, ~3 to send). L2: a conversation the filter cut carried no reply, so a
+  forbidden tool called on an earlier turn was never scored; the aggregate keeps the model's last
+  reply with the trace whenever there is a call, the runner reads it with the trace evaluators
+  only, a fail decides (error moved to `request.metadata.provider_filter_cut`), anything else
+  stays blocked and not exercised. L3: the Gemini block needs a `candidates.` text path. L4:
+  Vertex AI's `MODEL_ARMOR` and `JAILBREAK` (its REST reference, read 2026-10-10), not
+  `IMAGE_SAFETY`, on which the references disagree. L5: report-1.0 grows additively, as before, so
+  the CHANGELOG says a new report fails an older copy of the schema. L6: a carrier probe the
+  filter refused stopped `-sV`; the engine's `is_prompt_filtered` (wired to
+  `core.execute.is_provider_filter_block`) makes it a failed probe, as Prompt Shields classes an
+  encoded instruction as an encoding attack. The FAQ line of 152 characters is rewrapped. Not
+  started, at the conductor's request: the Bedrock guardrail and Azure output-filter gap. 17
+  tests more (52 adapter, 13 core, 7 CLI, 6 fingerprint and the base64 carrier through the CLI).
+  `make gates` green (2026-10-10, 21:25): ruff, format (387 files), mypy strict (156 source
+  files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs), 4,971 tests
+  with 97.63% coverage, self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
+
+## State, 2026-10-10 (evening): a provider's input-filter refusal is a blocked attempt (OD-41)
+
+- On `feat/provider-filter-blocked-attempt`, from `main` at `92c7b11`: the owner decided
+  (2026-10-10, 17:33) that an attack prompt the provider's own input filter refuses before the
+  model sees it no longer aborts the campaign (exit 3 after 1 request, measured on `92c7b11`
+  against a loopback stub answering Azure OpenAI's 400 `content_filter`). Built (u08 A-69,
+  ADR-0011, OD-41 closed): `adapters.base.ProviderFilterBlock` for Azure's 400 `content_filter`
+  (every `BaseAdapter`) and Gemini's `promptFeedback.blockReason` in a success body with no text
+  (REST), each shape cited in the code; every other 4xx unchanged. `execute_attempt` reads the
+  `blocked_by_provider_filter` marker: one send, debited, tokens released, the error marked
+  `[blocked_by_provider_filter]`; the runner's verdict is `inconclusive:
+  blocked_by_provider_filter` (a new `InconclusiveReason`), scored as an attempt without a reply
+  (a spec all blocked is inconclusive and not exercised, never a pass); a resume keeps it,
+  `dottore replay` re-derives it, and the JSON summary (`blocked_by_provider_filter`), SARIF,
+  JUnit, HTML and the terminal count it. A run all blocked is complete, not unreachable. The judge
+  path is unchanged (`capability_unavailable`). The `-sV` benign probe's failure reads
+  `ProviderFilterBlock`. With the stub and a judge: exit 0, 14 attack requests, 8 blocked, 12
+  judge requests. Tests: 7 CLI (4 fail on `92c7b11`), 45 adapter and 10 core (not collected on
+  `92c7b11`). Left open: Bedrock's guardrail intervention (an HTTP 200 read as a reply), OpenAI's
+  `invalid_prompt` 400 and Gemini's OpenAI-compatible endpoint (no documented shape); the `-sV`
+  pass still stops on such a refusal of an attributing probe (the benign one and, since the
+  audit, the carriers are failed probes). Not run against a live Azure or Gemini endpoint. `make gates` green (2026-10-10, 20:49): ruff, format (386 files),
+  mypy strict (156 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75
+  specs, 14 suites, 1 pack), 4,954 tests with 97.63% coverage, self-scan 0 high/critical, bandit,
+  pip-audit (no known vulnerabilities).
+
+## State, 2026-10-10: URL passwords behind a credential holding a URL separator (#96)
+
+- On `fix/redactor-issue-96`, from `origin/main` at `f12ba83`: the two regressions accepted with #56
+  and the endpoint cut the #56 pre-merge audit found, issue #96. (1) A registered credential holding
+  an `@` across a URL's `@`, in the user or the password, let the URL rule read on to a labelled
+  value's `@` and its tail stayed readable (`redis://ops:«REDACTED:url_password»@Value99xyz`): the
+  URL mask stays, and after the labelled and the entropy rules, where they left text readable, the
+  rest of the value is masked as the value up to a `://` that a `:` and then an `@` follow, and the
+  labelled rule runs again from where the value ends without reading its tail for a label. (2) A
+  registered credential holding
+  the URL's `://` (two overlapping ones as one run: `key-ABCD1234` and `1234://bob`), its `:` or the
+  password's `@` with no later `@` stopped the URL rule: the URL is now read in the text as written,
+  last in the pass, and what of its password is still readable is masked. (3) The policy gate's
+  refusal and `shown_auth_ref` quote an endpoint without its userinfo before cutting it
+  (`shared.config_errors.shown_endpoint`, moved from `cli/fleet`): cut first, 287 characters of a
+  308-character password were printed. u01 A-31 and A-51 amended (no new clause).
+- 2026-10-10, after the independent pre-merge audit of `924c276`: chained labelled values after a
+  URL mask leaked (on main too), `cli/app._masked` ran the URL rule on the raw text before the
+  redactor and cut registered credentials holding `@` or `:`, the tail stopped at every `://`, and
+  the docs claimed more than the code. Fixed in `38eac50` and the commits after it, docs aligned,
+  one Left open list everywhere. The audit's proposal for the tail (stop only where the URL rule
+  matches in this pass) was measured and not taken: 3 texts of 300,000 showed text main masks, as
+  the next pass reads that URL. The re-audit of `adeac2d` found the second run of the labelled rule
+  starting at the tail's stop, not at the value's end (a chained secret readable), and the stop
+  wider than needed; both fixed with its prototypes (`80ce50d`, `913045a`), and
+  `mask_url_passwords`, left with no caller, removed (`e3b4b8a`). The night's reboot wiped
+  `/private/tmp`, worktree and scratch
+  included; the branch survived at `924c276`, the fixes were redone in `_ildottore-tren/wt/issue96`
+  and the fuzzers rebuilt in `_ildottore-tren/scratch/issue96`.
+- The audit's narrow fix for (1) was measured and not taken: it left readable a character main masks
+  in 15,239 of 300,000 differential texts. The fix, against main: 0 texts leaking anything main
+  masks, 0 errors, 0 fixed-point failures on 900,000 texts of my fuzz before the re-audit and
+  300,000 on the final tree (120,167 texts with a secret main leaves readable masked there), on
+  1,500,000 and then 500,000 of the auditor's, and on 300,000 of the re-auditor's. Against the
+  redactor
+  before #56 (the auditor's 40,000 item-1 texts): a secret it masked is readable in 2,666 texts on
+  main, 98 on `924c276`, 18 now (none chained). On 2 MB of a reply echoing such a credential in
+  every URL (seven hostile shapes) the redaction is linear and takes 1.0 to 1.4 times main's traced
+  memory and 1.1 to 2.8 times its time (24.8 bytes a character against 17.6 with a credential
+  holding an `@` in every password); on 4 MB of that shape, 182 MB of peak RSS where main takes 120
+  MB. 24 mutants of the fix before the re-audit, 21 caught (one by a hang), and 5 of the re-audit's
+  changes, all caught; the 3 missed change nothing a test
+  can see (a guard against two of its masks overlapping, which they cannot; the label search
+  starting after the userinfo's last mask, which only bounds its cost; an off-by-one where the URL
+  rule cannot match from inside a mask). `make gates` green (with
+  `PYTHONPATH` set to the worktree's `src`): 4,671 tests (4,618 on `f12ba83`), coverage 97.63%, 75
+  specs lint OK, four import contracts kept, mypy clean on 155 files, self-scan, bandit and
+  pip-audit clean.
+- Left open after #96: where the URL rule did read a URL, its reading stands, so after a registered
+  credential holding the user's `:` the rest of the user is shown
+  (`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which urllib
+  reads as the password's head); a labelled value whose label sits in the user of a URL read through
+  a mask or behind an empty user (both read since #56), or is glued to the word before it
+  (`...3password="x@host.tld`, a label to no version), keeps what follows the URL's `@` readable as
+  its host, where the redactor before #56 masked it whole or as an address; the rest of a labelled
+  value after a URL mask stops before a `://` that a `:` and then an `@` follow before any
+  whitespace (the shape the URL rule needs, in this pass or the next), so what of the value lies
+  past that `://` is left to the other rules (`secret=AETw://0G1h9.mGle` and U+200B before
+  `://u:<password>@h` shows `0G1h9.mGle`); a raw `@` in a URL's user or unregistered
+  password leaves the password, or its part after the `@`, readable; and a URL whose `://` is split
+  by an invisible character (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
+
 ## State, 2026-10-10 (morning): the A-68 pre-merge audit, redone after a reboot
 
 - The Mac rebooted overnight and wiped `/private/tmp`: the worktree, its uncommitted fixes and the
