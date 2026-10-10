@@ -35,6 +35,7 @@ from ildottore.adapters import (
     AnthropicAdapter,
     MCPAdapter,
     OpenAIAdapter,
+    ProviderFilterBlock,
     RestAdapter,
     RestTemplate,
     RetryConfig,
@@ -56,7 +57,7 @@ from ildottore.adapters.websocket import (
 )
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
-from ildottore.core.execute import default_is_env_error
+from ildottore.core.execute import default_is_env_error, is_provider_filter_block
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
@@ -85,7 +86,14 @@ from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths, non_json_values, non_string_keys
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
-from ildottore.shared.config_errors import cut, listed, quoted, validation_problems, yaml_problem
+from ildottore.shared.config_errors import (
+    cut,
+    listed,
+    quoted,
+    shown_endpoint,
+    validation_problems,
+    yaml_problem,
+)
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.files import read_text_capped
@@ -330,7 +338,9 @@ def build_fingerprint_engine() -> FingerprintEngine:
     A probe whose reply comes back refused (an environment failure the attack phase would not
     retry, by its own predicate) is a failed probe (u09 §7 A-35, OD-23): one such reply used to
     stop ``run -sV`` before any attack while it only failed an attempt without it. So is a 4xx
-    to the guardrail layer's benign request (:func:`refused_request`, u09 §7 A-67).
+    to the guardrail layer's benign request (:func:`refused_request`, u09 §7 A-67), and a carrier
+    probe the provider's input filter refused (``is_provider_filter_block``, OD-41: a carrier is
+    an encoded instruction, which Azure's Prompt Shields refuses as a prompt attack).
     """
 
     registry = build_mutator_registry()
@@ -339,6 +349,7 @@ def build_fingerprint_engine() -> FingerprintEngine:
         layers=[*default_layers(), CarrierLayer(carriers)],
         is_env_error=default_is_env_error,
         is_request_refused=refused_request,
+        is_prompt_filtered=is_provider_filter_block,
     )
 
 
@@ -351,8 +362,16 @@ def refused_request(exc: BaseException) -> bool:
     error code ``content_filter``, and stopped ``-sV`` on it (pre-merge audit of ``cd413c0``).
     It is the one input-filter signal the pass can see, and the profile reads it as unknown, not
     as an input filter (OD-40). A 3xx or a 5xx the retries do not cover is not one.
+
+    Since OD-41 the adapters raise Azure's refusal as a ``ProviderFilterBlock``, which carries its
+    status but is not an ``AdapterStatusError``, and Gemini's prompt block (a success body) as
+    one too: both are refusals of the prompt, so both are read here, and the failed probe is
+    named ``guardrail/guardrail_benign: ProviderFilterBlock``. On any other probe they still
+    stop the pass, as before.
     """
 
+    if isinstance(exc, ProviderFilterBlock):
+        return True
     return isinstance(exc, AdapterStatusError) and 400 <= exc.status_code < 500
 
 
@@ -605,10 +624,15 @@ def shown_auth_ref(auth_ref: str) -> str:
     masked it only when its entropy was high enough: about 1 in 20 random 64-hex keys and 3 in 4
     32-hex keys were printed in clear (fourth audit of the residuals). A reference is quoted up
     to 300 characters (``quoted``): one of a million characters printed the refusal whole
-    (clause A-51).
+    (clause A-51). One holding an ``@`` is quoted as an endpoint is (``shown_endpoint``),
+    without what precedes the last ``@`` of its authority: a URL pasted with its password
+    (``https://user:<password>@host``) was cut before the redactor read it, so a password
+    whose ``@`` fell past the cut was printed (#96).
     """
 
-    return quoted(auth_ref) if "://" in auth_ref else "a literal value (not shown)"
+    if "://" not in auth_ref:
+        return "a literal value (not shown)"
+    return shown_endpoint(auth_ref) if "@" in auth_ref else quoted(auth_ref)
 
 
 def resolve_auth_ref(auth_ref: str | None) -> str | None:

@@ -5,6 +5,243 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (a prompt the provider's input filter refuses no longer stops the campaign: OD-41)
+
+- **The first prompt a provider's filter refused ended the scan.** Azure OpenAI's prompt filter
+  answers a prompt it blocks with HTTP 400 and the error code `content_filter`; the adapters read
+  every non-retryable 4xx as a product error and the runner stopped on the first one. Against a
+  loopback stub that answers that body to prompts holding "instructions for" or "developer mode",
+  `dottore run --spec GUARD-INPUT-EVASION-001 --spec PI-DIRECT-001 --runs 2` on `92c7b11` exited
+  3 after one request ("aborted on AdapterStatusError: azure: non-retryable HTTP 400 from
+  /v1/chat/completions; 2 of 2 specs never ran or did not finish"). By the owner's decision of
+  2026-10-10 (17:33) the attempt is recorded as blocked by the provider's filter and the campaign
+  goes on: the same command, with `--judge` against the same stub, exits 0 after 14 attack
+  requests, 8 of them blocked, and 12 judge requests.
+- **Recognised only in a shape the provider documents.** Azure OpenAI: status 400 and `error.code`
+  exactly `content_filter` (Microsoft Learn, "Content filtering", Scenario 3), read by every adapter
+  built on `BaseAdapter` (openai, anthropic, rest). Gemini and Vertex AI: a success body with no
+  text at a REST template's `text_path`, which must start at `candidates.` (another template is not
+  reading a Gemini body), whose `promptFeedback.blockReason` is `SAFETY`, `OTHER`, `BLOCKLIST` or
+  `PROHIBITED_CONTENT` (the Gemini API reference, `PromptFeedback`) or Vertex AI's `MODEL_ARMOR` or
+  `JAILBREAK` (its REST reference, `BlockedReason`), which was a product error that stopped the
+  campaign too; not `IMAGE_SAFETY`, on which the two references disagree. Either raises the new
+  `ProviderFilterBlock` (an `AdapterProductError` with the status and the provider's code). Every
+  other 4xx is the `AdapterStatusError` it was and stops the campaign exactly as before: another
+  code at 400, the Azure body at 403 or 422, `content_filtered`, a body that is not JSON. Not read,
+  for want of a documented shape: a Bedrock guardrail intervention (an HTTP 200 with the guardrail's
+  message, read as a reply), OpenAI's `invalid_prompt` 400 (in forum reports, not in its error-code
+  reference), Gemini's OpenAI-compatible endpoint.
+- **How a blocked attempt is scored** (ADR-0011, a new `InconclusiveReason`): the model never saw
+  the prompt, so it is not a refusal and not an exploit. The attempt has no reply, its error
+  ends with `[blocked_by_provider_filter]` (the provider's own message and inner code are not
+  copied: the redactor masks `ResponsibleAIPolicyViolation`), and its verdict is `inconclusive:
+  blocked_by_provider_filter`. The spec follows the rule an environment error does: any `fail` is
+  a `fail` (needing review unless a variant failed on every attempt); a `pass` needs more than half
+  of the attempts to have passed; otherwise `inconclusive`. A blocked attempt is in the
+  reproducibility's `N` and never a success. A spec whose every attempt was blocked is
+  `inconclusive`, Info and not exercised, never a pass of the model; `--fail-on` gates only a
+  `fail`, as before. In the run above `GUARD-INPUT-EVASION-001` passes (6 of its 8 attempts
+  reached the model and held: its confusable, zero-width and leetspeak variants evade the stub's
+  words) and `PI-DIRECT-001` is inconclusive, 6 of 6 blocked.
+- **Not retried, debited, kept by a resume, re-derived by replay.** The same prompt is refused
+  the same way, so it is sent once; it is a request against `--budget-requests` and its token
+  reservation is released (no completion was produced); `--estimate` is unchanged. A resume keeps
+  it and says so (`; 2 of them the provider's input filter refused, kept as blocked`), and
+  `--estimate --resume` counts it as done. `dottore replay` lists it as `inconclusive
+  (blocked_by_provider_filter)` and counts it under the pooled rate. A conversation stops at the
+  turn the filter refused; when the model had already called a tool, the attempt carries that
+  trace and the spec's trace evaluators read it, so a forbidden call made before the cut fails the
+  attempt (stored as any fail, the cut under `request.metadata.provider_filter_cut`), and anything
+  else leaves it blocked. A run whose every attempt was blocked is complete, not `unreachable`.
+- **Counted apart in every report.** The finding's reasoning adds `; 6/6 blocked by the provider's
+  input filter before the model saw them`; the JSON summary carries
+  `blocked_by_provider_filter: {attempts, specs}` (always; optional in report-1.0, whose schema
+  gains it); SARIF a `blocked_by_provider_filter` property on the run and on each result that has
+  any, and the count in the result's message; JUnit `blocked_by_provider_filter=<k>` in a passing
+  case's text; the HTML summary a line; the terminal summary `Blocked by the provider's input
+  filter: 8 attempt(s) in 2 spec(s) never reached the model (GUARD-INPUT-EVASION-001,
+  PI-DIRECT-001); they are inconclusive, not refusals by the model and not exploits`. With nothing
+  blocked only the JSON report changes (the key, with `0` and `[]`). **Schema note:**
+  `blocked_by_provider_filter` is a new optional property of the summary, whose object admits no
+  other key, and `schema_version` stays `1.0`, as with `edition` and `status` before it (report-1.0
+  grows additively): a report from this version fails validation against an older copy of
+  `report-1.0.schema.json`, while reports from earlier versions still validate against the new
+  one. Validate with the copy shipped in this version.
+- **The judge path is unchanged.** A judge request its own provider's filter refuses is an unusable
+  judge (`capability_unavailable`), as any judge adapter error is: the attempt is `inconclusive`
+  unless a deterministic evaluator fails, the attempt is not counted as blocked (the attack prompt
+  reached the model), and the campaign goes on. The `-sV` benign probe's failure now reads
+  `guardrail/guardrail_benign: ProviderFilterBlock` (it read `AdapterStatusError`).
+- **A carrier probe the filter refuses no longer stops `-sV`.** The carrier layer sends a benign
+  instruction through each encoding (base64, rot13, leetspeak, homoglyphs), which Microsoft's
+  Prompt Shields classes as a user prompt attack ("Encoding attacks"), so Azure's filter could
+  refuse a carrier after every other probe was answered and `-sV` exited 3 (pre-merge audit of
+  `3d739f3`, L6). Such a carrier is a failed probe now
+  (`carrier/carrier_base64_wrap: ProviderFilterBlock`), left unmeasured by the carrier layer, and
+  the pass goes on; the composition root injects `core.execute.is_provider_filter_block` as the
+  engine's `is_prompt_filtered`. Any other error of a carrier, and the same refusal of an
+  attributing probe, still stop the pass.
+- **Pre-merge audit of the first version (`3d739f3`): merge-ready, six lows closed.** L1: the
+  resume test checks `--estimate --resume` too. L2: a conversation the filter cut carried no
+  reply, so a forbidden tool the model had called on an earlier turn was never scored; the trace
+  is kept and read by the trace evaluators (above). L3: the Gemini block was read on any REST
+  template; it needs a `candidates.` text path now. L4: Vertex AI's `MODEL_ARMOR` and `JAILBREAK`
+  are read, from its reference. L5: the schema note above. L6: a carrier probe the filter refused
+  stopped `-sV`; it is a failed probe now (above).
+- Contract u08 A-69 (with halves in u04, u10, u11 and u12), OD-41 and ADR-0011, the `00-INDEX`
+  rows, notes in u00 and u09. Tests: `tests/cli/test_provider_filter_campaign.py` (7, through the
+  real CLI and a loopback stub: 4 fail on `92c7b11`, and the 3 that pass there pin that any other
+  4xx still stops the campaign), `tests/adapters/test_provider_filter_block.py` (52) and
+  `tests/core/test_provider_filter_block.py` (13), neither of which collects on `92c7b11` (2 of the
+  latter's, the cut conversations with a tool call, fail on `3d739f3`),
+  `tests/fingerprint/test_carrier_filter_block.py` (6) and the base64 carrier through the real CLI
+  in `tests/cli/test_input_filter_probe.py` (exit 3 on `92c7b11`);
+  `tests/adapters/test_status_error.py` sends a plain bad request where it sent Azure's body,
+  `tests/cli/test_input_filter_probe.py` expects the new probe label, the redactor's class-name
+  walk gains the blocked error's line, and the JSON report snapshot gains the key. Docs: MANUAL
+  §9 ("Attack prompts the provider's input filter refuses") and the `run`, `fingerprint`,
+  `replay`, §10 and troubleshooting text, the FAQ, USAGE, `dottore(1)`, `docs/01`, `05`, `10` and
+  `12`, `examples/README.md` (Scenario D). Not run against a live Azure or Gemini endpoint.
+
+### Fixed (URL passwords behind credentials that hold a URL separator, and endpoints cut first, #96)
+
+- **A labelled value after a URL keeps its tail masked, and the labelled values after it are read
+  as before #56 (#96, the first regression accepted with #56).** With a registered credential
+  holding an `@` across a URL's `@`, in the password (`Adm1n@2026` in
+  `redis://ops:Adm1n@2026-db.internal:6379,password=Secr3t@Value99xyz`) or in the user
+  (`ops@corp` in `redis://ops@corp;password:Secr3t@Value99xyz`), the URL rule reads on through
+  the credential's mask to a later `@`, the labelled value's: the URL mask took the label and the
+  value's head, and the output was `redis://ops:«REDACTED:url_password»@Value99xyz`, the tail
+  readable, where the redactor before #56 masked the value whole. The URL mask stays, and after
+  the labelled and the entropy rules, only where they left text readable, what follows its `@`
+  up to where the value ends is masked as the value is:
+  `redis://ops:«REDACTED:url_password»@«REDACTED:labeled_secret:<digest>»`. Its digest is the
+  one the redactor before #56 gave the value when no other rule masked something inside the
+  value first (a pattern or a URL); otherwise it is the digest of the value as written, where
+  the old redactor digested what that rule left of it. From where the value ends, the labelled
+  rule runs again without reading the tail for a label, as the redactor before #56 read the value
+  whole: read for one, a label in the tail took the next label into its value, and the secret
+  after it was readable, on main too (`,password=Secr3t@x-token abcdef/secret="Hunter2Secret99"`
+  printed `Hunter2Secret99`; the independent pre-merge audit of the first version of this fix).
+  The tail stops before a `://` that a `:` and then an `@` follow before any whitespace, what the
+  URL rule needs there to read a URL in this pass or, once this pass's masks are stash tokens, in
+  the next (a mask only hides characters); any other `://` is part of the value. Stopped at every
+  `://`, `password=Secr3t@hunter2://Secr3tTail99` left `://Secr3tTail99` readable (found by the same
+  audit); stopped only where the URL rule reads a URL in this pass, as it proposed, 3 texts of
+  300,000 showed text main masks; stopped wherever an `@` followed, as the second version did,
+  `...://Secr3tTail99@h` was readable (found by the independent re-audit of that version, whose
+  condition this is). The labelled rule runs again from where the value ends, not from where its
+  tail stops: from a `://` it stopped before, it read the rest of the value for a label
+  (`password=Secr3t@x://h@y-token abc123/secret="<secret>"` printed the secret; same re-audit). It
+  applies only when a mask in the userinfo stands for a registered credential holding an `@` (as
+  written the URL ends there; with any other mask both readings end at the labelled value's `@`,
+  and its tail is the host, as unregistered).
+- **The narrow fix the #56 pre-merge audit proposed was measured and not taken.** Leaving a
+  password that holds such a credential to the other rules masks the issue's case, but the
+  password's head before the credential then depends on them, and a labelled value inside the
+  password takes the `@`: `redis://ops:AAAAAdm1n@2026-token=QQQQQQ@host` printed `AAAA` and
+  `-token=`, which main masks. On the 300,000 texts of the fuzz below it left readable a
+  character main masks in 15,239 of them (9,951 of them a secret's).
+- **A URL password behind a registered credential holding the URL's `://`, `:` or `@` is masked
+  (#96, the second regression and its class).** The URL rule runs on the text with every
+  registered credential set aside as a stash token, so a credential holding the URL's `://`
+  stopped it, and the password stayed readable: two overlapping credentials masked as one run
+  (`key-ABCD1234` and `1234://bob`, in `x key-ABCD1234://bob:Sup3rS3cretPw@localhost y`) since
+  #56, where the one-at-a-time replacement before it left the `://` showing (and `://bob` of
+  the second credential readable), and one credential holding it (`1234://bob` alone) before #56
+  too. So did one holding the `:` between the user and the password (`ABCD:Sup3r` in
+  `x://key-ABCD:Sup3rS3cretPw@h` left `S3cretPw`), and one across the password's `@` with no
+  later `@` (`redis://ops:abcAdm1n@2026-db.internal:6379/0` left `abc`). Last in each pass, after
+  every other rule, the URL is now read in the text as written (every registered credential
+  written out, every other mask one neutral character, an email mask an `@` between two: where
+  the URL rule found no URL, the email rule took the password's tail and a dotted host as one
+  address, and the head was readable) and what of its password is still readable becomes one
+  `url_password` mask: `x «REDACTED:credential:<digest>»:«REDACTED:url_password»@localhost y`.
+  A URL the URL rule read at a `://` the text holds is left as it masked it, the `:` after the
+  user of a URL the next pass can read stays out of the mask (masked, it kept that pass from
+  reading the URL), and a credential cut by the password's edges stays its own mask. Running
+  last, it takes nothing another rule reads; the pass PR #56 backed out joined the password to
+  the credential before the other rules ran. The text read as written is one entry of four
+  8-byte integers a mask (a list of tuples a piece took the process to 270 MB on 4 MB of an
+  echoed credential, where main took 122 MB), and the step runs only when a registered
+  credential in the text holds a `:`, a `/` or an `@` (or the email rule masked an address) and
+  the text as written holds all three.
+- **An endpoint is quoted without its userinfo before it is cut (#96, found by the #56 pre-merge
+  audit).** The policy gate's refusal (`policy.authorize_target`, so `run`, `fingerprint` and the
+  engine's gate on each attempt) quoted the endpoint whole and cut it at 300 characters before
+  any redaction, so a URL password whose `@` fell past the cut was not read as one by the CLI's
+  redactor: `https://ops:<308 characters>@db.internal/v1` printed 287 of them through
+  `cli/app._masked`. It quotes the endpoint as `dottore fleet` does, by the helper that moved to
+  `shared.config_errors.shown_endpoint`: as urllib reads it, without what precedes the last `@`
+  of its authority, then cut. `shown_auth_ref` quotes a reference holding an `@` the same way (a
+  URL pasted with its password where a reference belongs); one without keeps its exact quote.
+  Every other place that cuts text before the redactor reads it was checked: the JUnit
+  reporter's 4,096-character cuts and the WebSocket adapter's 200 come after it, and the spec
+  loader's messages cut at 120 and 100 quote spec files, not endpoints.
+- **A CLI error is redacted whole by the redactor (#96, found by the independent pre-merge audit
+  of the first version of this fix).** `cli/app._masked` ran the URL rule on its own on the raw
+  text before the redactor, and cut a registered credential holding an `@` or a `:` at the URL's
+  separator, so the redactor no longer found it: `https://ops:P@ssw0rd!x@db.internal/v1` with
+  `P@ssw0rd!x` registered printed `...«REDACTED:url_password»@ssw0rd!«REDACTED:email»/v1`, and
+  `redis://ops:Adm1n@2026-db.internal:6379/0` printed `2026`. The redactor's own URL rule runs
+  after the registered credentials are set aside. That was the only call of
+  `mask_url_passwords` outside a test, which is removed with its test (re-audit of #96).
+- Checked by two differential fuzzers against `origin/main` (`f12ba83`): mine, and the
+  independent auditor's (`afuzz`, rebuilt as it was), on texts mixing URLs with userinfo (empty,
+  masked and registered users, passwords holding labels, registered values and raw `@`),
+  labelled values after, inside and chained after URLs, PEM blocks, emails, phones, cards and
+  masks, with registered credentials of hostile shapes (substrings of the text across the URL's
+  separators, overlapping and nested pairs, `@`, `://` and `:` shapes, mask substrings, one
+  holding a splitter), splitters, U+FFFD and stash delimiters inserted. Each output is checked to
+  be main's with stretches replaced by masks only (a check that also caught the narrow fix).
+  On the final tree (`e3b4b8a`, the code since): mine, on 300,000 texts, 0 texts where a character
+  main masks is readable, 0 errors, 0 fixed-point failures, and in 120,167 texts a secret character
+  main leaves readable is masked (a URL password in 109,387, a labelled value in 19,295, a private
+  key in 237); the first auditor's, on 500,000, 0 such texts, 0 errors, 0 fixed-point failures,
+  90,531 texts closed; the re-auditor's (`fz`, its own generator), on 300,000, 0, 0 and 0, 47,111
+  texts closed. On the tree before the re-audit (`c8c8b86`) the same held on three runs of 300,000
+  of mine and of 500,000 of the auditor's, and on 20 texts of 4 MB in all (at most 1.11 times main's
+  time). Earlier runs found the cases
+  quoted above (2 texts of 300,000 in a
+  first version, 4 in the second), each fixed and now a test. Against the redactor before #56,
+  on the auditor's 40,000 texts aimed at item 1 (hash seed 0, since the old redactor's order
+  followed it): a secret it masked is readable in 2,666 texts on main, 98 on the first version
+  of this fix (41 of them chained values) and 18 now, none of them chained: 8 a value after a
+  label glued to the word before it, 8 a URL read since #56 behind a masked or an empty user, 1
+  a tail stopped before a `://` an `@` follows, 1 a raw `@` in a password. On 2 MB of a reply
+  echoing such a credential in every URL (seven hostile shapes) the redaction is linear and takes
+  1.0 to 1.4 times main's traced memory and 1.1 to 2.8 times its time (24.8 bytes a character
+  against 17.6 with a credential holding an `@` in every password); on 4 MB of that shape, 182 MB of
+  peak RSS where main takes 120 MB.
+- Tests: `tests/test_redactor_url_separator_credentials.py` (the issue's two cases, a credential
+  across each separator, the labelled tail's limits the fuzzers found, chained values, the
+  credential in the user, the email host, the CLI's errors, a Hypothesis property over URLs with one
+  or two credentials across a separator, memory and linear time on 2 MB of hostile echoes;
+  52 cases, 36 of which fail on `f12ba83` and 16 on the first version of this fix, `924c276`), and
+  in `tests/cli/test_operator_file_quoted_values.py` the policy gate's refusal
+  and `shown_auth_ref` with a 308-character password (both fail on `f12ba83`). 24 mutants of the fix
+  before the re-audit, 21 caught (one by a hang), and 5 of the re-audit's changes, all caught; the 3
+  missed change nothing a test can see (a guard against
+  two of its masks overlapping, which they cannot; the label search starting after the userinfo's
+  last mask, which only bounds its cost; an off-by-one where the URL rule cannot match from inside a
+  mask). Docs:
+  MANUAL, `docs/02` (S6), u01 A-31 and A-51, u12 §6, the contract index, PROGRESS. `make gates`
+  green: 4,671 tests (4,618 on `f12ba83`), coverage 97.63%, 75 specs lint OK, four import contracts
+  kept, mypy clean on 155 files, self-scan, bandit and pip-audit clean. Left open after #96: where
+  the URL rule did read a URL, its reading stands,
+  so after a registered credential holding the user's `:` the rest of the user is shown
+  (`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which urllib
+  reads as the password's head); a labelled value whose label sits in the user of a URL read through
+  a mask or behind an empty user (both read since #56), or is glued to the word before it
+  (`...3password="x@host.tld`, a label to no version), keeps what follows the URL's `@` readable as
+  its host, where the redactor before #56 masked it whole or as an address; the rest of a labelled
+  value after a URL mask stops before a `://` that a `:` and then an `@` follow before any
+  whitespace (the shape the URL rule needs, in this pass or the next), so what of the value lies
+  past that `://` is left to the other rules (`secret=AETw://0G1h9.mGle` and U+200B before
+  `://u:<password>@h` shows `0G1h9.mGle`); a raw `@` in a URL's user or unregistered
+  password leaves the password, or its part after the `@`, readable; and a URL whose `://` is split
+  by an invisible character (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
+
 ### Fixed (a Claude model that takes no temperature or top_p could not be scanned)
 
 - **Every campaign against Claude Opus 4.7 and later, Sonnet 5, and the Fable and Mythos 5

@@ -57,6 +57,16 @@
       Confirmed: <strong>{{ summary.confirmed_count }}</strong> ·
       Needs review: <strong>{{ summary.needs_review_count }}</strong>
     </p>
+    {# OD-41: optional in report-1.0, so an older document renders exactly as before. #}
+    {% if summary.blocked_by_provider_filter and summary.blocked_by_provider_filter.attempts %}
+    <p class="provider-filter">
+      Blocked by the provider's input filter:
+      <strong>{{ summary.blocked_by_provider_filter.attempts }}</strong> attempt(s) in
+      {{ summary.blocked_by_provider_filter.specs | length }} spec(s)
+      ({{ summary.blocked_by_provider_filter.specs | join(', ') }}) never reached the model.
+      They are inconclusive: not refusals by the model and not exploits.
+    </p>
+    {% endif %}
 
     <h3>By status</h3>
     <table class="counts"><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>
@@ -104,7 +114,8 @@
         adapter could not carry; or a reply that never reached the tool carrying the scene; or
         every send ended in an environment error, such as a network
         failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could not be
-        decoded or one nested too deeply), so their framework codes are not counted as covered.
+        decoded or one nested too deeply, or was refused by the provider's input filter), so
+        their framework codes are not counted as covered.
       </p>
       {% endif %}
       {% if summary.coverage.off_universe %}

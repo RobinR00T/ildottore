@@ -36,6 +36,10 @@ _LINES = (
     "live-t: aborted on {name}: message; 10 of 18 specs never ran or did not finish",
     "evaluating a stored reply also raised {name}: message",
     "behavioral/self_id: {name}",
+    # A blocked attempt's error (OD-41, u08 A-69), with the mark a resume and a replay read.
+    "{name}: azure: non-retryable HTTP 400 from /v1/chat/completions: the provider's input filter "
+    "refused the prompt before the model saw it (error code content_filter; filtered: jailbreak) "
+    "[blocked_by_provider_filter]",
 )
 
 #: Where a class was renamed because the rule masked its name (PR #87, then u01 A-63): a walk

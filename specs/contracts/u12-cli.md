@@ -76,7 +76,11 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
 - Exit code is a pure function of `(findings, --fail-on, --include-needs-review, error_state)`
   in `exit_codes.py`: no side effects, table-tested.
 - All terminal output honors the central redactor; secrets/PII never printed (`AGENTS.md §2`).
-  (As built, for errors, `cli/app._masked`: URL passwords are masked first, on the whole text.
+  (As built, for errors, `cli/app._masked`: the redactor runs on the whole text, URL passwords
+  included (until #96 the URL rule ran on its own first, on the raw text, and cut a registered
+  credential holding an `@` or a `:`), and an endpoint an error cuts comes without its userinfo
+  before it is cut (u01 A-51, #96); one quoted whole (`EndpointNotAllowed`, a WebSocket close) is
+  the redactor's to mask.
   Besides the existing part of an absolute path, a path that exists, written whole, is kept
   out of the entropy rule (A-38); the name of a file that does not exist is not (OD-25).
   Outside one, a 64-hex value is kept readable in exactly two cases: an evidence file name
@@ -986,6 +990,20 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
   100,000 findings (best of 3), with the same peak memory;
 * what pydantic can read is taken as read: `confirmed: "yes"` is true and `risk.impact: "2"` is 2;
 * the labels file `calibrate` reads is not a report and keeps its own refusals.
+
+**A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) The CLI says what the provider's
+input filter refused, and does not call it a dead target.** A run whose every attempt the filter
+refused completed: the provider answered every request, so it is not `unreachable` (which still
+means every attempt failed on transport) and exits by the findings, 0 when none is a gated `fail`.
+The terminal summary, under the coverage block (never silenced by `-q`), prints `Blocked by the
+provider's input filter: <k> attempt(s) in <s> spec(s) never reached the model (<spec ids>); they
+are inconclusive, not refusals by the model and not exploits` when `k` is not 0, and the `Not
+exercised` line names the filter among its causes. A resume says how many of the attempts it keeps
+the filter refused (`; <k> of them the provider's input filter refused, kept as blocked`) and does
+not send them again; `--estimate --resume` counts them as done. The composition root's
+`refused_request` (u09 A-67) reads a `ProviderFilterBlock` at any status, so the `-sV` benign
+probe's failure is named `guardrail/guardrail_benign: ProviderFilterBlock`. Checked by
+`tests/cli/test_provider_filter_campaign.py` and `tests/cli/test_input_filter_probe.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
