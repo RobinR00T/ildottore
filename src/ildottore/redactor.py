@@ -429,8 +429,10 @@ _URL_USERINFO: Final = re.compile(
 _LABELLED_VALUE_END: Final = re.compile(r"[\s\"'`,;)\x00\x01]")
 #: A URL mask's stash token and its `@`, after which a labelled value it took the head of goes on.
 _URL_MASK_AT: Final = re.compile(r"\x00(\d++)\x01@")
-#: The first `@` or whitespace: a URL the URL rule can read has its `@` before any whitespace.
-_AT_OR_SPACE: Final = re.compile(r"[@\s]")
+#: What the URL rule needs after a `://`, written in the text: a `:` and then an `@`, before any
+#: whitespace. A mask only ever hides characters, so a URL the rule reads there in this pass, or in
+#: the next once this pass's masks are stash tokens, has both in the text as it is now.
+_NEXT_PASS_USERINFO: Final = re.compile(r"[^\s:]*+:[^\s@]*+@")
 _URL_PASSWORD_MASK: Final = _MASK_TEMPLATE.format(type="url_password")
 #: The URL rule over the text as written (``Redactor._url_passwords_as_written``): every
 #: registered credential written out, every other mask one :data:`_NEUTRAL` character.
@@ -476,25 +478,23 @@ def _labelled_value_across(url: re.Match[str]) -> str | None:
 def _value_tail_end(text: str, start: int) -> int:
     """Where the rest of a labelled value that goes on at ``start`` ends.
 
-    Where the value ends (:data:`_LABELLED_VALUE_END`), or before its first `://` when an `@`
-    follows that `://` before any whitespace: a URL can be read there, in this pass or, once this
-    pass's masks are stash tokens, in the next (the URL rule crosses a mask, but neither
-    whitespace nor an `@` outside one). Taken into this mask, such a `://` kept the next pass from
-    reading the URL, and what its password mask would have taken was readable (pre-commit
-    differential fuzz); stopped only where the URL rule reads a URL in this pass, 3 texts of
-    300,000 showed text main masks. Any other `://` is part of the value: stopped at every `://`,
-    `password=Secr3t@hunter2://Secr3tTail99` kept `://Secr3tTail99` readable (pre-merge audit of
-    #96). Linear: the value holds no whitespace, so one search past its first `://` decides for
-    every `://` in it, and that search stops at the `@` of the next URL the rule masked.
+    Where the value ends (:data:`_LABELLED_VALUE_END`), or before its first `://` when what the URL
+    rule needs there follows it (:data:`_NEXT_PASS_USERINFO`): a URL can be read at that `://`,
+    in this pass or, once this pass's masks are stash tokens, in the next. Taken into this mask,
+    such a `://` kept the next pass from reading the URL, and what its password mask would have
+    taken was readable (pre-commit differential fuzz); stopped only where the URL rule reads a URL
+    in this pass, 3 texts of 300,000 showed text main masks. Any other `://` is part of the value:
+    stopped at every `://`, `password=Secr3t@hunter2://Secr3tTail99` kept `://Secr3tTail99`
+    readable (pre-merge audit of #96), and stopped at every `://` an `@` followed, so did
+    `...://Secr3tTail99@h` (re-audit). Linear: the value holds no whitespace, so one possessive
+    match past its first `://` decides for every `://` in it.
     """
 
     found = _LABELLED_VALUE_END.search(text, start)
     end = len(text) if found is None else found.start()
     scheme = text.find("://", start, end)
-    if scheme >= 0:
-        after = _AT_OR_SPACE.search(text, scheme + 3)
-        if after is not None and after.group() == "@":
-            return scheme
+    if scheme >= 0 and _NEXT_PASS_USERINFO.match(text, scheme + 3):
+        return scheme
     return end
 
 

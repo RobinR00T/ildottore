@@ -171,6 +171,18 @@ _OPAQUE = "Zq8Xw3Yv6Ut1Sr4Qp7On"
             "redis://ops:Adm1n@2026-db,password=Secr3t@Val://vault/x99Q",
             f"redis://ops:{_URL}@[Secr3t@Val://vault/x99Q]",
         ),
+        # Nor is one an `@` follows with no `:` before it: the URL rule needs both (re-audit).
+        (
+            ("Adm1n@2026",),
+            "redis://ops:Adm1n@2026-db,password=Secr3t@hunter2://Secr3tTail99@h",
+            f"redis://ops:{_URL}@[Secr3t@hunter2://Secr3tTail99@h]",
+        ),
+        # One a `:` and then an `@` follow stops it: a URL can be read there.
+        (
+            ("Adm1n@2026",),
+            "redis://ops:Adm1n@2026-db,password=Secr3t@hunter2://u:Secr3tTail99@h",
+            f"redis://ops:{_URL}@[Secr3t@hunter2://u:Secr3tTail99@h]://u:{_URL}@h",
+        ),
         # One with an `@` after it stops the tail, even where the URL rule reads no URL in this
         # pass: in the next, with this pass's masks as stash tokens, it reads one and masks
         # `")tok`. Stopped only at a URL read in this pass, the tail took `tail://ops:` and
@@ -188,8 +200,7 @@ _OPAQUE = "Zq8Xw3Yv6Ut1Sr4Qp7On"
             ("Adm1n@2026",),
             "redis://ops:Adm1n@2026-db,password=Secr3t@x://h@y-token abc123/"
             'secret="Hunter2Secret99"',
-            f"redis://ops:{_URL}@[Secr3t@x://h@y-token]://h@y-token [abc123/secret=]"
-            '"[Hunter2Secret99]"',
+            f'redis://ops:{_URL}@[Secr3t@x://h@y-token] [abc123/secret=]"[Hunter2Secret99]"',
         ),
         # A plain word after a label and a path the entropy rule exempts stay as they are.
         (
