@@ -13,10 +13,12 @@ Two regressions the owner accepted for the merge of PR #56, and the class they b
 
 The proposal of the pre-merge audit for the first (leave a password holding such a credential to
 the other rules) was measured against main with a differential fuzz: on 300,000 texts it left
-readable, in 18,382 of them, a character main masked (the password's head before the
+readable, in 18,444 of them, a character main masked (the password's head before the
 credential, `AAAA` in `redis://ops:AAAAAdm1n@2026-token=QQQQQQ@host`). The fix keeps main's
-URL mask and masks the rest of the labelled value after it; the second reads the URL in the text
-as written and masks what of its password is still readable, last in the pass.
+URL mask and masks the rest of the labelled value after it, and the labelled values after that
+as the redactor before A-31 read them; the second reads the URL in the text as written and
+masks what of its password is still readable, last in the pass. The audit of the fix found the
+chained labelled values and the CLI's own URL pass, tested below too.
 """
 
 from __future__ import annotations
@@ -104,8 +106,8 @@ def _registered(*values: str) -> Iterator[None]:
             "redis://ops:Adm1n@2026-db:6379,secret=Secr3t@BT8Ibd/&TOKEN: 3DdqL_@78kB9 end",
             f"redis://ops:{_URL}@[Secr3t@BT8Ibd/&TOKEN:] [3DdqL_@78kB9] end",
         ),
-        # The tail stops before a `://`: running on, it took the next URL's scheme, which the
-        # URL rule reads in the next pass (pre-commit differential fuzz).
+        # The tail stops before a `://` with an `@` after it before any whitespace: running on,
+        # it took the next URL's scheme, which the URL rule reads (pre-commit fuzz).
         (
             "a://u:Adm1n@2026,token=Secr3t@ja5redis://u:Hunter2pw@h",
             f"a://u:{_URL}@[Secr3t@ja5redis://u:Hunter2pw@h]://u:{_URL}@h",
@@ -128,6 +130,77 @@ def _registered(*values: str) -> Iterator[None]:
 @pytest.mark.usefixtures("no_known_secrets")
 def test_a_labelled_value_after_a_url_keeps_its_tail_masked(text: str, expected: str) -> None:
     assert _redacted(("Adm1n@2026",), text) == _expected(expected)
+
+
+#: What the entropy rule masks, high in entropy and 20 characters long.
+_OPAQUE = "Zq8Xw3Yv6Ut1Sr4Qp7On"
+
+
+@pytest.mark.parametrize(
+    ("credentials", "text", "expected"),
+    [
+        # A label in the value's tail took the next label into its value, and the secret after
+        # it was readable, on main too (pre-merge audit of #96). The tail is not read for a
+        # label, as the redactor before A-31, which matched the value whole, did not read it.
+        (
+            ("Adm1n@2026",),
+            'redis://ops:Adm1n@2026-db,password=Secr3t@x-token abcdef/secret="Hunter2Secret99"',
+            f'redis://ops:{_URL}@[Secr3t@x-token] [abcdef/secret=]"[Hunter2Secret99]"',
+        ),
+        (
+            ("Adm1n@2026",),
+            "redis://ops:Adm1n@2026-db,password=Secr3t@x-api key is e@:X/"
+            "passphrase=`Hunter2Secret99",
+            f"redis://ops:{_URL}@[Secr3t@x-api] key is [e@:X/passphrase=]`[Hunter2Secret99]",
+        ),
+        # The credential holding an `@` in the user: the label is the user's tail.
+        (
+            ("ops@corp",),
+            "redis://ops@corp;password:Secr3t@Value99xyz",
+            f"redis://<ops@corp>;password:{_URL}@[Secr3t@Value99xyz]",
+        ),
+        # A `://` with no `@` after it is part of the value: stopped at it, the tail left
+        # `://Secr3tTail99` readable (pre-merge audit).
+        (
+            ("Adm1n@2026",),
+            "redis://ops:Adm1n@2026-db,password=Secr3t@hunter2://Secr3tTail99",
+            f"redis://ops:{_URL}@[Secr3t@hunter2://Secr3tTail99]",
+        ),
+        (
+            ("Adm1n@2026",),
+            "redis://ops:Adm1n@2026-db,password=Secr3t@Val://vault/x99Q",
+            f"redis://ops:{_URL}@[Secr3t@Val://vault/x99Q]",
+        ),
+        # One with an `@` after it stops the tail, even where the URL rule reads no URL in this
+        # pass: in the next, with this pass's masks as stash tokens, it reads one and masks
+        # `")tok`. Stopped only at a URL read in this pass, the tail took `tail://ops:` and
+        # `")tok` was readable (pre-commit differential fuzz: 3 texts of 300,000).
+        (
+            ("Q0@Fdznql4", "VOxX4@U6C4890"),
+            "p://o:Q0@Fdznql4;passphrase=7@tail://ops:VOxX4@U6C4890:5432/0secrets="
+            'COVFTvuW1smkF")tok@j9 end',
+            f"p://o:{_URL}@[7@tail://ops:]://ops:{_URL}@j9 end",
+        ),
+        # The masks of the labelled and the entropy rules after the tail are theirs, in place.
+        (
+            ("Adm1n@2026",),
+            f"redis://ops:Adm1n@2026-db,password=Secr3t@Val token=abcdefgh9 key {_OPAQUE} end",
+            f"redis://ops:{_URL}@[Secr3t@Val] token=[abcdefgh9] key "
+            f"«REDACTED:high_entropy:{_hmac8(_OPAQUE)}» end",
+        ),
+        (
+            ("Adm1n@2026",),
+            f"redis://ops:Adm1n@2026-db,password=Secr3t@Val {_OPAQUE} token=abcdefgh9 end",
+            f"redis://ops:{_URL}@[Secr3t@Val] «REDACTED:high_entropy:{_hmac8(_OPAQUE)}» "
+            "token=[abcdefgh9] end",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("no_known_secrets")
+def test_the_rest_of_a_labelled_value_after_a_url_is_read_as_one_value(
+    credentials: tuple[str, ...], text: str, expected: str
+) -> None:
+    assert _redacted(credentials, text) == _expected(expected)
 
 
 @pytest.mark.parametrize(
@@ -211,6 +284,22 @@ def test_a_url_password_with_no_labelled_value_across_its_at_is_masked_as_on_mai
             ("1234://bob",),
             "x key-ABCD1234://bob:«REDACTED:Sup3rS3cretPw»@localhost",
             f"x key-ABCD<1234://bob>:{_URL}@localhost",
+        ),
+        # A dotted host: where the URL rule found no URL, the email rule took the password's
+        # tail and the host as one address, and the head before it was readable.
+        (
+            ("key-ABCD1234", "1234://bob"),
+            "x key-ABCD1234://bob:Sup3r!S3cret@db.example.com y",
+            f"x <key-ABCD1234>:{_URL}«REDACTED:email» y",
+        ),
+        # The `:` the URL rule takes after the user stays, where the URL is read in the next
+        # pass on to a later `@`: masked, it kept the next pass from reading it (pre-commit
+        # differential fuzz).
+        (
+            ("T8RI://zR:3ujv", ";Km(.ieY@localhost:"),
+            "mongodb+srv://T8RI://zR:3ujv:Y;Km(.ieY@localhost:6379"
+            "&passphrase=Rv://IfdO9t:YSjWOLkV@oWCIf9w end",
+            f"mongodb+srv://<T8RI://zR:3ujv>:{_URL}@oWCIf9w end",
         ),
         # A labelled value in the password: the labelled rule masks it whole, as on main.
         (
