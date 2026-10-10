@@ -244,8 +244,8 @@ def test_a_listed_model_declared_sampling_true_is_sent_it_and_the_refusal_names_
     assert result.exit_code == 3, result.output
     assert len(seen) == 1 and _sampled(seen) == [{"temperature": 0.0}], seen
     flat = " ".join(result.output.split())
-    assert "refused the request's sampling (its error names temperature" in flat, flat
-    assert "`sampling: false` under capabilities" in flat, flat
+    assert "the target refused the request's temperature" in flat, flat
+    assert "`sampling: false` under capabilities in the target file of stub" in flat, flat
 
 
 def test_a_model_the_list_does_not_know_is_refused_in_words_that_name_the_capability(
@@ -259,8 +259,8 @@ def test_a_model_the_list_does_not_know_is_refused_in_words_that_name_the_capabi
     assert result.exit_code == 3, result.output
     assert len(seen) == 1, seen
     flat = " ".join(result.output.split())
-    assert "the request sent temperature" in flat, flat
-    assert "`sampling: false` under capabilities in its target file" in flat, flat
+    assert "the target refused the request's temperature" in flat, flat
+    assert "`sampling: false` under capabilities in the target file of stub" in flat, flat
 
 
 # --- the probes, the judge and the plan -------------------------------------------------------
@@ -289,6 +289,24 @@ def test_the_probes_go_out_with_no_temperature_and_the_fingerprint_says_so(
     for probe in probes:
         assert (probe["request"]["sampling"] or {}).get("temperature") is None, probe
         assert "temperature" in probe["request"]["metadata"]["sampling_not_sent"], probe
+
+
+def test_a_judge_that_refuses_sampling_stops_the_run_and_names_the_fix(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
+) -> None:
+    """The judge read every SamplingRefused as an outage: each judged spec came back
+    inconclusive, the run exited 0, and nothing named `sampling: false` (29 refused judge
+    requests in the pre-merge audit). It stops at the first refusal now, as a target does."""
+
+    port, seen = stub
+    _files(tmp_path, port, model="claude-sonnet-4-6", provider="openai", judge_model="claude-x-9")
+    result = CliRunner().invoke(app, _run(tmp_path, "--judge", str(tmp_path / "judge.yaml")))
+    assert result.exit_code == 3, result.output
+    judged = [body for path, body in seen if path.startswith("/judge/")]
+    assert len(judged) == 1, "the first refusal stops it: no retry, no second pass"
+    flat = " ".join(result.output.split())
+    assert "SamplingRefused" in flat, flat
+    assert "`sampling: false` under capabilities in the target file of judge" in flat, flat
 
 
 def test_a_judge_that_takes_no_sampling_is_sent_none(
@@ -369,6 +387,26 @@ def test_replay_says_the_attempts_went_out_with_no_temperature(
         ("claude-sonnet-5-5", True),
         ("anthropic.claude-opus-5-5", True),  # Bedrock
         ("us.anthropic.claude-sonnet-5-5", True),  # a Bedrock inference profile
+        ("anthropic.claude-opus-4-7-v1:0", True),
+        ("arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-4-7-v1:0", True),
+        (
+            "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
+            "us.anthropic.claude-sonnet-5-5-v1:0",
+            True,
+        ),
+        ("anthropic/claude-opus-4.7", True),  # a gateway's slash-and-dot form
+        ("openrouter/anthropic/claude-fable-5.1", True),
+        ("claude-opus-5.5", True),
+        ("claude-opus-4-7[1m]", True),  # a context-window tag
+        ("projects/p/locations/global/publishers/anthropic/models/claude-opus-4-8@20260601", True),
+        ("anthropic/claude-sonnet-4.6", False),
+        ("claude-opus-4.70", False),
+        ("claude-opus-50[1m]", False),
+        ("claude-opus-4-6[1m]", False),
+        ("anthropic.claude-haiku-4-5-v1:0", False),
+        ("arn:aws:bedrock:us-east-1:123456789012:provisioned-model/abc123", False),
+        ("foo.claude-opus-5", False),  # a prefix that is not a gateway's
+        ("claude-3-7-sonnet", False),
         ("claude-opus-4-6", False),
         ("claude-sonnet-4-6", False),
         ("claude-haiku-4-5", False),

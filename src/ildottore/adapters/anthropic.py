@@ -33,13 +33,14 @@ _DEFAULT_MAX_TOKENS = 1024
 #: The Claude models that take no ``temperature`` and no ``top_p`` (u12 A-68), by model-id
 #: family, the one place the scanner keeps them. Read in Anthropic's API reference as bundled with
 #: the claude-api skill (cached 2026-09-25), not tested against the live API: Opus 4.7, Opus 4.8,
-#: Opus 5 and Opus 5.5, the Fable and Mythos 5 families answer either with HTTP 400; Sonnet 5 and
-#: Sonnet 5.5 answer any value but the default with HTTP 400, and the scanner pins temperature 0.
-#: Opus 4.6, Sonnet 4.6, Haiku 4.5 and older take one of the two. A family matches its id exactly
-#: or followed by ``-``, ``@`` or ``.`` (``claude-opus-5`` matches ``claude-opus-5-5``, not
-#: ``claude-opus-50``), after a gateway prefix ending in ``anthropic.`` (Bedrock's). A model not
-#: listed here, a new one included, is sent sampling until its file says ``sampling: false``; the
-#: capability overrides this list either way.
+#: Opus 5 and Opus 5.5, and the Fable and Mythos 5 families answer either with HTTP 400. For Sonnet
+#: 5 the reference contradicts itself (its quick table: removed, 400; its migration guide: only a
+#: non-default value is a 400) and gives Sonnet 5.5 the second reading; sending neither is right
+#: under both, since the default temperature is 1 and the scanner pins 0, and omitting the field
+#: is accepted under both. Opus 4.6, Sonnet 4.6, Haiku 4.5 and older take one of the two. A model
+#: not listed here, a new one included, is sent sampling until its file says ``sampling: false``;
+#: the capability overrides this list either way. :func:`takes_no_sampling` says how an id is
+#: matched.
 MODELS_WITHOUT_SAMPLING: Final = (
     "claude-opus-4-7",
     "claude-opus-4-8",
@@ -49,17 +50,33 @@ MODELS_WITHOUT_SAMPLING: Final = (
     "claude-mythos-5",
 )
 
+#: A gateway's own prefix before a model id: Bedrock's ``anthropic.`` and its inference profiles'
+#: ``us.anthropic.``, ``global.anthropic.`` and the like.
 _GATEWAY_PREFIX = re.compile(r"^(?:[a-z0-9-]+\.)*anthropic\.")
+#: A suffix after a model id that is not part of it: a context-window tag such as ``[1m]``.
+_BRACKET_SUFFIX = re.compile(r"\[[^\]]*\]$")
 
 
 def takes_no_sampling(model: str | None) -> bool:
-    """True when ``model`` is of a family :data:`MODELS_WITHOUT_SAMPLING` lists."""
+    """True when ``model`` is of a family :data:`MODELS_WITHOUT_SAMPLING` lists.
+
+    The id is read as gateways write it: case-insensitively; its last ``/`` segment (a Bedrock
+    ARN, ``anthropic/claude-opus-4.7``, a Vertex resource path); without a ``[...]`` suffix
+    (``claude-opus-4-7[1m]``) or a gateway prefix ending in ``anthropic.``; with dots read as
+    dashes (``claude-opus-4.7`` is ``claude-opus-4-7``). A family then matches the whole id or
+    its start followed by ``-``, ``@`` or ``:`` (a version, a Vertex ``@date``, a Bedrock
+    ``:0``), so ``claude-opus-5`` covers ``claude-opus-5-5`` and ``claude-opus-5.5`` but not
+    ``claude-opus-50``, and ``claude-opus-4-7`` not ``claude-opus-4.70``. An id in any other form
+    (a provisioned-model ARN, an alias) is not matched: it is sent sampling, and a refusal names
+    the capability.
+    """
 
     if not model:
         return False
-    model_id = _GATEWAY_PREFIX.sub("", model.strip().lower())
+    model_id = _BRACKET_SUFFIX.sub("", model.strip().lower()).rsplit("/", 1)[-1]
+    model_id = _GATEWAY_PREFIX.sub("", model_id).replace(".", "-")
     return any(
-        model_id == family or model_id[len(family) : len(family) + 1] in ("-", "@", ".")
+        model_id == family or model_id[len(family) : len(family) + 1] in ("-", "@", ":")
         for family in MODELS_WITHOUT_SAMPLING
         if model_id.startswith(family)
     )
