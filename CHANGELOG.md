@@ -7,43 +7,63 @@ versioning: [SemVer](https://semver.org/).
 
 ### Fixed (a Claude model that takes no temperature or top_p could not be scanned)
 
-- **Every campaign against Claude Opus 4.7 and later, Sonnet 5 and the Fable models stopped at its
-  first request.** Anthropic's API reference (read in the reference bundled with the claude-api
-  skill, cached 2026-09-25; not tested against the live API) says Opus 4.7, Opus 4.8, Opus 5 and
-  Opus 5.5 and the Fable and Mythos 5 families answer a `temperature` or a `top_p` with HTTP 400,
-  and Sonnet 5 and Sonnet 5.5 any value but the default; the scanner pins temperature 0 on every
-  spec, probe and judge request, and the error said only `non-retryable HTTP 400 from
-  /v1/messages`. A target file's new `capabilities.sampling` says whether the target takes them.
-  Left out, a `provider: anthropic` target whose model is of a family
-  `adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists (`claude-opus-4-7`, `claude-opus-4-8`,
-  `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`, `claude-mythos-5`, each matched whole,
-  after a gateway prefix such as Bedrock's `anthropic.`) is sent neither, and every other target
-  is sent them; `false` sends neither to any model, through the OpenAI adapter too (a reasoning
-  model, or a Claude model behind a gateway); `true` sends them to a listed one. `max_tokens`
-  still goes out. Contract u12 A-68.
+- **Every campaign against Claude Opus 4.7 and later, Sonnet 5, and the Fable and Mythos 5
+  families stopped at its first request.** Anthropic's API reference (read in the reference
+  bundled with the claude-api skill, cached 2026-09-25; not tested against the live API) says
+  Opus 4.7, Opus 4.8, Opus 5 and Opus 5.5 and the Fable and Mythos 5 families answer a
+  `temperature` or a `top_p` with HTTP 400. For Sonnet 5 it contradicts itself (its quick table:
+  removed; its migration guide: only a non-default value is refused), and Sonnet 5.5 gets the
+  second reading; sending neither is right under both (the default temperature is 1 and the
+  scanner pins 0). The scanner pinned temperature 0 on every spec, probe and judge request, and the
+  error said only `non-retryable HTTP 400 from /v1/messages`. A target file's new
+  `capabilities.sampling` says whether the target takes them. Left out, a `provider: anthropic`
+  target whose model is of a family `adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists
+  (`claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`,
+  `claude-mythos-5`) is sent neither, and every other target is sent them; `false` sends neither
+  to any model, through the OpenAI adapter too (a Claude model behind a gateway, say); `true`
+  sends them to a listed one. An id is matched as gateways write it: its last `/` segment (a
+  Bedrock ARN, `anthropic/claude-opus-4.7`, a Vertex path), without a `[1m]` suffix or an
+  `anthropic.` prefix, dots read as dashes, the family whole (`claude-opus-5` covers
+  `claude-opus-5.5`, not `claude-opus-50`). `max_tokens` still goes out. Contract u12 A-68.
 - **Such a run says it is not temperature-0 deterministic.** The model samples at its own default,
   so its replies, the reproducibility over `--runs`, a `-sV` fingerprint and the judge's two passes
   are not pinned. The run says so on stderr before it sends (never silenced by `-q`), as do
   `--dry-run` (`sampling:` and `judge sampling:` lines), `-sn`, the `-sV` fingerprint line,
   `dottore fingerprint` and `dottore replay` (which counts the attempts sent with no temperature).
   Each stored attempt and probe records the sampling it went out with and, under
-  `request.metadata.sampling_not_sent`, the fields its spec, probe or block asked for that did not
-  go out (on Anthropic, a spec's `seed` too).
+  `request.metadata.sampling_not_sent`, the fields asked for that did not go out: the spec's or
+  the probe's own and the target file's `sampling_defaults` as written (on Anthropic, a spec's
+  `seed` too).
 - **A 400 that refuses the request's sampling names the fix.** From the OpenAI or the Anthropic
-  adapter, a 400 whose JSON error names `temperature`, `top_p` or `top_k`, for a request that sent
-  a temperature or a top_p, is `SamplingRefused`: not retried, as no 4xx is, and the campaign stops
-  as before, but with `the target refused the request's sampling (its error names temperature;
-  the request sent temperature). A model that takes no temperature or top_p needs `sampling:
-  false` under capabilities in its target file`. The target's own error text is not quoted.
+  adapter, a 400 whose JSON error names, as a parameter (`error.param`, a token between backticks
+  or quotes, or the first word of the message), a sampling field the request sent is
+  `SamplingRefused`: not retried, as no 4xx is, and the campaign stops as before, but with `the
+  target refused the request's temperature. If the model takes no temperature or top_p, set
+  `sampling: false` under capabilities in the target file of <id>`. The `--judge` model's stops
+  the run the same way. A moderation 400 quoting "the temperature of the room", or one naming
+  only `top_k`, which nothing sends, stays the plain error. The target's own error text is not
+  quoted.
 - **Resume.** Declared, the capability is part of the target's digest, so adding it to the file of
   a halted run refuses the resume; left out, it is not, so every stored run keeps its digest
-  (measured: the digest of a target that does not declare it is the one `00b2fca` computed), and a
-  run a listed model stopped at its first request resumes sending no sampling.
-- `tests/cli/test_models_without_sampling.py`: 40 tests through a loopback stub whose Anthropic
-  endpoints refuse any `temperature` or `top_p`; 37 fail on `00b2fca`, and the 3 that pass there
-  check that a non-boolean `sampling` is refused, which the base does as an unknown key.
-  `tests/adapters/test_websocket_audit.py` and `tests/core/test_seeded_setup.py` leave the new
-  null field out of their pre-field digests.
+  (measured: the digest of a target that does not declare it is the one `00b2fca` computed). The
+  run context records whether its target and judge were sent a temperature; a resume whose record
+  differs from what this version decides (a run started before the record counts as sent)
+  continues as it started when it keeps attempts, and is sent as this version decides when it
+  keeps none, said on stderr either way.
+- **Pre-merge audit of the first version (7dd5ec1).** A judge whose model refused sampling was
+  silent: the evaluator read `SamplingRefused` as an outage, every judged spec came back
+  inconclusive and the run exited 0 (29 refused judge requests); it stops the run now.
+  `SamplingRefused` fired on any whole word in the message; it fires only on a sent parameter
+  named as a parameter now. A resume could mix pinned and unpinned attempts; it continues as its
+  run started now. `sampling_not_sent` missed the block's fields the adapter never sends; it
+  counts the block as written now. The id forms above were not matched. The judge refusal reads
+  "a different --judge file, whose endpoint, model, capabilities or sampling_defaults differ".
+- `tests/cli/test_models_without_sampling.py` (64 tests, through a loopback stub whose Anthropic
+  endpoints refuse any `temperature` or `top_p`) and `tests/adapters/test_sampling_refused.py`
+  (21, through respx): 61 and 21 fail or do not collect on `00b2fca` (the 3 of the first that pass
+  check that a non-boolean `sampling` is refused, which the base does as an unknown key); 16 and
+  17 fail on `7dd5ec1`. `tests/adapters/test_websocket_audit.py` and
+  `tests/core/test_seeded_setup.py` leave the new null field out of their pre-field digests.
   Docs: MANUAL §4.2 ("Models that take no sampling", with a table), the `dottore fingerprint` and
   `dottore replay` sections, the FAQ, USAGE, `dottore(1)`, `dottore-scope(5)`, `docs/01`, `03`
   and `10`, `examples/target.openai.yaml` and `examples/README.md` (Scenario D), and the u00,
@@ -119,9 +139,10 @@ versioning: [SemVer](https://semver.org/).
   new `sampling:` line in Scenarios B and G, and a test runs both commands against it.
 - Left as they were, and said in A-66: a REST, MCP or WebSocket attempt still records the spec's
   own sampling, which nothing carries; the OpenAI adapter sends a spec's `seed` whatever
-  `capabilities.seed` says; the Anthropic adapter's 1024-token default is not recorded; Claude
-  models that take no sampling at all (Opus 4.7 and later, Sonnet 5, the Fable models, per the
-  same reference) refuse the temperature every request carries, a defect older than this change.
+  `capabilities.seed` says; the Anthropic adapter's 1024-token default is not recorded. Claude
+  models that take no sampling at all (Opus 4.7 and later, Sonnet 5, the Fable and Mythos 5
+  families, per the same reference) refused the temperature every request carries, a defect
+  older than this change, fixed by u12 A-68 (the entry above).
 
 ### Fixed (a run id of twelve decimal digits, masked as a phone number)
 

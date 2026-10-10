@@ -422,15 +422,25 @@ nothing they ask for; a block `top_p` below 1 is not applied there, and `--dry-r
 
 **Models that take no sampling.** The same reference says Claude Opus 4.7, Opus 4.8, Opus 5 and
 Opus 5.5 and the Fable and Mythos 5 families refuse a `temperature` or a `top_p` outright (HTTP
-400), and Sonnet 5 and Sonnet 5.5 any value but the default; the scanner pins temperature 0, so
-every request to them was refused and the campaign stopped at the first one, saying only
-`non-retryable HTTP 400`. `capabilities.sampling` says whether a target takes them:
+400). For Sonnet 5 it contradicts itself: its quick table says the parameters are removed (a 400),
+its migration guide that only a value other than the default is a 400; Sonnet 5.5 gets the second
+reading. Sending neither is right under both readings: the default temperature is 1, the scanner
+pins 0, and a request without the field is accepted under both. With the temperature pinned,
+every request to those models was refused, the campaign stopped at the first one, and the error
+said only `non-retryable HTTP 400`. `capabilities.sampling` says whether a target takes them:
 
 | `capabilities.sampling` | `provider: anthropic` | `provider: openai` |
 |---|---|---|
-| left out (or `null`) | not sent to a model of a family `adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists (`claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`, `claude-mythos-5`, each matched whole, so `claude-opus-5` covers `claude-opus-5-5`, after a gateway prefix such as Bedrock's `anthropic.`); sent to any other | sent |
-| `false` | not sent | not sent (a reasoning model, or a Claude model behind an OpenAI-compatible gateway, which the list does not cover) |
+| left out (or `null`) | not sent to a model of a family `adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists (`claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`, `claude-mythos-5`); sent to any other | sent |
+| `false` | not sent | not sent (a Claude model behind an OpenAI-compatible gateway, which the list does not cover, or any other model that refuses the two) |
 | `true` | sent, to a listed model too | sent |
+
+A family matches its id whole, case-insensitively, as gateways write ids: the last `/` segment
+(a Bedrock ARN, `anthropic/claude-opus-4.7`, a Vertex resource path), without a `[...]` suffix
+(`claude-opus-4-7[1m]`) or a gateway prefix ending in `anthropic.` (`us.anthropic.`), with dots
+read as dashes; then the family is the whole id or its start followed by `-`, `@` or `:`, so
+`claude-opus-5` covers `claude-opus-5-5` and `claude-opus-5.5` but not `claude-opus-50`. Any other
+form (a provisioned-model ARN, an alias) is not matched and is sent sampling.
 
 The list is the one place the scanner keeps those models, from that reference (cached
 2026-09-25, not tested against the live API); a model it does not name, a newer one included, is
@@ -447,18 +457,36 @@ samples at its own default, so its replies are not temperature-0 deterministic`)
 `--dry-run` (on a `sampling:` line, and on a `judge sampling:` line for the judge), `-sn`, the
 `-sV` fingerprint line (`[probes sent with no temperature: not temperature-0 repeatable]`) and
 `dottore fingerprint` (on stderr). The evidence records it: each attempt's and probe's sampling
-holds no temperature, and its `request.metadata.sampling_not_sent` lists the fields the spec, the
-probe or the block asked for that did not go out (on every Anthropic attempt with a `seed`, the
-seed too); `dottore replay` counts the attempts sent with no temperature under its pooled rate. A
-400 whose error names `temperature`, `top_p` or `top_k` when the request sent one of them is
-refused, not retried (a 4xx never is), in words that name the fix (`the target refused the
-request's sampling (its error names temperature; the request sent temperature). A model that takes
-no temperature or top_p needs `sampling: false` under capabilities in its target file`), where it
-said `non-retryable HTTP 400`; the target's own error text is not quoted. Declared, the capability
-is part of the target's digest, so adding it to the file of a halted run refuses the resume ("a
-different target"): start a fresh run, as a run that met that 400 stopped at its first request.
-Left out, it is not part of the digest, so a run halted before this capability existed against a
-listed model (it stopped at its first request) resumes, and sends no sampling.
+holds no temperature, and its `request.metadata.sampling_not_sent` lists the fields that were
+asked for and did not go out: the spec's or the probe's own, and the target file's
+`sampling_defaults` as the file writes it (on an Anthropic attempt, a spec's `seed` too; on a REST,
+MCP or WebSocket target nothing is listed, and the attempt keeps recording the spec's own
+sampling). `dottore replay` counts the attempts sent with no temperature under its pooled rate.
+
+A 400 from the OpenAI or the Anthropic adapter that names, as a parameter, a sampling field the
+request sent is refused, not retried (a 4xx never is), in words that name the fix: `the target
+refused the request's temperature. If the model takes no temperature or top_p, set `sampling:
+false` under capabilities in the target file of <id>`, where it said `non-retryable HTTP 400`;
+the target's own error text is not quoted. Named as a parameter means `error.param`, a token
+between backticks or quotes, or the first word of the message: a moderation 400 that quotes a
+prompt about "the temperature of the room", or one that names only `top_k`, which no adapter
+sends, stays the plain `non-retryable HTTP 400`. The `--judge` model's refusal stops the run the
+same way, naming the judge's file (a judge read it as an outage before, so every judged spec came
+back inconclusive, the run exited 0 and nothing named the fix).
+
+Declared, the capability is part of the target's digest, so adding it to the file of a halted
+run refuses the resume ("a different target"); left out, it is not, so a run halted before this
+capability existed keeps its digest. Each run records whether its target and its judge were sent
+a temperature, and a resume whose record differs from what this version decides (a run started
+before that record counts as sent, as every older version sent one) continues as it started when
+it keeps attempts, so one campaign is not half pinned and half unpinned, and is sent as this
+version decides when it keeps none; both are said on stderr (`resume: <run id> sent stub a
+temperature and a top_p when it started and keeps 3 attempt(s) sent so, so it continues as it
+started; this version would send no temperature or top_p (a fresh run does)`). If the reference
+is right, a run of an older version against a listed model stopped at its first request and kept
+nothing, so its resume sends no sampling; if a listed model did take the temperature, the run kept
+pinned attempts, and its resume stays pinned. A run started by the first version of this
+capability (7dd5ec1, never released) recorded nothing and is read as pinned.
 
 `--dry-run` says what goes out, per field and over the specs it would send (`sampling:
 local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of 10 specs (a

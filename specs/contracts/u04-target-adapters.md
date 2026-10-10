@@ -109,10 +109,11 @@ reads as U+FFFD, since httpx decodes the stream as text.
    400 (the reference bundled with the claude-api skill, cached 2026-09-25, not tested live);
    `_build_request` sends it, and the composition root records attempts and probes through it.
    Since the same day, u12 A-68: `sampling_enabled` false (a target that takes no sampling, as
-   `MODELS_WITHOUT_SAMPLING` lists Claude Opus 4.7 and later, Sonnet 5 and the Fable models)
-   drops the `temperature` and the `top_p` too; the OpenAI adapter has the same switch and its
-   own `sent_sampling`; and a 400 whose JSON error names `temperature`, `top_p` or `top_k`, when
-   the request sent one, is `SamplingRefused`, a product error that names the capability to set.)
+   `MODELS_WITHOUT_SAMPLING` lists Claude Opus 4.7 and later, Sonnet 5, and the Fable and Mythos 5
+   families) drops the `temperature` and the `top_p` too; the OpenAI adapter has the same switch
+   and its own `sent_sampling`; and a 400 whose JSON error names, as a parameter (`error.param`, a
+   quoted token, the first word of the message), a sampling field the request sent is
+   `SamplingRefused`, a product error that names the capability to set; the judge re-raises it.)
 4. `rest.py`: generic REST via a declarative request/response JSONPath template (long-tail); usually
    `logprobs=None`, `seed=False`; capabilities driven by template config.
 

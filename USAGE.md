@@ -54,9 +54,10 @@ capabilities: { tools: false, rag: false }
 # leaves unset; a field they set wins. Sent by the openai and anthropic adapters only (anthropic:
 # no seed, and no top_p beside a temperature); a seed only with `seed: true` in capabilities.
 # sampling_defaults: { temperature: 0.0, top_p: 1.0 }
-# A model that takes no temperature or top_p (Claude Opus 4.7 and later, Sonnet 5, Fable: sent
-# none by default on provider anthropic) is declared with `sampling: false` under capabilities;
-# its replies are then not temperature-0 deterministic.
+# A model that takes no temperature or top_p (per Anthropic's API reference, not tested live:
+# Claude Opus 4.7 and later, Sonnet 5, the Fable and Mythos 5 families, sent none by default on
+# provider anthropic) is declared with `sampling: false` under capabilities; its replies are then
+# not temperature-0 deterministic.
 ```
 
 Run the quick triage battery and write all report formats:

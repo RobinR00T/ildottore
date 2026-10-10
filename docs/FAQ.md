@@ -110,7 +110,11 @@ samples at its own default, so its replies, the reproducibility over `--runs` an
 fingerprint are not temperature-0 deterministic. The run says so before it sends, `--dry-run`, `-sn`
 and the `-sV` line say it too, each attempt records `request.metadata.sampling_not_sent`, and
 `dottore replay` counts those attempts. A model the list does not know is refused at its first
-request with the advice to set `sampling: false`, not a bare `HTTP 400`.
+request with the advice to set `sampling: false`, not a bare `HTTP 400`, and so is a `--judge`
+model, which used to come back inconclusive on every spec without a word. Model ids are matched
+as gateways write them (a Bedrock ARN, `anthropic/claude-opus-4.7`, `claude-opus-4-7[1m]`). For
+Sonnet 5 the reference contradicts itself (removed, or only non-default values refused); sending
+neither is right under both.
 
 ### Can the judge itself be fooled by a prompt injection?
 

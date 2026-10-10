@@ -141,8 +141,12 @@ the openai adapter too; true sends them to a listed model as well. Such a target
 own default, so its replies, its reproducibility over --runs and its -sV fingerprint are not
 temperature-0 deterministic: the run says so on stderr before it sends, as do --dry-run, -sn and
 the -sV line, and each attempt records the fields that did not go out under
-request.metadata.sampling_not_sent. A 400 whose error names temperature, top_p or top_k, when the
-request sent one, is refused unretried with the advice to set sampling: false.
+request.metadata.sampling_not_sent. A model id is matched as gateways write it: its last /
+segment (a Bedrock ARN, anthropic/claude-opus-4.7), without a [...] suffix or an anthropic.
+prefix, dots read as dashes. A 400 that names, as a parameter (error.param, a quoted token, the
+first word of the message), a sampling field the request sent is refused unretried with the
+advice to set sampling: false, the --judge model's included. A run records whether its target
+and judge were sent a temperature, and a resume that keeps attempts continues as it started.
 .B auth_ref
 accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
 refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is

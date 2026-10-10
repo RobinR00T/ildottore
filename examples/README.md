@@ -127,10 +127,10 @@ Add `--dry-run` first if you want to see the plan and the cost before spending a
 
 A Claude model is scanned the same way with `provider: anthropic`, an
 `https://api.anthropic.com/v1/messages` endpoint and `env://ANTHROPIC_API_KEY`. Claude Opus 4.7
-and later, Sonnet 5 and Sonnet 5.5, and the Fable models take no `temperature` or `top_p`
-(Anthropic's API reference, not tested live by this project), so the scanner sends them neither,
-from the list in `adapters.anthropic.MODELS_WITHOUT_SAMPLING`, and the run and `--dry-run` say
-that their replies are not temperature-0 deterministic. A model the list does not name and that
+and later, Sonnet 5 and Sonnet 5.5, and the Fable and Mythos 5 families take no `temperature` or
+`top_p` (Anthropic's API reference, not tested live by this project), so the scanner sends them
+neither, from the list in `adapters.anthropic.MODELS_WITHOUT_SAMPLING`, and the run and
+`--dry-run` say that their replies are not temperature-0 deterministic. A model the list does not name and that
 refuses them is declared with `sampling: false` under `capabilities`; `sampling: true` sends them
 to a listed one.
 

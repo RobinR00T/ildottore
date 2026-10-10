@@ -17,7 +17,7 @@ import pytest
 import respx
 
 from ildottore.adapters import AdapterProductError, AnthropicAdapter, OpenAIAdapter, RetryConfig
-from ildottore.adapters.base import SamplingRefused, sampling_params_named
+from ildottore.adapters.base import SamplingRefused
 from ildottore.policy import EndpointAllowlist
 from ildottore.shared.models import ModelRequest, Sampling
 
@@ -165,4 +165,6 @@ async def test_the_openai_adapter_names_the_fix_too(openai_allowlist: EndpointAl
     ],
 )
 def test_what_counts_as_naming_a_parameter(raw: bytes, named: list[str]) -> None:
+    from ildottore.adapters.base import sampling_params_named
+
     assert sampling_params_named(raw) == named
