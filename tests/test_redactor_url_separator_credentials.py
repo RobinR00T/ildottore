@@ -181,6 +181,13 @@ _OPAQUE = "Zq8Xw3Yv6Ut1Sr4Qp7On"
             'COVFTvuW1smkF")tok@j9 end',
             f"p://o:{_URL}@[7@tail://ops:]://ops:{_URL}@j9 end",
         ),
+        # A plain word after a label and a path the entropy rule exempts stay as they are.
+        (
+            ("Adm1n@2026",),
+            "redis://ops:Adm1n@2026-db,password=Secr3t@Val token=lowercaseword "
+            "path/to/some-long-path/x end",
+            f"redis://ops:{_URL}@[Secr3t@Val] token=lowercaseword path/to/some-long-path/x end",
+        ),
         # The masks of the labelled and the entropy rules after the tail are theirs, in place.
         (
             ("Adm1n@2026",),
@@ -298,6 +305,20 @@ def test_a_url_password_with_no_labelled_value_across_its_at_is_masked_as_on_mai
         (
             ("T8RI://zR:3ujv", ";Km(.ieY@localhost:"),
             "mongodb+srv://T8RI://zR:3ujv:Y;Km(.ieY@localhost:6379"
+            "&passphrase=Rv://IfdO9t:YSjWOLkV@oWCIf9w end",
+            f"mongodb+srv://<T8RI://zR:3ujv>:{_URL}@oWCIf9w end",
+        ),
+        # The same with the user's tail readable: as written it is the password's head, and the
+        # kept `:` splits the mask; with nothing readable but that `:`, nothing is added.
+        (
+            ("T8RI://zR:3ujv", ";Km(.ieY@localhost:"),
+            "mongodb+srv://T8RI://zR:3ujvQQ:Y;Km(.ieY@localhost:6379"
+            "&passphrase=Rv://IfdO9t:YSjWOLkV@oWCIf9w end",
+            f"mongodb+srv://<T8RI://zR:3ujv>{_URL}:{_URL}@oWCIf9w end",
+        ),
+        (
+            ("T8RI://zR:3ujv", ";Km(.ieY@localhost:"),
+            "mongodb+srv://T8RI://zR:3ujv:;Km(.ieY@localhost:6379"
             "&passphrase=Rv://IfdO9t:YSjWOLkV@oWCIf9w end",
             f"mongodb+srv://<T8RI://zR:3ujv>:{_URL}@oWCIf9w end",
         ),

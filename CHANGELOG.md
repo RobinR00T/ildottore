@@ -107,7 +107,7 @@ versioning: [SemVer](https://semver.org/).
   across each separator, the labelled tail's limits the fuzzers found, chained values, the
   credential in the user, the email host, the CLI's errors, a Hypothesis property over URLs with one
   or two credentials across a separator, memory and linear time on 2 MB of hostile echoes;
-  45 cases, 30 of which fail on `f12ba83` and 11 on the first version of this fix, `924c276`), and in `tests/cli/test_operator_file_quoted_values.py` the policy gate's refusal
+  48 cases, 32 of which fail on `f12ba83` and 13 on the first version of this fix, `924c276`), and in `tests/cli/test_operator_file_quoted_values.py` the policy gate's refusal
   and `shown_auth_ref` with a 308-character password (both fail on `f12ba83`). 24 mutants of the fix: 21 caught, one of them by a hang; the 3 missed change nothing a test can see (a guard against two of its masks overlapping, which they cannot; the label search starting after the userinfo's last mask, which only bounds its cost; an off-by-one where the URL rule cannot match from inside a mask). Docs:
   MANUAL, `docs/02` (S6), u01 A-31 and A-51, u12 §6, the contract index, PROGRESS. `make gates`
   green: GATES_FIGURES. Left open after #96: where the URL rule did read a URL, its reading stands,
