@@ -205,6 +205,30 @@ def test_the_same_refusal_of_any_other_probe_still_stops_the_pass(
     assert state["served"] == 7  # the nudge is the seventh send; nothing after it went out
 
 
+def test_a_carrier_the_filter_refuses_costs_that_carrier_not_the_pass(
+    tmp_path: Path, azure: tuple[int, dict[str, Any]]
+) -> None:
+    """A carrier is an encoded instruction, which Azure's Prompt Shields refuses as an encoding
+    attack: the filter's 400 to the base64 carrier alone is a failed probe, and the pass goes on
+    (OD-41, pre-merge audit of ``3d739f3``, L6). On ``92c7b11`` it stopped with exit 3."""
+
+    port, state = azure
+    state["word"] = "base64-encoded"
+    scope, target = _files(tmp_path, port)
+    result = CliRunner().invoke(app, ["fingerprint", str(target), "--scope", str(scope)])
+
+    assert result.exit_code == 0, result.output
+    assert state["blocked"] == 1
+    assert state["served"] == fingerprint_probe_count()
+    fp = ModelFingerprint.model_validate_json(result.stdout)
+    assert failed_probes(fp) == ["carrier/carrier_base64_wrap: ProviderFilterBlock"]
+    assert "base64_wrap" not in fp.capability_guess.get("effective_mutators", [])
+    assert result.stderr.startswith(
+        f"warning: azure: 1 of {fingerprint_probe_count()} probe(s) got no usable reply "
+        "(carrier/carrier_base64_wrap: ProviderFilterBlock)"
+    )
+
+
 @pytest.mark.parametrize(
     ("status", "refused"),
     [(400, True), (403, True), (422, True), (499, True), (302, False), (501, False)],

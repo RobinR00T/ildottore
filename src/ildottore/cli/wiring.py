@@ -57,7 +57,7 @@ from ildottore.adapters.websocket import (
 )
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
-from ildottore.core.execute import default_is_env_error
+from ildottore.core.execute import default_is_env_error, is_provider_filter_block
 from ildottore.core.metering import MeteredAdapter, SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import IDENTITY_MUTATOR
@@ -331,7 +331,9 @@ def build_fingerprint_engine() -> FingerprintEngine:
     A probe whose reply comes back refused (an environment failure the attack phase would not
     retry, by its own predicate) is a failed probe (u09 §7 A-35, OD-23): one such reply used to
     stop ``run -sV`` before any attack while it only failed an attempt without it. So is a 4xx
-    to the guardrail layer's benign request (:func:`refused_request`, u09 §7 A-67).
+    to the guardrail layer's benign request (:func:`refused_request`, u09 §7 A-67), and a carrier
+    probe the provider's input filter refused (``is_provider_filter_block``, OD-41: a carrier is
+    an encoded instruction, which Azure's Prompt Shields refuses as a prompt attack).
     """
 
     registry = build_mutator_registry()
@@ -340,6 +342,7 @@ def build_fingerprint_engine() -> FingerprintEngine:
         layers=[*default_layers(), CarrierLayer(carriers)],
         is_env_error=default_is_env_error,
         is_request_refused=refused_request,
+        is_prompt_filtered=is_provider_filter_block,
     )
 
 
