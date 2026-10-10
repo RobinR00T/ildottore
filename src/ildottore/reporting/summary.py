@@ -50,7 +50,7 @@ from ildottore.shared.iopc import (
     IOPC_TECHNIQUES,
 )
 from ildottore.shared.models import AttackSpec, Attempt, Finding
-from ildottore.shared.provider_filter import blocked_attempt_ids
+from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
 
 __all__ = [
     "ATLAS_MATRIX_RELEASE",
@@ -296,9 +296,14 @@ _UNSENT: tuple[str, ...] = ("setup_not_seeded", "setup_not_delivered")
 
 
 def _exercised(attempt: Attempt) -> bool:
-    """True when the attempt reached the target and its scene reached the model."""
+    """True when the attempt reached the target and its scene reached the model.
 
-    if attempt.response is None:
+    A conversation the provider's input filter cut carries a reply when the model had called a
+    tool, and is not exercised unless that trace failed it (OD-41): the turn the spec is about
+    never reached the model.
+    """
+
+    if attempt.response is None or blocked_by_provider_filter(attempt):
         return False
     verdict = attempt.verdict
     return verdict is None or not verdict.reasoning.startswith(SETUP_NOT_REACHED)

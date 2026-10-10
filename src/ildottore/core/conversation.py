@@ -174,7 +174,9 @@ async def execute_conversation(
     refused (OD-41): the conversation stops there, its result is ``filter_blocked`` and carries
     that turn's error, and the runner records it ``inconclusive: blocked_by_provider_filter``.
     The turns before it reached the model; the one it refused did not, so the dialogue never
-    reached the reply the spec scores.
+    reached the reply the spec scores. When the model had called a tool by then, the attempt
+    carries its last reply with the whole trace so far, which the runner's trace evaluators read:
+    a call already made can fail the attempt, and nothing else decides it.
 
     With an in-band ``setup`` (OD-18) the retrieved documents precede the first attacker turn
     (the memory seed is in ``system_prompt``, put there by the runner), every request carries
@@ -191,6 +193,9 @@ async def execute_conversation(
     messages: list[JsonDict] = []
     tools = list(setup.tools) if setup is not None and setup.tools else None
     last_response: ModelResponse | None = None
+    # The last reply the model gave, the turn's or a tool round's: a conversation the provider's
+    # input filter cuts carries it with the trace so far (OD-41, below).
+    answered: ModelResponse | None = None
     trace_tool_calls: list[JsonDict] = []
     total_latency = 0.0
     saw_latency = False
@@ -202,6 +207,15 @@ async def execute_conversation(
     crossed: ReplyOverBudget | None = None
 
     def aborted(result: AttemptResult) -> AttemptResult:
+        # A turn the provider's input filter refused did not reach the model, but the turns
+        # before it did, and a tool the model called on one of them was called (OD-41, u08 A-69):
+        # the trace so far rides on the model's last reply, so the runner's trace evaluators can
+        # read it. Without a call there is nothing to read, and an environment error keeps none.
+        partial = None
+        if result.filter_blocked and trace_tool_calls and answered is not None:
+            partial = answered.model_copy(
+                update={"tool_calls": [dict(call) for call in trace_tool_calls]}
+            )
         attempt = _aggregate_attempt(
             attempt_id=attempt_id,
             spec_id=spec_id,
@@ -209,7 +223,7 @@ async def execute_conversation(
             messages=messages,
             system_prompt=system_prompt,
             sampling=sampling,
-            response=None,
+            response=partial,
             latency_ms=None,
             error=result.attempt.error or "conversation aborted after an environment error",
             setup=setup,
@@ -272,6 +286,7 @@ async def execute_conversation(
         rounds = 0
         turn_texts: list[str] = []
         while True:
+            answered = response
             turn_texts.append(response.text)
             # Accumulate the trace across turns and rounds (see the docstring): the aggregate
             # keeps the final text but must expose every tool call made, in order.
