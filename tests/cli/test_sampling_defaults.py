@@ -701,8 +701,9 @@ def test_an_edited_judge_file_is_named_as_such(
     seen.clear()
     resumed = CliRunner().invoke(app, _run(tmp_path, "--resume", run_id, *judge))
     assert resumed.exit_code == 3, resumed.output
-    assert "a different --judge file (its endpoint, model or sampling_defaults differ)" in " ".join(
-        resumed.output.split()
+    assert (
+        "offers: a different --judge file, whose endpoint, model, capabilities or "
+        "sampling_defaults differ." in " ".join(resumed.output.split())
     ), resumed.output
     assert seen == []
 

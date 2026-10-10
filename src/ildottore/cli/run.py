@@ -36,7 +36,7 @@ import unicodedata
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -1617,6 +1617,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     prior_spend: Spend | None = None
     resume_from: TestRun | None = None
     provisional: list[TargetPlan] | None = None
+    # The judge as it is sent to: the file, or a resume's continuation of how it started (A-68).
+    judge_runtime = judge_target
     # Whether the target files' `sampling_defaults` go out (OD-39, u12 A-66): always for a fresh
     # run; a resume continues as its run started (read in the resume block below).
     apply_sampling_defaults = True
@@ -1675,6 +1677,24 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 "a fresh run sends them",
                 file=sys.stderr,
             )
+        # Sent a temperature when it started, or not (u12 A-68). With attempts kept, the resume
+        # continues as it started, so one campaign is not half pinned and half unpinned; with
+        # none kept nothing would mix, and it is sent as this version decides. Either way said.
+        kept, _ = resume_progress(resume_from)
+        stored_target, stored_judge = resume_mod.stored_takes_sampling(run_db, opts.resume)
+        real = routes[0][2][1]
+        if real is not None:
+            started = stored_target if stored_target is not None else True
+            continued = _continued_takes(opts.resume, real.id, started, real, kept=kept)
+            if continued is not None:
+                routes = [(routes[0][0], routes[0][1], (routes[0][2][0], continued))]
+                loaded_targets = [replace(loaded_targets[0], target=continued)]
+        if judge_target is not None:
+            started = stored_judge if stored_judge is not None else True
+            label = f"the --judge model {judge_target.id}"
+            continued = _continued_takes(opts.resume, label, started, judge_target, kept=kept)
+            if continued is not None:
+                judge_runtime = continued
         inherited = resume_mod.stored_runs(run_db, opts.resume)
         if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
             # stderr and never suppressed: this changes the denominator of the reproducibility
@@ -1835,8 +1855,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         # the reproducibility over --runs and a -sV fingerprint included (u12 A-68). A dry run
         # says it on its own `sampling:` line.
         unsampled = [no_sampling_note(real) for _, _, (_, real) in routes if real is not None]
-        if judge_target is not None:
-            judged = no_sampling_note(judge_target)
+        if judge_runtime is not None:
+            judged = no_sampling_note(judge_runtime)
             unsampled.append(f"the --judge model {judged}" if judged else None)
         for note in unsampled:
             if note is not None:
@@ -2068,8 +2088,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 opts.categories or opts.spec_globs or opts.exclude_globs or opts.top_tests
             ),
             judge_notes=(
-                judge_sampling_notes(judge_target, applied=apply_sampling_defaults)
-                if judge_target is not None
+                judge_sampling_notes(judge_runtime, applied=apply_sampling_defaults)
+                if judge_runtime is not None
                 else None
             ),
         )
@@ -2107,6 +2127,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             judge=judge_target,
             adaptive=adaptive,
             sampling_defaults_applied=apply_sampling_defaults,
+            takes_sampling=(
+                wiring.takes_sampling(real_target)[0] if real_target is not None else None
+            ),
+            judge_takes_sampling=(
+                wiring.takes_sampling(judge_runtime)[0] if judge_runtime is not None else None
+            ),
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         result = _run_one_target(
@@ -2121,7 +2147,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             n=opts.runs,
             mock_scenario=mock_scenario,
             real_target=real_target,
-            judge_target=judge_target,
+            judge_target=judge_runtime,
             budgets=plan.budgets,
             fingerprint=fingerprints.get(target.id),
             adaptive=adaptive,
@@ -2308,6 +2334,39 @@ def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None,
         scenario = "hardened" if opts.hardened else loaded.mock_scenario()
         return scenario, None
     return None, loaded.target
+
+
+def _continued_takes(
+    run_id: str, who: str, started: bool, target: Target, *, kept: int
+) -> Target | None:
+    """How a resume sends ``target`` sampling when that differs from how its run started (A-68).
+
+    ``started`` is what the run recorded (a run started before the record sent sampling, as every
+    version did before A-68). The same as this version decides: ``None``, nothing to say. Else,
+    with attempts kept, the target as it started (:func:`wiring.with_takes_sampling`), so one
+    campaign is not half pinned and half unpinned; with none kept, ``None``: nothing would mix,
+    and it is sent as this version decides. Both are said on stderr, never silenced by ``-q``.
+    """
+
+    now = wiring.takes_sampling(target)[0]
+    if started == now:
+        return None
+    as_started = "a temperature and a top_p" if started else "no temperature or top_p"
+    as_now = "a temperature and a top_p" if now else "no temperature or top_p"
+    if kept:
+        print(
+            f"resume: {run_id} sent {who} {as_started} when it started and keeps {kept} "
+            f"attempt(s) sent so, so it continues as it started; this version would send "
+            f"{as_now} (a fresh run does)",
+            file=sys.stderr,
+        )
+        return wiring.with_takes_sampling(target, started)
+    print(
+        f"resume: {run_id} sent {who} {as_started} when it started and keeps no attempt, so it "
+        f"is sent {as_now}, as this version decides",
+        file=sys.stderr,
+    )
+    return None
 
 
 def _unsent_sampling_defaults(
@@ -2565,6 +2624,8 @@ def _persist_run_integrity(
     judge: Target | None = None,
     adaptive: bool = False,
     sampling_defaults_applied: bool = True,
+    takes_sampling: bool | None = None,
+    judge_takes_sampling: bool | None = None,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -2595,6 +2656,10 @@ def _persist_run_integrity(
                 "adaptive": adaptive,
                 "runs": runs,
                 "sampling_defaults_applied": sampling_defaults_applied,
+                # Whether the live target and the judge are sent a temperature (u12 A-68), so a
+                # resume continues as the run started; None for an offline route or no judge.
+                "takes_sampling": takes_sampling,
+                "judge_takes_sampling": judge_takes_sampling,
             },
         )
 

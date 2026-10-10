@@ -516,3 +516,120 @@ def test_a_sampling_capability_that_is_not_a_boolean_is_refused(tmp_path: Path, 
     result = CliRunner().invoke(app, _run(tmp_path, "--dry-run"))
     assert result.exit_code == 3, result.output
     assert "'capabilities' failed validation: sampling" in " ".join(result.output.split())
+
+
+# --- a resume ---------------------------------------------------------------------------------
+
+
+def _context(tmp_path: Path) -> dict[str, Any]:
+    conn = sqlite3.connect(tmp_path / "runs.sqlite")
+    try:
+        (raw,) = conn.execute("SELECT context_json FROM runs").fetchone()
+    finally:
+        conn.close()
+    return dict(json.loads(raw))
+
+
+def _write_context(tmp_path: Path, context: dict[str, Any]) -> None:
+    conn = sqlite3.connect(tmp_path / "runs.sqlite")
+    try:
+        with conn:
+            conn.execute("UPDATE runs SET context_json = ?", (json.dumps(context),))
+    finally:
+        conn.close()
+
+
+def _halt(tmp_path: Path) -> str:
+    halted = CliRunner().invoke(app, _run(tmp_path, "--budget-requests", "1"))
+    assert halted.exit_code == 3, halted.output
+    assert "budget ceiling reached" in halted.output, halted.output
+    return _run_id(tmp_path)
+
+
+def test_the_run_records_whether_its_target_and_judge_were_sent_sampling(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
+) -> None:
+    port, seen = stub
+    _files(tmp_path, port, judge_model="claude-sonnet-4-6")
+    run_id = _halt_with_judge(tmp_path)
+    context = _context(tmp_path)
+    assert context["takes_sampling"] is False and context["judge_takes_sampling"] is True
+    seen.clear()
+    resumed = CliRunner().invoke(
+        app, _run(tmp_path, "--resume", run_id, "--judge", str(tmp_path / "judge.yaml"))
+    )
+    assert resumed.exit_code in (0, 3), resumed.output
+    assert "when it started" not in resumed.stderr, "nothing changed, nothing said"
+    target = [body for path, body in seen if not path.startswith("/judge/")]
+    assert target and all(not any(k in b for k in _SAMPLING_KEYS) for b in target), target
+
+
+def _halt_with_judge(tmp_path: Path) -> str:
+    command = _run(tmp_path, "--budget-requests", "1", "--judge", str(tmp_path / "judge.yaml"))
+    halted = CliRunner().invoke(app, command)
+    assert halted.exit_code == 3, halted.output
+    return _run_id(tmp_path)
+
+
+@pytest.mark.parametrize("recorded", [True, None], ids=["recorded", "started-before-the-record"])
+def test_a_resume_with_attempts_kept_continues_as_its_run_started(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]], recorded: bool | None
+) -> None:
+    """A run recorded as sent a temperature (or one started before the record: every version
+    sent one) is not continued without it, half pinned and half unpinned, scored as one."""
+
+    port, seen = stub
+    _files(tmp_path, port, model="o-reasoner", provider="openai", sampling=False)
+    run_id = _halt(tmp_path)
+    context = _context(tmp_path)
+    assert context["takes_sampling"] is False
+    if recorded is None:
+        context.pop("takes_sampling")
+    else:
+        context["takes_sampling"] = recorded
+    _write_context(tmp_path, context)
+    seen.clear()
+    resumed = CliRunner().invoke(app, _run(tmp_path, "--resume", run_id))
+    assert resumed.exit_code == 0, resumed.output
+    said = " ".join(resumed.stderr.split())
+    assert (
+        f"resume: {run_id} sent stub a temperature and a top_p when it started and keeps 1 "
+        "attempt(s) sent so, so it continues as it started; this version would send no "
+        "temperature or top_p (a fresh run does)"
+    ) in said, said
+    assert "is sent no temperature or top_p" not in said, "the run is pinned as it started"
+    assert seen and all(body.get("temperature") == 0.0 for _, body in seen), seen
+    assert _context(tmp_path)["takes_sampling"] is True, "recorded as it went out"
+
+
+def test_a_resume_that_keeps_no_attempt_is_sent_as_this_version_decides(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ildottore.cli.run import _continued_takes
+
+    listed = Target(id="stub", type="chatbot", provider="anthropic", model=_LISTED)  # type: ignore[arg-type]
+    assert _continued_takes("run-a", "stub", True, listed, kept=0) is None
+    assert "keeps no attempt, so it is sent no temperature or top_p" in capsys.readouterr().err
+    assert _continued_takes("run-a", "stub", False, listed, kept=3) is None, "no change"
+    assert capsys.readouterr().err == ""
+    continued = _continued_takes("run-a", "stub", True, listed, kept=3)
+    assert continued is not None and wiring.takes_sampling(continued)[0] is True
+
+
+@pytest.mark.parametrize("key", ["takes_sampling", "judge_takes_sampling"])
+def test_a_takes_sampling_record_that_is_not_a_boolean_is_refused(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]], key: str
+) -> None:
+    port, seen = stub
+    _files(tmp_path, port, model="o-reasoner", provider="openai", sampling=False)
+    run_id = _halt(tmp_path)
+    context = _context(tmp_path)
+    context[key] = "no"
+    _write_context(tmp_path, context)
+    seen.clear()
+    resumed = CliRunner().invoke(app, _run(tmp_path, "--resume", run_id))
+    assert resumed.exit_code == 3, resumed.output
+    assert "takes_sampling or judge_takes_sampling value that is not true or false" in " ".join(
+        resumed.output.split()
+    )
+    assert seen == []

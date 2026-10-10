@@ -149,6 +149,7 @@ __all__ = [
     "target_uses_mock",
     "utc_timestamp",
     "with_sent_sampling",
+    "with_takes_sampling",
 ]
 
 #: The offline mock-replay scenarios a ``target.yaml`` may select via ``mock_scenario``.
@@ -911,6 +912,18 @@ def sampling_fallback(target: Target) -> Sampling | None:
         if name in sent
     }
     return Sampling(**kept) if kept else None
+
+
+def with_takes_sampling(target: Target, takes: bool) -> Target:
+    """``target`` declaring ``capabilities.sampling: takes``: a resume that continues as it started.
+
+    Only for the adapters and the records of a resumed run (u12 A-68); the target's digest and
+    its report keep the file as written.
+    """
+
+    return target.model_copy(
+        update={"capabilities": target.capabilities.model_copy(update={"sampling": takes})}
+    )
 
 
 def sampling_written(target: Target) -> Sampling | None:
