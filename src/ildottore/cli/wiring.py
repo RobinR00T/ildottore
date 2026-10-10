@@ -86,7 +86,14 @@ from ildottore.redactor import register_known_secret
 from ildottore.registry import LintError, Registry, load_paths, non_json_values, non_string_keys
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
-from ildottore.shared.config_errors import cut, listed, quoted, validation_problems, yaml_problem
+from ildottore.shared.config_errors import (
+    cut,
+    listed,
+    quoted,
+    shown_endpoint,
+    validation_problems,
+    yaml_problem,
+)
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.files import read_text_capped
@@ -617,10 +624,15 @@ def shown_auth_ref(auth_ref: str) -> str:
     masked it only when its entropy was high enough: about 1 in 20 random 64-hex keys and 3 in 4
     32-hex keys were printed in clear (fourth audit of the residuals). A reference is quoted up
     to 300 characters (``quoted``): one of a million characters printed the refusal whole
-    (clause A-51).
+    (clause A-51). One holding an ``@`` is quoted as an endpoint is (``shown_endpoint``),
+    without what precedes the last ``@`` of its authority: a URL pasted with its password
+    (``https://user:<password>@host``) was cut before the redactor read it, so a password
+    whose ``@`` fell past the cut was printed (#96).
     """
 
-    return quoted(auth_ref) if "://" in auth_ref else "a literal value (not shown)"
+    if "://" not in auth_ref:
+        return "a literal value (not shown)"
+    return shown_endpoint(auth_ref) if "@" in auth_ref else quoted(auth_ref)
 
 
 def resolve_auth_ref(auth_ref: str | None) -> str | None:
