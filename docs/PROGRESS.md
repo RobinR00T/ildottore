@@ -3,6 +3,21 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-10 (night): the verification audit's three LOWs
+
+- The verification audit of `5bd7c45` found it merge-ready, with three LOWs, closed one commit each.
+  `93575ef`: `run_until_stopped` disarms in a `finally`, since a Ctrl-C or a second signal raising
+  at a call of its cleanup left the run armed (the audit's Ctrl-C sweep: 27 points, now 12, all at a
+  line that compiles to NOP alone; its second-signal sweeps: none left); one test, which fails on
+  `5bd7c45`. `4020f8b`: the campaign takes a held-back signal only when it arrives before the
+  put-back's last check, in a process whose only thread is the main thread, and the docs say so; the
+  hold is let go right after that check. `3836753`: `_interrupt_as_ctrl_c`'s docstring says what a
+  program that embeds `execute_run` sees, as u12 A-60 does. `tests/cli/test_termination_signals.py`:
+  49 tests, 30 runs in a row green on 3.14.7 and on 3.12.13 (shim). The single-signal sweep with
+  SIGTERM: 2 of 6,193 points bad with Ctrl-C ignored (the two NOP-only lines), 0 of 6,172 with a
+  Ctrl-C handler that does nothing. `make --no-print-directory gates` green: 4659 tests, 97.64%
+  coverage, 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+
 ## State, 2026-10-10: the pre-merge audit of the A-60 fix, closed
 
 - On `fix/sigterm-hang-a60`, the pre-merge audit of `2001e7f` (no HIGH) closed in normal commits on
