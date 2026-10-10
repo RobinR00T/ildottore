@@ -26,6 +26,7 @@ time - contract §4 KEEP; live probing is u09 fingerprint).
 from __future__ import annotations
 
 import asyncio
+import functools
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -52,6 +53,7 @@ __all__ = [
     "AdapterEnvError",
     "AdapterError",
     "AdapterProductError",
+    "AdapterStatusError",
     "BaseAdapter",
     "EndpointNotAllowed",
     "ResponseTooDeep",
@@ -142,6 +144,28 @@ class AdapterProductError(AdapterError):
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
+
+
+class AdapterStatusError(AdapterProductError):
+    """A non-retryable HTTP status (a 4xx, or a status the retries do not cover): a product error.
+
+    It is still one everywhere it was (the attack phase stops on it, as before). The subclass
+    only carries the status, so the composition root can tell a request the endpoint refused
+    from the rest: the fingerprint's profile-only probe treats a 4xx to it as a failed probe
+    (u09 §7 A-67), since Azure OpenAI's prompt filter answers a blocked prompt with HTTP 400 and
+    the error code ``content_filter``, and stopped ``-sV`` on the guardrail layer's benign
+    request (pre-merge audit of ``cd413c0``).
+    """
+
+    def __init__(self, message: str, *, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Rebuild with the status: the default reduction passed the message alone, and
+        ``copy.copy`` and ``pickle.loads`` raised ``TypeError`` on the keyword it lacked."""
+
+        return (functools.partial(type(self), status_code=self.status_code), self.args)
 
 
 #: The ``Content-Encoding`` values :func:`read_capped` decodes itself, with the ``wbits`` zlib
@@ -584,6 +608,7 @@ class BaseAdapter(ABC):
 
         # A non-retryable 4xx (auth, bad request) is a product/config defect -
         # not something a retry will fix, and not to be masked as a flake.
-        raise AdapterProductError(
-            f"{self.id}: non-retryable HTTP {response.status_code} from {self._request_path}"
+        raise AdapterStatusError(
+            f"{self.id}: non-retryable HTTP {response.status_code} from {self._request_path}",
+            status_code=response.status_code,
         )

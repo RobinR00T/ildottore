@@ -555,9 +555,9 @@ def test_a_resumed_probe_pass_at_the_ceiling_records_what_it_spent(
     from tests.cli.conftest import write_scope, write_spec_tree, write_target
     from tests.cli.test_resume_cmd import _opts
 
-    # A halted -sV run first (the resume must keep its planning mode): 17 probes, then the
+    # A halted -sV run first (the resume must keep its planning mode): the probe pass, then the
     # request ceiling stops the attack traffic.
-    monkeypatch.setattr(wiring, "fingerprint_probe", _probe_returning(17, []))
+    monkeypatch.setattr(wiring, "fingerprint_probe", _probe_returning(wiring_probe_count(), []))
     target = write_target(tmp_path, mock_scenario="vulnerable")
     specs = [write_spec_tree(tmp_path, [cli_spec(f"PI-DIRECT-{i:03d}") for i in range(1, 5)])]
     opts = _opts(
@@ -691,7 +691,7 @@ def test_the_recorded_start_precedes_the_probe_pass(
 
     ticks = count()
     monkeypatch.setattr(wiring, "utc_timestamp", lambda: f"2026-10-04T15:00:{next(ticks):02d}Z")
-    probe = _probe_returning(17, [])
+    probe = _probe_returning(wiring_probe_count(), [])
 
     def slow_probe(scope: object, target: object, **kw: object) -> wiring.ProbePass:
         wiring.utc_timestamp()  # time passes while probing

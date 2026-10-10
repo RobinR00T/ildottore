@@ -430,7 +430,8 @@ def test_run_sv_goes_on_to_the_attack_after_a_refused_frame(
     assert outcome.exit_code is not ExitCode.ERROR
     assert len(outcome.findings) == 1
     assert server.log.queries > fingerprint_probe_count()  # the attack went out after the pass
-    assert "1 of 17 probe(s) got no usable reply" in capsys.readouterr().err
+    warning = f"1 of {fingerprint_probe_count()} probe(s) got no usable reply"
+    assert warning in capsys.readouterr().err
 
 
 def test_a_close_reason_reaches_the_terminal_with_its_control_characters_written_out(

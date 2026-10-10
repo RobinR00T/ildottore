@@ -21,7 +21,7 @@ references across 11 files.
 
 **A. Wire it.** A fingerprint layer would have to measure per-category resistance, which means
 sending category-shaped probes and scoring how the target answers them. That is more recognition
-traffic (today `-sV` is 17 requests), and it only means anything against a live target: the
+traffic (today `-sV` is 18 requests), and it only means anything against a live target: the
 offline decoder cannot produce a resistance profile that reflects any real model. Then a consumer
 has to use it, which is a planning change with its own measurement. Cost: a new layer, more
 probes, a planner change, and a live run to validate. It cannot be honestly built before the live
