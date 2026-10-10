@@ -3,6 +3,35 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-10: the pre-merge audit of the A-60 fix, closed
+
+- On `fix/sigterm-hang-a60`, the pre-merge audit of `2001e7f` (no HIGH) closed in normal commits on
+  top of it, `main` not merged in. MEDIUM 1: the coroutine `asyncio.Runner` runs makes the
+  campaign's task and awaits it at once (`7a0be1d`); a Ctrl-C in its first step had cancelled only
+  that coroutine, and a second one during the stop left the task pending. MEDIUM 2: a second signal
+  of either kind raises in place (`2dcf954`): with Ctrl-C at its default a SIGTERM or SIGHUP goes to
+  asyncio's own Ctrl-C handler, which counts both. LOW 1 to 3 (`a5dd63f`, `36324f2`, `9eb2f12`): the
+  handlers are swapped with Ctrl-C, SIGTERM and SIGHUP held back, the put-back retried when a signal
+  beats the hold, a signal held back during it taken by the campaign, the loop let go while still
+  armed; a signal dropped outside a loop ends the campaign with KeyboardInterrupt after its last
+  loop; only the main thread watches. LOW 6 (`ec4277c`): a send is bounded by `asyncio.timeout`,
+  since 3.11's `wait_for` dropped a cancellation that landed as the send completed. LOW 7
+  (`fa94b96`, `e9cfd85`): `interrupts.py` at 100% line and branch coverage. LOW 4 (`3091640`): u12
+  A-60 amended in place, its index row, MANUAL, `dottore(1)`, CHANGELOG. Test-only (`7e31c2e`): two
+  WebSocket tests that hung on 3.12 hold their connection on an Event and abort it. The audit's
+  sweep (a signal at every line event, one forked child per point) on `9eb2f12`: 8 of 31,030 points
+  bad in five single-signal arms, all at two lines that compile to NOP alone (`2001e7f`: 50, 50 and
+  21 of about 6,000 in its three SIGTERM arms); a second signal one line event after the first waits
+  for a third at 66 of 413 points (16%), plain `asyncio.run` with a double Ctrl-C at 59 of 385
+  (15%). The real CLI with the first SIGTERM inside the runner's gather: exit 130, 0.99 to 1.11 s
+  after the start, the spend of 6 requests written inside the loop, Ctrl-C ignored or at its
+  default. `tests/cli/test_termination_signals.py`: 48 tests, 30 runs in a row green on 3.14.7 and
+  on 3.12.13 (the signal file alone, through a shim of `interrupts.py` and the four signal functions
+  of `run.py`, since the 3.12 here has none of the project's dependencies). `make
+  --no-print-directory gates` green: 4658 tests, 97.64% coverage, 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean. Python 3.11, what CI runs, is not installed
+  here.
+
 ## State, 2026-10-09 (evening): one SIGTERM stops a run with Ctrl-C ignored too
 
 - On `fix/sigterm-hang-a60` (from `main` at `f12ba83`): the hang the afternoon entry left open is
