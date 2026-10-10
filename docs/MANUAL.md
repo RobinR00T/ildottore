@@ -1702,8 +1702,11 @@ provider's filter** and the campaign goes on (OD-41, ADR-0011):
   `--budget-requests` (its token reservation is released: no completion was produced), a resume
   keeps it, and `--estimate` is unchanged.
 - Only a shape the provider documents is read. Every other 4xx stops the campaign as before
-  (another code at 400, the same body at 403, a body that is not JSON). A Bedrock guardrail
-  intervention is an HTTP 200 whose text is the guardrail's message, and is read as a reply.
+  (another code at 400, the same body at 403, a body that is not JSON). Gemini's block is read
+  through a REST template whose `text_path` starts at `candidates.` (as Gemini's and Vertex
+  AI's replies do), for `SAFETY`, `OTHER`, `BLOCKLIST`, `PROHIBITED_CONTENT` and Vertex AI's
+  `MODEL_ARMOR` and `JAILBREAK`. A Bedrock guardrail intervention is an HTTP 200 whose text is
+  the guardrail's message, and is read as a reply.
 
 Against a loopback stub that answers Azure's 400 to prompts holding "instructions for" or
 "developer mode", `dottore run --spec GUARD-INPUT-EVASION-001 --spec PI-DIRECT-001 --runs 2
