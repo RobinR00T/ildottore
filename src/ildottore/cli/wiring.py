@@ -138,6 +138,7 @@ __all__ = [
     "request_url_for",
     "resolve_auth_ref",
     "sampling_fallback",
+    "sampling_written",
     "scenario_adapter_factory",
     "scenario_judge_adapter",
     "scope_endpoint_for",
@@ -912,6 +913,20 @@ def sampling_fallback(target: Target) -> Sampling | None:
     return Sampling(**kept) if kept else None
 
 
+def sampling_written(target: Target) -> Sampling | None:
+    """``target``'s ``sampling_defaults`` as its file writes it, for a provider that sends sampling.
+
+    What the record lists as asked for and not sent (``sampling_not_sent``, A-68) is counted from
+    this, not from :func:`sampling_fallback`, which has already dropped what the adapter never
+    sends. ``None`` for a REST template, an MCP server and a WebSocket target, whose attempts
+    record the spec's own sampling and nothing of the block.
+    """
+
+    if _provider(target) not in _SAMPLING_FIELDS_SENT:
+        return None
+    return target.sampling_defaults
+
+
 def sent_sampling_for(target: Target | None) -> Callable[[Sampling], Sampling] | None:
     """The adapter's own rule for what of a request's sampling goes out, or ``None`` (as asked).
 
@@ -943,12 +958,14 @@ class _AsSent:
     probe or the judge sets its sampling, ``fallback`` (the target file's ``sampling_defaults``)
     fills what it leaves unset, and ``wire`` (the adapter's own rule) drops what the adapter
     will not send. Wrapped outside a recorder, so the evidence holds the request as it goes out.
-    The runner does the same for its attempts (``CampaignRunner._sampling``).
+    ``written`` is the block as the file writes it, for ``sampling_not_sent``. The runner does
+    the same for its attempts (``CampaignRunner._sampling``).
     """
 
     inner: TargetAdapter
     fallback: Sampling | None
     wire: Callable[[Sampling], Sampling] | None
+    written: Sampling | None = None
 
     @property
     def id(self) -> str:
@@ -961,7 +978,9 @@ class _AsSent:
         sampling = self.wire(asked) if asked is not None and self.wire is not None else asked
         if sampling is not request.sampling:
             update: dict[str, object] = {"sampling": sampling}
-            dropped = unsent_fields(asked, sampling)
+            written = self.written if self.written is not None else self.fallback
+            wanted = fill_sampling(request.sampling or Sampling(), written) if written else asked
+            dropped = unsent_fields(wanted, sampling)
             if dropped:  # the record says what did not go out (A-68)
                 update["metadata"] = {**(request.metadata or {}), SAMPLING_NOT_SENT: dropped}
             request = request.model_copy(update=update)
@@ -985,10 +1004,11 @@ def with_sent_sampling(
     if target is None:
         return adapter
     fallback = sampling_fallback(target) if apply_sampling_defaults else None
+    written = sampling_written(target) if apply_sampling_defaults else None
     wire = sent_sampling_for(target)
-    if fallback is None and wire is None:
+    if fallback is None and wire is None and written is None:
         return adapter
-    return cast("TargetAdapter", _AsSent(adapter, fallback, wire))
+    return cast("TargetAdapter", _AsSent(adapter, fallback, wire, written))
 
 
 @dataclass
@@ -1875,6 +1895,11 @@ def build_runner(
         # The adapter's own rule, applied whatever the block (Anthropic: no seed, no top_p
         # beside a temperature), so each attempt records what went out (u12 A-66).
         sent_sampling=sent_sampling_for(real_target),
+        sampling_asked=(
+            sampling_written(real_target)
+            if real_target is not None and apply_sampling_defaults
+            else None
+        ),
     )
     return BuiltRunner(
         runner=runner,

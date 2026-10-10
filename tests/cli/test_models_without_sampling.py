@@ -124,6 +124,7 @@ def _files(
     provider: str = "anthropic",
     sampling: bool | None = None,
     judge_model: str = "claude-fable-5-1",
+    block: str = "",
 ) -> None:
     path = "/v1/messages" if provider == "anthropic" else "/v1/chat/completions"
     endpoint = f"http://127.0.0.1:{port}{path}"
@@ -140,7 +141,9 @@ def _files(
     declared = "" if sampling is None else f"  sampling: {str(sampling).lower()}\n"
     (tmp_path / "target.yaml").write_text(
         f'id: stub\ntype: chatbot\nprovider: {provider}\nendpoint: "{endpoint}"\n'
-        f'model: "{model}"\ncapabilities:\n  tools: false\n  rag: false\n' + declared
+        f'model: "{model}"\ncapabilities:\n  tools: false\n  rag: false\n'
+        + declared
+        + (f"sampling_defaults: {block}\n" if block else "")
     )
     (tmp_path / "judge.yaml").write_text(
         f'id: judge\ntype: model\nprovider: anthropic\nendpoint: "{judge_endpoint}"\n'
@@ -230,6 +233,27 @@ def test_a_target_that_takes_no_sampling_is_sent_none_and_the_record_says_so(
         unsent = attempt["request"]["metadata"]["sampling_not_sent"]
         assert "temperature" in unsent, attempt
         assert ("seed" in unsent) is (provider == "anthropic")
+
+
+def test_the_record_lists_what_the_block_asked_for_and_did_not_go_out(
+    tmp_path: Path, stub: tuple[int, list[tuple[str, dict[str, Any]]]]
+) -> None:
+    """The block's top_p and seed never go out to a listed model, and the record says so: it was
+    counted from the block as the adapter keeps it, which had already lost them (pre-merge audit
+    of A-68). The probes' record lists them too."""
+
+    port, seen = stub
+    _files(tmp_path, port, block="{ top_p: 0.9, seed: 7, max_tokens: 33 }")
+    result = CliRunner().invoke(app, _run(tmp_path, "-sV"))
+    assert result.exit_code == 0, result.output
+    assert all(s == {} for s in _sampled(seen)), seen
+    for attempt in _stored(tmp_path, "attempts"):
+        unsent = attempt["request"]["metadata"]["sampling_not_sent"]
+        assert {"temperature", "top_p", "seed"} <= set(unsent), attempt
+        assert attempt["request"]["sampling"]["max_tokens"] == 600, "the spec's own wins"
+    for probe in _stored(tmp_path, "probes"):
+        unsent = probe["request"]["metadata"]["sampling_not_sent"]
+        assert {"temperature", "top_p", "seed"} <= set(unsent), probe
 
 
 def test_a_listed_model_declared_sampling_true_is_sent_it_and_the_refusal_names_the_fix(

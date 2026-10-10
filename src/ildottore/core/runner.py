@@ -279,6 +279,7 @@ class CampaignRunner:
         spend_sink: Callable[[Spend], None] | None = None,
         sampling_defaults: Sampling | None = None,
         sent_sampling: Callable[[Sampling], Sampling] | None = None,
+        sampling_asked: Sampling | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -344,6 +345,9 @@ class CampaignRunner:
         # adapter never sends a seed, nor a top_p beside a temperature): applied before the
         # attempt is recorded, so the record is the request that went out (u12 A-66).
         self._sent_sampling = sent_sampling
+        # The target file's block as written, for the record of what was asked for and did not
+        # go out: `sampling_defaults` has already lost what the adapter never sends (A-68).
+        self._sampling_asked = sampling_asked
 
     async def run(
         self,
@@ -944,14 +948,18 @@ class CampaignRunner:
     def _tagged_unsent(self, spec: AttackSpec, attempt: Attempt) -> Attempt:
         """The attempt with :data:`SAMPLING_NOT_SENT` on its request, when a field did not go out.
 
-        The fields the spec and the target file's ``sampling_defaults`` asked for that the
-        adapter's own rule dropped (Anthropic's seed, a top_p beside a temperature, the
-        temperature and the top_p of a model that takes none, u12 A-68): the recorded sampling
-        lacks them, and this says so in words, so a reader of the evidence does not take a
-        missing temperature for one nobody asked for.
+        The fields the spec and the target file's ``sampling_defaults``, as written, asked for
+        that did not go out (Anthropic's seed, a top_p beside a temperature, the temperature and
+        the top_p of a model that takes none, a block seed without ``capabilities.seed``, u12
+        A-68): the recorded sampling lacks them, and this says so in words, so a reader of the
+        evidence does not take a missing temperature for one nobody asked for.
         """
 
-        dropped = unsent_fields(spec_sampling(spec, self._sampling_defaults), self._sampling(spec))
+        written = (
+            self._sampling_asked if self._sampling_asked is not None else self._sampling_defaults
+        )
+        asked = spec_sampling(spec, written)
+        dropped = unsent_fields(asked, self._sampling(spec))
         if not dropped:
             return attempt
         metadata: JsonDict = {**(attempt.request.metadata or {}), SAMPLING_NOT_SENT: dropped}
