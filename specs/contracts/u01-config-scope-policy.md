@@ -204,8 +204,10 @@ rule read on to a later `@`; when that `@` is a labelled value's, the URL mask t
 the value's head, and since #96, after the other rules of the pass and only where they left text
 readable, the rest of the value after the mask's `@` is masked as the value is, with its digest (the
 one the redactor before A-31 gave it when no other rule masked something inside the value first), up
-to a `://` that an `@` follows before any whitespace, and the labelled rule is run again from where
-the value ends, without reading its tail for a label, as the redactor before A-31 read it (PR #56
+to a `://` that a `:` and then an `@` follow before any whitespace (what the rule needs to read a
+URL there, in this pass or the next: a mask only hides characters), and the labelled rule is run
+again from where the value ends (not from where the tail stops), without reading its tail for a
+label, as the redactor before A-31 read it (PR #56
 left the tail readable, and a label in it took the next label into its value: pre-merge audit of
 #96). The pre-merge audit's proposal for #96, leaving such a password to the other rules, left
 readable a character main masked in 15,239 of 300,000 differential texts (the password's head before
@@ -219,8 +221,10 @@ reads as the password's head); a labelled value whose label sits in the user of 
 mask or behind an empty user (both read since #56), or is glued to the word before it
 (`...3password="x@host.tld`, a label to no version), keeps what follows the URL's `@` readable as
 its host, where the redactor before #56 masked it whole or as an address; the rest of a labelled
-value after a URL mask stops before a `://` that an `@` follows before any whitespace, where a URL
-can be read, so what lies between them is readable; a raw `@` in a URL's user or unregistered
+value after a URL mask stops before a `://` that a `:` and then an `@` follow before any whitespace
+(the shape the URL rule needs, in this pass or the next), so what of the value lies past that `://`
+is left to the other rules (`secret=AETw://0G1h9.mGle` and U+200B before `://u:<password>@h` shows
+`0G1h9.mGle`); a raw `@` in a URL's user or unregistered
 password leaves the password, or its part after the `@`, readable; and a URL whose `://` is split by
 an invisible character (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
 Not yet every
@@ -392,7 +396,8 @@ came back whole there; the target id in the `--hardened`, stdio and credential r
 and the references the scope declares, listed by the credential refusal (20, each as
 `shown_auth_ref` quotes it, and how many more: 3,000 references of 290 characters printed 885,131
 bytes), and the variable a reference names when its value holds a control character; an `auth_ref`
-reference wherever `shown_auth_ref` quotes one (a literal is still never shown; since #96 one holding
+reference wherever `shown_auth_ref` quotes one (a literal is still never shown; since #96 one
+holding
 an `@` is quoted as an endpoint is, without its userinfo); the target id, and
 the one the run store recorded, in the three refusals that bind `run --resume` to its target (an id
 of 900,000 characters printed 900,276 bytes); in `dottore fleet`, an endpoint with an invalid port,

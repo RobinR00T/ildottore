@@ -10,8 +10,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   an `@` across a URL's `@`, in the user or the password, let the URL rule read on to a labelled
   value's `@` and its tail stayed readable (`redis://ops:«REDACTED:url_password»@Value99xyz`): the
   URL mask stays, and after the labelled and the entropy rules, where they left text readable, the
-  rest of the value is masked as the value up to a `://` an `@` follows, and the labelled rule runs
-  again from where it ends without reading its tail for a label. (2) A registered credential holding
+  rest of the value is masked as the value up to a `://` that a `:` and then an `@` follow, and the
+  labelled rule runs again from where the value ends without reading its tail for a label. (2) A
+  registered credential holding
   the URL's `://` (two overlapping ones as one run: `key-ABCD1234` and `1234://bob`), its `:` or the
   password's `@` with no later `@` stopped the URL rule: the URL is now read in the text as written,
   last in the pass, and what of its password is still readable is masked. (3) The policy gate's
@@ -24,16 +25,30 @@ The carryover ledger. Every agent session updates this so context survives even 
   the docs claimed more than the code. Fixed in `38eac50` and the commits after it, docs aligned,
   one Left open list everywhere. The audit's proposal for the tail (stop only where the URL rule
   matches in this pass) was measured and not taken: 3 texts of 300,000 showed text main masks, as
-  the next pass reads that URL. The night's reboot wiped `/private/tmp`, worktree and scratch
+  the next pass reads that URL. The re-audit of `adeac2d` found the second run of the labelled rule
+  starting at the tail's stop, not at the value's end (a chained secret readable), and the stop
+  wider than needed; both fixed with its prototypes (`80ce50d`, `913045a`), and
+  `mask_url_passwords`, left with no caller, removed (`e3b4b8a`). The night's reboot wiped
+  `/private/tmp`, worktree and scratch
   included; the branch survived at `924c276`, the fixes were redone in `_ildottore-tren/wt/issue96`
   and the fuzzers rebuilt in `_ildottore-tren/scratch/issue96`.
 - The audit's narrow fix for (1) was measured and not taken: it left readable a character main masks
   in 15,239 of 300,000 differential texts. The fix, against main: 0 texts leaking anything main
-  masks, 0 errors, 0 fixed-point failures on 900,000 texts of my fuzz (120,443, 120,410 and 120,618 texts
+  masks, 0 errors, 0 fixed-point failures on 900,000 texts of my fuzz (120,443, 120,410 and 120,618
+  texts
   with a secret main leaves readable masked) and on 1,500,000 of the auditor's. Against the redactor
   before #56 (the auditor's 40,000 item-1 texts): a secret it masked is readable in 2,666 texts on
-  main, 98 on `924c276`, 18 now (none chained). On 2 MB of a reply echoing such a credential in every URL (seven hostile shapes) the redaction is linear and takes 1.0 to 1.4 times main's traced memory and 1.1 to 2.8 times its time (24.8 bytes a character against 17.6 with a credential holding an `@` in every password); on 4 MB of that shape, 182 MB of peak RSS where main takes 120 MB. 24 mutants of the fix: 21 caught, one of them by a hang; the 3 missed change nothing a test can see (a guard against two of its masks overlapping, which they cannot; the label search starting after the userinfo's last mask, which only bounds its cost; an off-by-one where the URL rule cannot match from inside a mask). `make gates` green (with
-  `PYTHONPATH` set to the worktree's `src`): 4,668 tests (4,618 on `f12ba83`), coverage 97.63%, 75 specs lint OK, four import contracts kept, mypy clean on 155 files, self-scan, bandit and pip-audit clean.
+  main, 98 on `924c276`, 18 now (none chained). On 2 MB of a reply echoing such a credential in
+  every URL (seven hostile shapes) the redaction is linear and takes 1.0 to 1.4 times main's traced
+  memory and 1.1 to 2.8 times its time (24.8 bytes a character against 17.6 with a credential
+  holding an `@` in every password); on 4 MB of that shape, 182 MB of peak RSS where main takes 120
+  MB. 24 mutants of the fix: 21 caught, one of them by a hang; the 3 missed change nothing a test
+  can see (a guard against two of its masks overlapping, which they cannot; the label search
+  starting after the userinfo's last mask, which only bounds its cost; an off-by-one where the URL
+  rule cannot match from inside a mask). `make gates` green (with
+  `PYTHONPATH` set to the worktree's `src`): 4,668 tests (4,618 on `f12ba83`), coverage 97.63%, 75
+  specs lint OK, four import contracts kept, mypy clean on 155 files, self-scan, bandit and
+  pip-audit clean.
 - Left open after #96: where the URL rule did read a URL, its reading stands, so after a registered
   credential holding the user's `:` the rest of the user is shown
   (`redis://ops:svc-keyXYZ:<password>@host` with `ops:svc-key` registered shows `XYZ`, which urllib
@@ -41,8 +56,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   a mask or behind an empty user (both read since #56), or is glued to the word before it
   (`...3password="x@host.tld`, a label to no version), keeps what follows the URL's `@` readable as
   its host, where the redactor before #56 masked it whole or as an address; the rest of a labelled
-  value after a URL mask stops before a `://` that an `@` follows before any whitespace, where a URL
-  can be read, so what lies between them is readable; a raw `@` in a URL's user or unregistered
+  value after a URL mask stops before a `://` that a `:` and then an `@` follow before any
+  whitespace (the shape the URL rule needs, in this pass or the next), so what of the value lies
+  past that `://` is left to the other rules (`secret=AETw://0G1h9.mGle` and U+200B before
+  `://u:<password>@h` shows `0G1h9.mGle`); a raw `@` in a URL's user or unregistered
   password leaves the password, or its part after the `@`, readable; and a URL whose `://` is split
   by an invisible character (`s3:/<U+FEFF>/bob:...`) is read by no URL rule.
 

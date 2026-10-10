@@ -216,8 +216,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   value whose label sits in the user of a URL read through a mask or behind an empty user (both read
   since #56), or is glued to the word before it (`...3password="x@host.tld`, a label to no version),
   keeps what follows the URL's `@` readable as its host, where the redactor before #56 masked it
-  whole or as an address; the rest of a labelled value after a URL mask stops before a `://` that an
-  `@` follows before any whitespace, where a URL can be read, so what lies between them is readable;
+  whole or as an address; the rest of a labelled value after a URL mask stops before a `://` that a
+  `:` and then an `@` follow before any whitespace (the shape the URL rule needs, in this pass or
+  the next), so what of the value lies past that `://` is left to the other rules
+  (`secret=AETw://0G1h9.mGle` and U+200B before `://u:<password>@h` shows `0G1h9.mGle`);
   a raw `@` in a URL's user or unregistered password leaves the password, or its part after the `@`,
   readable; and a URL whose `://` is split by an invisible character (`s3:/<U+FEFF>/bob:...`) is
   read by no URL rule. An error quotes an endpoint, and an `auth_ref` holding an `@`, without what
