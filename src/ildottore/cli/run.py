@@ -1190,6 +1190,7 @@ def _termination_as_interrupt() -> Iterator[None]:
     mapped = [sig for sig in (getattr(signal, name, None) for name in names) if sig is not None]
     held = [*mapped, signal.SIGINT]
     previous: dict[signal.Signals, Any] = {}
+    interrupted: KeyboardInterrupt | None = None
     # Watched from before the first handler is set until after the last is put back, so a
     # signal one of them takes always counts for this campaign.
     with interrupts.terminations_watched():
@@ -1212,7 +1213,7 @@ def _termination_as_interrupt() -> Iterator[None]:
             # A signal that raises before the hold takes effect (the campaign's own handler, or
             # Ctrl-C's) skipped the rest of this block and left a handler installed (14 of
             # about 6,000 points once the swap was held): put them back again, then raise it.
-            interrupted: KeyboardInterrupt | None = None
+            # Nothing comes before the try, where it would not be caught.
             while True:
                 try:
                     with _signals_held_back(held):

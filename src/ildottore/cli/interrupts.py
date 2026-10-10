@@ -216,8 +216,6 @@ def run_until_stopped(
                     if not run.stopped:
                         raise
     finally:
-        if armed:
-            _running = outer
         task = run.task
         if task is None:
             # Never made a task (stopped before, cancelled before it was, or refused): closed,
@@ -227,6 +225,13 @@ def run_until_stopped(
             # Retrieved here: a KeyboardInterrupt raised inside it (a second signal) propagates
             # past the coroutine that awaits it, and asyncio would log it as never retrieved.
             task.exception()
+        # Let go of the loop while still armed: its __del__ runs with the last reference, and a
+        # signal then is this run's, kept for below. Disarmed first, it raised inside __del__,
+        # where Python prints "Exception ignored" and drops it (12 of about 6,000 points).
+        task = run.task = run.outer = None
+        run.loop = run.runner = None
+        if armed:
+            _running = outer
     # Here, and not in a callback on the loop: one that came as the last loop stopped would be
     # queued on a loop that never runs again, and lost.
     if run.stopped:
