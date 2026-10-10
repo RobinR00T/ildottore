@@ -106,19 +106,29 @@ _received: bool | None = None
 
 @contextmanager
 def terminations_watched() -> Iterator[None]:
-    """Remember, for one campaign, that a SIGTERM or SIGHUP arrived.
+    """Remember, for one campaign, that a SIGTERM or SIGHUP arrived, and stop it then.
 
     Outside a loop the handler still raises where the main thread is, and Python drops what is
     raised inside a weakref callback or ``__del__``. Remembered, such a signal still stops the
-    campaign before its next loop starts, so no request is sent after it.
+    campaign: before its next loop starts, so no request is sent after it, and, after its last
+    loop, with KeyboardInterrupt as the block ends, which used to end with the run's own exit
+    code (pre-merge audit of the A-60 fix). A block that ends with an exception keeps it. Only
+    the main thread watches, since only it takes signals: a block in another thread used to
+    reset what the main thread's campaign had noted, and its next loop started.
     """
 
     global _received
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
     previous, _received = _received, False
     try:
         yield
+        received = bool(_received)
     finally:
         _received = previous
+    if received:
+        raise KeyboardInterrupt
 
 
 def stop_running_loop(frame: FrameType | None = None) -> bool:

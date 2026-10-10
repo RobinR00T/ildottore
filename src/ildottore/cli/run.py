@@ -1142,34 +1142,63 @@ def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
 
 
 @contextmanager
+def _signals_held_back(signals: Sequence[signal.Signals]) -> Iterator[None]:
+    """Hold ``signals`` back while the handlers are swapped (POSIX; elsewhere nothing changes).
+
+    A signal that arrived halfway through the swap ran the handler just installed, which
+    raised before the next line recorded it, so a handler of the campaign stayed installed
+    after ``execute_run`` returned (pre-merge audit of the A-60 fix: 38 of about 6,000 points).
+    One held back is delivered when the swap is done, to whichever handler is then in place.
+    """
+
+    block = getattr(signal, "pthread_sigmask", None)
+    if block is None or not signals:
+        yield
+        return
+    previous = block(signal.SIG_BLOCK, signals)
+    try:
+        yield
+    finally:
+        block(signal.SIG_SETMASK, previous)
+
+
+@contextmanager
 def _termination_as_interrupt() -> Iterator[None]:
     """Turn SIGTERM and SIGHUP into Ctrl-C, for one campaign.
 
     The runner records its spend however it stops, but a SIGTERM (what `timeout`, `docker
     stop`, systemd, Kubernetes and CI timeouts send) or a SIGHUP killed the process outright,
     so the spend was lost there too (audit of the hygiene block). Restored afterwards; outside
-    the main thread, where signals cannot be set, nothing changes.
+    the main thread, where signals cannot be set, nothing changes. Ctrl-C, SIGTERM and SIGHUP
+    are held back while the handlers are set and while they are put back.
     """
 
+    names = ("SIGTERM", "SIGHUP")
+    mapped = [sig for sig in (getattr(signal, name, None) for name in names) if sig is not None]
+    held = [*mapped, signal.SIGINT]
     previous: dict[signal.Signals, Any] = {}
     # Watched from before the first handler is set until after the last is put back, so a
     # signal one of them takes always counts for this campaign.
     with interrupts.terminations_watched():
-        for name in ("SIGTERM", "SIGHUP"):
-            sig = getattr(signal, name, None)
-            # An ignored signal stays ignored: `nohup dottore run` set SIGHUP to SIG_IGN so a
-            # scan survives an SSH logout, and mapping it anyway aborted the scan on hangup.
-            if sig is None or signal.getsignal(sig) is signal.SIG_IGN:
-                continue
-            try:
-                previous[sig] = signal.signal(sig, _interrupt_as_ctrl_c)
-            except ValueError:
-                break
         try:
+            with _signals_held_back(held):
+                for sig in mapped:
+                    current = signal.getsignal(sig)
+                    # An ignored signal stays ignored: `nohup dottore run` set SIGHUP to SIG_IGN
+                    # so a scan survives an SSH logout, and mapping it anyway aborted the scan.
+                    if current is signal.SIG_IGN:
+                        continue
+                    previous[sig] = current  # recorded first: put back however this ends
+                    try:
+                        signal.signal(sig, _interrupt_as_ctrl_c)
+                    except ValueError:  # not the main thread: nothing to set or put back
+                        del previous[sig]
+                        break
             yield
         finally:
-            for sig, handler in previous.items():
-                signal.signal(sig, handler)
+            with _signals_held_back(held):
+                for sig, handler in previous.items():
+                    signal.signal(sig, handler)
 
 
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:

@@ -27,14 +27,16 @@ import gc
 import logging
 import selectors
 import signal
+import sys
 import threading
 import weakref
 from collections.abc import Callable, Coroutine, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pytest
 
-from ildottore.cli.interrupts import run_until_stopped
+from ildottore.cli.interrupts import run_until_stopped, terminations_watched
 from ildottore.cli.run import _termination_as_interrupt
 
 pytestmark = pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="POSIX signals")
@@ -122,7 +124,7 @@ def test_a_signal_inside_a_callback_stops_the_event_loop(name: str, drive: _Driv
         await asyncio.sleep(0.5)
         finished.append(True)
 
-    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         drive(campaign())
     assert not finished, f"{name} inside a callback let the run finish"
 
@@ -136,7 +138,7 @@ def test_a_termination_signal_outside_a_loop_still_interrupts(name: str, sigint:
         signal.SIGINT, signal.default_int_handler if sigint == "default" else signal.SIG_IGN
     )
     try:
-        with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
             signal.raise_signal(getattr(signal, name))
     finally:
         signal.signal(signal.SIGINT, previous)
@@ -159,7 +161,7 @@ def test_a_termination_signal_in_a_loop_cancels_the_run(sigint: str, name: str) 
             seen.append(type(exc).__name__)
             raise
 
-    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         run_until_stopped(campaign())
     assert seen == ["CancelledError"]
 
@@ -179,7 +181,7 @@ def test_a_second_signal_raises_where_the_run_is(sigint: str) -> None:
             seen.append(type(exc).__name__)
             raise
 
-    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         run_until_stopped(campaign())
     assert seen == ["KeyboardInterrupt"]
 
@@ -213,7 +215,7 @@ def test_a_second_signal_of_the_other_kind_raises_too(first: str, second: str) -
                 raise
             raise
 
-    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         run_until_stopped(campaign())
     assert seen == ["KeyboardInterrupt"]
 
@@ -245,7 +247,7 @@ def test_a_signal_after_a_stop_some_handler_began_raises() -> None:
 
     previous = signal.signal(signal.SIGINT, cancel_everything)
     try:
-        with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
             run_until_stopped(campaign())
     finally:
         signal.signal(signal.SIGINT, previous)
@@ -310,7 +312,7 @@ def test_one_signal_inside_an_asyncio_callback_is_enough(sigint: str) -> None:
             raise
 
     try:
-        with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
             run_until_stopped(campaign())
         assert signals == ["first"] and not stuck, "a second signal was needed"
         assert unwound == ["CancelledError"]
@@ -357,7 +359,7 @@ def test_a_signal_as_the_last_loop_stops_is_not_lost(sigint: str, moment: str) -
         finished.append(True)
 
     _ClosingLoop.closes = 0 if moment == "as the loop closes" else 1
-    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         run_until_stopped(campaign(), loop_factory=_ClosingLoop)
     assert finished == [True]
     assert _ClosingLoop.closes == (1 if moment == "as the loop closes" else 2)
@@ -417,7 +419,7 @@ def test_a_signal_wakes_a_loop_that_is_waiting(sigint: str) -> None:
 
     original = signal.getsignal(signal.SIGTERM)
     sender = threading.Thread(target=send)
-    with _termination_as_interrupt():
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         installed = signal.getsignal(signal.SIGTERM)
         assert callable(installed)
 
@@ -428,8 +430,7 @@ def test_a_signal_wakes_a_loop_that_is_waiting(sigint: str) -> None:
         signal.signal(signal.SIGTERM, noted)
         try:
             sender.start()
-            with pytest.raises(KeyboardInterrupt):
-                run_until_stopped(campaign(), loop_factory=factory)
+            run_until_stopped(campaign(), loop_factory=factory)
         finally:
             signal.signal(signal.SIGTERM, installed)
             sender.join()
@@ -438,24 +439,156 @@ def test_a_signal_wakes_a_loop_that_is_waiting(sigint: str) -> None:
     assert seen == ["CancelledError"]
 
 
+@pytest.fixture(params=["default", "ignored", "a handler that does nothing"])
+def any_ctrl_c(request: pytest.FixtureRequest) -> Iterator[str]:
+    """Ctrl-C at its default, ignored, or with a handler that does nothing (a program that
+    embeds `execute_run`): outside a loop the signal goes to whichever is in place."""
+
+    disposition = {"default": signal.default_int_handler, "ignored": signal.SIG_IGN}.get(
+        str(request.param), _does_nothing
+    )
+    previous = signal.signal(signal.SIGINT, disposition)
+    try:
+        yield str(request.param)
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
-def test_a_signal_dropped_outside_a_loop_still_stops_the_next(sigint: str) -> None:
+def test_a_signal_dropped_outside_a_loop_still_stops_the_next(any_ctrl_c: str) -> None:
     """Outside a loop the signal raises where the main thread is, and Python drops what is
-    raised inside a weakref callback. The campaign remembers it: its next loop does not start,
-    so nothing is sent after it."""
+    raised inside a weakref callback (or a Ctrl-C handler of the program's own does nothing).
+    The campaign remembers it: its next loop does not start, so nothing is sent after it."""
 
     ran: list[bool] = []
 
     async def campaign() -> None:
         ran.append(True)
 
-    with _termination_as_interrupt():
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         _signal_inside_a_weakref_callback(signal.SIGTERM)  # dropped: Python only prints it
-        with pytest.raises(KeyboardInterrupt):
-            run_until_stopped(campaign())
+        run_until_stopped(campaign())
     assert not ran
     run_until_stopped(campaign())  # a new campaign starts afresh
     assert ran == [True]
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_a_signal_dropped_after_the_last_loop_still_ends_the_campaign(any_ctrl_c: str) -> None:
+    """After the last loop nothing more is sent, but the campaign used to finish with the run's
+    own exit code instead of Ctrl-C's 130 (pre-merge audit). It ends with KeyboardInterrupt
+    now, once its block is done: the reports it was writing are written."""
+
+    steps: list[str] = []
+
+    async def campaign() -> None:
+        steps.append("loop")
+
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
+        run_until_stopped(campaign())
+        _signal_inside_a_weakref_callback(signal.SIGTERM)  # dropped: Python only prints it
+        steps.append("reports")
+    assert steps == ["loop", "reports"]
+
+
+def test_a_block_in_another_thread_does_not_reset_the_main_campaign() -> None:
+    """`terminations_watched` in a worker thread, while the main thread's campaign drops a
+    signal outside a loop: the worker's block used to reset what the main campaign had noted,
+    and its next loop started (pre-merge audit). Only the main thread watches now."""
+
+    ran: list[bool] = []
+    entered, dropped = threading.Event(), threading.Event()
+
+    async def campaign() -> None:
+        ran.append(True)
+
+    def worker() -> None:
+        with terminations_watched():
+            entered.set()
+            assert dropped.wait(60)
+
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
+        thread = threading.Thread(target=worker)
+        thread.start()
+        try:
+            assert entered.wait(60)
+            hook, sys.unraisablehook = sys.unraisablehook, lambda _unraisable: None
+            try:
+                _signal_inside_a_weakref_callback(signal.SIGTERM)  # dropped
+            finally:
+                sys.unraisablehook = hook
+        finally:
+            dropped.set()
+            thread.join()
+        run_until_stopped(campaign())
+    assert not ran
+
+
+@contextmanager
+def _signal_on_swap(raise_after: Callable[[int, object], int | None]) -> Iterator[None]:
+    """`signal.signal` raises the signal ``raise_after(sig, handler)`` names right after it
+    sets ``handler``: a signal that arrives halfway through the swap, deterministically."""
+
+    real = signal.signal
+
+    def swapped(sig: int, handler: Any) -> Any:
+        before = real(sig, handler)
+        signum = raise_after(sig, handler)
+        if signum is not None:
+            signal.raise_signal(signum)
+        return before
+
+    signal.signal = swapped  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        signal.signal = real
+
+
+@pytest.mark.usefixtures("ctrl_c")
+def test_a_signal_while_the_handlers_are_set_leaves_none_behind() -> None:
+    """A SIGTERM right after its handler is set, before the next line recorded what it
+    replaced: the handler raised there, and stayed installed after the campaign (pre-merge
+    audit: 38 of about 6,000 points). Held back while the handlers are set, it is delivered
+    once they all are, stops the campaign, and both are put back."""
+
+    original_term = signal.getsignal(signal.SIGTERM)
+    original_hup = signal.getsignal(signal.SIGHUP)
+
+    def on_set(sig: int, handler: object) -> int | None:
+        installing = handler is not original_term and handler is not original_hup
+        return signal.SIGTERM if sig == signal.SIGTERM and installing else None
+
+    with pytest.raises(KeyboardInterrupt), _signal_on_swap(on_set), _termination_as_interrupt():
+        pytest.fail("the signal held back while the handlers were set was not delivered")
+    assert signal.getsignal(signal.SIGTERM) is original_term
+    assert signal.getsignal(signal.SIGHUP) is original_hup
+
+
+def test_a_signal_while_the_handlers_are_put_back_leaves_none_behind() -> None:
+    """A SIGHUP right after SIGTERM's handler is put back, while SIGHUP's is still the
+    campaign's: it raised there and SIGHUP's stayed. Held back, it is delivered once both are
+    put back, to the handler SIGHUP had before the campaign."""
+
+    original_term = signal.getsignal(signal.SIGTERM)
+    hangups: list[int] = []
+
+    def before_campaign(signum: int, _frame: object) -> None:
+        hangups.append(signum)
+
+    previous_hup = signal.signal(signal.SIGHUP, before_campaign)
+    try:
+
+        def on_set(sig: int, handler: object) -> int | None:
+            return signal.SIGHUP if sig == signal.SIGTERM and handler is original_term else None
+
+        with _signal_on_swap(on_set), _termination_as_interrupt():
+            pass
+        assert signal.getsignal(signal.SIGTERM) is original_term
+        assert signal.getsignal(signal.SIGHUP) is before_campaign
+        assert hangups == [signal.SIGHUP]
+    finally:
+        signal.signal(signal.SIGHUP, previous_hup)
 
 
 class _AsyncioLog(logging.Handler):
@@ -512,7 +645,7 @@ def test_a_ctrl_c_in_the_campaigns_first_step_reaches_it(asyncio_log: _AsyncioLo
         finally:
             events.append(_in_a_loop())
 
-    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         run_until_stopped(campaign())
     gc.collect()
     assert events == ["cancelled", "inside a loop"]
@@ -533,7 +666,7 @@ def test_a_signal_before_the_task_exists_cancels_it_when_it_is_made(sigint: str)
         signal.raise_signal(signal.SIGTERM)
         return asyncio.SelectorEventLoop()
 
-    with _termination_as_interrupt(), pytest.raises(KeyboardInterrupt):
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
         run_until_stopped(campaign(), loop_factory=factory)
     assert not ran
 
@@ -548,7 +681,7 @@ def test_a_cancellation_that_is_no_signal_stays_one() -> None:
         task.cancel()
         await asyncio.sleep(0)
 
-    with _termination_as_interrupt(), pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError), _termination_as_interrupt():
         run_until_stopped(campaign())
 
 
