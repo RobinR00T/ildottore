@@ -340,7 +340,7 @@ succeeded; a write that fails; a stop after the write; a resume that completes; 
 not recorded, each comparing the store with what the stub served.
 
 **A-60 SIGTERM and SIGHUP stop a run as Ctrl-C does, inside a callback too (added 2026-10-08,
-amended 2026-10-09).** `execute_run` turned them into Ctrl-C by installing
+amended 2026-10-09 and 2026-10-10).** `execute_run` turned them into Ctrl-C by installing
 `signal.default_int_handler`, which raises KeyboardInterrupt wherever the main thread is. Raised
 inside a weakref callback, Python prints "Exception ignored" and drops it, and the run goes on: in
 CI the `[sigterm]` case of `tests/cli/test_probe_pass_spend.py` saw a resume keep sending after its
@@ -361,44 +361,93 @@ outside the loop as the process exited, after "Task was destroyed but it is pend
 
 Every loop a campaign runs, the `-sV` probe pass and each target's campaign, is now one of
 `interrupts.run_until_stopped`, which does for SIGTERM and SIGHUP what `asyncio.run` does for
-Ctrl-C, whatever Ctrl-C's disposition. The coroutine runs as a task created before the loop starts;
-the first signal cancels it and wakes the loop (which may be waiting in select() for a reply)
-instead of raising, so nothing is raised inside a callback, asyncio's or a weakref's; the task
-unwinds inside the loop, where the runner's `finally` writes the spend; and KeyboardInterrupt (exit
-130) is raised once the loop is closed. A signal that comes after the task is done, as the loop
-closes or inside `loop.close()`, is kept and raised then too: this is why raising from a loop
-callback of our own was rejected, since such a signal would be queued on a loop that does not run
-again, and lost. A second signal before the run has stopped raises in place, as a second Ctrl-C
-does. Ctrl-C keeps asyncio's own handler, which cancels the coroutine `asyncio.Runner` runs and
-through it the task. Measured through the same CLI path: one SIGTERM, the process gone with exit 130
-0.8 to 0.9 s after it started, the spend of 6 requests written inside the loop, with Ctrl-C ignored
-and at its default, on both Pythons. Outside a loop (planning, the store writes, the reports) a
-signal still calls whatever SIGINT handler is in place, and raises where the main thread is when
-there is none: one landing in a callback there is dropped, as Ctrl-C is in any Python program, but
-the campaign remembers it and its next loop does not start, so nothing is sent after it; past its
-last loop the run then finishes with its own exit code. A program that embeds `execute_run` and
-gives Ctrl-C a handler that does nothing makes them do nothing outside a loop; `dottore` does not.
-An ignored SIGHUP still stays ignored (`nohup`). Outside the main thread no handler is installed and
-`run_until_stopped` is `asyncio.run`.
+Ctrl-C, whatever Ctrl-C's disposition. The coroutine `asyncio.Runner` runs (`_drive`) makes the
+campaign a task and awaits it at once, so a cancel of that coroutine reaches the task from its first
+step (the first version made the task before the loop started: its first step ran before the
+coroutine awaited it, a Ctrl-C there cancelled only the coroutine, and a second Ctrl-C during the
+stop left the task pending, its spend written when Python collected it; pre-merge audit of the fix).
+The first SIGTERM or SIGHUP stops the run without raising: with Ctrl-C at its default it goes to the
+Ctrl-C handler that run's `asyncio.Runner` installed, which counts it with Ctrl-C's, cancels that
+coroutine and wakes the loop; with Ctrl-C ignored, or with a handler of the program's own, the
+handler cancels the task and wakes the loop (it may be waiting in select() for a reply) itself.
+Nothing is raised inside a callback, asyncio's or a weakref's; the task unwinds inside the loop,
+where the runner's `finally` writes the spend; and KeyboardInterrupt (exit 130) is raised once the
+loop is closed. A signal that comes after the task is done, as the loop closes or inside
+`loop.close()`, is kept and raised then too: this is why raising from a loop callback of our own was
+rejected, since such a signal would be queued on a loop that does not run again, and lost. The loop
+is let go while the run is still armed, so a signal during its `__del__` is the run's too. A second
+signal of either kind before the run has stopped raises in place, as a second Ctrl-C does: asyncio's
+handler counts the two together, and otherwise a signal after a stop some handler began (that
+coroutine is being cancelled) is read as the second (the first version counted SIGTERM apart from
+Ctrl-C, and Ctrl-C then SIGTERM, or SIGTERM then Ctrl-C, was one more cancellation). A second signal
+raised in place can, like a second Ctrl-C under `asyncio.run`, land in one of asyncio's callbacks
+and leave the run waiting for a third: with the second signal one line event after the first, 66 of
+413 points of the sweep below waited for a third (16%), against 59 of 385 (15%) for a double Ctrl-C
+under plain `asyncio.run`. Measured through the real CLI, with the first SIGTERM raised inside the
+runner's gather: one SIGTERM, the process gone, with exit 130, 0.99 to 1.11 s after it started, the
+spend of 6 requests written inside the loop, with Ctrl-C ignored and at its default.
 
-Checked by `tests/cli/test_termination_signals.py` (28 tests): SIGTERM, SIGHUP and, as a control,
+Outside a loop (planning, the store writes, the reports) a signal calls whatever SIGINT handler is
+in place, and raises where the main thread is when there is none. One that Python drops there
+(raised inside a weakref callback or a `__del__`), or that a Ctrl-C handler of the program's own
+ignores, is remembered by `terminations_watched`: the campaign's next loop does not start, so
+nothing is sent after it, and past its last loop the campaign ends with KeyboardInterrupt as
+`execute_run`'s block does (it used to end with the run's own exit code). Only the main thread
+watches: a block in another thread used to reset what the main campaign had noted, and its next loop
+started. The SIGTERM and SIGHUP handlers are set and put back with Ctrl-C, SIGTERM and SIGHUP held
+back (`pthread_sigmask`), what each replaces recorded before it is set: a signal halfway through the
+swap used to leave a handler of the campaign installed after `execute_run` returned (38 of about
+6,000 points in the audit's sweep). The put-back is retried when a signal raises just before the
+hold takes effect, and a signal held back during it is the campaign's (accepted with `sigwait` and
+noted), not the restored handler's, whose default would end the process with no exit code. A program
+that embeds `execute_run` sees the difference: inside a loop SIGTERM and SIGHUP no longer call its
+own Ctrl-C handler (only asyncio's), and one that its Ctrl-C handler ignores outside a loop still
+stops the campaign, at its next loop or as its block ends. An ignored SIGHUP still stays ignored
+(`nohup`). Outside the main thread no handler is set and `run_until_stopped` is `asyncio.run`. A
+send is bounded by `asyncio.timeout`, not `asyncio.wait_for`: on Python 3.11 `wait_for` returned a
+reply and dropped a cancellation that landed as the send completed (CPython gh-86296), so a spec a
+signal stopped at that instant went on sending (`core/execute.py`; from 3.12 `wait_for` is built on
+`asyncio.timeout`).
+
+Swept with the audit's tool (a signal raised at every line event while the campaign's handler is in
+place, one forked child per point, over a probe pass and two campaigns of three gathered children
+each): SIGTERM with Ctrl-C ignored, at its default and with a handler that does nothing, and SIGHUP
+with Ctrl-C ignored and at its default, 8 of 31,030 points bad, where `2001e7f` had 50 of 6,032, 50
+of 6,095 and 21 of 6,011 in the three SIGTERM arms (a handler left installed, a signal dropped in a
+`__del__`, the run's own exit code after the last loop). The points left are the `while True:` and
+`try:` of the put-back, which compile to NOP alone, where CPython never runs a signal handler; only
+a line-event tracer reaches them.
+
+Checked by `tests/cli/test_termination_signals.py` (48 tests): SIGTERM, SIGHUP and, as a control,
 SIGINT raised inside a real weakref callback under `run_until_stopped` and under `asyncio.run`
 (under `asyncio.run`, SIGTERM and SIGHUP fail on `e4d6c83`); SIGTERM and SIGHUP outside a loop with
 SIGINT at its default and ignored; SIGTERM and SIGHUP in a loop, which the campaign sees as
-CancelledError, and a second SIGTERM, which raises in place; a SIGTERM raised inside gather's
-callback, which one signal now stops with SIGINT at its default and ignored (with #94's handler its
-ignored arm fails, and so do the CancelledError cases with SIGINT ignored): a safety net queued from
-inside the first signal sends a second only if ten turns of the loop later the task is still not
-done, and it is never needed, so no clock decides it; a SIGTERM once the task is done and one inside
-`loop.close()`, both raised after the loop is closed (the second fails a handler that raises from a
-loop callback of its own); one that arrives while the loop waits in select() with nothing scheduled,
-which has to wake it (a selector that polls tells a loop that was not woken from one that was, the
-poll's length deciding nothing; without the wake the CLI case below still passes, but in 32 s
-instead of about 2); one dropped in a weakref callback outside a loop, which keeps the next loop
-from starting; and `run_until_stopped` outside the main thread and inside a running loop. Through
-the real CLI, `tests/cli/test_probe_pass_spend.py` adds a `[sigterm-ctrl-c-ignored]` case with a
-probe on the wire, and its three signal cases check exit 130. The SIGHUP cases give SIGHUP a handler
-of its own first, so they hold when the suite runs under `nohup`.
+CancelledError; a second SIGTERM, which raises in place, and a second signal of the other kind in
+both orders and after a stop a handler of the program's own began (all five fail on `7a0be1d`); a
+SIGTERM raised inside gather's callback, which one signal stops with SIGINT at its default and
+ignored (with #94's handler its ignored arm fails, and so do the CancelledError cases with SIGINT
+ignored): a safety net queued from inside the first signal sends a second only if ten turns of the
+loop later the task is still not done, and it is never needed, so no clock decides it; a Ctrl-C in
+the campaign's first step, then a second during the stop, after which the campaign's `finally` runs
+inside a loop and asyncio logs nothing (it fails on `2001e7f`); a SIGTERM while the Runner makes its
+loop, which cancels the task as it is made; a cancellation that is no signal's, which stays a
+CancelledError; a SIGTERM once the task is done and one inside `loop.close()`, both raised after the
+loop is closed (the second fails a handler that raises from a loop callback of its own); one that
+arrives while the loop waits in select() with nothing scheduled, which has to wake it (a selector
+that polls tells a loop that was not woken from one that was, the poll's length deciding nothing;
+without the wake the CLI case below still passes, but in 32 s instead of about 2); one dropped
+outside a loop, which keeps the next loop from starting, and one dropped after the last loop, which
+ends the campaign with KeyboardInterrupt, each with Ctrl-C at its default, ignored and with a
+handler that does nothing; a worker thread's block, which no longer resets the main campaign; a
+signal while the handlers are set, while they are put back, and just before the put-back holds
+anything, none of which leaves a handler behind (the first two fail on `2dcf954`); the handlers set
+and put back without `pthread_sigmask` (Windows) and from another thread; and `run_until_stopped`
+outside the main thread and inside a running loop. `tests/core/test_retry_classification.py`: an
+attempt cancelled in the callback that delivers its reply ends with CancelledError (with CPython
+3.11's `wait_for` in place of `asyncio.timeout` it returns the reply). Through the real CLI,
+`tests/cli/test_probe_pass_spend.py` has a `[sigterm-ctrl-c-ignored]` case with a probe on the wire,
+and its three signal cases check exit 130. The SIGHUP cases give SIGHUP a handler of its own first,
+so they hold when the suite runs under `nohup`.
 
 **A-61 A run id is never masked as a phone number (added 2026-10-09).** A run id was `run-` and the
 first 12 hexadecimal digits of a UUID4. When all twelve came out decimal, (10/16) ** 12 of the draws

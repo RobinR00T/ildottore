@@ -15,20 +15,60 @@ versioning: [SemVer](https://semver.org/).
   (measured through the real CLI on Python 3.12.13 and 3.14.7: still running 3.0 s after it started,
   when a second SIGTERM ended it). Every loop a campaign runs (the `-sV` probe pass, each target's
   campaign) now goes through `interrupts.run_until_stopped`, which does for SIGTERM and SIGHUP what
-  `asyncio.run` does for Ctrl-C, whatever Ctrl-C's disposition: the first signal cancels the run's
-  task and wakes the loop instead of raising, the task unwinds inside the loop, where the runner
-  writes the spend, and KeyboardInterrupt (exit 130) comes once the loop is closed. A signal that
-  arrives after the task is done, even inside `loop.close()`, is kept and raised then, which raising
-  from a loop callback of its own could not do; a second signal raises in place, as a second Ctrl-C
-  does; Ctrl-C keeps asyncio's handler. Measured on the same path: one SIGTERM, and exit 130 within
-  0.9 s of the start, the spend of 6 requests written inside the loop, with Ctrl-C ignored or at its
-  default. A signal Python drops outside a loop (in a cleanup callback, while planning or writing)
-  keeps the campaign's next loop from starting. u12 A-60 (amended), the MANUAL and the EXIT STATUS
-  of `dottore(1)`; `tests/cli/test_termination_signals.py` (28 tests: the test that pinned the hang
-  pins one signal as enough in both arms now, its safety net never needed, beside a signal after the
-  task and one inside `loop.close()`, one that has to wake a loop waiting in select(), a second
-  signal and one dropped outside a loop), and a `[sigterm-ctrl-c-ignored]` case in
-  `tests/cli/test_probe_pass_spend.py`, whose signal cases now check exit 130.
+  `asyncio.run` does for Ctrl-C, whatever Ctrl-C's disposition: the coroutine `asyncio.Runner` runs
+  makes the campaign a task and awaits it at once; the first signal cancels the run and wakes the
+  loop instead of raising (with Ctrl-C at its default through asyncio's own Ctrl-C handler, which
+  counts it with Ctrl-C's); the task unwinds inside the loop, where the runner writes the spend; and
+  KeyboardInterrupt (exit 130) comes once the loop is closed. A signal that arrives after the task
+  is done, even inside `loop.close()`, is kept and raised then, which raising from a loop callback
+  of its own could not do. Measured on the same path: one SIGTERM, exit 130, 0.99 to 1.11 s after
+  the start, the spend of 6 requests written inside the loop, with Ctrl-C ignored or at its default.
+- **What the fix's pre-merge audit found, fixed before it lands.** A Ctrl-C in the campaign's first
+  step cancelled only the coroutine that awaited it, and a second one during the stop left the task
+  pending, its spend written outside any loop (the task was made before the loop started; it is made
+  inside that coroutine now). Ctrl-C then SIGTERM, or SIGTERM then Ctrl-C, was one more cancellation
+  where #94 raised in place: a second signal of either kind raises now. The SIGTERM and SIGHUP
+  handlers could stay installed after `execute_run` returned (38 of about 6,000 points of the
+  audit's sweep): they are set and put back with Ctrl-C, SIGTERM and SIGHUP held back
+  (`pthread_sigmask`), what each replaces recorded first, the put-back retried when a signal beats
+  the hold, and a signal held back during it taken by the campaign. A signal Python dropped outside
+  a loop (in a weakref callback or a `__del__`) now keeps the campaign's next loop from starting
+  and, after its last loop, ends it with KeyboardInterrupt (exit 130) instead of the run's own exit
+  code; the loop is let go while the run is still armed, so a signal in its `__del__` is the run's;
+  and only the main thread watches, since a block in another thread reset what the main campaign had
+  noted. Swept again with the audit's tool, a signal at every line event: 8 of 31,030 points bad,
+  all at two lines that compile to NOP alone, where CPython never runs a signal handler (`2001e7f`:
+  50 of 6,032, 50 of 6,095 and 21 of 6,011 in its three SIGTERM arms).
+- **A program that embeds `execute_run` sees two changes.** Inside a loop, SIGTERM and SIGHUP no
+  longer call the program's own Ctrl-C handler (only asyncio's, when Ctrl-C is at its default); and
+  one that the program's Ctrl-C handler ignores outside a loop still stops the campaign, at its next
+  loop or with KeyboardInterrupt as `execute_run`'s block ends. `dottore` has no handler of its own.
+- **A second signal stops a run at once, but not always.** As a double Ctrl-C under any asyncio
+  program, a second signal raised in place can land in one of asyncio's callbacks and leave the run
+  waiting for a third: sent one line event after the first, 66 of 413 points of the sweep did (16%),
+  and 59 of 385 (15%) for a double Ctrl-C under plain `asyncio.run`. The MANUAL and `dottore(1)` say
+  so.
+- **A send is bounded by `asyncio.timeout`, not `asyncio.wait_for`.** On Python 3.11, what CI runs,
+  `wait_for` returned a reply and dropped a cancellation that landed as the send completed (CPython
+  gh-86296), so a spec a signal stopped at that instant went on sending. From 3.12 `wait_for` is
+  built on `asyncio.timeout`, so only 3.11 changes; `tests/core/test_retry_classification.py`
+  cancels an attempt in the callback that delivers its reply.
+- u12 A-60 (amended in place), its 00-INDEX row, the MANUAL and the EXIT STATUS of `dottore(1)`;
+  `tests/cli/test_termination_signals.py` (48 tests: the test that pinned the hang pins one signal
+  as enough in both arms now, its safety net never needed; a signal after the task and inside
+  `loop.close()`; one that has to wake a loop waiting in select(); a second signal of the same and
+  of the other kind; the first-step window; signals while the handlers are set and put back; one
+  dropped outside a loop and after the last one; a worker thread's block), and a
+  `[sigterm-ctrl-c-ignored]` case in `tests/cli/test_probe_pass_spend.py`, whose signal cases now
+  check exit 130.
+
+### Fixed (tests only: two WebSocket tests that hung on Python 3.12)
+
+- `tests/adapters/test_websocket_audit.py`: two handlers of the raw upgrade server slept 30 s and
+  never closed their writer, so each test took 30 s on 3.14 and, on 3.12, where the stream protocol
+  keeps a reference to the writer, `server.wait_closed()` never returned. The handler waits on an
+  Event and aborts the transport in a `finally`, and the test sets the Event before `wait_closed()`:
+  3.5 s and 1.0 s on 3.14.7.
 
 ### Fixed (a run id of twelve decimal digits, masked as a phone number)
 
