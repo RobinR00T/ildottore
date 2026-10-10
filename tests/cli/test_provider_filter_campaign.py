@@ -235,6 +235,12 @@ def test_the_campaign_goes_on_past_attack_prompts_the_provider_filter_refuses(
         if _blocked(attempt):
             assert attempt["response"] is None
             assert attempt["verdict"]["status"] == "inconclusive"
+            # Through the report's redactor, whole: the reason and the class are kept.
+            assert attempt["verdict"]["reasoning"] == (
+                "blocked_by_provider_filter: the provider's input filter refused the prompt "
+                "before the model saw it, so there is no reply to evaluate: not a refusal by the "
+                "model and not an exploit"
+            )
             assert attempt["error"] == (
                 "ProviderFilterBlock: azure: non-retryable HTTP 400 from /v1/chat/completions: "
                 "the provider's input filter refused the prompt before the model saw it (error "
