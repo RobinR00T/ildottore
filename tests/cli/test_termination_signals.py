@@ -671,6 +671,36 @@ def test_outside_a_campaign_the_handler_notes_nothing() -> None:
     assert ran == [True]
 
 
+class _CtrlCOnClose:
+    """A campaign whose close is where a Ctrl-C lands: the first call of the cleanup."""
+
+    def close(self) -> None:
+        raise KeyboardInterrupt
+
+
+def test_a_ctrl_c_in_the_cleanup_leaves_no_run_armed() -> None:
+    """A Ctrl-C, or a second signal, raising at one of the calls of `run_until_stopped`'s
+    cleanup (closing the campaign, retrieving its exception) skipped the line that disarms it:
+    the run stayed armed after it returned, and the next signal went to it, a run long gone
+    (verification audit). Here the campaign is refused, as a signal came before its loop, and
+    closing it raises."""
+
+    from ildottore.cli.interrupts import stop_running_loop
+
+    with pytest.raises(KeyboardInterrupt), _termination_as_interrupt():
+        hook, sys.unraisablehook = sys.unraisablehook, lambda _unraisable: None
+        try:
+            _signal_inside_a_weakref_callback(signal.SIGTERM)  # dropped: the next loop is refused
+        finally:
+            sys.unraisablehook = hook
+        run_until_stopped(_CtrlCOnClose())  # type: ignore[arg-type]
+    try:
+        taken = stop_running_loop()
+    except KeyboardInterrupt:  # a run left armed reads this as its second signal
+        taken = True
+    assert taken is False, "a run was left armed"
+
+
 class _AsyncioLog(logging.Handler):
     """What asyncio logs during a test: a destroyed pending task, a never-retrieved exception."""
 

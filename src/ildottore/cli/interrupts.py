@@ -216,22 +216,31 @@ def run_until_stopped(
                     if not run.stopped:
                         raise
     finally:
-        task = run.task
-        if task is None:
-            # Never made a task (stopped before, cancelled before it was, or refused): closed,
-            # or Python warns it was never awaited. Closing one asyncio.run finished is a no-op.
-            main.close()
-        elif task.done() and not task.cancelled():
-            # Retrieved here: a KeyboardInterrupt raised inside it (a second signal) propagates
-            # past the coroutine that awaits it, and asyncio would log it as never retrieved.
-            task.exception()
-        # Let go of the loop while still armed: its __del__ runs with the last reference, and a
-        # signal then is this run's, kept for below. Disarmed first, it raised inside __del__,
-        # where Python prints "Exception ignored" and drops it (12 of about 6,000 points).
-        task = run.task = run.outer = None
-        run.loop = run.runner = None
-        if armed:
-            _running = outer
+        try:
+            task = run.task
+            if task is None:
+                # Never made a task (stopped before, cancelled before it was, or refused):
+                # closed, or Python warns it was never awaited. Closing one that asyncio.run
+                # finished is a no-op.
+                main.close()
+            elif task.done() and not task.cancelled():
+                # Retrieved here: a KeyboardInterrupt raised inside it (a second signal)
+                # propagates past the coroutine that awaits it, and asyncio would log it as
+                # never retrieved.
+                task.exception()
+            # Let go of the loop while still armed: its __del__ runs with the last reference,
+            # and a signal then is this run's, kept for below. Disarmed first, it raised inside
+            # __del__, where Python prints "Exception ignored" and drops it (12 of about 6,000
+            # points).
+            task = run.task = run.outer = None
+            run.loop = run.runner = None
+        finally:
+            # Disarmed however the lines above end: a Ctrl-C or a second signal raising at one
+            # of their calls left this run armed after it returned (verification audit: 27
+            # points of the Ctrl-C sweep, 1 of the second-signal one). Not armed only on the way
+            # out of an early return or raise, so this never falls through unarmed.
+            if armed:  # pragma: no branch
+                _running = outer
     # Here, and not in a callback on the loop: one that came as the last loop stopped would be
     # queued on a loop that never runs again, and lost.
     if run.stopped:
