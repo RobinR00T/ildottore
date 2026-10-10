@@ -241,8 +241,12 @@ _GEMINI_URL = "https://llm.example.com/generate"
 _GEMINI_TEXT = "candidates.0.content.parts.0.text"
 
 
-@pytest.mark.parametrize("reason", ["SAFETY", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT"])
+@pytest.mark.parametrize(
+    "reason", ["SAFETY", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT", "MODEL_ARMOR", "JAILBREAK"]
+)
 async def test_a_gemini_prompt_block_is_a_provider_filter_block(reason: str) -> None:
+    """The Gemini API's four values, and the two Vertex AI's reference adds."""
+
     body = {"promptFeedback": {"blockReason": reason, "safetyRatings": []}}
     with pytest.raises(ProviderFilterBlock) as raised:
         await _send(lambda: _rest(_GEMINI_TEXT), _GEMINI_URL, 200, body)
@@ -258,7 +262,16 @@ async def test_a_gemini_prompt_block_is_a_provider_filter_block(reason: str) -> 
 
 
 @pytest.mark.parametrize(
-    "reason", ["IMAGE_SAFETY", "BLOCK_REASON_UNSPECIFIED", "SOMETHING_NEW", None, ["SAFETY"], 3]
+    "reason",
+    [
+        "IMAGE_SAFETY",
+        "BLOCK_REASON_UNSPECIFIED",
+        "BLOCKED_REASON_UNSPECIFIED",
+        "SOMETHING_NEW",
+        None,
+        ["SAFETY"],
+        3,
+    ],
 )
 async def test_any_other_gemini_body_without_text_stays_the_product_error_it_was(
     reason: object,
@@ -268,6 +281,18 @@ async def test_any_other_gemini_body_without_text_stays_the_product_error_it_was
         await _send(lambda: _rest(_GEMINI_TEXT), _GEMINI_URL, 200, body)
     assert type(raised.value) is AdapterProductError
     assert "response missing text" in str(raised.value)
+
+
+@pytest.mark.parametrize("text_path", ["output", "text", "data.candidates.0.text", "candidates"])
+async def test_a_template_that_does_not_read_a_gemini_body_does_not_read_its_block(
+    text_path: str,
+) -> None:
+    """Only a ``text_path`` rooted at ``candidates.`` reads a Gemini body (L3 of the audit)."""
+
+    body = {"promptFeedback": {"blockReason": "SAFETY"}}
+    with pytest.raises(AdapterProductError) as raised:
+        await _send(lambda: _rest(text_path), _GEMINI_URL, 200, body)
+    assert type(raised.value) is AdapterProductError
 
 
 async def test_a_body_with_text_is_a_reply_whatever_else_it_holds() -> None:
