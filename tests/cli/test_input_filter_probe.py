@@ -137,7 +137,7 @@ def test_the_fingerprint_goes_on_past_an_input_filter_on_the_benign_request(
     assert state["blocked"] == 1
     assert state["served"] == fingerprint_probe_count()
     fp = ModelFingerprint.model_validate_json(result.stdout)
-    assert failed_probes(fp) == ["guardrail/guardrail_benign: AdapterStatusError"]
+    assert failed_probes(fp) == ["guardrail/guardrail_benign: ProviderFilterBlock"]
     assert PROBES_FAILED_FLAG in fp.spoofing_flags
     # Unknown, not "answered" and not "refused": the request never reached the model.
     assert fp.guardrails["benign_refused"] is None
@@ -145,7 +145,7 @@ def test_the_fingerprint_goes_on_past_an_input_filter_on_the_benign_request(
     assert fp.guardrails["refusal_style"] == "polite-explain"
     assert result.stderr.startswith(
         f"warning: azure: 1 of {fingerprint_probe_count()} probe(s) got no usable reply "
-        "(guardrail/guardrail_benign: AdapterStatusError)"
+        "(guardrail/guardrail_benign: ProviderFilterBlock)"
     )
 
 
@@ -184,7 +184,7 @@ def test_run_sv_goes_on_to_the_attack_past_an_input_filter_on_the_benign_request
     attempts = [a for f in report["findings"] for a in f["attempts"]]
     assert attempts and all(a["response"] is not None for a in attempts)
     assert state["served"] == fingerprint_probe_count() + len(attempts)
-    assert "(guardrail/guardrail_benign: AdapterStatusError)" in result.stderr
+    assert "(guardrail/guardrail_benign: ProviderFilterBlock)" in result.stderr
 
 
 def test_the_same_refusal_of_any_other_probe_still_stops_the_pass(

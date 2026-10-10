@@ -9,6 +9,9 @@ one: it refuses the connection, not a prompt.
 The error is copied and pickled like any other: ``status_code`` is a required keyword, and the
 default ``BaseException`` reduction rebuilt it from its message alone, so ``copy.copy`` and
 ``pickle.loads`` raised ``TypeError`` (verification of ``abc6ffe``, 2026-10-09).
+
+Since OD-41 (2026-10-10) Azure's prompt-filter body at 400 is a ``ProviderFilterBlock`` instead
+(``tests/adapters/test_provider_filter_block.py``), so the body here is a plain bad request.
 """
 
 from __future__ import annotations
@@ -96,7 +99,7 @@ async def test_a_non_retryable_4xx_is_a_status_error_with_its_status(
     name: str, status: int
 ) -> None:
     build, url = _ADAPTERS[name]
-    body = {"error": {"code": "content_filter", "message": "filtered"}}
+    body = {"error": {"code": "invalid_request_error", "message": "bad request"}}
     with respx.mock:
         respx.post(url).mock(return_value=httpx.Response(status, json=body))
         with pytest.raises(AdapterStatusError) as raised:
