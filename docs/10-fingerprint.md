@@ -348,7 +348,10 @@ version is `null`.
   probes go out at the deployment's own sampling. The seed is metadata and is not
   sent; a `top_p` or `seed` in the target file's `sampling_defaults` is (a `seed` only with
   `capabilities.seed: true`, and on Anthropic neither: no seed, and no `top_p` beside the
-  probe's temperature 0), since the block fills
+  probe's temperature 0). To a target that takes no sampling (u12 A-68: a Claude model the
+  `adapters.anthropic.MODELS_WITHOUT_SAMPLING` list names, or `capabilities.sampling: false`)
+  the probes go out with no temperature at all, so the fingerprint is only as repeatable as the
+  model's own sampling, and the `-sV` line and `dottore fingerprint` say so. The block fills
   what `PROBE_SAMPLING` leaves unset (OD-39, 2026-10-09; its temperature and `max_tokens` never
   reach a probe). `run -sV` stores its probes as evidence (`probes/`); a standalone `dottore fingerprint`
   stores none.

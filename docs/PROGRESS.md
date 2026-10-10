@@ -3,6 +3,44 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-10 (morning): the A-68 pre-merge audit, redone after a reboot
+
+- The Mac rebooted overnight and wiped `/private/tmp`: the worktree, its uncommitted fixes and the
+  auditor's scripts were lost; `fix/anthropic-models-without-sampling` survived at `7dd5ec1`. The
+  worktree is now `_ildottore-tren/wt/anthropic`, scratch under `_ildottore-tren/scratch/`, and
+  the fixes are redone in small commits. MEDIUM: a judge whose model refused sampling was silent
+  (`SemanticJudgeEvaluator` read `SamplingRefused` as an outage: every judged spec inconclusive,
+  exit 0, 29 judge 400s); it is re-raised and stops the run. Lows: `SamplingRefused` fires only on a
+  sent parameter named as a parameter (`sampling_params_named`, `tests/adapters/test_sampling_refused.py`
+  with 21 tests, 17 failing on `7dd5ec1`); the run records whether its target and judge were sent a
+  temperature and a resume that keeps attempts continues as it started; `sampling_not_sent` counts
+  the block as written; the judge refusal says "capabilities" without nested parentheses; the
+  gateway id forms (ARNs, `anthropic/claude-opus-4.7`, `[1m]`) match; Mythos is named everywhere,
+  the reference's Sonnet 5 contradiction is written down, USAGE carries the not-tested-live
+  caveat, `examples/target.openai.yaml` no longer suggests `sampling: false` for a reasoning model.
+  `tests/cli/test_models_without_sampling.py`: 66 tests, 18 failing on `7dd5ec1`. Verification of
+  `569bb3b`: a probe recorded nothing of a block whose only field is a seed that does not go out,
+  and the resume notice named a top_p that never goes out to Anthropic; both fixed.
+
+## State, 2026-10-09 (night): Claude models that take no temperature or top_p (A-68)
+
+- On `fix/anthropic-models-without-sampling`, stacked on `feat/apply-sampling-defaults` at
+  `00b2fca`: a defect the A-66 pre-merge audit found, older than it. Per Anthropic's API reference
+  as bundled with the claude-api skill (cached 2026-09-25, not tested live), Opus 4.7 and later,
+  Sonnet 5 and Sonnet 5.5, and the Fable and Mythos 5 families refuse `temperature` and `top_p`;
+  the scanner pins temperature 0, so every `provider: anthropic` campaign against them stopped at
+  its first request. Built (u12 A-68): `capabilities.sampling` (`bool | None`, the one capability
+  not false unless set; `None` is the default rule), a documented list in one place
+  (`adapters.anthropic.MODELS_WITHOUT_SAMPLING`, matched by family, overridden by the capability),
+  `sampling_enabled` on the Anthropic and OpenAI adapters through their own `sent_sampling`, the
+  record through the same rule plus `request.metadata.sampling_not_sent`, the "not temperature-0
+  deterministic" notice on stderr before a run, in `--dry-run`, `-sn`, the `-sV` line, `dottore
+  fingerprint` and `dottore replay`, and `SamplingRefused` for a 400 that names a sampling
+  parameter the request sent. The digest leaves a null `capabilities.sampling` out, so no stored
+  run changes digest. `tests/cli/test_models_without_sampling.py`: 40 tests, 37 fail on `00b2fca`.
+  No open decision. Left open: no run-level word for it in the HTML, SARIF and JUnit reports; a
+  model the list does not name costs one refused request.
+
 ## State, 2026-10-09 (evening): `sampling_defaults` applied as a fallback (OD-39)
 
 - On `feat/apply-sampling-defaults`, from `main` at `f12ba83`: the owner decided (2026-10-09,
@@ -34,9 +72,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   MCP or WebSocket attempt still records the spec's sampling that nothing carries; the OpenAI
   adapter sends a spec's `seed` whatever `capabilities.seed` says; the Anthropic adapter sends
   `max_tokens` 1024 for a request with none and records none, while the ledger reserves 512; and
-  Claude models that take no sampling at all (Opus 4.7 and later, Sonnet 5, the Fable models, per
-  the same reference) refuse every request, its temperature 0 included (its own branch,
-  `fix/anthropic-models-without-sampling`).
+  Claude models that take no sampling at all (Opus 4.7 and later, Sonnet 5, the Fable and Mythos 5
+  families, per the same reference) refuse every request, its temperature 0 included (its own
+  branch, `fix/anthropic-models-without-sampling`).
 
 ## State, 2026-10-09 (evening): a refusal the guardrail probe asked for is not a filter (OD-40)
 

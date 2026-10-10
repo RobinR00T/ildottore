@@ -9,6 +9,10 @@ capabilities:
   rag: false
   streaming: true
   seed: true                         # provider supports seed -> determinism recorded
+  # sampling: false                  # for a model behind this endpoint that refuses temperature
+  #                                  # and top_p (a Claude model behind a gateway, say): neither
+  #                                  # is sent, max_tokens still is, and its replies are then not
+  #                                  # temperature-0 deterministic (u12 A-68)
 # A fallback, field by field (OD-39): a field the spec or the -sV probe sets is sent as set,
 # and this fills only what it leaves unset. Every shipped spec sets temperature 0, so here it is
 # top_p 1.0 that goes out on the 69 specs (and every probe) that set none. max_tokens and seed

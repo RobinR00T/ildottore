@@ -76,7 +76,9 @@ refused (exit 3). Without such a store the replay says on stderr that this was n
 The run id is the JSON report's run.run_id and the name of the run's directory under
 .BR --evidence-root ;
 a run an older version named with 12 decimal digits, masked as a phone number in its reports,
-replays by that name.
+replays by that name. Attempts that went out with no temperature (a target that takes no
+sampling, dottore-scope(5)) are counted under the pooled rate: they are not temperature-0
+deterministic.
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
@@ -138,7 +140,9 @@ run. Sends nothing.
 .B -sV
 Fingerprint before attacking, then order each spec's mutators by the carriers the target
 still understands. 18 probes per target, printed in the plan, paced by --rate; not sent under
---dry-run, --estimate or -sn.
+--dry-run, --estimate or -sn. To a target that takes no sampling (capabilities.sampling,
+dottore-scope(5)) the probes go out with no temperature, and the fingerprint line says it is
+not temperature-0 repeatable.
 .TP
 .B -A
 Aggressive: -sV plus --deep.

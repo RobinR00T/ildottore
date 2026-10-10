@@ -42,6 +42,7 @@ __all__ = [
     "stored_adaptive",
     "stored_runs",
     "stored_sampling_defaults",
+    "stored_takes_sampling",
 ]
 
 #: The reconstructed findings need a ``risk``, and a prior partial run's score is not stored
@@ -386,6 +387,30 @@ def stored_sampling_defaults(run_db: Path, run_id: str) -> bool | None:
     return value
 
 
+def stored_takes_sampling(run_db: Path, run_id: str) -> tuple[bool | None, bool | None]:
+    """Whether the halted campaign sent its target and its judge a temperature (u12 A-68).
+
+    ``(target, judge)``, each ``None`` when the run recorded nothing: a run started before the
+    record existed (every version before A-68 sent sampling to every live target and judge). A
+    value that is not a boolean is a corrupt record, refused as the other integrity fields are.
+    """
+
+    from ildottore.store.run_sqlite import CorruptRunContext, SqliteRunStore
+
+    if not Path(run_db).exists():
+        return None, None
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id) or {}
+    values = (context.get("takes_sampling"), context.get("judge_takes_sampling"))
+    if any(value is not None and not isinstance(value, bool) for value in values):
+        raise CorruptRunContext(
+            "context_json holds a takes_sampling or judge_takes_sampling value that is not true "
+            "or false. An integrity record that cannot be read is not the same as one that was "
+            "never written: refusing rather than continuing."
+        )
+    return values
+
+
 def _unverifiable(run_id: str, what: str, *, allow: bool, waivable: bool = True) -> None:
     """One decision for every "this cannot be checked" case: refuse, or say so loudly.
 
@@ -512,16 +537,17 @@ def _assert_same_context(
         # Both there and different: the same flag names another file, or the same file was
         # edited; "stored a judge, now a judge" said neither (pre-merge audit of A-66).
         which = (
-            "a different --judge file (its endpoint, model or sampling_defaults differ)"
+            "a different --judge file, whose endpoint, model, capabilities or sampling_defaults "
+            "differ"
             if stored_judge and current_judge
             else f"{'a judge' if stored_judge else 'no judge'} stored, "
             f"{'a judge' if current_judge else 'none'} now"
         )
         raise ValueError(
-            f"run {run_id!r} was judged by a different model than this invocation offers "
-            f"({which}). `semantic_judge` decides verdicts, so one campaign would be arbitrated "
-            "by two different models and merged into one finding per spec. Resume with the "
-            "same --judge, or start a fresh run."
+            f"run {run_id!r} was judged by a different model than this invocation offers: "
+            f"{which}. `semantic_judge` decides verdicts, so one campaign would be arbitrated by "
+            "two different models and merged into one finding per spec. Resume with the same "
+            "--judge, or start a fresh run."
         )
     stored_adaptive = context.get("adaptive")
     if adaptive is not None and stored_adaptive is not None and bool(stored_adaptive) != adaptive:

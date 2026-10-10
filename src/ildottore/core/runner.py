@@ -107,6 +107,7 @@ from ildottore.shared.protocols import (
 from ildottore.shared.toolcalls import call_name
 
 __all__ = [
+    "SAMPLING_NOT_SENT",
     "CampaignResult",
     "CampaignRunner",
     "EvaluatorResolver",
@@ -120,6 +121,7 @@ __all__ = [
     "spec_sampling",
     "sweeps_identities",
     "unjudged_attempt_ids",
+    "unsent_fields",
 ]
 
 _BLOCKED = "blocked_by_policy"
@@ -277,6 +279,7 @@ class CampaignRunner:
         spend_sink: Callable[[Spend], None] | None = None,
         sampling_defaults: Sampling | None = None,
         sent_sampling: Callable[[Sampling], Sampling] | None = None,
+        sampling_asked: Sampling | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -342,6 +345,9 @@ class CampaignRunner:
         # adapter never sends a seed, nor a top_p beside a temperature): applied before the
         # attempt is recorded, so the record is the request that went out (u12 A-66).
         self._sent_sampling = sent_sampling
+        # The target file's block as written, for the record of what was asked for and did not
+        # go out: `sampling_defaults` has already lost what the adapter never sends (A-68).
+        self._sampling_asked = sampling_asked
 
     async def run(
         self,
@@ -789,6 +795,7 @@ class CampaignRunner:
                     attempt = (
                         _tagged_seeded(result.attempt, seeded_tools) if seeded else result.attempt
                     )
+                    attempt = self._tagged_unsent(spec, attempt)
                     verdict: Verdict | None = None
                     try:
                         verdict = await self._evaluate(
@@ -937,6 +944,28 @@ class CampaignRunner:
 
         sampling = spec_sampling(spec, self._sampling_defaults)
         return self._sent_sampling(sampling) if self._sent_sampling is not None else sampling
+
+    def _tagged_unsent(self, spec: AttackSpec, attempt: Attempt) -> Attempt:
+        """The attempt with :data:`SAMPLING_NOT_SENT` on its request, when a field did not go out.
+
+        The fields the spec and the target file's ``sampling_defaults``, as written, asked for
+        that did not go out (Anthropic's seed, a top_p beside a temperature, the temperature and
+        the top_p of a model that takes none, a block seed without ``capabilities.seed``, u12
+        A-68): the recorded sampling lacks them, and this says so in words, so a reader of the
+        evidence does not take a missing temperature for one nobody asked for.
+        """
+
+        written = (
+            self._sampling_asked if self._sampling_asked is not None else self._sampling_defaults
+        )
+        asked = spec_sampling(spec, written)
+        dropped = unsent_fields(asked, self._sampling(spec))
+        if not dropped:
+            return attempt
+        metadata: JsonDict = {**(attempt.request.metadata or {}), SAMPLING_NOT_SENT: dropped}
+        return attempt.model_copy(
+            update={"request": attempt.request.model_copy(update={"metadata": metadata})}
+        )
 
     def _param_accepted(self, mutation: str) -> bool:
         """True unless ``mutation`` carries a parameter its mutator declares it does not take.
@@ -1463,6 +1492,22 @@ def _carrier_never_reached(spec: AttackSpec, attempt: Attempt, response: ModelRe
         if message.get("role") == "tool"
     }
     return bool(carriers) and not carriers & answered
+
+
+#: Request metadata key listing the sampling fields asked for that did not go out (u12 A-68).
+SAMPLING_NOT_SENT: Final = "sampling_not_sent"
+
+
+def unsent_fields(asked: Sampling | None, sent: Sampling | None) -> list[str]:
+    """The fields ``asked`` sets that ``sent`` does not: what the adapter's rule dropped."""
+
+    if asked is None:
+        return []
+    return [
+        name
+        for name in type(asked).model_fields
+        if getattr(asked, name) is not None and (sent is None or getattr(sent, name) is None)
+    ]
 
 
 #: What a spec that declares no ``sampling`` is sent with, once the target file's

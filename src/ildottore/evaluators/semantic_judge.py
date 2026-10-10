@@ -38,7 +38,7 @@ import secrets
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ildottore.adapters.base import AdapterError
+from ildottore.adapters.base import AdapterError, SamplingRefused
 from ildottore.evaluators.base import BaseEvaluator
 from ildottore.shared.enums import EvaluatorType, InconclusiveReason, VerdictStatus
 from ildottore.shared.models import EvalContext, ModelRequest, Sampling, Verdict
@@ -151,6 +151,13 @@ class SemanticJudgeEvaluator(BaseEvaluator):
             )
             try:
                 response = await self._judge.send(request)
+            except SamplingRefused:
+                # A judge whose model refuses the request's sampling refuses every request the
+                # same way: read as an outage, it made every judged spec inconclusive and the run
+                # exited 0 without a word about the fix (29 refused judge requests in the
+                # pre-merge audit of A-68). It stops the run, naming `sampling: false`, as the
+                # target's own refusal does (u12 A-68).
+                raise
             except AdapterError as exc:
                 # Env/product adapter failure - inconclusive, not a fabricated verdict, and
                 # with a REASON. Without one the runner drops it like a judge that merely

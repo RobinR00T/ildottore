@@ -27,11 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import re
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import httpx
 
@@ -60,9 +61,11 @@ __all__ = [
     "ResponseTooLarge",
     "ResponseUndecodable",
     "RetryConfig",
+    "SamplingRefused",
     "map_logprobs",
     "read_capped",
     "redact_ids",
+    "sampling_params_named",
 ]
 
 # HTTP statuses that mean "try again later" (transient / env, not a defect).
@@ -166,6 +169,60 @@ class AdapterStatusError(AdapterProductError):
         ``copy.copy`` and ``pickle.loads`` raised ``TypeError`` on the keyword it lacked."""
 
         return (functools.partial(type(self), status_code=self.status_code), self.args)
+
+
+class SamplingRefused(AdapterProductError):
+    """A 400 whose error names, as a parameter, a sampling field the request sent (u12 A-68).
+
+    Not retried, as no 4xx is: the same request is refused the same way. It is a product error,
+    so the campaign stops at the first one (the ``--judge`` model's too: the evaluator re-raises
+    it), now in words that name the fix: a model that takes no ``temperature`` or ``top_p``
+    (Anthropic's API reference lists Opus 4.7 and later, Sonnet 5, and the Fable and Mythos 5
+    families) needs ``sampling: false`` under the target file's ``capabilities``. Before, the
+    error said only ``non-retryable HTTP 400``. The target's own error text is not quoted, only
+    which of the parameters it names (:func:`sampling_params_named`).
+    """
+
+
+#: The request fields a model can refuse as sampling, as an error body names them.
+_SAMPLING_PARAMS: tuple[str, ...] = ("temperature", "top_p", "top_k")
+
+#: A parameter name as an error names a parameter, not as a word of a quoted prompt: a token
+#: between backticks or quotes, or the first word of the message.
+_QUOTED = r"[`'\"]{name}[`'\"]"
+_LEADING = r"^\s*{name}(?![\w.])"
+
+
+def sampling_params_named(raw: bytes) -> list[str]:
+    """The sampling parameters a 400's JSON error names as parameters (u12 A-68).
+
+    Named means: ``error.param`` is the name (its last dotted part, so ``body.temperature``
+    counts), or ``error.message`` holds it as a quoted token (`` `temperature` ``,
+    ``'top_p'``, ``"top_k"``) or starts with it (``temperature is not supported``, ``top_k:
+    unexpected parameter``), case-insensitively. A word of a quoted prompt (``Flagged: 'the
+    temperature of the room'``) or part of a longer identifier (``my_temperature_override``)
+    is not. The caller fires only on a name the request actually sent.
+    """
+
+    try:
+        payload = bounded_loads(raw)
+    except ValueError:
+        return []
+    error = payload.get("error") if isinstance(payload, Mapping) else None
+    if not isinstance(error, Mapping):
+        return []
+    param = error.get("param")
+    message = error.get("message")
+    named: list[str] = []
+    for name in _SAMPLING_PARAMS:
+        by_param = isinstance(param, str) and param.strip().lower().rsplit(".", 1)[-1] == name
+        by_message = isinstance(message, str) and any(
+            re.search(pattern.format(name=name), message, re.IGNORECASE)
+            for pattern in (_QUOTED, _LEADING)
+        )
+        if by_param or by_message:
+            named.append(name)
+    return named
 
 
 #: The ``Content-Encoding`` values :func:`read_capped` decodes itself, with the ``wbits`` zlib
@@ -552,7 +609,7 @@ class BaseAdapter(ABC):
                 await self._maybe_backoff(attempt, attempts)
                 continue
 
-            return self._handle_final_response(response, raw)
+            return self._handle_final_response(response, raw, body=body)
 
         raise AdapterEnvError(
             f"{self.id}: exhausted {attempts} attempt(s) to {self._request_path}: "
@@ -577,7 +634,13 @@ class BaseAdapter(ABC):
 
         return await read_capped(response, f"{self.id}: response from {self._request_path}")
 
-    def _handle_final_response(self, response: httpx.Response, raw: bytes) -> ModelResponse:
+    #: True for an adapter that puts sampling on the wire (OpenAI, Anthropic), whose 400 naming
+    #: a sampling parameter it sent is a :class:`SamplingRefused` (u12 A-68).
+    sends_sampling: ClassVar[bool] = False
+
+    def _handle_final_response(
+        self, response: httpx.Response, raw: bytes, *, body: Mapping[str, Any] | None = None
+    ) -> ModelResponse:
         """Classify a non-retryable response: 2xx → parse, else product defect."""
 
         if response.is_success:
@@ -608,6 +671,20 @@ class BaseAdapter(ABC):
 
         # A non-retryable 4xx (auth, bad request) is a product/config defect -
         # not something a retry will fix, and not to be masked as a flake.
+        # Only a parameter the request sent: an error naming top_k, which no adapter sends, or a
+        # moderation 400 quoting "the temperature of the room" is not this (pre-merge audit).
+        sent = [name for name in _SAMPLING_PARAMS if body is not None and name in body]
+        named = sampling_params_named(raw) if response.status_code == 400 else []
+        refused = [name for name in named if name in sent]
+        if self.sends_sampling and refused:
+            raise SamplingRefused(
+                f"{self.id}: non-retryable HTTP 400 from {self._request_path}: the target "
+                f"refused the request's {' and '.join(refused)}. If the model takes no "
+                "temperature or top_p, set `sampling: false` under capabilities in the target "
+                f"file of {self.id}: the scanner then sends neither, and its replies are not "
+                "temperature-0 deterministic. A value it refuses comes from the spec, the "
+                "target file's sampling_defaults or the judge"
+            )
         raise AdapterStatusError(
             f"{self.id}: non-retryable HTTP {response.status_code} from {self._request_path}",
             status_code=response.status_code,

@@ -572,8 +572,8 @@ def test_the_dry_run_says_what_the_block_fills_and_where_it_is_not_sent(
     unsent = CliRunner().invoke(app, _run(tmp_path, "--dry-run"))
     assert unsent.exit_code == 0, unsent.output
     assert (
-        "sampling: stub's sampling_defaults is not sent (nothing in it goes out through provider "
-        "rest)" in unsent.output
+        "sampling: stub's sampling_defaults is not sent (provider rest carries no sampling "
+        "field)" in unsent.output
     ), unsent.output
 
 
@@ -701,8 +701,9 @@ def test_an_edited_judge_file_is_named_as_such(
     seen.clear()
     resumed = CliRunner().invoke(app, _run(tmp_path, "--resume", run_id, *judge))
     assert resumed.exit_code == 3, resumed.output
-    assert "a different --judge file (its endpoint, model or sampling_defaults differ)" in " ".join(
-        resumed.output.split()
+    assert (
+        "offers: a different --judge file, whose endpoint, model, capabilities or "
+        "sampling_defaults differ." in " ".join(resumed.output.split())
     ), resumed.output
     assert seen == []
 

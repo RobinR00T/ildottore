@@ -36,7 +36,7 @@ import unicodedata
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -378,6 +378,8 @@ class TargetPlan:
     sampling_defaults: Sampling | None = None
     # The `sampling:` lines of the dry run: what the block fills and what does not go out.
     sampling_notes: list[str] = field(default_factory=list)
+    # Why a live target is sent no temperature or top_p (u12 A-68); None when it is, or offline.
+    no_sampling: str | None = None
 
 
 def _effective_mutators(spec: AttackSpec) -> list[str]:
@@ -705,14 +707,46 @@ def resolve_target_plans(
                 identities=identities,
                 sampling_defaults=sampling_defaults,
                 sampling_notes=notes,
+                no_sampling=None if loaded.uses_mock else no_sampling_note(target),
             )
         )
     return plans
 
 
 #: Why a field of a target file's ``sampling_defaults`` does not go out (OD-39, u12 A-66).
-_NO_SEED = {"anthropic": "the Messages API has none"}
 _ANTHROPIC_TOP_P = "anthropic takes no top_p beside a temperature, and every request carries one"
+_SAMPLING_PROVIDERS = ("openai", "anthropic")
+
+
+def _unsent_reason(target: Target, name: str, *, takes: bool) -> str | None:
+    """Why ``name`` of ``target``'s block does not go out to it, or ``None`` when it may."""
+
+    provider = (target.provider or "").strip().lower()
+    if provider not in _SAMPLING_PROVIDERS:
+        return f"provider {provider or 'rest'} carries no sampling field"
+    if name in ("temperature", "top_p") and not takes:
+        return "the target takes no temperature or top_p"
+    if name == "seed" and provider == "anthropic":
+        return "the Messages API has none"
+    if name == "seed" and not target.capabilities.seed:
+        return "capabilities.seed is not true"
+    if name == "top_p" and provider == "anthropic":
+        return _ANTHROPIC_TOP_P
+    return None
+
+
+def no_sampling_note(target: Target) -> str | None:
+    """The line that says ``target`` is sent no temperature or top_p, and what that costs (A-68)."""
+
+    if (target.provider or "").strip().lower() not in _SAMPLING_PROVIDERS:
+        return None
+    takes, reason = wiring.takes_sampling(target)
+    if takes:
+        return None
+    return (
+        f"{target.id} is sent no temperature or top_p ({reason}): it samples at its own default, "
+        "so its replies are not temperature-0 deterministic"
+    )
 
 
 def sampling_notes(
@@ -728,13 +762,18 @@ def sampling_notes(
     Counted over ``specs`` through the adapter's own rule (:func:`wiring.sent_sampling_for`), so
     a field the spec sets itself, or one the adapter drops, is not counted as filled. On an
     Anthropic target the ``top_p`` the specs set themselves is said too: it is not sent beside
-    their temperature (Claude 4 models refuse the pair).
+    their temperature (Claude 4 models refuse the pair). A target that takes no sampling at all
+    (u12 A-68) is said first.
     """
 
     notes: list[str] = []
     block = target.sampling_defaults
     rule = wiring.sent_sampling_for(target) if live else None
+    takes = wiring.takes_sampling(target)[0]
     total = len(specs)
+    unsampled = no_sampling_note(target) if live else None
+    if unsampled is not None:
+        notes.append(unsampled)
     if block is not None and not live:
         notes.append(f"{target.id}'s sampling_defaults is not sent (an offline mock sends nothing)")
     elif block is not None and not applied:
@@ -742,41 +781,34 @@ def sampling_notes(
             f"{target.id}'s sampling_defaults is not sent (a resume of a run started before it "
             "was applied)"
         )
-    elif block is not None and fallback is None:
-        provider = (target.provider or "").strip().lower() or "rest"
-        notes.append(
-            f"{target.id}'s sampling_defaults is not sent (nothing in it goes out through "
-            f"provider {provider})"
-        )
-    elif block is not None and fallback is not None:
-        kept = fallback.model_dump(exclude_none=True)
-        unsent: list[str] = []
+    elif block is not None:
+        unsent: list[tuple[str, object, str]] = []
         fills: list[str] = []
-        no_seed = _NO_SEED.get(
-            (target.provider or "").strip().lower(), "capabilities.seed is not true"
-        )
         for name, value in block.model_dump(exclude_none=True).items():
-            if name not in kept:  # only the seed: the rest of a live block is the provider's
-                unsent.append(f"{name} {value} ({no_seed})")
-            elif name == "top_p" and rule is not None:
-                unsent.append(f"{name} {value} ({_ANTHROPIC_TOP_P})")
-            else:
-                filled = 0
-                for spec in specs:
-                    own = getattr(spec.sampling, name) if spec.sampling is not None else None
-                    sent = spec_sampling(spec, fallback)
-                    sent = rule(sent) if rule is not None else sent
-                    if own is None and getattr(sent, name) == value:
-                        filled += 1
-                fills.append(f"{name} {value} on {filled} of {total}")
+            reason = _unsent_reason(target, name, takes=takes)
+            if reason is not None:
+                unsent.append((name, value, reason))
+                continue
+            filled = 0
+            for spec in specs:
+                own = getattr(spec.sampling, name) if spec.sampling is not None else None
+                sent = spec_sampling(spec, fallback)
+                sent = rule(sent) if rule is not None else sent
+                if own is None and getattr(sent, name) == value:
+                    filled += 1
+            fills.append(f"{name} {value} on {filled} of {total}")
         if fills:
             notes.append(
                 f"{target.id}'s sampling_defaults fills {', '.join(fills)} specs (a spec's own "
                 "value wins)"
             )
-        if unsent:
-            notes.append(f"{target.id}'s sampling_defaults sends no {', no '.join(unsent)}")
-    if rule is not None:
+        reasons = {reason for _, _, reason in unsent}
+        if unsent and not fills and len(reasons) == 1:
+            notes.append(f"{target.id}'s sampling_defaults is not sent ({reasons.pop()})")
+        elif unsent:
+            items = ", no ".join(f"{name} {value} ({reason})" for name, value, reason in unsent)
+            notes.append(f"{target.id}'s sampling_defaults sends no {items}")
+    if rule is not None and takes and (target.provider or "").strip().lower() == "anthropic":
         own_top_p = sum(1 for s in specs if s.sampling is not None and s.sampling.top_p is not None)
         if own_top_p:
             notes.append(
@@ -791,25 +823,30 @@ def judge_sampling_notes(judge: Target, *, applied: bool) -> list[str]:
 
     The judge sets its temperature (0, then 0.5) and ``top_p`` 1.0, so its own file's block
     fills only ``max_tokens`` and ``seed``; an Anthropic judge sends no ``top_p`` beside its
-    temperature.
+    temperature, and a judge that takes no sampling (u12 A-68) neither.
     """
 
     notes: list[str] = []
-    rule = wiring.sent_sampling_for(judge)
+    takes = wiring.takes_sampling(judge)[0]
+    unsampled = no_sampling_note(judge)
+    if unsampled is not None:
+        notes.append(unsampled + "; its two passes are then two samples at that default")
     if judge.sampling_defaults is not None:
-        kept = wiring.sampling_fallback(judge)
+        written = judge.sampling_defaults.model_dump(exclude_none=True)
         added = {
             name: value
-            for name, value in (kept.model_dump(exclude_none=True) if kept else {}).items()
+            for name, value in written.items()
             if name not in ("temperature", "top_p")
+            and _unsent_reason(judge, name, takes=takes) is None
         }
         if not applied:
             notes.append(
                 f"{judge.id}'s sampling_defaults is not sent (a resume of a run started before "
                 "it was applied)"
             )
-        elif kept is None:
-            notes.append(f"{judge.id}'s sampling_defaults is not sent (nothing in it goes out)")
+        elif (judge.provider or "").strip().lower() not in _SAMPLING_PROVIDERS:
+            reason = _unsent_reason(judge, "max_tokens", takes=takes)
+            notes.append(f"{judge.id}'s sampling_defaults is not sent ({reason})")
         elif added:
             filled = ", ".join(f"{name} {value}" for name, value in added.items())
             notes.append(
@@ -821,13 +858,12 @@ def judge_sampling_notes(judge: Target, *, applied: bool) -> list[str]:
                 f"{judge.id}'s sampling_defaults fills nothing: the judge sets its own temperature "
                 "and top_p"
             )
-        seed = judge.sampling_defaults.seed
-        if applied and kept is not None and seed is not None and kept.seed is None:
-            reason = _NO_SEED.get(
-                (judge.provider or "").strip().lower(), "capabilities.seed is not true"
-            )
+        seed = written.get("seed")
+        reason = _unsent_reason(judge, "seed", takes=takes)
+        provider_sends = (judge.provider or "").strip().lower() in _SAMPLING_PROVIDERS
+        if applied and provider_sends and seed is not None and reason is not None:
             notes.append(f"{judge.id}'s sampling_defaults sends no seed {seed} ({reason})")
-    if rule is not None:
+    if (judge.provider or "").strip().lower() == "anthropic" and takes:
         notes.append(
             f"{judge.id} gets no top_p (the judge's 1.0): anthropic takes no top_p beside a "
             "temperature"
@@ -1211,6 +1247,8 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
         print(f"    provider:  {plan.target.provider or 'mock/offline'}")
         print(f"    model:     {plan.target.model or 'unknown'}")
         print(f"    declares:  {', '.join(caps) if caps else 'no optional capabilities'}")
+        if plan.no_sampling is not None:
+            print(f"    sampling:  {visible_controls(plan.no_sampling)}")
         print(
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "
@@ -1579,6 +1617,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     prior_spend: Spend | None = None
     resume_from: TestRun | None = None
     provisional: list[TargetPlan] | None = None
+    # The judge as it is sent to: the file, or a resume's continuation of how it started (A-68).
+    judge_runtime = judge_target
     # Whether the target files' `sampling_defaults` go out (OD-39, u12 A-66): always for a fresh
     # run; a resume continues as its run started (read in the resume block below).
     apply_sampling_defaults = True
@@ -1637,6 +1677,24 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 "a fresh run sends them",
                 file=sys.stderr,
             )
+        # Sent a temperature when it started, or not (u12 A-68). With attempts kept, the resume
+        # continues as it started, so one campaign is not half pinned and half unpinned; with
+        # none kept nothing would mix, and it is sent as this version decides. Either way said.
+        kept, _ = resume_progress(resume_from)
+        stored_target, stored_judge = resume_mod.stored_takes_sampling(run_db, opts.resume)
+        real = routes[0][2][1]
+        if real is not None:
+            started = stored_target if stored_target is not None else True
+            continued = _continued_takes(opts.resume, real.id, started, real, kept=kept)
+            if continued is not None:
+                routes = [(routes[0][0], routes[0][1], (routes[0][2][0], continued))]
+                loaded_targets = [replace(loaded_targets[0], target=continued)]
+        if judge_target is not None:
+            started = stored_judge if stored_judge is not None else True
+            label = f"the --judge model {judge_target.id}"
+            continued = _continued_takes(opts.resume, label, started, judge_target, kept=kept)
+            if continued is not None:
+                judge_runtime = continued
         inherited = resume_mod.stored_runs(run_db, opts.resume)
         if not opts.runs_explicit and inherited is not None and inherited != opts.runs:
             # stderr and never suppressed: this changes the denominator of the reproducibility
@@ -1792,6 +1850,17 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         no_judge = _no_judge_warning(preview, routes, judge_target)
     if no_judge:
         printer.error(no_judge)
+    if not sends_nothing:
+        # Before anything is sent and never silenced by -q: it changes what the numbers mean,
+        # the reproducibility over --runs and a -sV fingerprint included (u12 A-68). A dry run
+        # says it on its own `sampling:` line.
+        unsampled = [no_sampling_note(real) for _, _, (_, real) in routes if real is not None]
+        if judge_runtime is not None:
+            judged = no_sampling_note(judge_runtime)
+            unsampled.append(f"the --judge model {judged}" if judged else None)
+        for note in unsampled:
+            if note is not None:
+                print(f"note: {note}", file=sys.stderr)
 
     if not sends_nothing and opts.resume is not None and opts.fingerprint_first:
         # A resumed run has its row: with -sV the scope is recorded before the probe pass, its
@@ -1901,6 +1970,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         # mock, and the caveat that this is an offline fixture lived in six documents and not
         # in the one line anybody actually reads. An audit read it off the terminal as a result.
         offline = {target.id: scenario for _, target, (scenario, _) in routes if scenario}
+        unsampled_ids = {
+            target.id
+            for _, target, (_, real) in routes
+            if real is not None and no_sampling_note(real) is not None
+        }
         for target_id, fingerprint in sorted(fingerprints.items()):
             family = fingerprint.family
             version = fingerprint.version
@@ -1923,6 +1997,11 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 + (
                     f" [{failed} of {fingerprint_probe_count()} probes got no usable reply]"
                     if failed
+                    else ""
+                )
+                + (
+                    " [probes sent with no temperature: not temperature-0 repeatable]"
+                    if target_id in unsampled_ids
                     else ""
                 )
             )
@@ -2009,8 +2088,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 opts.categories or opts.spec_globs or opts.exclude_globs or opts.top_tests
             ),
             judge_notes=(
-                judge_sampling_notes(judge_target, applied=apply_sampling_defaults)
-                if judge_target is not None
+                judge_sampling_notes(judge_runtime, applied=apply_sampling_defaults)
+                if judge_runtime is not None
                 else None
             ),
         )
@@ -2048,6 +2127,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             judge=judge_target,
             adaptive=adaptive,
             sampling_defaults_applied=apply_sampling_defaults,
+            takes_sampling=(
+                wiring.takes_sampling(real_target)[0] if real_target is not None else None
+            ),
+            judge_takes_sampling=(
+                wiring.takes_sampling(judge_runtime)[0] if judge_runtime is not None else None
+            ),
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         result = _run_one_target(
@@ -2062,7 +2147,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             n=opts.runs,
             mock_scenario=mock_scenario,
             real_target=real_target,
-            judge_target=judge_target,
+            judge_target=judge_runtime,
             budgets=plan.budgets,
             fingerprint=fingerprints.get(target.id),
             adaptive=adaptive,
@@ -2249,6 +2334,41 @@ def _route_for(opts: RunOptions, loaded: wiring.TargetFile) -> tuple[str | None,
         scenario = "hardened" if opts.hardened else loaded.mock_scenario()
         return scenario, None
     return None, loaded.target
+
+
+def _continued_takes(
+    run_id: str, who: str, started: bool, target: Target, *, kept: int
+) -> Target | None:
+    """How a resume sends ``target`` sampling when that differs from how its run started (A-68).
+
+    ``started`` is what the run recorded (a run started before the record sent sampling, as every
+    version did before A-68). The same as this version decides: ``None``, nothing to say. Else,
+    with attempts kept, the target as it started (:func:`wiring.with_takes_sampling`), so one
+    campaign is not half pinned and half unpinned; with none kept, ``None``: nothing would mix,
+    and it is sent as this version decides. Both are said on stderr, never silenced by ``-q``.
+    """
+
+    now = wiring.takes_sampling(target)[0]
+    if started == now:
+        return None
+    # "A temperature": what taking sampling pins. A top_p goes out only where a spec or a block
+    # sets one, and never beside a temperature to Anthropic (A-66), so it is not named here.
+    as_started = "a temperature" if started else "no temperature or top_p"
+    as_now = "a temperature" if now else "no temperature or top_p"
+    if kept:
+        print(
+            f"resume: {run_id} sent {who} {as_started} when it started and keeps {kept} "
+            f"attempt(s) sent so, so it continues as it started; this version would send "
+            f"{as_now} (a fresh run does)",
+            file=sys.stderr,
+        )
+        return wiring.with_takes_sampling(target, started)
+    print(
+        f"resume: {run_id} sent {who} {as_started} when it started and keeps no attempt, so it "
+        f"is sent {as_now}, as this version decides",
+        file=sys.stderr,
+    )
+    return None
 
 
 def _unsent_sampling_defaults(
@@ -2506,6 +2626,8 @@ def _persist_run_integrity(
     judge: Target | None = None,
     adaptive: bool = False,
     sampling_defaults_applied: bool = True,
+    takes_sampling: bool | None = None,
+    judge_takes_sampling: bool | None = None,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -2536,6 +2658,10 @@ def _persist_run_integrity(
                 "adaptive": adaptive,
                 "runs": runs,
                 "sampling_defaults_applied": sampling_defaults_applied,
+                # Whether the live target and the judge are sent a temperature (u12 A-68), so a
+                # resume continues as the run started; None for an offline route or no judge.
+                "takes_sampling": takes_sampling,
+                "judge_takes_sampling": judge_takes_sampling,
             },
         )
 
