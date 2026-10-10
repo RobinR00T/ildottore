@@ -113,7 +113,7 @@ def render_replay(result: ReplayResult) -> str:
     if blocked:
         lines.append(
             f"  {blocked} of {result.n} attempt(s) the provider's input filter refused before the "
-            "model saw them (blocked_by_provider_filter): counted in N, never exploited, and "
+            "model saw them (blocked_by_provider_filter): counted in N and never a success; "
             "neither a refusal by the model nor an exploit"
         )
     # A model that takes no sampling was sent no temperature (u12 A-68): what each attempt
