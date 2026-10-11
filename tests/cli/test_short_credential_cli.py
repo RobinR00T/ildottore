@@ -151,3 +151,27 @@ def test_credentials_of_8_characters_or_more_run_as_before(
     result = CliRunner().invoke(app, ["run", *args, "--spec", "PI-DIRECT-001", "--runs", "1"])
     assert result.exit_code == 0, result.output
     assert seen and all(header == f"Bearer {LONG}" for header in seen)
+
+
+@pytest.mark.parametrize("extra", [[], ["--dry-run"]])
+def test_an_offline_mock_is_sent_no_key_so_its_length_is_not_checked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: list[str]
+) -> None:
+    monkeypatch.setenv("SHORT", SHORT)
+    scope = tmp_path / "scope.yaml"
+    scope.write_text(
+        'version: "1.0"\ntargets:\n  - id: mock-target\n    base_url: "mock://mock-target"\n'
+        '    endpoints:\n      - host: "mock-target"\n        path_prefixes: ["/"]\n'
+        '    identities:\n      - name: default\n        auth_ref: "env://SHORT"\n'
+    )
+    target = tmp_path / "target.yaml"
+    target.write_text(
+        'id: mock-target\ntype: chatbot\nmock_scenario: hardened\nauth_ref: "env://SHORT"\n'
+    )
+    store = ["--evidence-root", str(tmp_path / "ev"), "--run-db", str(tmp_path / "runs.sqlite")]
+    args = ["run", "-t", str(target), "--scope", str(scope), "--spec-path", str(REPO / "specs")]
+    result = CliRunner().invoke(
+        app, [*args, *store, "--spec", "PI-DIRECT-001", "--runs", "1", *extra]
+    )
+    assert "shorter than 8" not in result.output, result.output
+    assert result.exit_code in (0, 1), result.output

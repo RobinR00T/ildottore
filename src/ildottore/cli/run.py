@@ -1665,8 +1665,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # the judge got this check, so `--dry-run` printed a green plan for a target whose
     # auth_ref the scope refuses and the real run then failed at exit 3: the command whose
     # job is answering "is my wiring right?" gave the wrong answer about the credential.
-    for _, candidate in to_authorize:
-        wiring.check_target_credential(scope, candidate)
+    for candidate_path, candidate in to_authorize:
+        # An offline mock is sent nothing, so its credential's length is not checked (u04 A-78).
+        sends = not wiring.target_uses_mock(candidate_path)
+        wiring.check_target_credential(scope, candidate, sends=sends)
 
     # A spec file that fails to load is refused, not dropped. `build_registry` keeps only what
     # parsed, so a one-letter typo removed a spec from the battery and the run still printed

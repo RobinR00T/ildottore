@@ -879,7 +879,7 @@ def _authorized_api_key(scope: Scope, target: Target) -> str | None:
     return resolve_auth_ref(target.auth_ref)
 
 
-def check_target_credential(scope: Scope, target: Target) -> None:
+def check_target_credential(scope: Scope, target: Target, *, sends: bool = True) -> None:
     """Assert the scope authorized ``target``'s ``auth_ref`` (raises ``ValueError`` if not).
 
     The same check :func:`real_adapter_factory` performs, exposed so a command can run it as
@@ -890,8 +890,9 @@ def check_target_credential(scope: Scope, target: Target) -> None:
 
     api_key = _authorized_api_key(scope, target)
     # A credential the redactor could not mask by value is refused here too, so `--dry-run`, `-sn`
-    # and `--estimate` answer what the run would (u04 A-78); a stdio MCP server is sent no key.
-    if (target.transport or "").strip().lower() != "stdio":
+    # and `--estimate` answer what the run would (u04 A-78); a stdio MCP server and an offline
+    # mock (``sends`` false) are sent no key.
+    if sends and (target.transport or "").strip().lower() != "stdio":
         try:
             refuse_short_credential(target.id, api_key, target.endpoint)
         except CredentialTooShort as exc:
