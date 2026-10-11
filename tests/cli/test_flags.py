@@ -56,6 +56,15 @@ def test_run_help_exposes_nmap_style_flags() -> None:
         assert flag in out
 
 
+def test_include_needs_review_names_a_fail_only_the_judge_reported() -> None:
+    """A judge-only fail is never confirmed (OD-19), and it is one of the fails the flag gates:
+    the help listed every other kind of unconfirmed fail (audit of the scoring, 2026-10-11,
+    LOW 3)."""
+
+    out = " ".join(_help_text(["run", "--help"]).replace("│", " ").split())
+    assert "or reported by the judge alone" in out
+
+
 def test_estimate_plan_counts_requests_and_tokens() -> None:
     """estimate_plan (docs/12 P2) counts requests = specs x runs x mutations x turns."""
     from ildottore.cli.run import estimate_plan

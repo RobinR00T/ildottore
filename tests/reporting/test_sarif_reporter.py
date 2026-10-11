@@ -97,3 +97,32 @@ def test_deterministic() -> None:
     run = make_run(findings=[make_finding()])
     reporter = SarifReporter(specs={"PI-DEMO-001": make_spec()})
     assert reporter.render(run, list(run.findings)) == reporter.render(run, list(run.findings))
+
+
+@pytest.mark.parametrize(
+    ("band", "confirmed", "level"),
+    [
+        (ScanBand.CRITICAL, True, "error"),
+        # A fail that needs review (only the judge reported it, say, OD-19) does not gate
+        # `--fail-on` unless `--include-needs-review`, so it is no `error` in code scanning.
+        (ScanBand.CRITICAL, False, "warning"),
+        (ScanBand.HIGH, False, "warning"),
+        (ScanBand.MEDIUM, False, "warning"),
+        # Capped at warning, never raised to it.
+        (ScanBand.LOW, False, "note"),
+        (ScanBand.INFO, False, "note"),
+    ],
+)
+def test_a_fail_that_needs_review_is_at_most_a_warning(
+    band: ScanBand, confirmed: bool, level: str
+) -> None:
+    """Audit of the scoring, 2026-10-11, LOW 4: a judge-only critical fail was an ``error``,
+    which GitHub code scanning fails a check on, while ``dottore`` exited 0 for it."""
+
+    run = make_run(findings=[make_finding(band=band, confirmed=confirmed)])
+    doc = _doc(SarifReporter(specs={"PI-DEMO-001": make_spec()}), run)
+    jsonschema.validate(doc, load_sarif_schema())
+    result = doc["runs"][0]["results"][0]
+    assert result["level"] == level
+    assert result["properties"]["state"] == ("confirmed" if confirmed else "needs_review")
+    assert result["properties"]["band"] == band.value

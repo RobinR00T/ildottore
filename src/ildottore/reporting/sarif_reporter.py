@@ -4,8 +4,9 @@ Emits a SARIF 2.1.0 log - the CI / security-tool interchange format. One ``run``
 one ``reportingDescriptor`` (rule) per distinct spec, tagged with its OWASP LLM / MITRE ATLAS
 / NIST framework ids; one ``result`` per finding. ``ruleId`` is the spec id; ``level`` is
 mapped from the risk **band** (critical/high → ``error``, medium → ``warning``,
-low/info → ``note``). Result ``properties`` carry ``{band, risk_score, reproducibility,
-confidence, state}`` so downstream tools keep the two-axis model (``docs/05``).
+low/info → ``note``), and a fail that needs review is at most a ``warning``, since it does not
+gate ``--fail-on`` on its own. Result ``properties`` carry ``{band, risk_score,
+reproducibility, confidence, state}`` so downstream tools keep the two-axis model (``docs/05``).
 
 Every generated document validates against the vendored SARIF 2.1.0 JSON Schema
 (``schemas/sarif-2.1.0.schema.json``) - the contract's SARIF-validity gate (§7). Output is
@@ -50,6 +51,10 @@ _BAND_LEVEL: dict[ScanBand, str] = {
     ScanBand.LOW: "note",
     ScanBand.INFO: "note",
 }
+
+
+#: The highest ``level`` of a fail whose state is ``needs_review`` (``docs/05 §3``).
+_NEEDS_REVIEW_LEVEL = "warning"
 
 
 def band_to_level(band: ScanBand) -> str:
@@ -118,6 +123,12 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
     # read as passes, with a level the standard forbids for them (audit 2026-10-03, R7).
     level = band_to_level(risk.band) if kind == "fail" else "none"
     state = finding_state(finding)
+    if state == "needs_review" and level == "error":
+        # A fail that is not confirmed (only the judge reported it, or it was not reproduced on
+        # every attempt of a variant) does not trip `--fail-on` without `--include-needs-review`,
+        # so it is no `error`, which GitHub code scanning fails a check on: at most a `warning`
+        # (audit of the scoring, 2026-10-11, LOW 4).
+        level = _NEEDS_REVIEW_LEVEL
     message = (
         f"{finding.spec_id} against {finding.target_id}: {finding.status.value} "
         f"(band={risk.band.value}, risk={risk.risk:g}, state={state})"
