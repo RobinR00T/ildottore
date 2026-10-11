@@ -240,7 +240,7 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `tests/evaluators/test_operator_not_destructive.py` (30 tests, 29 failing on `main` at
   `e8f9d1f6`; the other checks that a refusal never quotes the value),
   `tests/core/test_operator_declaration_runner.py` (6, all failing there, among them a reply the
-  provider's filter cut, A-70) and `tests/cli/test_operator_declaration_campaign.py` (11, all
+  provider's filter cut, A-70) and `tests/cli/test_operator_declaration_campaign.py` (12, all
   failing there).
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 

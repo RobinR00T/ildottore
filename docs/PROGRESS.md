@@ -59,9 +59,9 @@ The carryover ledger. Every agent session updates this so context survives even 
 - Tests: `tests/evaluators/test_operator_not_destructive.py` (30, 29 fail on `main` at
   `e8f9d1f6`; the one that passes there checks that a refusal never quotes the value),
   `tests/core/test_operator_declaration_runner.py` (6, all fail there, among them a cut reply),
-  `tests/cli/test_operator_declaration_campaign.py` (11, all fail there: every report of one run
+  `tests/cli/test_operator_declaration_campaign.py` (12, all fail there: every report of one run
   through the real CLI and the same run without the declaration, the dry run, `-sn`, the two plan
-  warnings, the worked example, four resume cases). Docs: MANUAL §4.2, §5, §8, §10 and replay,
+  warnings, the worked example, five resume cases, a corrupt record among them). Docs: MANUAL §4.2, §5, §8, §10 and replay,
   FAQ, USAGE, both man pages, `docs/01`, `03`, `04`, `09`, `12`, `16`, ADR-0009,
   `examples/target.app.yaml` (the support agent now declares its hand-off) and Scenario G's real
   output, CHANGELOG. GATES_LINE
