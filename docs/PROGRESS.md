@@ -64,7 +64,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   warnings, the worked example, five resume cases, a corrupt record among them). Docs: MANUAL §4.2, §5, §8, §10 and replay,
   FAQ, USAGE, both man pages, `docs/01`, `03`, `04`, `09`, `12`, `16`, ADR-0009,
   `examples/target.app.yaml` (the support agent now declares its hand-off) and Scenario G's real
-  output, CHANGELOG. GATES_LINE
+  output, CHANGELOG. `make gates` green on `a9564e9d` (with `PYTHONPATH` set to the
+  worktree's `src`): 5312 tests (5264 on `main` at `e8f9d1f6`, 48 new), 97.82% coverage
+  (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean.
 - Left open, for the owner: nothing the decision did not settle. Two readings to confirm: `true`
   in the entry is refused rather than read as "destructive whatever its name" (the decision speaks
   only of declaring a tool not destructive, and making a tool destructive stays the spec's word);
