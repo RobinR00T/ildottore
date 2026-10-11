@@ -149,6 +149,9 @@ findings trip the gate, and only confirmed ones unless you pass `--include-needs
 option (`--fail-on bogus`, `--timeout 0`, two formats writing one file) is refused with exit
 `3` before anything is sent. For regression-only gating, compare against a baseline with
 `dottore diff baseline.json current.json`. See [`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
+In the SARIF you upload to code scanning, a fail that needs review is at most a `warning` (since
+2026-10-11), so code scanning, which by default fails a pull request's check on an `error`, does
+not fail one that `--fail-on` lets through; a confirmed fail keeps its band's level.
 
 ### What is "confirmed" vs "needs-review"?
 
@@ -328,7 +331,12 @@ attempt keeps a redacted excerpt of what came back under `request.metadata.unrea
 the summary says how many (`Unreadable replies: 1 attempt(s) in 1 spec(s) (...)`, never silenced by
 `-q`; `summary.unreadable_reply` in the JSON report, and SARIF, JUnit and HTML). A spec with one and
 no fail is `inconclusive`, so it does not trip `--fail-on`; a pipeline that should stop on one reads
-`summary.unreadable_reply.attempts`.
+`summary.unreadable_reply.attempts`. A resume's re-send replaces it only when the adapter reads it
+(or it is unreadable or cut again): one that ends in a network error says nothing of the reply,
+so the unreadable reply stays the attempt, in the report and in `dottore replay` alike (since
+2026-10-11; before, which copy counted depended on the artifacts' file names). A tool your agent
+called on an earlier turn of a conversation that then got such a reply, or a network error, is
+still read: a forbidden call fails the spec.
 
 A target that answers **every** request that way is a wrong endpoint or provider, and one that
 stops answering as it did mid-run is often an expired session behind a proxy that serves a login

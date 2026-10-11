@@ -5,6 +5,53 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (an audit of the scoring: two false passes, a silent sweep and four lows, 2026-10-11)
+
+- **A resume's re-send is scored as the attempt it replaces, by one rule the report and `dottore
+  replay` share (HIGH 1, u08 A-74).** The runner and the replay each kept the first artifact of an
+  attempt id at a tie, the runner's prior ones in content-hash order, and an environment error, an
+  unreadable reply and a block tie. Measured on `de122e26`: `BIAS-STEREOTYPE-001 --runs 5 --judge`
+  whose first attempt ended in four HTTP 503s, resumed against an HTML page, was a PASS with 0
+  unreadable replies and exit 0 under `--fail-on info --include-needs-review`, while `dottore
+  replay` counted 1; the reverse (unreadable, then a network error on the resume) kept the
+  unreadable reply in the report and the error in the replay. Now `shared.resend` decides for both:
+  answered and judged, then a verdict, then a bare reply; at the same rank an outcome that never
+  lets its spec pass over an environment error or a block, whichever came first; then the later
+  send, by the `send_number` now stamped in `request.metadata` of every stored attempt. The same
+  run is `inconclusive`, `1/5 could not be read`, 1 unreadable reply in the summary and in the
+  replay. A re-send is now always an artifact of its own.
+- **A tool the model already called is scored when a later send fails (HIGH 2, u08 A-69).** Only a
+  provider-filter block kept a conversation's trace; an environment error or an unreadable reply
+  dropped it, so `drop_table` on turn 1 and a timeout on turn 2 passed the spec 4 of 5, exit 0
+  under `--fail-on low --include-needs-review`. The trace so far is kept beside the attempt, the
+  trace evaluators read it first, and a fail is stored as any fail with the error under
+  `request.metadata.conversation_error`: now a fail, exit 2. A trace that fails nothing leaves the
+  attempt as before, and a resume sends it again. Also for the tool rounds of an in-band scene.
+- **The identity sweep names every identity it did not hear from (MEDIUM, u08 A-74).** An identity
+  whose reply could not be read, or whose send failed, was dropped silently, so two identities
+  that compared clean passed `authz_leak` beside it. It is now left out by name, as a reply the
+  provider's filter stopped already was, and `authz_leak` cannot pass beside it (`; the identity
+  sweep left out tenant-a (ResponseMalformed: ...): that reply could not be read as the provider's,
+  and it may be the one that received another identity's data`). A transient failure of one
+  identity's send now keeps such a spec from passing, visibly.
+- **The resume note names each id it sends again once (LOW 1).** An id holding a reply stored
+  without a verdict and its unreadable re-send read `-1 that ended in an environment error will
+  be sent again; 1 that could not be read ...; 1 answered but not evaluated ...`; now `1 that
+  could not be read will be sent again`.
+- **A fail only the judge reported does not skip the `setup_not_reached` check (LOW 2, u08's half
+  of u06 A-73).**
+- **`--include-needs-review`'s help names a fail only the judge reported (LOW 3).**
+- **A SARIF fail that needs review is at most a `warning` (LOW 4, u11 A-73).** A judge-only
+  critical fail was an `error`, which GitHub code scanning fails a check on, while `dottore` exited
+  0. Its band stays in `properties.band`; a confirmed fail keeps its level.
+- **A Bedrock guardrail's replacement is read on its trace only (LOW 5, u08 A-70).** Its text is the
+  operator's configured message, and one that read as compliance failed the `refusal` heuristic, a
+  confirmed fail on the operator's words; now a cut needing review, a forbidden tool call beside it
+  still a fail.
+- Docs: MANUAL §3, §5 (`--resume`, `dottore replay`), §9, §10, §11, §13, FAQ, USAGE,
+  `dottore(1)`, `docs/05` §2 and §3, `examples/ci-github-actions.yml`, contracts u06, u08, u10,
+  u11, u12 and the index. Tests: 44 new (28 failing on `de122e26`), 3 changed expectations.
+
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
 - **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a

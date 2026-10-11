@@ -138,6 +138,15 @@ attempt id, by the verdict's reason or, without a verdict, by the error's mark
 `inconclusive (unreadable_reply)` on their line and a footer line for the count. A resume sends
 such an attempt again (the mark is not the not-retryable one). Checked by
 `tests/cli/test_malformed_reply_campaign.py` and `tests/core/test_unreadable_replies.py`.
+**Amended 2026-10-11 after the audit of the scoring (HIGH 1, u08 A-74):** which artifact of an id
+is the attempt, for `effective_attempts()` and every count above, is the runner's rule, read from
+one place (`shared.resend.one_per_attempt_id`): the replay kept the first artifact at a tie in
+file-name order, the content hash, so it could count another attempt than the report. Every
+attempt artifact carries `request.metadata.send_number` (`1` for an id's first send in the run,
+one more for each re-send), so a re-send is never byte-identical to the try it replaces and is an
+artifact of its own; an artifact stored before the stamp reads as sent before every stamped one, so
+an older run replays and resumes as it did, ties between two of its artifacts going to an outcome
+that never lets its spec pass. Checked by `tests/core/test_resend_is_the_attempt.py`.
 
 **A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The evidence keeps a cut reply as
 it came, and a replay re-derives it.** A reply the provider's filter cut or replaced is stored with

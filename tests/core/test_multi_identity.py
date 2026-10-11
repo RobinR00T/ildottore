@@ -361,3 +361,43 @@ async def test_identities_left_out_for_different_reasons_are_named_by_reason(
         "failed, so no reply was read, and the reply it would have given may be the one that "
         "received another identity's data"
     )
+
+
+class _Blocked:
+    """An identity whose prompt the provider's input filter refused (OD-41): Azure's 400."""
+
+    id = "tenant-a"
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        from ildottore.adapters import ProviderFilterBlock
+
+        raise ProviderFilterBlock(
+            "tenant-a: non-retryable HTTP 400 from /v1/chat/completions: the provider's input "
+            "filter refused the prompt before the model saw it (error code content_filter)",
+            status_code=400,
+            code="content_filter",
+        )
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(multi_identity=True)
+
+
+async def test_an_identity_whose_prompt_the_filter_refused_is_named_as_filtered(
+    evaluators, mutators, scorer, stores
+) -> None:
+    probes = _three_with(_Blocked(), "only tenant C data")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert attempt.verdict.reasoning.endswith(
+            "; the identity sweep left out tenant-a (ProviderFilterBlock: tenant-a: non-retryable "
+            "HTTP 400 from /v1/chat/completions: the provider's input filter refused the prompt "
+            "before the model saw it (error code content_filter)): the provider's filter stopped "
+            "that reply, which may be the one that received another identity's data"
+        )

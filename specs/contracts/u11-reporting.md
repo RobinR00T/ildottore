@@ -56,8 +56,8 @@ the state in each result's `properties.state`.
   else, so the attack text of a `test_only` spec is readable in the JSON report. The HTML report
   shows no prompts.)
 - KEEP: SARIF output is 2.1.0, `level` mapped from band per `docs/05 §3`
-  (critical/high→`error`, medium→`warning`, low/info→`note`); ruleId = spec id; rules carry
-  OWASP/ATLAS/NIST tags.
+  (critical/high→`error`, medium→`warning`, low/info→`note`), a fail whose state is
+  `needs_review` at most `warning` (A-73); ruleId = spec id; rules carry OWASP/ATLAS/NIST tags.
 - KEEP: masking is mandatory and applied centrally before any format writer runs (single choke
   point in `masking.py`), so a new format can't bypass it.
 - DECIDE: whether HTML embeds evidence excerpts inline or links to store refs only (propose:
@@ -170,6 +170,17 @@ kind `open`, state `needs_review`. With none blocked, only the JSON report chang
 and `[]`), so the golden JSON snapshot gains it and the SARIF, JUnit and HTML ones do not move.
 Checked by `tests/cli/test_provider_filter_campaign.py` (every format of one run, the JSON against
 the schema).
+
+**A-73 (u06's clause; this unit's half, added 2026-10-11 after the audit of the scoring, LOW 4) A
+fail that needs review is no `error` in SARIF.** A fail only the judge reported is never confirmed
+(OD-19), and neither is one not reproduced on every attempt of a variant: `--fail-on` gates neither
+without `--include-needs-review`. SARIF gave such a fail its band's level, so a judge-only critical
+fail was an `error`, which GitHub code scanning fails a pull request's check on by default, while
+`dottore` exited 0 for it. A `fail` result whose `properties.state` is `needs_review` is now at most
+`warning` (`error` becomes `warning`; `warning` and `note` stay), its band unchanged in
+`properties.band`; a confirmed fail keeps its band's level, and every other kind keeps `none`.
+The golden SARIF snapshot does not move (its fail is confirmed). Checked by
+`tests/reporting/test_sarif_reporter.py` (6 cases; the critical and high ones fail on `de122e26`).
 
 **A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21; pre-merge audit of `598f0858`,
 HIGH 1) The replies the adapter could not read are counted apart in every format.** Such an attempt

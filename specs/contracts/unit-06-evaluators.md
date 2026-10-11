@@ -280,7 +280,12 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
   (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
   second's 7 fail; with that module alone added, 17 of the 48 fail), the rewritten
-  `tests/evaluators/test_combine.py`.
+  `tests/evaluators/test_combine.py`. **Amended 2026-10-11 after the audit of the scoring:** a
+  fail the judge alone decided does not skip the runner's `setup_not_reached` check, since the
+  judge read a reply to a scene that never reached the model (LOW 2, u08's half); `run --help`
+  names it among the fails `--include-needs-review` gates (LOW 3: the help listed every other
+  kind); and SARIF gives a fail that needs review at most `warning`, not its band's `error`
+  (LOW 4, u11's half), so code scanning does not fail a check `dottore` passes.
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden
