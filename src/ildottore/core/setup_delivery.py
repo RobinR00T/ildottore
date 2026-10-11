@@ -230,10 +230,13 @@ def seeding_gap(spec: AttackSpec, target: Target) -> str | None:
 
     The runner and the plan both ask this, so what the dry run counts as "not seeded" is what
     the run reports; both exempt the offline mock, which answers from the spec, not from a
-    deployment. Three reasons: the spec is not declared; its scene carries the per-run canary
+    deployment. Four reasons: the spec is not declared; its scene carries the per-run canary
     and no ``run_token`` replaces it (the operator seeds before the run, so the canary the
     evaluators look for could never be in the deployment, and ``secret_leakage`` would be
-    blind; pre-commit audit of B); or two of its scene tools map to one deployment name.
+    blind; pre-commit audit of B); two of its scene tools map to one deployment name; or one of
+    them maps to the name of another (``{transfer_to_billing_agent: delete_account}`` on a scene
+    that also has ``delete_account`` judged a real delete as the hand-off, which its scene may
+    have cleared with ``destructive: false``; pre-merge audit of u06 A-71).
     """
 
     if not needs_seeding(spec, target):
@@ -255,6 +258,13 @@ def seeding_gap(spec: AttackSpec, target: Target) -> str | None:
         return (
             f"setup_not_seeded: seeded_setup.tools maps {', '.join(clash)}, all tools of this "
             "spec's scene, to one deployment name, so a call under it could not be told apart"
+        )
+    crossed = _crossed_names(spec, seeded.tools)
+    if crossed:
+        pairs = ", ".join(f"{spec_name} to {deployment}" for spec_name, deployment in crossed)
+        return (
+            f"setup_not_seeded: seeded_setup.tools maps {pairs}, the name of another tool of "
+            "this spec's scene, so a call to that tool would be judged as the one mapped to it"
         )
     return None
 
@@ -389,6 +399,17 @@ def _scene_text(spec: AttackSpec) -> str:
         return ""
     return json.dumps(
         [setup.documents, setup.tools, setup.memory_seed], sort_keys=True, default=str
+    )
+
+
+def _crossed_names(spec: AttackSpec, tools: dict[str, str]) -> list[tuple[str, str]]:
+    """Each scene tool ``seeded_setup.tools`` maps to the name of another of the scene's tools."""
+
+    scene = scene_tool_names(spec)
+    return sorted(
+        (spec_name, deployment)
+        for spec_name, deployment in tools.items()
+        if spec_name in scene and deployment in scene and deployment != spec_name
     )
 
 
