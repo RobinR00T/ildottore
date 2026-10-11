@@ -116,8 +116,12 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   (one switch and no written record, against DL4 and DL5); dropping the spec until then (it would
   lose its lint proof; `blocked_by_policy` already says what holds it back); an opt-in in the
   scope file (the scope authorizes targets, not test categories). Pinned by
-  `tests/battery/test_battery.py` (off under a restrictive pack) and `tests/core/test_policy_gate.py`
-  (never sent under a default scope, sent once the engagement opts in).
+  `tests/policy/test_policy_audit_2026_10_03.py:55` (the shipped spec stays blocked with only its
+  capability enabled, neither DL4 key turned) and `:69` (it runs only when every key is turned).
+  Reversal (to let one flag enable it): a `run` option that sets
+  `SafetyFlags(allow_pii_elicitation=True)` and adds `allow_pii_elicitation` and `layer_b_pii` to
+  the pack `cli/wiring.build_permissive_pack` builds, with DL4 in `docs/11` rewritten to one
+  key.
 - Fixture location convention: inline in the spec vs `tests/fixtures/specs/<id>/`. **Decided
   2026-10-11 under the owner's delegation (best practice), revisable: inline only, as built
   (OD-7, reasoning in u03 §9).** Revisit if a fixture outgrows its spec file (a long multi-turn

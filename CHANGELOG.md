@@ -32,9 +32,10 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
 - **One query per WebSocket connection, by design (OD-35).** `session.one_query_in_flight: false`
   is still refused when the target file loads, and the refusal now says it is by design: "is
   refused by design (OD-35): with several queries on one socket a reply frame is tied to its
-  attempt only by an id the server echoes; leave it true (--concurrency gives each conversation a
-  connection of its own)" (it said "is not built"). One frame misattributed would put one
-  attempt's reply into another's verdict, which nothing downstream can detect. Not taken: a
+  attempt only by an id the server echoes; leave it true (each conversation gets a connection of
+  its own; --concurrency sets how many run at once)" (it said "is not built"). One frame
+  misattributed would put one attempt's reply into another's verdict, which nothing downstream
+  can detect. Not taken: a
   correlation id in `message.send` and a `response.correlation_path` read from every frame.
 - **No WebSocket reconnect in the middle of a conversation, by design (OD-36).** Unchanged
   behaviour, now decided: a later turn whose connection is gone is inconclusive, never a silent
@@ -55,22 +56,23 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   frozen registry, `raw_ids` is already the per-transport place for what a reply carries beyond
   its fields (redacted where it is built and at rest, stored with each attempt, re-read by
   `replay`), and a field shaped for one transport would be reshaped for the second. Measured with
-  the field added on a copy: 1 of 5,082 tests fails (the JSON report's golden snapshot) and every
-  attempt and report written after it carries one more key. `ModelResponse`'s docstring and u00
-  §6 now say what `raw_ids` holds.
+  the field added on a copy: 1 of 5,082 tests fails (the JSON report's golden snapshot), and with
+  the default serializer each new attempt and report would carry one more key, which a
+  `None`-dropping serializer would avoid, so that cost does not decide it. `ModelResponse`'s
+  docstring and u00 §6 now say what `raw_ids` holds.
 - **The scope checksum is integrity only, and proving who approved a scope is out of band (OD-2).**
   Signed off as built: the optional `checksum:` catches an accidental edit, not an editor who
   recomputes it, and built-in signing waits for key management (trusted keys, who signs,
-  revocation), now a stated non-goal in `NON-GOALS.md`. `docs/MANUAL.md` §4.1 gains "Signing a
-  scope (out of band)", run as written: the reviewer's `ssh-keygen -Y sign` on their own machine,
-  then `ssh-keygen -Y verify ... && dottore run` on one private copy against an `allowed_signers`
-  the scope's editors cannot write, and `shasum -a 256` of that copy equal to the report's
+  revocation), now a stated non-goal in `NON-GOALS.md`. `docs/MANUAL.md` §4.1 gains "Signing a scope
+  (out of band)", run as written: the reviewer's `ssh-keygen -Y sign` on their own machine, then
+  `ssh-keygen -Y verify ... && dottore run` on one private copy against an `allowed_signers` the
+  scope's editors cannot write, and `shasum -a 256` of that copy equal to the report's
   `run.scope_sha256` (for LF line ends and no top-level `checksum:` line); one appended line made
-  the verify exit 255 and started no run. The two custody rules a signature depends on (a key
-  only the reviewer holds, trusted keys out of the editors' reach) are stated with it. The FAQ, the threat model (S4), `RESPONSIBLE-USE.md`, `dottore-scope(5)` and the
-  scope loader's docstrings say the same. Not taken: built-in verification of a detached
-  signature behind the existing verifier seam (kept for it), a keyed MAC, a flag requiring the
-  checksum.
+  the verify exit 255 and started no run. The two custody rules a signature depends on (a key only
+  the reviewer holds, trusted keys out of the editors' reach) are stated with it. The FAQ, the
+  threat model (S4), `RESPONSIBLE-USE.md`, `dottore-scope(5)` and the scope loader's docstrings say
+  the same. Not taken: built-in verification of a detached signature behind the existing verifier
+  seam (kept for it), a keyed MAC, a flag requiring the checksum.
 - **`DL-PII-ELICIT-001` stays off by default; its opt-in is two keys or none (OD-11).** The safe
   default stands: present, `test_only`, and not enableable from the CLI, which loads no policy
   pack and sets no run PII key. The opt-in, when it comes, is DL4's two keys in one change, a

@@ -1724,8 +1724,8 @@ def _websocket_spec(
         raise ValueError(
             f"target file {path}: websocket.session.one_query_in_flight: false is refused by "
             "design (OD-35): with several queries on one socket a reply frame is tied to its "
-            "attempt only by an id the server echoes; leave it true (--concurrency gives each "
-            "conversation a connection of its own)"
+            "attempt only by an id the server echoes; leave it true (each conversation gets a "
+            "connection of its own; --concurrency sets how many run at once)"
         )
     if TOKEN in spec.vars:
         raise ValueError(

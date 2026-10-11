@@ -368,28 +368,30 @@ reads as U+FFFD, since httpx decodes the stream as text.
   credential split that way is masked whole, since PR #57 reads U+FFFD as a splitter (u01 A-32), as
   the owner approved for whichever of the two landed second. Not built: an evidence field
   saying a reply was altered (an additive `ModelResponse` field, u00); U+FFFD is the mark.
-- **OD-34** (opened 2026-10-07, PR #87; it numbered these four OD-30 to OD-33, which `main` and
-  PR #88 had taken, and they were renumbered on 2026-10-09; **decided 2026-10-11 under the
-  owner's delegation (best practice), revisable: the transcript stays in
-  `raw_ids["websocket"]["frames"]`, as built**): a WebSocket target's frame transcript lives in
-  `ModelResponse.raw_ids["websocket"]` rather than in a dedicated field. Why: `ModelResponse` is
-  u00's frozen shape, which every adapter, evaluator, store and reporter codes against, so a field
-  is a program-level change, and `raw_ids` is already where a transport puts what it returns
-  beyond text, tool calls, logprobs, finish reason and usage, under its own key; it is redacted
-  where the adapter builds it (`redact_ids`) and again at rest, it is in each attempt's stored
-  artifact, and `dottore replay` re-derives a verdict from it, so the evidence is the same either
-  way. A field for one transport would be designed around one transport's frames; when a second
-  streaming transport needs a transcript (an SSE chat, a realtime API), one field can be shaped
-  for both in a single u00 revision. The one reader of `raw_ids` as tells, the fingerprint's
-  envelope layer, skips a nested value, so a reply's text in the frames never names a family
-  (`test_the_transcript_is_not_a_metadata_tell`). Measured on a copy of `0bdb6ee` with an
-  optional `transcript: list[JsonDict] | None = None` added: 1 of 5,082 tests fails (the JSON
-  report's golden snapshot, `tests/reporting/test_golden_snapshot.py`), and every attempt
-  artifact and report written after it carries one more key (`"transcript": null` on each
-  response) than those written before. Alternative not taken: that field, the WebSocket adapter
-  writing it instead of `raw_ids["websocket"]`, with the snapshot regenerated. Revisit when a
-  second transport records a transcript. Reversal: add the field in `shared/models.py`, write it
-  in `adapters/websocket.py` where `ids["websocket"]` is set, and regenerate the snapshot.
+- **OD-34** (opened 2026-10-07, PR #87; it numbered these four OD-30 to OD-33, which `main` and PR
+  #88 had taken, and they were renumbered on 2026-10-09; **decided 2026-10-11 under the owner's
+  delegation (best practice), revisable: the transcript stays in `raw_ids["websocket"]["frames"]`,
+  as built**): a WebSocket target's frame transcript lives in `ModelResponse.raw_ids["websocket"]`
+  rather than in a dedicated field. Why: `ModelResponse` is u00's frozen shape, which every adapter,
+  evaluator, store and reporter codes against, so a field is a program-level change, and `raw_ids`
+  is already where a transport puts what it returns beyond text, tool calls, logprobs, finish reason
+  and usage, under its own key; it is redacted where the adapter builds it (`redact_ids`) and again
+  at rest, it is in each attempt's stored artifact, and `dottore replay` re-derives a verdict from
+  it, so the evidence is the same either way. A field for one transport would be designed around one
+  transport's frames; when a second streaming transport needs a transcript (an SSE chat, a realtime
+  API), one field can be shaped for both in a single u00 revision. The one reader of `raw_ids` as
+  tells, the fingerprint's envelope layer, skips a nested value, so a reply's text in the frames
+  never names a family (`test_the_transcript_is_not_a_metadata_tell`). Measured on a copy of
+  `0bdb6ee` with an optional `transcript: list[JsonDict] | None = None` added: 1 of 5,082 tests
+  fails (the JSON report's golden snapshot, `tests/reporting/test_golden_snapshot.py`), and with the
+  default serializer every attempt artifact and report written after it carries one more key
+  (`"transcript": null` on each response). That cost is small and avoidable (a serializer that drops
+  a `None` field, as the OD-42 branch adds for `filter_side`, keeps the stored output
+  byte-identical), so it is not what decides; the frozen shape and the single transport are.
+  Alternative not taken: that field, the WebSocket adapter writing it instead of
+  `raw_ids["websocket"]`, with the snapshot regenerated. Revisit when a second transport records a
+  transcript. Reversal: add the field in `shared/models.py`, write it in `adapters/websocket.py`
+  where `ids["websocket"]` is set, and regenerate the snapshot.
 - **OD-35** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
   practice), revisable: refused by design, as built**): a WebSocket target's
   `session.one_query_in_flight: false` is refused by the loader, before anything is sent, and the

@@ -170,15 +170,14 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   from the spec's category, which a spec cannot opt out of. One limit remains: a copy that keeps
   `test_only` but deletes `requires_policy` still runs, because nothing outside the spec says
   which specs are offensive simulations. `--spec-path` is a trust decision; lint what you load.
-- **PII elicitation needs two more keys.** `DL-PII-ELICIT-001` runs only when the policy pack
-  sets `allow_pii_elicitation` **and** the run's safety flag of the same name is on (DL4), on top
-  of the `layer_b_pii` capability. The CLI sets neither the pack nor the run key today, so the
-  spec cannot be enabled from the command line at all. That is the decided default (OD-11,
-  2026-10-11): when an opt-in comes, it is both keys from the CLI in one change, a flag loading
-  the engagement's pack and `--allow-pii-elicitation`, never the run flag alone. The gate recognises the spec by its
-  `pii-elicitation` tag regardless of case and of `-` or `_` (`pii_elicitation`,
-  `PII-Elicitation`; not `pii elicitation`) or by the
-  `layer_b_pii` capability alone.
+- **PII elicitation needs two more keys.** `DL-PII-ELICIT-001` runs only when the policy pack sets
+  `allow_pii_elicitation` **and** the run's safety flag of the same name is on (DL4), on top of the
+  `layer_b_pii` capability. The CLI sets neither the pack nor the run key today, so the spec cannot
+  be enabled from the command line at all. That is the decided default (OD-11, 2026-10-11): when an
+  opt-in comes, it is both keys from the CLI in one change, a flag loading the engagement's pack and
+  `--allow-pii-elicitation`, never the run flag alone. The gate recognises the spec by its
+  `pii-elicitation` tag regardless of case and of `-` or `_` (`pii_elicitation`, `PII-Elicitation`;
+  not `pii elicitation`) or by the `layer_b_pii` capability alone.
 - **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports. Every
   credential the tool reads (an `env://` key, a password in an endpoint URL) is registered and
   masked **by value** wherever it appears, also in the escaped form an HTTP library quotes it
@@ -356,17 +355,18 @@ canary's occurrence covers. Avoid it all the same: A's `ZZ-1` leaking into B's r
 before `-b` reads as B's own canary. Plain `http` is allowed only to loopback hosts; everything
 else must be `https`. Template: [`../specs/scope.example.yaml`](../specs/scope.example.yaml).
 
-**Signing a scope (out of band).** The tool verifies no signature (OD-2): checking one would
-need a list of trusted keys, a rule for who signs and a way to revoke a key, which is key
-management it does not have. Sign the scope with tooling whose keys you already manage, verify it
-before `dottore run`, and match the report to the signed bytes: `run.scope_sha256` in the JSON
-report (the SARIF, JUnit and HTML reports carry it too, §10) is the SHA-256 of the file when it
-has LF line ends and no top-level `checksum:` line. A signature proves something only under two
-custody rules: the reviewer signs on their own machine, with a key only they hold, and the list
-of trusted keys (`allowed_signers`, one `<identity> <public key>` per line) is read from a place
-the scope's editors cannot write (a protected branch or repository, a CI secret, a read-only
-mount). An `allowed_signers` beside the scope, or a signing key the scope's editors can reach
-(a key in a CI secret their jobs can read), proves no more than the checksum does. With SSH signatures (OpenSSH 8.1 or later):
+**Signing a scope (out of band).** The tool verifies no signature (OD-2): checking one would need a
+list of trusted keys, a rule for who signs and a way to revoke a key, which is key management it
+does not have. Sign the scope with tooling whose keys you already manage, verify it before `dottore
+run`, and match the report to the signed bytes: `run.scope_sha256` in the JSON report (the SARIF,
+JUnit and HTML reports carry it too, §10) is the SHA-256 of the file when it has LF line ends and no
+top-level `checksum:` line. A signature proves something only under two custody rules: the reviewer
+signs on their own machine, with a key only they hold, and the list of trusted keys
+(`allowed_signers`, one `<identity> <public key>` per line) is read from a place the scope's editors
+cannot write (a protected branch or repository, a CI secret, a read-only mount). An
+`allowed_signers` beside the scope, or a signing key the scope's editors can reach (a key in a CI
+secret their jobs can read), proves no more than the checksum does. With SSH signatures (OpenSSH 8.1
+or later):
 
 ```bash
 # 1. The reviewer, on their own machine, with their own key (a key held by ssh-agent, or a FIDO
@@ -836,8 +836,8 @@ no template carries a temperature, so a fingerprint is as repeatable as the depl
 
 **Not covered.** A connection shared by several concurrent queries (by design, OD-35, decided
 2026-10-11: on a shared socket a reply frame is tied to its attempt only by an id the server
-echoes, and one frame misread puts one attempt's reply into another's verdict; `--concurrency`
-gives each conversation a connection of its own); an
+echoes, and one frame misread puts one attempt's reply into another's verdict; each
+conversation gets a connection of its own, and `--concurrency` sets how many run at once); an
 HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet target entry (a fleet
 entry carries no `websocket:` block, so `dottore fleet` refuses a `ws://` or `wss://` endpoint
 and `provider: websocket`, exit 3 and nothing written, and points here: write the target and its
@@ -866,27 +866,27 @@ targets:
     endpoint: http://localhost:3000/mcp
 ```
 
-`provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
-`/messages` -> `anthropic`, otherwise `rest`. A WebSocket target is not a fleet entry: a `ws://`
-or `wss://` endpoint (whatever `provider` says) and `provider: websocket` are refused before
-anything is written (exit 3), since the target file it needs carries a `websocket:` block a fleet
-entry cannot hold (§4.2, OD-37). A `judge:` block may declare a WebSocket judge only when
-`--judge` names its hand-written target file, which must match the block (id, endpoint,
-credential): the block authorizes it in the generated scope, the file is what the run reads, and
-no `judge.yaml` is written for it (one would be refused by `run`). Without `--judge` such a
-block is refused, and the error says to write the file and pass it with `--judge`. `dottore
-fleet` expands this into a scope plus one target file per model, named for its `id`
-(`target-<id>.yaml`). Two ids that differ only by case (`Prod` and `prod`) are refused (exit 3,
-nothing written) on every file system: on a case-insensitive one (the macOS and Windows default) they are one file, and the second entry
-used to overwrite the first. The message locates both entries as validation errors do
-(`targets.0.id`, counted from 0), since the CLI may mask an id that looks random. A `judge:` id
-spelled as a target's only up to case is refused too (the default `judge` of a block with no
-`id:` included), so the scope never holds two ids that differ only by case; spelled exactly the
-same, the judge shares that target's scope entry when its endpoint and credential match, and is
-refused otherwise.
-Each entry is written as a `chatbot` target (an `mcp` one as `api`)
-with no `seeded_setup`, so a spec that needs documents, tools or memory is `setup_not_seeded`
-on a fleet entry that declares the capability; for those, scan with a target file (§4.2). Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
+`provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`, `/messages`
+-> `anthropic`, otherwise `rest`. A WebSocket target is not a fleet entry: a `ws://` or `wss://`
+endpoint (whatever `provider` says) and `provider: websocket` are refused before anything is written
+(exit 3), since the target file it needs carries a `websocket:` block a fleet entry cannot hold
+(§4.2, OD-37). A `judge:` block may declare a WebSocket judge only when `--judge` names its
+hand-written target file, which must match the block (id, endpoint, credential): the block
+authorizes it in the generated scope, the file is what the run reads, and no `judge.yaml` is written
+for it (one would be refused by `run`). Without `--judge` such a block is refused, and the error
+says to write the file and pass it with `--judge`. `dottore fleet` expands this into a scope plus
+one target file per model, named for its `id` (`target-<id>.yaml`). Two ids that differ only by case
+(`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
+case-insensitive one (the macOS and Windows default) they are one file, and the second entry used to
+overwrite the first. The message locates both entries as validation errors do (`targets.0.id`,
+counted from 0), since the CLI may mask an id that looks random. A `judge:` id spelled as a target's
+only up to case is refused too (the default `judge` of a block with no `id:` included), so the scope
+never holds two ids that differ only by case; spelled exactly the same, the judge shares that
+target's scope entry when its endpoint and credential match, and is refused otherwise. Each entry is
+written as a `chatbot` target (an `mcp` one as `api`) with no `seeded_setup`, so a spec that needs
+documents, tools or memory is `setup_not_seeded` on a fleet entry that declares the capability; for
+those, scan with a target file (§4.2). Template:
+[`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
 
 An entry may declare `capabilities` with the keys a target file takes (§4.2). Its target file
 gets `tools: false` (`true` for an `mcp` entry) and `rag: false` unless the entry sets them, plus

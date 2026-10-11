@@ -64,10 +64,11 @@ only - no jailbreak payloads, scope-allowlist-gated.
   unchanged. To a target that takes no sampling (u12 A-68) the probes go out with no
   temperature at all: the fingerprint is then only as repeatable as the model's own sampling,
   and `run -sV` and `dottore fingerprint` say so.
-- DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always
-  disables). Resolved as built, signed off 2026-10-11 under the owner's delegation: `-sV` (and
-  `-A`) imply adaptive ordering; there is no `--no-adaptive` flag (`00-INDEX.md` OD-5, u08 §9). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs
-  response-feature vector (propose feature-vector + nearest-neighbor to avoid a heavy dep).
+- DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always disables).
+  Resolved as built, signed off 2026-10-11 under the owner's delegation: `-sV` (and `-A`) imply
+  adaptive ordering; there is no `--no-adaptive` flag (`00-INDEX.md` OD-5, u08 §9). DECIDE (OD-9):
+  statistical layer embedding source: bundled small embedder vs response-feature vector (propose
+  feature-vector + nearest-neighbor to avoid a heavy dep).
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `base.py` (FingerprintLayer protocol) + `probes.py` (seeded benign battery) + `signatures.py`
