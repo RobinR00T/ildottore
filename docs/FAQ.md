@@ -37,7 +37,10 @@ bytes verified are the bytes the run reads. The `ssh-keygen -Y` recipe, run for 
 
 Not to explore (`registry ls`, `describe`, `lint`, `schema`) or to scan a **local** model
 via Ollama. You need a key only to scan a **hosted** model, and it is passed by env-var
-reference (`auth_ref: env://…`), never written to a file.
+reference (`auth_ref: env://…`), never written to a file. A key shorter than 8 characters is
+refused before anything is sent (`the credential is shorter than 8 characters, which the
+redactor cannot mask by value`): the redactor masks a credential the tool read by its value only
+from that length, so a target that echoed a shorter one would put it in every report.
 
 ### What does `--judge` do, and do I need it?
 
@@ -407,3 +410,13 @@ off.
 
 Under `.dottore/` (evidence store + run SQLite) by default; override with `--evidence-root`
 and `--run-db`. Secrets and PII are redacted at rest. Do not commit `.dottore/`.
+
+### Why does a report show `«REDACTED:uuid:…»` or `«REDACTED:hex_token:…»` for an id my target returned?
+
+Because a UUID and a run of 32 hex digits or more are the shapes of keys and tokens (an Azure key
+is 32 hex digits, an old npm token a UUID), and a target's reply is untrusted text: they are
+masked whatever their entropy, as the documented key formats are (`«REDACTED:openai_key:…»`,
+`«REDACTED:github_token:…»`, ...). The digest after the type is the same for the same value in
+one run (pin `ILDOTTORE_REDACTION_SALT` to compare across runs), so two occurrences can still be
+matched. What the tool itself computed stays readable: the evidence file names and their sha256,
+the media digests a multimodal request records, the scope digest, run and attempt ids.

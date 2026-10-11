@@ -942,11 +942,13 @@ def _key(body: str) -> re.Pattern[str]:
 def _late_patterns() -> list[Pattern]:
     """The documented key formats, the JWT and the UUID, masked whatever their entropy (A-78).
 
-    They run after the labelled and the entropy rules (``Redactor._redact_late``), on what those
-    left readable, so each only adds a mask: run before them, a key glued to a word, a label or
-    padding took less than the entropy rule took of its token (`x_<key>` showed `x_`, `-x-api key
-    : <secret>` lost the label to a greedy body and showed the secret), and a UUID in an address
-    cut it (pre-commit differential fuzz of this clause, against main's redactor). A token the
+    They run last in a pass, after the labelled rule, the entropy rule and the URL rule as
+    written (``Redactor.redact_late``), on what those left readable, so each only adds a mask: run
+    before them, a key glued to a word, a label or padding took less than the entropy rule took of
+    its token (`x_<key>` showed `x_`, `-x-api key : <secret>` lost the label to a greedy body and
+    showed the secret), a UUID in an address cut it, and a mask's `:` made the URL rule as written
+    take a URL for one its rule had read (pre-commit differential fuzz of this clause, against
+    main's redactor). A token the
     entropy rule masks whole is typed by the format inside it (``_entropy_spans``). The four rules
     the redactor had (``sk-``, ``ghp_``, ``AKIA``, ``xox``) still run where they ran, as they
     were; here they are started with ``_KEY_START`` and cover every documented form.
@@ -1148,8 +1150,8 @@ class Redactor:
         self._mask_types = _OWN_MASK_TYPES | {
             pattern.type for pattern in (*self._patterns, *self._late)
         }
-        # The phone and card rules leave alone a number inside a UUID (A-78), which a late
-        # pattern masks whole; off only for the identity masks a run store wrote before A-78.
+        # The number rules leave a UUID whole (A-78, `_number_mask`), which a late pattern masks
+        # whole; off only for the identity masks a run store wrote before A-78.
         self._uuid_whole = True
         self._entropy_threshold = entropy_threshold
         self._entropy_min_len = entropy_min_len
@@ -1536,11 +1538,11 @@ class Redactor:
     def redact_late(self, text: str, as_written: Callable[[str], str] | None = None) -> str:
         """Mask the late patterns (:func:`_late_patterns`, A-78) in what ``text`` shows.
 
-        The last rule of a pass, after the labelled and the entropy rules, so each only adds a
-        mask. No late pattern matches inside a mask (none starts with a letter of one, or holds
-        a ``«``, a ``:`` or a ``»``). ``as_written`` writes out a stash token a match holds (the
-        pass's own); the CLI calls it on its own on the parts of an error it kept from its
-        entropy pass, after that pass.
+        The last rule of a pass, after the labelled, the entropy and the URL-as-written rules, so
+        each only adds a mask. No late pattern matches inside a mask (none starts with a letter of
+        one, or holds a ``«``, a ``:`` or a ``»``). ``as_written`` writes out a stash token a match
+        holds (the pass's own); the CLI calls it on its own on the whole message it prints, after
+        its entropy pass (``cli.app._masked``).
         """
 
         written = as_written or (lambda stretch: stretch)
@@ -1966,8 +1968,8 @@ class Redactor:
 
         The whole token when the rule masks it whole (:meth:`_masks_whole`), typed by the first
         late pattern it holds (A-78: the same mask, named better). Otherwise, when the fallback
-        is on: each UUID the card and phone rules left alone, with what the rule would have
-        masked around it had they cut it (:meth:`_uuid_spans`), and each run of
+        is on: each UUID the number rules left whole, with what the rule would have masked
+        around it had they cut it (:meth:`_uuid_spans`), and each run of
         :data:`_HEX_RUN` outside those and outside a late pattern's match, which the late pass
         masks with its type (masked here, `sk-proj-` and `a` written 156 times read
         `sk-proj-«REDACTED:hex_token»`). ``cuts`` are the pass's (:meth:`_uuid_spans`).
@@ -2124,10 +2126,10 @@ def identity_masks(value: str) -> tuple[str, ...]:
     wrote before u01 A-78, when they differ.
 
     The key formats, the hex run and the UUID changed the identity mask of an id that holds one
-    (``prod-<uuid>`` was ``prod-<uuid with a phone mask in it>``, it is ``prod-«REDACTED:uuid:...»``
-    now), so a run halted before them was refused on resume as made against another target, and
-    a resume keyed its findings anew beside the old rows. The resume checks and the run store
-    accept both, and the store keeps the current one.
+    (a UUID was stored with a phone mask in its digit-only groups, or as written, and is
+    ``«REDACTED:uuid:...»`` now), so a run halted before them was refused on resume as made
+    against another target, and a resume keyed its findings anew beside the old rows. The resume
+    checks and the run store accept both, and the store keeps the current one.
     """
 
     current = _IDENTITY.redact_text(value)

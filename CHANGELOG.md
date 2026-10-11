@@ -5,6 +5,54 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (key formats, hex runs and UUIDs masked whatever their entropy; a credential under 8 characters refused by every adapter, u01 A-78)
+
+Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
+
+- **The documented key formats of 11 providers are masked whatever their entropy.** Only `sk-`,
+  `ghp_`, `AKIA` and `xox` had a rule; `sk-ant-`, `sk-proj-` (whose `-` cut the `sk-` rule),
+  `github_pat_`, `AIza`, `glpat-` and `hf_` rested on the entropy rule, so a body of low entropy was
+  printed, and a key after a run of `_` (`\b` refused a start after a word character) was diluted
+  by it: 30 `_` before printed 155 of 200 `ghp_` tokens and every `AKIA`, `glpat-` and `hf_` one,
+  20 `=` on either side every `AIza`, `glpat-` and `hf_` one, 20 `-` before every `glpat-` one; now
+  0 of 200 for every prefix. Covered, each sourced from the provider's documentation: OpenAI
+  (`sk-`, `sk-proj-`, `sk-svcacct-`, `sk-admin-`, `sk-None-`), Anthropic (`sk-ant-`), GitHub
+  (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), GitLab (13 prefixes), AWS (`AKIA`,
+  `ASIA`, `ABIA`, `ACCA`), Google (`AIza`), Hugging Face (`hf_`), Slack (`xox[abeprs]-`,
+  `xoxe.xoxb-`, `xoxe.xoxp-`, `xapp-`, `xoxe.xapp-`, `xwfp-`), Stripe (`sk_live_`, `sk_test_`,
+  `rk_live_`, `rk_test_`, `sk_org_`, `whsec_`), npm (`npm_`) and PyPI (`pypi-`), typed
+  (`«REDACTED:anthropic_key:<digest>»`), plus a JWT written after `_`.
+- **Every run of 32 hex digits or more, and the UUID shape, are masked whatever their entropy.**
+  The threshold printed 74.7% of random 32-hex keys (an Azure key), 47.5% of 40-hex, 5.5% of
+  64-hex and 47.7% of v4 UUIDs; now 0%. A hex run is `«REDACTED:hex_token:<digest>»` (a `0x` in
+  front included), a UUID `«REDACTED:uuid:<digest>»`, whole even when its groups are all digits,
+  which the phone and card rules used to take as numbers, leaving the rest readable.
+- **They only add masks.** They run after every other rule, and a token the entropy rule masks
+  with a word glued to a key is still masked whole, now named by the key's type. A first version
+  that ran them before the labelled and entropy rules left readable what those rules had masked
+  (`x_` before a key, a label glued after a greedy body and its secret, the rest of an address
+  holding a UUID); a differential fuzz against the redactor before A-78 (five draws of 300,000
+  texts) finds no planted secret this one shows and that one hid, but in 2 texts that hold U+0000
+  or U+0001, whose redaction depends on whether anything else in them is masked, before A-78 too.
+- **What the tool computes stays readable.** The hex rule belongs to the entropy rule, so the
+  CLI's carried digests and evidence file names, an existing path and a model name keep out of it
+  as before; the reports now restore the SHA-256 of each media part a request records (the JSON
+  report of a multimodal battery masked 24 of its 28) and each evidence reference's attempt id. A
+  full offline run of the battery writes every report, the evidence and the run store byte for byte
+  as before, timestamps aside, but those 24 digests.
+- **A run halted before this change resumes against its own target**, though the identity mask of
+  an id holding a UUID, a hex run or a key format changed, and keeps one row a finding.
+- **A credential shorter than 8 characters is refused by every adapter, and before the run.** The
+  redactor masks a credential by value only from 8 characters; the WebSocket adapter refused a
+  shorter one, the OpenAI, Anthropic, REST and MCP adapters sent it (a target that echoed it put it
+  in every report). Now each refuses it before its first request, with the WebSocket adapter's
+  message, and so do the pre-flight (`--dry-run`, `-sn` and `--estimate` exit 3 as the run would),
+  the identity sweep (naming the identity) and the judge, which used to abstain on every spec and
+  exit 0. A password in the endpoint is checked as written and percent-decoded; an empty one passes.
+- Cost: 4 MB of prose 1.10 s (0.98 s before), of base64 tokens 3.34 s (2.65 s), of UUIDs 2.75 s
+  (4.70 s), of UUIDs whose groups are all digits 6.04 s (2.86 s). Not covered: a key glued to a
+  letter or a digit, and a random token with no prefix the entropy rule passes, as before.
+
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
 - **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a

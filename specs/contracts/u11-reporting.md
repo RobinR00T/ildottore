@@ -239,6 +239,17 @@ control, L4), so the golden JSON snapshot gains the key and the SARIF, JUnit and
 move. Checked by `tests/cli/test_operator_declaration_campaign.py` (every format of one run, the
 JSON against the schema, and the same run without the declaration).
 
+**A-78 (u01's clause; this unit's half, added 2026-10-11) Every report keeps the media digests and
+the attempt each evidence reference names.** The hex rule masks every run of 32 hex digits or more,
+so what the tool computed in that shape is put back after the masking pass, as the evidence
+references and the scope digest already were (R1, F12): `_restore_tool_fields` puts back each
+attempt's `request.metadata.media_sha256` when it is a list of 64 lowercase hex digits, the shape the
+runner writes (anything else is masked as any value), and each evidence reference's `attempt_id` as
+written, as the attempts' own ids are, in both copies of a finding the JSON report carries. On
+`de122e26` the JSON report of a multimodal battery at `--runs 2` masked 24 of its 28 media digests
+(`high_entropy`); every other output of the run is byte for byte as before. Checked by
+`tests/reporting/test_own_values_readable.py` (2 of its 9 tests fail on `de122e26`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
 - MUST NOT read/persist to the run or evidence store beyond the injected read interface (u10).

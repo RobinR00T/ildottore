@@ -225,7 +225,14 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   trailing CR from a Windows-edited `.env` used to be quoted, in clear, by the transport error
   that rejected it). A key with a control character **inside** it (a newline from a pasted
   value) is refused before any request, with an error that names the variable and never the
-  value. Values shorter than 8 characters are not registered. A registered credential is also
+  value. Values shorter than 8 characters are not registered, so a credential that short is refused
+  before anything is sent, by every adapter and by the pre-flight `--dry-run`, `-sn` and
+  `--estimate` run too (`error: <target id>: the credential is shorter than 8 characters, which the
+  redactor cannot mask by value; nothing was sent`, exit 3; for a judge's key, the judge's id, and
+  for an identity of the scope's sweep, `<target id>, identity '<name>'`); an endpoint's password is
+  checked as written and percent-decoded, and an empty one (`https://<token>:@host`) is no
+  credential. Until A-78 only the WebSocket adapter refused one; the others sent it, and a target
+  that echoed it put it in every report. A registered credential is also
   found when the text splits it with a newline, a tab or another control character, with an
   invisible format character (a zero-width space, a soft hyphen, a word joiner, a byte order
   mark, a bidi control, a tag character), or with U+FFFD, the replacement character half a
@@ -269,14 +276,34 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   (#96). An error is redacted whole by the redactor, URL passwords included: the URL rule run on its
   own first cut a registered credential holding an `@` or a `:`
   (`https://ops:P@ssw0rd!x@db.internal/v1` with `P@ssw0rd!x` registered printed `ssw0rd!`; #96).
+  Key shapes are masked whatever their entropy (A-78): the documented formats of OpenAI (`sk-`,
+  `sk-proj-`, `sk-svcacct-`, `sk-admin-`, `sk-None-`), Anthropic (`sk-ant-`), GitHub (`ghp_`,
+  `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), GitLab (`glpat-` and the 12 other prefixes of its
+  token list), AWS (`AKIA`, `ASIA`, `ABIA`, `ACCA`), Google (`AIza`), Hugging Face (`hf_`), Slack
+  (`xoxb-`, `xoxp-`, `xoxa-`, `xoxr-`, `xoxs-`, `xoxe-`, `xoxe.xoxb-`, `xoxe.xoxp-`, `xapp-`,
+  `xoxe.xapp-`, `xwfp-`), Stripe (`sk_live_`, `sk_test_`, `rk_live_`, `rk_test_`, `sk_org_`,
+  `whsec_`; not the publishable `pk_`), npm (`npm_`) and PyPI (`pypi-`), each typed
+  (`«REDACTED:anthropic_key:<digest>»`), a JWT, a UUID (`«REDACTED:uuid:<digest>»`) and a run of 32
+  hex digits or more, a `0x` in front included (`«REDACTED:hex_token:<digest>»`, an Azure key or a
+  digest). A key is recognised after `_`, `=`, `-` and any other character that is not a letter or
+  a digit: written after a run of `_` it was printed, its padding diluting the entropy rule; glued
+  to a letter or a digit (`0000...0<key>`) it is the middle of a word, and the entropy rule decides,
+  as before. These rules run last, after the labelled and the entropy rules, so they only add
+  masks: a key the entropy rule masks with the word glued to it is still masked whole, and named
+  (`x_<sk-proj- key>` reads `«REDACTED:openai_key:<digest>»`). A UUID is masked whole even when
+  its groups are all digits, which the phone and card rules used to take as numbers, leaving the
+  rest of it readable. Each costs some time on a text full of them (4 MB of UUIDs whose groups are
+  all digits: 6.0 s, 2.9 s before, which left most of each readable).
   What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
-  id) is left readable in every report, in both copies of a finding the JSON report carries, so
+  id, and since A-78 the SHA-256 of each media part a request records, `media_sha256`) is left
+  readable in every report, in both copies of a finding the JSON report carries, so
   a custom spec id reads the same in every run and `dottore diff` can match it. Error messages
   the CLI prints go through the same redactor, which cannot tell a sha256 from a 64-hex
-  key. The class an error is written with (`aborted on AdapterProductError: ...`, an attempt's
-  `ResponseTooLarge: ...`) always reads: every exception class the scanner defines has a name
-  the entropy rule leaves as it is, and a test holds it (u01 A-63). The part of an absolute
-  path that exists on this machine is exempt from the entropy rule, and so is a path that
+  key, and masks every run of 32 hex digits or more since A-78. The class an error is written
+  with (`aborted on AdapterProductError: ...`, an attempt's `ResponseTooLarge: ...`) always
+  reads: every exception class the scanner defines has a name the entropy rule leaves as it is,
+  and a test holds it (u01 A-63). The part of an absolute path that exists on this machine is
+  exempt from the entropy rule (the hex rule included), and so is a path that
   exists written whole at the start of the message or
   after a space, a quote, a comma, a semicolon or an opening bracket: relative to the
   working directory too (as one word), with a space or a bracket in a directory name of
@@ -857,7 +884,8 @@ of `run`). A `ws://` or `wss://` endpoint on any other provider is refused too: 
 adapter dials it. The error names the field and never quotes the value; a name it lists (a
 header, a placeholder) is cut at 300 characters, and at most 20 are listed. At send time,
 before any dial, a resolved credential shorter than 8 characters is refused too: the redactor
-masks a credential by value only from that length.
+masks a credential by value only from that length (every adapter does since A-78, the pre-flight
+too, as redact-at-rest says).
 
 **One connection per conversation.** A single-turn attempt dials, sends the handshake and the
 session start, sends its query, reads the turn and closes. A multi-turn attempt keeps one

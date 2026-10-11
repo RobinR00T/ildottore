@@ -1182,6 +1182,20 @@ spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `
 attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
 Checked by `tests/cli/test_malformed_reply_campaign.py`.
 
+**A-78 (u01's clause; this unit's half, added 2026-10-11) The CLI masks the key formats last, and
+refuses a credential under 8 characters before anything is sent.** `_masked` runs the late patterns
+on the whole message as shown, after its entropy pass, kept parts included (an existing path, a
+carried digest, a spec file name), and its two redactors run without them, so `x_<key>` is masked as
+the token the entropy pass masks and a mask of a late type written in an error is read as text, as
+before. `check_target_credential`, the pre-flight of the target and the judge, refuses a credential
+shorter than 8 characters (a `ValueError` with the adapters' message), so `--dry-run`, `-sn` and
+`--estimate` exit 3 as the run would; `build_real_adapter` refuses it too; the identity sweep names
+the identity (`live, identity 'second': the credential is shorter than 8 characters, ...`); and the
+judge raises the adapters' `CredentialTooShort` rather than abstain, which made every judged spec
+inconclusive and exited 0 without a word. Against a loopback stub on `de122e26` a 7-character key was
+sent with every request, a judge's too (exit 0); now each case exits 3 with nothing sent. Checked by
+`tests/cli/test_short_credential_cli.py` (8 tests, 7 fail on `de122e26`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
