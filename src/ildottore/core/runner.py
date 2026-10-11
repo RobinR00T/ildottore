@@ -54,6 +54,7 @@ from ildottore.core.execute import (
     UNREADABLE_REPLIES_TO_STOP,
     UNREADABLE_STREAK_TO_STOP,
     AttemptResult,
+    CeilingAtUnreadable,
     ReplyOverBudget,
     RetryPolicy,
     UnreadableReplies,
@@ -424,8 +425,13 @@ class _WatchedAdapter:
             response = await self._inner.send(request)
         except Exception as exc:
             if is_unreadable_reply(exc):
-                # The check goes to the wrapped adapter, so it is not counted by the watch.
-                halt = await self._watch.unreadable(exc, self._inner)
+                # The check goes to the wrapped adapter, so it is not counted by the watch. A
+                # ceiling that refuses it halts the campaign with this reply in hand, stored and
+                # refunded (verification of da16f219, LOW 1).
+                try:
+                    halt = await self._watch.unreadable(exc, self._inner)
+                except BudgetExhausted as ceiling:
+                    raise CeilingAtUnreadable(ceiling, reply=exc) from ceiling
                 if halt is not None:
                     raise halt from exc
             elif is_provider_filter_block(exc):

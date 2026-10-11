@@ -70,6 +70,7 @@ __all__ = [
     "UNREADABLE_REPLIES_TO_STOP",
     "UNREADABLE_STREAK_TO_STOP",
     "AttemptResult",
+    "CeilingAtUnreadable",
     "ReplyOverBudget",
     "RetryPolicy",
     "UnreadableReplies",
@@ -236,6 +237,25 @@ class UnreadableReplies(Exception):
         self.result: AttemptResult | None = None
 
 
+class CeilingAtUnreadable(Exception):
+    """A ceiling that refused the watch's benign check, with the unreadable reply that called for
+    it (verification of da16f219, LOW 1).
+
+    Raised by the runner's watch in place of that reply. :func:`execute_attempt` turns it into a
+    :class:`ReplyOverBudget` carrying the reply's result, its reservation released, so the reply
+    is stored before the ceiling halts the campaign: raised as the plain ceiling, it replaced the
+    reply, which was never stored, and its tokens stayed reserved. Named so the redactor keeps the
+    name (u01 A-63).
+    """
+
+    is_env_error = False
+
+    def __init__(self, ceiling: BudgetExhausted, *, reply: BaseException) -> None:
+        super().__init__(str(ceiling))
+        self.ceiling = ceiling
+        self.reply = reply
+
+
 def _unreadable_result(
     reply: BaseException,
     *,
@@ -374,7 +394,8 @@ async def execute_attempt(
             # it on, which travels on the stop (pre-merge audit of 598f0858, MEDIUM 1: it was
             # sent, debited and never stored, and its token reservation stayed spent).
             halt = exc if isinstance(exc, UnreadableReplies) else None
-            reply = halt.reply if halt is not None else exc
+            refused = exc if isinstance(exc, CeilingAtUnreadable) else None
+            reply = halt.reply if halt is not None else refused.reply if refused else exc
             if is_unreadable_reply(reply):
                 if reserved:
                     ledger.refund_tokens(reserved)
@@ -388,6 +409,8 @@ async def execute_attempt(
                     retries=send_index,
                     errors=errors,
                 )
+                if refused is not None:  # the ceiling's halt, the reply in hand (as a reply's own)
+                    raise ReplyOverBudget(refused.ceiling, unreadable) from exc
                 if halt is None:
                     return unreadable
                 halt.result = unreadable

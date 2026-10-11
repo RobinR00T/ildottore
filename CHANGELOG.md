@@ -50,7 +50,7 @@ versioning: [SemVer](https://semver.org/).
   already sending stops at its own next unreadable reply, and every reply sent is stored. Measured
   against a stub answering every request with an HTML page: 9 requests at the default
   `--concurrency 4` (6 at 1), 27 with `-sV` (18 probes, then 9), 24 at 1; on `6d5f7ae`, 4 and 1;
-  two readable replies and then that page: 27 requests, exit 3; a filter answering attack prompts
+  two readable replies and then that page: 26 to 27 requests (the replies in flight vary), exit 3; a filter answering attack prompts
   with a 200 block page: the default battery finishes, 160 of 550 attacks blocked, exit 0. A shorter run that read nothing is `unreachable`, and its reason
   says the replies could not be read and what to check (it said "failed on transport"). The report
   schema's `status` description names `aborted` and the wider `unreachable`.
@@ -73,6 +73,11 @@ versioning: [SemVer](https://semver.org/).
 
 ### Fixed (what the verification of `07aa0b3a` found in OD-21, before it lands)
 
+- LOW (verification of `da16f219`): at the request ceiling the benign check's debit raised in place
+  of the fifth unreadable reply, which was never stored, its token reservation kept
+  (`--budget-requests 5`: 5 requests, 4 attempts stored, 629 tokens recorded with nothing read).
+  The ceiling now halts the campaign with that reply in hand, stored and refunded, as a reply that
+  crossed a token ceiling is: 5 requests, 5 attempts stored, 0 tokens, `budget_exhausted`.
 - MEDIUM: a target behind a content filter that answers attack prompts with a 200 HTML block page
   could never finish: with a filter on words such as "ignore", "instruction", "system prompt",
   "secret" and "bypass", the default battery at `--concurrency 1` read 69 of 284 replies as block

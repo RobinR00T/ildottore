@@ -29,7 +29,13 @@ from ildottore.evaluators import build_default_registry as build_evaluators
 from ildottore.mutators import build_default_registry as build_mutators
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
-from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, TestRun
+from ildottore.shared.models import (
+    Capabilities,
+    ModelRequest,
+    ModelResponse,
+    PlanBudgets,
+    TestRun,
+)
 from ildottore.shared.unreadable import (
     UNREADABLE_MARK,
     UNREADABLE_REPLY_KEY,
@@ -95,6 +101,7 @@ def _run(
     n: int = 5,
     concurrency: int = 1,
     resume_from: TestRun | None = None,
+    budgets: PlanBudgets | None = None,
 ) -> CampaignResult:
     runs = SqliteRunStore(tmp_path / "runs.sqlite")
     runner = CampaignRunner(
@@ -118,6 +125,7 @@ def _run(
                 target=make_target(),
                 specs=[make_spec(f"JB-REFUSAL-{i:03d}") for i in range(1, specs + 1)],
                 resume_from=resume_from,
+                budgets=budgets,
             )
         )
     finally:
@@ -361,3 +369,24 @@ def test_a_resume_sends_an_unreadable_attempt_again(tmp_path: Path) -> None:
     (finding,) = second.findings
     assert finding.status is VerdictStatus.PASS
     assert unreadable_attempt_ids(finding.attempts) == set()
+
+
+def test_a_check_the_request_ceiling_refuses_keeps_the_reply_that_called_for_it(
+    tmp_path: Path,
+) -> None:
+    """Verification of da16f219, LOW 1: at the request ceiling the check's debit raised inside
+    the watch, in place of the fifth unreadable reply, so that attempt was never stored and its
+    token reservation stayed spent (`--budget-requests 5`: 5 requests, 4 attempts stored, 629
+    tokens recorded with nothing read). The halt is the ceiling's, with the reply in hand: stored
+    and refunded, as a reply that crossed a token ceiling is."""
+
+    adapter = Scripted([], probe=_BAD)
+    result = _run(adapter, tmp_path, specs=2, n=5, budgets=PlanBudgets(max_requests=5))
+
+    assert result.status == "budget_exhausted", result.status_reason
+    assert adapter.sends == UNREADABLE_REPLIES_TO_STOP
+    assert adapter.probes == []  # the ceiling refused the check before it went out
+    stored = sorted((tmp_path / "ev").rglob("attempts/*.json"))
+    assert len(stored) == UNREADABLE_REPLIES_TO_STOP
+    assert result.spend.requests == UNREADABLE_REPLIES_TO_STOP
+    assert result.spend.tokens == 0

@@ -3,6 +3,18 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (evening, later): the verification of `da16f219`, two LOWs
+
+- Merge-ready per the verification; two LOWs, fixed in a new commit. At the request ceiling the
+  benign check's debit raised inside the watch in place of the fifth unreadable reply, which was
+  never stored and kept its reservation: the watch's caller now raises `CeilingAtUnreadable`, which
+  `execute_attempt` turns into a `ReplyOverBudget` carrying that reply's result, refunded and stored
+  (`--budget-requests 5` against an all-HTML stub through the CLI: 5 requests, 5 attempts stored, 0
+  tokens, exit 3 `budget ceiling reached on 'max_requests'`; it stored 4 and recorded 629 tokens).
+  One test more in `tests/core/test_unreadable_replies.py` (16; it fails on `da16f219`). The
+  mid-run break's figure is written "26 to 27" (three runs gave 26, 26, 26 here, and 27, 26, 26
+  for the verifier: the replies in flight vary).
+
 ## State, 2026-10-11 (evening): the verification of `07aa0b3a` (OD-21), fixed
 
 - Both false passes closed per the verification; one MEDIUM and two LOWs, fixed in new commits after
@@ -17,7 +29,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   Measured with the auditor's `probe_cli.py` on `b5a4e7e1`: the broad filter on attack words
   finishes the default battery (160 of 550 blocked, 2 checks at `--concurrency 1`, exit 0; on
   `07aa0b3a`, exit 3 at a run of 20 and every resume after 5); all HTML: 9 requests (6 at 1), 27
-  with `-sV` (24 at 1); two readable then HTML: 27, exit 3; 30% HTML at random: finishes, every
+  with `-sV` (24 at 1); two readable then HTML: 26 to 27, exit 3; 30% HTML at random: finishes, every
   spec `inconclusive`. Tests: core 15 (6 fail on `07aa0b3a`), adapters 37 (3 fail there), CLI 11 (4
   fail there). `eca90de1` names the resume note's clause apart (mypy). `make --no-print-directory
   gates` green on `eca90de1` (2026-10-11, 18:34 to 18:41): ruff, format (405 files), mypy strict

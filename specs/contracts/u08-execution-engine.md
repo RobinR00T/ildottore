@@ -611,7 +611,11 @@ as amended:
   with a block page): <advice>. ...`, both ending `the replies are stored as inconclusive
   attempts, and a resume sends them again; <k> of <n> specs never ran or did not finish` (`<n>` is
   the run when the check came back: with specs in flight it can pass 5). A check that fails on
-  transport stops it too, the error quoted. A resume of a run that holds a read reply (or a
+  transport stops it too, the error quoted. A check the request ceiling refuses halts the
+  campaign as `budget_exhausted` with the reply that called for it in hand (`CeilingAtUnreadable`,
+  turned by `execute_attempt` into a `ReplyOverBudget`), stored and refunded (verification of
+  `da16f219`, LOW 1: the ceiling replaced that reply, which was never stored, and its tokens
+  stayed reserved; `--budget-requests 5` now gives 5 requests, 5 attempts stored, 0 tokens). A resume of a run that holds a read reply (or a
   provider's filter block) starts the watch proven (`_read_a_reply`), so only 20 in a row stop it. Once stopped, every later unreadable reply raises the same halt, so a spec already
   sending stops at its own next one. The halt carries the result its reply makes, refunded, and
   `reproduce` and the conversation executor keep it before it goes on, as a `ReplyOverBudget`'s
@@ -627,7 +631,7 @@ request with an HTML page, the default battery stops after 9 requests (5, the ch
 other spec in flight at the default `--concurrency 4`) with 8 attempts and 1 probe stored and 0
 tokens recorded, 6 with `--concurrency 1`; `run -sV` after 27 (18 probes, each a failed probe since
 the reply is refused, u09 A-35, then 9), 24 with `--concurrency 1`; two readable replies, then that
-page for everything: 27 requests, exit 3; the verification's filter on attack words (a 200 HTML
+page for everything: 26 to 27 requests (the replies in flight vary), exit 3; the verification's filter on attack words (a 200 HTML
 block page for prompts holding "ignore", "instruction", "system prompt", "pretend", "rules",
 "secret", "password" or "bypass"): the default battery finishes, exit 0, 160 of 550 attacks
 blocked and counted, 2 checks at `--concurrency 1` (on `07aa0b3a`, exit 3 at a run of 20, and each
