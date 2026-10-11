@@ -55,7 +55,10 @@ writes to judge.yaml; a
 .B --judge
 file must name the same id, endpoint and credential, or it is refused. A ws:// or wss://
 endpoint, or provider websocket, is refused before anything is written (exit 3): a fleet entry
-carries no websocket block, so that target file is written by hand (OD-37).
+carries no websocket block, so that target file is written by hand (OD-37). A WebSocket judge
+block is accepted only with a matching hand-written
+.B --judge
+file, and no judge.yaml is written for it.
 .TP
 .B lint
 Schema, policy and fixtures-prove-detection lint of the specs.

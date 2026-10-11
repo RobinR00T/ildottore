@@ -432,13 +432,21 @@ reads as U+FFFD, since httpx decodes the stream as text.
 - **OD-37** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
   practice), revisable: a fleet refuses a WebSocket entry; built, u12 §9**): `dottore fleet`
   refuses a `ws://` or `wss://` endpoint (read as `run` reads it, stripped and case-folded,
-  whatever `provider` the entry gives) and `provider: websocket` (on any endpoint), in a target
-  and in the `judge:` block, before it writes anything (exit 3). The refusal names the entry
+  whatever `provider` the entry gives) and `provider: websocket` (on any endpoint) in a target
+  before it writes anything (exit 3). The refusal names the entry
   (`targets.1.endpoint of 'ws-assistant-staging' is a wss:// URL`) and points to
-  `examples/target.websocket.yaml` and `examples/scope.websocket.yaml`. Before: it inferred `rest`
-  from a `wss://` path and wrote no `websocket:` block, and `run`, `fleet --run` and the printed
-  `dottore run` refused that file (a `ws://` or `wss://` endpoint is dialled only by
-  `provider: websocket`); `provider: websocket` wrote a file with no block, refused the same way.
+  `examples/target.websocket.yaml` and `examples/scope.websocket.yaml`. In the `judge:` block the
+  same declaration is accepted when `--judge` names a hand-written file that matches the block
+  (`_check_judge`): that file is what the run reads, the block authorizes it in the generated
+  scope, and no `judge.yaml` is written for it; without `--judge` the block is refused, and the
+  refusal says to write the judge's file and pass it with `--judge` (the first build of this
+  decision refused it either way, which broke a fleet that worked on `6d5f7ae`, where `fleet`
+  exited 0 and `run --dry-run` planned 220 judge requests; pre-merge audit of `be3f2e71`).
+  Before: a target entry with a `wss://` path was inferred `rest` and written with no
+  `websocket:` block, and `run`, `fleet --run` and the printed `dottore run` refused that target
+  file (a `ws://` or `wss://` endpoint is dialled only by `provider: websocket`);
+  `provider: websocket` wrote a file with no block, refused the same way; a WebSocket judge
+  worked only through a matching `--judge` file, beside a `judge.yaml` written as `rest`.
   Why: a fleet entry is the shorthand for a target whose wire shape is standard and read from its
   endpoint (OpenAI-compatible, Anthropic, a REST URL, an MCP server); a WebSocket target's shape is
   the deployment's own, declared in a block `run` checks field by field before it sends
@@ -449,5 +457,6 @@ reads as U+FFFD, since httpx decodes the stream as text.
   scanned. Alternative not taken: a `websocket:` block in a fleet entry, the provider read as
   `websocket` from the scheme and the block checked by `_websocket_spec` before anything is
   written (its scope entry pinned to host, port and path, as now). Reversal: `_refuse_websocket`,
-  `_websocket_problem` and `_WEBSOCKET_BY_HAND` in `cli/fleet.py` and their call in
-  `materialize_fleet`, and `tests/cli/test_fleet_websocket.py`.
+  `_websocket_problem`, `_WEBSOCKET_BY_HAND`, `_WEBSOCKET_JUDGE_BY_HAND` and the `judge_doc`
+  argument of `_documents` in `cli/fleet.py`, their use in `materialize_fleet`, and
+  `tests/cli/test_fleet_websocket.py`.

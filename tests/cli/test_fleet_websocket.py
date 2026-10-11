@@ -122,3 +122,88 @@ def test_an_http_fleet_is_unchanged(tmp_path: Path) -> None:
     entry = fleet_mod.FleetTarget(id="chat", endpoint="https://app.example.test/ws/chat")
     out = fleet_mod.materialize_fleet(_fleet(entry), tmp_path / "out")
     assert [p.name for p in out.target_paths] == ["target-local.yaml", "target-chat.yaml"]
+
+
+# --- pre-merge audit of be3f2e71, HIGH 1: a hand-written WebSocket judge given with --judge ------
+
+_WS_JUDGE_BLOCK = (
+    "judge:\n"
+    "  id: ws-assistant-staging\n"
+    "  endpoint: wss://assistant.example.test/ws/chat\n"
+    "  api_key_env: ASSISTANT_WS_TOKEN\n"
+)
+
+
+def _ws_judge_fleet(tmp_path: Path) -> tuple[Path, Path]:
+    """A fleet whose judge: block declares the example WebSocket target, and that target's file."""
+
+    judge = tmp_path / "ws-judge.yaml"
+    root = Path(__file__).resolve().parents[2]
+    judge.write_bytes((root / "examples" / "target.websocket.yaml").read_bytes())
+    fleet = tmp_path / "fleet.yaml"
+    fleet.write_text(_FLEET_HEAD + _WS_JUDGE_BLOCK, encoding="utf-8")
+    return fleet, judge
+
+
+def test_a_hand_written_websocket_judge_given_with_judge_is_accepted(tmp_path: Path) -> None:
+    """It worked on 6d5f7ae (fleet exit 0, the dry run planned judge requests) and the first
+    OD-37 build refused it: the --judge file is what the run reads, checked by ``load_target``
+    and held to the block by ``_check_judge``. The block is not written as ``judge.yaml``, a
+    file ``run`` would refuse; the hint carries the --judge file."""
+
+    fleet, judge = _ws_judge_fleet(tmp_path)
+    out = tmp_path / "o"
+    result = CliRunner().invoke(
+        app, ["fleet", str(fleet), "--out", str(out), "--judge", str(judge)]
+    )
+    assert result.exit_code == 0, result.output
+    assert not (out / "judge.yaml").exists(), "a judge.yaml run refuses is not written"
+    assert "judge:   " not in result.output, result.output
+    assert f'--judge "{judge}"' in result.output, result.output
+
+    dry = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "--dry-run",
+            "--quick",
+            "-t",
+            str(out / "target-local-llama.yaml"),
+            "--scope",
+            str(out / "scope.yaml"),
+            "--judge",
+            str(judge),
+        ],
+    )
+    assert dry.exit_code == 0, dry.output
+    assert "request(s) to the --judge model" in dry.output, dry.output
+
+
+def test_without_judge_a_websocket_judge_block_is_refused_with_advice_that_works(
+    tmp_path: Path,
+) -> None:
+    fleet, _judge = _ws_judge_fleet(tmp_path)
+    out = tmp_path / "o"
+    result = CliRunner().invoke(app, ["fleet", str(fleet), "--out", str(out)])
+    assert result.exit_code == 3, result.output
+    assert "judge.endpoint of 'ws-assistant-staging' is a wss:// URL" in result.output
+    # A judge cannot be "scanned with dottore run": it is passed with --judge, and this block
+    # still authorizes it.
+    assert "pass it to dottore fleet with --judge" in result.output, result.output
+    assert "scan it with dottore run" not in result.output, result.output
+    assert not out.exists()
+
+
+def test_materialize_takes_the_judge_file_and_writes_no_judge_yaml(tmp_path: Path) -> None:
+    from ildottore.cli import wiring
+
+    fleet, judge = _ws_judge_fleet(tmp_path)
+    config = fleet_mod.load_fleet(fleet)
+    out = fleet_mod.materialize_fleet(config, tmp_path / "out", judge=wiring.load_target(judge))
+    assert out.judge_path is None
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == [
+        "scope.yaml",
+        "target-local-llama.yaml",
+    ]
+    scope = wiring.build_scope(out.scope_path)
+    assert scope.target("ws-assistant-staging") is not None, "the block still authorizes it"

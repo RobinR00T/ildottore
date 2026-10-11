@@ -189,7 +189,9 @@ only at send time. `provider` is inferred from the endpoint (`/chat/completions`
 `/messages` -> anthropic, else `rest`). A WebSocket target is not a fleet entry: a `ws://` or
 `wss://` endpoint, or `provider: websocket`, is refused before anything is written (exit 3),
 since its target file needs a `websocket:` block; write it by hand from
-[`examples/target.websocket.yaml`](examples/target.websocket.yaml) (OD-37). A `kind: mcp`
+[`examples/target.websocket.yaml`](examples/target.websocket.yaml) (OD-37). A WebSocket judge
+is accepted only with `--judge` naming that hand-written file, matching the `judge:` block,
+and no `judge.yaml` is written for it. A `kind: mcp`
 entry routes to the read-only MCP adapter, which discovers a Model Context Protocol server's
 advertised tool/resource/prompt metadata (it never calls a tool); point the `mcp` suite at it.
 See [`specs/fleet.example.yaml`](specs/fleet.example.yaml).

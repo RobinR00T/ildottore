@@ -227,8 +227,11 @@ targets:
 .B provider
 is inferred from the endpoint when omitted: /chat/completions maps to openai, /messages to
 anthropic, otherwise rest. A ws:// or wss:// endpoint, and provider websocket, are refused in a
-target and in the judge block before anything is written (exit 3): that target file needs a
-websocket block, which a fleet entry cannot carry, so it is written by hand (OD-37).
+target before anything is written (exit 3): that target file needs a websocket block, which a
+fleet entry cannot carry, so it is written by hand (OD-37). In the judge block they are
+accepted only when dottore fleet --judge names the hand-written file, matching the block (id,
+endpoint, credential); no judge.yaml is written for it, and without --judge the block is
+refused.
 .B api_key_env
 names an environment variable, never the key itself. Each entry becomes a chatbot target (an
 mcp one an api target) with no seeded_setup, so a spec that needs documents, tools or memory is

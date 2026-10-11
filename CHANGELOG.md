@@ -12,17 +12,23 @@ recorded as decided under that delegation, by best practice and revisable, with 
 the alternative not taken and how to reverse it, in its `00-INDEX` row and its unit's §9.
 
 - **`dottore fleet` no longer writes a WebSocket target that `run` refuses (OD-37).** A fleet
-  entry carries no `websocket:` block, so a `wss://` endpoint was written as `provider: rest`
-  (inferred from its path) and `provider: websocket` as a file with no block, and `run`,
-  `fleet --run` and the printed `dottore run` refused both. Now a `ws://` or `wss://` endpoint
-  (stripped and case-folded, whatever `provider` says) and `provider: websocket`, in a target or
-  in the `judge:` block, are refused before anything is written (exit 3): `error: targets.1.endpoint
-  of 'ws-assistant-staging' is a wss:// URL, which only a provider websocket target dials, with a
-  websocket: block declaring its wire shape; a fleet entry cannot carry that block (OD-37). Write
-  that target file by hand (examples/target.websocket.yaml, ...)`. Refused rather than skipped, so
-  `fleet --run` never exits on the other targets' findings with one target unscanned. Not taken:
-  a `websocket:` block in a fleet entry, checked by `run`'s own `_websocket_spec` before writing.
-  `tests/cli/test_fleet_websocket.py`: 17 tests, 16 of them failing before the change.
+  entry carries no `websocket:` block, so a target entry with a `wss://` endpoint was written as
+  `provider: rest` (inferred from its path) and one with `provider: websocket` as a file with no
+  block, and `run`, `fleet --run` and the printed `dottore run` refused those target files. Now
+  a `ws://` or `wss://` endpoint (stripped and case-folded, whatever `provider` says) and
+  `provider: websocket` in a target are refused before anything is written (exit 3):
+  `error: targets.1.endpoint of 'ws-assistant-staging' is a wss:// URL, which only a provider
+  websocket target dials, with a websocket: block declaring its wire shape; a fleet entry cannot
+  carry that block (OD-37). Write that target file by hand (examples/target.websocket.yaml, ...)`.
+  A WebSocket judge keeps working as it did: a `judge:` block that declares one is accepted when
+  `--judge` names its hand-written file (matching the block), and now no `judge.yaml` is written
+  beside it (it was written as `rest`, a file `run` refuses); without `--judge` the block is
+  refused, with `... pass it to dottore fleet with --judge; keep this block, which authorizes it,
+  with the same id, endpoint and api_key_env`. Refused rather than skipped, so `fleet --run` never
+  exits on the other targets' findings with one target unscanned. Not taken: a `websocket:` block
+  in a fleet entry, checked by `run`'s own `_websocket_spec` before writing.
+  `tests/cli/test_fleet_websocket.py`: 20 tests, 16 of the first 17 failing on `6d5f7ae` and the
+  3 for a `--judge` file failing on `be3f2e71`, whose pre-merge audit found that case.
 - **One query per WebSocket connection, by design (OD-35).** `session.one_query_in_flight: false`
   is still refused when the target file loads, and the refusal now says it is by design: "is
   refused by design (OD-35): with several queries on one socket a reply frame is tied to its

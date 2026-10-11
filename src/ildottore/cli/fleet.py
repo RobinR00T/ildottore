@@ -350,15 +350,25 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
         raise ValueError("--judge does not match the fleet's judge: " + "; ".join(mismatches))
 
 
-#: Where a refused WebSocket entry is pointed: the hand-written target and its scope entry.
+#: Where a refused WebSocket target is pointed: the hand-written target and its scope entry.
 _WEBSOCKET_BY_HAND = (
     "a fleet entry cannot carry that block (OD-37). Write that target file by hand "
     "(examples/target.websocket.yaml, docs/MANUAL.md §4.2), authorize it in a scope of its own "
     "(examples/scope.websocket.yaml) and scan it with dottore run"
 )
 
+#: Where a refused WebSocket judge is pointed: a judge is passed with --judge, and the fleet's
+#: block still authorizes it, so the hand-written file has to match the block.
+_WEBSOCKET_JUDGE_BY_HAND = (
+    "a judge: block cannot carry that block (OD-37). Write the judge's target file by hand "
+    "(examples/target.websocket.yaml, docs/MANUAL.md §4.2) and pass it to dottore fleet with "
+    "--judge; keep this block, which authorizes it, with the same id, endpoint and api_key_env"
+)
 
-def _websocket_problem(where: str, entry_id: str, endpoint: str, provider: str | None) -> str:
+
+def _websocket_problem(
+    where: str, entry_id: str, endpoint: str, provider: str | None, *, advice: str
+) -> str:
     """Why ``fleet`` cannot write this entry, or ``""``: a WebSocket target it would misdeclare.
 
     A fleet entry has no ``websocket:`` block, so a ``ws://`` or ``wss://`` endpoint was written
@@ -370,32 +380,46 @@ def _websocket_problem(where: str, entry_id: str, endpoint: str, provider: str |
     if (provider or "").strip().lower() == "websocket":
         return (
             f"{where}.provider of {quoted(entry_id)} is websocket, whose websocket: block "
-            f"declares the wire shape; {_WEBSOCKET_BY_HAND}"
+            f"declares the wire shape; {advice}"
         )
     scheme = _split(endpoint).scheme.lower()
     if scheme in ("ws", "wss"):
         return (
             f"{where}.endpoint of {quoted(entry_id)} is a {scheme}:// URL, which only a provider "
-            f"websocket target dials, with a websocket: block declaring its wire shape; "
-            f"{_WEBSOCKET_BY_HAND}"
+            f"websocket target dials, with a websocket: block declaring its wire shape; {advice}"
         )
     return ""
 
 
-def _refuse_websocket(config: FleetConfig) -> None:
-    """Refuse a target or a judge the fleet would write as a file ``run`` refuses (OD-37)."""
+def _refuse_websocket(config: FleetConfig, judge_file: Target | None = None) -> bool:
+    """Refuse a target or a judge the fleet would write as a file ``run`` refuses (OD-37).
+
+    Returns whether the ``judge:`` block declares a WebSocket judge, which is allowed only with
+    a ``--judge`` file: that file is what the run reads (checked by ``load_target`` and held to
+    the block by :func:`_check_judge`), so a hand-written WebSocket judge keeps working, as it
+    did on 6d5f7ae, and the block is then not written as ``judge.yaml`` (pre-merge audit of
+    be3f2e71).
+    """
 
     for index, target in enumerate(config.targets):
         problem = _websocket_problem(
-            f"targets.{index}", target.id, target.endpoint, target.provider
+            f"targets.{index}",
+            target.id,
+            target.endpoint,
+            target.provider,
+            advice=_WEBSOCKET_BY_HAND,
         )
         if problem:
             raise ValueError(problem)
     judge = config.judge
-    if judge is not None:
-        problem = _websocket_problem("judge", judge.id, judge.endpoint, judge.provider)
-        if problem:
-            raise ValueError(problem)
+    if judge is None:
+        return False
+    problem = _websocket_problem(
+        "judge", judge.id, judge.endpoint, judge.provider, advice=_WEBSOCKET_JUDGE_BY_HAND
+    )
+    if problem and judge_file is None:
+        raise ValueError(problem)
+    return bool(problem)
 
 
 def _shown(field: str, value: str | None) -> str:
@@ -428,13 +452,19 @@ def _scope_doc(config: FleetConfig) -> dict[str, object]:
     return {"version": "1.0", "targets": targets}
 
 
-def _documents(config: FleetConfig) -> Iterator[tuple[str, dict[str, object]]]:
-    """Each file :func:`materialize_fleet` writes, by name, built only when it is reached."""
+def _documents(
+    config: FleetConfig, *, judge_doc: bool = True
+) -> Iterator[tuple[str, dict[str, object]]]:
+    """Each file :func:`materialize_fleet` writes, by name, built only when it is reached.
+
+    ``judge_doc`` false leaves out ``judge.yaml``: a WebSocket judge block given with a
+    ``--judge`` file would be written as a file ``run`` refuses (OD-37).
+    """
 
     yield "scope.yaml", _scope_doc(config)
     for entry in config.targets:  # the id is charset-validated (a safe file name)
         yield f"target-{entry.id}.yaml", _target_doc(entry)
-    if config.judge is not None:
+    if config.judge is not None and judge_doc:
         yield "judge.yaml", _judge_doc(config.judge)
 
 
@@ -485,8 +515,8 @@ def materialize_fleet(
         )
 
     # A WebSocket target's wire shape is declared by hand: written from a fleet entry, its file
-    # was one `run` refuses (OD-37).
-    _refuse_websocket(config)
+    # was one `run` refuses (OD-37). A WebSocket judge is taken from its --judge file instead.
+    judge_by_hand = _refuse_websocket(config, judge)
     _check_judge(config, judge)
 
     scannable = list(config.targets)
@@ -505,7 +535,7 @@ def materialize_fleet(
     # GiB for a fleet file just under the cap (delta audit). The judge file is measured only
     # when it is the judge the printed command reads, not when ``judge`` (a ``--judge`` file)
     # replaces it. An OS error while writing can still leave the directory part written.
-    for name, doc in _documents(config):
+    for name, doc in _documents(config, judge_doc=not judge_by_hand):
         if name == "judge.yaml" and judge is not None:
             continue
         size = len(_rendered(doc))
@@ -517,11 +547,11 @@ def materialize_fleet(
             )
 
     out.mkdir(parents=True, exist_ok=True)
-    for name, doc in _documents(config):
+    for name, doc in _documents(config, judge_doc=not judge_by_hand):
         (out / name).write_bytes(_rendered(doc))
     scope_path = out / "scope.yaml"
     target_paths = [out / f"target-{entry.id}.yaml" for entry in scannable]
-    judge_path = out / "judge.yaml" if config.judge is not None else None
+    judge_path = out / "judge.yaml" if config.judge is not None and not judge_by_hand else None
 
     return MaterializedFleet(
         scope_path=scope_path, target_paths=target_paths, skipped=skipped, judge_path=judge_path

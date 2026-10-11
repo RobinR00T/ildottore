@@ -824,12 +824,13 @@ no template carries a temperature, so a fingerprint is as repeatable as the depl
 2026-10-11: on a shared socket a reply frame is tied to its attempt only by an id the server
 echoes, and one frame misread puts one attempt's reply into another's verdict; `--concurrency`
 gives each conversation a connection of its own); an
-HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (a fleet entry
-carries no `websocket:` block, so `dottore fleet` refuses a `ws://` or `wss://` endpoint and
-`provider: websocket`, exit 3 and nothing written, and points here: write the target and its
+HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet target entry (a fleet
+entry carries no `websocket:` block, so `dottore fleet` refuses a `ws://` or `wss://` endpoint
+and `provider: websocket`, exit 3 and nothing written, and points here: write the target and its
 scope entry by hand, as `examples/target.websocket.yaml` and `examples/scope.websocket.yaml` do;
-until 2026-10-11 it wrote a `provider: rest` file `run` refused, OD-37); a session that must
-survive a reconnect (by design, OD-36, above).
+until 2026-10-11 it wrote a `provider: rest` target file `run` refused, OD-37; a WebSocket judge
+is given to `dottore fleet` as a hand-written `--judge` file, §4.3); a session that must survive
+a reconnect (by design, OD-36, above).
 
 ### 4.3 `fleet.yaml`, many targets in one file
 
@@ -853,12 +854,16 @@ targets:
 
 `provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
 `/messages` -> `anthropic`, otherwise `rest`. A WebSocket target is not a fleet entry: a `ws://`
-or `wss://` endpoint (whatever `provider` says) and `provider: websocket` are refused, in a
-target and in the `judge:` block, before anything is written (exit 3), since the target file it
-needs carries a `websocket:` block a fleet entry cannot hold (§4.2, OD-37). `dottore fleet`
-expands this into a scope plus one target file per model, named for its `id`
-(`target-<id>.yaml`). Two ids that differ only by case (`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
-case-insensitive one (the macOS and Windows default) they are one file, and the second entry
+or `wss://` endpoint (whatever `provider` says) and `provider: websocket` are refused before
+anything is written (exit 3), since the target file it needs carries a `websocket:` block a fleet
+entry cannot hold (§4.2, OD-37). A `judge:` block may declare a WebSocket judge only when
+`--judge` names its hand-written target file, which must match the block (id, endpoint,
+credential): the block authorizes it in the generated scope, the file is what the run reads, and
+no `judge.yaml` is written for it (one would be refused by `run`). Without `--judge` such a
+block is refused, and the error says to write the file and pass it with `--judge`. `dottore
+fleet` expands this into a scope plus one target file per model, named for its `id`
+(`target-<id>.yaml`). Two ids that differ only by case (`Prod` and `prod`) are refused (exit 3,
+nothing written) on every file system: on a case-insensitive one (the macOS and Windows default) they are one file, and the second entry
 used to overwrite the first. The message locates both entries as validation errors do
 (`targets.0.id`, counted from 0), since the CLI may mask an id that looks random. A `judge:` id
 spelled as a target's only up to case is refused too (the default `judge` of a block with no
