@@ -26,14 +26,14 @@ Two roles for fingerprinting: both first-class:
    The alternative was a hand-written "mutators known to work against family X" table. We
    have no empirical basis for one, and shipping it would attach a confidence to a fiction.
 
-   The other hook, the planner function `core/planner._baseline_resistance`, is **dead at both
-   ends**: it reads a per-category expectation from `guardrails["baseline_resistance"]`, a key no
-   fingerprint layer writes, so it always returns `None`; and the
-   `PlanSelection.baseline_resistance` field it fills has no reader anywhere in `src/` (OD-17).
-   No layer writes the key because benign probes
-   cannot measure per-category resistance, so nothing emits it and no result is scored
-   relative to an expectation. Tracked in `docs/12`. That one really is inert, and saying so
-   is cheaper than a number nobody can defend.
+   There was a second hook, the planner function `core/planner._baseline_resistance`, **dead at
+   both ends**: it read a per-category expectation from `guardrails["baseline_resistance"]`, a
+   key no fingerprint layer writes, so it always returned `None`, into a
+   `PlanSelection.baseline_resistance` field nothing in `src/` read. No layer writes the key
+   because benign probes cannot measure per-category resistance. The function and the field were
+   removed on 2026-10-11 (OD-17, ADR-0008 option B, decided under the owner's delegation): a
+   field that always says `null` in a shape that looks like a working feature is a claim the
+   code cannot back. It comes back with a layer that measures resistance, after a live run.
 
    **Only obscuring carriers are probed, and that is a safety boundary.** A carrier that
    leaves the instruction readable and wraps it in new text (a refusal-suppression preamble, a
@@ -129,17 +129,18 @@ went through with the same credential and route. It is recorded as a failed prob
 `AdapterStatusError` until the adapters named Azure's filter refusal on 2026-10-10, OD-41, and any
 other 4xx still does), `benign_refused` is `null`, and the pass and the run go on. Gemini's prompt
 block (`promptFeedback.blockReason` in a success body, through a REST template) is read the same
-way. It is the one input-filter signal the pass can see; `input_filter` stays `null` for now
-(OD-40). The same refusal of a **carrier** probe costs that carrier, not the pass, since the
+way. It is the one input-filter signal the pass can see, and since OD-40 was decided (2026-10-11,
+under the owner's delegation) the engine reads it as one: `input_filter` is `true` (an undocumented
+4xx stays a failed probe and claims nothing). The same refusal of a **carrier** probe costs that carrier, not the pass, since the
 pre-merge audit of `3d739f3` (2026-10-10): a carrier is an instruction sent through an encoding,
 which Microsoft's Prompt Shields classes as a user prompt attack ("Encoding attacks"), so Azure's
 filter can refuse it after every other probe was answered. It is recorded as a failed probe
 (`carrier/carrier_base64_wrap: ProviderFilterBlock`), the carrier is unmeasured (absent from the
 comprehension map and from `effective_mutators`), and the engine reads it through the
 composition root's `is_prompt_filtered` (the adapters' `blocked_by_provider_filter` marker); any
-other error of a carrier stops the pass. The same refusal of an attributing probe stops the pass,
-as before. The attack phase, since OD-41, records such a refusal of an attack prompt as a blocked
-attempt and goes on (`docs/05` §2, u08 A-69).
+other error of a carrier stops the pass. Such a carrier sets `input_filter: true` too. The same
+refusal of an attributing probe stops the pass, as before. The attack phase, since OD-41, records
+such a refusal of an attack prompt as a blocked attempt and goes on (`docs/05` §2, u08 A-69).
 
 Until 2026-10-09 the layer sent the nudge alone and read **any** refusal in its reply as an output
 filter, and a canned one as an input filter as well, so a model that followed the instruction was
@@ -177,8 +178,14 @@ printed on 2026-10-09 for an offline target with `mock_scenario: comprehending` 
   provider's filter stop is on either reply, `false` when neither has one but at least one carries
   a stop reason from the provider, and `null` when none does: `false` is what these two benign
   probes saw, not proof that there is no filter, since one that acts only on harmful content never
-  acts on them. `input_filter` is always `null`: no reply tells an input filter from the model's
-  own refusal (it was `true` for a canned requested refusal until 2026-10-09). The latency is the
+  acts on them. `input_filter` is `true` when a probe of the pass (the benign request or a
+  carrier) failed because the provider's own input filter refused it in a shape it documents
+  (`ProviderFilterBlock`: Azure OpenAI's HTTP 400 `content_filter`, Gemini's prompt block), and
+  `null` otherwise, never `false`: no reply tells an input filter from the model's own refusal,
+  and benign probes cannot show that there is none. The guardrail layer sees replies only and
+  writes `null`; the engine, which sees every failed probe, sets the `true` (OD-40, decided
+  2026-10-11; it was `null` on every pass from 2026-10-09, and `true` for a canned requested
+  refusal before that). The latency is the
   first figure a probe reply's `usage` reports, read only when it is a finite, non-negative number
   a float can hold, and `null` otherwise (since 2026-10-07: a 400-digit integer there made
   `fingerprint` and `run -sV` exit 1, and an infinity, a NaN or a negative figure was recorded).
@@ -388,9 +395,9 @@ What the planner does today, with and without a fingerprint:
    rest follow, in declared order. It selects no spec and drops no variant. Seen over the wire
    once, against a local 3B model (`docs/16` §1, 2026-10-07).
 3. **Does not set baseline expectations.** The design was to record the family's known
-   resistance and score a result relative to it. That half is the dead `_baseline_resistance`
-   hook described above §1: nothing writes the guardrails key it reads, and nothing reads the
-   plan field it fills (OD-17, ADR-0008). The same
+   resistance and score a result relative to it. The hook for it, `_baseline_resistance`, was
+   dead at both ends and was removed with its plan field on 2026-10-11 (above §1; OD-17,
+   ADR-0008). The same
    goes for the original idea of weighting variants "historically effective against the
    detected family", which the introduction rejects for lack of an empirical basis.
 4. **Emits an explicit, reviewable `TestPlan`** (which specs, why, which were skipped and why).

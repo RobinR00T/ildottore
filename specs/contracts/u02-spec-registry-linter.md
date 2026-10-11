@@ -90,7 +90,13 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   `UNKNOWN_MUTATOR_TYPE`, `PARSE_ERROR`, `UNKNOWN_SPEC_REF`, `ASSET_ERROR`,
   `EVALUATOR_MISCONFIGURED`, `UNKNOWN_FRAMEWORK_CODE`, `ORACLE_MARKER_IS_ECHOABLE`,
   `FRAMEWORK_CLAIM_CONTRADICTED` and `MUTATOR_PLUGIN_ERROR`. A regex a spec writes that does not
-  compile is `EVALUATOR_MISCONFIGURED` (A-33).
+  compile is `EVALUATOR_MISCONFIGURED` (A-33). Since 2026-10-11 (OD-19, u06 §7 A-73) it also
+  holds `DEPRECATED_COMBINATION`, a warning: `evaluator_logic` written as `all_pass`, `any_fail`
+  or `weighted` (deprecated names of `deterministic_first`, the one rule; for `weighted` the
+  message says no vote is taken), or an evaluator `weight`, which nothing reads. The fixture
+  engine combines its stubs by `shared.combination.combine_verdicts`, the runner's rule, so lint
+  and a run cannot disagree; its stubs return only `pass` or `fail`, so a fixture still fails
+  when any stub fails and no lint result changed.
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/registry -q` green; **coverage ≥ 90%** for `src/ildottore/registry/`.

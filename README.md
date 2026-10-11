@@ -24,8 +24,8 @@ mapping the code checks).
 - **Multi-turn** attacks (Crescendo, Linear, Sequential, Bad-Likert, Tree) whose turns are
   pinned in the spec, so a conversation is as reproducible as a single shot.
 - **Deterministic-first evaluators** decide the verdict; an optional **LLM-as-judge**
-  (`--judge`) is a hardened secondary that can never turn a deterministic fail into a pass
-  (whether a judge-only fail may gate CI is an open decision, OD-19).
+  (`--judge`) is a hardened secondary that can never turn a deterministic fail into a pass,
+  and a fail only the judge reported is reported for review, never confirmed (OD-19).
 - **Fleet mode**: declare every LLM / URL / MCP endpoint in one `fleet.yaml` and scan the lot.
 - **Reports** in JSON, HTML, SARIF and JUnit; **`replay`** re-derives any run from evidence;
   **`diff`** gates a pipeline on regressions vs a baseline.

@@ -10,7 +10,9 @@ such an endpoint after 8 requests, where ``main`` exited 0 (pre-merge audit of `
 The benign request is read for the profile only, so a 4xx to it alone is a refusal of that
 request: the probes before it went through with the same credential and route. It is now a
 failed probe: ``benign_refused`` is unknown (``null``), ``probes_failed`` lists it, and the pass
-and the run go on. The same 400 on any other probe still stops the pass, as on ``main``.
+and the run go on. The same 400 on any other probe still stops the pass, as on ``main``. Since
+OD-40 was decided (2026-10-11) the refusal also sets ``input_filter: true``: the provider says,
+in a shape it documents, that its input filter refused the prompt.
 
 Through the real CLI against a local stub that blocks, as Azure does, every prompt with a word.
 """
@@ -141,7 +143,9 @@ def test_the_fingerprint_goes_on_past_an_input_filter_on_the_benign_request(
     assert PROBES_FAILED_FLAG in fp.spoofing_flags
     # Unknown, not "answered" and not "refused": the request never reached the model.
     assert fp.guardrails["benign_refused"] is None
-    assert fp.guardrails["input_filter"] is None
+    # The provider said its input filter refused it, in the shape Azure documents (OD-40,
+    # decided 2026-10-11: it was ``null`` on every pass).
+    assert fp.guardrails["input_filter"] is True
     assert fp.guardrails["refusal_style"] == "polite-explain"
     assert result.stderr.startswith(
         f"warning: azure: 1 of {fingerprint_probe_count()} probe(s) got no usable reply "

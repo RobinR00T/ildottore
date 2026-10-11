@@ -464,9 +464,12 @@ def _build_coverage(
 def finding_state(finding: Finding) -> str:
     """The review state every report prints for one finding.
 
-    * ``confirmed``: an exploit above the confidence threshold (what the CI gate counts);
-    * ``needs_review``: an exploit below it, or a result that was sent and could not be
-      decided (an uncorroborated secret shape is inconclusive by design, docs/11 §4);
+    * ``confirmed``: an exploit above the confidence threshold, with a fail a deterministic
+      evaluator decided in its confirming variant (what the CI gate counts; the runner's rule,
+      OD-19);
+    * ``needs_review``: an exploit below it, one only the judge reported (OD-19), or a result
+      that was sent and could not be decided (an uncorroborated secret shape is inconclusive by
+      design, docs/11 §4);
     * ``not_exploited``: the spec passed;
     * ``not_tested``: nothing was sent for it (a capability skip, a policy block).
 

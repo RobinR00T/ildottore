@@ -360,8 +360,9 @@ def refused_request(exc: BaseException) -> bool:
     goes out after seven probes the same credential and route got answers to, so a 4xx to it is
     about its prompt: Azure OpenAI's prompt filter answers a blocked prompt with HTTP 400 and the
     error code ``content_filter``, and stopped ``-sV`` on it (pre-merge audit of ``cd413c0``).
-    It is the one input-filter signal the pass can see, and the profile reads it as unknown, not
-    as an input filter (OD-40). A 3xx or a 5xx the retries do not cover is not one.
+    A 3xx or a 5xx the retries do not cover is not one. An undocumented 4xx says nothing about a
+    filter; the provider's documented refusal (below) is the one input-filter signal the pass can
+    see, and the engine reads it as one (``input_filter: true``, OD-40, decided 2026-10-11).
 
     Since OD-41 the adapters raise Azure's refusal as a ``ProviderFilterBlock``, which carries its
     status but is not an ``AdapterStatusError``, and Gemini's prompt block (a success body) as
@@ -532,14 +533,15 @@ def bare_adapter_factory(target: Target, _spec: AttackSpec) -> TargetAdapter:
     reports ``inconclusive``. The target's declared capabilities are still carried so
     capability-gating behaves.
 
-    **Two specs of the shipped 75 decide anyway, in opposite directions**, and this used to say
-    "never a fabricated pass or fail", which is false. A text oracle scores a reply that is
-    evidence of neither: `DOS-TOKEN-AMP-001` looks for a secure marker the canned string does
-    not carry and reports `fail`; `MCP-TOOLPOISON-001` looks for the ABSENCE of injection
-    markers, which the canned string trivially satisfies, and reports `pass`. That is a
-    property of a text oracle facing an irrelevant reply, not of this factory, and it is pinned
-    by `tests/cli/test_scenario_mode.py` so the claim and the code cannot drift apart again
-    (OD-16 asks whether an evaluator should abstain on a reply that answers nothing).
+    Against the shipped battery no spec decides. Two used to, in opposite directions, because
+    a text oracle scores a reply that is evidence of neither: `DOS-TOKEN-AMP-001` looked for a
+    secure marker the canned string does not carry and reported `fail`; `MCP-TOOLPOISON-001`
+    looked for the ABSENCE of injection markers, which the canned string trivially satisfies,
+    and reported `pass`. OD-16 was decided on 2026-10-11 under the owner's delegation
+    (ADR-0007 option B): the first keys on the amplification itself and the second pairs its
+    text oracle with a judge, which a bare run leaves unregistered. That is a property of the
+    specs' oracles, not of this factory, and `tests/cli/test_scenario_mode.py` and
+    `tests/battery/test_irrelevant_reply.py` pin it so the claim and the code cannot drift apart.
     """
 
     return MockTarget(bare_scenario(capabilities=target.capabilities), id=target.id)
@@ -561,7 +563,8 @@ def scenario_judge_adapter(scenario: str) -> TargetAdapter | None:
 
     The ``semantic_judge`` evaluator is an LLM-as-judge reached via a
     :class:`TargetAdapter`; offline it would otherwise have no model and abstain
-    (``inconclusive``), sinking every ``weighted``/``any_fail`` aggregate. For a
+    (``inconclusive``), and an unconfigured judge holds every aggregate it is in
+    ``inconclusive`` unless a deterministic evaluator fails (OD-19). For a
     ``vulnerable`` run we replay a canned judge verdict of ``exploited`` and for
     ``hardened`` one of ``secure`` - so the judge *agrees* with the fixtures and the
     run demonstrates a decisive ``fail``/``pass``. ``bare`` returns ``None`` (no
@@ -1442,6 +1445,38 @@ def load_target(path: Path) -> Target:
     return _target_from(path, _read_target_yaml(path))
 
 
+def _mcp_capability(
+    path: Path, raw: dict[str, Any], caps_raw: dict[str, Any], caps: Capabilities
+) -> Capabilities:
+    """``capabilities.mcp``: true exactly when the target is an MCP server (OD-44).
+
+    Its provider is ``mcp``: the read-only MCP adapter is the one route that renders a server's
+    advertised surface, which the ``mcp``-gated specs read, so the capability follows the provider
+    and is not declared. Declared ``false`` on an MCP target, or ``true`` on a live target of any
+    other provider, it says what the route does not do, and is refused (the file and the field,
+    never the value). An offline mock may declare it: it replays the specs' fixtures, an MCP
+    listing included. Decided 2026-10-11 under the owner's delegation; before, nothing gated the
+    MCP specs and the default battery sent the discovery request to a chat model as a prompt.
+    """
+
+    provider = raw.get("provider")
+    is_mcp = isinstance(provider, str) and provider.strip().lower() == "mcp"
+    declared = "mcp" in caps_raw
+    if is_mcp:
+        if declared and not caps.mcp:
+            raise ValueError(
+                f"target file {path} 'capabilities' declares mcp false for an MCP server "
+                "(provider mcp); leave it out: the provider sets it"
+            )
+        return caps.model_copy(update={"mcp": True})
+    if caps.mcp and not _uses_mock(raw):
+        raise ValueError(
+            f"target file {path} 'capabilities' declares mcp for a live target whose provider is "
+            "not mcp: only the MCP adapter reads an MCP server; leave it out, or set provider: mcp"
+        )
+    return caps
+
+
 def _target_from(path: Path, raw: dict[str, Any]) -> Target:
     """The :class:`Target` a parsed ``target.yaml`` declares (:func:`load_target`)."""
 
@@ -1507,6 +1542,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         raise ValueError(
             f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"
         ) from exc
+    caps = _mcp_capability(path, raw, caps_raw, caps)
     # Text or absent: `_read_target_yaml` refuses anything else, once read as absent (A-53).
     name = raw.get("name")
 

@@ -60,10 +60,9 @@ def test_no_adaptive_pass_through_ignores_fingerprint() -> None:
     spec = make_spec(mutations=["rot13", "base64_wrap"])
     fp = _fingerprint_with_effective(["base64_wrap"])
     plan = build_plan([spec], fp, Capabilities(), target_id="t1", plan_ref="p1", adaptive=False)
-    # Non-adaptive: declared order preserved, no fingerprint_ref, no baseline.
+    # Non-adaptive: declared order preserved, no fingerprint_ref.
     assert plan.adaptive is False
     assert plan.fingerprint_ref is None
-    assert plan.selected[0].baseline_resistance is None
     assert plan.selected[0].mutators == ["identity", "rot13", "base64_wrap"]
 
 
@@ -76,17 +75,6 @@ def test_adaptive_orders_family_effective_mutators() -> None:
     assert plan.fingerprint_ref == "plan_ref_x"
 
 
-def test_adaptive_baseline_resistance_from_guardrails() -> None:
-    spec = make_spec(category=Category.JAILBREAK)
-    fp = ModelFingerprint(
-        target_id="t1",
-        family=FingerprintGuess(guess="anthropic-claude", confidence=0.9),
-        guardrails={"baseline_resistance": {"jailbreak": 0.85}},
-    )
-    plan = build_plan([spec], fp, Capabilities(), target_id="t1", plan_ref="p1", adaptive=True)
-    assert plan.selected[0].baseline_resistance == 0.85
-
-
 def test_adaptive_without_effective_hint_preserves_order() -> None:
     spec = make_spec(mutations=["rot13", "base64_wrap"])
     # Fingerprint with NO effective_mutators hint → declared order preserved.
@@ -96,28 +84,6 @@ def test_adaptive_without_effective_hint_preserves_order() -> None:
     )
     plan = build_plan([spec], fp, Capabilities(), target_id="t1", plan_ref="p1", adaptive=True)
     assert plan.selected[0].mutators == ["identity", "rot13", "base64_wrap"]
-
-
-def test_adaptive_baseline_absent_when_guardrails_not_a_map() -> None:
-    spec = make_spec(category=Category.JAILBREAK)
-    fp = ModelFingerprint(
-        target_id="t1",
-        family=FingerprintGuess(guess="x", confidence=0.5),
-        guardrails={"baseline_resistance": "not-a-dict"},
-    )
-    plan = build_plan([spec], fp, Capabilities(), target_id="t1", plan_ref="p1", adaptive=True)
-    assert plan.selected[0].baseline_resistance is None
-
-
-def test_adaptive_baseline_absent_when_value_not_numeric() -> None:
-    spec = make_spec(category=Category.JAILBREAK)
-    fp = ModelFingerprint(
-        target_id="t1",
-        family=FingerprintGuess(guess="x", confidence=0.5),
-        guardrails={"baseline_resistance": {"jailbreak": "high"}},  # non-numeric
-    )
-    plan = build_plan([spec], fp, Capabilities(), target_id="t1", plan_ref="p1", adaptive=True)
-    assert plan.selected[0].baseline_resistance is None
 
 
 def test_default_budgets_applied_when_unset() -> None:

@@ -1,10 +1,15 @@
-"""Tests for verdict combination (evaluator_logic) - docs/04 §2."""
+"""Tests for verdict combination (evaluator_logic) - docs/04 §2.
+
+Since OD-19 (decided 2026-10-11, u06 A-73) every value of the field runs one rule,
+``deterministic_first``; ``tests/evaluators/test_one_combination_rule.py`` holds the tests of
+the rule itself and of the agreement between the runner, lint and ``combine``.
+"""
 
 from __future__ import annotations
 
 from ildottore.evaluators.combine import AGGREGATE_TYPE, combine
 from ildottore.shared.enums import EvaluatorLogic, InconclusiveReason, VerdictStatus
-from ildottore.shared.models import EvaluatorConfig, Verdict
+from ildottore.shared.models import Verdict
 
 
 def _v(
@@ -56,15 +61,16 @@ def test_any_fail_with_fail_fails() -> None:
     assert v.status is VerdictStatus.FAIL
 
 
-def test_inconclusive_dominates_all_pass() -> None:
+def test_an_inconclusive_blocks_a_pass() -> None:
     v = combine([_v(VerdictStatus.PASS), _v(VerdictStatus.INCONCLUSIVE)], EvaluatorLogic.ALL_PASS)
     assert v.status is VerdictStatus.INCONCLUSIVE
 
 
-def test_inconclusive_dominates_any_fail() -> None:
+def test_a_deterministic_fail_decides_over_an_inconclusive() -> None:
     v = combine([_v(VerdictStatus.FAIL), _v(VerdictStatus.INCONCLUSIVE)], EvaluatorLogic.ANY_FAIL)
-    # Required inconclusive is never coerced - even a fail cannot override it.
-    assert v.status is VerdictStatus.INCONCLUSIVE
+    # Before OD-19 this module returned inconclusive here and the runner fail: a leaked canary
+    # beside an evaluator that could not decide is still a leak.
+    assert v.status is VerdictStatus.FAIL
 
 
 def test_inconclusive_reason_propagated_when_unanimous() -> None:
@@ -89,55 +95,20 @@ def test_matched_union_deduplicated() -> None:
     assert v.matched == ["a", "b", "c"]
 
 
-def test_weighted_fail_majority() -> None:
-    configs = [
-        EvaluatorConfig(type="semantic_judge", weight=3.0),  # type: ignore[arg-type]
-        EvaluatorConfig(type="regex_absence", weight=1.0),  # type: ignore[arg-type]
+def test_weighted_is_the_same_rule_and_takes_no_vote() -> None:
+    """``weighted`` was a vote over ``config.weight``; it names the one rule now (OD-19)."""
+
+    judge = "semantic_judge"
+    leak_and_two_secure_judges = [
+        _v(VerdictStatus.FAIL),
+        _v(VerdictStatus.PASS, etype=judge),
+        _v(VerdictStatus.PASS, etype=judge),
     ]
-    v = combine(
-        [_v(VerdictStatus.FAIL), _v(VerdictStatus.PASS)],
-        EvaluatorLogic.WEIGHTED,
-        configs=configs,
-    )
-    assert v.status is VerdictStatus.FAIL
-    assert v.confidence == 0.75  # 3 / 4
-
-
-def test_weighted_pass_majority() -> None:
-    configs = [
-        EvaluatorConfig(type="semantic_judge", weight=1.0),  # type: ignore[arg-type]
-        EvaluatorConfig(type="regex_absence", weight=3.0),  # type: ignore[arg-type]
-    ]
-    v = combine(
-        [_v(VerdictStatus.FAIL), _v(VerdictStatus.PASS)],
-        EvaluatorLogic.WEIGHTED,
-        configs=configs,
-    )
-    assert v.status is VerdictStatus.PASS
-
-
-def test_weighted_excludes_inconclusive_from_tally() -> None:
-    # One fail + one inconclusive → fail is 100% of the decisive weight.
-    v = combine(
-        [_v(VerdictStatus.FAIL), _v(VerdictStatus.INCONCLUSIVE)],
-        EvaluatorLogic.WEIGHTED,
-    )
-    assert v.status is VerdictStatus.FAIL
-
-
-def test_weighted_all_inconclusive_is_inconclusive() -> None:
+    for logic in EvaluatorLogic:
+        assert combine(leak_and_two_secure_judges, logic) == combine(leak_and_two_secure_judges)
+    assert combine(leak_and_two_secure_judges, EvaluatorLogic.WEIGHTED).status is VerdictStatus.FAIL
     v = combine(
         [_v(VerdictStatus.INCONCLUSIVE), _v(VerdictStatus.INCONCLUSIVE)],
         EvaluatorLogic.WEIGHTED,
     )
     assert v.status is VerdictStatus.INCONCLUSIVE
-
-
-def test_weighted_default_weights_when_configs_mismatch() -> None:
-    # configs length mismatch → defaults to weight 1.0 each; 1 of 2 fail = 50% ≥ threshold.
-    v = combine(
-        [_v(VerdictStatus.FAIL), _v(VerdictStatus.PASS)],
-        EvaluatorLogic.WEIGHTED,
-        configs=[EvaluatorConfig(type="regex_absence")],  # type: ignore[arg-type]
-    )
-    assert v.status is VerdictStatus.FAIL

@@ -377,8 +377,10 @@ def test_the_no_judge_warning_counts_what_will_run() -> None:
         ],
     )
     text = " ".join(result.output.split())
-    assert "33 of the 34 specs that will run on local-llama use semantic_judge" in text
-    assert "34 specs selected" in text
+    # 33 of 33 since 2026-10-11: OD-16 gave MCP-TOOLPOISON-001, the one spec without a judge, a
+    # judge, and OD-44 keeps that spec off a chat model, which this target is.
+    assert "33 of the 33 specs that will run on local-llama use semantic_judge" in text
+    assert "33 specs selected" in text
 
 
 # --- token accounting details (pre-commit audit of the leftovers) ------------------------

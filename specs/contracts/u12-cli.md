@@ -1147,6 +1147,16 @@ Checked by `tests/cli/test_malformed_reply_campaign.py`.
 - Not its call: adaptive-default decision (OD-5) · judge model (OD-3) · scope signing (OD-2).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
+- **OD-44** (2026-10-11): an MCP spec ran against any target, a chat model included. **Decided
+  2026-10-11 under the owner's delegation (best practice, revisable), built.** This unit's half:
+  the target loader (`wiring._mcp_capability`) sets `capabilities.mcp` when `provider` is `mcp`,
+  refuses it declared `false` there, or `true` on a live target of another provider (the file and
+  the field, never the value, as A-45), and lets an offline mock declare it; `dottore fleet`
+  refuses `mcp` declared in an entry (`kind: mcp` makes an MCP server) before it writes, as A-50
+  does an unknown key. The planner (u08) skips a spec that `requires: [mcp]` elsewhere; the dry run
+  of `examples/target.local.yaml` plans 33 specs (34 before). Checks:
+  `tests/cli/test_mcp_specs_need_an_mcp_target.py`. Alternative not taken: gate on `provider` in
+  the planner directly.
 - **OD-5** whether `--adaptive` defaults ON under `-sV`/`-A` or is opt-in (CLI mirrors engine
   default; propose opt-in for MVP‑1 to bound cost). **Decided 2026-10-11 under the owner's
   delegation (best practice), revisable: signed off as built**, no flag, `-sV`/`-A` imply
