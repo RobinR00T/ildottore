@@ -64,7 +64,7 @@ _ALREADY_MASKED: Final = re.compile(r"«REDACTED:([A-Za-z0-9_]+)(?::([0-9a-f]{8}
 #: the type hints the evaluators give ``mask_value`` (a test keeps this list complete).
 _OWN_MASK_TYPES: Final = frozenset(
     {
-        *("credential", "url_password", "labeled_secret", "high_entropy"),
+        *("credential", "url_password", "labeled_secret", "high_entropy", "hex_token"),
         *("canary", "shared_line", "tool_arg_injection", "ip", "private_key"),
     }
 )
@@ -411,6 +411,8 @@ LABELLED_CARD: Final = re.compile(
 _KNOWN_SECRETS: set[str] = set()
 _KNOWN_LOCK: Final = threading.Lock()
 _KNOWN_MIN_LEN: Final = 8
+#: The same floor, for an adapter that refuses a shorter credential before sending it (u04 A-78).
+KNOWN_SECRET_MIN_LEN: Final = _KNOWN_MIN_LEN
 
 
 def _escaped_forms(value: str) -> set[str]:
@@ -764,6 +766,28 @@ _SEGMENT_SPLIT: Final = re.compile(r"[-_/]")
 # digits, i.e. the hash and UUID shapes.
 _HEX_SEGMENT: Final = re.compile(r"[0-9a-fA-F]+")
 _HEX_EXEMPTION_MIN_LEN: Final = 16
+# --- hex runs and UUIDs, masked whatever their bits/char (u01 A-78) ---------------------
+# Hexadecimal caps at 4 bits/char and a short sample seldom shows all 16 digits, so the 3.7
+# threshold left most random hex keys readable: 74.7% of 32-digit ones (the shape of an Azure
+# key), 47.5% of 40-digit ones, 5.5% of 64-digit ones and 47.7% of v4 UUIDs (pre-merge security
+# audit of 2026-10-11, MEDIUM 4, 2,000 draws each). A run of 32 or more hex digits (a `0x` in
+# front included) is masked by the entropy fallback whatever its entropy: inside any token the
+# rule does not mask whole, a separator-structured one too, so it only adds to what the rule
+# masked before, and whatever keeps a value out of that rule keeps it out of this one (the CLI
+# keeps the digests it computed, the evidence names and an existing path; a model name keeps
+# its form). Nothing cuts such a run before the rule reads it: every earlier pattern starts and
+# ends where a run of letters and digits does. The UUID shape (8-4-4-4-12 hex digits, any
+# version) is a pattern instead, run before the PII ones: the phone rule read its digit-only
+# groups (`-6819-4748-`) as a number and left the rest of it readable. The tool writes no UUID of
+# its own; what it computes in hex (an evidence or media sha256, the scope digest) is put back,
+# or kept out of the rule, where the tool writes it (A-78 lists each place).
+_HEX_RUN: Final = re.compile(r"(?<![A-Za-z0-9])(?:0[xX])?[0-9A-Fa-f]{32,}+(?![A-Za-z0-9])")
+#: Either shape is 32 characters or more: a shorter token holds neither.
+_SHAPE_MIN_LEN: Final = 32
+_UUID: Final = re.compile(
+    r"(?<![A-Za-z0-9])[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+    r"(?![A-Za-z0-9])"
+)
 
 # --- date-shape exemption for the ``phone`` and ``card`` detectors ---------------------
 # The phone pattern accepts ``-``/``.``/space as group separators, which is exactly how a
@@ -858,6 +882,93 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 
+#: Where a key's documented prefix may start: not right after a letter or a digit (u01 A-78).
+#: ``\b`` refused a key after ``_`` too, a word character: `_` written 30 times before a
+#: ``ghp_`` token left it to the entropy rule, which the run of `_` diluted below its threshold
+#: (155 of 200 random tokens printed), and the same for ``AKIA``, ``glpat-`` and ``hf_`` (200 of
+#: 200), for ``AIza``, ``glpat-`` and ``hf_`` between runs of 20 `=`, and for ``glpat-`` after 20
+#: `-` (pre-merge security audit of 2026-10-11, MEDIUM 4). A key glued to a letter or a digit is
+#: still left to the entropy rule: there the prefix is the middle of a longer word.
+_KEY_START: Final = r"(?<![A-Za-z0-9])"
+#: What the entropy fallback writes for a hex run (A-78), hashed as a key pattern's mask is.
+_HEX_TOKEN: Final = Pattern("hex_token", _HEX_RUN, hashed=True)
+
+
+def _key(body: str) -> re.Pattern[str]:
+    """A key format: its prefix and body ``body``, starting where :data:`_KEY_START` lets it."""
+
+    return re.compile(_KEY_START + body)
+
+
+def _key_patterns() -> list[Pattern]:
+    """The documented key formats, each masked whatever the entropy of its body (u01 A-78).
+
+    Every body is a run the pattern takes greedily, so a key followed by more characters of its
+    own alphabet is masked with them rather than cut, and each start fails or matches in one
+    scan of its run. The sources, read on 2026-10-11: OpenAI (``sk-``, ``sk-proj-``,
+    ``sk-svcacct-``, ``sk-admin-``, ``sk-None-``; its developer forum and GitHub's
+    secret-scanning partner list, ``openai_api_key``: OpenAI's own reference pages refused the
+    read), Anthropic (``sk-ant-``, the Admin API's ``partial_key_hint`` reads
+    ``sk-ant-api03-R2D...igAA``), GitHub ("GitHub's token formats": ``ghp_``, ``github_pat_``,
+    ``gho_``, ``ghu_``, ``ghs_``, ``ghr_``), GitLab ("Token prefixes": ``glpat-``, ``gloas-``,
+    ``gldt-``, ``glrt-``, ``glrtr-``, ``glcbt-``, ``glptt-``, ``glft-``, ``glimt-``,
+    ``glagent-``, ``glwt-``, ``glsoat-``, ``glffct-``), AWS ("Understanding unique ID
+    prefixes": ``AKIA`` access keys, ``ASIA`` temporary ones, ``ABIA`` STS bearer tokens,
+    ``ACCA`` context-specific credentials, each 20 characters), Google Cloud ("API keys", its
+    example ``AIza`` key of 39 characters), Hugging Face (User Access Tokens, ``hf_``), Slack
+    ("Tokens": ``xoxb-``, ``xoxp-``, ``xapp-``, ``xoxe.xapp-``, ``xwfp-``; "Using token
+    rotation": ``xoxe.xoxb-``, ``xoxe.xoxp-``, ``xoxe-``; and the legacy ``xoxa-``, ``xoxr-``,
+    ``xoxs-`` the rule already took), Stripe ("API keys": ``sk_live_``, ``sk_test_``,
+    ``rk_live_``, ``rk_test_``, ``sk_org_``; "Webhooks": ``whsec_``; the publishable ``pk_``
+    key is safe to expose and not taken), npm (the token format of 2021, ``npm_`` and 36
+    characters ending in a CRC32 checksum) and PyPI (``pypi-``, Help).
+    """
+
+    return [
+        Pattern("anthropic_key", _key(r"sk-ant-[A-Za-z0-9_-]{20,}"), hashed=True),
+        # The legacy body is letters and digits only; a typed key's (`sk-proj-`) holds `-` and
+        # `_`, which cut the first rule (`\bsk-[A-Za-z0-9]{20,}\b`) at its `proj`.
+        Pattern(
+            "openai_key",
+            _key(r"sk-(?:(?:proj|svcacct|admin|None)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})"),
+            hashed=True,
+        ),
+        Pattern(
+            "github_token",
+            _key(r"(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
+            hashed=True,
+        ),
+        Pattern(
+            "gitlab_token",
+            _key(r"gl(?:pat|oas|dt|rtr|rt|cbt|ptt|ft|imt|agent|wt|soat|ffct)-[A-Za-z0-9_-]{20,}"),
+            hashed=True,
+        ),
+        Pattern(
+            "aws_access_key",
+            _key(r"(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}(?![A-Za-z0-9])"),
+            hashed=True,
+        ),
+        Pattern("google_api_key", _key(r"AIza[A-Za-z0-9_-]{35,}"), hashed=True),
+        Pattern("huggingface_token", _key(r"hf_[A-Za-z0-9]{30,}"), hashed=True),
+        # Slack bot + user + app tokens (the user/app forms were previously uncovered), and
+        # the rotating forms.
+        Pattern(
+            "slack_token",
+            _key(r"(?:xoxe\.(?:xox[bp]|xapp)|xox[abeprs]|xapp|xwfp)-[A-Za-z0-9-]{10,}"),
+            hashed=True,
+        ),
+        Pattern(
+            "stripe_key",
+            _key(r"(?:(?:sk|rk)_(?:live|test|org)_[A-Za-z0-9_]{20,}|whsec_[A-Za-z0-9_+/=-]{20,})"),
+            hashed=True,
+        ),
+        Pattern("npm_token", _key(r"npm_[A-Za-z0-9]{36,}"), hashed=True),
+        Pattern("pypi_token", _key(r"pypi-[A-Za-z0-9_-]{50,}"), hashed=True),
+        # Before the PII rules, which cut a UUID at its digit-only groups (see `_HEX_RUN`).
+        Pattern("uuid", _UUID, hashed=True),
+    ]
+
+
 def _default_patterns() -> list[Pattern]:
     """The built-in secret + PII detectors (contract §5 step 2, ``docs/11 §2``).
 
@@ -881,17 +992,15 @@ def _default_patterns() -> list[Pattern]:
         ),
         Pattern(
             "jwt",
-            re.compile(
-                r"\b(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
+            # Started as the key formats are (`_KEY_START`): after `_` a JWT is still one, as in
+            # GitHub's `ghs_<app id>_<JWT>` installation tokens.
+            _key(
+                r"(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
                 r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
             ),
             hashed=True,
         ),
-        Pattern("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), hashed=True),
-        Pattern("github_token", re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"), hashed=True),
-        Pattern("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), hashed=True),
-        # Slack bot + user + app tokens (the user/app forms were previously uncovered).
-        Pattern("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), hashed=True),
+        *_key_patterns(),
         # --- PII ---
         # With a `skip` branch (SKIP): every start of a long run with no `@` was tried and
         # scanned to its end (100 KB of `1-` took about 7 s, in text the target controls).
@@ -950,6 +1059,11 @@ class Redactor:
         self._mask_types = _OWN_MASK_TYPES | {pattern.type for pattern in self._patterns}
         self._entropy_threshold = entropy_threshold
         self._entropy_min_len = entropy_min_len
+        # The hex run is part of the entropy fallback (A-78): a redactor built without it
+        # (`without_entropy`, an infinite threshold) does not mask one, so whatever keeps a
+        # value out of that rule (the CLI's carried digests, an existing path, a model name)
+        # keeps it out of this one too.
+        self._hex_runs = math.isfinite(entropy_threshold)
 
     def register(self, pattern: Pattern) -> None:
         """Add a detector. Registered patterns run **before** the built-ins."""
@@ -1406,16 +1520,14 @@ class Redactor:
         del parts
         entropy: list[tuple[int, int, str]] = []
         for m in self._HIGH_ENTROPY_TOKEN.finditer(written):
-            token = m.group(0)
-            if self._is_structured(token) or not (
-                len(token) >= self._entropy_min_len
-                and _shannon_entropy(token) >= self._entropy_threshold
-            ):
+            spans = self._entropy_spans(m.group(0))
+            if not spans:
                 continue
+            # A token lies between two labelled masks (none holds a token character), so one
+            # shift places all of its spans.
             index = bisect.bisect_right(written_ends, m.start())
-            back = shifts[index - 1] if index else 0
-            mask = _MASK_TEMPLATE_HASHED.format(type="high_entropy", digest=self._digest(token))
-            entropy.append((m.start() - back, m.end() - back, mask))
+            at = m.start() - (shifts[index - 1] if index else 0)
+            entropy += [(at + start, at + end, mask) for start, end, mask in spans]
         del written, written_ends, shifts
         ruled = sorted([*zip(starts, ends, masks, strict=True), *entropy])
         ruled_starts = array("q", (start for start, _end, _mask in ruled))
@@ -1647,23 +1759,48 @@ class Redactor:
             and all(_HEX_SEGMENT.fullmatch(segment) for segment in segments)
         )
 
+    def _entropy_spans(self, token: str) -> list[tuple[int, int, str]]:
+        """What the entropy fallback masks of ``token``, as ``(start, end, mask)`` in it.
+
+        The whole token when it is not a structured identifier (:meth:`_is_structured`) and it
+        clears both the length and the bits/char threshold; otherwise each run of
+        :data:`_HEX_RUN` inside it (A-78), when the fallback is on; else nothing.
+        """
+
+        if (
+            not self._is_structured(token)
+            and len(token) >= self._entropy_min_len
+            and _shannon_entropy(token) >= self._entropy_threshold
+        ):
+            mask = _MASK_TEMPLATE_HASHED.format(type="high_entropy", digest=self._digest(token))
+            return [(0, len(token), mask)]
+        if not self._hex_runs or len(token) < _SHAPE_MIN_LEN:
+            return []
+        return [
+            (m.start(), m.end(), self._mask_token(_HEX_TOKEN, m[0]))
+            for m in _HEX_RUN.finditer(token)
+        ]
+
     def _redact_high_entropy(self, text: str) -> str:
         """Interim global entropy fallback for unknown-shape secrets (OD-15).
 
         Structured identifiers/paths are skipped (:meth:`_is_structured`); everything else
-        is masked once it clears both the length and the bits/char threshold.
+        is masked once it clears both the length and the bits/char threshold. A run of 32 hex
+        digits or more is masked whatever its entropy (A-78).
         """
 
         def _sub(m: re.Match[str]) -> str:
             token = m.group(0)
-            if self._is_structured(token):
+            spans = self._entropy_spans(token)
+            if not spans:
                 return token
-            if (
-                len(token) >= self._entropy_min_len
-                and _shannon_entropy(token) >= self._entropy_threshold
-            ):
-                return _MASK_TEMPLATE_HASHED.format(type="high_entropy", digest=self._digest(token))
-            return token
+            out: list[str] = []
+            cursor = 0
+            for start, end, mask in spans:
+                out += (token[cursor:start], mask)
+                cursor = end
+            out.append(token[cursor:])
+            return "".join(out)
 
         return self._HIGH_ENTROPY_TOKEN.sub(_sub, text)
 
