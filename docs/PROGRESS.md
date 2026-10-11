@@ -33,7 +33,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   than refused out of order, since a report's redactor can mask a name and move it).
 - Tests now: `tests/evaluators/test_operator_not_destructive.py` (34, 33 fail on `main` at
   `a69dbd8c`), `tests/core/test_operator_declaration_runner.py` (9, all fail there),
-  `tests/cli/test_operator_declaration_campaign.py` (16, all fail there). GATES_LINE
+  `tests/cli/test_operator_declaration_campaign.py` (16, all fail there). `make gates` green on `9096f659`
+  (with `PYTHONPATH` set to the worktree's `src`): 5391 tests (5332 on `main` at `a69dbd8c`, 59
+  new), 97.83% coverage (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs
+  lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
 
 ## State, 2026-10-11 (later): a target file may declare one of its own granted tools not destructive (OD-43)
 
