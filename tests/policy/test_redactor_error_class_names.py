@@ -40,6 +40,11 @@ _LINES = (
     "{name}: azure: non-retryable HTTP 400 from /v1/chat/completions: the provider's input filter "
     "refused the prompt before the model saw it (error code content_filter; filtered: jailbreak) "
     "[blocked_by_provider_filter]",
+    # An input-side block read from a reply (OD-42, u08 A-70), and the cut's verdict line.
+    "{name}: tgt: the provider's input filter refused the prompt before the model saw it (stop "
+    "reason guardrail_intervened; trace.guardrail.inputAssessment) [blocked_by_provider_filter]",
+    "{name}; cut_by_provider_output_filter: the provider's output filter cut or replaced the reply "
+    "(stop reason refusal before any output, usage.output_tokens 0); provider_filter_side_unknown",
 )
 
 #: Where a class was renamed because the rule masked its name (PR #87, then u01 A-63): a walk
@@ -138,3 +143,15 @@ def test_the_checksum_error_keeps_its_0_1_0_name() -> None:
     assert policy.ChecksumMismatchError is ChecksumMismatchError is ScopeChecksumError
     assert {"ChecksumMismatchError", "ScopeChecksumError"} <= set(policy.__all__)
     assert ScopeChecksumError.__name__ == "ScopeChecksumError"
+
+
+def test_every_inconclusive_reason_survives_the_redactor() -> None:
+    """A reason is written into a verdict's reasoning, a report's summary keys and a replay's line
+    (OD-41, OD-42): a name the high-entropy rule masked would read as a secret there."""
+
+    from ildottore.shared.enums import InconclusiveReason
+
+    redactor = Redactor()
+    for reason in InconclusiveReason:
+        line = f"inconclusive ({reason.value}); {reason.value}: the provider's filter"
+        assert redactor.redact_text(line) == line, reason

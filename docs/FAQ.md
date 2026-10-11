@@ -231,7 +231,8 @@ output filter, so a model that followed the instruction looked filtered
 ### My Azure OpenAI deployment's content filter refuses some attacks. Does the scan stop?
 
 No, since 2026-10-10 (OD-41). Azure's prompt filter answers a prompt it blocks with HTTP 400 and
-the error code `content_filter`, and Gemini's API (through a REST template) with a body whose
+the error code `content_filter`, and Gemini's API (through a `RestTemplate` built in Python; a
+target file's REST target has none) with a body whose
 `promptFeedback.blockReason` is set; either is recorded as a **blocked** attempt and the campaign
 goes on. Before, the first one stopped it with `aborted on AdapterStatusError: ...
 non-retryable HTTP 400` (exit 3 after one request).
@@ -244,9 +245,36 @@ attempts to pass). The terminal summary, the finding's reasoning and every repor
 (`Blocked by the provider's input filter: 8 attempt(s) in 2 spec(s) never reached the model`). A
 blocked attempt is not sent again, on a retry or a resume, and it counts against
 `--budget-requests`. Only those documented shapes count: any other 4xx (another code, the same body
-at 403) still stops the run, and a Bedrock guardrail's canned reply (an HTTP 200) is read as a
-reply. To measure the model rather than the deployment, scan a deployment whose filter annotates
+at 403) still stops the run; a Bedrock guardrail's canned reply (an HTTP 200) is read by the next
+answer. To measure the model rather than the deployment, scan a deployment whose filter annotates
 instead of blocking ([`MANUAL.md`](MANUAL.md) §9,
+[`adr/0011`](adr/0011-a-prompt-the-provider-filter-refused-is-not-a-verdict.md)).
+
+### My deployment's output filter blanks or replaces some replies. Do those specs pass?
+
+No, since 2026-10-11 (OD-42). An output filter answers HTTP 200 with its own stop reason and an
+empty or canned reply: Azure OpenAI withholds the completion (`finish_reason: content_filter`, no
+content), a Bedrock guardrail returns the message you configured for it (`stopReason:
+guardrail_intervened`), Gemini stops the candidate (`finishReason: SAFETY` and its kin), Anthropic's
+classifiers stop with `stop_reason: refusal`. Before, that reply was scored as the model's answer:
+an empty reply or a canned refusal, or the judge's secure verdict on one, passed the spec, while the
+model may have written exactly what the spec tests for before the filter cut it.
+
+Now the stop reason decides. A filter that refused the prompt (a Bedrock trace whose input
+assessment blocked it, Anthropic's `refusal` before any output) is a blocked attempt, as above. One
+that cut or replaced what the model wrote is `inconclusive: cut_by_provider_output_filter`, needs
+review, and keeps the spec from passing however many other attempts held. A fail that rests on
+something present in the text that did come back (a planted canary in a partial reply, say) is still
+a fail; one that rests on something absent is not, since everything is absent from an empty reply
+(`regex_presence` does not decide a cut reply). Gemini's `RECITATION` counts as a cut too. One whose
+side the provider does not report (a Bedrock guardrail without its trace) is `inconclusive:
+provider_filter_side_unknown`; enable the guardrail's trace to learn the side. The judge never
+decides a cut reply; on a partial one its verdict is recorded beside the cut. From `dottore`, the
+Azure (`provider: openai`), Anthropic and WebSocket shapes are read; Bedrock's and Gemini's only
+through a `RestTemplate` built in Python, since a target file's REST target has no template. Every
+report counts them apart, and `--fail-on` does not trip on them, since nobody saw an exploit: a
+pipeline that should stop reads `summary.cut_by_provider_output_filter.attempts` from the JSON
+report ([`MANUAL.md`](MANUAL.md) §9, the amendment in
 [`adr/0011`](adr/0011-a-prompt-the-provider-filter-refused-is-not-a-verdict.md)).
 
 ### If my system passes Il Dottore, does it meet OWASP AISVS?

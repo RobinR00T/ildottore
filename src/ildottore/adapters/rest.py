@@ -15,10 +15,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from ildottore.adapters.base import AdapterProductError, BaseAdapter
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
+from ildottore.shared.provider_filter import INPUT_SIDE, OUTPUT_SIDE, UNKNOWN_SIDE, is_filter_stop
 
 __all__ = ["RestAdapter", "RestTemplate", "get_path"]
 
@@ -36,6 +37,37 @@ _GEMINI_PROMPT_BLOCKS: frozenset[str] = frozenset(
 )
 #: Where every Gemini text path starts: ``GenerateContentResponse.candidates`` (both references).
 _GEMINI_TEXT_ROOT = "candidates."
+
+#: Amazon Bedrock Converse's stop reason sits at the body's root, beside its guardrail trace
+#: (OD-42): the API reference's response syntax, ``stopReason`` and ``trace.guardrail``
+#: (docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html, read 2026-10-11).
+#: The trace is read only for a template whose ``finish_path`` is this, so a key of that name in
+#: another body is not taken for Bedrock's.
+_CONVERSE_STOP_PATH = "stopReason"
+_GUARDRAIL_INTERVENED = "guardrail_intervened"
+#: Where each policy of a ``GuardrailAssessment`` lists what it found, every entry with an
+#: ``action`` (the API reference's ``GuardrailAssessment`` and the types it names, read
+#: 2026-10-11): ``GuardrailContentFilter``, ``GuardrailTopic``, ``GuardrailCustomWord``,
+#: ``GuardrailManagedWord`` and ``GuardrailContextualGroundingFilter`` take ``BLOCKED | NONE``;
+#: ``GuardrailPiiEntityFilter`` and ``GuardrailRegexFilter`` take ``ANONYMIZED | BLOCKED | NONE``.
+#: The user guide's example of a blocked prompt is ``inputAssessment.<id>.topicPolicy.topics[]``
+#: with ``"action": "BLOCKED"`` (docs.aws.amazon.com/bedrock/latest/userguide/
+#: guardrails-use-converse-api.html). ``automatedReasoningPolicy`` findings carry no action and
+#: are not read.
+_GUARDRAIL_POLICIES: tuple[tuple[str, str], ...] = (
+    ("contentPolicy", "filters"),
+    ("topicPolicy", "topics"),
+    ("wordPolicy", "customWords"),
+    ("wordPolicy", "managedWordLists"),
+    ("sensitiveInformationPolicy", "piiEntities"),
+    ("sensitiveInformationPolicy", "regexes"),
+    ("contextualGroundingPolicy", "filters"),
+)
+#: A prompt the guardrail blocked; a reply it blocked or masked (``ANONYMIZED`` rewrote what the
+#: model wrote, so the reply is not wholly the model's). A masked prompt is not a blocked one:
+#: the model answered it, so with nothing else in the trace the side stays unreported.
+_INPUT_ACTIONS: frozenset[str] = frozenset({"BLOCKED"})
+_OUTPUT_ACTIONS: frozenset[str] = frozenset({"BLOCKED", "ANONYMIZED"})
 
 
 def get_path(payload: Any, path: str) -> Any:
@@ -187,19 +219,27 @@ class RestAdapter(BaseAdapter):
         return "promptFeedback.blockReason", f"promptFeedback.blockReason {reason}"
 
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
+        finish_reason = None
+        if self.template.finish_path is not None:
+            candidate = get_path(payload, self.template.finish_path)
+            if isinstance(candidate, str):
+                finish_reason = candidate
+
         text = get_path(payload, self.template.text_path)
+        if text is None and is_filter_stop(finish_reason):
+            # The provider's filter stopped the reply and left no text (OD-42): a Gemini candidate
+            # stopped with ``SAFETY`` can come without its text (Vertex AI's reference, on
+            # ``FinishReason`` ``SAFETY``: "When streaming, the content field is empty if
+            # content filters block the output", read 2026-10-11). It was a product error that
+            # stopped the campaign; it is a reply with no text and that stop reason, which the
+            # runner never reads as the model's answer. Read at ``finish_path`` only, as before.
+            text = ""
         if text is None:
             raise AdapterProductError(
                 f"{self.id}: response missing text at path {self.template.text_path!r}"
             )
         if not isinstance(text, str):
             raise AdapterProductError(f"{self.id}: response text is not a string")
-
-        finish_reason = None
-        if self.template.finish_path is not None:
-            candidate = get_path(payload, self.template.finish_path)
-            if isinstance(candidate, str):
-                finish_reason = candidate
 
         ids: dict[str, Any] = {}
         if self.template.id_path is not None:
@@ -221,4 +261,64 @@ class RestAdapter(BaseAdapter):
             finish_reason=finish_reason,
             raw_ids=self._redact_ids(ids),
             usage=usage,
+            filter_side=self._guardrail_side(payload, finish_reason),
         )
+
+    def _guardrail_side(
+        self, payload: Mapping[str, Any], finish_reason: str | None
+    ) -> Literal["input", "output", "unknown"] | None:
+        """The side a Bedrock guardrail trace says it blocked, or ``None`` (OD-42, u04 A-70).
+
+        Bedrock Converse answers a guardrail's intervention with HTTP 200, ``stopReason``
+        ``guardrail_intervened`` and the guardrail's configured message as the output, for a
+        blocked prompt and a blocked reply alike ("Include a guardrail with the Converse API",
+        read 2026-10-11). With ``guardrailConfig.trace`` enabled the body carries
+        ``trace.guardrail``: ``inputAssessment`` (guardrail id to an assessment) and
+        ``outputAssessments`` (guardrail id to a list of them). An output assessment that
+        blocked or masked something is the output side, whatever the input one says: the model
+        wrote a reply. Otherwise an input assessment that blocked something is the input side.
+        A trace that names neither (a masked prompt alone, say) is ``unknown``, and no trace is
+        ``None``: the runner reads both as a side the provider did not report, and the evidence
+        says which of the two it was (pre-merge audit of ``a55e953``, L3).
+
+        Read only for a template whose ``finish_path`` is the Converse root ``stopReason``.
+        """
+
+        if self.template.finish_path != _CONVERSE_STOP_PATH:
+            return None
+        if (finish_reason or "").strip().lower() != _GUARDRAIL_INTERVENED:
+            return None
+        trace = get_path(payload, "trace.guardrail")
+        if not isinstance(trace, Mapping):
+            return None
+        outputs = trace.get("outputAssessments")
+        if isinstance(outputs, Mapping) and any(
+            _acted(assessment, _OUTPUT_ACTIONS)
+            for listed in outputs.values()
+            if isinstance(listed, Sequence) and not isinstance(listed, (str, bytes))
+            for assessment in listed
+        ):
+            return OUTPUT_SIDE
+        inputs = trace.get("inputAssessment")
+        if isinstance(inputs, Mapping) and any(
+            _acted(assessment, _INPUT_ACTIONS) for assessment in inputs.values()
+        ):
+            return INPUT_SIDE
+        return UNKNOWN_SIDE
+
+
+def _acted(assessment: object, actions: frozenset[str]) -> bool:
+    """True when one entry of a ``GuardrailAssessment``'s policies took one of ``actions``."""
+
+    if not isinstance(assessment, Mapping):
+        return False
+    for policy, key in _GUARDRAIL_POLICIES:
+        entries = get_path(assessment, f"{policy}.{key}")
+        if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+            continue
+        for entry in entries:
+            action = entry.get("action") if isinstance(entry, Mapping) else None
+            # A string first: the body is the target's, and a list there is unhashable.
+            if isinstance(action, str) and action in actions:
+                return True
+    return False

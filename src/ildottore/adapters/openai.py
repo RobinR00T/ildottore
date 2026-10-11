@@ -233,6 +233,10 @@ class OpenAIAdapter(BaseAdapter):
             raise AdapterProductError(f"{self.id}: choice has no message object")
         text = message.get("content")
         if text is None:
+            # A reply Azure OpenAI's output filter withheld comes back with no content and
+            # ``finish_reason`` ``content_filter`` (OD-42): the empty text goes on with that stop
+            # reason, which the runner reads as the filter's cut (``shared.provider_filter``),
+            # never as the model's refusal. An empty reply used to pass a spec.
             text = ""
         if not isinstance(text, str):
             raise AdapterProductError(f"{self.id}: message content is not a string")

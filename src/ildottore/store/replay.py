@@ -17,7 +17,11 @@ from pathlib import Path
 
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import Attempt
-from ildottore.shared.provider_filter import blocked_attempt_ids
+from ildottore.shared.provider_filter import (
+    blocked_attempt_ids,
+    cut_attempt_ids,
+    side_unknown_attempt_ids,
+)
 from ildottore.store import paths
 
 
@@ -94,6 +98,21 @@ class ReplayResult:
         """
 
         return len(blocked_attempt_ids(self.effective_attempts()))
+
+    def cut_by_provider_output_filter(self) -> int:
+        """Attempts whose reply the provider's output filter cut or replaced (OD-42).
+
+        Re-derived from each stored attempt (its verdict's reason, or, on a reply stored without
+        a verdict, its stop reason), one per attempt id. In ``N`` and never a success: the model
+        may have written what the filter hid, which is why each needs review.
+        """
+
+        return len(cut_attempt_ids(self.effective_attempts()))
+
+    def provider_filter_side_unknown(self) -> int:
+        """Attempts the provider's filter stopped on a side it did not report (OD-42)."""
+
+        return len(side_unknown_attempt_ids(self.effective_attempts()))
 
 
 def _answer_rank(attempt: Attempt) -> tuple[bool, bool, bool]:
