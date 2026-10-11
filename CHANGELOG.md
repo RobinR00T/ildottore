@@ -25,15 +25,16 @@ versioning: [SemVer](https://semver.org/).
 - **The stop reason says which side the filter acted on**, read by one predicate in
   `shared.provider_filter` (the fingerprint's `FILTER_STOPS`, moved there so the attack phase can
   read it, and Vertex AI's `MODEL_ARMOR` and Gemini's `RECITATION` added, the latter decided on
-  2026-10-11 under the owner's delegation and revisable; every value sourced in the code). The prompt (a
-  Bedrock trace whose `inputAssessment` blocked something, Anthropic's `refusal` before any output,
-  no text and `usage.output_tokens` 0): OD-41's block, `blocked_by_provider_filter`, the reply kept
-  as evidence. The reply (Azure's `content_filter`, Gemini's `SAFETY`, `PROHIBITED_CONTENT`,
-  `BLOCKLIST`, `SPII`, `RECITATION` and `MODEL_ARMOR`, a Bedrock trace whose `outputAssessments` blocked or
-  masked something, Anthropic's `refusal` after any output): `inconclusive:
-  cut_by_provider_output_filter`. A side the provider does not report (Bedrock without its trace,
-  `content_filtered`): `inconclusive: provider_filter_side_unknown`. Two new `InconclusiveReason`s
-  (the amendment to ADR-0011). A reply without a filter stop is scored exactly as before.
+  2026-10-11 under the owner's delegation and revisable; every value sourced in the code). The
+  prompt (a Bedrock trace whose `inputAssessment` blocked something, Anthropic's `refusal` before
+  any output, no text and `usage.output_tokens` 0): OD-41's block, `blocked_by_provider_filter`, the
+  reply kept as evidence. The reply (Azure's `content_filter`, Gemini's `SAFETY`,
+  `PROHIBITED_CONTENT`, `BLOCKLIST`, `SPII`, `RECITATION` and `MODEL_ARMOR`, a Bedrock trace whose
+  `outputAssessments` blocked or masked something, Anthropic's `refusal` after any output):
+  `inconclusive: cut_by_provider_output_filter`. A side the provider does not report (Bedrock
+  without its trace, `content_filtered`): `inconclusive: provider_filter_side_unknown`. Two new
+  `InconclusiveReason`s (the amendment to ADR-0011). A reply without a filter stop is scored exactly
+  as before.
 - **How a cut attempt is scored.** What came back is read by the evaluators whose fail rests on
   something present in it (every one but `regex_presence`, which fails on an absence, and the
   judge; the `refusal` heuristic counts). Such a fail stands: a planted canary in a partial reply
@@ -68,11 +69,12 @@ versioning: [SemVer](https://semver.org/).
   schema shipped in it, and an earlier build cannot load this version's runs to replay, resume or
   diff them, since their verdicts carry reasons its enum rejects); SARIF properties of those names
   on the run and each result that has any, and the count in the result's message; JUnit the counts
-  in a skip's or failure's `message`; the HTML summary a line each; the terminal summary `Cut by the provider's output filter: 8
-  attempt(s) in 2 spec(s) came back cut or replaced (GUARD-INPUT-EVASION-001, PI-DIRECT-001); the
-  model may have written what the filter hid, so they are inconclusive and need review, never a
-  pass`. A reply cut on the output side was exercised; one stopped on an unreported side is not
-  counted as covered. With none, only the JSON report changes (the two keys at `0` and `[]`).
+  in a skip's or failure's `message`; the HTML summary a line each; the terminal summary `Cut by the
+  provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or replaced
+  (GUARD-INPUT-EVASION-001, PI-DIRECT-001); the model may have written what the filter hid, so they
+  are inconclusive and need review, never a pass`. A reply cut on the output side was exercised; one
+  stopped on an unreported side is not counted as covered. With none, only the JSON report changes
+  (the two keys at `0` and `[]`).
 - **Adapters.** The REST adapter reads a filter stop at `finish_path` first, so a body with no text
   whose stop is a filter's (a Gemini `SAFETY` candidate) is a reply with no text rather than a
   product error (which stopped the campaign, and a `-sV` pass too; the fingerprint now reads it as

@@ -151,10 +151,10 @@ the gate; `pass`/`inconclusive` never do.
 
 **A provider's input filter does not stop the scan.** An attack prompt the deployment's own filter
 refuses before the model sees it (Azure OpenAI's HTTP 400 `content_filter`; Gemini's
-`promptFeedback.blockReason` through a `RestTemplate` built in Python) is recorded as a blocked attempt, `inconclusive:
-blocked_by_provider_filter`, and the campaign goes on; the summary counts them (`Blocked by the
-provider's input filter: N attempt(s) in S spec(s) never reached the model`, and
-`summary.blocked_by_provider_filter` in JSON). A spec whose every attempt was blocked is
+`promptFeedback.blockReason` through a `RestTemplate` built in Python) is recorded as a blocked
+attempt, `inconclusive: blocked_by_provider_filter`, and the campaign goes on; the summary counts
+them (`Blocked by the provider's input filter: N attempt(s) in S spec(s) never reached the model`,
+and `summary.blocked_by_provider_filter` in JSON). A spec whose every attempt was blocked is
 inconclusive, never a pass. Any other 4xx still stops the run with `3`
 ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
 

@@ -1042,8 +1042,8 @@ neither a way nor a listed refusal phrase is unclear, `null`). `output_filter` i
 `true` only when the provider stopped a reply with its own filter's stop reason (OpenAI's and
 Azure's `content_filter`, Anthropic's `refusal`, Bedrock's `guardrail_intervened` or
 `content_filtered`, Gemini's `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST`, `SPII` or `RECITATION`,
-Vertex AI's `MODEL_ARMOR`, also read at a REST template's `finish_path`; the attack phase reads the same
-stops, §9); a reply cut at the probe's 512-token cap is not one, and with no
+Vertex AI's `MODEL_ARMOR`, also read at a REST template's `finish_path`; the attack phase reads
+the same stops, §9); a reply cut at the probe's 512-token cap is not one, and with no
 stop reason from the provider on any reply (a REST template without `finish_path`, a WebSocket or
 MCP target, the offline mocks) it is `null`. `input_filter` is always `null`. An input filter
 that answers the benign request with a 4xx (Azure OpenAI's prompt filter: HTTP 400,
@@ -1774,14 +1774,14 @@ blocked by the provider's input filter before the model saw them`), and so does 
 A filter on the reply does not answer with an error. It answers HTTP 200 with its own stop reason
 and an empty or canned reply: Azure OpenAI withholds a completion it filters (no content,
 `finish_reason: content_filter`); a Bedrock guardrail returns the message you configured for it
-(`stopReason: guardrail_intervened`), for a blocked prompt and a blocked reply alike; Gemini stops
-a candidate with `finishReason: SAFETY` (or `PROHIBITED_CONTENT`, `BLOCKLIST`, `SPII`,
-`RECITATION`, Vertex AI's `MODEL_ARMOR`), with or without its text; Anthropic's safety classifiers stop with `stop_reason:
-refusal`, before any output or after some. Until 2026-10-11 that reply was scored as the model's
-answer, so an empty reply, a canned message worded as a refusal, or a judge's secure verdict on
-either passed the spec, while the model may well have been exploited before the filter cut it.
-Now it never is (OD-42, the amendment to ADR-0011). The stop reason says which side the filter
-acted on:
+(`stopReason: guardrail_intervened`), for a blocked prompt and a blocked reply alike; Gemini stops a
+candidate with `finishReason: SAFETY` (or `PROHIBITED_CONTENT`, `BLOCKLIST`, `SPII`, `RECITATION`,
+Vertex AI's `MODEL_ARMOR`), with or without its text; Anthropic's safety classifiers stop with
+`stop_reason: refusal`, before any output or after some. Until 2026-10-11 that reply was scored as
+the model's answer, so an empty reply, a canned message worded as a refusal, or a judge's secure
+verdict on either passed the spec, while the model may well have been exploited before the filter
+cut it. Now it never is (OD-42, the amendment to ADR-0011). The stop reason says which side the
+filter acted on:
 
 - **The prompt** (a Bedrock guardrail trace whose input assessment blocked something, Anthropic's
   `refusal` before any output, with no text and `usage.output_tokens` 0): the attempt is blocked,
