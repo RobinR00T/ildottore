@@ -266,3 +266,37 @@ def test_a_judge_only_finding_is_reported_and_needs_review_through_the_cli(tmp_p
     assert "decided by the judge alone" in finding.reasoning
     assert outcome.exit_code is ExitCode.CLEAN
     assert run(True).exit_code is ExitCode.FINDINGS_AT_OR_ABOVE
+
+
+def test_diff_still_counts_a_judge_only_fail_as_a_regression() -> None:
+    """``dottore diff`` compares statuses, not confirmation (pre-merge audit of 4f3ed297, M2)."""
+
+    from ildottore.cli.diff import DriftClass, compare_runs
+
+    from ..cli.conftest import make_finding
+
+    baseline = {"X": make_finding("X", status=_PASS, confirmed=False)}
+    current = {"X": make_finding("X", status=_FAIL, confirmed=False)}
+    (entry,) = compare_runs(baseline, current).entries
+    assert entry.drift is DriftClass.NEW_FAIL
+
+
+def test_a_cut_reply_is_decided_by_the_same_rule_and_never_by_the_judge_alone() -> None:
+    """OD-42's cut-reply rule and ``deterministic_first`` agree (merge of #106).
+
+    A reply the provider's filter cut is read only by ``CUT_DECIDING_EVALUATORS``, combined by the
+    same ``_combine_verdicts``; the judge never decides it. So every fail of a cut reply is a
+    deterministic fail, which the rule lets decide and which can confirm.
+    """
+
+    from ildottore.core.runner import CUT_DECIDING_EVALUATORS, CUT_NOT_DECIDING_EVALUATORS
+
+    assert EvaluatorType.SEMANTIC_JUDGE in CUT_NOT_DECIDING_EVALUATORS
+    assert EvaluatorType.SEMANTIC_JUDGE not in CUT_DECIDING_EVALUATORS
+    spec = make_spec()
+    for etype in sorted(CUT_DECIDING_EVALUATORS):
+        combined = R._combine_verdicts([_v(_FAIL, etype.value), _v(_PASS)], spec)
+        assert combined.status is _FAIL
+        assert not decided_by_judge_alone(combined)
+        attempts = [_attempt(combined, n) for n in range(2)]
+        assert R._is_confirmed(_FAIL, attempts, spec) is True

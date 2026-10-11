@@ -45,7 +45,7 @@ versioning: [SemVer](https://semver.org/).
   tests that pinned the dead reader removed; the guardrail-profile ordering test's docstring
   updated.
 
-### Changed (one rule combines a spec's evaluators, and a judge-only fail needs review: OD-19)
+### Changed (breaking for a CI gate and the Python API: one combination rule, a judge-only fail needs review, OD-19)
 
 - **`evaluator_logic` named three behaviours and every path ran a different one.** 33 specs
   declared `weighted` and 42 `any_fail`. The runner read no value and applied its own rule (a
@@ -59,12 +59,15 @@ versioning: [SemVer](https://semver.org/).
 - **One rule, `deterministic_first`, in one function.** `shared.combination.combine_verdicts`
   is the runner's rule, unchanged, and the runner, the lint fixture engine and
   `evaluators.combine` all call it whatever the field says; a Hypothesis property checks that the
-  three agree. No verdict a run produces changes. The schema gains `deterministic_first`, which
-  all 75 shipped specs now declare. `all_pass`, `any_fail` and `weighted` still load and run the
-  same rule, and `dottore lint` warns about each (`DEPRECATED_COMBINATION`; for `weighted` it says
-  no vote is taken), and about an evaluator `weight`, which nothing reads now. For a program that
-  calls it directly: `evaluators.combine.combine` takes no `configs` argument any more, and its
-  `logic` argument changes nothing.
+  three agree. Statuses are unchanged; confirmation changes (next item). The schema gains
+  `deterministic_first`, which all 75 shipped specs now declare. `all_pass`, `any_fail` and
+  `weighted` still load and run the same rule, and `dottore lint` warns about each
+  (`DEPRECATED_COMBINATION`; for `weighted` it says no vote is taken), and about an evaluator
+  `weight`, which nothing reads now.
+- **Breaking (Python API).** `evaluators.combine.combine` takes no `configs` argument any more (a
+  call that passes one raises `TypeError`), and its `logic` argument changes nothing. A caller
+  that passed weights expected a weighted vote, which is gone; a loud error was chosen over
+  accepting and ignoring them, which would have computed a different verdict in silence.
 - **A fail only the judge reported is never confirmed.** When every deterministic evaluator
   passed and the judge said `fail`, the attempt failed, and the finding was `confirmed`, and
   tripped `--fail-on`, whenever the judge said `fail` on every attempt of a variant. The judge is
@@ -74,8 +77,18 @@ versioning: [SemVer](https://semver.org/).
   the judge alone, which never confirms a finding on its own`; `--include-needs-review` gates it.
   Measured with a spec whose only failing evaluator is the judge, against the vulnerable mock with
   `--runs 3`: Critical, confirmed, exit 2 on `6d5f7ae`; Critical, needs review, exit 0 now (exit 2
-  with `--include-needs-review`). A stored attempt is read the same way on a resume: the
-  reasoning that marks it has not changed since 2026-09-03.
+  with `--include-needs-review`). Against a loopback stub with a realistic judge (it says
+  `exploited` when the judged reply complied), all 75 specs, `--runs 3`: 12 of the 26 confirmed
+  fails on `0685f2c` become needs-review (`AC-BFLA-001`, `AC-BOLA-001`, `AC-SSRF-001`,
+  `AG-IDENTITY-ABUSE-001`, `AG-TOOL-UNAUTH-001`, `DL-SECRET-CANARY-001`, `DOS-RESOURCE-HIJACK-001`,
+  `GUARD-UNICODE-EVASION-001`, `OUT-CODEINJ-001`, `OUT-SQLI-001`, `RECON-MODEL-IDENTITY-001`,
+  `SUPPLY-SLOPSQUAT-001`), the other statuses are unchanged and the exit stays 2; run alone,
+  `AC-BFLA-001` and `OUT-SQLI-001` go from exit 2 to exit 0 (2 with `--include-needs-review`). So
+  a CI gate that was red only on judge-only fails turns green unless it passes the flag, which
+  also gates the intermittent fails (a variant that did not fail on every attempt). `dottore diff`
+  reads statuses, not confirmation, so it still counts a judge-only fail as `NEW_FAIL`. A stored
+  attempt is read the same way on a resume: the reasoning that marks it has not changed since
+  2026-09-03.
 - **No shipped fixture changed.** Against the vulnerable mock (every capability declared,
   `--runs 2`) the battery has 224 failing attempts and none decided by the judge alone, so its 67
   confirmed fails stay confirmed; bare and hardened are unchanged spec by spec; lint reports

@@ -895,7 +895,7 @@ required.
 |------|---------|
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
 | `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
-| `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding) |
+| `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding). A fail only the judge reported is never confirmed (OD-19, since 2026-10-11), so it does not trip this gate; `--include-needs-review` makes it, and also every intermittent fail (a variant that did not fail on every attempt). `dottore diff` reads statuses, not confirmation, so it counts a judge-only fail as `NEW_FAIL` either way |
 | `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt, its mean confidence is below the spec's `confidence_threshold`, or only the judge reported its fails (§9). Undecided (`inconclusive`) results never gate, with or without it |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`) |
 | `--run-db PATH` | run store SQLite path |
@@ -2002,6 +2002,13 @@ Two patterns, often combined:
    finding at or above the band. Upload the SARIF to code-scanning.
 2. **Regression gate.** Keep a baseline JSON run in the repo and compare:
    `dottore diff baseline.json current.json` exits nonzero only on NEW-FAIL regressions.
+
+The two gates read different things. `--fail-on` gates confirmed fails, and a fail only the judge
+reported is never confirmed (OD-19, since 2026-10-11): a pipeline that was red only on such a
+finding is green unless it passes `--include-needs-review`, which also gates every intermittent
+fail (a variant that did not fail on every attempt), the trade-off to weigh before adding it.
+`dottore diff` compares statuses, not confirmation, so a judge-only fail that is new since the
+baseline is a `NEW_FAIL` regression whatever the flag.
 
 A ready-made GitHub Actions workflow is in
 [`../examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
