@@ -24,7 +24,11 @@ from ildottore.reporting.summary import RunSummary, finding_state
 from ildottore.shared.enums import ReportFormat, VerdictStatus
 from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import Finding
-from ildottore.shared.provider_filter import blocked_attempt_ids
+from ildottore.shared.provider_filter import (
+    blocked_attempt_ids,
+    cut_attempt_ids,
+    side_unknown_attempt_ids,
+)
 
 __all__ = ["JunitReporter"]
 
@@ -59,6 +63,14 @@ class JunitReporter(BaseReporter):
         blocked = len(blocked_attempt_ids(finding.attempts))
         if blocked:
             detail += f" blocked_by_provider_filter={blocked}"
+        # And the replies the provider's filter cut, or stopped on an unsaid side (OD-42). A
+        # spec with one is inconclusive or failed, so the count rides in its reasoning too.
+        cut = len(cut_attempt_ids(finding.attempts))
+        if cut:
+            detail += f" cut_by_provider_output_filter={cut}"
+        unsaid = len(side_unknown_attempt_ids(finding.attempts))
+        if unsaid:
+            detail += f" provider_filter_side_unknown={unsaid}"
         if finding.status is VerdictStatus.FAIL:
             failure = ET.SubElement(
                 case,

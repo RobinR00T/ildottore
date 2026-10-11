@@ -50,7 +50,13 @@ from ildottore.shared.iopc import (
     IOPC_TECHNIQUES,
 )
 from ildottore.shared.models import AttackSpec, Attempt, Finding
-from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
+from ildottore.shared.provider_filter import (
+    blocked_attempt_ids,
+    blocked_by_provider_filter,
+    cut_attempt_ids,
+    filter_side_unknown,
+    side_unknown_attempt_ids,
+)
 
 __all__ = [
     "ATLAS_MATRIX_RELEASE",
@@ -64,6 +70,7 @@ __all__ = [
     "BatteryCoverage",
     "Coverage",
     "FilterBlocks",
+    "FilterCuts",
     "FrameworkCounts",
     "MatrixCell",
     "ModelComparison",
@@ -201,6 +208,24 @@ class FilterBlocks:
 
 
 @dataclass(frozen=True)
+class FilterCuts:
+    """The attempts whose reply the provider's filter stopped after the prompt reached the model,
+    or may have (OD-42, u11 A-70), counted the way :class:`FilterBlocks` counts the blocked ones.
+
+    One instance each for ``cut_by_provider_output_filter`` (the output filter cut or replaced a
+    reply the model wrote) and ``provider_filter_side_unknown`` (the provider did not say which
+    side it acted on). Neither is a pass of the model: a spec with one is ``inconclusive``
+    unless an attempt failed, and needs review, because the model may have written what the
+    filter hid.
+    """
+
+    #: Such attempts, one per attempt id, over every finding.
+    attempts: int = 0
+    #: Spec ids with at least one such attempt, sorted.
+    specs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class RunStatus:
     """Whether the run that produced this summary actually finished (contract §6).
 
@@ -237,6 +262,9 @@ class RunSummary:
     model_comparison: ModelComparison | None = None
     run_status: RunStatus = field(default_factory=RunStatus)
     provider_filter: FilterBlocks = field(default_factory=FilterBlocks)
+    #: OD-42: replies the provider's output filter cut, and ones it stopped on an unsaid side.
+    output_filter: FilterCuts = field(default_factory=FilterCuts)
+    filter_side_unknown: FilterCuts = field(default_factory=FilterCuts)
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -300,10 +328,16 @@ def _exercised(attempt: Attempt) -> bool:
 
     A conversation the provider's input filter cut carries a reply when the model had called a
     tool, and is not exercised unless that trace failed it (OD-41): the turn the spec is about
-    never reached the model.
+    never reached the model. Neither is a reply the provider's filter stopped on a side it did
+    not report (OD-42): it may be the prompt that was refused. A reply its output filter cut did
+    reach the model, which wrote it, and is exercised.
     """
 
-    if attempt.response is None or blocked_by_provider_filter(attempt):
+    if (
+        attempt.response is None
+        or blocked_by_provider_filter(attempt)
+        or filter_side_unknown(attempt)
+    ):
         return False
     verdict = attempt.verdict
     return verdict is None or not verdict.reasoning.startswith(SETUP_NOT_REACHED)
@@ -473,12 +507,24 @@ def build_run_summary(
     targets: set[str] = set()
     blocked = 0
     blocked_specs: set[str] = set()
+    cut = 0
+    cut_specs: set[str] = set()
+    unsaid = 0
+    unsaid_specs: set[str] = set()
 
     for finding in findings:
         filtered = len(blocked_attempt_ids(finding.attempts))
         if filtered:
             blocked += filtered
             blocked_specs.add(finding.spec_id)
+        trimmed = len(cut_attempt_ids(finding.attempts))
+        if trimmed:
+            cut += trimmed
+            cut_specs.add(finding.spec_id)
+        stopped = len(side_unknown_attempt_ids(finding.attempts))
+        if stopped:
+            unsaid += stopped
+            unsaid_specs.add(finding.spec_id)
         by_status[finding.status.value] += 1
         by_band[finding.risk.band.value] += 1
         # A spec nothing was sent for (a capability skip, a policy block) measured nothing, so
@@ -522,6 +568,8 @@ def build_run_summary(
         model_comparison=comparison,
         run_status=run_status if run_status is not None else RunStatus(),
         provider_filter=FilterBlocks(attempts=blocked, specs=tuple(sorted(blocked_specs))),
+        output_filter=FilterCuts(attempts=cut, specs=tuple(sorted(cut_specs))),
+        filter_side_unknown=FilterCuts(attempts=unsaid, specs=tuple(sorted(unsaid_specs))),
     )
 
 

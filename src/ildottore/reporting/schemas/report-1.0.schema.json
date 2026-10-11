@@ -196,6 +196,48 @@
               }
             }
           }
+        },
+        "cut_by_provider_output_filter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "specs"
+          ],
+          "description": "The attempts whose reply the provider's own output filter cut or replaced after the model wrote it (OD-42, ADR-0011 amendment): Azure OpenAI's finish_reason content_filter, Gemini's candidate finishReason SAFETY, Anthropic's stop_reason refusal after some output, a Bedrock guardrail whose trace shows an output assessment. Each is an inconclusive attempt with the reason cut_by_provider_output_filter, needing review: the model may have written what the filter hid, so it is never the model's refusal; specs lists the spec ids with at least one. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one.",
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "specs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "provider_filter_side_unknown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "specs"
+          ],
+          "description": "The attempts whose reply the provider's filter stopped without saying whether it refused the prompt or cut the reply (OD-42): a Bedrock guardrail_intervened with no guardrail trace, Bedrock's content_filtered. Each is an inconclusive attempt with the reason provider_filter_side_unknown, needing review and never a pass. Optional in report-1.0; always emitted by this build.",
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "specs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },

@@ -88,7 +88,12 @@ from ildottore.shared.models import (
     TestRun,
     TestRunSummary,
 )
-from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
+from ildottore.shared.provider_filter import (
+    blocked_attempt_ids,
+    blocked_by_provider_filter,
+    cut_attempt_ids,
+    side_unknown_attempt_ids,
+)
 
 __all__ = [
     "CATEGORY_ALIASES",
@@ -1853,9 +1858,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             unjudged = len(unjudged_attempt_ids(resume_from))
             errored = again - unjudged
             # OD-41: a prompt the provider's input filter refused would be refused again.
-            blocked = len(
-                blocked_attempt_ids(a for finding in resume_from.findings for a in finding.attempts)
-            )
+            stored = [a for finding in resume_from.findings for a in finding.attempts]
+            blocked = len(blocked_attempt_ids(stored))
+            # OD-42: a reply the provider's filter cut is answered, and kept like any other.
+            cut = len(cut_attempt_ids(stored)) + len(side_unknown_attempt_ids(stored))
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
                 f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
@@ -1863,6 +1869,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 + (
                     f"; {blocked} of them the provider's input filter refused, kept as blocked"
                     if blocked
+                    else ""
+                )
+                + (
+                    f"; {cut} of them the provider's filter cut or stopped after the prompt, "
+                    "kept for review"
+                    if cut
                     else ""
                 )
                 + (

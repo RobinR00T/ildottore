@@ -146,6 +146,8 @@ def coverage_lines(
     summary = build_run_summary(findings, specs or {}, planned_specs=planned_specs)
     cov = summary.coverage
     blocked = summary.provider_filter
+    cut = summary.output_filter
+    unsaid = summary.filter_side_unknown
     return [
         (
             f"Coverage - OWASP LLM Top 10 ({OWASP_LLM_EDITION}): "
@@ -196,6 +198,29 @@ def coverage_lines(
                 + "); they are inconclusive, not refusals by the model and not exploits"
             ]
             if blocked.attempts
+            else []
+        ),
+        # OD-42: never a pass, so never silent either; the model may have written what was hid.
+        *(
+            [
+                f"Cut by the provider's output filter: {cut.attempts} attempt(s) in "
+                f"{len(cut.specs)} spec(s) came back cut or replaced ("
+                + ", ".join(cut.specs)
+                + "); the model may have written what the filter hid, so they are inconclusive "
+                "and need review, never a pass"
+            ]
+            if cut.attempts
+            else []
+        ),
+        *(
+            [
+                f"Stopped by the provider's filter on a side it did not report: "
+                f"{unsaid.attempts} attempt(s) in {len(unsaid.specs)} spec(s) ("
+                + ", ".join(unsaid.specs)
+                + "); inconclusive and need review, never a pass (a Bedrock guardrail reports "
+                "the side when guardrailConfig.trace is enabled)"
+            ]
+            if unsaid.attempts
             else []
         ),
         *(

@@ -67,6 +67,26 @@
       They are inconclusive: not refusals by the model and not exploits.
     </p>
     {% endif %}
+    {# OD-42: optional in report-1.0 too. #}
+    {% if summary.cut_by_provider_output_filter and summary.cut_by_provider_output_filter.attempts %}
+    <p class="provider-filter">
+      Cut by the provider's output filter:
+      <strong>{{ summary.cut_by_provider_output_filter.attempts }}</strong> attempt(s) in
+      {{ summary.cut_by_provider_output_filter.specs | length }} spec(s)
+      ({{ summary.cut_by_provider_output_filter.specs | join(', ') }}) came back cut or replaced.
+      The model may have written what the filter hid: they are inconclusive and need review,
+      never a pass.
+    </p>
+    {% endif %}
+    {% if summary.provider_filter_side_unknown and summary.provider_filter_side_unknown.attempts %}
+    <p class="provider-filter">
+      Stopped by the provider's filter on a side it did not report:
+      <strong>{{ summary.provider_filter_side_unknown.attempts }}</strong> attempt(s) in
+      {{ summary.provider_filter_side_unknown.specs | length }} spec(s)
+      ({{ summary.provider_filter_side_unknown.specs | join(', ') }}).
+      They are inconclusive and need review, never a pass.
+    </p>
+    {% endif %}
 
     <h3>By status</h3>
     <table class="counts"><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>
