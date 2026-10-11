@@ -19,7 +19,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   `07aa0b3a`, exit 3 at a run of 20 and every resume after 5); all HTML: 9 requests (6 at 1), 27
   with `-sV` (24 at 1); two readable then HTML: 27, exit 3; 30% HTML at random: finishes, every
   spec `inconclusive`. Tests: core 15 (6 fail on `07aa0b3a`), adapters 37 (3 fail there), CLI 11 (4
-  fail there). Gates: below, in the next entry's figures.
+  fail there). `eca90de1` names the resume note's clause apart (mypy). `make --no-print-directory
+  gates` green on `eca90de1` (2026-10-11, 18:34 to 18:41): ruff, format (405 files), mypy strict
+  (159 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs, 14
+  suites, 1 pack), 5,348 tests with 97.75% coverage, self-scan 0 high/critical, bandit, pip-audit
+  (no known vulnerabilities).
 - Noted, not part of this branch: the auditor's `probe_excerpt.py` shows an `sk-ant-api03-` key of
   a repeated 8-character pattern readable in the excerpt, and the redactor leaves it readable
   everywhere else too (its entropy rule; the excerpt only applies the redactor).
