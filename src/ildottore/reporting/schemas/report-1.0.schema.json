@@ -337,7 +337,7 @@
         },
         "not_exercised": {
           "type": "array",
-          "description": "Spec ids that produced a finding but no reply that could be scored: nothing sent (policy-blocked, or skipped for an undeclared capability), or every send ended in an environment error or was refused by the provider's input filter (OD-41). Their framework codes are excluded from every numerator. Optional in report-1.0.",
+          "description": "Spec ids that produced a finding but no reply that could be scored: nothing sent (policy-blocked, or skipped for an undeclared capability), or every send ended in an environment error or was refused by the provider's input filter (OD-41), or was stopped by its filter on a side it did not report (OD-42). Their framework codes are excluded from every numerator. Optional in report-1.0.",
           "items": {
             "type": "string"
           }

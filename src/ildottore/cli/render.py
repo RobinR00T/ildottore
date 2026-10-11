@@ -184,7 +184,8 @@ def coverage_lines(
                 "every send ended in an environment error, such as a network "
                 "failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could "
                 "not be decoded or one nested too deeply, or was refused by the provider's input "
-                "filter), so their framework codes are NOT counted as covered"
+                "filter, or stopped by its filter on a side it did not report), so their "
+                "framework codes are NOT counted as covered"
             ]
             if cov.not_exercised
             else []

@@ -186,7 +186,8 @@ class Coverage:
     off_universe: tuple[tuple[str, str, str], ...] = ()
     #: Specs that produced a finding but no reply that could be scored: nothing sent
     #: (policy-blocked, or skipped for a capability the target does not declare), or every send
-    #: ended in an environment error or was refused by the provider's input filter (OD-41). They
+    #: ended in an environment error or was refused by the provider's input filter (OD-41), or
+    #: was stopped by its filter on a side it did not report (OD-42). They
     #: are reported, and they do NOT count as covered surface: crediting them told the reader a
     #: tactic had been exercised when the spec for it never got an answer.
     not_exercised: tuple[str, ...] = ()
