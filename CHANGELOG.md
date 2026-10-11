@@ -62,10 +62,12 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   Signed off as built: the optional `checksum:` catches an accidental edit, not an editor who
   recomputes it, and built-in signing waits for key management (trusted keys, who signs,
   revocation), now a stated non-goal in `NON-GOALS.md`. `docs/MANUAL.md` §4.1 gains "Signing a
-  scope (out of band)", run as written: `ssh-keygen -Y sign`, `ssh-keygen -Y verify ... &&
-  dottore run`, and `shasum -a 256 scope.yaml` equal to the report's `run.scope_sha256` (for LF
-  line ends and no top-level `checksum:` line); one appended line made the verify exit 255 and
-  started no run. The FAQ, the threat model (S4), `RESPONSIBLE-USE.md`, `dottore-scope(5)` and the
+  scope (out of band)", run as written: the reviewer's `ssh-keygen -Y sign` on their own machine,
+  then `ssh-keygen -Y verify ... && dottore run` on one private copy against an `allowed_signers`
+  the scope's editors cannot write, and `shasum -a 256` of that copy equal to the report's
+  `run.scope_sha256` (for LF line ends and no top-level `checksum:` line); one appended line made
+  the verify exit 255 and started no run. The two custody rules a signature depends on (a key
+  only the reviewer holds, trusted keys out of the editors' reach) are stated with it. The FAQ, the threat model (S4), `RESPONSIBLE-USE.md`, `dottore-scope(5)` and the
   scope loader's docstrings say the same. Not taken: built-in verification of a detached
   signature behind the existing verifier seam (kept for it), a keyed MAC, a flag requiring the
   checksum.

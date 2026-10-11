@@ -705,7 +705,10 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
   beside the scope proves nothing more than the checksum does. What an operator does instead,
   documented in `docs/MANUAL.md` §4.1 and run for real: sign the scope with tooling whose keys
   they already manage (`ssh-keygen -Y sign` with an `allowed_signers` file, `cosign sign-blob`,
-  a signed commit behind review), verify it before `dottore run`, and match the report's
+  a signed commit behind review), under two custody rules the recipe states (the reviewer signs
+  on their own machine with a key only they hold, and the trusted keys are read from a place the
+  scope's editors cannot write; added after the pre-merge audit of `be3f2e71`), verify one
+  private copy before `dottore run` and run that copy, and match the report's
   `scope_sha256` (recorded since 2026-10-05, audit D-17) with the signed bytes: for a file with
   LF line ends and no top-level `checksum:` line it is the file's plain SHA-256 (checked: an
   `ssh-keygen -Y verify` that passed, a run, and `shasum -a 256` equal to `run.scope_sha256`;
@@ -715,7 +718,11 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
   an owner, so the seam stays; (b) a keyed MAC with its key in an environment variable, a shared
   secret that in practice sits beside the file in CI; (c) a flag requiring the checksum, which
   adds a step and no assurance, since anyone who edits the file can recompute it.
-  `require_checksum=True` stays for a library caller; no CLI path passes it.
+  `require_checksum=True` stays for a library caller; no CLI path passes it. Reversal (to build
+  signing): an `IntegrityVerifier` that checks a detached signature (an SSH signature against an
+  `allowed_signers` file, or sigstore) in `policy/scope.py`, a `run` option naming the signature
+  and the trusted-keys file, the bullet in `NON-GOALS.md` and the "verifies no signature" of
+  `docs/MANUAL.md` §4.1 removed.
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
 - **OD-26** reading the operator's files. **Decided 2026-10-07 by the owner, built (A-43):** 1

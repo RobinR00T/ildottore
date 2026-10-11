@@ -30,7 +30,9 @@ path not under a target's endpoints is never contacted. An optional top-level ch
 (sha256 of the body, the checksum line excluded) is verified when present, so a scope edited
 without updating it is refused. It is an integrity check, not a signature: anyone who can edit
 the file can recompute it. Who wrote or approved a scope is proved out of band (OD-2): sign it
-with your own tooling (ssh-keygen -Y sign, cosign sign-blob) and verify it before the run; the
+with your own tooling (ssh-keygen -Y sign, cosign sign-blob), the reviewer on their own machine
+with a key only they hold, and verify a private copy before the run against trusted keys the
+scope's editors cannot write, then run that copy; the
 scope_sha256 a report records is the file's SHA-256 when it has LF line ends and no top-level
 checksum line. A line starting with checksum: that belongs to another value is
 refused. Every run records the same sha256 in its run store and in every report, so a report

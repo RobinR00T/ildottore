@@ -361,23 +361,37 @@ need a list of trusted keys, a rule for who signs and a way to revoke a key, whi
 management it does not have. Sign the scope with tooling whose keys you already manage, verify it
 before `dottore run`, and match the report to the signed bytes: `run.scope_sha256` in the JSON
 report (the SARIF, JUnit and HTML reports carry it too, §10) is the SHA-256 of the file when it
-has LF line ends and no top-level `checksum:` line. With SSH signatures (OpenSSH 8.1 or later;
-`allowed_signers` lists the reviewers' public keys, one `<identity> <key>` per line):
+has LF line ends and no top-level `checksum:` line. A signature proves something only under two
+custody rules: the reviewer signs on their own machine, with a key only they hold, and the list
+of trusted keys (`allowed_signers`, one `<identity> <public key>` per line) is read from a place
+the scope's editors cannot write (a protected branch or repository, a CI secret, a read-only
+mount). An `allowed_signers` beside the scope, or a signing key the scope's editors can reach
+(a key in a CI secret their jobs can read), proves no more than the checksum does. With SSH signatures (OpenSSH 8.1 or later):
 
 ```bash
-ssh-keygen -Y sign -f reviewer_key -n dottore-scope scope.yaml             # writes scope.yaml.sig
-ssh-keygen -Y verify -f allowed_signers -I reviewer@example.test -n dottore-scope \
-  -s scope.yaml.sig < scope.yaml && dottore run -t target.yaml --scope scope.yaml -oJ report.json
-shasum -a 256 scope.yaml                     # equals run.scope_sha256 in report.json
+# 1. The reviewer, on their own machine, with their own key (a key held by ssh-agent, or a FIDO
+#    key made with -t ed25519-sk, serves too):
+ssh-keygen -Y sign -f ~/.ssh/id_ed25519 -n dottore-scope scope.yaml     # writes scope.yaml.sig
+
+# 2. Whoever runs the scan, from where specs/ is reachable (the repository root, or add
+#    --spec-path), with allowed_signers from a place the scope's editors cannot write. Verify and
+#    load one private copy, so the bytes verified are the bytes the run loads:
+copy="$(mktemp -d)/scope.yaml" && cp scope.yaml "$copy"
+ssh-keygen -Y verify -f /etc/dottore/allowed_signers -I reviewer@example.test \
+  -n dottore-scope -s scope.yaml.sig < "$copy" &&
+  dottore run -t target.yaml --scope "$copy" -oJ report.json
+shasum -a 256 "$copy"                        # equals run.scope_sha256 in report.json
 ```
 
-Run as written on 2026-10-11 (OpenSSH 10.3p1) on an offline mock target
+Run on 2026-10-11 (OpenSSH 10.3p1), with a throwaway key in place of `~/.ssh/id_ed25519` and a
+read-only `allowed_signers` in a directory of its own, on an offline mock target
 (`mock_scenario: hardened`): the verify printed `Good "dottore-scope" signature for
 reviewer@example.test with ED25519 key SHA256:...`, the run exited 0 (`Specs run: 75 of 75
 planned`), and `shasum` printed `38529c5c...00c2d`, the `run.scope_sha256` of the report. With
-one line appended to the scope, the verify printed `Signature verification failed: incorrect
+one line appended to the copy, the verify printed `Signature verification failed: incorrect
 signature` and exited 255, so the `&&` started no run. `cosign sign-blob` and `cosign
-verify-blob`, or a signed commit behind review, serve the same way.
+verify-blob`, or a signed commit behind review on a protected branch, serve the same way, under
+the same two rules.
 
 ### 4.2 `target.yaml`, what you are scanning
 

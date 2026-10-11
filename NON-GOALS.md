@@ -21,7 +21,9 @@ not gaps.
 - **Not a signing or key-management system (yet).** The scope's optional `checksum:` is an
   integrity check: it catches an accidental edit, not an editor who recomputes it. Who wrote or
   approved a scope is proved out of band, with a signature the operator's own tooling makes and
-  verifies before the run (SSH signatures, sigstore, a signed commit behind review), and every
+  verifies before the run (SSH signatures, sigstore, a signed commit behind review), made by the
+  reviewer with a key only they hold and checked against trusted keys the scope's editors cannot
+  write (`docs/MANUAL.md` §4.1), and every
   report's `scope_sha256` ties the run to the signed bytes. Built-in verification waits for key
   management: a list of trusted keys, who signs, and revocation (OD-2, decided 2026-10-11,
   revisable).
