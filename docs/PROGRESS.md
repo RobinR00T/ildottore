@@ -14,7 +14,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   spec; `authz_leak` now cannot pass beside a filtered identity (a fail among the others stands)
   and the stored verdict names it. 4 tests more (94 for OD-42): the judge under
   `--budget-requests 2`, with and without a canary, through the CLI, and two sweeps of three
-  identities; all 4 fail on `91845524`.
+  identities; all 4 fail on `91845524`. `make gates` green (2026-10-11, 10:59, on `b4d4368a`):
+  ruff, format (393 files), mypy strict (157 source files), import-linter (4 kept), spec lint (0
+  errors, 0 warnings across 75 specs, 14 suites, 1 pack), 5,159 tests with 97.68% coverage,
+  self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
 
 ## State, 2026-10-11 (late morning): the pre-merge audit of `a55e953` (OD-42), fixed
 
