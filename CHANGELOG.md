@@ -5,6 +5,45 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (a target file may declare one of its own granted tools not destructive, OD-43)
+
+- **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a
+  deployment grants is in no spec's scene, so the scene's `destructive: false` could not reach it,
+  and a hand-off in the OpenAI Agents SDK's style (`transfer_to_billing_agent`) failed every
+  seeded spec that declares `tool_call` by its name alone (measured on `f76f145`:
+  `AG-TOOL-UNAUTH-001` at `--runs 2` against a loopback agent that hands off, `fail` 2/2, exit 2).
+  The owner decided (OD-43, 2026-10-11) that the operator's file may say it, narrowly: by exact
+  name (no pattern, no case folding), only for a spec whose scene does not name the tool (a
+  scene's `destructive: true`, or a verb in an unmarked scene name, always wins), and clearing
+  only `tool_call`'s destructive check: a call off the allowlist, an injected and a forbidden
+  argument still fail, and `kill_chain_progression` keeps its stage map. Same run with the
+  declaration: `pass` 2/2, exit 0. A plain name still only grants, so every existing file loads,
+  digests and resumes as before (u06 A-72).
+- **Always visible.** `--dry-run`, `-v` and `-sn` print an `operator:` line before anything is
+  sent (and say when a declared name holds no destructive verb, so the declaration changes
+  nothing); the JSON summary's `operator_declarations` (always emitted, optional in report-1.0),
+  the SARIF run and results, a property of each JUnit suite and its cases, the HTML targets and
+  summary and a closing line of the terminal summary state it for the run, with the attempts it
+  changed; each such attempt's verdict ends `operator declaration (OD-43): '<tool>' not judged
+  destructive, as the target file declares it (seeded_setup.granted_tools, destructive: false)`
+  and the finding's reasoning counts them; the run store keeps it
+  (`context_json.not_destructive_tools`) and `dottore replay` marks those attempts.
+- **Part of the target digest.** Left out when none is declared, so a run stored before keeps its
+  digest; a resume after a change is refused, naming the old and the new declaration.
+- **Validated.** The loader refuses a non-boolean `destructive` (a quoted `"false"`, `0`, `null`),
+  `true` (a spec's scene is where a tool is made destructive), any other key, a missing or empty
+  `name`, a declared name also mapped under `seeded_setup.tools` and one granted twice, naming the
+  entry and never the value. No new key in `seeded_setup` or at the top level: the declaration is
+  written on the grant, so it cannot name a tool the file does not grant.
+- Docs: MANUAL §4.2, §5 (`--dry-run`, `-sn`), §8, §10 and `dottore replay`, FAQ, USAGE,
+  `dottore(1)`, `dottore-scope(5)`, `docs/01`, `03`, `04`, `12`, ADR-0009,
+  `examples/target.app.yaml` (now declaring the support agent's hand-off) and Scenario G's real
+  output in `examples/README.md`; contracts u06 §7 A-72 and §9 OD-43, with halves in u00, u08,
+  u10, u11 and u12, and the index rows. Tests: `tests/evaluators/test_operator_not_destructive.py`
+  (29, 28 fail on `f76f145`), `tests/core/test_operator_declaration_runner.py` (3, all fail
+  there) and `tests/cli/test_operator_declaration_campaign.py` (10, all fail there); the golden
+  JSON report snapshot gains the empty key.
+
 ### Fixed (a hand-off tool is not destructive by its name, and lint judges tool calls as a run does)
 
 - **A scene can mark a tool `destructive: false`.** The destructive verbs are matched anywhere in

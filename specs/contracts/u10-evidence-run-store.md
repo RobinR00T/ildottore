@@ -121,6 +121,17 @@ attempt id, by the verdict's reason or, without a verdict, by the mark
 `dottore replay` writes `inconclusive (blocked_by_provider_filter)` on their line and a footer line
 with the count. Checked by `tests/cli/test_provider_filter_campaign.py`.
 
+**A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) The run store records the
+operator's declaration for each run, and a replay reads it back.** The run's context
+(`context_json`, written before anything is sent) holds `not_destructive_tools`: the tools the
+target file declares not destructive, sorted, each masked with the fixed identity salt the store
+masks a target id with, so an ordinary tool name reads as written and one that reads as a secret is
+not kept in clear, and the record compares equal across processes; `[]` when none is declared, and
+absent from a run stored before 2026-10-11, which declared none. Each attempt's stored verdict
+carries the note when the declaration changed it, and `dottore replay` writes `(operator
+declaration)` after such an attempt's status and a footer line with their count. Checked by
+`tests/cli/test_operator_declaration_campaign.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.

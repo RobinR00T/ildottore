@@ -415,6 +415,21 @@ two files do not collect on `92c7b11` (no `ProviderFilterBlock`); in the third, 
 key it reads. The two cut-conversation tests with a tool call fail on `3d739f3`, where the
 aggregate carried no reply. Not re-run against a live Azure endpoint.
 
+**A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) The runner carries the operator's
+declaration to the evaluators and to every verdict it changed.** `_evaluate` and
+`_trace_before_block` read `seeded_setup.granted_tools` and `seeded_setup.not_destructive` off the
+target and hand both to every evaluator's context; only `tool_call` reads the second. Only the
+aggregate is stored, and it says nothing of the `tool_call` verdict it combined ("all evaluators
+reported secure"), so `_note_operator_declaration` appends `; operator declaration (OD-43):
+'<tool>' not judged destructive, as the target file declares it (seeded_setup.granted_tools,
+destructive: false)` to the attempt's verdict, whatever its status, when the spec declares
+`tool_call` and a call of the attempt is one the declaration cleared
+(`shared.tool_abuse.operator_cleared_calls`); a spec judged without `tool_call` gets no note, and
+`kill_chain_progression`'s verdict is the same with or without a declaration. The finding's
+reasoning counts those attempts (`; <k>/<n> with a call to a tool the target file declares not
+destructive, not judged destructive (operator declaration, OD-43)`). Checked by
+`tests/core/test_operator_declaration_runner.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.

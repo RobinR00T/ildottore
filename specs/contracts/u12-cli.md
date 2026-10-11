@@ -1078,6 +1078,38 @@ not send them again; `--estimate --resume` counts them as done. The composition 
 probe's failure is named `guardrail/guardrail_benign: ProviderFilterBlock`. Checked by
 `tests/cli/test_provider_filter_campaign.py` and `tests/cli/test_input_filter_probe.py`.
 
+**A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) A target file may declare one of
+its own granted tools not destructive, and the CLI shows it before anything is sent and refuses a
+resume after a change.** `seeded_setup.granted_tools` entries are tool names, as before, or a
+mapping `{name: <tool>, destructive: false}` that grants the tool and declares it not destructive
+(`wiring._granted_tools`); `SeededSetup.not_destructive` holds the declared names, sorted. The
+mapping holds `name` (text, not empty) and `destructive`, which must be the boolean `false`:
+refused, naming the file and the entry (`'seeded_setup.granted_tools[<i>]'`) and never the value,
+are a non-boolean (`must be false (a boolean), not str`; `int`, `null`), `true` (a target file
+may say its own tool destroys nothing; a spec's scene is where a tool is made destructive), any
+other key (`unknown key(s) external; expected 'name' and 'destructive' (OD-43)`), a missing or
+empty name, an entry that is neither a name nor such a mapping, a declared name also mapped under
+`tools` ("only a tool the deployment grants, outside every scene, may be declared not
+destructive"), and a declared name granted twice. The keys of `seeded_setup` itself are
+unchanged, and so is A-53's top level: the declaration lives on the grant. `--dry-run` and `-v`
+print, per target, `  operator: <tools> declared not destructive by <target>'s target file (an
+operator declaration: seeded_setup.granted_tools, OD-43); it clears tool_call's destructive check
+only, never for a tool of a spec's scene`, `-sn` the same line indented under the target, both
+one line more per declared name no destructive verb is in ("the declaration changes nothing for
+it"), and the `-q` line of each ends `, <k> tool(s) declared not destructive`. The terminal
+summary ends with `Operator declaration (OD-43): <target>'s target file declares <tools> not
+destructive (seeded_setup.granted_tools); a call to it was not judged destructive on <k>
+attempt(s) in <s> spec(s) (<ids>), each named in that attempt's reasoning`. The run's integrity
+record holds the declaration (u10 half), and the target digest holds it (u00 half), so a resume
+after a change is refused; when the stored and the current declaration differ the refusal names
+them: `run '<id>' was made under another operator declaration in its target file's
+seeded_setup.granted_tools: it declared '<tool>' not destructive and now declares no tool (OD-43).
+It decides which destructive calls fail, so the two halves would be judged two ways in one
+report. Restore the declaration as it was, or start a fresh run.` A run stored before the record
+existed declared none and resumes without one. Checked by
+`tests/cli/test_operator_declaration_campaign.py` and the loader tests of
+`tests/evaluators/test_operator_not_destructive.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

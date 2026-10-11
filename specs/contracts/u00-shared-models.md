@@ -116,6 +116,17 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   may not import each other; stdlib only, like `shared/patterns.py` (A-33) and
   `shared/refusal_tells.py` (A-27) before it. The verdict stays with u06 and u02: these are the
   predicates both apply, the one kind of behaviour this unit holds despite §8, as with A-33 and A-27.
+- **A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43):** `SeededSetup` gains
+  `not_destructive`, the granted tools the target file declares not destructive (sorted, always a
+  subset of `granted_tools`, empty by default), and `EvalContext` gains `not_destructive_tools`,
+  which the runner fills from it; behaviour-free, as every model here. `shared/tool_abuse.py`
+  gains the predicates both the evaluator and the runner apply (`operator_cleared`: declared,
+  granted and in no scene of the spec; `operator_cleared_calls`: of those, the ones a call made and
+  a verb or the scene's flag would make destructive) and the note every changed verdict carries
+  (`OPERATOR_DECLARATION`, `operator_note`), so the evaluator's verdict, the runner's aggregate and
+  the reports' counts read one rule. `shared/digest.target_digest` leaves `not_destructive` out of
+  the seeded block when it is empty, so a target that declares none keeps the digest it had
+  before the field existed (`tests/evaluators/test_operator_not_destructive.py`).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
