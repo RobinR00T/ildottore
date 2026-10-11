@@ -26,6 +26,13 @@ way); the send stays debited, its token reservation is released as for an enviro
 completion was produced), and the runner records it ``inconclusive: blocked_by_provider_filter``.
 It used to propagate as a product error and stop the whole campaign at the first one.
 
+A reply the provider's filter stopped (OD-42, u08 A-70) comes back as an HTTP 200, so it is read
+here, after the send, with ``shared.provider_filter.filter_side``. A filter that refused the
+prompt (a Bedrock guardrail trace that says so, Anthropic's ``refusal`` before any output) is the
+block above, recorded the same way with the reply kept for the evidence. A filter that cut or
+replaced what the model wrote, or one that does not say which it did, marks the result
+``filter_cut`` with that side, and the runner never scores the reply as the model's answer.
+
 The clock/sleep is injected (``sleep``) so tests run without real delays and the
 backoff schedule is deterministic (contract §7).
 """
@@ -42,7 +49,13 @@ from ildottore.core.pacing import RateLimiter
 from ildottore.shared.amounts import is_count
 from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
-from ildottore.shared.provider_filter import PROVIDER_FILTER_MARK
+from ildottore.shared.provider_filter import (
+    INPUT_FILTER_REFUSED,
+    INPUT_SIDE,
+    PROVIDER_FILTER_MARK,
+    describe_filter_stop,
+    filter_side,
+)
 
 __all__ = [
     "NOT_RETRYABLE_MARK",
@@ -87,8 +100,14 @@ class AttemptResult:
     on an exhausted-retry env failure ``attempt.error`` holds the last error string
     and ``env_error`` is ``True`` - the runner maps that to
     ``inconclusive`` (never a product ``fail``). ``filter_blocked`` is ``True`` when the
-    provider's input filter refused the prompt (OD-41): no response, the error carries
-    :data:`~ildottore.shared.provider_filter.PROVIDER_FILTER_MARK`, and ``env_error`` is ``False``.
+    provider's input filter refused the prompt (OD-41): the error carries
+    :data:`~ildottore.shared.provider_filter.PROVIDER_FILTER_MARK`, ``env_error`` is ``False``,
+    and there is no response, unless the refusal came as a reply (OD-42), which is kept.
+
+    ``filter_cut`` is the side (``output`` or ``unknown``) when the provider's filter stopped the
+    reply after the prompt reached the model, or may have (OD-42, u08 A-70): the response is
+    kept and is not the model's whole answer. ``cut_before_final`` is ``True`` when a conversation
+    stopped at that reply before the one its spec scores (``core.conversation``).
     """
 
     attempt: Attempt
@@ -96,6 +115,8 @@ class AttemptResult:
     filter_blocked: bool = False
     retries: int = 0
     errors: list[str] = field(default_factory=list)
+    filter_cut: str | None = None
+    cut_before_final: bool = False
 
 
 class ReplyOverBudget(BudgetExhausted):
@@ -269,6 +290,17 @@ async def execute_attempt(
             )
         else:
             latency_ms = max(0.0, (clock() - started) * 1000.0)
+            side = filter_side(response)
+            error = None
+            if side == INPUT_SIDE:
+                # The provider's filter refused the prompt and said so in a reply (OD-42): the
+                # block of OD-41, recorded with the same mark, the reply kept as evidence.
+                target = getattr(adapter, "id", "target")
+                error = (
+                    f"{target}: {INPUT_FILTER_REFUSED} ({describe_filter_stop(response)})"
+                    f"{PROVIDER_FILTER_MARK}"
+                )
+                errors.append(error)
             answered = AttemptResult(
                 attempt=_attempt(
                     attempt_id,
@@ -277,12 +309,14 @@ async def execute_attempt(
                     request,
                     sampling,
                     response=response,
-                    error=None,
+                    error=error,
                     latency_ms=latency_ms,
                 ),
                 env_error=False,
+                filter_blocked=side == INPUT_SIDE,
                 retries=send_index,
                 errors=errors,
+                filter_cut=side if side is not None and side != INPUT_SIDE else None,
             )
             try:
                 _reconcile_tokens(ledger, response, reserved)

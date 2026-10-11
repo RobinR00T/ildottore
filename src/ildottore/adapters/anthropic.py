@@ -349,7 +349,10 @@ class AnthropicAdapter(BaseAdapter):
             elif block_type == "tool_use":
                 tool_calls.append(dict(block))
 
-        # `stop_reason` vocabulary preserved verbatim (no translation).
+        # `stop_reason` vocabulary preserved verbatim (no translation). ``refusal`` is the safety
+        # classifiers declining, possibly with an empty ``content``; with the ``usage`` kept below
+        # the runner reads from it whether that came before any output (OD-42,
+        # ``shared.provider_filter``).
         stop_reason = payload.get("stop_reason")
 
         usage_raw = payload.get("usage")

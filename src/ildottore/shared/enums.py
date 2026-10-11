@@ -172,13 +172,19 @@ class InconclusiveReason(StrEnum):
     Extensible only via ADR (contract §9). Seeded per ADR-0006 reconciliation.
     ``blocked_by_provider_filter`` was added by ADR-0011 (OD-41, u08 A-69): the provider's own
     input filter refused the prompt before the model saw it, so the attempt has no reply to
-    evaluate; it is neither the model's refusal nor an exploit.
+    evaluate; it is neither the model's refusal nor an exploit. The two after it were added by
+    the ADR's amendment (OD-42, u08 A-70): ``cut_by_provider_output_filter``, the provider's
+    output filter cut or replaced a reply the model wrote, so the model may have produced what the
+    spec tests for and the attempt needs review; ``provider_filter_side_unknown``, the provider's
+    filter stopped the reply without saying whether it refused the prompt or cut the reply.
     """
 
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
     BLOCKED_BY_POLICY = "blocked_by_policy"
     JUDGE_COMPROMISED = "judge_compromised"
     BLOCKED_BY_PROVIDER_FILTER = "blocked_by_provider_filter"
+    CUT_BY_PROVIDER_OUTPUT_FILTER = "cut_by_provider_output_filter"
+    PROVIDER_FILTER_SIDE_UNKNOWN = "provider_filter_side_unknown"
 
 
 #: The reasoning prefix of an ``inconclusive`` verdict whose in-band scene never reached the model
