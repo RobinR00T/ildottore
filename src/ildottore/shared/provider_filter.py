@@ -208,7 +208,7 @@ def describe_filter_stop(response: ModelResponse) -> str:
     if normalized == _REFUSAL:
         side = _refusal_side(response)
         if side == INPUT_SIDE:
-            return f"{detail} before any output (usage.output_tokens 0)"
+            return f"{detail} before any output, usage.output_tokens 0"
         if side == UNKNOWN_SIDE:
             return f"{detail}; no text and no usage say whether any output came first"
     return detail
