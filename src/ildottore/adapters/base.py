@@ -40,7 +40,7 @@ from typing import Any, ClassVar, cast
 import httpx
 
 from ildottore.policy import EndpointAllowlist
-from ildottore.redactor import Redactor
+from ildottore.redactor import Redactor, registered_secrets
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
@@ -218,17 +218,58 @@ class ResponseMalformed(AdapterEnvError):
 UNREADABLE_EXCERPT_BYTES = 4096
 
 
+#: A character a token of the redactor's rules can be made of: a key shape that crosses the read
+#: cut is cut before rather than read in part, when what lies before the cut is this short.
+_TOKEN_CHAR = re.compile(r"[\w+/=.:@-]")
+_SHORT_TOKEN_HEAD = 256
+
+
+def _clean_cut(text: str, cut: int) -> int:
+    """Where to cut ``text``, at or before ``cut``, so nothing that could be a credential crosses.
+
+    A registered credential that crosses ``cut`` (whatever characters it holds) is left out
+    whole, and so is a token of key characters whose part before the cut is short: read in part,
+    neither is recognised, and up to 15 leading characters of a registered credential reached
+    the excerpt (verification of 07aa0b3a, LOW 1). A longer token's head is long enough for the
+    redactor's own rules.
+    """
+
+    if cut >= len(text):
+        return len(text)
+    start = cut
+    if _TOKEN_CHAR.match(text, cut):
+        head = cut
+        while head > 0 and _TOKEN_CHAR.match(text, head - 1):
+            head -= 1
+        if cut - head <= _SHORT_TOKEN_HEAD:
+            start = head
+    for secret in registered_secrets():
+        end = cut + len(secret) - 1
+        found = text.find(secret, max(0, cut - len(secret) + 1), end)
+        while found != -1 and found < cut:
+            start = min(start, found)
+            found = text.find(secret, found + 1, end)
+    return start
+
+
 def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
     """``(excerpt, size)``: the start of ``body`` for review, redacted, and its size in bytes.
 
-    Redacted over twice what is kept, then cut, so a credential that crosses the cut is masked
-    whole before the cut takes part of its mask; bytes that are not UTF-8 read as U+FFFD, and the
-    cut never splits a character.
+    Read over twice what is kept, cut where no credential and no short key-shaped token crosses
+    (:func:`_clean_cut`), redacted, then cut to :data:`UNREADABLE_EXCERPT_BYTES`, so a credential
+    is masked whole before the last cut takes part of its mask; bytes that are not UTF-8 read as
+    U+FFFD, and no cut splits a character.
     """
 
     data = body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body)
-    head = data[: 2 * UNREADABLE_EXCERPT_BYTES].decode("utf-8", "replace")
-    shown = redactor.redact_text(head).encode("utf-8")[:UNREADABLE_EXCERPT_BYTES]
+    cut = min(len(data), 2 * UNREADABLE_EXCERPT_BYTES)
+    while 0 < cut < len(data) and data[cut] & 0xC0 == 0x80:  # not inside a character
+        cut -= 1
+    longest = max((len(secret) for secret in registered_secrets()), default=0)
+    head = data[:cut].decode("utf-8", "replace")
+    window = head + data[cut : cut + 4 * max(longest, _SHORT_TOKEN_HEAD)].decode("utf-8", "replace")
+    kept = window[: _clean_cut(window, len(head))]
+    shown = redactor.redact_text(kept).encode("utf-8")[:UNREADABLE_EXCERPT_BYTES]
     return shown.decode("utf-8", "ignore"), len(data)
 
 

@@ -342,3 +342,43 @@ def test_the_class_keeps_its_excerpt_and_advice_through_copy_and_pickle() -> Non
     error = ResponseMalformed("t1: x; not evaluated", excerpt="<p>", size=3, advice="check it")
     for clone in (copy.copy(error), pickle.loads(pickle.dumps(error))):  # noqa: S301
         assert (clone.excerpt, clone.size, clone.advice) == ("<p>", 3, "check it")
+
+
+@pytest.mark.usefixtures("no_known_secrets")
+@pytest.mark.parametrize(
+    "key",
+    [
+        "scanKEY-7f3a9c2e1b8d4f6a0e5c7b9d2f4a6c8e",
+        "sk-proj-Zx9Yw8Vu7Ts6Zx9Yw8Vu7Ts6Zx9Yw8Vu7Ts6Zx9Yw8Vu7Ts6",
+        "pass word:with@separators-9f8e7d6c",
+    ],
+)
+def test_no_part_of_a_credential_across_the_cut_reaches_the_excerpt(key: str) -> None:
+    """Verification of 07aa0b3a, LOW 1 (the auditor's probe_cut.py): the excerpt was redacted
+    over the first 8 KiB, so a registered credential crossing that cut was read in part and up
+    to 15 of its leading characters survived, once masks that shrink (a JWT's) pulled them into
+    the kept 4 KiB. The cut now moves before a credential or a token that crosses it."""
+
+    import base64
+
+    from ildottore.adapters.base import UNREADABLE_EXCERPT_BYTES, reply_excerpt
+    from ildottore.redactor import Redactor, register_known_secret
+
+    register_known_secret(key)
+    redactor = Redactor()
+    head = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').decode().rstrip("=")
+
+    def jwt(n: int) -> str:
+        claims = base64.urlsafe_b64encode(json.dumps({"sub": "x" * n}).encode()).decode()
+        return f"{head}.{claims.rstrip('=')}.{'s' * 43}"
+
+    prefix = " ".join(jwt(1100) for _ in range(4)) + " "
+    survived = []
+    for keep in range(1, len(key)):
+        filler = "x" * (2 * UNREADABLE_EXCERPT_BYTES - len(prefix) - 1 - keep)
+        excerpt, _ = reply_excerpt((prefix + filler + " " + key + " tail").encode(), redactor)
+        if len(key[:keep]) >= 4 and key[:keep] in excerpt:
+            survived.append(keep)
+    assert survived == []
+    whole, _ = reply_excerpt((prefix + "x" * 50 + " " + key + " tail").encode(), redactor)
+    assert key not in whole

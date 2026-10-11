@@ -664,6 +664,16 @@ def holds_known_secret_part(value: str, parts: frozenset[str]) -> bool:
     )
 
 
+def registered_secrets() -> tuple[str, ...]:
+    """Every registered credential (and the forms a library quotes it in), longest first.
+
+    For a caller that must not cut one in two before redacting (the excerpt an unreadable reply
+    keeps, ``adapters.base.reply_excerpt``: a credential read in part is not recognised).
+    """
+
+    return tuple(_known_secrets())
+
+
 def _known_secrets() -> list[str]:
     # Longest first, then by value: a set's iteration order changes with PYTHONHASHSEED, and two
     # credentials of one length came in either order (pre-commit audit of the control-characters
