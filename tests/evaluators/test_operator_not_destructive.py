@@ -422,19 +422,15 @@ def _target(seeded: SeededSetup) -> Target:
 
 
 def test_the_declaration_is_part_of_the_target_digest_and_absent_when_empty() -> None:
-    from ildottore.shared import digest
-
     granted = SeededSetup(specs=["*"], granted_tools=[_HANDOFF])
     declared = SeededSetup(specs=["*"], granted_tools=[_HANDOFF], not_destructive=[_HANDOFF])
 
     assert target_digest(_target(granted)) != target_digest(_target(declared))
-    # None declared, the digest is the one a run stored before the field existed got.
-    before = {
-        k: v
-        for k, v in _target(granted).model_dump(mode="json").items()
-        if k not in digest._TARGET_COSMETIC and k != "websocket"
-    }
-    assert "not_destructive" not in before["seeded_setup"]
-    before["capabilities"].pop("sampling")
-    before["__route__"] = "live"
-    assert target_digest(_target(granted)) == digest._sha(before)
+    # None declared, the digest is the one `main` gives the same target, computed there at
+    # `a69dbd8c` (a hand-built payload drifted with every field `main` adds to `Target` and
+    # leaves out when unset, such as OD-44's `capabilities.mcp`: pre-merge audit, L7), so a run
+    # stored before a file could declare one resumes.
+    assert target_digest(_target(granted)) == (
+        "sha256:v2:3fc02c41ae4f7347d6aa92ee17d752f6244943dd07c2e41ad0d9947174a58584"
+    )
+    assert "not_destructive" not in _target(granted).model_dump(mode="json")["seeded_setup"]
