@@ -213,3 +213,30 @@ def test_a_refused_write_withholds_the_pieces_and_the_campaign_goes_on(
         assert stored["response"]["text"].startswith("Developer mode on.")
         assert {entry["token"] for entry in stored["response"]["logprobs"]} == {""}
         assert all(entry["logprob"] == -0.01 for entry in stored["response"]["logprobs"])
+
+
+def test_a_write_refused_again_with_its_pieces_withheld_still_ends_the_campaign(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_known_secrets: None
+) -> None:
+    """Nothing raw is ever written: a store that refuses the withheld attempt too stops the run."""
+
+    from ildottore.store import evidence_fs
+
+    def refuse_all(self: evidence_fs.FsEvidenceStore, payload: str) -> None:
+        raise evidence_fs.RedactionLeakError("a test refusal of everything")
+
+    monkeypatch.setattr(evidence_fs.FsEvidenceStore, "_assert_no_leak", refuse_all)
+    monkeypatch.setenv("ILDOTTORE_SPLIT_KEY", CREDENTIAL)
+    with _serving({}) as port:
+        target, scope = _files(tmp_path, port)
+        result = CliRunner().invoke(
+            app,
+            [
+                *("run", "-t", str(target), "--scope", str(scope), "--spec", "PI-DIRECT-001"),
+                *("--runs", "1", "--rate", "1000", "--concurrency", "1", "--no-color"),
+                *("--evidence-root", str(tmp_path / "ev"), "--run-db", str(tmp_path / "r.db")),
+            ],
+        )
+    assert result.exit_code == 3, result.output
+    assert "aborted on RedactionLeakError: a test refusal of everything" in result.output
+    assert not list((tmp_path / "ev").rglob("*/attempts/*.json"))
