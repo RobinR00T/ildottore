@@ -5,7 +5,8 @@ from the **environment or a pluggable vault**, never from files checked into the
 repo (S6, AGENTS.md §2). Carries the safety-flag surface - ``unsafe_render`` (S5, OD-12) and
 the run-level PII-elicitation key (DL4, OD-11) - as typed config so the policy engine and the
 reporter (u11) can read one authoritative state. No CLI flag sets either of them today, so both
-stay at their default, off.
+stay at their default, off. OD-11 (decided 2026-10-11): the PII run key gets a CLI flag only
+together with a flag that loads a policy pack, the two keys of DL4, never alone.
 
 This module does **no** network I/O and imports nothing from ``adapters``,
 ``core`` or any other unit - only ``shared`` types and the stdlib.

@@ -613,8 +613,10 @@ def _assert_same_context(
         raise ValueError(
             f"run {run_id!r} halted with adaptive planning "
             f"{'on' if stored_adaptive else 'off'} and this invocation asks for "
-            f"{'on' if adaptive else 'off'}. It reorders the mutators a spec runs, so the two "
-            f"halves would not be the same campaign. {remedy}, or start a fresh run."
+            f"{'on' if adaptive else 'off'}. A resume keeps the planning mode its campaign "
+            "recorded, so the record holds one mode: the mode changes the order in which a "
+            "spec's mutators go out, never which attempts are sent (OD-5). "
+            f"{remedy}, or start a fresh run."
         )
     stored_runs = context.get("runs")
     if runs is not None and stored_runs is not None and int(stored_runs) != runs:

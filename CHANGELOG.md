@@ -55,6 +55,98 @@ versioning: [SemVer](https://semver.org/).
   `tests/cli/test_operator_declaration_campaign.py` (11, all fail there); the golden JSON report
   snapshot gains the empty key.
 
+### Decided (eight open decisions, closed on 2026-10-11 under the owner's delegation)
+
+The owner delegated these on 2026-10-11 ("arreglalo todo según mejores prácticas"). Each is
+recorded as decided under that delegation, by best practice and revisable, with its reasoning,
+the alternative not taken and how to reverse it, in its `00-INDEX` row and its unit's §9.
+
+- **`dottore fleet` no longer writes a WebSocket target that `run` refuses (OD-37).** A fleet
+  entry carries no `websocket:` block, so a target entry with a `wss://` endpoint was written as
+  `provider: rest` (inferred from its path) and one with `provider: websocket` as a file with no
+  block, and `run`, `fleet --run` and the printed `dottore run` refused those target files. Now
+  a `ws://` or `wss://` endpoint (stripped and case-folded, whatever `provider` says) and
+  `provider: websocket` in a target are refused before anything is written (exit 3):
+  `error: targets.1.endpoint of 'ws-assistant-staging' is a wss:// URL, which only a provider
+  websocket target dials, with a websocket: block declaring its wire shape; a fleet entry cannot
+  carry that block (OD-37). Write that target file by hand (examples/target.websocket.yaml, ...)`.
+  A WebSocket judge keeps working as it did: a `judge:` block that declares one is accepted when
+  `--judge` names its hand-written file (matching the block), and now no `judge.yaml` is written
+  beside it (it was written as `rest`, a file `run` refuses); without `--judge` the block is
+  refused, with `... pass it to dottore fleet with --judge; keep this block, which authorizes it,
+  with the same id, endpoint and api_key_env`. Refused rather than skipped, so `fleet --run` never
+  exits on the other targets' findings with one target unscanned. Not taken: a `websocket:` block
+  in a fleet entry, checked by `run`'s own `_websocket_spec` before writing.
+  `tests/cli/test_fleet_websocket.py`: 20 tests, 16 of the first 17 failing on `6d5f7ae` and the
+  3 for a `--judge` file failing on `be3f2e71`, whose pre-merge audit found that case.
+- **One query per WebSocket connection, by design (OD-35).** `session.one_query_in_flight: false`
+  is still refused when the target file loads, and the refusal now says it is by design: "is
+  refused by design (OD-35): with several queries on one socket a reply frame is tied to its
+  attempt only by an id the server echoes; leave it true (each conversation gets a connection of
+  its own; --concurrency sets how many run at once)" (it said "is not built"). One frame
+  misattributed would put one attempt's reply into another's verdict, which nothing downstream
+  can detect. Not taken: a
+  correlation id in `message.send` and a `response.correlation_path` read from every frame.
+- **No WebSocket reconnect in the middle of a conversation, by design (OD-36).** Unchanged
+  behaviour, now decided: a later turn whose connection is gone is inconclusive, never a silent
+  new session, even with `{{messages}}` in the template, since the tool cannot tell that a server
+  keeps no per-connection state, and on one that keeps it the re-dialled turn would be scored
+  without the context the attack built. Not taken: a `session.stateless: true` declaration under
+  which the runner re-dials, debited, and resends the whole history.
+- **Golden fixtures live inline in each spec, and only there (OD-7).** Signed off as built: the
+  schema's `fixtures` takes `vulnerable` and `hardened` with no path field, so there is no sidecar
+  fixture file, and the u03 and u13 contracts that said "schema supports both" (and "inline or
+  under `tests/fixtures/specs/<id>/`") now say what is built. Inline keeps the proof inside the
+  spec's digest, so the lint proof, the resume binding and a reviewer's diff cover it with the
+  spec; the 75 specs carry 223 to 835 bytes of fixture JSON each. Not taken: an optional path
+  resolved next to the spec inside its pack and hashed into its digest.
+  `tests/golden/test_fixture_location.py` pins it (6 tests).
+- **The WebSocket frame transcript stays in `raw_ids["websocket"]["frames"]` (OD-34).** Signed off
+  as built, not moved to a `transcript` field of its own on `ModelResponse`: that shape is u00's
+  frozen registry, `raw_ids` is already the per-transport place for what a reply carries beyond
+  its fields (redacted where it is built and at rest, stored with each attempt, re-read by
+  `replay`), and a field shaped for one transport would be reshaped for the second. Measured with
+  the field added on a copy: 1 of 5,082 tests fails (the JSON report's golden snapshot), and with
+  the default serializer each new attempt and report would carry one more key, which a
+  `None`-dropping serializer would avoid, so that cost does not decide it. `ModelResponse`'s
+  docstring and u00 §6 now say what `raw_ids` holds.
+- **The scope checksum is integrity only, and proving who approved a scope is out of band
+  (OD-2).** Signed off as built: the optional `checksum:` catches an accidental edit, not an
+  editor who recomputes it, and built-in signing waits for key management (trusted keys, who
+  signs, revocation), now a stated non-goal in `NON-GOALS.md`. `docs/MANUAL.md` §4.1 gains
+  "Signing a scope (out of band)", run as written: the reviewer's `ssh-keygen -Y sign` on their
+  own machine, then `ssh-keygen -Y verify ... && dottore run` on one private copy against an
+  `allowed_signers` the scope's editors cannot write, and `shasum -a 256` of that copy equal to
+  the report's `run.scope_sha256` (for LF line ends and no top-level `checksum:` line); one
+  appended line made the verify exit 255 and started no run. The two custody rules a signature
+  depends on (a key only the reviewer holds, trusted keys out of the editors' reach) are stated
+  with it. The FAQ, the threat model (S4), `RESPONSIBLE-USE.md`, `dottore-scope(5)` and the scope
+  loader's docstrings say the same. Not taken: built-in verification of a detached signature
+  behind the existing verifier seam (kept for it), a keyed MAC, a flag requiring the checksum.
+- **`DL-PII-ELICIT-001` stays off by default; its opt-in is two keys or none (OD-11).** The safe
+  default stands: present, `test_only`, and not enableable from the CLI, which loads no policy
+  pack and sets no run PII key. The opt-in, when it comes, is DL4's two keys in one change, a
+  flag that loads the engagement's policy pack (the written authorization DL5 asks for) and a
+  per-run `--allow-pii-elicitation`; never the run flag alone, which with the CLI's own pack
+  would enable nothing. The policy-pack flag itself stays open, since it also gates the seven
+  `agentic-extortion` specs. Not taken: one flag that enables it alone, dropping the spec, an
+  opt-in in the scope file.
+- **Adaptive ordering stays implied by `-sV` and `-A`, with no `--adaptive` flag (OD-5).** Signed
+  off as built (`--deep` sets the mode too, and orders nothing without a fingerprint): the
+  ordering changes which attempt goes first, never which attempts are sent, since an attempt is
+  named by its spec, mutation and run and no spec stops early. Measured and documented: a `-sV`
+  campaign halted on the mock (exit 3, 9 of 18 specs) and resumed with `--deep` alone keeps the
+  recorded mode and completes (exit 2, 18 of 18) with the rest in declared order. That is now
+  recorded and said: the run store keeps `context_json.mutator_orders`, one entry per invocation
+  (`fingerprint` when it planned with a fingerprint, whether or not that moved a mutator, or
+  `declared`; `"unrecorded"` first for an older run), such a resume prints `note: <run id> plans
+  in each spec's declared mutator order: ... (mutator_orders: fingerprint, declared)` on stderr
+  (only after a part that planned with a fingerprint), and the planning-mode refusal says the mode
+  "changes the order in which a spec's mutators go out, never which attempts are sent" (it said
+  the two halves "would not be the same campaign"). Not taken: an `--adaptive`/`--no-adaptive`
+  switch; `--deep` as timing only, which would need a compatibility path for halted `--deep`
+  campaigns.
+
 ### Changed (a reply the provider's filter cut or replaced is never a pass: OD-42)
 
 - **An empty or canned reply from the provider's filter passed the spec.** A provider's output

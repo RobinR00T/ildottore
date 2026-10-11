@@ -23,7 +23,8 @@ assurance report, not offensive capability.
 - **Operating rule (enforced in code):** the tool refuses to scan any target that is not
   covered by a `scope.yaml` authorization record with an endpoint allowlist (default-deny).
   The scope file *is* the authorization. It is not signed: an optional SHA-256 `checksum:` makes
-  edits detectable (whether to add real signing is open decision OD-2). Runs record what was
+  accidental edits detectable, and who approved it is yours to prove, by signing the file out of
+  band and verifying it before the run (OD-2; `docs/MANUAL.md` §4.1). Runs record what was
   sent and what came back as evidence, when they ran and the SHA-256 of the scope they ran
   under, but not who ran them. Using it against systems you are not authorized to test is
   prohibited and may be illegal.

@@ -1806,9 +1806,14 @@ def _websocket_spec(
             "credential goes through auth_ref and the {{token}} placeholder"
         )
     if not spec.session.one_query_in_flight:
+        # Decided 2026-10-11 under the owner's delegation, revisable (OD-35): on a shared socket
+        # a reply frame belongs to its attempt only by an id the server echoes, and one frame
+        # misread puts one attempt's reply into another's verdict.
         raise ValueError(
-            f"target file {path}: websocket.session.one_query_in_flight: false is not built "
-            "(several queries multiplexed on one socket need a correlation id); leave it true"
+            f"target file {path}: websocket.session.one_query_in_flight: false is refused by "
+            "design (OD-35): with several queries on one socket a reply frame is tied to its "
+            "attempt only by an id the server echoes; leave it true (each conversation gets a "
+            "connection of its own; --concurrency sets how many run at once)"
         )
     if TOKEN in spec.vars:
         raise ValueError(

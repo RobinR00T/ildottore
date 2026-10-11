@@ -42,9 +42,11 @@ total-fixtures + per-family FP/FN rates (`docs/07 §2`). Full spec: `docs/07 §2
   runner exits non-zero on any mismatch and emits a per-spec/per-family diff.
 - **KEEP:** multi-response fixtures (N-run repro) replay a declared **sequence**, cycling
   deterministically by attempt index: no drift.
-- **DECIDE:** fixture-carrying location: inline in the spec YAML `fixtures:` block vs sidecar
-  files under `tests/fixtures/{vulnerable,hardened}/` (`docs/07 §4`). Propose: schema allows both,
-  runner resolves inline-first (§9).
+- **DECIDED (OD-7, 2026-10-11, under the owner's delegation, revisable):** fixtures live inline in
+  the spec YAML `fixtures:` block, and only there. The schema's `fixtures` has no path field
+  (`additionalProperties: false`), and there are no sidecar files under
+  `tests/fixtures/{vulnerable,hardened}/` (`docs/07 §4`). The first proposal, "schema allows
+  both, runner resolves inline-first", was never built (§9).
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `adapters/mock.py`: `MockTarget(scenario, fixture)` implementing `TargetAdapter`; `send()`
@@ -93,7 +95,21 @@ total-fixtures + per-family FP/FN rates (`docs/07 §2`). Full spec: `docs/07 §2
 - Not its call: fixture-storage-location decision (§9) · which families ship fixtures (u13).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
-- **OD-u03-a** fixture location: inline in spec YAML vs sidecar `tests/fixtures/**`: propose
-  schema supports both, runner resolves inline-first; flag as ADR if it constrains u13.
+- **OD-u03-a / OD-7** fixture location: inline in spec YAML vs sidecar `tests/fixtures/**`.
+  **Decided 2026-10-11 under the owner's delegation (best practice), revisable: inline only, as
+  built.** The proposal "schema supports both, runner resolves inline-first" was never true: the
+  schema's `fixtures` takes `vulnerable` and `hardened` with no path field and `load_fixtures` reads
+  the inline block. Why inline only: a spec is self-proving as one file, and its fixtures are inside
+  its digest (`shared/digest.py`), so the lint proof, the resume binding and a reviewer's diff cover
+  the proof with the spec, as a pack's per-file checksum would once one is verified (OD-10); a
+  sidecar file would sit outside them, and resolving it would add a file lookup the spec loader does
+  not make. The 75 shipped specs carry 223 to 835 bytes of fixture JSON each (median 459).
+  Alternative not taken: an optional fixture path resolved next to the spec inside its pack, hashed
+  into the spec's digest. Revisit when a fixture outgrows a spec file (a long multi-turn
+  transcript); no ADR is needed while nothing changes. Reversal: an optional path field in
+  `fixtures` (`schemas/attack-spec.schema.json` and u00's `Fixtures`, a program-level change through
+  u02), resolved by `testing/golden.load_fixtures` next to the spec inside its pack, its bytes
+  hashed into `shared/digest.spec_digest`, and `tests/golden/test_fixture_location.py` changed to
+  pin the new rule.
 - Whether per-family FP/FN thresholds are informational or also merge-gating in MVP‑1 (propose:
   overall 100% accuracy gates; per-family rates informational until u13 battery exists).

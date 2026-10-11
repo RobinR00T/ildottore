@@ -22,6 +22,17 @@ allowlist, default-deny), and plain http is allowed only to loopback. The scope'
 `checksum:` is an integrity check, verified when present, not a signature. See
 [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
+### Can the tool prove who approved a scope?
+
+No, by decision (OD-2): it verifies no signature, since that needs key management it does not
+have (trusted keys, who signs, revocation). Sign the scope with your own tooling, verify it
+before the run, and compare the report's `run.scope_sha256` with `shasum -a 256 scope.yaml`
+(equal for a file with LF line ends and no top-level `checksum:` line). It proves something only
+if the reviewer signs on their own machine with a key only they hold and the trusted keys are
+read from a place the scope's editors cannot write; verify and load one private copy, so the
+bytes verified are the bytes the run reads. The `ssh-keygen -Y` recipe, run for real, is in
+[`MANUAL.md`](MANUAL.md) §4.1.
+
 ### Do I need an API key?
 
 Not to explore (`registry ls`, `describe`, `lint`, `schema`) or to scan a **local** model
@@ -216,7 +227,11 @@ to ignore and the per-turn timeout. The adapter knows nothing about any product;
 the whole description. The scope gates `wss://` like `https://` (cleartext `ws://` only to
 loopback), a redirect at the upgrade is never followed, every frame is kept in the evidence
 with the credential as its placeholder, and `-sV` works (one connection per probe). Start from
-[`../examples/target.websocket.yaml`](../examples/target.websocket.yaml) and `--dry-run`.
+[`../examples/target.websocket.yaml`](../examples/target.websocket.yaml) and `--dry-run`. Not
+from a fleet file: a fleet entry carries no `websocket:` block, so `dottore fleet` refuses a
+`ws://` or `wss://` endpoint (exit 3, nothing written) and the error points to that example
+(OD-37). One query at a time per connection, and no reconnect in the middle of a conversation:
+both by design (OD-35, OD-36).
 
 ### Does `dottore fingerprint` tell me whether my endpoint has an output filter?
 
@@ -345,7 +360,9 @@ a target that lacks the capability they need skips them, and one that has it rep
 end in `error: nothing would be sent` (exit 3), and the message says why: "Widen the selection
 or declare the capability on the target. A spec blocked by policy needs a policy pack that
 enables it, and the CLI cannot load one today (open decision), so it cannot run from
-`dottore`."
+`dottore`." For `DL-PII-ELICIT-001` the opt-in is decided (OD-11): the pack that enables it and a
+per-run `--allow-pii-elicitation` flag come together, never the flag alone; until then it stays
+off.
 
 ### Where does evidence live, and is it safe to keep?
 

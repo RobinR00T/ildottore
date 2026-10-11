@@ -68,7 +68,13 @@ the u00 protocols:
   `scope_sha256s`: each scope the run went out under, appended (on a resume with `-sV` before its
   probe pass, otherwise with the integrity record) whenever it differs from the last entry,
   `"unrecorded"` first for a run recorded before 2026-10-05, in an immediate transaction
-  (`add_run_scope`) that a context rewrite preserves (audit D-17). Schema v4 (2026-10-04) adds
+  (`add_run_scope`) that a context rewrite preserves (audit D-17), and, since 2026-10-11, as
+  `mutator_orders`: what each invocation planned with (`fingerprint` when it planned with a
+  `-sV` fingerprint, whether or not that moved a mutator, `declared` otherwise), appended by
+  every invocation,
+  `"unrecorded"` first for a run recorded before it, in an immediate transaction
+  (`add_run_order`) that a context rewrite preserves too (OD-5; pre-merge audit of
+  `be3f2e71`). Schema v4 (2026-10-04) adds
   `artifacts(run_id, spec_id, sha256, state, PRIMARY KEY(run_id, sha256))`: the evidence store
   journals every attempt artifact through the run store, `pending` before the write and `written`
   after, and `recorded_evidence` unions it with the findings' references, so the manifest covers a

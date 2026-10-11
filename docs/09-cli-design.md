@@ -109,15 +109,23 @@ OTHER COMMANDS
 
 **`--deep` and adaptive planning.** With no `--suite`, a plain `run` already selects the full
 battery, so `--deep` alone changes the timing template (T2 instead of T3) and turns on adaptive
-mode. Adaptive mode reorders a spec's mutators by the fingerprint's carrier-comprehension
-result, and only `-sV` produces a fingerprint, so `--deep` without `-sV` keeps every spec's
-declared order. The mode is still recorded: the in-memory plan is marked adaptive (each
-selection's reason reads "adaptive-tailored", which no output prints), and the run's integrity
-record stores the planning mode, so a `--resume` that changes it is refused. `-A` is the form
-that does both. Measured with `--dry-run` on `examples/target.local.yaml` (a chat model with no
-tools, RAG or memory): no flag, `--deep` and `-A` each select the same 34 specs and 550
-requests; the pacing line reads 5.0 req/s with no flag and 2.0 with `--deep` or `-A`, and `-A`
-adds `+18 probe(s) per target`.
+mode. Adaptive mode reorders a spec's mutators by the fingerprint's carrier-comprehension result,
+and only `-sV` produces a fingerprint, so `--deep` without `-sV` keeps every spec's declared order.
+The mode is still recorded: the in-memory plan is marked adaptive (each selection's reason reads
+"adaptive-tailored", which no output prints), and the run's integrity record stores the planning
+mode, so a `--resume` that changes it is refused. `-A` is the form that does both. Signed off as
+built on 2026-10-11 (OD-5): no `--adaptive` flag, since the ordering changes which attempt goes
+first and never which attempts are sent (an attempt is named by its spec, mutation and run), so it
+matters only to what a halt leaves stored. The mode alone does not say whether a part planned with
+a fingerprint (`-sV`, `-A` and `--deep` all set it), so since 2026-10-11 the run store also keeps
+`context_json.mutator_orders`, one entry per invocation: `fingerprint` when it planned with a `-sV`
+fingerprint (whether or not that moved a mutator), `declared` otherwise. A `-sV` campaign resumed
+with `--deep` alone reads `["fingerprint", "declared"]`, and that resume prints a `note:` line on
+stderr saying it plans in each spec's declared order; a `--deep` campaign resumed with `--deep`
+reads `["declared", "declared"]` and prints none. Measured with `--dry-run` on
+`examples/target.local.yaml` (a chat model with no tools, RAG or memory): no flag, `--deep` and `-A`
+each select the same 34 specs and 550 requests; the pacing line reads 5.0 req/s with no flag and 2.0
+with `--deep` or `-A`, and `-A` adds `+18 probe(s) per target`.
 
 **`runs` comes from the command line.** A spec's own `runs:` and a suite's `default_runs:` are
 not read by the runner: every mutation variant of every spec is sent `--runs` times (default
@@ -242,7 +250,9 @@ tried on `run --quick --dry-run` and answered "No such option" (exit 3):
   and `--budget-wall`; without them each ceiling is derived from the resolved plan.
 - `--allow-pii-elicitation` and any flag that loads a policy pack. The gated specs
   (`requires_policy`) therefore cannot be enabled from `dottore` today; whether to add a
-  policy-pack flag is an open decision.
+  policy-pack flag is an open decision. For `DL-PII-ELICIT-001` it is decided (OD-11,
+  2026-10-11): `--allow-pii-elicitation` comes only together with that flag, the two keys of
+  DL4, never alone.
 - A positional URL or model id (`dottore run https://...`): the positional is read as a file.
 - `run` as the default subcommand.
 - The `discover` subcommand (`-sn` is a flag on `run`).

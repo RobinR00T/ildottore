@@ -170,13 +170,14 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   from the spec's category, which a spec cannot opt out of. One limit remains: a copy that keeps
   `test_only` but deletes `requires_policy` still runs, because nothing outside the spec says
   which specs are offensive simulations. `--spec-path` is a trust decision; lint what you load.
-- **PII elicitation needs two more keys.** `DL-PII-ELICIT-001` runs only when the policy pack
-  sets `allow_pii_elicitation` **and** the run's safety flag of the same name is on (DL4), on top
-  of the `layer_b_pii` capability. The CLI sets neither the pack nor the run key today, so the
-  spec cannot be enabled from the command line at all. The gate recognises the spec by its
-  `pii-elicitation` tag regardless of case and of `-` or `_` (`pii_elicitation`,
-  `PII-Elicitation`; not `pii elicitation`) or by the
-  `layer_b_pii` capability alone.
+- **PII elicitation needs two more keys.** `DL-PII-ELICIT-001` runs only when the policy pack sets
+  `allow_pii_elicitation` **and** the run's safety flag of the same name is on (DL4), on top of the
+  `layer_b_pii` capability. The CLI sets neither the pack nor the run key today, so the spec cannot
+  be enabled from the command line at all. That is the decided default (OD-11, 2026-10-11): when an
+  opt-in comes, it is both keys from the CLI in one change, a flag loading the engagement's pack and
+  `--allow-pii-elicitation`, never the run flag alone. The gate recognises the spec by its
+  `pii-elicitation` tag regardless of case and of `-` or `_` (`pii_elicitation`, `PII-Elicitation`;
+  not `pii elicitation`) or by the `layer_b_pii` capability alone.
 - **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports. Every
   credential the tool reads (an `env://` key, a password in an endpoint URL) is registered and
   masked **by value** wherever it appears, also in the escaped form an HTTP library quotes it
@@ -324,9 +325,10 @@ See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPON
 Required for every scanning command. An optional top-level `checksum:` (sha256 of the body,
 the `checksum:` line itself excluded) is verified when present: a scope edited without
 updating it is refused (exit 3). It is an integrity check, not a signature: anyone who can edit
-the file can recompute it, and nothing requires one. Signing is not built; whether to add it is
-an open decision (OD-2). Every run records the scope's SHA-256 (in the run store and every
-report, see §10); it does not record who ran it.
+the file can recompute it, and nothing requires one. Proving who wrote or approved a scope is a
+non-goal of the tool until it has key management (OD-2, decided 2026-10-11): sign the file with
+your own tooling and verify it before the run (below). Every run records the scope's SHA-256
+(in the run store and every report, see §10); it does not record who ran it.
 
 ```yaml
 version: "1.0"
@@ -352,6 +354,44 @@ contain another (`ZZ-1`, `ZZ-1-b`): `authz_leak` does not count an occurrence th
 canary's occurrence covers. Avoid it all the same: A's `ZZ-1` leaking into B's reply right
 before `-b` reads as B's own canary. Plain `http` is allowed only to loopback hosts; everything
 else must be `https`. Template: [`../specs/scope.example.yaml`](../specs/scope.example.yaml).
+
+**Signing a scope (out of band).** The tool verifies no signature (OD-2): checking one would need
+a list of trusted keys, a rule for who signs and a way to revoke a key, which is key management it
+does not have. Sign the scope with tooling whose keys you already manage, verify it before
+`dottore run`, and match the report to the signed bytes: `run.scope_sha256` in the JSON report
+(the SARIF, JUnit and HTML reports carry it too, §10) is the SHA-256 of the file when it has LF
+line ends and no top-level `checksum:` line. A signature proves something only under two custody
+rules: the reviewer signs on their own machine, with a key only they hold, and the list of trusted
+keys (`allowed_signers`, one `<identity> <public key>` per line) is read from a place the scope's
+editors cannot write (a protected branch or repository, a CI secret, a read-only mount). An
+`allowed_signers` beside the scope, or a signing key the scope's editors can reach (a key in a CI
+secret their jobs can read), proves no more than the checksum does. With SSH signatures (OpenSSH
+8.1 or later):
+
+```bash
+# 1. The reviewer, on their own machine, with their own key (a key held by ssh-agent, or a FIDO
+#    key made with -t ed25519-sk, serves too):
+ssh-keygen -Y sign -f ~/.ssh/id_ed25519 -n dottore-scope scope.yaml     # writes scope.yaml.sig
+
+# 2. Whoever runs the scan, from where specs/ is reachable (the repository root, or add
+#    --spec-path), with allowed_signers from a place the scope's editors cannot write. Verify and
+#    load one private copy, so the bytes verified are the bytes the run loads:
+copy="$(mktemp -d)/scope.yaml" && cp scope.yaml "$copy"
+ssh-keygen -Y verify -f /etc/dottore/allowed_signers -I reviewer@example.test \
+  -n dottore-scope -s scope.yaml.sig < "$copy" &&
+  dottore run -t target.yaml --scope "$copy" -oJ report.json
+shasum -a 256 "$copy"                        # equals run.scope_sha256 in report.json
+```
+
+Run on 2026-10-11 (OpenSSH 10.3p1), with a throwaway key in place of `~/.ssh/id_ed25519` and a
+read-only `allowed_signers` in a directory of its own, on an offline mock target
+(`mock_scenario: hardened`): the verify printed `Good "dottore-scope" signature for
+reviewer@example.test with ED25519 key SHA256:...`, the run exited 0 (`Specs run: 75 of 75
+planned`), and `shasum` printed `38529c5c...00c2d`, the `run.scope_sha256` of the report. With
+one line appended to the copy, the verify printed `Signature verification failed: incorrect
+signature` and exited 255, so the `&&` started no run. `cosign sign-blob` and `cosign
+verify-blob`, or a signed commit behind review on a protected branch, serve the same way, under
+the same two rules.
 
 ### 4.2 `target.yaml`, what you are scanning
 
@@ -717,7 +757,7 @@ websocket:
   session:
     start: {type: "new_conversation"}              # once per connection, after the handshake
     expect: {path: "type", equals: "session"}      # optional acknowledgement
-    one_query_in_flight: true                      # the only policy built
+    one_query_in_flight: true                      # the only policy (OD-35)
   message:
     send: {type: "query", text: "{{prompt}}"}      # {{prompt}}, or {{messages}} for the history
   response:
@@ -750,7 +790,8 @@ that carries a query, a fragment or a user:password; a placeholder that is neith
 in `vars`; `{{token}}` without an `auth_ref`, or inside `vars`; a request placeholder in a
 connection template; a `message.send` with neither `{{prompt}}` nor `{{messages}}`; an upgrade
 header the library writes itself (`Host`, `Connection`, `Upgrade`, and `Sec-WebSocket-Key`,
-`-Version`, `-Extensions`, `-Protocol` and `-Accept`); `one_query_in_flight: false`; a
+`-Version`, `-Extensions`, `-Protocol` and `-Accept`); `one_query_in_flight: false` (by
+design, OD-35, below); a
 `timeout_seconds` outside (0, 600]; a `reconnect.max_attempts` outside 0 to 5; a key that is
 not text anywhere in the block (YAML reads `on:`, `~:` and `5:` as a boolean, null and a
 number; `opts: {on: true}` went on the wire as `{"True": true}`) and a value JSON cannot hold
@@ -767,7 +808,10 @@ masks a credential by value only from that length.
 session start, sends its query, reads the turn and closes. A multi-turn attempt keeps one
 connection across its turns and closes it after the last; a later turn whose connection is gone
 (the turn before it failed) is an environment error (`inconclusive`, not retried), never a
-silent restart of the session. A live conversation is never evicted: past 256 open at once, a
+silent restart of the session, even for a server that keeps no state (`{{messages}}` in the
+template): the tool cannot tell that a server keeps none, and on one that does, a re-dialled turn
+would be answered in a fresh conversation without the context the earlier turns built (by
+design, OD-36, decided 2026-10-11). A live conversation is never evicted: past 256 open at once, a
 new one is refused (`inconclusive`, not retried) and the open ones keep working. Concurrent
 specs therefore never interleave on one socket, and one query is in flight per connection. The
 `-sV` probes are single-turn attempts: one connection each. One request in the budget is one
@@ -818,7 +862,8 @@ HTTP adapters. It carries no tool definitions, so a `type: model` target with to
 is `setup_not_delivered` too; a memory seed needs `{{system_prompt}}` in a template.
 
 **Evidence and the credential.** Every frame sent and received is kept on the attempt
-(`response.raw_ids.websocket.frames`, in order, with its direction) and filed by the evidence
+(`response.raw_ids.websocket.frames`, in order, with its direction: the transport's own key of
+`raw_ids`, not a field of its own, by decision, OD-34) and filed by the evidence
 store redacted at rest, so `dottore replay` re-derives the verdict from what went over the
 socket. In a multi-turn attempt the stored attempt is built from the final turn, whose record
 carries the whole conversation's frames (an intermediate turn's record carries only its own).
@@ -830,11 +875,17 @@ model name only when `model_path` is declared (there is no HTTP envelope to read
 transcript is never read as a tell). The probes go out at the deployment's own sampling, since
 no template carries a temperature, so a fingerprint is as repeatable as the deployment is.
 
-**Not covered.** A connection shared by several concurrent queries (a correlation id); an
-HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (`dottore fleet`
-infers `rest` from a `wss://` endpoint and writes no `websocket:` block, so `run` refuses the
-target file it writes until you set `provider: websocket` and add the block; its scope pins the
-port, 443 for `wss`); a session that must survive a reconnect.
+**Not covered.** A connection shared by several concurrent queries (by design, OD-35, decided
+2026-10-11: on a shared socket a reply frame is tied to its attempt only by an id the server
+echoes, and one frame misread puts one attempt's reply into another's verdict; each
+conversation gets a connection of its own, and `--concurrency` sets how many run at once); an
+HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet target entry (a fleet
+entry carries no `websocket:` block, so `dottore fleet` refuses a `ws://` or `wss://` endpoint
+and `provider: websocket`, exit 3 and nothing written, and points here: write the target and its
+scope entry by hand, as `examples/target.websocket.yaml` and `examples/scope.websocket.yaml` do;
+until 2026-10-11 it wrote a `provider: rest` target file `run` refused, OD-37; a WebSocket judge
+is given to `dottore fleet` as a hand-written `--judge` file, §4.3); a session that must survive
+a reconnect (by design, OD-36, above).
 
 ### 4.3 `fleet.yaml`, many targets in one file
 
@@ -856,20 +907,27 @@ targets:
     endpoint: http://localhost:3000/mcp
 ```
 
-`provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
-`/messages` -> `anthropic`, otherwise `rest`. `dottore fleet` expands this into a scope plus
-one target file per model, named for its `id` (`target-<id>.yaml`). Two ids that differ only by
-case (`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
-case-insensitive one (the macOS and Windows default) they are one file, and the second entry
-used to overwrite the first. The message locates both entries as validation errors do
-(`targets.0.id`, counted from 0), since the CLI may mask an id that looks random. A `judge:` id
-spelled as a target's only up to case is refused too (the default `judge` of a block with no
-`id:` included), so the scope never holds two ids that differ only by case; spelled exactly the
-same, the judge shares that target's scope entry when its endpoint and credential match, and is
-refused otherwise.
-Each entry is written as a `chatbot` target (an `mcp` one as `api`)
-with no `seeded_setup`, so a spec that needs documents, tools or memory is `setup_not_seeded`
-on a fleet entry that declares the capability; for those, scan with a target file (§4.2). Template: [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
+`provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`, `/messages`
+-> `anthropic`, otherwise `rest`. A WebSocket target is not a fleet entry: a `ws://` or `wss://`
+endpoint (whatever `provider` says) and `provider: websocket` are refused before anything is written
+(exit 3), since the target file it needs carries a `websocket:` block a fleet entry cannot hold
+(§4.2, OD-37). A `judge:` block may declare a WebSocket judge only when `--judge` names its
+hand-written target file, which must match the block (id, endpoint, credential): the block
+authorizes it in the generated scope, the file is what the run reads, and no `judge.yaml` is written
+for it (one would be refused by `run`). Without `--judge` such a block is refused, and the error
+says to write the file and pass it with `--judge`. `dottore fleet` expands this into a scope plus
+one target file per model, named for its `id` (`target-<id>.yaml`). Two ids that differ only by case
+(`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
+case-insensitive one (the macOS and Windows default) they are one file, and the second entry used to
+overwrite the first. The message locates both entries as validation errors do (`targets.0.id`,
+counted from 0), since the CLI may mask an id that looks random. A `judge:` id spelled as a target's
+only up to case is refused too (the default `judge` of a block with no `id:` included), so the scope
+never holds two ids that differ only by case; spelled exactly the same, the judge shares that
+target's scope entry when its endpoint and credential match, and is refused otherwise. Each entry is
+written as a `chatbot` target (an `mcp` one as `api`) with no `seeded_setup`, so a spec that needs
+documents, tools or memory is `setup_not_seeded` on a fleet entry that declares the capability; for
+those, scan with a target file (§4.2). Template:
+[`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
 
 An entry may declare `capabilities` with the keys a target file takes (§4.2). Its target file
 gets `tools: false` (`true` for an `mcp` entry) and `rag: false` unless the entry sets them, plus
@@ -922,7 +980,7 @@ required.
 | `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the `max_tokens` the send goes out with (the spec's own, else the target file's `sampling_defaults`, OD-39) or, with none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0). A figure is read only when it is a JSON integer from 0 to 2^53, past which a float no longer holds every integer: one that is negative, larger, or written with a fraction or an exponent is skipped like an absent one and the next shape is read (`total_tokens`, then `tokens`, then input plus output, then prompt plus completion); a sum past 2^53 is no usage, and with no readable shape the reservation stands. A prompt-cache figure is summed only into a pair, and one that is there and unreadable makes the pair a floor: the reservation is trued up to it, never down. (A 400-digit figure made `run` exit 1 with no report, and one past 2^53 halted the campaign on the token ceiling, until 2026-10-07.) Up to 2^53 a figure is believed, as a bill is: a target can report more than it used and halt the run on the ceiling (one reply of 2^53 fills even the largest ceiling these flags take, 2^53 too). Tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a request that has none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
 | `--timeout FLOAT` | per-attempt timeout (s) |
 | `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine. A target file with `sampling_defaults` gets `sampling:` lines: what the block fills and what of it does not go out, and an Anthropic target the specs' own `top_p` it does not get; a target that takes no sampling, a line that says so and that its replies are not temperature-0 deterministic; a `--judge` file, `judge sampling:` lines (§4.2); a target file that declares one of its granted tools not destructive, an `operator:` line naming it (OD-43, §4.2) |
-| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is the JSON report's `run.run_id` (the SARIF, JUnit and HTML reports carry it too) and the name of the run's directory under `--evidence-root`; neither the halt message nor `summary.status.reason` names it. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. That it is the same campaign (target, route, judge, planning mode, `--runs`, battery, evidence) is checked first, the budget after (against the campaign's `--runs`), and a resume refused before it sends anything writes nothing. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run. The planning mode is adaptive when the campaign ran with `-sV`, `-A` or `--deep`, and a resume has to keep it: the refusal names those flags, to leave out or to put back (the run store does not record which of them set it). With `-sV`, a request ceiling the campaign's spend leaves too small for the 18 probes is refused before they are sent, and the refusal offers dropping `-sV` (or the `-A` that implies it) only when the campaign did not plan adaptively and the ceiling holds the rest of it without the probes, priced as `--estimate` prices it; otherwise it says to raise `--budget-requests`. A halt keeps every reply the target gave: the attempts a batch had answered when the ceiling stopped it are stored (they were lost until 2026-10-07, and the resume sent them and paid for them again), and a reply whose evaluation the ceiling stopped (the judge's request refused) keeps a deterministic check's fail when it has one (that decides without the judge, and the verdict says the judge was not consulted) and is otherwise stored without a verdict, then sent again and judged by the resume. With `--judge`, a reply stored without a verdict is paid for twice: the resume sends it again rather than judging the stored one (a design choice; re-judging is a possible follow-up). A run that spent requests and stored no reply (for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start with its spend carried; one whose run store records no request spent is refused, and so is an `--evidence-root` that holds none of the artifacts the run store journals for the run, or an empty tree for a run that predates that journal. A run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them, and stderr says so (§4.2, OD-39) |
+| `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is the JSON report's `run.run_id` (the SARIF, JUnit and HTML reports carry it too) and the name of the run's directory under `--evidence-root`; neither the halt message nor `summary.status.reason` names it. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. That it is the same campaign (target, route, judge, planning mode, `--runs`, battery, evidence) is checked first, the budget after (against the campaign's `--runs`), and a resume refused before it sends anything writes nothing. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run. The planning mode is adaptive when the campaign ran with `-sV`, `-A` or `--deep`, and a resume has to keep it: the refusal names those flags, to leave out or to put back (the run store does not record which of them set it). So a campaign run with `-sV` and resumed with `--deep` alone keeps the mode and goes through, and the rest is planned in declared order: the same attempts are sent and scored, since an attempt is named by its spec, mutation and run, only perhaps in another order (OD-5, signed off 2026-10-11). What each invocation planned with is recorded: `context_json.mutator_orders` in the run store holds one entry per invocation, `fingerprint` when it planned with a `-sV` fingerprint (whether or not that moved a mutator: with no hint in the fingerprint the declared order stands) and `declared` otherwise (`"unrecorded"` first for a run recorded before 2026-10-11). A resume that plans in declared order after an earlier part planned with a fingerprint says so on stderr: `note: <run id> plans in each spec's declared mutator order: an earlier part planned with a fingerprint and this invocation has none (no -sV or -A); which attempts are sent does not change, only the order may (mutator_orders: fingerprint, declared)`. A campaign that never had a fingerprint (a `--deep` campaign resumed with `--deep`) prints no note. The reports carry no planning field. With `-sV`, a request ceiling the campaign's spend leaves too small for the 18 probes is refused before they are sent, and the refusal offers dropping `-sV` (or the `-A` that implies it) only when the campaign did not plan adaptively and the ceiling holds the rest of it without the probes, priced as `--estimate` prices it; otherwise it says to raise `--budget-requests`. A halt keeps every reply the target gave: the attempts a batch had answered when the ceiling stopped it are stored (they were lost until 2026-10-07, and the resume sent them and paid for them again), and a reply whose evaluation the ceiling stopped (the judge's request refused) keeps a deterministic check's fail when it has one (that decides without the judge, and the verdict says the judge was not consulted) and is otherwise stored without a verdict, then sent again and judged by the resume. With `--judge`, a reply stored without a verdict is paid for twice: the resume sends it again rather than judging the stored one (a design choice; re-judging is a possible follow-up). A run that spent requests and stored no reply (for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start with its spend carried; one whose run store records no request spent is refused, and so is an `--evidence-root` that holds none of the artifacts the run store journals for the run, or an empty tree for a run that predates that journal. A run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them, and stderr says so (§4.2, OD-39) |
 | `--resume-unverified` | resume a run whose integrity record is missing; its ceiling then covers this invocation only |
 | `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. On a live target whose scope gives it two or more identities it also prices the identity sweep: one request per identity for each spec that sweeps them (`DL-XTENANT-001`, and `EMB-XTENANT-RETRIEVAL-001` when the target declares `multi_identity` and its scene is not sent in-band), which it left out until PR #60 (merged 2026-10-09). Its output tokens are each send's `max_tokens` (the spec's own, else the target file's `sampling_defaults`, OD-39) or 512. With `--resume` it subtracts the requests already done, the sweep of a spec whose attempts are all kept (answered and judged, or failed in a way a retry would repeat), which the runner does not sweep again, and, with `--judge`, the judge's two requests for each kept attempt of a spec that uses `semantic_judge`, so it prices what the resume sends. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
 | `--compare` | model-comparison matrix across targets (a band per spec x target), printed in the terminal and embedded in the JSON report. The matrix renders for **any** multi-target run; `--compare` states the intent and refuses a single target (exit 3) |
@@ -2026,7 +2084,8 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   record (after a fresh run's probes, before its attack traffic), appended whenever it differs
   from the last; `"unrecorded"` first for a run recorded before this): a resume under a different
   scope file is not refused, it is recorded and noted on stderr. The digest names the file; it
-  does not prove who wrote it (the scope is checksummed, not signed: OD-2).
+  does not prove who wrote it (the scope is checksummed, not signed: OD-2, signed out of band as
+  §4.1 shows).
 - **Several targets in one run.** The JSON report's `run` object lists every target, and its
   own `findings` and `summary` cover all of them, as the top-level `findings` and `summary` do.
   Its `run_id` is the last target's; each target's run id is in its findings' evidence
