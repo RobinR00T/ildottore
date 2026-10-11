@@ -75,7 +75,8 @@ the state in each result's `properties.state`.
 - JSON: `{schema_version, run: TestRun, findings: [Finding], summary: RunSummary}` where
   `RunSummary = {by_status, by_band, by_framework{owasp,atlas,nist}, model_comparison?,
   repro_distribution, confidence_distribution, confirmed_count, needs_review_count}` (as built
-  also `coverage`, `status` and, since OD-41, `blocked_by_provider_filter: {attempts, specs}`).
+  also `coverage`, `status` and, since OD-41, `blocked_by_provider_filter: {attempts, specs}`;
+  since OD-42, `cut_by_provider_output_filter` and `provider_filter_side_unknown`, the same shape).
 - SARIF: `sarif-2.1.0` root; one `run` per tool invocation; `results[]` with `ruleId`, `level`,
   `message`, `properties{band, risk_score, reproducibility, confidence, state}`.
 - JUnit: `<testsuites>`→`<testsuite name=framework>`→`<testcase name=spec_id>` with `<failure>`
@@ -110,8 +111,9 @@ survived. A test asserts `run <= total` and that a complete run has them equal.
 **A-13 A value that is not counted is reported.** A framework value outside its pinned universe
 never reaches a numerator **and** appears in `coverage.off_universe`; a spec that produced a
 finding without a reply that could be scored (nothing sent, or every send ended in an environment
-error or, since OD-41, was refused by the provider's input filter) appears in
-`coverage.not_exercised` and is credited nothing.
+error or, since OD-41, was refused by the provider's input filter, or since OD-42 was stopped by
+its filter on a side it did not report) appears in `coverage.not_exercised` and is credited
+nothing. A reply the provider's output filter cut did reach the model, which wrote it: exercised.
 A run does not lint, so silently dropping either is how a numerator shrinks with nobody told.
 
 **A-14 Every figure carries its edition, and percentages floor.** OWASP renumbered in 2026 and
@@ -167,6 +169,33 @@ kind `open`, state `needs_review`. With none blocked, only the JSON report chang
 and `[]`), so the golden JSON snapshot gains it and the SARIF, JUnit and HTML ones do not move.
 Checked by `tests/cli/test_provider_filter_campaign.py` (every format of one run, the JSON against
 the schema).
+
+**A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The replies the provider's filter
+cut, or stopped on a side it did not report, are counted apart in every format.** Such an attempt
+is never the model's refusal, and the model may have written what the filter hid, so a report that
+folded it into "inconclusive" would hide the one thing a reader must review. The summary
+(`RunSummary.output_filter` and `filter_side_unknown`, read from the stored attempts by
+`shared.provider_filter`) is `cut_by_provider_output_filter: {attempts, specs}` and
+`provider_filter_side_unknown: {attempts, specs}` in the JSON report, always emitted and optional in
+report-1.0 (additively, `schema_version` staying `1.0`, as A-69's key did: a report from this
+version fails an earlier copy of the schema, and an earlier build cannot load this version's runs,
+whose verdicts carry reasons its enum rejects; L6 of the pre-merge audit of `a55e953`); SARIF adds
+both to
+`runs[0].properties` and to a result's `properties`, and `; <k> of <n> attempt(s) cut or replaced
+by the provider's output filter, which may have hidden an exploit: review them` (and `; <k> of <n>
+attempt(s) stopped by the provider's filter on a side it did not report: review them`) to its
+message, when there are any; in JUnit a spec with one never passes, so its skip's or failure's
+`message` carries ` cut_by_provider_output_filter=<k>` and ` provider_filter_side_unknown=<k>`
+(`inconclusive: BR-001 provider_filter_side_unknown=2`), and its text quotes the finding's
+reasoning, which says how many (L4: they had been put in a passing case's detail, where they could
+never appear); the HTML summary prints a line under the counts for each. A
+spec with such an attempt and no fail is `inconclusive`, SARIF kind `open`, state `needs_review`;
+one whose only stops are on an unreported side is in `not_exercised`. With none, only the JSON
+report changes (the two keys, with 0 and `[]`), so the golden JSON snapshot gains them and the
+SARIF, JUnit and HTML ones do not move. Checked by
+`tests/cli/test_provider_output_filter_campaign.py` (every format of one run, the JSON against the
+schema) and `tests/reporting/test_provider_filter_cut_counts.py` (the side-unknown SARIF counts and
+the JUnit messages).
 
 **A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) Every format states the operator's
 declaration for the run, as an operator declaration, and the attempts it changed.** A pass the

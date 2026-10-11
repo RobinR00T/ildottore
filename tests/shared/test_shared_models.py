@@ -129,6 +129,8 @@ def test_inconclusive_reason_coverage() -> None:
         "blocked_by_policy",
         "judge_compromised",
         "blocked_by_provider_filter",
+        "cut_by_provider_output_filter",
+        "provider_filter_side_unknown",
     }
 
 

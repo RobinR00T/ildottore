@@ -88,7 +88,12 @@ from ildottore.shared.models import (
     TestRun,
     TestRunSummary,
 )
-from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
+from ildottore.shared.provider_filter import (
+    blocked_attempt_ids,
+    blocked_by_provider_filter,
+    cut_attempt_ids,
+    side_unknown_attempt_ids,
+)
 from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped
 
 __all__ = [
@@ -1910,8 +1915,20 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             unjudged = len(unjudged_attempt_ids(resume_from))
             errored = again - unjudged
             # OD-41: a prompt the provider's input filter refused would be refused again.
-            blocked = len(
-                blocked_attempt_ids(a for finding in resume_from.findings for a in finding.attempts)
+            # Only among the attempts it keeps: a cut reply stored without a verdict is sent again,
+            # and was counted as kept for review beside "will be sent again" (verification of
+            # 91845524, finding 1).
+            kept_ids = answered_attempt_ids(resume_from)
+            prior_attempts = [
+                a
+                for finding in resume_from.findings
+                for a in finding.attempts
+                if a.attempt_id in kept_ids
+            ]
+            blocked = len(blocked_attempt_ids(prior_attempts))
+            # OD-42: a reply the provider's filter cut is answered, and kept like any other.
+            trimmed = len(cut_attempt_ids(prior_attempts)) + len(
+                side_unknown_attempt_ids(prior_attempts)
             )
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
@@ -1920,6 +1937,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 + (
                     f"; {blocked} of them the provider's input filter refused, kept as blocked"
                     if blocked
+                    else ""
+                )
+                + (
+                    f"; {trimmed} of them the provider's filter cut or stopped after the "
+                    "prompt, kept for review"
+                    if trimmed
                     else ""
                 )
                 + (

@@ -46,6 +46,7 @@ from ildottore.shared.models import (
     TokenLogprob,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.provider_filter import INPUT_FILTER_REFUSED
 from ildottore.shared.toolcalls import check_argument_nesting
 from ildottore.shared.wellformed import well_formed_json
 
@@ -263,8 +264,9 @@ def azure_prompt_filter(status_code: int, raw: bytes) -> str | None:
     return detail + (f"; filtered: {', '.join(filtered)}" if filtered else "")
 
 
-#: What every :class:`ProviderFilterBlock` message says, after where the refusal came from.
-FILTER_REFUSED = "the provider's input filter refused the prompt before the model saw it"
+#: What every :class:`ProviderFilterBlock` message says, after where the refusal came from. The
+#: same words as an input-side block read from a reply (``shared.provider_filter``, OD-42).
+FILTER_REFUSED = INPUT_FILTER_REFUSED
 
 
 class SamplingRefused(AdapterProductError):

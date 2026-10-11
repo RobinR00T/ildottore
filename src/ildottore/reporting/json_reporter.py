@@ -122,6 +122,16 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
             "attempts": summary.provider_filter.attempts,
             "specs": list(summary.provider_filter.specs),
         },
+        # The attempts whose reply the provider's filter cut, or stopped on a side it did not
+        # report (OD-42): always emitted, optional in report-1.0 like the key above.
+        "cut_by_provider_output_filter": {
+            "attempts": summary.output_filter.attempts,
+            "specs": list(summary.output_filter.specs),
+        },
+        "provider_filter_side_unknown": {
+            "attempts": summary.filter_side_unknown.attempts,
+            "specs": list(summary.filter_side_unknown.specs),
+        },
         # What the operator's target files declare of their own tools (OD-43, u06 A-72), and
         # the attempts it changed: always emitted, optional in report-1.0 for older reports.
         "operator_declarations": {

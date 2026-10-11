@@ -75,6 +75,26 @@
       They are inconclusive: not refusals by the model and not exploits.
     </p>
     {% endif %}
+    {# OD-42: optional in report-1.0 too. #}
+    {% if summary.cut_by_provider_output_filter and summary.cut_by_provider_output_filter.attempts %}
+    <p class="provider-filter">
+      Cut by the provider's output filter:
+      <strong>{{ summary.cut_by_provider_output_filter.attempts }}</strong> attempt(s) in
+      {{ summary.cut_by_provider_output_filter.specs | length }} spec(s)
+      ({{ summary.cut_by_provider_output_filter.specs | join(', ') }}) came back cut or replaced.
+      The model may have written what the filter hid: they are inconclusive and need review,
+      never a pass.
+    </p>
+    {% endif %}
+    {% if summary.provider_filter_side_unknown and summary.provider_filter_side_unknown.attempts %}
+    <p class="provider-filter">
+      Stopped by the provider's filter on a side it did not report:
+      <strong>{{ summary.provider_filter_side_unknown.attempts }}</strong> attempt(s) in
+      {{ summary.provider_filter_side_unknown.specs | length }} spec(s)
+      ({{ summary.provider_filter_side_unknown.specs | join(', ') }}).
+      They are inconclusive and need review, never a pass.
+    </p>
+    {% endif %}
     {# OD-43: optional in report-1.0, so an older document renders exactly as before. #}
     {% if summary.operator_declarations and summary.operator_declarations.not_destructive_tools %}
     <p class="operator-declaration">
@@ -133,7 +153,8 @@
         adapter could not carry; or a reply that never reached the tool carrying the scene; or
         every send ended in an environment error, such as a network
         failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could not be
-        decoded or one nested too deeply, or was refused by the provider's input filter), so
+        decoded or one nested too deeply, or was refused by the provider's input filter, or
+        stopped by its filter on a side it did not report), so
         their framework codes are not counted as covered.
       </p>
       {% endif %}

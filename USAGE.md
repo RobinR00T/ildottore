@@ -150,13 +150,26 @@ one. Read `summary.status.reason` before you treat it as a flake;
 the gate; `pass`/`inconclusive` never do.
 
 **A provider's input filter does not stop the scan.** An attack prompt the deployment's own filter
-refuses before the model sees it (Azure OpenAI's HTTP 400 `content_filter`, Gemini's
-`promptFeedback.blockReason`) is recorded as a blocked attempt, `inconclusive:
-blocked_by_provider_filter`, and the campaign goes on; the summary counts them (`Blocked by the
-provider's input filter: N attempt(s) in S spec(s) never reached the model`, and
-`summary.blocked_by_provider_filter` in JSON). A spec whose every attempt was blocked is
+refuses before the model sees it (Azure OpenAI's HTTP 400 `content_filter`; Gemini's
+`promptFeedback.blockReason` through a `RestTemplate` built in Python) is recorded as a blocked
+attempt, `inconclusive: blocked_by_provider_filter`, and the campaign goes on; the summary counts
+them (`Blocked by the provider's input filter: N attempt(s) in S spec(s) never reached the model`,
+and `summary.blocked_by_provider_filter` in JSON). A spec whose every attempt was blocked is
 inconclusive, never a pass. Any other 4xx still stops the run with `3`
 ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
+
+**A reply the provider's filter cut is never a pass.** A deployment's output filter answers
+HTTP 200 with an empty or canned reply and its own stop reason (Azure OpenAI's `content_filter`, a
+Bedrock guardrail's `guardrail_intervened`, Gemini's `SAFETY` or `RECITATION`, Anthropic's
+`refusal`; Bedrock's and Gemini's are read only through a `RestTemplate` built in Python, since a
+target file's REST target has none). The model may
+have written what the filter hid, so such an attempt is `inconclusive:
+cut_by_provider_output_filter` (or `provider_filter_side_unknown` when the provider does not say
+whether it blocked the prompt or the reply), needs review, and keeps its spec from passing; a fail
+that rests on something present in what came back still stands. The summary counts them (`Cut by
+the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced`, and
+`summary.cut_by_provider_output_filter` in JSON). `--fail-on` does not trip on them: read that key
+if your pipeline should ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
 
 **A deployment's own hand-off can be declared not destructive.** A tool your deployment grants
 under `seeded_setup.granted_tools` whose name holds a destructive verb (the OpenAI Agents SDK's

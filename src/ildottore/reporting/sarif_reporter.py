@@ -28,7 +28,11 @@ from ildottore.reporting.summary import RunSummary, declared_attempt_ids, findin
 from ildottore.shared.enums import ReportFormat, ScanBand
 from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import AttackSpec, Finding
-from ildottore.shared.provider_filter import blocked_attempt_ids
+from ildottore.shared.provider_filter import (
+    blocked_attempt_ids,
+    cut_attempt_ids,
+    side_unknown_attempt_ids,
+)
 
 __all__ = ["SARIF_SCHEMA_VERSION", "SarifReporter", "band_to_level", "load_sarif_schema"]
 
@@ -119,18 +123,33 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
     # Attempts the provider's input filter refused never reached the model (OD-41): said in the
     # message a dashboard shows, and counted in the properties, only when there are any.
     blocked = len(blocked_attempt_ids(finding.attempts))
+    sent = len({a.attempt_id for a in finding.attempts})
     if blocked:
         message += (
-            f"; {blocked} of {len({a.attempt_id for a in finding.attempts})} attempt(s) blocked "
+            f"; {blocked} of {sent} attempt(s) blocked "
             "by the provider's input filter before the model saw them"
+        )
+    # Replies the provider's filter cut, or stopped on a side it did not say (OD-42): never the
+    # model resisting, so the message a dashboard shows says to review them.
+    cut = len(cut_attempt_ids(finding.attempts))
+    if cut:
+        message += (
+            f"; {cut} of {sent} attempt(s) cut or replaced by the provider's output filter, "
+            "which may have hidden an exploit: review them"
+        )
+    unsaid = len(side_unknown_attempt_ids(finding.attempts))
+    if unsaid:
+        message += (
+            f"; {unsaid} of {sent} attempt(s) stopped by the provider's filter on a side it did "
+            "not report: review them"
         )
     # Attempts whose verdict the operator's target file changed (OD-43): said in the message,
     # and counted in the properties, only when there are any.
     declared = len(declared_attempt_ids(finding.attempts))
     if declared:
         message += (
-            f"; {declared} of {len({a.attempt_id for a in finding.attempts})} attempt(s) with a "
-            "call the target file declares not destructive (operator declaration, OD-43)"
+            f"; {declared} of {sent} attempt(s) with a call the target file declares not "
+            "destructive (operator declaration, OD-43)"
         )
     result: dict[str, Any] = {
         "ruleId": finding.spec_id,
@@ -156,6 +175,8 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
             "status": finding.status.value,
             "target_id": finding.target_id,
             **({"blocked_by_provider_filter": blocked} if blocked else {}),
+            **({"cut_by_provider_output_filter": cut} if cut else {}),
+            **({"provider_filter_side_unknown": unsaid} if unsaid else {}),
             **({"operator_declaration_attempts": declared} if declared else {}),
         },
     }
@@ -185,10 +206,20 @@ def _declaration_property(summary: RunSummary) -> dict[str, Any]:
 
 
 def _blocked_property(findings: list[Finding]) -> dict[str, int]:
-    """``{"blocked_by_provider_filter": n}`` for the run's blocked attempts, or ``{}`` for none."""
+    """The run's counts of attempts the provider's filter stopped, each only when not zero.
 
-    blocked = sum(len(blocked_attempt_ids(f.attempts)) for f in findings)
-    return {"blocked_by_provider_filter": blocked} if blocked else {}
+    ``blocked_by_provider_filter`` (OD-41), ``cut_by_provider_output_filter`` and
+    ``provider_filter_side_unknown`` (OD-42).
+    """
+
+    counts = {
+        "blocked_by_provider_filter": sum(len(blocked_attempt_ids(f.attempts)) for f in findings),
+        "cut_by_provider_output_filter": sum(len(cut_attempt_ids(f.attempts)) for f in findings),
+        "provider_filter_side_unknown": sum(
+            len(side_unknown_attempt_ids(f.attempts)) for f in findings
+        ),
+    }
+    return {key: count for key, count in counts.items() if count}
 
 
 class SarifReporter(BaseReporter):

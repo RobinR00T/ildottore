@@ -9,9 +9,16 @@ schema ``additionalProperties: false`` (contract §4 KEEP).
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+)
 
 from ildottore.shared.enums import (
     Category,
@@ -484,6 +491,14 @@ class ModelResponse(_Frozen):
     """A target response (``docs/01 §3``, contract §6).
 
     ``logprobs is None`` when the target lacks the logprobs capability (ADR-0005).
+
+    ``filter_side`` is the side the provider's own trace says its filter acted on, for a reply
+    stopped by that filter (OD-42, u00 and u08 A-70): ``input`` (the prompt was blocked),
+    ``output`` (the model's reply was), or ``unknown`` (a trace that names neither). Only the
+    REST adapter sets it, from a Bedrock Converse guardrail trace; every other reply leaves it
+    ``None`` and ``shared.provider_filter`` reads the side from the stop reason. A ``None`` is
+    left out of a dump, so a reply without one is stored, reported and hashed byte for byte as
+    before the field existed.
     """
 
     text: str
@@ -492,6 +507,16 @@ class ModelResponse(_Frozen):
     finish_reason: str | None = None
     raw_ids: JsonDict = Field(default_factory=dict)
     usage: JsonDict | None = None
+    filter_side: Literal["input", "output", "unknown"] | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_unset_filter_side(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The dump as before OD-42 when no trace said which side a filter acted on."""
+
+        dumped: dict[str, Any] = handler(self)
+        if dumped.get("filter_side") is None:
+            dumped.pop("filter_side", None)
+        return dumped
 
 
 class Verdict(_Frozen):

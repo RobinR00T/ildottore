@@ -1078,6 +1078,29 @@ not send them again; `--estimate --resume` counts them as done. The composition 
 probe's failure is named `guardrail/guardrail_benign: ProviderFilterBlock`. Checked by
 `tests/cli/test_provider_filter_campaign.py` and `tests/cli/test_input_filter_probe.py`.
 
+**A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The CLI never lets a reply the
+provider's filter cut pass silently.** The terminal summary, under the coverage block (never
+silenced by `-q`), prints `Cut by the provider's output filter: <k> attempt(s) in <s> spec(s) came
+back cut or replaced (<spec ids>); the model may have written what the filter hid, so they are
+inconclusive and need review, never a pass` and `Stopped by the provider's filter on a side it did
+not report: <k> attempt(s) in <s> spec(s) (<spec ids>); inconclusive and need review, never a pass
+(stop reason(s): <stops>)` when `k` is not 0, with `; a Bedrock guardrail reports the side when
+guardrailConfig.trace is enabled` inside the bracket only when `guardrail_intervened` is among the
+stops (it was printed for an Anthropic `refusal` with no usage too: pre-merge audit of `a55e953`,
+M3),
+and the `Not exercised` line names a stop on an unreported side among its causes. The exit code is
+the findings', unchanged: `--fail-on` gates a `fail` only, and a spec with a cut attempt and no
+fail is `inconclusive` (0 when nothing else trips the gate); a team that wants CI to stop on one
+reads `summary.cut_by_provider_output_filter.attempts` from the JSON report. A resume says how many
+of the attempts it keeps the filter cut or stopped (`; <k> of them the provider's filter cut or
+stopped after the prompt, kept for review`), counted among the kept attempts only (a cut reply
+stored without a verdict is sent again, and was counted as kept beside "will be sent again":
+verification of `91845524`, finding 1), and does not send them again; `--estimate --resume`
+counts them as done. `dottore replay` lists and counts them (u10). From a target file, the
+providers whose stops are read are openai (Azure), anthropic and websocket: a `provider: rest`
+target is the generic template, so Bedrock's and Gemini's shapes are library-only (u04). Checked
+by `tests/cli/test_provider_output_filter_campaign.py`.
+
 **A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) A target file may declare one of
 its own granted tools not destructive, and the CLI shows it before anything is sent and refuses a
 resume after a change.** `seeded_setup.granted_tools` entries are tool names, as before, or a

@@ -341,6 +341,10 @@
         "total": 2
       }
     },
+    "cut_by_provider_output_filter": {
+      "attempts": 0,
+      "specs": []
+    },
     "model_comparison": {
       "category_rollups": {
         "LLM01": {
@@ -379,6 +383,10 @@
     "operator_declarations": {
       "attempts": 0,
       "not_destructive_tools": {},
+      "specs": []
+    },
+    "provider_filter_side_unknown": {
+      "attempts": 0,
       "specs": []
     },
     "repro_distribution": {
