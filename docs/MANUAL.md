@@ -781,7 +781,8 @@ HTTP adapters. It carries no tool definitions, so a `type: model` target with to
 is `setup_not_delivered` too; a memory seed needs `{{system_prompt}}` in a template.
 
 **Evidence and the credential.** Every frame sent and received is kept on the attempt
-(`response.raw_ids.websocket.frames`, in order, with its direction) and filed by the evidence
+(`response.raw_ids.websocket.frames`, in order, with its direction: the transport's own key of
+`raw_ids`, not a field of its own, by decision, OD-34) and filed by the evidence
 store redacted at rest, so `dottore replay` re-derives the verdict from what went over the
 socket. In a multi-turn attempt the stored attempt is built from the final turn, whose record
 carries the whole conversation's frames (an intermediate turn's record carries only its own).

@@ -78,7 +78,12 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 ## §6 Data/wire shapes
 - `TokenLogprob = {token: str, logprob: float, top: list[tuple[str,float]] | None}` (ADR-0005).
 - `ModelResponse = {text: str, tool_calls: list[dict], logprobs: list[TokenLogprob] | None,
-  finish_reason: str | None, raw_ids: dict, usage: dict | None}`.
+  finish_reason: str | None, raw_ids: dict, usage: dict | None}`. `raw_ids` holds what a
+  transport returns beyond those fields, scalars at the top (a provider's request id, its model
+  echo) and a transport's record under its own key: the WebSocket adapter's frame transcript is
+  `raw_ids["websocket"]["frames"]`, not a field of its own (OD-34, decided 2026-10-11 under the
+  owner's delegation, revisable; reasoning in u04 §9). A reader of the scalars skips a nested
+  value (the fingerprint's envelope layer does).
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],
   evaluator_type: str, inconclusive_reason: InconclusiveReason | None}` (`docs/04 §1-§3`).
 - `AttackSpec` = every field/constraint in `schemas/attack-spec.schema.json` (`docs/03 §2`),

@@ -44,6 +44,14 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   spec; the 75 specs carry 223 to 835 bytes of fixture JSON each. Not taken: an optional path
   resolved next to the spec inside its pack and hashed into its digest.
   `tests/golden/test_fixture_location.py` pins it (6 tests).
+- **The WebSocket frame transcript stays in `raw_ids["websocket"]["frames"]` (OD-34).** Signed off
+  as built, not moved to a `transcript` field of its own on `ModelResponse`: that shape is u00's
+  frozen registry, `raw_ids` is already the per-transport place for what a reply carries beyond
+  its fields (redacted where it is built and at rest, stored with each attempt, re-read by
+  `replay`), and a field shaped for one transport would be reshaped for the second. Measured with
+  the field added on a copy: 1 of 5,082 tests fails (the JSON report's golden snapshot) and every
+  attempt and report written after it carries one more key. `ModelResponse`'s docstring and u00
+  §6 now say what `raw_ids` holds.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 

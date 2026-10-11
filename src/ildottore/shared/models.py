@@ -455,7 +455,10 @@ class ModelRequest(_Frozen):
 class ModelResponse(_Frozen):
     """A target response (``docs/01 §3``, contract §6).
 
-    ``logprobs is None`` when the target lacks the logprobs capability (ADR-0005).
+    ``logprobs is None`` when the target lacks the logprobs capability (ADR-0005). ``raw_ids``
+    holds what a transport returns beyond these fields: scalars at the top (a request id, a model
+    echo) and a transport's record under its own key, such as the WebSocket frame transcript in
+    ``raw_ids["websocket"]["frames"]`` (OD-34: no field of its own, decided 2026-10-11).
     """
 
     text: str
