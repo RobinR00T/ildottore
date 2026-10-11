@@ -325,7 +325,7 @@ first build, each reproduced, and added to the criterion:
   key that could only say "unknown". The alternatives not taken: keep the key with a documented
   always-null meaning, or drop it from the profile (the choice OD-17 made for a field with no
   producer; this one has one). Checks: `tests/fingerprint/test_input_filter_signal.py` (5 tests,
-  2 failing on `1d02aef`) and `tests/cli/test_input_filter_probe.py` (the Azure 400 through the
+  2 failing on `23e2cec`) and `tests/cli/test_input_filter_probe.py` (the Azure 400 through the
   real CLI now reads `input_filter: true`).
 Checked by `tests/fingerprint/test_guardrail_requested_refusal.py` (stub targets for (a), (b) and
 (c), and the audit's cases: 53 tests, of which 31 fail on `cd413c0` and 14 of the first 18 on

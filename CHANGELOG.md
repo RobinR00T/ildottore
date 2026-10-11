@@ -23,7 +23,7 @@ versioning: [SemVer](https://semver.org/).
 - Kept, not dropped: unlike the plan's `baseline_resistance` (OD-17, removed the same day), this
   key has a producer that can make it true. u09 §6 and §7 A-67, OD-40's row and u09 §9, `docs/10`
   §1-§2, the MANUAL and the FAQ. Tests: `tests/fingerprint/test_input_filter_signal.py` (5, 2 of
-  them failing on `1d02aef`: the benign request and a carrier refused by the filter); the CLI test
+  them failing on `23e2cec`: the benign request and a carrier refused by the filter); the CLI test
   asserts `true`.
 
 ### Removed (the plan's `baseline_resistance`, dead at both ends: OD-17)
@@ -41,7 +41,7 @@ versioning: [SemVer](https://semver.org/).
   fails validation against this version's model and schema. No command reads a plan from disk
   (the run store keeps the integrity context, not the plan) and `report-1.0` never held it, so
   nothing the tool reads or writes changes: no verdict, no plan ordering, no report.
-- Tests: `tests/core/test_no_baseline_resistance.py` (4, all failing on `52cd923`); three planner
+- Tests: `tests/core/test_no_baseline_resistance.py` (4, all failing on `522817d`); three planner
   tests that pinned the dead reader removed; the guardrail-profile ordering test's docstring
   updated.
 
@@ -85,7 +85,8 @@ versioning: [SemVer](https://semver.org/).
   `docs/07`, `docs/12`, `docs/14`, the playbook's lesson 7, the MANUAL (§8, §9, the
   `--include-needs-review` row), the FAQ, the README, USAGE and `dottore(1)`. Tests:
   `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
-  (17 of their tests fail on `530fb30`); `tests/evaluators/test_combine.py` rewritten for the one
+  (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
+  second's 7 fail; with that module alone added, 17 of the 48 fail); `tests/evaluators/test_combine.py` rewritten for the one
   rule; the two helper tests moved to `shared.combination`; three test fixtures and the
   `requires_policy` test of `tests/test_terminal_log_commands.py` write `deterministic_first`.
 
@@ -118,7 +119,7 @@ versioning: [SemVer](https://semver.org/).
 - ADR-0007 accepted (with the re-check against OD-41 and OD-42, and its reversal), the OD-16 row
   of `00-INDEX`, u06 §9, u13 §7, a note in u09 §7, `docs/04` §1, the MANUAL (§8 and the
   `mock_scenario` table's note) and the FAQ's MCP entry. Tests:
-  `tests/battery/test_irrelevant_reply.py` (5, all failing on `6d5f7ae`); the two pins that held
+  `tests/battery/test_irrelevant_reply.py` (5, all failing on `6d5f7ae` and on `ee202bf`); the two pins that held
   the old pair (`tests/cli/test_scenario_mode.py`, `tests/fingerprint/test_carrier_measured_offline.py`)
   pin an empty set, and the resume test that needed a spec without a judge derives one.
 ### Changed (breaking for a spec pack: a scene tool's `destructive` and `external` are true, false or left out)

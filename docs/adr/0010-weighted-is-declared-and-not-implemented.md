@@ -81,7 +81,8 @@ The amendment changes one thing that users see: a judge-only fail moves from `co
 
 **B, with the amendment**, decided under the owner's delegation (best practice, revisable), and
 built as u06 §7 A-73 (halves in u08, u02 and u00). Why, against today's code (`main` at
-`6d5f7ae`, with OD-16 on the same branch):
+`6d5f7ae`, with OD-16 on the same branch; every figure below re-measured on `ee202bf` after
+#105 merged, the same):
 
 * **A deterministic fail is evidence; a vote over it is not.** A canary in a reply, a forbidden
   tool call, an `<script>` in an output are facts about the target, and a security scanner that
@@ -150,6 +151,6 @@ built as u06 §7 A-73 (halves in u08, u02 and u00). Why, against today's code (`
 To make a judge-only fail confirm again, drop the `corroborated` test in `_is_confirmed` and the
 judge count in `_finding_reasoning`. To restore the three paths, revert `shared/combination.py`,
 `evaluators/combine.py`, `registry/fixtures_engine._combine` and the runner's `_combine_decisive`
-from `530fb30`, the schema enum, the `DEPRECATED_COMBINATION` lint code and the 75 spec lines,
+from `feb148f`, the schema enum, the `DEPRECATED_COMBINATION` lint code and the 75 spec lines,
 and delete `tests/evaluators/test_one_combination_rule.py` and
 `tests/registry/test_deprecated_combination.py`.

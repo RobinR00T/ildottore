@@ -69,6 +69,52 @@ The carryover ledger. Every agent session updates this so context survives even 
   `granted_tools` entry written as `{name, destructive: false}`) is a question of who may say a
   tool is safe: the operator's file, not the spec.
 
+## State, 2026-10-11: four evaluator and fingerprint decisions closed (OD-16, OD-19, OD-17, OD-40)
+
+- On `feat/decide-evaluator-semantics`, rebased onto `main` at `ee202bf` (#105): the owner delegated
+  these on 2026-10-11 at 10:09 ("arreglalo todo según mejores prácticas"), so each is recorded as
+  decided under the owner's delegation (best practice), revisable, with the alternative not taken
+  and a reversal in its ADR. One commit each.
+- **OD-16 (ADR-0007 B, accepted):** no engine change; `DOS-TOKEN-AMP-001` keys on the
+  amplification (`regex_absence` on 100 repetitions in a row) and `MCP-TOOLPOISON-001` pairs its
+  text oracle with a judge. Bare mock, every capability declared, `--runs 2`: `inconclusive 73 ·
+  fail 1 · pass 1` (exit 1) on `6d5f7ae` and on `ee202bf`, `inconclusive 75` (exit 0) now;
+  vulnerable (67 confirmed fails, 8 inconclusive) and hardened (64 passes, 11 inconclusive)
+  unchanged spec by spec. No fixture verdict changed. The no-judge dry-run warning on
+  `examples/target.local.yaml` now reads 34 of the 34 specs (was 33): every shipped spec declares
+  a judge. Left out: `MCP-TOOLPOISON-001` against a non-MCP target with a judge configured is
+  what the judge makes of a reply that lists no tool (gating MCP specs to `provider: mcp` is a
+  planner change of its own).
+- **OD-19 (ADR-0010 B with the amendment, accepted, u06 A-73):** one rule, `deterministic_first`,
+  in `shared/combination.py`, called by the runner, the lint fixture engine and
+  `evaluators.combine` (a Hypothesis property checks they agree); the schema gains the value, the
+  75 specs declare it, `all_pass`/`any_fail`/`weighted` and an evaluator `weight` are a
+  `DEPRECATED_COMBINATION` lint warning; the weighted vote and `combine`'s `configs` are gone. A
+  variant confirms only with a deterministic fail among its fails: a spec whose only failing
+  evaluator is the judge, vulnerable mock, `--runs 3`, was Critical, confirmed, exit 2; now
+  needs review, exit 0 (2 with `--include-needs-review`). Vulnerable battery: 224 failing
+  attempts, none judge-only, so no confirmation changed.
+- **OD-17 (ADR-0008 B now, accepted):** `PlanSelection.baseline_resistance` and
+  `planner._baseline_resistance` removed (dead at both ends); a plan JSON with the key is refused
+  (no command reads one; `report-1.0` never held it); no verdict, ordering or report changes.
+  (The delegation's brief called the drop option "C"; in the ADR it is B and C is "leave it
+  documented".)
+- **OD-40, its open part (u09 A-67):** `input_filter` is kept and filled: `true` when the benign
+  request or a carrier failed because the provider's own input filter refused it in a documented
+  shape (`ProviderFilterBlock`), `null` otherwise, never `false`; set by the engine, so the
+  guardrail layer's evidence and the golden fingerprint are unchanged. The Azure stub of
+  `tests/cli/test_input_filter_probe.py` now gives `"input_filter": true`.
+- New tests: `tests/battery/test_irrelevant_reply.py` (5, failing on `6d5f7ae` and `ee202bf`),
+  `tests/evaluators/test_one_combination_rule.py` (41) and
+  `tests/registry/test_deprecated_combination.py` (7) (on `feb148f` the first does not import and 6
+  of the second's 7 fail), `tests/core/test_no_baseline_resistance.py` (4, failing on `522817d`),
+  `tests/fingerprint/test_input_filter_signal.py` (5, 2 failing on `23e2cec`, plus the CLI test's
+  flipped assertion). `make --no-print-directory gates` green (2026-10-11, 11:08 to 11:13): ruff,
+  format (398 files), mypy strict (159 source files), import-linter (4 kept), spec lint (0 errors,
+  0 warnings across 75 specs), 5,190 tests collected (5,135 on `ee202bf`) with 97.80% coverage,
+  self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities). Not pushed; no PR
+  opened.
+
 ## State, 2026-10-10 (night): the verification audit's three LOWs
 
 - The verification audit of `5bd7c45` found it merge-ready, with three LOWs, closed one commit each.

@@ -80,7 +80,7 @@ because:
   a fingerprint, `capability_guess["effective_mutators"]`). The golden plan
   (`tests/fixtures/plans/adaptive-plan.json`) loses the key; the three planner tests that pinned
   the dead reader are gone, and `tests/core/test_no_baseline_resistance.py` (4 tests, all failing
-  on `52cd923`) pins the removal: no field, no property in the generated schema, a fingerprint
+  on `522817d`) pins the removal: no field, no property in the generated schema, a fingerprint
   holding the old map orders nothing, and a plan JSON written with the field is refused.
 * **Compatibility, stated.** `PlanSelection` forbids unknown keys (`extra="forbid"`, mirrored as
   `additionalProperties: false` in `dottore schema export --name test-plan`), so a plan JSON that
@@ -93,5 +93,5 @@ because:
 ### Reversal
 
 Restore the field (`baseline_resistance: float | None = None`), `_baseline_resistance` and its
-call, the golden key and the three tests from `52cd923`, and delete
+call, the golden key and the three tests from `522817d`, and delete
 `tests/core/test_no_baseline_resistance.py`.

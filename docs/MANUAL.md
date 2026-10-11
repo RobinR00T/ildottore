@@ -875,7 +875,7 @@ required.
 
 | Flag | Meaning |
 |------|---------|
-| `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`). Without it, a live run (and its `--dry-run`) warns before sending, per live target, how many of the specs that will run there use `semantic_judge` (`33 of the 34 specs that will run on local-llama ...` on the example target): they come back inconclusive wherever no deterministic evaluator decides |
+| `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`). Without it, a live run (and its `--dry-run`) warns before sending, per live target, how many of the specs that will run there use `semantic_judge` (`34 of the 34 specs that will run on local-llama ...` on the example target: every shipped spec declares a judge since OD-16): they come back inconclusive wherever no deterministic evaluator decides |
 | `--runs INT` | reproducibility runs (default 5) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep` and `-A` imply 2; an explicit `-T` always wins); higher is faster/louder |
 | `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it). Every send passes it: the battery, each retry (a campaign's adapters do not retry on their own; the runner retries, paced and debited, so a 429 storm is not a burst), the `-sV` probes, the multi-identity sweep and the `--judge` model. Must be greater than 0: `0` or a negative rate is refused (exit 3) instead of silently switching pacing off. **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |

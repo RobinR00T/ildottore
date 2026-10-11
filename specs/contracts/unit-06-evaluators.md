@@ -229,7 +229,9 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   vulnerable mock, every capability declared, `--runs 2`: 224 failing attempts, none decided by
   the judge alone; 67 confirmed fails before and after). Checks:
   `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
-  (17 of their tests fail on `530fb30`), the rewritten `tests/evaluators/test_combine.py`.
+  (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
+  second's 7 fail; with that module alone added, 17 of the 48 fail), the rewritten
+  `tests/evaluators/test_combine.py`.
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden
