@@ -14,7 +14,7 @@ reconstructs a run's attempts for reproducibility recomputation.
 
 from __future__ import annotations
 
-from ildottore.store.evidence_fs import FsEvidenceStore, RedactionLeakError
+from ildottore.store.evidence_fs import EvidenceStoreError, FsEvidenceStore, RedactionLeakError
 from ildottore.store.migrations import SCHEMA_VERSION, connect, current_version, migrate
 from ildottore.store.paths import UnsafePathError, content_hash
 from ildottore.store.replay import (
@@ -28,6 +28,7 @@ from ildottore.store.run_sqlite import RunStoreError, SqliteRunStore, finding_id
 
 __all__ = [
     "SCHEMA_VERSION",
+    "EvidenceStoreError",
     "FsEvidenceStore",
     "RedactionLeakError",
     "ReplayResult",

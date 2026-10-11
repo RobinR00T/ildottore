@@ -44,6 +44,48 @@ class RunStoreError(OSError):
     """
 
 
+#: The first 16 bytes of every SQLite database file.
+_SQLITE_HEADER = b"SQLite format 3\x00"
+
+
+def check_store_path(db_path: Path) -> None:
+    """Refuse, writing nothing, a path that cannot hold a run store (u10 A-80).
+
+    For the commands that promise to write nothing (``--dry-run``, ``--estimate``, ``-sn``),
+    which used to say nothing about a ``--run-db`` naming a directory or another kind of file:
+    the run then failed on it. A missing file is fine (the run creates it), an empty one is a
+    new store, and anything else must start with SQLite's header. Opening it is the real test,
+    which a run makes before it sends anything.
+    """
+
+    path = Path(db_path)
+    if str(path) == ":memory:":
+        return
+    if path.is_dir():
+        raise RunStoreError(f"cannot open the run store at {path}: it is a directory, not a file")
+    if path.exists():
+        try:
+            with path.open("rb") as handle:
+                head = handle.read(len(_SQLITE_HEADER))
+        except OSError as exc:
+            raise RunStoreError(f"cannot open the run store at {path}: {exc}") from exc
+        if head and head != _SQLITE_HEADER:
+            raise RunStoreError(f"cannot open the run store at {path}: file is not a database")
+        return
+    ancestor = nearest_existing(path.parent)
+    if ancestor is not None and not ancestor.is_dir():
+        raise RunStoreError(f"cannot open the run store at {path}: {ancestor} is not a directory")
+
+
+def nearest_existing(path: Path) -> Path | None:
+    """``path`` or its closest ancestor that exists, or ``None`` when none does."""
+
+    for candidate in (path, *path.parents):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _open_reason(db_path: Path, exc: BaseException) -> str:
     """Why ``db_path`` could not be opened, in the words an operator acts on."""
 

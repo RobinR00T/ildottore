@@ -12,17 +12,22 @@ widens the battery, never the authorization gate (``docs/09 §5``).
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import json
 import math
 import os
 import re
+import sqlite3
 import sys
+import traceback
 from functools import partial
 from itertools import chain
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, NoReturn
 
 import typer
+from typer.core import TyperGroup
 
 from ildottore import __version__
 from ildottore.adapters.base import AdapterError
@@ -56,11 +61,94 @@ from ildottore.store.replay import TamperError
 
 DEFAULT_SPEC_PATHS = [Path("specs")]
 
+#: Where a command records how verbose it was asked to be, for the guard below (``ctx.meta`` is
+#: shared by a command's context and its parents').
+_VERBOSE_KEY = "ildottore.verbose"
+
+
+def _flow_exceptions() -> tuple[type[BaseException], ...]:
+    """The command-line library's own control flow (exit, usage error, abort): let through.
+
+    Typer 0.26 raises from its vendored copy of click; a click installed beside it has its own
+    classes, so both are listed when present (as ``_usage_errors_exit_3`` does below).
+    """
+
+    import importlib
+
+    found: list[type[BaseException]] = [typer.Exit]
+    for name in ("typer._click.exceptions", "click.exceptions"):
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            continue
+        found += [module.Exit, module.ClickException, module.Abort]
+    return tuple(found)
+
+
+_FLOW = _flow_exceptions()
+
+
+class OperationalErrorGroup(TyperGroup):
+    """The root command group: an exception no command handled exits 3, never 1 (u12 A-9).
+
+    Exit 1 means "findings below --fail-on", so a CI step that lets 1 through read a crash as an
+    almost clean scan; that is how a locked run store, a bare sqlite3 error and every class a
+    handler tuple forgot used to end. Here it is one line on stderr through the same masking as
+    every other error, and its traceback (masked line by line) only under ``-v``. Ctrl-C is not
+    an exception in this sense and keeps its 130.
+    """
+
+    def invoke(self, ctx: Any) -> Any:
+        try:
+            return super().invoke(ctx)
+        except _FLOW:
+            raise
+        except Exception as exc:
+            _report_unexpected(exc, verbose=int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
+            raise typer.Exit(int(ExitCode.ERROR)) from exc
+
+
+def _report_unexpected(exc: Exception, *, verbose: int) -> None:
+    """Say on stderr what stopped the command, in one line (and its traceback under ``-v``)."""
+
+    if isinstance(exc, OSError) and exc.errno == errno.EPIPE:
+        # The reader of stdout went away (`dottore ... | head`). Python would print a second
+        # error at exit, flushing into the closed pipe; the command-line library quiets that
+        # the same way.
+        from typer._click.utils import PacifyFlushWrapper
+
+        sys.stdout = PacifyFlushWrapper(sys.stdout)
+        sys.stderr = PacifyFlushWrapper(sys.stderr)
+        _echo_err("error: the output stream closed before the command finished (broken pipe)")
+        return
+    try:
+        said = _masked(exc)
+    except Exception:  # a message that cannot even be read: its class is what is left
+        said = "<unprintable message>"
+    _echo_err(
+        f"error: unexpected {type(exc).__name__}: {said} (an internal error, not a scan "
+        "result; rerun as `dottore -v ...` for the traceback)"
+    )
+    if verbose:
+        for line in "".join(traceback.format_exception(exc)).splitlines():
+            try:
+                _echo_err(_masked(RuntimeError(line)))
+            except Exception:
+                _echo_err("<unprintable traceback line>")
+
+
+def _echo_err(text: str) -> None:
+    # stderr may be gone too: the exit code is then all that is left to say it.
+    with contextlib.suppress(OSError):
+        typer.echo(text, err=True)
+
+
 app = typer.Typer(
     name="dottore",
     help="Il Dottore, nmap-for-AI: a spec-driven security scanner for LLMs and AI apps.",
     no_args_is_help=True,
     add_completion=False,
+    cls=OperationalErrorGroup,
 )
 
 registry_app = typer.Typer(help="Inspect the attack-spec registry (read-only).")
@@ -119,9 +207,20 @@ def _root(
         bool,
         typer.Option("--version", callback=_version_callback, is_eager=True, help="Show version."),
     ] = False,
+    verbose: Annotated[
+        int,
+        typer.Option(
+            "-v",
+            "--verbose",
+            count=True,
+            help="Print the traceback of an internal error (exit 3), for any command. "
+            "`run -v` also prints the resolved plan.",
+        ),
+    ] = 0,
 ) -> None:
     """Il Dottore root - see ``dottore <command> --help`` for each command."""
 
+    ctx.meta[_VERBOSE_KEY] = verbose
     _streams_escape_what_they_cannot_encode(ctx)
 
 
@@ -389,6 +488,7 @@ def _masked(exc: BaseException) -> str:
 
 @app.command()
 def run(
+    ctx: typer.Context,
     target: Annotated[
         list[Path] | None,
         typer.Option("-t", "--target", help="Target file(s) (target.yaml). Repeatable."),
@@ -545,6 +645,7 @@ def run(
 ) -> None:
     """Run a campaign against one or more targets."""
 
+    ctx.meta[_VERBOSE_KEY] = max(verbose, int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
     targets = list(target or []) + list(target_pos or [])
     outputs: dict[str, Path] = {}
     if o_json is not None:
@@ -635,10 +736,23 @@ def run(
         # step treating 1 as "carry on" would read a refused endpoint as a clean-ish scan.
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    except sqlite3.Error as exc:
+        # The run store failed while the run used it (a lock held past the busy timeout, a full
+        # disk): an operational error, named after the store (u10 A-80).
+        _store_failed(opts.run_db or run_mod.DEFAULT_RUN_DB, exc)
 
     # The dry-run plan is printed by execute_run itself (it owns the resolved plan);
     # echoing a second, contentless line here just duplicated the header.
     raise typer.Exit(int(outcome.exit_code))
+
+
+def _store_failed(run_db: Path, exc: sqlite3.Error) -> NoReturn:
+    """Say which run store failed and exit 3 (a sqlite3 error that reached a command)."""
+
+    typer.echo(
+        f"error: {_masked(RuntimeError(f'the run store at {run_db} failed: {exc}'))}", err=True
+    )
+    raise typer.Exit(ExitCode.ERROR) from exc
 
 
 # --- fleet -----------------------------------------------------------------------
@@ -719,9 +833,11 @@ def fleet(
     # derives from Exception, so `fleet --run` used to turn an HTTP 401 or an off-allowlist
     # endpoint into a traceback and exit **1**, which in this tool means "findings below the
     # threshold". Identical condition, identical code path underneath, two exit codes.
-    except (ScopeRequiredError, PolicyError, AdapterError, ValueError, OSError) as exc:
+    except (ScopeRequiredError, PolicyError, AdapterError, TamperError, ValueError, OSError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    except sqlite3.Error as exc:
+        _store_failed(opts.run_db or run_mod.DEFAULT_RUN_DB, exc)
     raise typer.Exit(int(outcome.exit_code))
 
 
@@ -974,6 +1090,8 @@ def replay(
     except (OSError, ValueError, TamperError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    except sqlite3.Error as exc:
+        _store_failed(run_db, exc)
     if warning is not None:
         # It names the --run-db path; written out like an error (`_masked`).
         typer.echo(f"warning: {visible_controls(warning)}", err=True)

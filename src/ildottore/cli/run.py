@@ -103,6 +103,8 @@ from ildottore.shared.unreadable import (
 
 __all__ = [
     "CATEGORY_ALIASES",
+    "DEFAULT_EVIDENCE_ROOT",
+    "DEFAULT_RUN_DB",
     "PlanEstimate",
     "RunOptions",
     "RunOutcome",
@@ -115,6 +117,11 @@ __all__ = [
     "resolve_target_plans",
     "select_specs",
 ]
+
+#: Where a run keeps its evidence and its run store when ``--evidence-root`` / ``--run-db``
+#: are not given (``replay`` and ``fleet --run`` read the same defaults).
+DEFAULT_EVIDENCE_ROOT = Path(".dottore/evidence")
+DEFAULT_RUN_DB = Path(".dottore/runs.sqlite")
 
 #: ``-p`` friendly category tokens → the canonical :class:`Category` (``docs/09 §2``).
 CATEGORY_ALIASES: dict[str, Category] = {
@@ -1767,8 +1774,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # Both store paths are resolved here, before anything can send: the probe pass files its
     # evidence under the run id, and the resume block reads the prior run's evidence and asks
     # the run store which target it belonged to.
-    evidence_root = opts.evidence_root or Path(".dottore/evidence")
-    run_db = opts.run_db or Path(".dottore/runs.sqlite")
+    evidence_root = opts.evidence_root or DEFAULT_EVIDENCE_ROOT
+    run_db = opts.run_db or DEFAULT_RUN_DB
+    # Read-only, for every mode: a store path that is a directory, a file that is not SQLite, or
+    # a path under a regular file is refused here, before anything is sent or written. A run
+    # then opens both stores for real before its first send (`_open_stores`, u10 A-80).
+    _check_store_paths(run_db, evidence_root)
 
     routes = [(loaded.path, loaded.target, _route_for(opts, loaded)) for loaded in loaded_targets]
     any_live = any(real is not None for _, _, (_, real) in routes)
@@ -2102,6 +2113,15 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             if note is not None:
                 print(f"note: {note}", file=sys.stderr)
 
+    # Both stores are opened, and the run directories proved writable, before the first send:
+    # the -sV probe pass when there is one, the campaign otherwise. A store that could not be
+    # used was found by the first write, inside the per-target loop, after the probes (and, for
+    # the evidence, after the first batch) had been paid for (u10 A-80).
+    stores_open = False
+    if opts.fingerprint_first and not sends_nothing:
+        _open_stores(run_db, evidence_root, list(run_ids.values()), probes=True)
+        stores_open = True
+
     if not sends_nothing and opts.resume is not None and opts.fingerprint_first:
         # A resumed run has its row: with -sV the scope is recorded before the probe pass, its
         # first traffic. Otherwise each run records it with its integrity record below, before
@@ -2343,6 +2363,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         )
     if opts.dry_run:
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
+
+    if not stores_open:
+        _open_stores(run_db, evidence_root, list(run_ids.values()), probes=False)
 
     # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
     # loop: `--resume` names a single target, so there is one prior spend to carry.
@@ -2743,6 +2766,32 @@ def _run_one_target(
         )
     finally:
         built.close()
+
+
+def _check_store_paths(run_db: Path, evidence_root: Path) -> None:
+    """Refuse, writing nothing, a run store or evidence root that cannot be used (u10 A-80)."""
+
+    from ildottore.store.evidence_fs import check_root_path
+    from ildottore.store.run_sqlite import check_store_path
+
+    check_store_path(Path(run_db))
+    check_root_path(Path(evidence_root))
+
+
+def _open_stores(run_db: Path, evidence_root: Path, run_ids: list[str], *, probes: bool) -> None:
+    """Open (create, migrate) the run store and prove each run's evidence directory writable.
+
+    Called once, before the first request of the invocation. Raises the store's own errors
+    (``RunStoreError``, ``EvidenceStoreError``, both ``OSError``), which the CLI maps to exit 3.
+    """
+
+    from ildottore.store.evidence_fs import prepare_run
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)):
+        pass
+    for run_id in run_ids:
+        prepare_run(Path(evidence_root), run_id, probes=probes)
 
 
 def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) -> Spend | None:
