@@ -37,15 +37,21 @@ versioning: [SemVer](https://semver.org/).
   request that way, and so does a target that breaks mid-run (an expired session behind a proxy that
   serves a login page). Every spec's adapter goes through one watch per invocation that counts
   unreadable replies in a row, each reply read (or a provider's filter block) starting the count
-  again: 5 in a row before any reply was read, or 20 in a row after, stop the campaign (exit 3),
-  `error: run on api did not complete: aborted on UnreadableReplies: the target's first 5 replies
-  in this run could not be read as replies (the last: ResponseMalformed: ...), and none could:
-  check that the target file's endpoint is an OpenAI chat completions URL (or a server that speaks
-  that API) and its provider is openai. ...`, the advice worded per provider. A spec already sending
-  stops at its own next unreadable reply, and every reply sent is stored. Measured against a stub
-  answering every request with an HTML page: 8 requests at the default `--concurrency 4` (5 at 1),
-  26 with `-sV` (18 probes, then 8), 23 at 1; on `6d5f7ae`, 4 and 1; two readable replies and then
-  that page: 25 requests, exit 3. A shorter run that read nothing is `unreachable`, and its reason
+  again. At 5 in a row before any reply was read, or 20 in a row after, it sends one benign request
+  (debited, paced, filed with the recognition probes), and only when that one cannot be read either
+  does it stop the campaign (exit 3), `error: run on api did not complete: aborted on
+  UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the
+  last: ResponseMalformed: ...), and none could, nor a benign check sent then: check that the
+  target file's endpoint is an OpenAI chat completions URL (or a server that speaks that API) and
+  its provider is openai (a filter in front of the endpoint that answers every request with a
+  block page reads the same). ...`, the advice worded per provider. A content filter that answers
+  attack prompts with a block page lets the check through, so the battery finishes, the blocked
+  attempts counted. A resume of a run that read replies starts with the endpoint proven. A spec
+  already sending stops at its own next unreadable reply, and every reply sent is stored. Measured
+  against a stub answering every request with an HTML page: 9 requests at the default
+  `--concurrency 4` (6 at 1), 27 with `-sV` (18 probes, then 9), 24 at 1; on `6d5f7ae`, 4 and 1;
+  two readable replies and then that page: 27 requests, exit 3; a filter answering attack prompts
+  with a 200 block page: the default battery finishes, 160 of 550 attacks blocked, exit 0. A shorter run that read nothing is `unreachable`, and its reason
   says the replies could not be read and what to check (it said "failed on transport"). The report
   schema's `status` description names `aborted` and the wider `unreachable`.
 - A REST template whose `text_path` starts at an index (Hugging Face's `0.generated_text`) reads a
@@ -56,14 +62,35 @@ versioning: [SemVer](https://semver.org/).
   read", `-sV`, the exit codes, the WebSocket turn, `dottore replay`, troubleshooting), the FAQ,
   USAGE, `dottore(1)`, `docs/01-architecture.md`, `docs/02-threat-model.md`,
   `docs/05-scoring-model.md`, `docs/10-fingerprint.md`, the examples. Tests:
-  `tests/adapters/test_malformed_replies.py` (34), `tests/adapters/test_rest_array_body.py` (1),
-  `tests/core/test_unreadable_replies.py` (12), `tests/cli/test_malformed_reply_campaign.py` (10);
+  `tests/adapters/test_malformed_replies.py` (37), `tests/adapters/test_rest_array_body.py` (1),
+  `tests/core/test_unreadable_replies.py` (15), `tests/cli/test_malformed_reply_campaign.py` (11);
   the tests that pinned the old rule assert this one (`tests/adapters/test_base.py`,
   `test_openai.py`, `test_anthropic.py`, `test_rest.py`, `test_deep_replies.py`, `test_websocket.py`,
   `test_websocket_premerge.py`, `test_provider_filter_block.py`, `test_provider_output_filter.py`,
   `tests/cli/test_probe_pass_spend.py`, `tests/fingerprint/test_probe_failures.py`,
   `tests/cli/test_input_filter_probe.py`), and the golden JSON report snapshot gains
   `summary.unreadable_reply`.
+
+### Fixed (what the verification of `07aa0b3a` found in OD-21, before it lands)
+
+- MEDIUM: a target behind a content filter that answers attack prompts with a 200 HTML block page
+  could never finish: with a filter on words such as "ignore", "instruction", "system prompt",
+  "secret" and "bypass", the default battery at `--concurrency 1` read 69 of 284 replies as block
+  pages, 20 of them in a row, and stopped with exit 3; every resume sent its 69 unreadable attempts
+  first, and the fresh watch read five block pages before any readable reply and stopped after 5
+  requests ("none could: check that the target file's endpoint ..."), though 110 attempts were
+  answered. A resume of a run that holds a read reply now starts with the endpoint proven, and
+  before either stop the watch sends one benign request and stops only when that one cannot be read
+  either; the reason names a filter's block page among the causes, and ADR-0012 states the stop
+  and its consequences. The same battery now finishes, exit 0, 160 of 550 attacks blocked and
+  counted, 2 checks sent.
+- LOW 1: the excerpt could keep up to 15 leading characters of a registered credential that
+  crossed its 8 KiB read cut (masks that shrink, a JWT's, pulled them into the kept 4 KiB). The
+  read now stops before a registered credential that crosses it, and before a short key-shaped
+  token that does; the auditor's probe finds no fragment.
+- LOW 2: a resume that keeps no attempt said "keeps 0 attempt(s) across 4 spec(s)"; it says "keeps
+  none of the 8 attempt(s) it stored across 4 spec(s) (none was answered, or failed in a way a
+  retry would repeat)" and what it sends again.
 
 ### Fixed (what the pre-merge audit of `598f0858` found in OD-21 and OD-20, before it lands)
 

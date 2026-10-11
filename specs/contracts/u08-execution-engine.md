@@ -588,15 +588,31 @@ as amended:
   each reply the adapter read, and a `ProviderFilterBlock` (the provider answering in its
   documented shape), resets the count; a transport failure does neither. The
   `UNREADABLE_REPLIES_TO_STOP`-th in a row (5) while the campaign has read nothing, or the
-  `UNREADABLE_STREAK_TO_STOP`-th (20) once it has, raises `UnreadableReplies` in its place
+  `UNREADABLE_STREAK_TO_STOP`-th (20) once it has, does not stop the campaign at once: the watch
+  first sends one benign request (`UNREADABLE_CHECK_PROMPT`, `Please reply with the single word:
+  ready.`, temperature 0 and 16 tokens as the adapter sends sampling) through the spec's adapter,
+  unwatched, by `execute_attempt`, so debited and paced, and filed with the recognition probes
+  (`probes/`, `probe::unreadable_check#<k>`, never an attack attempt); one check at a time, a spec
+  that reaches the count meanwhile waiting for its answer. When its reply is read (or the
+  provider's filter refuses it in its documented shape) the endpoint is proven, the count starts
+  again and the run goes on; a target behind a content filter that answers attack prompts with a
+  200 block page lets it through (verification of `07aa0b3a`, MEDIUM: with the auditor's filter
+  the default battery stopped at a run of exactly 20 block pages, and every resume, which sends
+  its unreadable attempts first, stopped after 5: the run could never finish). Only when the check
+  cannot be read either does the watch raise `UnreadableReplies` in place of the reply
   (`is_env_error = False`, a name the redactor keeps), which halts the campaign as `aborted`, exit
-  3, with `aborted on UnreadableReplies: the target's first 5 replies in this run could not be read
-  as replies (the last: <class>: <message>), and none could: <the adapter's advice>. ...` or `...
-  the target's last 20 replies in this run could not be read as replies, in a row after ones that
-  could (the last: ...): it may have stopped answering as it did (an expired session behind a proxy
-  that serves a login page, a maintenance page): <advice>. ...`, both ending `the replies are
-  stored as inconclusive attempts, and a resume sends them again; <k> of <n> specs never ran or did
-  not finish`. Once stopped, every later unreadable reply raises the same halt, so a spec already
+  3, with `aborted on UnreadableReplies: the target's first <n> replies in this run could not be
+  read as replies (the last: <class>: <message>), and none could, nor a benign check sent then:
+  <the adapter's advice> (a filter in front of the endpoint that answers every request with a
+  block page reads the same). ...` or `... the target's last <n> replies in this run could not be
+  read as replies, in a row after ones that could (the last: ...), and a benign check sent then
+  could not be read either: it may have stopped answering as it did (an expired session behind a
+  proxy that serves a login page, a maintenance page, a filter that now answers every request
+  with a block page): <advice>. ...`, both ending `the replies are stored as inconclusive
+  attempts, and a resume sends them again; <k> of <n> specs never ran or did not finish` (`<n>` is
+  the run when the check came back: with specs in flight it can pass 5). A check that fails on
+  transport stops it too, the error quoted. A resume of a run that holds a read reply (or a
+  provider's filter block) starts the watch proven (`_read_a_reply`), so only 20 in a row stop it. Once stopped, every later unreadable reply raises the same halt, so a spec already
   sending stops at its own next one. The halt carries the result its reply makes, refunded, and
   `reproduce` and the conversation executor keep it before it goes on, as a `ReplyOverBudget`'s
   (MEDIUM 1: the reply that stopped each spec was sent, debited and never stored, and its token
@@ -606,25 +622,32 @@ as amended:
   proven endpoint earns more doubt (an attack battery garbles in runs: a wrapper that breaks on a
   quote breaks on every variant of a jailbreak that works). A run of fewer attempts that read
   nothing is `unreachable` (u12's half).
-Measured through the CLI against a loopback stub answering every request with an HTML page,
-2026-10-11, on `c97317c2`: the default battery stops after 8 requests (5, then one per other spec
-in flight at the default `--concurrency 4`) with 8 attempts stored and 0 tokens recorded, 5 with
-`--concurrency 1`; `run -sV` after 26 (18 probes, each a failed probe since the reply is refused,
-u09 A-35, then 8), 23 with `--concurrency 1`; two readable replies, then that page for everything:
-25 requests (2, 20 in a row, then one per other spec in flight), exit 3; the auditor's
-`PI-DIRECT-001 --runs 3` with the broken wrapper first: `inconclusive`, exit 0, `Unreadable replies:
-1 attempt(s) in 1 spec(s)` in the summary (on `598f0858`, PASS). Checked by
-`tests/core/test_unreadable_replies.py` (12: one unreadable reply among readable ones and the spec
-it keeps from passing, the stop at five with every reply stored and no token left reserved, a
-readable reply first or among the first four, a filter block, transport failures that neither
-count nor reset, concurrent specs stopping at their next unreadable reply with every reply stored,
-twenty in a row after readable replies, a readable reply that resets the run, a resume that sends
-the attempt again), `tests/adapters/test_malformed_replies.py` (34, u04) and
-`tests/cli/test_malformed_reply_campaign.py` (10, through the real CLI: one unreadable reply at
-the first or the fourth request, the stop after five, a resume after the stop that sends them
-again and finishes, a two-attempt run that is `unreachable`, the auditor's broken wrapper with the
-JSON, SARIF, JUnit and HTML reports, a target that breaks mid-run, and three on the unreachable
-reason's words). Not built: the `-sV` probe pass seeding the watch, which would stop a run whose
+Measured through the CLI against loopback stubs, 2026-10-11, on `b5a4e7e1`: answering every
+request with an HTML page, the default battery stops after 9 requests (5, the check, and one per
+other spec in flight at the default `--concurrency 4`) with 8 attempts and 1 probe stored and 0
+tokens recorded, 6 with `--concurrency 1`; `run -sV` after 27 (18 probes, each a failed probe since
+the reply is refused, u09 A-35, then 9), 24 with `--concurrency 1`; two readable replies, then that
+page for everything: 27 requests, exit 3; the verification's filter on attack words (a 200 HTML
+block page for prompts holding "ignore", "instruction", "system prompt", "pretend", "rules",
+"secret", "password" or "bypass"): the default battery finishes, exit 0, 160 of 550 attacks
+blocked and counted, 2 checks at `--concurrency 1` (on `07aa0b3a`, exit 3 at a run of 20, and each
+resume stopped after 5); 30% HTML at random: finishes, exit 0, every spec `inconclusive`; the
+auditor's `PI-DIRECT-001 --runs 3` with the broken wrapper first: `inconclusive`, exit 0,
+`Unreadable replies: 1 attempt(s) in 1 spec(s)` in the summary (on `598f0858`, PASS). Checked by
+`tests/core/test_unreadable_replies.py` (15: one unreadable reply among readable ones and the spec
+it keeps from passing, the stop at five after a check that cannot be read, with every reply stored,
+the check filed with the probes and no token left reserved, a check that reads and lets the run go
+on, a readable reply first or among the first four, a filter block, transport failures that
+neither count nor reset, concurrent specs stopping at their next unreadable reply with one check,
+twenty in a row after readable replies, a check that reads after twenty, a readable reply that
+resets the run, a resume that starts proven, a resume that sends the attempt again),
+`tests/adapters/test_malformed_replies.py` (37, u04) and
+`tests/cli/test_malformed_reply_campaign.py` (11, through the real CLI: one unreadable reply at
+the first or the fourth request, the stop after five and its check, a resume after the stop that
+sends them again and finishes, a two-attempt run that is `unreachable`, the auditor's broken
+wrapper with the JSON, SARIF, JUnit and HTML reports, a target that breaks mid-run, a target
+behind a filter on attack words that finishes its battery, and three on the unreachable reason's
+words). Not built: the `-sV` probe pass seeding the watch, which would stop a run whose
 every probe was unreadable after its probes (u09 A-35).
 
 ## §8 Out of scope / forbidden
@@ -706,7 +729,10 @@ every probe was unreadable after its probes (u09 A-35).
   keeps a redacted excerpt and is counted apart in every report, the reply that stops the
   campaign is stored like the others, the stop counts unreadable replies in a row (5 before any
   reply was read, 20 after, so a target that breaks mid-run stops too), and a resume sends such an
-  attempt again. Built as §7 A-74. Why: it is the rule #65, #68 and OD-41 already
+  attempt again. **Amended again after the verification of `07aa0b3a`:** before either stop the
+  watch sends one benign request, and stops only when that one cannot be read either, so a target
+  behind a content filter that answers attack prompts with a block page finishes its battery; a
+  resume of a run that read replies starts proven. Built as §7 A-74. Why: it is the rule #65, #68 and OD-41 already
   follow for neighbouring cases, a hostile reply should not decide whether the rest of a battery is
   measured, and the early stop keeps what the old rule bought (a misconfigured endpoint caught at
   once) for 5 requests instead of 1. Not taken: keep stopping at the first one (one hostile reply

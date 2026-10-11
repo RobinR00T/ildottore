@@ -121,17 +121,24 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   provider or template answers every request that way, and so does a target that breaks mid-run
   (an expired session behind a proxy that serves a login page), so the run counts unreadable
   replies in a row, each reply it reads (or a provider's filter block, §9) starting the count
-  again and a transport failure doing neither: 5 in a row before any reply was read, or 20 in a
-  row after, stop it (exit 3): `error: run on api did not complete: aborted on UnreadableReplies:
-  the target's first 5 replies in this run could not be read as replies (the last:
-  ResponseMalformed: ...), and none could: check that the target file's endpoint is an OpenAI chat
-  completions URL (or a server that speaks that API) and its provider is openai. ...`, or `the
-  target's last 20 replies in this run could not be read as replies, in a row after ones that
-  could ...`. The advice is the adapter's own (a `provider: rest` target file is told the generic
+  again and a transport failure doing neither. At 5 in a row before any reply was read, or 20 in
+  a row after, it sends one benign request (`Please reply with the single word: ready.`, debited
+  and paced like any send, and filed with the recognition probes under `probes/`): a content
+  filter that answers attack prompts with a 200 block page lets that one through, so the run goes
+  on and the count starts again, the blocked attempts staying `inconclusive`. Only when the check
+  cannot be read either does the run stop (exit 3): `error: run on api did not complete: aborted
+  on UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the
+  last: ResponseMalformed: ...), and none could, nor a benign check sent then: check that the
+  target file's endpoint is an OpenAI chat completions URL (or a server that speaks that API) and
+  its provider is openai (a filter in front of the endpoint that answers every request with a
+  block page reads the same). ...`, or `the target's last 20 replies in this run could not be read
+  as replies, in a row after ones that could ..., and a benign check sent then could not be read
+  either ...`. A resume of a run that read replies starts with the endpoint proven, so only 20 in
+  a row stop it. The advice is the adapter's own (a `provider: rest` target file is told the generic
   template reads the text at `text`, since a target file cannot declare a template). With
   concurrent specs, each one already sending stops at its own next unreadable reply, so the stop
-  costs at most the 5 (or 20) requests plus one per other spec in flight, and every reply sent is
-  stored. A run of fewer attempts that read nothing is `unreachable` (exit 3, below), its reason
+  costs at most the 5 (or 20) requests, the check and one per other spec in flight, and every
+  reply sent is stored. A run of fewer attempts that read nothing is `unreachable` (exit 3, below), its reason
   giving the same advice. A non-retryable 4xx is not this: it still stops the run. Over MCP stdio a
   line that is not JSON is skipped as stray output, so a server that writes nothing else times out
   instead. An MCP server over stdio may write up to the same 4 MiB for one request, its stray
@@ -2126,7 +2133,7 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
 | `warning: -sV on <target>: N of 18 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep, not JSON or not the provider's shape (`ResponseMalformed`, since OD-21); from a WebSocket target, a frame refused as §4.2 says or a 1007 or 1009 close the server starts), or the provider's input filter refused the benign guardrail probe or a carrier probe (`ProviderFilterBlock`). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
 | `aborted on UnreadableReplies: the target's first 5 replies in this run could not be read ...` (exit 3) | Every reply so far was one the adapter cannot read as the provider's: an HTML page, a body that is not JSON, JSON without `choices` (OpenAI) or a `content` array (Anthropic), nothing at a REST template's `text_path`. The endpoint is usually wrong (it serves a portal or a proxy's page), or the `provider` does not match what it serves; the line says what to check for that provider. Check it against one `curl` of the endpoint; each stored attempt keeps an excerpt of what came back under `request.metadata.unreadable_reply`. A run of fewer than 5 attempts says `every one of the N attempt(s) got a reply that could not be read as the provider's` and is `unreachable` instead. A resume sends those attempts again. |
-| `aborted on UnreadableReplies: the target's last 20 replies in this run could not be read as replies, in a row after ones that could ...` (exit 3) | The target answered as the provider does, then stopped: an expired session behind a proxy that serves a login page with HTTP 200, a maintenance page. Renew the credential or wait for the endpoint, then `--resume` the run: the unreadable attempts are sent again. |
+| `aborted on UnreadableReplies: the target's last 20 replies in this run could not be read as replies, in a row after ones that could ..., and a benign check sent then could not be read either` (exit 3) | The target answered as the provider does, then stopped, the benign check included: an expired session behind a proxy that serves a login page with HTTP 200, a maintenance page. Renew the credential or wait for the endpoint, then `--resume` the run: the unreadable attempts are sent again, and the resume starts with the endpoint proven. A filter that blocks only attack prompts does not stop a run: the check gets through, and the blocked attempts are counted as `Unreadable replies`. |
 | `Unreadable replies: N attempt(s) in S spec(s) (...) got a reply that could not be read as the provider's` | Some replies were not the provider's shape, a broken JSON wrapper among them (one that pastes the model's output unescaped breaks on its quotes, which is what a jailbreak that worked writes). Those specs are `inconclusive`, never a pass: review the excerpt each attempt keeps under `request.metadata.unreadable_reply` (the JSON report, the evidence). |
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |

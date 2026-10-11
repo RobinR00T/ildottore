@@ -312,9 +312,11 @@ no fail is `inconclusive`, so it does not trip `--fail-on`; a pipeline that shou
 A target that answers **every** request that way is a wrong endpoint or provider, and one that
 stops answering as it did mid-run is often an expired session behind a proxy that serves a login
 page with HTTP 200. The run counts such replies in a row, each reply it reads starting the count
-again: 5 in a row before any reply was read, or 20 in a row after, stop it early (exit 3, `aborted
-on UnreadableReplies: ...`, with what to check for that provider), and a shorter run that read
-nothing is `unreachable`. A 4xx is not this: it still stops the run ([`MANUAL.md`](MANUAL.md) §3, a
+again. At 5 in a row before any reply was read, or 20 in a row after, it sends one benign request
+first: a content filter that answers attack prompts with a block page lets it through, and the run
+goes on. Only when that one cannot be read either does the run stop early (exit 3, `aborted on
+UnreadableReplies: ...`, with what to check for that provider); a resume of a run that read replies
+starts with the endpoint proven, and a shorter run that read nothing is `unreachable`. A 4xx is not this: it still stops the run ([`MANUAL.md`](MANUAL.md) §3, a
 reply the adapter cannot read; [`adr/0012`](adr/0012-a-reply-the-adapter-cannot-read-is-not-a-verdict.md)).
 
 ### If my system passes Il Dottore, does it meet OWASP AISVS?

@@ -318,9 +318,11 @@ template's shape, a WebSocket frame or an MCP reply included) fails its attempt,
 with the reason unreadable_reply, and is not sent again in the run (a resume sends it again); the
 run goes on, but the spec it belongs to is never a pass, the attempt keeps an excerpt of the
 body under request.metadata.unreadable_reply, and the summary says how many ("Unreadable
-replies: N attempt(s) in S spec(s)"). Such replies 5 in a row before any reply was read, or 20 in
-a row after (a target that broke mid-run), stop the run with exit 3 and say what to check for the
-target's provider.
+replies: N attempt(s) in S spec(s)"). At 5 such replies in a row before any reply was read, or 20
+in a row after (a target that broke mid-run), one benign request is sent first; only when that one
+cannot be read either does the run stop with exit 3, saying what to check for the target's
+provider. A content filter that answers attack prompts with a block page lets the check through,
+so the run goes on.
 .SH FILES
 .TP
 .I scope.yaml

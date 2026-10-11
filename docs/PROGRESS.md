@@ -3,6 +3,27 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (evening): the verification of `07aa0b3a` (OD-21), fixed
+
+- Both false passes closed per the verification; one MEDIUM and two LOWs, fixed in new commits after
+  merging `main` (`e8f9d1f6`, #107) as `19ce3080` (conflicts only in CHANGELOG and PROGRESS, both
+  kept). `f6b1a792` LOW 1: the excerpt's read stops before a registered credential that crosses its
+  8 KiB cut, and before a short key-shaped token that does (the auditor's `probe_cut.py`: 0
+  fragments, where up to 15 leading characters survived). `b5a4e7e1` MEDIUM and LOW 2: before
+  either stop the watch sends one benign request (debited, paced, filed under `probes/`) and stops
+  only when that one cannot be read either; a resume of a run that read replies starts proven; the
+  reason names a filter's block page among the causes; ADR-0012 states the stop and its
+  consequences; a resume that keeps nothing says "keeps none of the N attempt(s) it stored".
+  Measured with the auditor's `probe_cli.py` on `b5a4e7e1`: the broad filter on attack words
+  finishes the default battery (160 of 550 blocked, 2 checks at `--concurrency 1`, exit 0; on
+  `07aa0b3a`, exit 3 at a run of 20 and every resume after 5); all HTML: 9 requests (6 at 1), 27
+  with `-sV` (24 at 1); two readable then HTML: 27, exit 3; 30% HTML at random: finishes, every
+  spec `inconclusive`. Tests: core 15 (6 fail on `07aa0b3a`), adapters 37 (3 fail there), CLI 11 (4
+  fail there). Gates: below, in the next entry's figures.
+- Noted, not part of this branch: the auditor's `probe_excerpt.py` shows an `sk-ant-api03-` key of
+  a repeated 8-character pattern readable in the excerpt, and the redactor leaves it readable
+  everywhere else too (its entropy rule; the excerpt only applies the redactor).
+
 ## State, 2026-10-11 (afternoon, later): the pre-merge audit of `598f0858` (OD-21, OD-20), fixed
 
 - Not merge-ready per the audit: OD-21 opened two false passes the old rule did not have. Fixed in

@@ -331,8 +331,11 @@ reads as U+FFFD, since httpx decodes the stream as text.
   pass isolates every refused reply by the same marker (u09 A-35), such a probe fails alone, as
   `layer/probe: ResponseMalformed`. The error carries what the attempt keeps for review (pre-merge
   audit of `598f0858`, HIGH 1): `excerpt`, at most 4 KiB (`UNREADABLE_EXCERPT_BYTES`) of the body's
-  UTF-8 through the adapter's redactor, redacted over twice that and then cut so a credential across
-  the cut is masked whole (`reply_excerpt`); `size`, the body's bytes; `advice`, the adapter's
+  UTF-8 through the adapter's redactor, read over twice that, cut before a registered credential
+  that crosses that cut (`redactor.registered_secrets`) and before a key-shaped token that does
+  when its part before the cut is 256 characters or fewer (read in part, neither is recognised:
+  up to 15 leading characters of a registered credential survived, verification of `07aa0b3a`,
+  LOW 1), redacted, then cut to 4 KiB (`reply_excerpt`, `_clean_cut`); `size`, the body's bytes; `advice`, the adapter's
   `unreadable_advice`, worded for it (openai: an OpenAI chat completions URL and `provider: openai`;
   anthropic: the Messages API; websocket: the block's `text_path`, `tool_calls_path` and
   `final_path`; mcp: an MCP server; a REST template built in Python: its `text_path`; a target

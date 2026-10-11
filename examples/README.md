@@ -170,15 +170,17 @@ secure marker a spec wants present (`DOS-TOKEN-AMP-001`'s) is not held against a
 A 200 that is not the provider's reply (an HTML page, JSON without `choices`) fails only its
 attempt (OD-21), and its spec is `inconclusive`, never a pass: the reply that broke may be the one
 the attack changed, so the summary counts it (`Unreadable replies: ...`) and the attempt keeps an
-excerpt under `request.metadata.unreadable_reply`. An `endpoint` that answers every request that
-way is wrong, and the run stops at its fifth such reply in a row (or the twentieth in a row after
-replies it could read, as when a session expires mid-run). Against a loopback stub answering every
-request with an HTML page, the full battery (`dottore run` with no selector, target id `api`) sent
-8 requests (5, then one per other spec in flight at the default `--concurrency 4`), stored the 8
-attempts, recorded 0 tokens, and ended, exit 3, with
+excerpt under `request.metadata.unreadable_reply`. A filter that answers attack prompts with a 200
+block page is counted the same way, and the battery finishes. An `endpoint` that answers every
+request that way is wrong: at its fifth such reply in a row (or the twentieth in a row after
+replies it could read, as when a session expires mid-run) the run sends one benign request, and
+stops when that one cannot be read either. Against a loopback stub answering every request with an
+HTML page, the full battery (`dottore run` with no selector, target id `api`) sent 9 requests (5,
+the benign check, then one per other spec in flight at the default `--concurrency 4`), stored the
+8 attempts and the check, recorded 0 tokens, and ended, exit 3, with
 
 ```
-error: run on api did not complete: aborted on UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the last: ResponseMalformed: api: success response was not valid JSON: Expecting value: line 1 column 1 (char 0); not evaluated), and none could: check that the target file's endpoint is an OpenAI chat completions URL (or a server that speaks that API) and its provider is openai. The run stopped rather than send the rest of the battery to be scored inconclusive; the replies are stored as inconclusive attempts, and a resume sends them again; 35 of 75 specs never ran or did not finish
+error: run on api did not complete: aborted on UnreadableReplies: the target's first 8 replies in this run could not be read as replies (the last: ResponseMalformed: api: success response was not valid JSON: Expecting value: line 1 column 1 (char 0); not evaluated), and none could, nor a benign check sent then: check that the target file's endpoint is an OpenAI chat completions URL (or a server that speaks that API) and its provider is openai (a filter in front of the endpoint that answers every request with a block page reads the same). The run stopped rather than send the rest of the battery to be scored inconclusive; the replies are stored as inconclusive attempts, and a resume sends them again; 35 of 75 specs never ran or did not finish
 ```
 
 ## Scenario E, scan a fleet

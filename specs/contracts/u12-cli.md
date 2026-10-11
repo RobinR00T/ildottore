@@ -1131,7 +1131,9 @@ reply that could not be read as the provider's, so nothing was evaluated: <advic
 failures among them, `failed on transport or (<k> of them) with a reply that could not be read as
 the provider's`; with transport failures only, the reason is as before. A resume says how many it
 sends again because they could not be read (`; <k> that could not be read will be sent again`,
-LOW 1). The report schema's `status` description names `aborted` and the wider `unreachable`.
+LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it stored across <s>
+spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
+attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
 Checked by `tests/cli/test_malformed_reply_campaign.py`.
 
 ## §8 Out of scope / forbidden

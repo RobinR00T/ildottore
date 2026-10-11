@@ -1896,8 +1896,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 "or failed in a way a retry would repeat); they will not be re-sent"
                 if done
                 else f"keeps none of the {again} attempt(s) it stored across "
-                f"{len(resume_from.findings)} spec(s): none was answered, or failed in a way a "
-                "retry would repeat, so every one is sent again"
+                f"{len(resume_from.findings)} spec(s) (none was answered, or failed in a way a "
+                "retry would repeat)"
             )
             print(
                 f"resume: {opts.resume} {kept}"
