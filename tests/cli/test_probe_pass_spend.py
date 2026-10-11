@@ -233,11 +233,26 @@ def test_a_resumed_probe_pass_stopped_by_an_error_records_what_it_sent(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
-@pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM], ids=["ctrl-c", "sigterm"])
+@pytest.mark.parametrize(
+    ("signum", "sigint"),
+    [
+        (signal.SIGINT, "default_int_handler"),
+        (signal.SIGTERM, "default_int_handler"),
+        (signal.SIGTERM, "SIG_IGN"),
+    ],
+    ids=["ctrl-c", "sigterm", "sigterm-ctrl-c-ignored"],
+)
 def test_a_signal_during_a_resumed_probe_pass_records_what_it_sent(
-    tmp_path: Path, stub: tuple[int, dict[str, Any]], monkeypatch: pytest.MonkeyPatch, signum: int
+    tmp_path: Path,
+    stub: tuple[int, dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    signum: int,
+    sigint: str,
 ) -> None:
-    """The fifth probe of the resume is on the wire, unanswered, when the signal arrives."""
+    """The fifth probe of the resume is on the wire, unanswered, when the signal arrives.
+
+    With Ctrl-C ignored too (u12 A-60): the SIGTERM cancels the pass and wakes the loop waiting
+    for the reply, which the stub holds for 60 s; the child exits with what it sent recorded."""
 
     port, state = stub
     monkeypatch.setattr("ildottore.core.execute.RetryPolicy.delay_for", lambda *_a: 0.0)
@@ -252,7 +267,7 @@ def test_a_signal_during_a_resumed_probe_pass_records_what_it_sent(
             "-c",
             # A shell that starts pytest with `&` passes SIGINT on ignored, and Python then
             # installs no Ctrl-C handler in the child (pre-merge audit: 5 of 5 failed so).
-            "import signal, sys; signal.signal(signal.SIGINT, signal.default_int_handler); "
+            f"import signal, sys; signal.signal(signal.SIGINT, signal.{sigint}); "
             "from ildottore.cli.main import main; sys.argv[0] = 'dottore'; main()",
             *_argv(tmp_path, port, "--budget-requests", "200", "--resume", run_id),
         ],
@@ -266,6 +281,7 @@ def test_a_signal_during_a_resumed_probe_pass_records_what_it_sent(
             process["cli"].kill()
             process["cli"].wait()
 
+    assert process["cli"].returncode == 130, err.decode(errors="replace")  # Ctrl-C's
     assert state["served"] == _HALT_AT + 5, err.decode(errors="replace")
     assert _recorded(tmp_path, run_id) == state["served"], err.decode(errors="replace")
     assert (

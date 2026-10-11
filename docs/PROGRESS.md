@@ -3,6 +3,78 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-10 (night): the verification audit's three LOWs
+
+- The verification audit of `5bd7c45` found it merge-ready, with three LOWs, closed one commit each.
+  `93575ef`: `run_until_stopped` disarms in a `finally`, since a Ctrl-C or a second signal raising
+  at a call of its cleanup left the run armed (the audit's Ctrl-C sweep: 27 points, now 12, all at a
+  line that compiles to NOP alone; its second-signal sweeps: none left); one test, which fails on
+  `5bd7c45`. `4020f8b`: the campaign takes a held-back signal only when it arrives before the
+  put-back's last check, in a process whose only thread is the main thread, and the docs say so; the
+  hold is let go right after that check. `3836753`: `_interrupt_as_ctrl_c`'s docstring says what a
+  program that embeds `execute_run` sees, as u12 A-60 does. `tests/cli/test_termination_signals.py`:
+  49 tests, 30 runs in a row green on 3.14.7 and on 3.12.13 (shim). The single-signal sweep with
+  SIGTERM: 2 of 6,193 points bad with Ctrl-C ignored (the two NOP-only lines), 0 of 6,172 with a
+  Ctrl-C handler that does nothing. `make --no-print-directory gates` green: 4659 tests, 97.64%
+  coverage, 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+
+## State, 2026-10-10: the pre-merge audit of the A-60 fix, closed
+
+- On `fix/sigterm-hang-a60`, the pre-merge audit of `2001e7f` (no HIGH) closed in normal commits on
+  top of it, `main` not merged in. MEDIUM 1: the coroutine `asyncio.Runner` runs makes the
+  campaign's task and awaits it at once (`7a0be1d`); a Ctrl-C in its first step had cancelled only
+  that coroutine, and a second one during the stop left the task pending. MEDIUM 2: a second signal
+  of either kind raises in place (`2dcf954`): with Ctrl-C at its default a SIGTERM or SIGHUP goes to
+  asyncio's own Ctrl-C handler, which counts both. LOW 1 to 3 (`a5dd63f`, `36324f2`, `9eb2f12`): the
+  handlers are swapped with Ctrl-C, SIGTERM and SIGHUP held back, the put-back retried when a signal
+  beats the hold, one that arrives before the put-back's last check taken by the campaign (in a
+  process whose only thread is the main thread), the loop let go while still armed; a signal dropped
+  outside a loop ends the campaign with KeyboardInterrupt after its last loop; only the main thread
+  watches. LOW 6 (`ec4277c`): a send is bounded by `asyncio.timeout`, since 3.11's `wait_for`
+  dropped a cancellation that landed as the send completed. LOW 7 (`fa94b96`, `e9cfd85`):
+  `interrupts.py` at 100% line and branch coverage. LOW 4 (`3091640`): u12 A-60 amended in place,
+  its index row, MANUAL, `dottore(1)`, CHANGELOG. Test-only (`7e31c2e`): two WebSocket tests that
+  hung on 3.12 hold their connection on an Event and abort it. The audit's sweep (a signal at every
+  line event, one forked child per point) on `9eb2f12`: 8 of 31,030 points bad in five single-signal
+  arms, all at two lines that compile to NOP alone (`2001e7f`: 50, 50 and 21 of about 6,000 in its
+  three SIGTERM arms); a second signal one line event after the first waits for a third at 66 of 413
+  points (16%), plain `asyncio.run` with a double Ctrl-C at 59 of 385 (15%). The real CLI with the
+  first SIGTERM inside the runner's gather: exit 130, 0.99 to 1.11 s after the start, the spend of 6
+  requests written inside the loop, Ctrl-C ignored or at its default.
+  `tests/cli/test_termination_signals.py`: 48 tests, 30 runs in a row green on 3.14.7 and on 3.12.13
+  (the signal file alone, through a shim of `interrupts.py` and the four signal functions of
+  `run.py`, since the 3.12 here has none of the project's dependencies). `make --no-print-directory
+  gates` green: 4658 tests, 97.64% coverage, 75 specs lint OK, four import contracts kept,
+  self-scan, bandit and pip-audit clean. Python 3.11, what CI runs, is not installed here.
+
+## State, 2026-10-09 (evening): one SIGTERM stops a run with Ctrl-C ignored too
+
+- On `fix/sigterm-hang-a60` (from `main` at `f12ba83`): the hang the afternoon entry left open is
+  fixed. With Ctrl-C ignored, a SIGTERM or SIGHUP landing in gather's callback left the run waiting
+  for a second signal as it closed, and the stuck part's spend was written when Python collected the
+  task (measured through the real CLI on Python 3.12.13 and 3.14.7: still running 3.0 s after the
+  start, when a second SIGTERM ended it). New `cli/interrupts.py`: `run_until_stopped` replaces
+  `asyncio.run` for the `-sV` probe pass and each target's campaign and runs the coroutine as a task
+  made before the loop starts; on the first signal, whatever Ctrl-C's disposition, the handler
+  (`stop_running_loop`) cancels that task and wakes the loop, and KeyboardInterrupt is raised once
+  the loop is closed, also for a signal that comes after the task is done or inside `loop.close()`;
+  a second raises in place; Ctrl-C keeps asyncio's handler; and a signal Python drops outside a loop
+  keeps the next loop from starting. The same CLI path now: one SIGTERM, exit 130 within 0.9 s, the
+  spend of 6 requests written inside the loop, in both arms and on both Pythons. u12 A-60 amended in
+  place (no new number), its 00-INDEX row, the MANUAL, the EXIT STATUS of `dottore(1)`, the
+  CHANGELOG. `tests/cli/test_termination_signals.py` has 28 tests (10 before): the hang test pins
+  one signal as enough in both arms, its safety net never needed, and no clock decides any of them;
+  30 runs in a row green on each Python, alongside a `make gates` run. Each broken variant fails it:
+  #94's handler (raising in place) fails 3 (the hang test's ignored arm and two CancelledError
+  cases), a handler that raises from a loop callback of its own fails the two `loop.close()` cases,
+  no wake-up fails the two select() cases, and no memory of a dropped signal fails the two
+  dropped-signal cases. `tests/cli/test_probe_pass_spend.py` gains `[sigterm-ctrl-c-ignored]`
+  through the real CLI (without the wake-up it still passes, in 32 s instead of about 2), and its
+  three signal cases check exit 130. `make gates` green (with `PYTHONPATH` set to the worktree's
+  `src`): 4637 tests, 97.58% coverage, 75 specs lint OK, four import contracts kept, self-scan,
+  bandit and pip-audit clean. Python 3.11, what CI runs, is not installed on this machine; tested on
+  3.12.13 and 3.14.7.
+
 ## State, 2026-10-10 (night): the pre-merge audit of `3d739f3` (OD-41), six lows closed
 
 - Merge-ready per the audit; closed on the same branch. L1: the resume test checks `--estimate
