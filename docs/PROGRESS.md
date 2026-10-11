@@ -3,6 +3,42 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11: a reply the provider's filter cut or replaced is never a pass (OD-42)
+
+- On `fix/provider-output-filter-not-a-pass`, from `origin/main` at `6d5f7ae`: the owner decided
+  (2026-10-11, 08:55, "haz lo pendiente" after the recommendation) that a reply the provider's
+  filter cut or replaced is never scored as the model resisting. The gap was found by the
+  pre-merge audit of OD-41. Measured on `6d5f7ae` against loopback stubs that answer the filter's
+  reply to prompts holding "instructions for" or "developer mode", `GUARD-INPUT-EVASION-001` and
+  `PI-DIRECT-001` at `--runs 2` with a secure judge: Azure's withheld reply (`content: null`,
+  `content_filter`) and Anthropic's empty `refusal` both gave two passes, exit 0, 28 judge
+  requests; through the REST adapter, a Bedrock canned refusal passed with and without the
+  guardrail trace, a Gemini `SAFETY` candidate with refusing text passed, and one without text
+  stopped the campaign. Built (u08 A-70, with halves in u00, u04, u09, u10, u11 and u12; the
+  amendment to ADR-0011; OD-42 closed): one predicate in `shared.provider_filter` (the
+  fingerprint's `FILTER_STOPS`, moved, with Vertex AI's `MODEL_ARMOR`; every value sourced, read
+  2026-10-11) reads the stop reason and its side. Input (a Bedrock trace's `inputAssessment`,
+  Anthropic's `refusal` before any output): OD-41's block, reply kept. Output: `inconclusive:
+  cut_by_provider_output_filter`; unreported side (Bedrock without trace, `content_filtered`):
+  `provider_filter_side_unknown`; both new `InconclusiveReason`s, needing review, scored by the
+  deterministic evaluators on what came back (a fail stands; the judge is not asked); a spec with
+  one cannot pass; in `N`, never a success; `--fail-on` unchanged; a conversation ends on the cut
+  reply; kept by a resume, re-derived by `dottore replay`, counted apart in JSON, SARIF, JUnit, HTML
+  and the terminal. `ModelResponse.filter_side` carries a Bedrock trace's side and is left out of a
+  dump when unset. The REST adapter reads a filter stop at `finish_path` before the text, so a
+  `SAFETY` candidate with no text is a reply. With the stubs: Azure's run exits 0 with both specs
+  inconclusive (2/8 and 6/6 cut) and 12 judge requests; a canary in a cut partial reply is a
+  confirmed fail, exit 2; Anthropic's refusal before output is 6 blocked attempts, after partial
+  text 2 cut ones. Tests: 72 new (6 CLI, 4 of which fail on `6d5f7ae` and 2 controls that pass
+  there too; 22 core and 41 adapter, not collected on `6d5f7ae`; 2 fingerprint; 1 redactor). Left
+  open: Gemini's `RECITATION` (a reply cut for reciting a source: a question for the owner when a
+  training-data extraction spec is the one cut), a Gemini template without `finish_path`,
+  Bedrock's `InvokeModel` shape and streamed replies; the identity sweep reads its replies as
+  before. Not run against a live Azure, Bedrock, Gemini or Anthropic endpoint. `make gates` green
+  (2026-10-11, 09:45): ruff, format (392 files), mypy strict (157 source files), import-linter (4
+  kept), spec lint (0 errors, 0 warnings across 75 specs, 14 suites, 1 pack), 5,137 tests with
+  97.66% coverage, self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
+
 ## State, 2026-10-10 (night): the verification audit's three LOWs
 
 - The verification audit of `5bd7c45` found it merge-ready, with three LOWs, closed one commit each.

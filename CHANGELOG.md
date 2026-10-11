@@ -66,7 +66,8 @@ versioning: [SemVer](https://semver.org/).
   counted as covered. With none, only the JSON report changes (the two keys at `0` and `[]`).
 - **Adapters.** The REST adapter reads a filter stop at `finish_path` first, so a body with no text
   whose stop is a filter's (a Gemini `SAFETY` candidate) is a reply with no text rather than a
-  product error; with `finish_path: stopReason` and `guardrail_intervened` it reads Bedrock's
+  product error (which stopped the campaign, and a `-sV` pass too; the fingerprint now reads it as
+  `output_filter`); with `finish_path: stopReason` and `guardrail_intervened` it reads Bedrock's
   `trace.guardrail` into the new `ModelResponse.filter_side` (`input` or `output`). That field is
   left out of a dump when unset, so every other reply is stored and hashed as before. Not read:
   Gemini's `RECITATION` (a copyright check), a template without `finish_path` (as before),
