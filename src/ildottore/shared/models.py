@@ -529,6 +529,22 @@ class Target(_Frozen):
     seeded_setup: SeededSetup | None = None
     # The wire shape of a ``provider: websocket`` target (``None`` for every other provider).
     websocket: WebSocketSpec | None = None
+    # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
+    # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and is not the
+    # provider, so neither its stops nor Azure's HTTP 400 are read as a filter's. ``None``: the
+    # provider's own. Validated by the loader (``cli.wiring``); left out of a dump when ``None``.
+    filter_stops: list[str] | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_an_undeclared_filter(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """The dump as before A-79 when the file does not declare ``filter_stops``."""
+
+        dumped: dict[str, Any] = handler(self)
+        if dumped.get("filter_stops") is None:
+            dumped.pop("filter_stops", None)
+        return dumped
 
 
 class TokenLogprob(_Frozen):

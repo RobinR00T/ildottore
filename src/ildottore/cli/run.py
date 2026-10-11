@@ -1204,6 +1204,10 @@ def _print_dry_run_plan(
         # What the operator's file says of its own tools, before anything is sent (OD-43).
         for line in _declaration_lines(plan.target, plan.selected):
             print(f"  operator: {line}")
+        # And of the provider filter words it reads, when it declares them (u04 A-79).
+        filters = _filter_stops_line(plan.target)
+        if filters is not None:
+            print(f"  filters: {filters}")
         # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
         # temperature reaches none of the shipped battery), and what never goes out (OD-39).
         for note in plan.sampling_notes:
@@ -1286,6 +1290,33 @@ def _near_scene_lines(target: Target, specs: Sequence[AttackSpec]) -> list[str]:
     return lines
 
 
+def _filter_stops_line(target: Target) -> str | None:
+    """What ``--dry-run``, ``-v`` and ``-sn`` say of a file's filter declaration, or ``None``.
+
+    Said only when the file declares one (u04 A-79): ``filter_stops`` at the top level of an
+    ``openai`` or ``anthropic`` file, ``websocket.response.filter_stops`` in a WebSocket one. A
+    declaration changes what is scored as the provider's filter, so it is shown before anything
+    is sent, as the operator's declaration of its tools is (OD-43).
+    """
+
+    declared = target.filter_stops
+    where = "filter_stops"
+    if declared is None and target.websocket is not None and target.websocket.response.filter_stops:
+        declared = target.websocket.response.filter_stops
+        where = "websocket.response.filter_stops"
+    if declared is None:
+        return None
+    if not declared:
+        return (
+            f"{visible_controls(target.id)}'s target file declares {where}: [], so no stop and no "
+            "HTTP 400 is read as its provider's filter; every reply is scored as the model's"
+        )
+    return (
+        f"{visible_controls(target.id)}'s target file declares {where}: "
+        f"[{', '.join(declared)}], the only stops read as a provider's filter"
+    )
+
+
 def _declaration_lines(target: Target, specs: Sequence[AttackSpec] = ()) -> list[str]:
     """What ``--dry-run``, ``-v`` and ``-sn`` say of the operator's declaration (OD-43, A-72).
 
@@ -1356,6 +1387,9 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
             print(f"    sampling:  {visible_controls(plan.no_sampling)}")
         for line in _declaration_lines(plan.target, plan.selected):
             print(f"    operator:  {line}")
+        filters = _filter_stops_line(plan.target)
+        if filters is not None:
+            print(f"    filters:   {filters}")
         print(
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "

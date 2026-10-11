@@ -65,6 +65,9 @@ class OpenAIAdapter(BaseAdapter):
     audio_enabled: bool = False
     #: False when the target file says ``sampling: false`` (u12 A-68): no temperature, no top_p.
     sampling_enabled: bool = True
+    #: The target file's ``filter_stops`` (u04 A-79), ``None`` when it declares none: ``[]`` reads
+    #: no stop, and no HTTP 400, as the provider's filter.
+    declared_filter_stops: frozenset[str] | None = None
     #: A 400 that names a sampling parameter is refused in words that name the capability.
     sends_sampling: ClassVar[bool] = True
 
@@ -88,9 +91,12 @@ class OpenAIAdapter(BaseAdapter):
         The API documents no other filter stop, so ``refusal``, ``SAFETY`` or
         ``guardrail_intervened`` in a reply is an ordinary stop: a gateway or a target that writes
         one cannot make its reply read as a filter's. With it, Azure's HTTP 400 ``content_filter``
-        is the prompt filter's block (OD-41).
+        is the prompt filter's block (OD-41). A target file that declares ``filter_stops: []``
+        (an endpoint that speaks the API and is not OpenAI or Azure) reads none.
         """
 
+        if self.declared_filter_stops is not None:
+            return self.declared_filter_stops
         return OPENAI_FILTER_STOPS
 
     @property

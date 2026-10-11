@@ -20,6 +20,7 @@ genuine Azure 400 on some prompts of an ``openai`` target and a genuine Anthropi
 from __future__ import annotations
 
 import json
+import re
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -125,7 +126,12 @@ def stub() -> Iterator[tuple[int, dict[str, Any]]]:
 
 
 def _argv(
-    tmp_path: Path, port: int, *specs: str, provider: str = "openai", runs: int = 1
+    tmp_path: Path,
+    port: int,
+    *specs: str,
+    provider: str = "openai",
+    runs: int = 1,
+    target_extra: str = "",
 ) -> list[str]:
     path = "/v1/messages" if provider == "anthropic" else "/v1/chat/completions"
     endpoint = f"http://127.0.0.1:{port}{path}"
@@ -149,7 +155,7 @@ def _argv(
     target = tmp_path / "target.yaml"
     target.write_text(
         f'id: tgt\ntype: chatbot\nprovider: {provider}\nendpoint: "{endpoint}"\nmodel: m\n'
-        "capabilities:\n  tools: false\n  rag: false\n"
+        "capabilities:\n  tools: false\n  rag: false\n" + target_extra
     )
     judge = tmp_path / "judge.yaml"
     judge.write_text(
@@ -429,3 +435,80 @@ def test_a_websocket_target_file_refuses_an_undocumented_stop_without_quoting_it
     message = str(info.value)
     assert "response.filter_stops" in message
     assert "sk-123456789" not in message
+
+
+# --- an openai or anthropic target file that is not the provider (pre-merge audit, LOW 3) -------
+
+
+def test_an_openai_target_file_can_switch_the_providers_filter_reading_off(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """``filter_stops: []`` for an endpoint that speaks OpenAI's API and is not OpenAI or Azure:
+    its ``content_filter`` is an ordinary stop, so the harmful text it withheld nothing of is the
+    model's answer (a confirmed fail, exit 2), and the plan says so before anything is sent."""
+
+    port, state = stub
+    state["reply"] = lambda _prompt: (200, _openai(_HARMFUL, "content_filter"))
+    argv = _argv(tmp_path, port, "JB-ROLEPLAY-001", target_extra="filter_stops: []\n")
+
+    planned = CliRunner().invoke(app, [*argv, "--dry-run"])
+    assert planned.exit_code == 0, planned.output
+    assert (
+        "  filters: tgt's target file declares filter_stops: [], so no stop and no HTTP 400 is "
+        "read as its provider's filter; every reply is scored as the model's"
+    ) in planned.output
+    assert state["attack"] == 0
+
+    result = CliRunner().invoke(app, argv)
+    assert result.exit_code == 2, result.output
+    finding = _finding(_report(tmp_path), "JB-ROLEPLAY-001")
+    assert (finding["status"], finding["confirmed"]) == ("fail", True)
+
+
+def test_azures_400_is_an_ordinary_4xx_when_the_file_reads_no_filter(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    port, state = stub
+    state["reply"] = lambda _prompt: (400, _AZURE_400)
+    argv = _argv(tmp_path, port, "PI-DIRECT-001", target_extra="filter_stops: []\n")
+    result = CliRunner().invoke(app, argv)
+
+    assert result.exit_code == 3, result.output
+    assert state["attack"] == 1
+    assert "aborted on AdapterStatusError" in result.output
+
+
+@pytest.mark.parametrize(
+    ("provider", "declared", "match"),
+    [
+        ("openai", "[refusal]", "may list only the provider's own filter stop (content_filter)"),
+        ("anthropic", "[content_filter]", "may list only the provider's own filter stop (refusal)"),
+        ("openai", '["sk-123456789-moderated"]', "may list only the provider's own filter stop"),
+        ("openai", "content_filter", "must be a list of stop reasons"),
+        ("rest", "[]", "is for a provider: openai or anthropic target"),
+    ],
+)
+def test_a_target_files_filter_stops_is_refused_outside_its_providers_words(
+    tmp_path: Path, provider: str, declared: str, match: str
+) -> None:
+    path = tmp_path / "target.yaml"
+    path.write_text(
+        f'id: t\ntype: chatbot\nprovider: {provider}\nendpoint: "https://gw.example.test/v1"\n'
+        f"model: m\nfilter_stops: {declared}\n"
+    )
+    with pytest.raises(ValueError, match=re.escape(match)) as info:
+        wiring.load_target(path)
+    assert "sk-123456789" not in str(info.value)
+
+
+def test_a_hand_built_anthropic_target_may_declare_none() -> None:
+    from ildottore.policy import EndpointAllowlist
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    target = Target(id="t", type=TargetType.CHATBOT, provider="anthropic", filter_stops=[])
+    adapter = wiring.build_real_adapter(target, EndpointAllowlist([]), api_key=None)
+    assert adapter.filter_stops == frozenset()  # type: ignore[attr-defined]
+    assert "filter_stops" in target.model_dump()
+    plain = Target(id="t", type=TargetType.CHATBOT, provider="anthropic")
+    assert "filter_stops" not in plain.model_dump(), "an undeclared file dumps as before"

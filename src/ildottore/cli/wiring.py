@@ -97,6 +97,11 @@ from ildottore.shared.config_errors import (
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.files import read_text_capped
+from ildottore.shared.filter_stops import (
+    ANTHROPIC_FILTER_STOPS,
+    OPENAI_FILTER_STOPS,
+    documented_stops,
+)
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -811,6 +816,7 @@ def build_real_adapter(
             **extra,
             path_override=declared_path,
             sampling_enabled=takes,
+            declared_filter_stops=_declared_filter_stops(target),
         )
     if provider == "anthropic":
         return AnthropicAdapter(
@@ -822,6 +828,7 @@ def build_real_adapter(
             **extra,
             path_override=declared_path,
             sampling_enabled=takes,
+            declared_filter_stops=_declared_filter_stops(target),
         )
     template = RestTemplate(path=parts.path or "/")
     return RestAdapter(
@@ -836,6 +843,56 @@ def build_real_adapter(
         advice=REST_TARGET_FILE_ADVICE,
         **extra,
     )
+
+
+def _declared_filter_stops(target: Target) -> frozenset[str] | None:
+    """The target file's ``filter_stops`` as the adapter reads them, or ``None`` (u04 A-79)."""
+
+    return None if target.filter_stops is None else documented_stops(target.filter_stops)
+
+
+#: The filter stops a target file's top-level ``filter_stops`` may list, per provider: its own
+#: (u04 A-79). A WebSocket target declares its stops in its block, a REST one reads none.
+_OWN_FILTER_STOPS: dict[str, frozenset[str]] = {
+    "openai": OPENAI_FILTER_STOPS,
+    "anthropic": ANTHROPIC_FILTER_STOPS,
+}
+
+
+def _filter_stops(path: Path, raw: object, provider: object) -> list[str] | None:
+    """A target file's ``filter_stops``, checked (u04 A-79; pre-merge audit of ``a55710e9``).
+
+    For an ``openai`` or ``anthropic`` target only, and only the provider's own words: ``[]``
+    switches the provider's filter reading off for an endpoint that speaks its API and is not
+    the provider (a gateway, a local server), so a stop it writes, and Azure's 400, are ordinary.
+    Refused anywhere else: a WebSocket target declares its stops under
+    ``websocket.response.filter_stops``, and a REST target file reads none. The refusals name the
+    file and the field, never a value (A-53).
+    """
+
+    if raw is None:
+        return None
+    lowered = provider.strip().lower() if isinstance(provider, str) else ""
+    own = _OWN_FILTER_STOPS.get(lowered)
+    if own is None:
+        raise ValueError(
+            f"target file {path} 'filter_stops' is for a provider: openai or anthropic target; a "
+            "websocket target declares its stops under websocket.response.filter_stops, and a "
+            "rest target reads none"
+        )
+    if not (isinstance(raw, list) and all(isinstance(stop, str) for stop in raw)):
+        raise ValueError(f"target file {path} 'filter_stops' must be a list of stop reasons")
+    try:
+        stops = documented_stops(raw)
+    except ValueError:
+        stops = frozenset({""})
+    if not stops <= own:
+        raise ValueError(
+            f"target file {path} 'filter_stops' may list only the provider's own filter stop "
+            f"({', '.join(sorted(own))}), or nothing ([]) for an endpoint that is not the "
+            "provider"
+        )
+    return sorted(stops)
 
 
 #: What a target file's ``provider: rest`` target is told to check when no reply can be read.
@@ -1588,6 +1645,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         command=command,
         seeded_setup=seeded,
         websocket=websocket,
+        filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
     )
 
 

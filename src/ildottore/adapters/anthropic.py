@@ -137,6 +137,8 @@ class AnthropicAdapter(BaseAdapter):
     anthropic_version: str = _ANTHROPIC_VERSION
     #: False for a model that takes no ``temperature`` or ``top_p`` (u12 A-68): neither is sent.
     sampling_enabled: bool = True
+    #: The target file's ``filter_stops`` (u04 A-79), ``None`` when it declares none.
+    declared_filter_stops: frozenset[str] | None = None
     #: A 400 that names a sampling parameter is refused in words that name the capability.
     sends_sampling: ClassVar[bool] = True
 
@@ -159,9 +161,12 @@ class AnthropicAdapter(BaseAdapter):
 
         The Messages API documents no other filter stop, so ``content_filter`` or ``SAFETY`` in a
         reply is an ordinary stop, and so is Azure's HTTP 400 ``content_filter`` body: an
-        undocumented 4xx, which stops the campaign as any other does.
+        undocumented 4xx, which stops the campaign as any other does. A target file that declares
+        ``filter_stops: []`` (an endpoint that speaks the API and is not Anthropic) reads none.
         """
 
+        if self.declared_filter_stops is not None:
+            return self.declared_filter_stops
         return ANTHROPIC_FILTER_STOPS
 
     @property
