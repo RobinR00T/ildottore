@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import re
 import zlib
 from abc import ABC, abstractmethod
@@ -40,7 +41,7 @@ from typing import Any, ClassVar, cast
 import httpx
 
 from ildottore.policy import EndpointAllowlist
-from ildottore.redactor import Redactor, registered_secrets
+from ildottore.redactor import Redactor, mask_split, redact_split, registered_secrets
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
@@ -252,15 +253,36 @@ def _clean_cut(text: str, cut: int) -> int:
     return start
 
 
+def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:
+    """``body``, or, when it is JSON holding a value split over the items of a list, that JSON
+    written again with the value masked (:func:`ildottore.redactor.mask_split`, A-77).
+
+    A WebSocket turn with no text is quoted as its frames, and a reply in the wrong shape as
+    its body: a secret streamed in deltas, or kept as tokens, was redacted piece by piece and
+    rebuilt from the excerpt (audit of main de122e26, HIGH 1). A body that is not JSON, or holds
+    no such value, is returned as it is, so its excerpt is byte for byte what it was.
+    """
+
+    try:
+        parsed = well_formed_json(bounded_loads(body))
+    except ValueError:
+        return body
+    masked = mask_split(redactor, parsed)
+    return body if masked is parsed else json.dumps(masked)
+
+
 def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
     """``(excerpt, size)``: the start of ``body`` for review, redacted, and its size in bytes.
 
     Read over twice what is kept, cut where no credential and no short key-shaped token crosses
     (:func:`_clean_cut`), redacted, then cut to :data:`UNREADABLE_EXCERPT_BYTES`, so a credential
     is masked whole before the last cut takes part of its mask; bytes that are not UTF-8 read as
-    U+FFFD, and no cut splits a character.
+    U+FFFD, and no cut splits a character. A JSON body holding a value split over the items of
+    a list is read with it masked (:func:`_split_masked`); the size is the body's as it came.
     """
 
+    size = len(body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body))
+    body = _split_masked(body, redactor)
     data = body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body)
     cut = min(len(data), 2 * UNREADABLE_EXCERPT_BYTES)
     while 0 < cut < len(data) and data[cut] & 0xC0 == 0x80:  # not inside a character
@@ -270,7 +292,7 @@ def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
     window = head + data[cut : cut + 4 * max(longest, _SHORT_TOKEN_HEAD)].decode("utf-8", "replace")
     kept = window[: _clean_cut(window, len(head))]
     shown = redactor.redact_text(kept).encode("utf-8")[:UNREADABLE_EXCERPT_BYTES]
-    return shown.decode("utf-8", "ignore"), len(data)
+    return shown.decode("utf-8", "ignore"), size
 
 
 class AdapterProductError(AdapterError):
@@ -690,16 +712,18 @@ def redact_ids(redactor: Redactor, ids: Mapping[str, Any]) -> dict[str, Any]:
     The ``model`` echo, when it is a string, is a model name, not an opaque id: it skips the
     entropy rule (patterns and known credentials still apply). Mixed-case names such as
     ``meta-llama/Meta-Llama-3-8B-Instruct`` were masked as high-entropy before the
-    fingerprint's metadata layer could read them (audit of the fingerprint). This is in
-    memory only: the evidence store, the run store and the reports apply their own full
-    redactor to everything they keep. Shared by the HTTP adapters and the WebSocket one.
+    fingerprint's metadata layer could read them (audit of the fingerprint). A value split over
+    the items of a list (a WebSocket transcript's deltas) is masked as the text it makes
+    (:func:`ildottore.redactor.redact_split`, A-77). This is in memory only: the evidence store,
+    the run store and the reports apply their own full redactor to everything they keep. Shared
+    by the HTTP adapters and the WebSocket one.
     """
 
     model = ids.get(_MODEL_ID)
     if not isinstance(model, str):  # a nested value gets the full redactor
-        return cast("dict[str, Any]", redactor.redact(dict(ids)))
+        return cast("dict[str, Any]", redact_split(redactor, dict(ids)))
     rest = {key: value for key, value in ids.items() if key != _MODEL_ID}
-    redacted = cast("dict[str, Any]", redactor.redact(rest))
+    redacted = cast("dict[str, Any]", redact_split(redactor, rest))
     redacted[_MODEL_ID] = redactor.without_entropy().redact_text(model)
     return {key: redacted[key] for key in ids}
 
