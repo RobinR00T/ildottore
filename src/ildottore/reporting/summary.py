@@ -57,6 +57,7 @@ from ildottore.shared.provider_filter import (
     filter_side_unknown,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.unreadable import unreadable_attempt_ids
 
 __all__ = [
     "ATLAS_MATRIX_RELEASE",
@@ -266,6 +267,9 @@ class RunSummary:
     #: OD-42: replies the provider's output filter cut, and ones it stopped on an unsaid side.
     output_filter: FilterCuts = field(default_factory=FilterCuts)
     filter_side_unknown: FilterCuts = field(default_factory=FilterCuts)
+    #: OD-21 (u11's half of u08 A-74): replies the adapter could not read as the provider's,
+    #: counted the same way. Never a pass of the model either: a spec with one is inconclusive.
+    unreadable: FilterCuts = field(default_factory=FilterCuts)
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -515,6 +519,8 @@ def build_run_summary(
     cut_specs: set[str] = set()
     unsaid = 0
     unsaid_specs: set[str] = set()
+    unread = 0
+    unread_specs: set[str] = set()
 
     for finding in findings:
         filtered = len(blocked_attempt_ids(finding.attempts))
@@ -529,6 +535,10 @@ def build_run_summary(
         if stopped:
             unsaid += stopped
             unsaid_specs.add(finding.spec_id)
+        broken = len(unreadable_attempt_ids(finding.attempts))
+        if broken:
+            unread += broken
+            unread_specs.add(finding.spec_id)
         by_status[finding.status.value] += 1
         by_band[finding.risk.band.value] += 1
         # A spec nothing was sent for (a capability skip, a policy block) measured nothing, so
@@ -574,6 +584,7 @@ def build_run_summary(
         provider_filter=FilterBlocks(attempts=blocked, specs=tuple(sorted(blocked_specs))),
         output_filter=FilterCuts(attempts=cut, specs=tuple(sorted(cut_specs))),
         filter_side_unknown=FilterCuts(attempts=unsaid, specs=tuple(sorted(unsaid_specs))),
+        unreadable=FilterCuts(attempts=unread, specs=tuple(sorted(unread_specs))),
     )
 
 

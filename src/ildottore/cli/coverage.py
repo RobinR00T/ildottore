@@ -32,7 +32,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ildottore.cli import wiring
-from ildottore.redactor import visible_controls
+from ildottore.redactor import log_safe_json, visible_controls
 from ildottore.reporting.summary import (
     AxisCoverage,
     BatteryCoverage,
@@ -229,4 +229,5 @@ def render_coverage_json(
             for a in axes
         ],
     }
-    return json.dumps(payload, indent=2, sort_keys=True)
+    # The same data, with no CI log command in its bytes (OD-20).
+    return log_safe_json(json.dumps(payload, indent=2, sort_keys=True))

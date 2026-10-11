@@ -243,11 +243,12 @@ def test_a_refused_request_is_a_4xx_status(status: int, refused: bool) -> None:
     the prompt; an error with no status (a reply that is not JSON) is not either."""
 
     from ildottore.adapters import AdapterProductError, AdapterStatusError
-    from ildottore.adapters.base import ResponseTooLarge
+    from ildottore.adapters.base import ResponseMalformed, ResponseTooLarge
     from ildottore.cli.wiring import refused_request
 
     error = AdapterStatusError(f"t: non-retryable HTTP {status}", status_code=status)
     assert isinstance(error, AdapterProductError)
     assert refused_request(error) is refused
-    assert refused_request(AdapterProductError("t: success response was not valid JSON")) is False
+    assert refused_request(AdapterProductError("t: MCP initialize error: {}")) is False
+    assert refused_request(ResponseMalformed("t: success response was not valid JSON")) is False
     assert refused_request(ResponseTooLarge("t: too large")) is False

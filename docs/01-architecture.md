@@ -90,13 +90,14 @@ class Evaluator(Protocol):
     #              inconclusive_reason: capability_unavailable|blocked_by_policy|
     #                                   judge_compromised|blocked_by_provider_filter|
     #                                   cut_by_provider_output_filter|
-    #                                   provider_filter_side_unknown|None}
+    #                                   provider_filter_side_unknown|unreadable_reply|None}
     #   blocked_by_provider_filter (ADR-0011, OD-41): the provider's own input filter refused the
     #   prompt before the model saw it. cut_by_provider_output_filter and
     #   provider_filter_side_unknown (its amendment, OD-42): the provider's filter cut or replaced
     #   the reply, or stopped it on a side it did not report, so the model may have written what
-    #   the spec tests for (shared.provider_filter reads the stop reason). The runner sets the
-    #   three, no evaluator does.
+    #   the spec tests for (shared.provider_filter reads the stop reason). unreadable_reply
+    #   (ADR-0012, OD-21): the adapter could not read the reply as the provider's
+    #   (shared.unreadable). The runner sets the four, no evaluator does.
 
 class Mutator(Protocol):
     name: str

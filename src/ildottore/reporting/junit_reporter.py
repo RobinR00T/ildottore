@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from xml.etree import ElementTree as ET  # nosec B405
 
+from ildottore.redactor import log_safe_xml
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
 from ildottore.reporting.summary import RunSummary, finding_state
@@ -29,6 +30,7 @@ from ildottore.shared.provider_filter import (
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.unreadable import unreadable_attempt_ids
 
 __all__ = ["JunitReporter"]
 
@@ -74,6 +76,10 @@ class JunitReporter(BaseReporter):
         unsaid = len(side_unknown_attempt_ids(finding.attempts))
         if unsaid:
             counts += f" provider_filter_side_unknown={unsaid}"
+        # And the replies the adapter could not read (OD-21, u08 A-74), which never pass either.
+        unreadable = len(unreadable_attempt_ids(finding.attempts))
+        if unreadable:
+            counts += f" unreadable_reply={unreadable}"
         if finding.status is VerdictStatus.FAIL:
             failure = ET.SubElement(
                 case,
@@ -173,7 +179,8 @@ class JunitReporter(BaseReporter):
         root.set("errors", str(total_errors))
 
         ET.indent(root, space="  ")
-        body = ET.tostring(root, encoding="unicode")
+        # No CI log command in its bytes when printed (OD-20, as every JSON output).
+        body = log_safe_xml(ET.tostring(root, encoding="unicode"))
         return ('<?xml version="1.0" encoding="UTF-8"?>\n' + body + "\n").encode("utf-8")
 
 

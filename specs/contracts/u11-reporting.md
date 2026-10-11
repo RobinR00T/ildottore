@@ -76,7 +76,8 @@ the state in each result's `properties.state`.
   `RunSummary = {by_status, by_band, by_framework{owasp,atlas,nist}, model_comparison?,
   repro_distribution, confidence_distribution, confirmed_count, needs_review_count}` (as built
   also `coverage`, `status` and, since OD-41, `blocked_by_provider_filter: {attempts, specs}`;
-  since OD-42, `cut_by_provider_output_filter` and `provider_filter_side_unknown`, the same shape).
+  since OD-42, `cut_by_provider_output_filter` and `provider_filter_side_unknown`, the same shape;
+  since OD-21, `unreadable_reply`, the same shape too, u08 A-74).
 - SARIF: `sarif-2.1.0` root; one `run` per tool invocation; `results[]` with `ruleId`, `level`,
   `message`, `properties{band, risk_score, reproducibility, confidence, state}`.
 - JUnit: `<testsuites>`→`<testsuite name=framework>`→`<testcase name=spec_id>` with `<failure>`
@@ -169,6 +170,21 @@ kind `open`, state `needs_review`. With none blocked, only the JSON report chang
 and `[]`), so the golden JSON snapshot gains it and the SARIF, JUnit and HTML ones do not move.
 Checked by `tests/cli/test_provider_filter_campaign.py` (every format of one run, the JSON against
 the schema).
+
+**A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21; pre-merge audit of `598f0858`,
+HIGH 1) The replies the adapter could not read are counted apart in every format.** Such an attempt
+is never the model's refusal, and the reply that broke may be the one an attack changed (a wrapper
+whose JSON a quote in the model's output broke), so a report that folded it into "inconclusive", or
+let a majority outvote it, would hide the one attempt a reader must review. The summary
+(`RunSummary.unreadable`, read from the stored attempts by `shared.unreadable`) is
+`unreadable_reply: {attempts, specs}` in the JSON report, always emitted and optional in report-1.0
+(additively, as A-69's and A-70's keys); SARIF adds it to `runs[0].properties` and to a result's
+`properties`, and `; <k> of <n> attempt(s) whose reply could not be read as the provider's, which
+may be the one an attack changed: review them` to its message; a JUnit skip's or failure's
+`message` carries ` unreadable_reply=<k>`; the HTML summary prints `Unreadable replies: ...` under
+the counts. With none, only the JSON report changes (the key, with 0 and `[]`): the golden JSON
+snapshot gains it. Checked by `tests/cli/test_malformed_reply_campaign.py` (the JSON, SARIF, JUnit
+and HTML reports of one run with an unreadable reply).
 
 **A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The replies the provider's filter
 cut, or stopped on a side it did not report, are counted apart in every format.** Such an attempt

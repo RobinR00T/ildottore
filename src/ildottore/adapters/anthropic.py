@@ -21,7 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Final
 
-from ildottore.adapters.base import AdapterProductError, BaseAdapter
+from ildottore.adapters.base import BaseAdapter, ResponseMalformed
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
@@ -138,6 +138,15 @@ class AnthropicAdapter(BaseAdapter):
     sampling_enabled: bool = True
     #: A 400 that names a sampling parameter is refused in words that name the capability.
     sends_sampling: ClassVar[bool] = True
+
+    @property
+    def unreadable_advice(self) -> str:
+        """What to check when no reply reads as Anthropic's (OD-21, u08 A-74)."""
+
+        return (
+            "check that the target file's endpoint is the Anthropic Messages API and its provider "
+            "is anthropic"
+        )
 
     @property
     def _endpoint_path(self) -> str:
@@ -334,7 +343,7 @@ class AnthropicAdapter(BaseAdapter):
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
         content = payload.get("content")
         if not isinstance(content, list):
-            raise AdapterProductError(f"{self.id}: response has no content array")
+            raise ResponseMalformed(f"{self.id}: response has no content array; not evaluated")
 
         text_parts: list[str] = []
         tool_calls: list[dict[str, Any]] = []

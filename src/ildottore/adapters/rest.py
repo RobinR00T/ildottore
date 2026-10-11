@@ -17,7 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from ildottore.adapters.base import AdapterProductError, BaseAdapter
+from ildottore.adapters.base import BaseAdapter, ResponseMalformed
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 from ildottore.shared.provider_filter import INPUT_SIDE, OUTPUT_SIDE, UNKNOWN_SIDE, is_filter_stop
 
@@ -136,10 +136,24 @@ class RestAdapter(BaseAdapter):
     logprobs_enabled: bool = False
     multi_identity_enabled: bool = False
     multimodal_enabled: bool = False
+    #: What to check when no reply reads as the template's, set by whoever built the adapter: a
+    #: target file declares no template, so it is not told to check one (OD-21 audit, LOW 2).
+    advice: str | None = None
 
     @property
     def _endpoint_path(self) -> str:
         return self.template.path
+
+    @property
+    def unreadable_advice(self) -> str:
+        """What to check when no reply reads as the template says (OD-21, u08 A-74)."""
+
+        if self.advice is not None:
+            return self.advice
+        return (
+            "check the endpoint and the template's text_path "
+            f"({self.template.text_path!r}): the reply's text is read there"
+        )
 
     #: A REST template reads no tool calls from a reply (``tool_calls`` is always empty), so a
     #: seeded spec judged on its tool trace is not sent through it (OD-18 B).
@@ -205,7 +219,8 @@ class RestAdapter(BaseAdapter):
         references put the text (any other template is not reading a Gemini body, and a
         ``promptFeedback`` key in its reply is not Gemini's, pre-merge audit of ``3d739f3``, L3);
         no text at that path; and a ``blockReason`` in :data:`_GEMINI_PROMPT_BLOCKS`. Anything
-        else stays the product error it was. A body with text is a reply whatever else it holds.
+        else is a body with no text at the path, a :class:`ResponseMalformed` (it was a product
+        error until OD-21). A body with text is a reply whatever else it holds.
         """
 
         if not self.template.text_path.startswith(_GEMINI_TEXT_ROOT):
@@ -218,7 +233,23 @@ class RestAdapter(BaseAdapter):
             return None
         return "promptFeedback.blockReason", f"promptFeedback.blockReason {reason}"
 
+    @property
+    def reads_array_body(self) -> bool:
+        """A template whose ``text_path`` starts at an index reads a JSON array (Hugging Face's
+        Inference API answers ``[{"generated_text": ...}]``; pre-merge audit of 598f0858, LOW 2)."""
+
+        return self.template.text_path.split(".", 1)[0].lstrip("-").isdigit()
+
+    def _parse_array_response(self, payload: list[Any]) -> ModelResponse:
+        return self._parse_body(payload)
+
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
+        return self._parse_body(payload)
+
+    def _parse_body(self, payload: Any) -> ModelResponse:
+        """The reply read at the template's paths, from an object or, rooted at an index, an
+        array (``get_path`` indexes a list)."""
+
         finish_reason = None
         if self.template.finish_path is not None:
             candidate = get_path(payload, self.template.finish_path)
@@ -235,11 +266,12 @@ class RestAdapter(BaseAdapter):
             # runner never reads as the model's answer. Read at ``finish_path`` only, as before.
             text = ""
         if text is None:
-            raise AdapterProductError(
-                f"{self.id}: response missing text at path {self.template.text_path!r}"
+            raise ResponseMalformed(
+                f"{self.id}: response missing text at path {self.template.text_path!r}; "
+                "not evaluated"
             )
         if not isinstance(text, str):
-            raise AdapterProductError(f"{self.id}: response text is not a string")
+            raise ResponseMalformed(f"{self.id}: response text is not a string; not evaluated")
 
         ids: dict[str, Any] = {}
         if self.template.id_path is not None:

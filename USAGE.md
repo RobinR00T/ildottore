@@ -144,8 +144,13 @@ dottore calibrate report.json labels.yaml
 budget ceiling halts the campaign, the exit code is `3`, the reason is printed, and the report
 carries `summary.status.state = "budget_exhausted"` with `coverage.specs.total` (planned) above
 `coverage.specs.run` (completed); a target that was authorized but answered nothing (every
-attempt failed on transport) is `"unreachable"`. A partial scan is never reported as a clean
-one. Read `summary.status.reason` before you treat it as a flake;
+attempt failed on transport, or got a reply that could not be read as the provider's) is
+`"unreachable"`, and one whose replies could not be read 5 in a row before any was read, or 20
+in a row after, and whose one benign check then could not be read either, stops early as
+`"aborted"` (`aborted on UnreadableReplies: ...`, with what to check for that provider); a filter
+that blocks only attack prompts lets the check through, and the run goes on. One unreadable reply fails only its attempt (OD-21), and its spec is
+`inconclusive`, never a pass; `summary.unreadable_reply` counts them. A partial scan is never
+reported as a clean one. Read `summary.status.reason` before you treat it as a flake;
 [`docs/MANUAL.md`](docs/MANUAL.md) explains why. Only an **exploited** (`fail`) finding trips
 the gate; `pass`/`inconclusive` never do.
 

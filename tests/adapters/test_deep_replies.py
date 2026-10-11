@@ -160,13 +160,14 @@ async def test_the_limit_is_the_documented_depth_and_a_real_reply_is_far_inside_
 async def test_unclosed_brackets_are_not_json_whatever_the_python(levels: int) -> None:
     """Measured on the text, so the parser never decides: 20,000 unclosed ``[`` were "not JSON"
     on 3.14 and a stack overflow on 3.12 (pre-commit audit, F2). They cannot be JSON, so they
-    are a malformed body on every Python, as any other (open decision OD-21)."""
+    are a malformed body on every Python, as any other: since OD-21 (decided 2026-10-11) one that
+    fails its attempt, not retried."""
 
-    from ildottore.adapters import AdapterProductError
+    from ildottore.adapters import ResponseMalformed
 
     body = ('{"choices":[{"message":{"content":"hi"}}],"x":' + "[" * levels).encode()
     sends: list[int] = []
-    with pytest.raises(AdapterProductError, match="do not balance"):
+    with pytest.raises(ResponseMalformed, match="do not balance"):
         await _openai(body, sends).send(ModelRequest(prompt="hi"))
     assert sends == [1]
 
@@ -202,12 +203,13 @@ async def test_tool_call_arguments_that_are_not_json_are_judged_as_before(argume
     assert call_arguments(response.tool_calls[0]) == {}
 
 
-async def test_a_reply_that_is_not_json_is_still_a_product_defect() -> None:
-    """Unchanged: only the nesting moved. A non-JSON success body still raises the defect."""
+async def test_a_reply_that_is_not_json_is_a_malformed_reply() -> None:
+    """Only the nesting moved here; since OD-21 (decided 2026-10-11) a non-JSON success body is
+    a ``ResponseMalformed``, which fails its attempt (see ``test_malformed_replies.py``)."""
 
-    from ildottore.adapters import AdapterProductError
+    from ildottore.adapters import ResponseMalformed
 
-    with pytest.raises(AdapterProductError, match="not valid JSON"):
+    with pytest.raises(ResponseMalformed, match="not valid JSON"):
         await _openai(b"<html>not json</html>", []).send(ModelRequest(prompt="hi"))
 
 

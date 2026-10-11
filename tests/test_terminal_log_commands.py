@@ -371,13 +371,18 @@ def test_the_resume_note_writes_a_stored_scope_entry_out(
 
 
 @pytest.mark.parametrize("command", ["coverage", "lint"])
-def test_json_output_keeps_the_value_as_it_is(tmp_path: Path, command: str) -> None:
-    """JSON is data for a program, not a log line for a reader: its values are not rewritten.
-    Printed to a CI log it still carries the prefix (an open decision, see CHANGELOG)."""
+def test_json_output_keeps_the_value_and_writes_the_hash_as_its_json_escape(
+    tmp_path: Path, command: str
+) -> None:
+    """JSON is data for a program: its values are not rewritten, so the text escape (`\\x23`) is
+    not used there. Since OD-20 (decided 2026-10-11) the bytes write that `#` as `\\u0023`, which
+    every JSON reader parses as `#`, so printed to a CI log they carry no command either
+    (`tests/test_json_log_commands.py` checks every JSON output)."""
 
     name = _FILE_NAMES[0]
     result = CliRunner().invoke(app, [command, "--json", str(_broken_pack(tmp_path, name))])
     payload = json.loads(result.stdout)
     assert name in json.dumps(payload, ensure_ascii=False)
-    assert _RAW_PREFIX.search(result.stdout), "the bytes still carry it: OD-20 is open"
+    assert _commands(result.stdout) == [], result.stdout
+    assert "#\\u0023[error" in result.stdout
     assert "#\\\\x23" not in result.stdout

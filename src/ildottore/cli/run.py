@@ -94,6 +94,11 @@ from ildottore.shared.provider_filter import (
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.unreadable import (
+    UNREADABLE_REPLY_KEY,
+    unreadable_attempt_ids,
+    unreadable_reply,
+)
 
 __all__ = [
     "CATEGORY_ALIASES",
@@ -1856,7 +1861,18 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         elif not opts.quiet:
             done, again = resume_progress(resume_from)
             unjudged = len(unjudged_attempt_ids(resume_from))
-            errored = again - unjudged
+            # OD-21: a reply the adapter could not read is sent again (the target may have been
+            # fixed since), and said apart from the environment errors.
+            kept_now = answered_attempt_ids(resume_from)
+            unread = len(
+                unreadable_attempt_ids(
+                    a
+                    for finding in resume_from.findings
+                    for a in finding.attempts
+                    if a.attempt_id not in kept_now
+                )
+            )
+            errored = again - unjudged - unread
             # OD-41: a prompt the provider's input filter refused would be refused again.
             # Only among the attempts it keeps: a cut reply stored without a verdict is sent again,
             # and was counted as kept for review beside "will be sent again" (verification of
@@ -1873,10 +1889,18 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             trimmed = len(cut_attempt_ids(prior_attempts)) + len(
                 side_unknown_attempt_ids(prior_attempts)
             )
+            # It keeps none when every stored attempt is sent again: "keeps 0 attempt(s) across 4
+            # spec(s)" read as a resume with nothing to do (verification of 07aa0b3a, LOW 2).
+            keeps = (
+                f"keeps {done} attempt(s) across {len(resume_from.findings)} spec(s) (answered, "
+                "or failed in a way a retry would repeat); they will not be re-sent"
+                if done
+                else f"keeps none of the {again} attempt(s) it stored across "
+                f"{len(resume_from.findings)} spec(s) (none was answered, or failed in a way a "
+                "retry would repeat)"
+            )
             print(
-                f"resume: {opts.resume} keeps {done} attempt(s) across "
-                f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
-                "would repeat); they will not be re-sent"
+                f"resume: {opts.resume} {keeps}"
                 + (
                     f"; {blocked} of them the provider's input filter refused, kept as blocked"
                     if blocked
@@ -1893,6 +1917,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     if errored
                     else ""
                 )
+                + (f"; {unread} that could not be read will be sent again" if unread else "")
                 + (
                     f"; {unjudged} answered but not evaluated before the halt will be sent again"
                     if unjudged
@@ -2378,6 +2403,10 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     A prompt the provider's input filter refused is not a transport failure (OD-41): the
     provider answered it. A run whose every attempt it refused is complete, its specs
     inconclusive, and the summary counts the blocked attempts; it is not "unreachable".
+
+    A reply the adapter could not read (``ResponseMalformed``, OD-21) fails its attempt; a run
+    of fewer attempts than the runner's stop (u08 A-74) that got only such replies, or such
+    replies and transport failures, evaluated nothing either, and the reason says which.
     """
 
     attempts = [a for finding in result.findings for a in finding.attempts]
@@ -2388,6 +2417,24 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
         for a in attempts
     ):
         return None
+    # By the attempt's own record (its verdict's reason, or its error's mark), never by the
+    # error's class name (pre-merge audit of 598f0858, LOW 3).
+    unreadable = [a for a in attempts if unreadable_reply(a)]
+    if unreadable:
+        what = (
+            "got a reply that could not be read as the provider's"
+            if len(unreadable) == len(attempts)
+            else f"failed on transport or ({len(unreadable)} of them) with a reply that could "
+            "not be read as the provider's"
+        )
+        kept = (unreadable[0].request.metadata or {}).get(UNREADABLE_REPLY_KEY)
+        advice = kept.get("advice") if isinstance(kept, dict) else None
+        if not isinstance(advice, str):
+            advice = "check the target file's endpoint and provider"
+        return (
+            f"every one of the {len(attempts)} attempt(s) {what}, so nothing was evaluated: "
+            f"{advice}. The first: {unreadable[0].error}"
+        )
     first = next((a.error for a in attempts if a.error), "no response")
     return (
         f"every one of the {len(attempts)} attempt(s) failed on transport, so nothing was "

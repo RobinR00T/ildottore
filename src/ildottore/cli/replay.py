@@ -19,6 +19,7 @@ from ildottore.shared.provider_filter import (
     cut_by_output_filter,
     filter_side_unknown,
 )
+from ildottore.shared.unreadable import unreadable_reply
 from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
 
 __all__ = ["render_replay", "replay", "replay_checked"]
@@ -91,6 +92,8 @@ def render_replay(result: ReplayResult) -> str:
             status = f"{status} (cut_by_provider_output_filter)"
         elif filter_side_unknown(attempt):
             status = f"{status} (provider_filter_side_unknown)"
+        elif unreadable_reply(attempt):  # OD-21: the adapter could not read what came back
+            status = f"{status} (unreadable_reply)"
         # Read back from the evidence tree, written out as every other stored text is.
         fields = visible_controls(f"{attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}")
         lines.append(f"  {fields}  {status}")
@@ -130,6 +133,13 @@ def render_replay(result: ReplayResult) -> str:
             f"  {cut} of {result.n} attempt(s) the provider's output filter cut or replaced "
             "(cut_by_provider_output_filter): counted in N and never a success; the model may "
             "have written what the filter hid, so review them"
+        )
+    unread = result.unreadable_replies()
+    if unread:
+        lines.append(
+            f"  {unread} of {result.n} attempt(s) whose reply could not be read as the provider's "
+            "(unreadable_reply): counted in N and never a success; each keeps an excerpt for "
+            "review"
         )
     unsaid = result.provider_filter_side_unknown()
     if unsaid:

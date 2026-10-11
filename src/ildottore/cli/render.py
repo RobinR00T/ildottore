@@ -149,6 +149,7 @@ def coverage_lines(
     blocked = summary.provider_filter
     cut = summary.output_filter
     unsaid = summary.filter_side_unknown
+    unread = summary.unreadable
     return [
         (
             f"Coverage - OWASP LLM Top 10 ({OWASP_LLM_EDITION}): "
@@ -184,8 +185,9 @@ def coverage_lines(
                 "could not carry; or a reply that never reached the tool carrying the scene; or "
                 "every send ended in an environment error, such as a network "
                 "failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could "
-                "not be decoded or one nested too deeply, or was refused by the provider's input "
-                "filter, or stopped by its filter on a side it did not report), so their "
+                "not be decoded or one nested too deeply or could not be read, or was refused by "
+                "the provider's input filter, or stopped by its filter on a side it did not "
+                "report), so their "
                 "framework codes are NOT counted as covered"
             ]
             if cov.not_exercised
@@ -224,6 +226,19 @@ def coverage_lines(
                 + ")"
             ]
             if unsaid.attempts
+            else []
+        ),
+        # OD-21 (u08 A-74): never a pass, so never silent: the reply that broke may be the one an
+        # attack changed, and a target that broke mid-run reads a run of them.
+        *(
+            [
+                f"Unreadable replies: {unread.attempts} attempt(s) in {len(unread.specs)} spec(s) ("
+                + ", ".join(unread.specs)
+                + ") got a reply that could not be read as the provider's; inconclusive, never a "
+                "pass: each keeps an excerpt for review under request.metadata.unreadable_reply, "
+                "and a resume sends them again"
+            ]
+            if unread.attempts
             else []
         ),
         *(
