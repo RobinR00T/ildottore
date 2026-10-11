@@ -161,11 +161,12 @@ produces a real split and the plan comes out in a different order, through the r
 real mutators and the real planner. It is a **simulated decoder, not a model**: it proves the
 chain, not how any given model behaves, and the docs say so where the claim is made. It also may not buy the measurement with a **verdict**: whatever the plain
 `bare` mock decides, the decoding one decides identically, spec by spec over the shipped
-battery. (The first version of this clause said "every spec stays inconclusive", which is false
-and always was: three specs decide against any fixed-string offline target because their
-oracles read only the response text. The test asserted it over one spec the test itself built,
-so it could not find that out. Both are fixed: the property is differential now, and measured
-against `specs/`.) What this file checks is the **ordering**; the scoring discriminators
+battery. (The first version of this clause said "every spec stays inconclusive", which was false
+then: three specs decided against any fixed-string offline target because their oracles read
+only the response text. The test asserted it over one spec the test itself built, so it could not
+find that out. Both are fixed: the property is differential now, and measured against `specs/`.
+Since the three oracles were repaired, the last two on 2026-10-11 (OD-16, ADR-0007), the set of
+specs that decide is empty, and the test pins that too.) What this file checks is the **ordering**; the scoring discriminators
 (the echo tell, the zero-width strip, marker invariance) are pinned by
 `tests/fingerprint/test_carrier_layer.py`, each one individually since 2026-09-22, because an
 audit removed all three at once and the suite stayed green. Checked by

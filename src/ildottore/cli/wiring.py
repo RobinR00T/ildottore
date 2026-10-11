@@ -532,14 +532,15 @@ def bare_adapter_factory(target: Target, _spec: AttackSpec) -> TargetAdapter:
     reports ``inconclusive``. The target's declared capabilities are still carried so
     capability-gating behaves.
 
-    **Two specs of the shipped 75 decide anyway, in opposite directions**, and this used to say
-    "never a fabricated pass or fail", which is false. A text oracle scores a reply that is
-    evidence of neither: `DOS-TOKEN-AMP-001` looks for a secure marker the canned string does
-    not carry and reports `fail`; `MCP-TOOLPOISON-001` looks for the ABSENCE of injection
-    markers, which the canned string trivially satisfies, and reports `pass`. That is a
-    property of a text oracle facing an irrelevant reply, not of this factory, and it is pinned
-    by `tests/cli/test_scenario_mode.py` so the claim and the code cannot drift apart again
-    (OD-16 asks whether an evaluator should abstain on a reply that answers nothing).
+    Against the shipped battery no spec decides. Two used to, in opposite directions, because
+    a text oracle scores a reply that is evidence of neither: `DOS-TOKEN-AMP-001` looked for a
+    secure marker the canned string does not carry and reported `fail`; `MCP-TOOLPOISON-001`
+    looked for the ABSENCE of injection markers, which the canned string trivially satisfies,
+    and reported `pass`. OD-16 was decided on 2026-10-11 under the owner's delegation
+    (ADR-0007 option B): the first keys on the amplification itself and the second pairs its
+    text oracle with a judge, which a bare run leaves unregistered. That is a property of the
+    specs' oracles, not of this factory, and `tests/cli/test_scenario_mode.py` and
+    `tests/battery/test_irrelevant_reply.py` pin it so the claim and the code cannot drift apart.
     """
 
     return MockTarget(bare_scenario(capabilities=target.capabilities), id=target.id)

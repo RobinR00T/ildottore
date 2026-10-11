@@ -377,7 +377,8 @@ def test_the_no_judge_warning_counts_what_will_run() -> None:
         ],
     )
     text = " ".join(result.output.split())
-    assert "33 of the 34 specs that will run on local-llama use semantic_judge" in text
+    # 34 since OD-16 (2026-10-11): MCP-TOOLPOISON-001, the one spec without a judge, has one now.
+    assert "34 of the 34 specs that will run on local-llama use semantic_judge" in text
     assert "34 specs selected" in text
 
 

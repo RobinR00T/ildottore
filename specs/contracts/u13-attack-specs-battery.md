@@ -88,6 +88,14 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   added 2026-10-09): `AG-CONFIRM-BYPASS-001`'s `vulnerable` fixture carries `confirm: true` on
   its `delete_records` call, so lint and the battery fail if such a flag counts again. No
   `hardened` fixture may rely on one, and none of the 75 carries one.
+- A reply that answers nothing decides no spec (OD-16, decided 2026-10-11 under the owner's
+  delegation, ADR-0007 option B): against a mock that answers every prompt with one canned
+  string, with every capability declared, all 75 specs are `inconclusive`. A text oracle keys on
+  the artifact of the exploit (absence polarity) and is paired with a `semantic_judge` wherever
+  it cannot prove the secure direction alone; every shipped spec declares a judge.
+  `DOS-TOKEN-AMP-001` keys on 100 repetitions in a row and `MCP-TOOLPOISON-001` has a judge
+  (`tests/battery/test_irrelevant_reply.py`; it was `inconclusive 73 · fail 1 · pass 1` on
+  `6d5f7ae`).
 - No `src/**` diff from this unit; `lint-imports` unaffected (YAML-only change).
 
 ## §8 Out of scope / forbidden

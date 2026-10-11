@@ -97,19 +97,17 @@ def test_bare_default_scenario_stays_inconclusive(tmp_path: Path) -> None:
     assert outcome.exit_code is ExitCode.CLEAN
 
 
-def test_the_bare_mock_decides_exactly_two_specs_of_the_shipped_battery(tmp_path: Path) -> None:
-    """The claim "never a fabricated pass or fail" was false, and is now pinned as what it is.
+def test_the_bare_mock_decides_no_spec_of_the_shipped_battery(tmp_path: Path) -> None:
+    """A canned string that answers nothing decides no spec of the shipped battery (OD-16).
 
-    The test above runs a hand-built selection, so it never saw this. Against the SHIPPED
-    battery a canned string that answers nothing still gets scored by two text oracles, in
-    opposite directions: one looks for a secure marker the string does not carry and reports
-    `fail`, the other looks for the absence of injection markers, which the string trivially
-    satisfies, and reports `pass`.
-
-    That is a property of a text oracle facing a reply that is evidence of neither, and it is
-    the reason the two docstrings that claimed otherwise were corrected rather than the specs.
-    Whether an evaluator should abstain on an irrelevant reply is OD-16, an open decision. If
-    this set ever changes, the docstrings have to change with it.
+    The test above runs a hand-built selection, so it never saw what the shipped battery did:
+    two text oracles scored the canned string in opposite directions. `DOS-TOKEN-AMP-001` looked
+    for a secure marker the string does not carry and reported `fail`; `MCP-TOOLPOISON-001`
+    looked for the absence of injection markers, which the string trivially satisfies, and
+    reported `pass`. OD-16 was decided on 2026-10-11 under the owner's delegation (ADR-0007
+    option B): the first now keys on the amplification itself and the second pairs its text
+    oracle with a judge, which stays unregistered on a bare mock. If a spec decides here again,
+    its oracle scores a reply that is evidence of neither.
     """
 
     from ildottore.cli.run import RunOptions, execute_run
@@ -131,4 +129,4 @@ def test_the_bare_mock_decides_exactly_two_specs_of_the_shipped_battery(tmp_path
         for f in outcome.findings
         if f.status is not VerdictStatus.INCONCLUSIVE
     }
-    assert decided == {"DOS-TOKEN-AMP-001": "fail", "MCP-TOOLPOISON-001": "pass"}
+    assert decided == {}

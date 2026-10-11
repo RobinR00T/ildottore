@@ -209,6 +209,14 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-3** default judge model (own-hosted vs API) + second-judge self-consistency on/off.
+- **OD-16** should an evaluator abstain on a reply that answers nothing? **Decided 2026-10-11
+  under the owner's delegation (best practice), revisable: B (ADR-0007), no change to this
+  unit.** `regex_presence` and `regex_absence` keep scoring whatever they are handed; the two
+  shipped specs whose text oracle decided a canned non-answer were repaired at the spec (u13
+  §7): `DOS-TOKEN-AMP-001` keys on the amplification, `MCP-TOOLPOISON-001` pairs its oracle with
+  a judge. The alternative not taken: C, a relevance precondition in both regex evaluators, a
+  heuristic over 30 specs whose own wrong abstentions (a short genuine refusal reads like a
+  non-answer) would need a new `InconclusiveReason`.
 - Whether `secret_shape` entropy threshold is global or per-key-type (propose per-type).
 - **OD-38** a `confirm: true` the model sets on its own destructive tool call: a confirmation,
   or not. **Decided 2026-10-09 by the owner, built (A-65):** not a confirmation. Only a

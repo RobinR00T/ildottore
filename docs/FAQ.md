@@ -196,7 +196,12 @@ MCP adapter: it performs the JSON-RPC `initialize` handshake and lists the serve
 resources and prompts, then renders that advertised metadata for evaluation. It never calls a
 tool (`tools/call`), invoking a target's tools could have real side effects, so discovery is
 read-only by design. Point the `mcp` suite at such a target for the tool-metadata-poisoning
-("line jumping") check.
+("line jumping") check. A poisoned description fails with or without a judge; a clean listing
+passes only with `--judge`, and is `inconclusive` without one (since 2026-10-11, OD-16: the text
+check alone passed any reply without an injection marker, one that lists nothing included).
+Nothing stops `MCP-TOOLPOISON-001` from running against a chat model, which receives the
+discovery request as a prompt; its verdict there says nothing about MCP, so select the `mcp`
+suite only for an MCP target.
 
 ### My assistant only talks over a WebSocket. Can I scan it?
 

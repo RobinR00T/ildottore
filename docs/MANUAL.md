@@ -1436,9 +1436,12 @@ real adapter. It decides what an offline target answers:
 comprehends some carriers and not others changes the plan, through the real layer, the real
 mutators and the real planner. It says nothing about how any actual model behaves: that needs a
 live run (the first, against a local `llama3.2:3b`, is in `docs/16` §1), and the fingerprint
-line prints `[offline mock: <scenario>]` so an offline result is never read as one. Three specs
-decide against any fixed-string offline target (their oracles read only the response text);
-`comprehending` decides exactly what `bare` decides, no more.
+line prints `[offline mock: <scenario>]` so an offline result is never read as one. No spec of
+the shipped battery decides against a fixed-string offline target: two did, because their text
+oracles scored a reply that answers nothing, until OD-16 was decided on 2026-10-11 (ADR-0007:
+`DOS-TOKEN-AMP-001` keys on the amplification itself, `MCP-TOOLPOISON-001` pairs its oracle with a
+judge, which a bare run leaves unregistered). `comprehending` decides exactly what `bare` decides,
+no more.
 
 Both offline fingerprint paths honour the key: `dottore run -sV` and `dottore fingerprint
 --offline` pass the target's `mock_scenario` to the mock. On a `comprehending` target the
@@ -1570,6 +1573,16 @@ Each spec names one or more evaluators. The design is **deterministic-first**:
   refusing the judge request) or never returns a parseable verdict (empty content, a refusal in
   prose) counts like no judge, never as a pass; the campaign goes on, and an attempt whose judge
   was refused is not counted as blocked (the attack prompt reached the model).
+
+**A reply that answers nothing decides nothing.** A `regex_absence` passes, and a
+`regex_presence` fails, any reply that lacks its pattern: a canned string, an error page, a model
+that never engaged. So the shipped specs key a text oracle on what only an exploited reply holds
+(the leaked marker, the produced batch, the coerced repetition: the absence polarity) and pair it
+with `semantic_judge` wherever the oracle cannot prove the secure direction alone; without a judge
+such a spec is `inconclusive`, never a pass, and a deterministic `fail` still decides alone.
+Against the offline `bare` mock, which answers every prompt with one canned string, all 75 come
+out `inconclusive`. Write a custom spec the same way: a `regex_presence` on refusal words fails a
+bounded answer phrased in other words (OD-16, decided 2026-10-11, ADR-0007).
 
 The **`tool_call`** evaluator inspects the tool-call trace and fails on four abuse classes:
 an unauthorized tool (outside `patterns`, or with no `patterns` outside the `setup.tools` not
