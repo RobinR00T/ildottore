@@ -168,7 +168,9 @@ them, so a hand-off in the OpenAI Agents SDK's `transfer_to_<agent>` style reads
 In a spec of your own, mark that tool `destructive: false` in `setup.tools`: a call to that exact
 name is then not destructive, while `transfer_to_account`, which moves money, still is (no name
 is exempt by its shape). The flag clears only that check: a call off the allowlist, or with an
-injected or a forbidden argument, still fails. See MANUAL §8 (u06 A-71, 2026-10-11).
+injected or a forbidden argument, still fails. The verdict's reasoning names each called tool the
+scene cleared, and `dottore lint` warns when the cleared name is not shaped like a hand-off
+(`delete_account: destructive: false`). See MANUAL §8 (u06 A-71, 2026-10-11).
 
 A tool your deployment grants under `seeded_setup.granted_tools` is in no scene, so no spec can
 mark it. Your target file can: write the grant as `{name: transfer_to_billing_agent,

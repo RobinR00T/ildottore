@@ -110,7 +110,8 @@ concretes:
    target type, OD-18 option B: a spec with setup is `inconclusive` (`setup_not_seeded`) before
    the scene, with no send, when `setup_delivery.seeding_gap` names a reason (not declared in
    `seeded_setup.specs`; a per-run canary in the scene and no `run_token`; two of its scene tools
-   under one deployment name; asked of the spec before its canary is bound), or
+   under one deployment name; one of them mapped to the name of another, since 2026-10-11, u06
+   A-71's pre-merge audit; asked of the spec before its canary is bound), or
    `setup_delivery.trace_gap` (a trace spec through an adapter without `returns_tool_calls`)
    does, unless the adapter is an offline mock (`offline_mock`). A sent one binds `{{run_id}}` to
    `<run_token>-<spec id>` when its canary has to be seeded, records `setup_delivery: seeded`
@@ -420,9 +421,9 @@ declaration to the evaluators and to every verdict it changed.** `_evaluate` and
 `_trace_before_block` read `seeded_setup.granted_tools` and `seeded_setup.not_destructive` off the
 target and hand both to every evaluator's context; only `tool_call` reads the second. Only the
 aggregate is stored, and it says nothing of the `tool_call` verdict it combined ("all evaluators
-reported secure"), so `_note_operator_declaration` appends `; operator declaration (OD-43):
-'<tool>' not judged destructive, as the target file declares it (seeded_setup.granted_tools,
-destructive: false)` to the attempt's verdict, whatever its status, when the spec declares
+reported secure"), so `_note_operator_declaration` appends `; operator declaration (OD-43): the
+target file declares '<tool>' (its name holds '<verb>') not destructive (seeded_setup.granted_tools,
+destructive: false), so no call to it was judged destructive` to the attempt's verdict, whatever its status, when the spec declares
 `tool_call` and a call of the attempt is one the declaration cleared
 (`shared.tool_abuse.operator_cleared_calls`); a spec judged without `tool_call` gets no note, and
 `kill_chain_progression`'s verdict is the same with or without a declaration. The finding's

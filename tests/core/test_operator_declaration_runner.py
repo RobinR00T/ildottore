@@ -25,8 +25,9 @@ _HANDOFF = "transfer_to_billing_agent"
 #: Written out, so this module is collected on the base too and each test fails on its own there.
 OPERATOR_DECLARATION = "operator declaration (OD-43)"
 _NOTE = (
-    f"operator declaration (OD-43): {_HANDOFF!r} not judged destructive, as the target file "
-    "declares it (seeded_setup.granted_tools, destructive: false)"
+    f"operator declaration (OD-43): the target file declares {_HANDOFF!r} (its name holds "
+    "'transfer') not destructive (seeded_setup.granted_tools, destructive: false), so no call to "
+    "it was judged destructive"
 )
 
 

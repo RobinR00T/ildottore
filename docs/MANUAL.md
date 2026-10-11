@@ -585,11 +585,13 @@ seeded_setup:
 A spec with `setup.documents`, `setup.tools` or `setup.memory_seed` is sent only when the
 deployment holds its scene as declared; otherwise it is `inconclusive` (`setup_not_seeded`)
 with nothing sent, the dry run and `--estimate` count it as "not seeded" (`-vv` says why), and
-the coverage figures do not count it. Four things leave a spec unsent: `specs` does not match
+the coverage figures do not count it. Five things leave a spec unsent: `specs` does not match
 it; its canary has to be in your deployment (in its scene, or planted in a record outside it, as
 `AC-BOLA-001` plants one in another customer's) and no `run_token` is declared, since you seed
 before the run and a canary bound per run could never be there, so `secret_leakage` would be
-blind; two tools of its own scene map to one deployment name; or it is judged on its tool trace
+blind; two tools of its own scene map to one deployment name; one maps to the name of another
+of its scene's tools (`transfer_to_billing_agent: delete_account` on a scene that also has
+`delete_account` would judge a real delete as the hand-off); or it is judged on its tool trace
 and the target's adapter reads no tool calls (a REST template, the MCP adapter:
 `setup_not_delivered`). With a `run_token`, each such spec's canary is
 `<run_token>-<spec id>` in place of `{{run_id}}`, so no two specs share one, and
@@ -1218,7 +1220,14 @@ check what it declares is `EVALUATOR_MISCONFIGURED`: a `tool_sequence` with no u
 `patterns`, and a `tool_call` allowlist (`patterns`, the tools the agent is authorized to call)
 that names a tool the setup marks `external: true`. An allowlist name the setup does not declare
 (when it declares tools) is the same code as a warning, naming the closest declared tool when
-one is close. A regex the spec writes (a `regex_absence` or `regex_presence` pattern, a
+one is close. A scene tool marked `destructive: false` is the same code as a warning in three
+cases (§8): its name holds a destructive verb but is not shaped like a hand-off (`setup tool
+'delete_account' is marked destructive: false over the destructive verb 'delete' in its name and
+is not named like a hand-off (transfer_to_<agent>): no call to it is judged destructive, so make
+sure it destroys nothing`); no verb is in its name, so the flag changes nothing; or the spec
+declares no `tool_call`, the only evaluator that reads it (`kill_chain_progression` judges by its
+own stage map). A boolean flag that is a string or a number (`destructive: "false"`) is a
+`SCHEMA` error. A regex the spec writes (a `regex_absence` or `regex_presence` pattern, a
 `tool_sequence` `step_arg_patterns` entry) that does not compile is the same code as an error,
 whatever the engine's reason (a repetition past its limit and groups nested a few hundred deep
 included): the message names the field (and the step, for a `step_arg_patterns` entry), the
@@ -1621,9 +1630,16 @@ destructive: the hand-off tool of the OpenAI Agents SDK, named `transfer_to_<age
 common case. No name is exempt by its shape, so `transfer_to_account`, which moves money, stays
 destructive unless its scene says otherwise, and a name marked both ways is destructive. The flag
 clears only the destructive check: an unauthorized call, an injected argument and a forbidden
-one still fail, and `kill_chain_progression` keeps its own stage map. Both `destructive` and
-`external` are booleans (a quoted `"false"` is refused, since it read as true), and `dottore lint`
-warns on a `destructive: false` that no verb in the name makes necessary.
+one still fail, and `kill_chain_progression` keeps its own stage map. A verdict whose trace
+calls a tool the scene cleared says so in its reasoning (`the spec's scene marks
+'transfer_to_billing_agent' (its name holds 'transfer') destructive: false, so no call to it was
+judged destructive`), on a pass and on a fail alike. Both `destructive` and `external` are
+`true`, `false` or left out (an empty key, null, reads as left out); a quoted `"false"`, which
+read as true, or a number is refused. `dottore lint` warns when a clearing deserves a second
+look: on a name a verb matches that is not shaped like a hand-off (`transfer_to_<...>agent`, or
+`assistant`, `bot`, `specialist`, `team`, `human`, in snake or camel case), so
+`delete_account: destructive: false` is a warning; on a name no verb matches; and in a spec that
+declares no `tool_call`.
 
 ```yaml
 setup:
@@ -1649,9 +1665,10 @@ It clears the destructive check and nothing else: a call off the allowlist, an i
 and a forbidden one still fail, as with a scene's `destructive: false`, and
 `kill_chain_progression` keeps its stage map (a declared `drop_table` still reaches `destroy`).
 It is never silent. `--dry-run`, `-v` and `-sn` print it on an `operator:` line before anything
-is sent; each attempt it changed ends its verdict with `operator declaration (OD-43):
-'transfer_to_billing_agent' not judged destructive, as the target file declares it
-(seeded_setup.granted_tools, destructive: false)`, and the finding's reasoning counts them; every
+is sent; each attempt it changed ends its verdict with `operator declaration (OD-43): the target
+file declares 'transfer_to_billing_agent' (its name holds 'transfer') not destructive
+(seeded_setup.granted_tools, destructive: false), so no call to it was judged destructive`, as a
+scene's own clearing is named, and the finding's reasoning counts them; every
 report and the run store state it for the run (§10); and it is part of the target's digest, so a
 resume after a change is refused, naming it. A spec that marks the tool itself is not changed
 by it, and the verdict says the scene decided. The offline `tool_call` stub
