@@ -223,11 +223,14 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `kill_chain_progression` reads no declaration and keeps its stage map (a declared
   `drop_table` still reaches `destroy`); the lint stub has no target file and is unchanged. Each
   verdict the declaration changed says so, in the form of the scene's own clearing note (A-71):
-  `tool_call`'s ends `operator declaration (OD-43): the target file declares '<tool>' (its name
+  `tool_call`'s carries `operator declaration (OD-43): the target file declares '<tool>' (its name
   holds '<verb>') not destructive (seeded_setup.granted_tools, destructive: false), so no call to
   it was judged destructive` (`shared.tool_abuse.operator_note`, opened by
-  `OPERATOR_DECLARATION`), after the scene's note when both apply, and the runner puts the same
-  note on the stored aggregate (u08 half). A seeded name map cannot carry a call onto the
+  `OPERATOR_DECLARATION`), after the scene's note when both apply, with a structured
+  `Verdict.operator_cleared` naming the tools, which the reports count from instead of the text
+  (a judge or a tool's name can echo it; pre-merge audit of `ed381359`, L1); the runner puts the
+  same note and record on the stored aggregate, a conversation the input filter cut after such a
+  call and a reply the output filter cut included (u08 half, M1). A seeded name map cannot carry a call onto the
   declaration (the A-71 audit's L1, for the operator's word): a map renames a call only to a
   scene tool, which the declaration never reaches, and a scene tool mapped onto a declared name is
   refused by the loader and by `seeding_gap`. And it gets the second look lint gives a scene's

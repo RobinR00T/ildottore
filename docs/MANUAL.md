@@ -658,12 +658,14 @@ a call to that exact name by its name alone; a plain string entry still grants a
 nothing more. The entry holds `name` (text) and `destructive`, which must be the boolean `false`:
 a quoted `"false"`, `0` or `null` is refused as not a boolean (a scene's empty `destructive:`
 reads as left out, for the specs written before the flag was checked; this entry is new, and an
-empty one is a declaration half written), `true` is refused (a target file
-may say its own tool destroys nothing, and a spec's scene is where a tool is made destructive),
-and so are any other key (`external`, a misspelling), a missing or empty `name`, an entry that
-is neither a name nor such a mapping, a declared name also mapped under `tools` (that is a spec's
-scene tool, and the scene says for it), and a declared name granted twice. Every refusal names
-the file and the entry, never the value. The declaration clears only `tool_call`'s destructive
+empty one is a declaration half written), `true` is refused (a target file may say its own tool
+destroys nothing, and a spec's scene is where a tool is made destructive), and so are a mapping
+without `destructive` (a bare name is how a tool is only granted), any other key (`external`, a
+misspelling), a missing or empty `name`, one with a space at either end (names are compared
+exactly, so it would declare a tool nobody calls), an entry that is neither a name nor such a
+mapping, a declared name also mapped under `tools` (that is a spec's scene tool, and the scene
+says for it), and a declared name granted twice. Every refusal names the file and the entry,
+never the value. The declaration clears only `tool_call`'s destructive
 check, never for a tool of a spec's own scene, never `kill_chain_progression`'s stage map, and
 never an unauthorized call, an injected or a forbidden argument (§8); `--dry-run`, `-v` and `-sn`
 print it before anything is sent:
@@ -676,9 +678,14 @@ and say when a declared name holds no destructive verb, so the declaration chang
 or holds one and is not named like a hand-off, the second look `dottore lint` gives a scene's
 `destructive: false` (`purge_cache: declared not destructive over the destructive verb 'purge' in
 its name and not named like a hand-off (transfer_to_<agent>): no call to it is judged destructive,
-so make sure it destroys nothing`). A name map cannot carry a call onto the declaration: a map
-renames a call only to one of the spec's scene tools, where the scene decides, and a scene tool
-mapped onto a declared name is refused, by the loader and again before the spec is sent.
+so make sure it destroys nothing`), and when a granted name is one of a selected spec's scene
+tools but for case or Unicode form (`Delete_Account: granted, and the scene tool
+'delete_account' of AG-TOOL-UNAUTH-001 differs from it only in case or Unicode form; names are
+compared exactly, so a call under this name is the deployment's own tool there and that scene's
+word on its tool does not reach it: make sure the two are not one tool`). A name map cannot carry
+a call onto the declaration: a map renames a call only to one of the spec's scene tools, where
+the scene decides, and a scene tool mapped onto a declared name is refused, by the loader and
+again before the spec is sent.
 Under `-q` the dry run's one line ends `, 1 tool(s) declared not destructive`. Each attempt it
 changed says so in its verdict, every report states it (§10), and the run store records it.
 
@@ -1414,7 +1421,10 @@ dottore diff BASELINE CURRENT
 Both are JSON run reports (`-oJ` output) **of the same target**. Classifies each spec id as
 NEW-FAIL (regression), FIXED (was failing, now passes), UNVERIFIED (was failing, now
 inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits `2` when any
-regression is present, so it is CI-gateable like `run`. A report covering several targets, or
+regression is present, so it is CI-gateable like `run`. A FIXED the operator's declaration may
+have made (OD-43, §8: the current report has attempts of that spec the declaration changed, or
+the two reports declare different tools not destructive) reads `FIXED (operator declaration,
+OD-43)`, with a line naming those specs: the pass may be the operator's word, not the target's. A report covering several targets, or
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
 complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
@@ -1738,13 +1748,18 @@ It clears the destructive check and nothing else: a call off the allowlist, an i
 and a forbidden one still fail, as with a scene's `destructive: false`, and
 `kill_chain_progression` keeps its stage map (a declared `drop_table` still reaches `destroy`).
 It is never silent. `--dry-run`, `-v` and `-sn` print it on an `operator:` line before anything
-is sent; each attempt it changed ends its verdict with `operator declaration (OD-43): the target
+is sent; each attempt it changed carries in its verdict `operator declaration (OD-43): the target
 file declares 'transfer_to_billing_agent' (its name holds 'transfer') not destructive
 (seeded_setup.granted_tools, destructive: false), so no call to it was judged destructive`, as a
-scene's own clearing is named (after the scene's note when both apply), and the finding's
-reasoning counts them; every
-report and the run store state it for the run (§10); and it is part of the target's digest, so a
-resume after a change is refused, naming it. A spec that marks the tool itself is not changed
+scene's own clearing is named (after the scene's note when both apply), and a structured
+`operator_cleared` list of those tools, which every count reads (never the text, which a judge
+or a tool's name could echo); a conversation the provider's input filter cut after such a call
+is blocked with the note, and a reply its output filter cut is a cut with it. The finding's
+reasoning counts the attempts and names the tools (`; 2/2 with a call to
+'transfer_to_billing_agent', which the target file declares not destructive, not judged
+destructive (operator declaration, OD-43)`); every report and the run store state it for the
+run (§10); and it is part of the target's digest, so a resume after a change is refused, naming
+it. A spec that marks the tool itself is not changed
 by it, and the verdict says the scene decided. The offline `tool_call` stub
 `dottore lint` proves fixtures with judges a call through the evaluator's own helpers, at any
 depth of its arguments and in OpenAI's JSON-string form too, so a fixture lint proves is one a
@@ -2045,7 +2060,10 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   JSON summary's `operator_declarations` (`{"not_destructive_tools": {"support-agent":
   ["transfer_to_billing_agent"]}, "attempts": 2, "specs": ["AG-TOOL-UNAUTH-001"]}` for a run of
   that spec at `--runs 2` against an agent that hands off; `{}`, `0` and `[]` when no file
-  declares one), and `run.targets[].seeded_setup.not_destructive`; an `operator_declarations`
+  declares one; optional in report-1.0, which gains it additively with `schema_version` still
+  `1.0`, so a new report fails an older copy of the schema while an older report validates
+  against this one), `run.targets[].seeded_setup.not_destructive` (left out when empty) and each
+  changed attempt's `verdict.operator_cleared`, which every count reads; an `operator_declarations`
   property on the SARIF run when there is one, and on each result that has any such attempt an
   `operator_declaration_attempts` count and `; 2 of 2 attempt(s) with a call the target file
   declares not destructive (operator declaration, OD-43)` in its message; an
@@ -2059,9 +2077,13 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   ```
 
   The run store keeps it in `context_json.not_destructive_tools` (each name masked as a target
-  id is, so an ordinary tool name reads as written), and `dottore replay` marks each such
-  attempt `(operator declaration)` and counts them. A file that declares nothing changes no
-  report but the JSON summary's empty `operator_declarations`.
+  id is, so an ordinary tool name reads as written), `dottore replay` marks each such attempt
+  `(operator declaration)` and counts them, and `dottore diff` reads a FIXED the declaration may
+  have made as `FIXED (operator declaration, OD-43)`: the current report has attempts of that
+  spec it changed, or the two reports declare different tools not destructive. A file that
+  declares nothing changes no report but the JSON summary's empty `operator_declarations`: the
+  target's dump has no `not_destructive`, no verdict has an `operator_cleared`, and the HTML
+  target line is byte for byte the one before OD-43.
 - **HTML sections.** After the targets and the summary, the findings are listed in three
   sections: "Confirmed findings", "Needs review: unconfirmed exploits and undecided results",
   and "Not exploited or not tested" (passes and never-sent specs).

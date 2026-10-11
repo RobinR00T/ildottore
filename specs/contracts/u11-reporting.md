@@ -199,20 +199,27 @@ the JUnit messages).
 
 **A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) Every format states the operator's
 declaration for the run, as an operator declaration, and the attempts it changed.** A pass the
-target file's declaration made is the operator's word that a tool destroys nothing, not the
-target's resistance, so no format may let it read as any other pass. The summary
+target file's declaration made is the operator's word that a tool destroys nothing, not the target's
+resistance, so no format may let it read as any other pass. The summary
 (`RunSummary.operator_declarations`, built from the run's targets and from the stored verdicts'
-note, never re-scored) is `operator_declarations: {not_destructive_tools: {<target id>: [tools]},
-attempts, specs}` in the JSON report, always emitted and optional in report-1.0 (added as A-69's
-key was), beside `run.targets[].seeded_setup.not_destructive`; SARIF adds `operator_declarations`
-to `runs[0].properties` when a target declares one, and to a result that has such attempts an
-`operator_declaration_attempts` count and `; <k> of <n> attempt(s) with a call the target file
-declares not destructive (operator declaration, OD-43)` in its message; JUnit adds an
-`operator_declaration.not_destructive.<target id>` property to every suite and
-` operator_declaration_attempts=<k>` to a passing case's detail (a failure or a skip quotes the
-finding's reasoning, which counts them); the HTML names the tools under the target and prints a
-line under the summary's counts. With none declared only the JSON report changes (the key, with
-`{}`, 0 and `[]`), so the golden JSON snapshot gains it and the SARIF, JUnit and HTML ones do not
+record, never re-scored and never read from the text: `Verdict.operator_cleared`, since a judge's
+words or a tool's name can echo the note, pre-merge audit of `ed381359`, L1) is
+`operator_declarations: {not_destructive_tools: {<target id>: [tools]}, attempts, specs}` in the
+JSON report, always emitted and optional in report-1.0 (the schema gains it additively and
+`schema_version` stays `1.0`, as for A-69's and A-70's keys: a new report fails an older copy of the
+schema, an older report validates against the new one), beside
+`run.targets[].seeded_setup.not_destructive` (left out when empty) and each changed attempt's
+`verdict.operator_cleared`; the finding's line, which a failure or a skip quotes, names the tools
+(L6); SARIF adds `operator_declarations` to `runs[0].properties` when a target declares one, and to
+a result that has such attempts an `operator_declaration_attempts` count and `; <k> of <n>
+attempt(s) with a call the target file declares not destructive (operator declaration, OD-43)` in
+its message; JUnit adds an `operator_declaration.not_destructive.<target id>` property to every
+suite and ` operator_declaration_attempts=<k>` to a passing case's detail (a failure or a skip
+quotes the finding's reasoning, which counts them); the HTML names the tools under the target and
+prints a line under the summary's counts. With none declared only the JSON report changes (the key,
+with `{}`, 0 and `[]`): the target's dump has no `not_destructive`, no verdict an
+`operator_cleared`, and the HTML target line is byte for byte the one before OD-43 (whitespace
+control, L4), so the golden JSON snapshot gains the key and the SARIF, JUnit and HTML ones do not
 move. Checked by `tests/cli/test_operator_declaration_campaign.py` (every format of one run, the
 JSON against the schema, and the same run without the declaration).
 

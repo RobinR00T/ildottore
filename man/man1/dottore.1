@@ -93,7 +93,9 @@ counted the same way.
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
-a report covering several targets, or one that cannot be read, is refused (exit 3).
+a report covering several targets, or one that cannot be read, is refused (exit 3). A fix the
+target file's declaration of a tool not destructive may have made reads FIXED (operator
+declaration, OD-43).
 .TP
 .B coverage
 What the battery tests, per framework (OWASP LLM, MITRE ATLAS, Nova IoPC, OWASP AISVS by
@@ -315,7 +317,8 @@ transfer_to_billing_agent would. It is an operator declaration and always shown:
 operator: line of --dry-run, -v and -sn, in every report (operator_declarations in the JSON
 summary and the SARIF run, a property of each JUnit suite, the HTML targets and summary) and
 the terminal summary ("Operator declaration (OD-43): ..."), in the run store, and in the verdict
-of each attempt it changed, which dottore replay marks. A resume after a change is refused.
+of each attempt it changed (blocked and cut ones included), which dottore replay marks and
+dottore diff reads. A resume after a change is refused.
 .SH FILES
 .TP
 .I scope.yaml

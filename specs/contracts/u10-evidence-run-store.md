@@ -148,9 +148,12 @@ operator's declaration for each run, and a replay reads it back.** The run's con
 target file declares not destructive, sorted, each masked with the fixed identity salt the store
 masks a target id with, so an ordinary tool name reads as written and one that reads as a secret is
 not kept in clear, and the record compares equal across processes; `[]` when none is declared, and
-absent from a run stored before 2026-10-11, which declared none. Each attempt's stored verdict
-carries the note when the declaration changed it, and `dottore replay` writes `(operator
-declaration)` after such an attempt's status and a footer line with their count. Checked by
+absent from a run stored before 2026-10-11, which declared none; a record that is not a list of
+names says nothing of the declaration, and the target digest's own refusal speaks. Each attempt's
+stored verdict carries the note and the `operator_cleared` record when the declaration changed
+it (the record left out otherwise, so every other artifact is byte for byte as before), and
+`dottore replay` reads the record, never the text, to write `(operator declaration)` after such
+an attempt's status and a footer line with their count. Checked by
 `tests/cli/test_operator_declaration_campaign.py`.
 
 ## §8 Out of scope / forbidden

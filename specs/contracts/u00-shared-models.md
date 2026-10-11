@@ -130,9 +130,15 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   `shared/refusal_tells.py` (A-27) before it. The verdict stays with u06 and u02: these are the
   predicates both apply, the one kind of behaviour this unit holds despite §8, as with A-33 and A-27.
 - **A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43):** `SeededSetup` gains
-  `not_destructive`, the granted tools the target file declares not destructive (sorted, always a
-  subset of `granted_tools`, empty by default), and `EvalContext` gains `not_destructive_tools`,
-  which the runner fills from it; behaviour-free, as every model here. `shared/tool_abuse.py`
+  `not_destructive`, the granted tools the target file declares not destructive, empty by
+  default: a validator refuses a name not in `granted_tools` however the setup is built and keeps
+  the list sorted and once each (sorted, not refused out of order, since a report's redactor can
+  mask a name and move it), and a serializer leaves it out of a dump when empty, as `ModelResponse`
+  leaves out an unset `filter_side` (A-70). `EvalContext` gains `not_destructive_tools`, which the
+  runner fills from it, and `Verdict` gains `operator_cleared`, the called tools only the
+  declaration kept from being judged destructive, left out of a dump when empty, which every
+  count reads instead of the note's text (pre-merge audit of `ed381359`, L1); behaviour-free, as
+  every model here. `shared/tool_abuse.py`
   gains the predicates both the evaluator and the runner apply (`operator_cleared`: declared,
   granted and in no scene of the spec; `operator_cleared_calls`: of those, the ones a call made and
   a verb or the scene's flag would make destructive) and the note every changed verdict carries

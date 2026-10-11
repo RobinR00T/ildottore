@@ -20,39 +20,46 @@ versioning: [SemVer](https://semver.org/).
   declaration: `pass` 2/2, exit 0. A plain name still only grants, so every existing file loads,
   digests and resumes as before (u06 A-72).
 - **Always visible.** `--dry-run`, `-v` and `-sn` print an `operator:` line before anything is
-  sent (and say when a declared name holds no destructive verb, so the declaration changes
-  nothing, or holds one and is not named like a hand-off, the second look lint gives a scene's
-  `destructive: false`: "make sure it destroys nothing"); the JSON summary's `operator_declarations` (always emitted, optional in report-1.0),
-  the SARIF run and results, a property of each JUnit suite and its cases, the HTML targets and
-  summary and a closing line of the terminal summary state it for the run, with the attempts it
-  changed; each such attempt's verdict ends `operator declaration (OD-43): the target file
-  declares '<tool>' (its name holds '<verb>') not destructive (seeded_setup.granted_tools,
-  destructive: false), so no call to it was judged destructive`, in the form of the scene's own
-  clearing note, and the finding's reasoning counts them; the run store keeps it
-  (`context_json.not_destructive_tools`) and `dottore replay` marks those attempts.
+  sent, and a second look at a declared name no destructive verb is in ("changes nothing for
+  it"), at one a verb is in that is not named like a hand-off ("make sure it destroys nothing", as
+  lint says of a scene's `destructive: false`) and at a granted name that is a selected spec's
+  scene tool but for case or Unicode form. The JSON summary's `operator_declarations` (always
+  emitted, optional in report-1.0: a new report fails an older copy of the schema, an older
+  report validates against the new one), the SARIF run and results, a property of each JUnit
+  suite and its cases, the HTML targets and summary and a closing line of the terminal summary
+  state it for the run, with the attempts it changed. Each such attempt's verdict carries
+  `operator declaration (OD-43): the target file declares '<tool>' (its name holds '<verb>') not
+  destructive (seeded_setup.granted_tools, destructive: false), so no call to it was judged
+  destructive`, in the form of the scene's own clearing note, and a structured
+  `operator_cleared` list every count reads (never the text, which a judge or a tool's name could
+  echo); the finding's reasoning counts them and names the tools; the run store keeps the
+  declaration (`context_json.not_destructive_tools`), `dottore replay` marks those attempts, and
+  `dottore diff` reads a FIXED it may have made as `FIXED (operator declaration, OD-43)`. A file
+  that declares nothing leaves every report but the JSON summary's empty key byte for byte as it
+  was.
+- **Every path that judges a reply reads it**: a conversation the provider's input filter cut
+  after the model handed off is blocked, saying the declaration kept it from a fail, and a hand-off
+  in a reply its output filter cut (OD-42) is no fail, the attempt staying a cut needing review.
 - **Part of the target digest.** Left out when none is declared, so a run stored before keeps its
   digest; a resume after a change is refused, naming the old and the new declaration.
 - **Validated.** The loader refuses a non-boolean `destructive` (a quoted `"false"`, `0`, `null`),
-  `true` (a spec's scene is where a tool is made destructive), any other key, a missing or empty
-  `name`, a declared name also mapped under `seeded_setup.tools` and one granted twice, naming the
-  entry and never the value. No new key in `seeded_setup` or at the top level: the declaration is
-  written on the grant, so it cannot name a tool the file does not grant. A null `destructive` is
-  refused here, while a scene's reads as left out: that entry predates the check, this one is new.
-- **Every path that judges a reply reads it**, OD-42's for a reply the provider's filter cut
-  included: a hand-off in a cut reply is no fail, and the attempt stays a cut needing review,
-  saying the declaration was read.
+  `true` (a spec's scene is where a tool is made destructive), a mapping without `destructive` (a
+  bare name is the grant form), any other key, a missing, empty or padded `name`, a declared name
+  also mapped under `seeded_setup.tools` and one granted twice, naming the entry and never the
+  value, and `SeededSetup` refuses a declared name it does not grant however it is built. No new
+  key in `seeded_setup` or at the top level: the declaration is written on the grant, so it
+  cannot name a tool the file does not grant. A null `destructive` is refused here, while a
+  scene's reads as left out: that entry predates the check, this one is new.
 - **No name map reaches it.** A map renames a call only to one of the spec's scene tools, which
   the declaration never applies to, and a scene tool mapped onto a declared name is refused by the
   loader and again by `seeding_gap` (`setup_not_seeded`), as the A-71 audit refused a map onto
   another scene tool's name.
-- Docs: MANUAL §4.2, §5 (`--dry-run`, `-sn`), §8, §10 and `dottore replay`, FAQ, USAGE,
-  `dottore(1)`, `dottore-scope(5)`, `docs/01`, `03`, `04`, `12`, ADR-0009,
+- Docs: MANUAL §4.2, §5 (`--dry-run`, `-sn`, `dottore diff`), §8, §10 and `dottore replay`, FAQ,
+  USAGE, `dottore(1)`, `dottore-scope(5)`, `docs/01`, `03`, `04`, `09`, `12`, `16`, ADR-0009,
   `examples/target.app.yaml` (now declaring the support agent's hand-off) and Scenario G's real
-  output in `examples/README.md`; contracts u06 §7 A-72 and §9 OD-43, with halves in u00, u08,
-  u10, u11 and u12, and the index rows. Tests: `tests/evaluators/test_operator_not_destructive.py`
-  (30, 29 fail on `main` at `e8f9d1f6`), `tests/core/test_operator_declaration_runner.py` (6,
-  all fail there) and `tests/cli/test_operator_declaration_campaign.py` (12, all fail there); the
-  golden JSON report snapshot gains the empty key.
+  output in `examples/README.md`; contracts u06 §7 A-72 and §9 OD-43, with halves in u00, u02,
+  u08, u10, u11 and u12, and the index rows. Tests: TESTS_LINE; the golden JSON report snapshot
+  gains the empty key.
 
 ### Decided (eight open decisions, closed on 2026-10-11 under the owner's delegation)
 

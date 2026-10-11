@@ -557,20 +557,25 @@ cut, since the merge of `0685f2ce`) gets the declaration by passing the target, 
 note below on what it returns: a hand-off in a cut reply is no fail, so the attempt stays
 `cut_by_provider_output_filter` and needs review, its verdict saying the declaration was read
 (`tests/core/test_operator_declaration_runner.py`; the test fails when `_cut_verdict`'s deciding
-evaluators are not given the target). A name map cannot carry a call onto it: a map renames a call
-only to one of the spec's scene tools, the declaration never applies to a scene tool, and
-`seeding_gap` refuses a scene tool mapped onto a declared name (`setup_not_seeded:
-seeded_setup.tools maps <spec tool> to <tool>, a granted tool the target file declares not
-destructive (OD-43), ...`), which the loader refuses too. Only the aggregate is stored, and it says
-nothing of the `tool_call` verdict it combined ("all evaluators reported secure"), so
-`_note_operator_declaration` appends `; operator declaration (OD-43): the target file declares
-'<tool>' (its name holds '<verb>') not destructive (seeded_setup.granted_tools, destructive: false),
-so no call to it was judged destructive` to the attempt's verdict, whatever its status, when the
-spec declares `tool_call` and a call of the attempt is one the declaration cleared
-(`shared.tool_abuse.operator_cleared_calls`); a spec judged without `tool_call` gets no note, and
-`kill_chain_progression`'s verdict is the same with or without a declaration. The finding's
-reasoning counts those attempts (`; <k>/<n> with a call to a tool the target file declares not
-destructive, not judged destructive (operator declaration, OD-43)`). Checked by
+evaluators are not given the target). A conversation the provider's input filter cut after such a
+call is blocked with the note too (the trace evaluators judged it with the declaration, and the
+hand-off is what kept it from a fail; pre-merge audit of `ed381359`, M1). The note goes with a
+structured `Verdict.operator_cleared` (u00 half), which the finding's line, the summary and replay
+count from, never the text: a judge recorded beside a cut reply could echo it, so `_judge_record`
+quotes the marker instead (L1); the finding's line names the tools (`; <k>/<n> with a call to
+'<tool>', which the target file declares not destructive, not judged destructive (operator
+declaration, OD-43)`, L6). A name map cannot carry a call onto it: a map renames a call only to one
+of the spec's scene tools, the declaration never applies to a scene tool, and `seeding_gap` refuses
+a scene tool mapped onto a declared name (`setup_not_seeded: seeded_setup.tools maps <spec tool> to
+<tool>, a granted tool the target file declares not destructive (OD-43), ...`), which the loader
+refuses too. Only the aggregate is stored, and it says nothing of the `tool_call` verdict it
+combined ("all evaluators reported secure"), so `_note_operator_declaration` appends `; operator
+declaration (OD-43): the target file declares '<tool>' (its name holds '<verb>') not destructive
+(seeded_setup.granted_tools, destructive: false), so no call to it was judged destructive` to the
+attempt's verdict, whatever its status, when the spec declares `tool_call` and a call of the attempt
+is one the declaration cleared (`shared.tool_abuse.operator_cleared_calls`); a spec judged without
+`tool_call` gets no note, and `kill_chain_progression`'s verdict is the same with or without a
+declaration. The finding's reasoning counts those attempts and names the tools (above). Checked by
 `tests/core/test_operator_declaration_runner.py`.
 
 ## §8 Out of scope / forbidden

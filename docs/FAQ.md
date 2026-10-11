@@ -189,8 +189,9 @@ destructive: false}` and a call to that exact name is not failed by its name alo
 decision OD-43, 2026-10-11). It is your declaration, so it is always shown: `--dry-run` and
 `-sn` print it on an `operator:` line, every report and the run store state it for the run,
 each attempt it changed says so in its verdict, and changing it refuses a resume. It is held to
-the narrowest reading: `false` only (`true`, a quoted `"false"` and any other key are refused),
-exact names, never a tool of a spec's own scene (there the scene decides, `destructive: true`
+the narrowest reading: `false` only (`true`, a quoted `"false"`, a mapping without
+`destructive` and any other key are refused), exact names (a padded one is refused, and the dry
+run flags a grant that is a spec's scene tool but for case), never a tool of a spec's own scene (there the scene decides, `destructive: true`
 included), never `kill_chain_progression`, and never a call off the allowlist or an injected or
 forbidden argument. See MANUAL §4.2 and §8.
 
