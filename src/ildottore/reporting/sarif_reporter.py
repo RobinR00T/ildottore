@@ -165,9 +165,9 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
 def _declaration_property(summary: RunSummary) -> dict[str, Any]:
     """The run's operator declaration (OD-43, u06 A-72), or ``{}`` when no target file makes one.
 
-    ``{"operator_declarations": {"not_destructive_tools": {target: [names]}, "attempts": n}}``,
-    so a dashboard that reads only SARIF still sees which tools were not judged destructive by
-    the operator's word, and on how many attempts it changed the verdict.
+    ``{"operator_declarations": {"not_destructive_tools": {target: [names]}, "attempts": n,
+    "specs": [ids]}}``, so a dashboard that reads only SARIF still sees which tools were not
+    judged destructive by the operator's word, and on how many attempts it changed the verdict.
     """
 
     declarations = summary.operator_declarations

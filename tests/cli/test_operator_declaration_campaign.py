@@ -19,6 +19,7 @@ import json
 import sqlite3
 import threading
 from collections.abc import Iterator
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -244,7 +245,7 @@ def test_every_report_states_the_declaration_and_the_attempts_it_changed(
     ) in result.output
 
     # The run store records it for the run, as an operator declaration of that run.
-    with sqlite3.connect(tmp_path / "runs.sqlite") as db:
+    with closing(sqlite3.connect(tmp_path / "runs.sqlite")) as db:
         (context,) = db.execute("SELECT context_json FROM runs").fetchone()
     assert json.loads(context)["not_destructive_tools"] == [_HANDOFF]
 
@@ -294,7 +295,7 @@ def test_without_the_declaration_the_same_hand_off_fails_and_no_report_mentions_
     assert "operator_declaration" not in (tmp_path / "r.xml").read_text(encoding="utf-8")
     assert "operator-declaration" not in (tmp_path / "r.html").read_text(encoding="utf-8")
     assert "Operator declaration" not in result.output
-    with sqlite3.connect(tmp_path / "runs.sqlite") as db:
+    with closing(sqlite3.connect(tmp_path / "runs.sqlite")) as db:
         (context,) = db.execute("SELECT context_json FROM runs").fetchone()
     assert json.loads(context)["not_destructive_tools"] == []
 
@@ -420,11 +421,12 @@ def test_a_run_stored_before_the_record_existed_resumes_without_a_declaration(
     from ildottore.cli.exit_codes import ExitCode
 
     run_id, spec_dir = _halted(tmp_path, _PLAIN)
-    with sqlite3.connect(tmp_path / "runs.sqlite") as db:
+    with closing(sqlite3.connect(tmp_path / "runs.sqlite")) as db:
         (raw,) = db.execute("SELECT context_json FROM runs").fetchone()
         context = json.loads(raw)
         del context["not_destructive_tools"]
         db.execute("UPDATE runs SET context_json = ?", (json.dumps(context),))
+        db.commit()
 
     assert _resume(tmp_path, spec_dir, run_id, _PLAIN).exit_code != ExitCode.ERROR
 
