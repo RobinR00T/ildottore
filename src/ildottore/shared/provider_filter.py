@@ -72,6 +72,7 @@ __all__ = [
     "filter_stop",
     "is_filter_stop",
     "partial_reply",
+    "replaced_reply",
     "side_unknown_attempt_ids",
     "stop_provenance",
 ]
@@ -206,6 +207,24 @@ def partial_reply(response: ModelResponse) -> bool:
         bool(response.text.strip())
         and filter_stop(response) in _PARTIAL_STOPS
         and response.filter_side is None
+    )
+
+
+def replaced_reply(response: ModelResponse) -> bool:
+    """True when the reply holds text its provider's filter put there, not the model's own.
+
+    A filter stop with text that :func:`partial_reply` does not call the model's: a Bedrock
+    guardrail's, whose text is the message the operator configured for it ("The blocked content
+    text that you have configured in the guardrail") or, on the output side, the model's reply
+    with its PII masked, which the trace does not tell apart. Read on either side by the
+    evaluators whose fail cannot come from configured words only (``core.runner``, u08 A-79,
+    pre-merge audit of ``a55710e9``, MEDIUM 1).
+    """
+
+    return (
+        bool(response.text.strip())
+        and filter_stop(response) is not None
+        and not partial_reply(response)
     )
 
 
