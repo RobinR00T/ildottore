@@ -146,6 +146,34 @@ The carryover ledger. Every agent session updates this so context survives even 
   `granted_tools` entry written as `{name, destructive: false}`) is a question of who may say a
   tool is safe: the operator's file, not the spec.
 
+## State, 2026-10-11 (afternoon): the pre-merge audit of `4f3ed297`, closed (and OD-44)
+
+- Merge-ready per the audit after M1 and M2, no HIGH; fixed in new commits on the same branch,
+  `main` at `0685f2c` (#105, #106 OD-42) merged in first (both sides kept; OD-42's A-70 text now
+  names the shared rule, and a test holds that its cut-reply rule never lets the judge decide
+  alone, so a cut fail is deterministic and can confirm). M1: `DOS-TOKEN-AMP-001`'s pattern is
+  `(?:scale[^a-z]{0,12}){100}`, so a numbered run counts (it was a confirmed Medium on `ee202bf`
+  and the first pattern missed it). M2: the OD-19 CHANGELOG entry is marked breaking for a CI
+  gate and the Python API, with the non-mock figure re-measured (loopback stub, realistic judge,
+  75 specs, `--runs 3`: 12 of the 26 confirmed fails on `0685f2c` become needs-review, exit
+  stays 2; `AC-BFLA-001` and `OUT-SQLI-001` alone go from exit 2 to 0, 2 with
+  `--include-needs-review`); the MANUAL's `--fail-on` row and §11 say `dottore diff` still counts
+  a judge-only fail as `NEW_FAIL` and what the flag also gates. M3, decided under the delegation
+  as **OD-44**: `MCP-TOOLPOISON-001` `requires: [mcp]`, a new capability true exactly when the
+  provider is `mcp` (loader-set; refused declared on a live target of another provider; an
+  offline mock may declare it; fleet refuses it declared); against a chat stub that explains the
+  markers it was a confirmed Critical with 3 attempts on `0685f2c` and is not sent now; the
+  example chat dry run plans 33 specs (34); a chat-like hardened run credits 26/30 IoPC
+  techniques (27/30); `dottore coverage` is unchanged. L1: `combine`'s lost `configs` is labelled
+  breaking (a `TypeError` over a silently different verdict). L2: `scoring.gate_state` agrees
+  that a judge-only fail needs review. L3: the reversals take files from `main`. L4: OD-40's
+  reversal line. L5: a bounded answer in other words passes only with `--judge`. L7: docs/04 on
+  what "deterministic" covers. The mock battery is unchanged throughout (bare 75 inconclusive,
+  vulnerable 67 confirmed fails, hardened 64 passes). `make --no-print-directory gates` green
+  (12:11 to 12:16): format (403 files), mypy strict (159 source files), import-linter (4 kept),
+  spec lint (0 errors, 0 warnings across 75 specs), 5,297 tests collected (5,229 on `0685f2c`),
+  97.77% coverage, self-scan, bandit, pip-audit clean.
+
 ## State, 2026-10-11: four evaluator and fingerprint decisions closed (OD-16, OD-19, OD-17, OD-40)
 
 - On `feat/decide-evaluator-semantics`, rebased onto `main` at `ee202bf` (#105): the owner delegated
