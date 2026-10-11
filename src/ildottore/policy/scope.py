@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ildottore import safe_yaml
 from ildottore.policy.errors import ScopeChecksumError, ScopeError
 from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
+from ildottore.shared.credential_refs import ENV_NAME_RULE, env_name_of, is_env_name
 from ildottore.shared.files import read_text_capped
 
 
@@ -152,6 +153,26 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
             canaries.add(identity.canary)
 
 
+def _refuse_unnamed_variables(file_path: Path, entry: ScopeTarget) -> None:
+    """Refuse an identity whose ``env://`` reference names no environment variable (u12 A-82).
+
+    ``dottore fleet`` wrote ``auth_ref: env://<the key>`` for a key pasted as ``api_key_env``,
+    and this loader took it (CLI audit M8). Never quoted: what follows ``env://`` there is most
+    often the key. Another scheme (``vault://``) is a reference this loader keeps, refused
+    where it is read.
+    """
+
+    for identity in entry.identities:
+        name = env_name_of(identity.auth_ref)
+        if name is not None and not is_env_name(name):
+            raise ScopeError(
+                f"scope file {file_path} target {quoted(entry.id)} identity "
+                f"{quoted(identity.name)}: auth_ref names no environment variable after env:// "
+                f"(a name is {ENV_NAME_RULE}, not shown here); write env://NAME with the "
+                "variable's name, never the key"
+            )
+
+
 def _strip_checksum_line(raw_text: str) -> str:
     """Return the scope body with any top-level ``checksum:`` line removed.
 
@@ -243,6 +264,7 @@ def load_scope_with_digest(
             )
         seen.add(entry.id)
         _refuse_shared_identities(file_path, entry)
+        _refuse_unnamed_variables(file_path, entry)
 
     stripped = _strip_checksum_line(raw_text)
     if stripped != raw_text:

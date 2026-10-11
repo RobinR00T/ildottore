@@ -67,6 +67,7 @@ from ildottore.core.runner import (
     IdentityProbe,
     PolicyGate,
     fill_sampling,
+    sweeps_identities,
     unsent_fields,
 )
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
@@ -93,6 +94,13 @@ from ildottore.shared.config_errors import (
     shown_endpoint,
     validation_problems,
     yaml_problem,
+)
+from ildottore.shared.credential_refs import (
+    ENV_NAME_RULE,
+    NO_CREDENTIAL,
+    env_name_of,
+    is_env_name,
+    unset_variable,
 )
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
@@ -156,6 +164,7 @@ __all__ = [
     "shown_auth_ref",
     "takes_sampling",
     "target_uses_mock",
+    "unset_credentials",
     "utc_timestamp",
     "with_sent_sampling",
     "with_takes_sampling",
@@ -647,14 +656,26 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
     caller passes it straight into the adapter's ``api_key``, which itself never
     appears in evidence: the redactor masks ``raw_ids``, and the value never enters
     a ``ModelRequest``/``ModelResponse``). ``None`` in ⇒ ``None`` out (no auth
-    configured). An unsupported scheme (e.g. ``vault://``, deferred) raises rather
-    than silently sending an unauthenticated request.
+    configured), and so does ``env://NONE``, the reference that names no credential, without
+    reading a variable. An unsupported scheme (e.g. ``vault://``, deferred) raises rather
+    than silently sending an unauthenticated request, and so does a name that is no variable's.
+    A variable that is not set still resolves to ``None`` here: a live run refuses it before
+    anything is sent (:func:`unset_credentials`), and a dry run warns about it (u12 A-82).
     """
 
-    if auth_ref is None:
+    if auth_ref is None or auth_ref == NO_CREDENTIAL:
+        # `env://NONE` says "no credential" (u12 A-82): its variable is never read, so a
+        # `NONE` some other tool exported is not sent as a key.
         return None
-    if auth_ref.startswith("env://"):
-        name = auth_ref.removeprefix("env://")
+    name = env_name_of(auth_ref)
+    if name is not None:
+        if not is_env_name(name):
+            # The loaders refuse such a file; a reference built in code is refused here, and
+            # never quoted: it was a key pasted where a variable's name belongs (M8).
+            raise ValueError(
+                "auth_ref names no environment variable after env:// (a name is "
+                f"{ENV_NAME_RULE}); write the variable's name, never the key"
+            )
         raw = os.environ.get(name)
         # Registered before it is used, raw AND stripped: every Redactor in the process then
         # masks it by value, including inside an HTTP library's error text. And stripped,
@@ -872,6 +893,59 @@ def _authorized_api_key(scope: Scope, target: Target) -> str | None:
                 "unauthorized credential"
             )
     return resolve_auth_ref(target.auth_ref)
+
+
+#: What a refusal or a dry run's warning about an unset variable advises (u12 A-82).
+UNSET_CREDENTIAL_ADVICE = (
+    "export each variable before the run; a target that takes no credential leaves auth_ref "
+    "out of its target file, and a scope identity that carries none writes env://NONE"
+)
+
+
+def unset_credentials(
+    scope: Scope,
+    targets: list[Target],
+    *,
+    judge: Target | None = None,
+    specs: list[AttackSpec] | None = None,
+) -> list[str]:
+    """One phrase per credential a live run would read from a variable that is not set.
+
+    ``targets`` are the ones sent to over the wire. Each one's ``auth_ref``; each identity of its
+    scope entry when the scope declares two or more and a spec of ``specs`` sweeps identities on
+    it (the sweep sends the attack as each one, ``build_identity_probes``); and the ``--judge``
+    model's when it is live. ``env://NONE`` and a target with no ``auth_ref`` send none on
+    purpose and are not listed. Names the variable, never a value (CLI audit M4: an unset
+    ``env://TYPO`` sent every request without a credential and the run stopped on a bare
+    ``HTTP 401``).
+    """
+
+    problems: list[str] = []
+
+    def check(who: str, auth_ref: str | None) -> None:
+        found = unset_variable(auth_ref)
+        if found is not None and auth_ref is not None:
+            name, state = found
+            problems.append(
+                f"{who} auth_ref {shown_auth_ref(auth_ref)} names the environment variable "
+                f"{name}, which is {state}"
+            )
+
+    for target in targets:
+        check(f"target {quoted(target.id)}", target.auth_ref)
+        entry = scope.target(target.id)
+        if entry is None or len(entry.identities) < 2:
+            continue
+        if any(sweeps_identities(spec, target) for spec in specs or []):
+            for identity in entry.identities:
+                check(
+                    f"target {quoted(target.id)} identity {quoted(identity.name)} (the scope's, "
+                    "sent by the identity sweep)",
+                    identity.auth_ref,
+                )
+    if judge is not None and request_url_for(judge) is not None:
+        check(f"the --judge model {quoted(judge.id)}", judge.auth_ref)
+    return problems
 
 
 def check_target_credential(scope: Scope, target: Target) -> None:
@@ -1550,6 +1624,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
     endpoint = raw.get("endpoint")
     model = raw.get("model")
     auth_ref = raw.get("auth_ref")
+    _check_env_reference(path, "auth_ref", auth_ref)
     sampling_raw = raw.get("sampling_defaults")
     sampling = None
     if sampling_raw is not None:
@@ -1589,6 +1664,22 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         seeded_setup=seeded,
         websocket=websocket,
     )
+
+
+def _check_env_reference(path: Path, field: str, value: object) -> None:
+    """Refuse an ``env://`` reference whose name is no environment variable's (u12 A-82, M8).
+
+    Never quoted: what follows ``env://`` there is most often the key itself, pasted where its
+    variable's name belongs, and a name with a space or a quote cannot be set by any shell.
+    """
+
+    name = env_name_of(value) if isinstance(value, str) else None
+    if name is not None and not is_env_name(name):
+        raise ValueError(
+            f"target file {path} '{field}' names no environment variable after env:// (a name "
+            f"is {ENV_NAME_RULE}, not shown here): write {field}: env://NAME with the "
+            "variable's name, never the key"
+        )
 
 
 def provider_returns_tool_calls(target: Target) -> bool:

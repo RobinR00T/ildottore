@@ -1802,6 +1802,31 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             "run would wait past that ceiling between two sends; raise the rate or --budget-wall"
         )
 
+    # A credential variable that is not set, before anything is sent, the -sV probes included:
+    # an unset `env://TYPO` read as "no credential", every request went out without one, and
+    # the run stopped on a bare `HTTP 401` that named nothing (u12 A-82, CLI audit M4). A mode
+    # that sends nothing says it and goes on: the variable is the environment's, not the
+    # wiring's, and a dry run on a machine without the key is how a pipeline is checked.
+    unset = wiring.unset_credentials(
+        scope,
+        [real for _, _, (_, real) in routes if real is not None],
+        judge=judge_target,
+        specs=selected,
+    )
+    if unset and (opts.discovery_only or opts.dry_run or opts.estimate):
+        print(
+            visible_controls(
+                f"warning: {'; '.join(unset)}: a live run refuses this before sending "
+                f"anything; {wiring.UNSET_CREDENTIAL_ADVICE}"
+            ),
+            file=sys.stderr,
+        )
+    elif unset:
+        raise ValueError(
+            f"{'; '.join(unset)}, so every request would go out without a credential; nothing "
+            f"was sent: {wiring.UNSET_CREDENTIAL_ADVICE}"
+        )
+
     # Resolved BEFORE the fingerprint pass, which SENDS. It used to sit after it, so
     # `-sV --resume <id-of-a-changed-battery>` put 17 probes on a real endpoint with a real
     # bearer token and then exited 3 having done no work. Nothing here needs the fingerprint.

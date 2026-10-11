@@ -51,7 +51,14 @@ from typing import Literal
 from urllib.parse import SplitResult, urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from ildottore import safe_yaml
 from ildottore.cli.wiring import shown_auth_ref
@@ -61,6 +68,7 @@ from ildottore.shared.config_errors import (
     validation_problems,
     yaml_problem,
 )
+from ildottore.shared.credential_refs import ENV_NAME_RULE, is_env_name
 from ildottore.shared.files import MAX_FILE_BYTES, read_text_capped
 from ildottore.shared.models import Capabilities, Target
 
@@ -73,6 +81,42 @@ __all__ = [
     "load_fleet",
     "materialize_fleet",
 ]
+
+
+def _variable_name(value: str | None) -> str | None:
+    """``api_key_env`` names an environment variable, or the entry has none (u12 A-82, M8).
+
+    A key pasted there was written into the scope and the target file as ``env://<the key>``,
+    exit 0. Never quoted: pydantic's line carries this message and the field, not the input.
+    """
+
+    if value is not None and not is_env_name(value):
+        raise ValueError(
+            f"is not an environment variable's name ({ENV_NAME_RULE}; the value is not shown): "
+            "write the variable's name (api_key_env: OPENAI_API_KEY), never the key"
+        )
+    return value
+
+
+def _no_userinfo(value: str) -> str:
+    """An endpoint without a user name or password before its host (u12 A-82, M8).
+
+    ``https://user:<password>@host/...`` was copied into ``base_url`` in ``scope.yaml`` and into
+    the target file, a credential on disk twice. A URL this module cannot split is left to the
+    checks that read it (``_split``, ``_scope_endpoint``), which say so.
+    """
+
+    try:
+        netloc = urlsplit(value.strip()).netloc
+    except ValueError:
+        return value
+    if "@" in netloc:
+        raise ValueError(
+            "carries a user name or password before its host (user:password@host), which "
+            "fleet would copy into scope.yaml and the target file; drop it and name the "
+            "credential's environment variable with api_key_env"
+        )
+    return value
 
 
 class FleetTarget(BaseModel):
@@ -91,6 +135,9 @@ class FleetTarget(BaseModel):
     # The target file's own model, so a key it does not know is refused here, before anything is
     # written: as `dict[str, bool]` any text key was copied into the target file (A-50).
     capabilities: Capabilities = Field(default_factory=Capabilities)
+
+    _api_key_env_is_a_name = field_validator("api_key_env")(_variable_name)
+    _endpoint_has_no_userinfo = field_validator("endpoint")(_no_userinfo)
 
     @model_validator(mode="after")
     def _mcp_is_the_kind(self) -> FleetTarget:
@@ -123,6 +170,9 @@ class FleetJudge(BaseModel):
     provider: str | None = None  # inferred from the endpoint if None, as for a target
     model: str | None = None
     api_key_env: str | None = None  # env var NAME (never the key value)
+
+    _api_key_env_is_a_name = field_validator("api_key_env")(_variable_name)
+    _endpoint_has_no_userinfo = field_validator("endpoint")(_no_userinfo)
 
 
 class FleetConfig(BaseModel):
