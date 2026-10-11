@@ -321,12 +321,13 @@ from the JSON report. A run whose every attempt was cut or blocked, with no fail
 
 ### Could a target fake a filter stop to hide an exploit?
 
-Not since 2026-10-11 (A-79, the amendment to OD-41 and OD-42, decided under the owner's
-delegation as best practice, revisable). A target writes its own stop reason, and until then every
-adapter read every provider's filter words: an `openai` target that answered harmful text with
-`finish_reason: refusal` (Anthropic's word) or `SAFETY` (Gemini's) had it read as the filter's cut,
-the judge's fail on it was only recorded, and a target that answered every attack with Azure's
-400 `content_filter` had every attempt blocked and the run exit 0. Three rules close it:
+Not with text that came back, since 2026-10-11 (A-79, the amendment to OD-41 and OD-42, decided
+under the owner's delegation as best practice, revisable). A target writes its own stop reason,
+and until then every adapter read every provider's filter words: an `openai` target that answered
+harmful text with `finish_reason: refusal` (Anthropic's word) or `SAFETY` (Gemini's) had it read as
+the filter's cut, the judge's fail on it was only recorded, and a target that answered every
+attack with Azure's 400 `content_filter` had every attempt blocked and the run exit 0. Three rules
+now apply:
 
 - **Only the provider's own words are read.** `content_filter` (and Azure's 400) from an `openai`
   target, `refusal` from an `anthropic` one, Gemini's or Bedrock's from a `RestTemplate` in their
@@ -335,15 +336,20 @@ the judge's fail on it was only recorded, and a target that answered every attac
   (kept in the reply with `foreign_stop: true`), and Azure's 400 from another provider stops the
   run as any undocumented 4xx.
 - **Text that came back was delivered.** The judge's fail on a partial reply stands, as a fail
-  that needs review; a deterministic fail on it stood already; and the text of a reply a Bedrock
-  trace says it refused the prompt for is read too (a canary in it is a fail).
+  that needs review, and a deterministic fail on it stood already. Text the filter put there (a
+  Bedrock guardrail's configured message) is read only for what no configured message can hold:
+  a planted canary or secret, a crossing canary, a tool call.
 - **A run the filter answered every time exits 3** (`filtered`), as an unreachable one does, so it
-  never reads green. A partly filtered run keeps its exit code: each spec with a filtered attempt
-  is inconclusive, never a pass.
+  never reads green; `dottore replay` of it says so too.
 
-An OpenAI-compatible gateway that maps its own moderation to `content_filter` is still read as
-OpenAI's filter (it speaks OpenAI's vocabulary); what it lets through is scored as delivered, and
-a run it filters entirely exits 3 ([`MANUAL.md`](MANUAL.md) §9).
+What it does not stop: an endpoint that uses its own provider's word can still withhold chosen
+attacks, with an empty `content_filter` reply or Azure's 400, and keep CI green, because such an
+attempt is inconclusive, never a pass, and `--fail-on` does not gate it. A pipeline that should
+stop on one reads `summary.blocked_by_provider_filter` and `summary.cut_by_provider_output_filter`
+from the JSON report. An endpoint that speaks OpenAI's or Anthropic's API and is not the provider
+(a gateway that maps its own moderation to `content_filter`, a local server) can be told so:
+`filter_stops: []` in its target file reads none of its stops, and no 400, as a filter's
+([`MANUAL.md`](MANUAL.md) §4.2, §9).
 
 ### My target answered an attack with an HTML page. Does the scan stop?
 

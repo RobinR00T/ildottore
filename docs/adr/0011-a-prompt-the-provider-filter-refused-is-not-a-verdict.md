@@ -258,10 +258,11 @@ a REST template's by its shape (Gemini's and Vertex AI's under `candidates.`, Be
 `stopReason`) or by its `filter_stops`, a WebSocket target file's `response.filter_stops`
 (validated against the sourced vocabularies, none by default, refused beside a `final_value`).
 Any other filter word keeps its spelling in the stored reply with `foreign_stop: true` and is read
-as an ordinary stop, so the reply is the model's answer. The declaration sits in the WebSocket
-block, beside the `final_path` the stop is read at: the only target file that can read a stop it
-controls is a WebSocket one (a target file's `provider: rest` target has no `finish_path`), so a
-top-level key (A-53's list) would be a field most providers ignore. Not taken: threading each
+as an ordinary stop, so the reply is the model's answer. The WebSocket declaration sits in the
+block, beside the `final_path` the stop is read at. An `openai` or `anthropic` file may declare a
+top-level `filter_stops`, `[]` or the provider's own word only, for an endpoint that speaks the
+provider's API and is not the provider: with `[]` none of its stops, and no Azure 400, is read as
+a filter's (added after the pre-merge audit of `a55710e9`, LOW 3, as best practice). Not taken: threading each
 adapter's set to every reader (the attack phase, the identity sweep, the replay), which leaves a
 reply stored without a verdict with nothing to read it by; the provenance travels on the reply
 instead.
@@ -271,8 +272,13 @@ wrote before the cut, never a guardrail's configured message) joins the combinat
 gets (OD-19, ADR-0010): it stands when that combination says fail, and since a fail the judge
 alone reported is never confirmed it needs review and gates only with `--include-needs-review`.
 Its pass is recorded and does not decide, as before: a partial or canned text is not the model
-resisting. Deterministic fails stand as before, and the text of a reply a Bedrock trace says it
-refused the prompt for is read by them too. A conversation cut before its last turn is still read
+resisting. Deterministic fails stand as before. Text the filter put there (a Bedrock guardrail's
+configured message, on either side, or the reply with its PII masked) is read by one rule, only
+with the evaluators whose fail cannot come from words the operator configured: a planted canary
+or secret, a canary that crossed identities, the tool trace. The first version read the input
+side with every evaluator whose fail rests on something present, and a forbidden phrase in the
+configured message was a confirmed fail (pre-merge audit of `a55710e9`, MEDIUM 1; the output side
+had the same fail before A-79). A conversation cut before its last turn is still read
 on its trace only: its text evaluators score a final reply that was never written. Not taken: a
 confirmed fail on the judge's word (it never confirms one alone on a whole reply either); going on
 with a conversation past a cut turn that had text.
@@ -302,6 +308,9 @@ inconclusive, never a pass.
   a dump when unset, so stored replies, reports and target digests without them are unchanged. The
   vocabularies move to `shared.filter_stops`; `RunStatus.state` gains `filtered`.
 - What it still leaves: a target that answers some attacks, not all, with its own provider's
-  filter word and no text hides those attempts, inconclusive and counted apart; a gateway that
-  maps moderation to `content_filter` is read as OpenAI's filter (it speaks that vocabulary), its
-  text scored as delivered.
+  filter word and no text (an empty `content_filter`, Azure's 400) hides those attempts and keeps
+  the exit code: they are inconclusive, `--fail-on` does not gate them, and a pipeline reads
+  `summary.blocked_by_provider_filter` and `summary.cut_by_provider_output_filter` to stop on
+  them; a gateway that maps moderation to `content_filter` is read as OpenAI's filter unless its
+  file declares `filter_stops: []`; a resume across the upgrade keeps verdicts made under the
+  earlier rules (open for the judging-rules version).

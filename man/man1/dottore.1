@@ -324,11 +324,16 @@ Each adapter reads its own provider's filter words only: content_filter from an 
 refusal from an anthropic one, Gemini's or Bedrock's from a RestTemplate in their shape, what a
 websocket target file lists under response.filter_stops (none by default). Any other filter word
 is an ordinary stop (foreign_stop in the stored reply), and the reply is the model's answer.
+An openai or anthropic target file declares filter_stops: [] for an endpoint that speaks the
+provider's API and is not the provider: no stop and no HTTP 400 is then read as a filter's. A
+Bedrock guardrail's configured message is read only for a planted canary or secret, a crossing
+canary or the tool trace.
 .PP
 A run whose every attempt the provider's filter refused, cut or stopped, or that got no reply that
 could be read, with at least one of them the filter's and none a fail, exits 3 with the state
 filtered ("every one of the N attempt(s) was answered by the provider's filter"): it measured the
-filter, not the model. A partly filtered run keeps its exit status.
+filter, not the model. A partly filtered run keeps its exit status. dottore replay of such a
+run prints "run: filtered".
 .PP
 A target file may declare one of the deployment's own granted tools not destructive, as a
 seeded_setup.granted_tools entry {name: <tool>, destructive: false} (OD-43): tool_call then does

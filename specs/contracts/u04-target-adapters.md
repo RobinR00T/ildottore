@@ -421,7 +421,15 @@ reads as U+FFFD, since httpx decodes the stream as text.
     honours `content_filter` (OpenAI's, or a REST template that declares it); from any other it is
     an `AdapterStatusError`, an undocumented 4xx that stops the campaign, as before OD-41.
     Gemini's `promptFeedback.blockReason` is read only by a template that honours one of Gemini's
-    stops (a template in Gemini's shape does, unless its `filter_stops` says otherwise).
+    stops (a template in Gemini's shape does, unless its `filter_stops` says otherwise);
+  - an `openai` or `anthropic` target file may declare `filter_stops` (u00 `Target`, u12): `[]`
+    for an endpoint that speaks the provider's API and is not the provider, or the provider's own
+    word only. The composition root passes it as the adapter's `declared_filter_stops`, which
+    `filter_stops` returns in place of the provider's: with `[]` no stop and no Azure 400 is read
+    as a filter's (pre-merge audit of `a55710e9`, LOW 3, best-practice addition);
+  - the WebSocket adapter's `unreadable_advice` names `response.filter_stops`: a file written
+    before A-79 whose server ends a withheld turn on a filter word gets an unreadable reply for it
+    until the word is declared (LOW 2).
   Measured on `de122e26` through the CLI: an `openai` stub answering `JB-ROLEPLAY-001` with
   harmful text and `finish_reason: refusal` gave three cut attempts and exit 0, and gives a
   confirmed fail, exit 2, as the same text with `stop` does; an `anthropic` stub answering every

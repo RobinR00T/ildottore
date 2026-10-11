@@ -8,8 +8,8 @@ versioning: [SemVer](https://semver.org/).
 ### Changed, breaking: a target can no longer forge a filter stop to hide an exploit (A-79, the amendment to OD-41 and OD-42)
 
 Decided 2026-10-11 under the owner's delegation (best practice), revisable; found by the security
-audit of 2026-10-11 (MEDIUM 3). **A CI result changes in four cases**, each measured through the
-real CLI against a loopback stub, `main` (`de122e26`) against this branch:
+audit of 2026-10-11 (MEDIUM 3), and its pre-merge audit. **A CI result changes in five cases**,
+each measured against a loopback stub, `main` (`de122e26`) against this branch:
 
 - **A run the provider's filter answered every time exits 3, not 0.** Every attempt refused, cut
   or stopped by the filter (or with no reply that could be read), at least one by the filter and
@@ -31,7 +31,9 @@ real CLI against a loopback stub, `main` (`de122e26`) against this branch:
   word is an ordinary stop, kept in the stored reply with `foreign_stop: true`.
   `JB-ROLEPLAY-001` with harmful text and `finish_reason: refusal` from an `openai` stub: three
   cut attempts, exit 0, now a confirmed fail, exit 2, as with `stop`. A WebSocket target whose
-  turns end on `content_filter` must now declare it to have it read as a filter's.
+  turns end on `content_filter` must now declare it to have it read as a filter's: until it
+  does, a withheld turn (no text) is an unreadable reply, and a run made only of them is
+  `unreachable`, exit 3, with advice that names `response.filter_stops`.
 - **Azure's 400 `content_filter` from a non-OpenAI adapter stops the run** (exit 3 at the first
   request) as any undocumented 4xx: an `anthropic` stub answering it to every attack had 6 of 6
   blocked, exit 0.
@@ -41,11 +43,28 @@ real CLI against a loopback stub, `main` (`de122e26`) against this branch:
   `--include-needs-review`. `PI-DIRECT-001` with text cut by `content_filter` and a judge that says
   exploited: inconclusive, exit 0 either way, now `fail` (needs review), exit 0 and 2 with
   `--include-needs-review`, as the same text uncut. Its pass is still only recorded.
+- **A forbidden phrase in a Bedrock guardrail's configured message is no longer a fail.** Text
+  the filter put there (the configured message, on the input or the output side, or a reply with
+  its PII masked) is read only by the evaluators whose fail cannot come from configured words:
+  `secret_leakage`, `secret_shape`, `authz_leak` and the tool trace. On `main` a `regex_absence`
+  phrase in the message of an output-side block (or one with no trace) beside `refusal` was a
+  confirmed fail; it is the cut's `inconclusive`. A planted canary in it is still a fail, now on
+  the input side too (pre-merge audit of `a55710e9`, MEDIUM 1, under the owner's delegation).
 
-Also: the text of a reply a Bedrock trace says it refused the prompt for is read by the
-evaluators whose fail rests on something present in it (a canary in it is a fail; only the trace
-evaluators read it), and the fingerprint's `guardrails.output_filter` does not believe a foreign
-stop. The stop vocabularies, each sourced, move to `shared.filter_stops`. Stored replies, reports
+Added: an `openai` or `anthropic` target file may declare `filter_stops: []` (or the provider's
+own word only) for an endpoint that speaks the provider's API and is not the provider: none of its
+stops, and no HTTP 400, is then read as a filter's; `--dry-run`, `-v` and `-sn` print a `filters:`
+line for it (and for a WebSocket file's declaration). A filtered run's error line adds what to
+check for the attempts that got no reply at all (the endpoint for a transport failure, the
+adapter's advice for an unreadable reply), and `dottore replay` of a filtered run prints `run:
+filtered: ...`. The fingerprint's `guardrails.output_filter` does not believe a foreign stop.
+Still possible, and said: an endpoint that uses its own provider's word can withhold chosen
+attacks (an empty `content_filter`, Azure's 400) and keep CI green, since `--fail-on` does not gate
+an inconclusive attempt; read `summary.blocked_by_provider_filter` and
+`summary.cut_by_provider_output_filter` to stop on them. **A resume across this upgrade keeps the
+verdicts its stored attempts were judged with under the earlier rules** (`foreign_stop` is not
+recomputed for a stored reply), left for the judging-rules version that
+`fix/resume-judging-rules` adds. The stop vocabularies, each sourced, move to `shared.filter_stops`. Stored replies, reports
 and target digests without the new fields are byte for byte as before. Controls kept: a genuine
 Azure 400 on some prompts of an `openai` target and a genuine Anthropic refusal (a block before
 any output, a cut after some) score as OD-41 and OD-42 built them. ADR-0011 has a second

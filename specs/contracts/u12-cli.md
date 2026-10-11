@@ -1206,8 +1206,20 @@ spec (a pass needs more than half of its attempts) was the alternative, not take
 would make a deployment whose filter refuses most of an attack battery, the filter working, an
 error on every CI run, and a target that forges a filter's answer could stay under any share below
 all. A partly filtered run keeps its exit code (the 8-of-14 run of A-69 still exits 0). The
-report schema's `status` description names `filtered`. Checked by
-`tests/cli/test_filter_stop_provenance_campaign.py` (13 tests: the two ways a run is filtered, an
+report schema's `status` description names `filtered`. After the pre-merge audit of `a55710e9`:
+when some attempts were not the filter's, the line adds the unreachable reason's advice for them,
+`. The other <k> failed on transport: check the target file's endpoint, and that the target is
+up. The first: <error>` (or, for replies it could not read, the adapter's own advice; LOW 1: 3
+withheld and 4 transport failures were told only to find a deployment whose filter lets the
+prompts through); the rule is `shared.provider_filter.filtered_run`, which `dottore replay`
+applies too, one attempt per id, printing `run: filtered: the provider's filter answered every
+attempt for the model (...)`, since the run store keeps no run state (LOW 5). A target file's top
+level gains `filter_stops` (a `Target` field, so A-53's check reads it): for an `openai` or
+`anthropic` target only, `[]` or the provider's own word, refused otherwise naming the file and
+the field, never a value (`_filter_stops` in `cli/wiring.py`; LOW 3, best-practice addition), and
+`--dry-run`, `-v` and `-sn` print a `filters:` line for a file that declares it or a WebSocket
+file's `response.filter_stops` (`_filter_stops_line`). Checked by
+`tests/cli/test_filter_stop_provenance_campaign.py` (23 tests; 19 fail on `de122e26`; the first 13: the two ways a run is filtered, an
 `openai` target's foreign stops, an `anthropic` target answering Azure's 400, the judge's fail on
 cut text with and without `--include-needs-review`, a WebSocket file's declaration and its refusal,
 and three controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal before and

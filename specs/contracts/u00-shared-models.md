@@ -114,6 +114,10 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   that read the reply sets it (`shared.provider_filter.stop_provenance`, u04), the stop is kept as
   sent, and every reader takes it for an ordinary stop. `false` is left out of a dump by the same
   serializer, so every other reply is stored, reported and hashed as before.
+- `Target` gains `filter_stops: list[str] | None = None` (A-79, after the pre-merge audit of
+  `a55710e9`): an `openai` or `anthropic` target file's declaration, `[]` or the provider's own
+  word, validated by the loader (u12); left out of a dump when `None`, so every existing file
+  dumps and digests as before.
 - `WebSocketResponse` gains `filter_stops: list[str]` (A-79): the provider filter words the
   endpoint writes at `final_path`, each one of `shared.filter_stops.FILTER_STOPS` (validated,
   stored trimmed, lower case, sorted, once), none by default, refused beside a `final_value`; an

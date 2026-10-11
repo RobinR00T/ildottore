@@ -732,13 +732,25 @@ intent. Three rules, as built:
    it from deciding), with `; the provider's output filter then cut the reply (<detail>); the text
    came back, so it was read as delivered`, and a fail it alone decided is never confirmed (OD-19),
    so the finding needs review and gates only with `--include-needs-review`. Its pass is recorded
-   as before (`recorded and not deciding`), and a deterministic fail keeps its note. In
-   `_trace_before_block`, a reply the filter answered for the prompt with (`filter_side: input`,
-   from a Bedrock trace) whose text is not empty is read by `CUT_DECIDING_EVALUATORS`, not the
-   trace evaluators alone: a fail stands with `; the provider's filter reported the prompt refused
-   (<detail>), and the text that came back was read as delivered`, stored as any fail (the block's
-   error under `request.metadata.provider_filter_cut`); a guardrail's configured message holds no
-   canary and stays blocked. A conversation cut before its last turn is read on its trace only, as
+   as before (`recorded and not deciding`), and a deterministic fail keeps its note. **One rule
+   picks the deciding evaluators of every reply the filter stopped**, on either side:
+   `_evaluators_for_filtered_reply`, used by `_cut_verdict` and `_trace_before_block` alike. A
+   conversation cut or refused before the reply its text evaluators score: the trace evaluators.
+   Text the filter put there (`shared.provider_filter.replaced_reply`: a Bedrock guardrail's
+   configured message, on the input or the output side, or the reply with its PII masked, which
+   the trace does not tell apart): `REPLACED_TEXT_EVALUATORS`, the evaluators whose fail cannot
+   come from words an operator configured (`secret_leakage`, `secret_shape`, `authz_leak` and the
+   trace evaluators). Otherwise (the model's own text up to the cut, or none):
+   `CUT_DECIDING_EVALUATORS`. So a reply the filter answered for the prompt with (`filter_side:
+   input`, from a Bedrock trace) whose text holds a planted canary is a fail, with `; the
+   provider's filter reported the prompt refused (<detail>), and the text that came back was read
+   as delivered`, stored as any fail (the block's error under
+   `request.metadata.provider_filter_cut`), and a forbidden phrase in the configured message is
+   no fail on either side. Pre-merge audit of `a55710e9`, MEDIUM 1 (decided under the owner's
+   delegation, best practice): the first version read the input-side text with
+   `CUT_DECIDING_EVALUATORS`, so `regex_absence` "never disclose" in the configured message
+   beside `refusal` was a confirmed fail (`de122e26`: blocked); the output side had the same fail
+   on `de122e26`, which the scoring audit's LOW 5 found. A conversation cut before its last turn is read on its trace only, as
    before: its text evaluators score a final reply that was never written, and reading an earlier
    turn's text would score what an uncut conversation never scores. Alternatives not taken: a
    judge's fail on cut text as confirmed (it alone never confirms one on an uncut reply either);
@@ -761,10 +773,14 @@ and a judge that says exploited is a fail that needs review, exit 0 and 2 with
 `anthropic` target stops at the first request, exit 3 (`de122e26`: 6 blocked, exit 0); the
 controls, the 8-of-14 Azure run of A-69 (exit 0, a pass and an inconclusive) and Anthropic's
 refusal before and after output beside answered prompts (exit 0), are unchanged. Checked by
-`tests/core/test_filter_stop_scoring.py` (7 tests: the judge's fail on cut text, its pass, a
+`tests/core/test_filter_stop_scoring.py` (14 tests: the judge's fail on cut text, its pass, a
 deterministic abstention, a replaced reply the judge does not read, the same text uncut, a canary
-in a reply a Bedrock trace says it refused the prompt for, and a canned message that stays
-blocked; 2 fail on `de122e26`, the 5 controls pass), with u04's and u12's tests.
+in a reply a Bedrock trace says it refused the prompt for, a canned message that stays blocked, a
+forbidden phrase in a configured message on the input side, the output side and with no trace,
+a canary in a replaced reply on each, and the replaced-text set; 6 fail on `de122e26`), with
+u04's and u12's tests. What A-79 does not settle (u10): a resume across the upgrade keeps the
+verdicts its stored attempts were judged with under the earlier rules (`foreign_stop` is not
+recomputed for a stored reply).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is

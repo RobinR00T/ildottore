@@ -178,7 +178,10 @@ that rests on something present in what came back still stands, and so does the 
 the model wrote, as a fail that needs review (`--include-needs-review` gates it). Each adapter
 reads only its own provider's filter words (`content_filter` from `openai`, `refusal` from
 `anthropic`, what a WebSocket file lists under `response.filter_stops`, none by default): any other
-is an ordinary stop, so a target cannot hide its reply behind another provider's word. The summary counts them (`Cut by
+is an ordinary stop, so a target cannot hide its reply behind another provider's word; an
+`openai` or `anthropic` file declares `filter_stops: []` for an endpoint that is not the provider.
+An endpoint can still withhold chosen attacks with its own provider's word and keep `--fail-on`
+green, so read the counts below if your pipeline should stop on them. The summary counts them (`Cut by
 the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced`, and
 `summary.cut_by_provider_output_filter` in JSON). `--fail-on` does not trip on them: read that key
 if your pipeline should ([`docs/MANUAL.md`](docs/MANUAL.md) §9).

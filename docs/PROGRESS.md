@@ -3,6 +3,34 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (night): the pre-merge audit of `a55710e9` (A-79), fixed
+
+- One MEDIUM, six LOWs and a nit, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's probes are in
+  `scratch/fixstop-audit/`.
+- MEDIUM 1: the input-side reading ran every evaluator whose fail rests on something present on a
+  Bedrock guardrail's configured message, so `regex_absence` "never disclose" beside `refusal` was
+  a confirmed fail (`de122e26`: blocked; the output side had the same fail on `de122e26`, the
+  scoring audit's LOW 5). One helper, `_evaluators_for_filtered_reply`, now serves `_cut_verdict`
+  and `_trace_before_block`: replaced text (`replaced_reply`) is read only by
+  `REPLACED_TEXT_EVALUATORS` (`secret_leakage`, `secret_shape`, `authz_leak`, the trace). The
+  repro: input and output both inconclusive (blocked, cut); a canary in the message still fails.
+  When `fix/scoring-audit-2026-10-11` merges, its `replaced` line in `_cut_verdict` gives way to
+  the helper (one rule, a superset of its trace-only reading).
+- LOW 1: a filtered run's line adds the unreachable advice for the attempts that got no reply.
+  LOW 2: the WebSocket advice names `response.filter_stops`, and the CHANGELOG says a withheld
+  turn is unreadable until declared. LOW 3: the FAQ answer says "not with text that came back" and
+  what stays open (chosen attacks withheld with the provider's own word keep CI green; read
+  the summary keys), the MANUAL row fixed, and an `openai` or `anthropic` file may declare
+  `filter_stops: []` (validated, shown by `--dry-run`, `-v` and `-sn` as `filters:`; the example
+  `target.openai.yaml` carries it commented out; every example digests and dumps as on `main`, by
+  the auditor's `compat.py`). LOW 4: the stale runner comments. LOW 5: `dottore replay` prints
+  `run: filtered: ...`, by `shared.provider_filter.filtered_run`, the rule `run` uses. LOW 6: the
+  resume across the upgrade is stated in u10 and the CHANGELOG for `fix/resume-judging-rules`.
+- Tests added: 7 in `tests/core/test_filter_stop_scoring.py` (now 14, 6 fail on `de122e26`), 1 in
+  `tests/adapters/test_filter_stop_provenance.py` (now 25, 23 fail there), 10 in
+  `tests/cli/test_filter_stop_provenance_campaign.py` (now 23, 19 fail there).
+
 ## State, 2026-10-12 (early hours): a forged filter stop, closed (A-79; security audit MEDIUM 3)
 
 - On `fix/filter-stop-provenance` from `de122e26`, under the owner's delegation of 2026-10-11
@@ -29,8 +57,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   `tests/core/test_filter_stop_scoring.py` (2), 13 in
   `tests/cli/test_filter_stop_provenance_campaign.py` (9), the Azure 400 from `anthropic` and from
   a plain REST template in `tests/adapters/test_provider_filter_block.py` (2; its `rest-azure`
-  cases fail there only because `RestTemplate` has no `filter_stops`) and one WebSocket case in
-  `tests/adapters/test_malformed_replies.py` (1). The ones that pass on `de122e26` are the
+  cases fail there only because `RestTemplate` has no `filter_stops`) and the WebSocket cases in
+  `tests/adapters/test_malformed_replies.py` (2 fail there: the new one, and the one that now
+  declares its stop). The ones that pass on `de122e26` are the
   controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal, the same text
   without a filter word, and the WebSocket loader's refusal (`de122e26` refuses the key itself).
   Four existing CLI tests whose every attempt was filtered now expect exit 3; one WebSocket test
