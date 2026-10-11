@@ -48,6 +48,7 @@ from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 from ildottore.shared.refusal_tells import STRONG_COMPLIANCE
+from ildottore.shared.tool_abuse import cleared_verbs
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
 from .fixtures_engine import DEFAULT_STUB_TABLE, StubEvaluator, evaluate_fixture
@@ -523,7 +524,100 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
                     spec_id=spec.id,
                 )
             )
+    errors.extend(_check_cleared_tools(spec))
     return errors
+
+
+#: The last word of the agent a hand-off names, in the OpenAI Agents SDK's
+#: ``transfer_to_<agent>`` style (the agent's name in snake case): ``transfer_to_billing_agent``,
+#: ``transfer_to_triage_agent``.
+_HANDOFF_SUFFIXES = ("agent", "assistant", "bot", "specialist", "team", "human")
+_HANDOFF_SHAPE = re.compile(
+    r"transfer_to_(?:[a-z0-9]+_)*(?:" + "|".join(_HANDOFF_SUFFIXES) + r")", re.IGNORECASE
+)
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _handoff_shaped(name: str, verbs: list[str]) -> bool:
+    """Whether ``name`` reads as a hand-off: ``transfer`` is its only destructive verb and it is
+    ``transfer_to_<...>agent`` (or ``assistant``, ``bot``, ``specialist``, ``team``, ``human``),
+    in snake case or camel case. A heuristic for a lint warning; no verdict reads it."""
+
+    snake = _CAMEL_BOUNDARY.sub("_", name)
+    return verbs == ["transfer"] and _HANDOFF_SHAPE.fullmatch(snake) is not None
+
+
+def _check_cleared_tools(spec: AttackSpec) -> list[LintError]:
+    """Warn on a ``destructive: false`` worth a second look (A-71).
+
+    The flag clears a tool that a destructive verb in its name would make destructive, for a tool
+    that destroys nothing, a hand-off above all. It is also a way to hide one that does
+    (``delete_account: destructive: false``), and a run only records it in the reasoning, so lint
+    says it where the spec is written: a cleared name that is not named like a hand-off is a
+    warning. So is a flag that does nothing: on a name no verb matches (put on the wrong tool, or
+    meant to excuse something it cannot: a call off the allowlist, an injected or a forbidden
+    argument), or in a spec that declares no ``tool_call``, the one evaluator that reads it
+    (``kill_chain_progression`` judges by its own stage map). Warnings, as the allowlist's
+    undeclared name is: the spec still means what it says, and no verdict changes.
+    """
+
+    tools = spec.setup.tools if spec.setup is not None and spec.setup.tools else []
+    names = sorted(
+        {
+            str(tool.get("name"))
+            for tool in tools
+            if isinstance(tool, dict) and tool.get("name") and tool.get("destructive") is False
+        }
+    )
+    if not names:
+        return []
+    types = {cfg.type for cfg in spec.evaluators}
+    if EvaluatorType.TOOL_CALL not in types:
+        stage_map = (
+            " (kill_chain_progression judges by its own stage map)"
+            if EvaluatorType.KILL_CHAIN_PROGRESSION in types
+            else ""
+        )
+        return [
+            _cleared_warning(
+                spec,
+                f"setup tool {name!r} is marked destructive: false, which does nothing here: no "
+                f"tool_call evaluator in this spec reads it{stage_map}",
+            )
+            for name in names
+        ]
+    out: list[LintError] = []
+    for name in names:
+        verbs = cleared_verbs(name, {name: False})
+        if not verbs:
+            out.append(
+                _cleared_warning(
+                    spec,
+                    f"setup tool {name!r} is marked destructive: false, but no destructive verb "
+                    "is in its name, so the flag changes nothing: it clears only a tool a verb "
+                    "would make destructive, never an unauthorized call or an argument",
+                )
+            )
+        elif not _handoff_shaped(name, verbs):
+            said = ", ".join(repr(verb) for verb in verbs)
+            out.append(
+                _cleared_warning(
+                    spec,
+                    f"setup tool {name!r} is marked destructive: false over the destructive verb "
+                    f"{said} in its name and is not named like a hand-off (transfer_to_<agent>): "
+                    "no call to it is judged destructive, so make sure it destroys nothing",
+                )
+            )
+    return out
+
+
+def _cleared_warning(spec: AttackSpec, message: str) -> LintError:
+    return LintError(
+        code=LintCode.EVALUATOR_MISCONFIGURED,
+        severity=Severity.WARNING,
+        message=message,
+        spec_id=spec.id,
+    )
 
 
 def _check_tool_allowlist(spec: AttackSpec, allowlist: list[str]) -> list[LintError]:

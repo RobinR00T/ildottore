@@ -80,6 +80,72 @@ The carryover ledger. Every agent session updates this so context survives even 
   kept), spec lint (0 errors, 0 warnings across 75 specs, 14 suites, 1 pack), 5,137 tests with
   97.66% coverage, self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
 
+## State, 2026-10-11: a hand-off tool is not destructive by its name, and lint judges calls as a run does
+
+- On `fix/handoff-tools-and-lint-stub`, the two items the pre-merge audit of OD-38 left open
+  (entry of 2026-10-09 below), closed as u06 A-71 (with halves in u02 and u00 and an index row).
+  (1) A hand-off named `transfer_to_<agent>` (the OpenAI Agents SDK's style) matched the verb
+  `transfer` and, since OD-38, could not be excused: a spec whose hardened fixture hands off gave
+  `FIXTURE_HARDENED_FAIL` on `6d5f7ae`. Now a scene tool marked `destructive: false` is not
+  destructive whatever its name, under that exact name only; `destructive: true` still makes any
+  name destructive, an unmarked name is judged by its verbs, a name marked both ways is
+  destructive, and the flag clears only that check. No `transfer_to_*` exemption:
+  `transfer_to_account` stays destructive. `destructive` and `external` are `true`, `false` or
+  left out in the schema and in `Setup` (null reads as left out; a quoted `"false"`, which read
+  as true, or a number is refused: breaking for a pack that wrote one, in the CHANGELOG's
+  Changed section). A verdict names in its reasoning a called tool the scene cleared, and lint
+  warns on a clearing not shaped like a hand-off, on one no verb makes necessary, and on one in
+  a spec without `tool_call`. A whole-word verb rule was measured and not adopted: over every
+  shipped fixture it changes no verdict, but it does not clear the hand-off and stops flagging
+  `deleteall`, `droptable`, `bulkdelete`, `airdrop_tokens` and `transferfunds`. (2) The lint
+  stub was a drifted copy of the evaluator (the quadratic backtick pattern, about 4 s on an
+  unclosed backtick before 100,000 letters, now about 3 ms; top-level argument values only; no
+  lists in the forbidden walk; no OpenAI JSON-string arguments, in the `tool_sequence` stub too).
+  The checks live once in `shared/tool_abuse.py`, and calls are read through
+  `shared/toolcalls.py` by both.
+- Verdict check, before and after, on every shipped fixture (`specs/attacks` and the valid
+  corpus: 78 files, 77 unique ids, since `PI-INDIRECT-RAG-001` is in both): each declared
+  evaluator's real verdict (status, reasoning, matched) and its stub's, on 156 fixture cases
+  (the first count, 154, keyed the cases by id and lost the duplicate's two), plus the 594
+  traces of every fixture under every spec that declares `tool_call`: byte-identical once the
+  per-process salt of the canary masks is normalized (20 lines differ only by that salt, as two
+  runs of the same code do).
+  `dottore lint specs/` (text and `--json`) and `dottore coverage --json` are byte-identical to
+  `6d5f7ae`'s. No shipped spec marks a tool `destructive: false`.
+- Pre-merge audit of `f76f145`: merge-ready after one CHANGELOG fix, with three MEDIUMs and five
+  LOWs (M3, the granted hand-off, is the owner's question; L5 asked only not to rewrite history),
+  the rest closed in new commits on top (no history rewritten: `feat/operator-declared-tools`
+  is built on `f76f145`). M1: the booleans-only tightening broke a pack that left the key empty
+  (null) or wrote a quote or a number (lint `SCHEMA`, and `run` refused the whole battery); null
+  reads as left out again, a quote or a number is still refused, and the CHANGELOG says so as a
+  breaking change with its migration. M2: a scene could clear a real destructive tool without a
+  trace; the reasoning names each cleared tool, and lint warns on a clearing not shaped like a
+  hand-off. L1: a seeded name map onto another scene tool's name (`{transfer_to_billing_agent:
+  delete_account}`) judged a real delete as the cleared hand-off; `seeding_gap` refuses it. L2,
+  L3: the timing test times only the judgement, on 200,000 letters, and pins the shared helpers
+  by identity; the shipped-trace sweep covers every `tool_call` config (22, with
+  `AG-CRED-SWEEP-001` and `AG-TOOLCHAIN-EXFIL-001`). L4: the MANUAL's lint reference lists the
+  warnings and the figures above are corrected. The auditor's dump (156 cases, 594 traces) is
+  byte-identical on the fixed tree to `6d5f7ae`'s and `f76f145`'s, and so are `dottore lint
+  specs/` and `dottore coverage --json`.
+- Tests: `tests/evaluators/test_scene_not_destructive.py` (43, 26 fail on `6d5f7ae`),
+  `tests/registry/test_stub_agrees_with_tool_call.py` (22, 13 fail on `6d5f7ae`, among them a
+  timing test bounded at 1.5 s, 250 times the linear cost), four in
+  `tests/core/test_seeded_setup.py` (3 fail on `6d5f7ae`), and the invalid schema-parity
+  fixture `setup-tool-destructive-not-boolean.yaml` (fails on `6d5f7ae`). Docs: `docs/03`,
+  `docs/04` §1, MANUAL §4.2, §5 and §8, FAQ, `dottore-scope(5)`, `examples/target.app.yaml`,
+  CHANGELOG. `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 5135 tests
+  (5065 on `6d5f7ae`, 70 new), 97.79% to 97.80% coverage over two runs
+  (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean.
+- Left open, for the owner (not decided here, no OD opened): a tool a deployment grants under
+  `seeded_setup.granted_tools` is in no scene, so a granted `transfer_to_<agent>` is still
+  destructive by its name: an Agents SDK deployment that hands off during a seeded spec that
+  declares `tool_call` fails it (read from the code, not run against a live deployment).
+  Whether a target file may declare one of its own tools not destructive (for instance a
+  `granted_tools` entry written as `{name, destructive: false}`) is a question of who may say a
+  tool is safe: the operator's file, not the spec.
+
 ## State, 2026-10-10 (night): the verification audit's three LOWs
 
 - The verification audit of `5bd7c45` found it merge-ready, with three LOWs, closed one commit each.
@@ -463,7 +529,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   pattern in `registry/fixtures_engine._STUB_INJECTION_RE` is still the one the evaluator dropped
   in the hostile-text audit (`[^`]*[A-Za-z][^`]*` between backticks): an unclosed backtick before
   40,000 letters takes 0.65 s to search there and 0.001 s in the evaluator's pattern. Only lint
-  reads it, over a spec's own fixtures.
+  reads it, over a spec's own fixtures. **Both closed on 2026-10-11** (u06 A-71, the entry of that
+  date above): a scene may mark a tool `destructive: false`, and the stub judges a call through
+  the evaluator's own helpers.
 
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 

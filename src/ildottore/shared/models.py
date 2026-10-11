@@ -16,6 +16,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    field_validator,
     model_serializer,
 )
 
@@ -114,6 +115,13 @@ class IoPC(_SchemaMirror):
     impacts: list[Annotated[str, Field(pattern=_IOPC_IMPACT_PATTERN)]] | None = None
 
 
+#: The flags of a scene tool the evaluators read, each a boolean or null when present: a quoted
+#: ``"false"`` is truthy, so it read as ``true``, and ``0`` or ``1`` say nothing a boolean does
+#: not (u06 A-71). Null (a key left empty) reads as absent, as it always did. Mirrors the
+#: schema's ``setup.tools.items.properties``.
+_TOOL_FLAGS: tuple[str, ...] = ("destructive", "external")
+
+
 class Setup(_SchemaMirror):
     """Declarative ``setup`` block (all fields optional per schema)."""
 
@@ -122,6 +130,19 @@ class Setup(_SchemaMirror):
     memory_seed: list[JsonDict] | None = None
     system_prompt: str | None = None
     canaries: list[str] | None = None
+
+    @field_validator("tools")
+    @classmethod
+    def _tool_flags_are_booleans(cls, tools: list[JsonDict] | None) -> list[JsonDict] | None:
+        for index, tool in enumerate(tools or []):
+            for flag in _TOOL_FLAGS:
+                value = tool.get(flag)
+                if value is not None and not isinstance(value, bool):
+                    raise ValueError(
+                        f"setup.tools[{index}].{flag} must be true or false (or left out), "
+                        f"not {type(value).__name__}"
+                    )
+        return tools
 
 
 class Attack(_SchemaMirror):
