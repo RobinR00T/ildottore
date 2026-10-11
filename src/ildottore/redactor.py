@@ -49,7 +49,7 @@ import threading
 from array import array
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 _MASK_TEMPLATE: Final = "«REDACTED:{type}»"
 _MASK_TEMPLATE_HASHED: Final = "«REDACTED:{type}:{digest}»"
@@ -66,6 +66,8 @@ _OWN_MASK_TYPES: Final = frozenset(
     {
         *("credential", "url_password", "labeled_secret", "high_entropy"),
         *("canary", "shared_line", "tool_arg_injection", "ip", "private_key"),
+        # A piece of a list's joined text masked where its mask could not be placed (A-77).
+        "fragment",
     }
 )
 
@@ -1679,8 +1681,8 @@ class Redactor:
         if isinstance(obj, Mapping):
             # Values only: masking keys here would rename fields and break callers that
             # re-validate the masked dump against a frozen model (reporting.mask_run). The
-            # evidence store, which serializes to JSON without re-validation, masks keys too
-            # via its own deep pass (evidence_fs) to close the secret-in-a-key vector (DL2).
+            # evidence store masks every key of what it writes, and the reports the keys of an
+            # attempt's free-form fields, through :func:`mask_keys` (DL2).
             return {key: self.redact(value) for key, value in obj.items()}
         if isinstance(obj, (list, tuple, set)):
             redacted = [self.redact(item) for item in obj]
@@ -1744,3 +1746,459 @@ def redact_identity(value: str) -> str:
     """Mask an identifier with the fixed identity salt, so the mask is comparable later."""
 
     return _IDENTITY.redact_text(value)
+
+
+# --- a reply kept in pieces (A-77) -----------------------------------------------------------
+# A reply reaches the evidence in pieces as well as whole: OpenAI's logprobs hold its text as
+# tokens of 1 to 4 characters, each with its alternatives, and a WebSocket transcript holds it as
+# the deltas it was streamed in. Each piece was masked on its own, too short for any rule, so a
+# key, a registered credential or the run's canary was rebuilt by joining the `token` fields of
+# the evidence or of the JSON report while `response.text` read masked (audit of main de122e26,
+# HIGH 1). The pieces are kept, since they are the reply as the target sent it (the figures the
+# membership evaluator reads, the transcript a reviewer reads), and are masked as the text they
+# make: the pieces of one stream are joined in order, the joined text is redacted once, and every
+# piece a mask covers shows that mask. Two streams are read as such, where the data says what
+# they are: a logprob list (its tokens, and each rank of their alternatives) and a WebSocket
+# transcript (the fields of the frames received that are not the protocol's, which the transcript
+# names). Any other list is a list of records, each string masked on its own: joining every list
+# read the `type` of a transcript's frames as `auth_oksessiondeltaping...`, one high-entropy
+# token, and masked the type of every frame.
+
+#: The mask a piece shows when the redactor masked its stream's joined text and where it masked
+#: could not be placed: every piece of that stream shows it.
+_FRAGMENT_MASK: Final = _MASK_TEMPLATE.format(type="fragment")
+#: How many passes a value gets at most, as ``redact_text`` reads a text to a fixed point.
+_SPLIT_ROUNDS: Final = 4
+_STASH_DELIMITERS: Final = frozenset((_STASH_OPEN, _STASH_CLOSE))
+#: A logprob item's token and its figure (ADR-0005 ``TokenLogprob``, and OpenAI's wire shape).
+_TOKEN: Final = "token"  # noqa: S105 - a field name, not a credential
+_LOGPROB: Final = "logprob"
+_BYTES: Final = "bytes"
+#: A WebSocket transcript (``raw_ids["websocket"]``, OD-34): its frames, each ``{"direction",
+#: "frame"}``, and the dotted paths of the frame fields the target file declares as the
+#: protocol's (the frame type, the final marker, an error, ids, usage, tool calls).
+TRANSCRIPT_FRAMES: Final = "frames"
+TRANSCRIPT_PROTOCOL_PATHS: Final = "protocol_paths"
+_RECEIVED: Final = "received"
+
+#: Where a string sits inside one item of a list: the keys and indices that lead to it.
+_LeafPath = tuple[object, ...]
+#: One stream: the strings to read joined, each with the item it sits in and where.
+_Stream = list[tuple[int, _LeafPath, str]]
+
+
+class _RedactsText(Protocol):
+    def redact_text(self, text: str) -> str: ...
+
+
+class _RedactsBoth(_Redacts, _RedactsText, Protocol): ...
+
+
+def _string_leaves(node: object, path: _LeafPath = ()) -> Iterator[tuple[_LeafPath, str]]:
+    """Every string value under ``node`` (a key is not one), with where it sits."""
+
+    if isinstance(node, str):
+        yield path, node
+    elif isinstance(node, Mapping):
+        for key, value in node.items():
+            yield from _string_leaves(value, (*path, key))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _string_leaves(value, (*path, index))
+
+
+def _is_logprob_list(items: Sequence[object]) -> bool:
+    """True for a list of logprob items: each an object with a string token and a figure."""
+
+    return len(items) > 1 and all(
+        isinstance(item, Mapping) and isinstance(item.get(_TOKEN), str) and _LOGPROB in item
+        for item in items
+    )
+
+
+def _logprob_streams(items: Sequence[object]) -> list[_Stream]:
+    """The tokens of a logprob list, then each rank of their alternatives, as streams.
+
+    An alternative is a ``[token, figure]`` pair of ``top`` (the stored shape) or an object with
+    a ``token`` in ``top_logprobs`` (OpenAI's, which an unreadable reply's excerpt quotes).
+    """
+
+    tokens: _Stream = []
+    ranks: dict[_LeafPath, _Stream] = {}
+    for index, item in enumerate(items):
+        if not isinstance(item, Mapping):  # pragma: no cover - _is_logprob_list checked it
+            continue
+        tokens.append((index, (_TOKEN,), cast("str", item[_TOKEN])))
+        pairs = item.get("top")
+        if isinstance(pairs, list):
+            for rank, pair in enumerate(pairs):
+                if isinstance(pair, list) and pair and isinstance(pair[0], str):
+                    path: _LeafPath = ("top", rank, 0)
+                    ranks.setdefault(path, []).append((index, path, pair[0]))
+        alternatives = item.get("top_logprobs")
+        if isinstance(alternatives, list):
+            for rank, alternative in enumerate(alternatives):
+                if isinstance(alternative, Mapping) and isinstance(alternative.get(_TOKEN), str):
+                    path = ("top_logprobs", rank, _TOKEN)
+                    ranks.setdefault(path, []).append((index, path, alternative[_TOKEN]))
+    return [stream for stream in (tokens, *ranks.values()) if len(stream) > 1]
+
+
+def _protocol_paths(node: Mapping[object, object]) -> list[list[str]] | None:
+    """The declared protocol paths of a transcript, split into segments, or None if not one."""
+
+    frames, declared = node.get(TRANSCRIPT_FRAMES), node.get(TRANSCRIPT_PROTOCOL_PATHS)
+    if not isinstance(frames, list) or not isinstance(declared, list):
+        return None
+    if not all(isinstance(path, str) for path in declared):
+        return None
+    return [path.split(".") for path in declared if isinstance(path, str)]
+
+
+def _transcript_streams(frames: Sequence[object], protocol: list[list[str]]) -> list[_Stream]:
+    """The content of the frames received, one stream per field, the protocol's fields aside."""
+
+    streams: dict[_LeafPath, _Stream] = {}
+    for index, entry in enumerate(frames):
+        if not isinstance(entry, Mapping) or entry.get("direction") != _RECEIVED:
+            continue
+        for path, text in _string_leaves(entry.get("frame"), ("frame",)):
+            segments = [str(step) for step in path[1:]]
+            if any(segments[: len(declared)] == declared for declared in protocol):
+                continue
+            streams.setdefault(path, []).append((index, path, text))
+    return [stream for stream in streams.values() if len(stream) > 1]
+
+
+def split_texts(obj: object) -> Iterator[str]:
+    """Every text a stream of ``obj`` makes joined: a logprob list's, a transcript's (A-77).
+
+    For the evidence store's fail-closed guard, which redacts each and refuses a write when one
+    changes (a secret in pieces survived), as it redacts each string on its own.
+    """
+
+    if isinstance(obj, Mapping):
+        for value in obj.values():
+            yield from split_texts(value)
+        protocol = _protocol_paths(obj)
+        if protocol is not None:
+            for stream in _transcript_streams(obj[TRANSCRIPT_FRAMES], protocol):
+                yield "".join(text for _, _, text in stream)
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from split_texts(item)
+        if _is_logprob_list(obj):
+            for stream in _logprob_streams(obj):
+                yield "".join(text for _, _, text in stream)
+
+
+def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None:
+    """Where in ``text`` each mask of ``redacted`` may stand, or None when that cannot be said.
+
+    ``redacted`` is ``text`` with stretches replaced by masks, so it reads ``L0 M1 L1 ... Mn Ln``
+    where each ``L`` is text as written and each mask stands for a stretch of one character or
+    more. The literals are placed as early as they can be, left to right, and as late as they
+    can be, right to left; every placement the text allows lies between the two, so mask ``i``
+    stands somewhere from where literal ``i - 1`` ends at the earliest to where literal ``i``
+    starts at the latest, and that span holds it in any placement. A character outside every
+    span is in a literal in every placement: it is text the redacted copy shows. A literal not
+    found means ``redacted`` is not of that form, and None sends the caller to mask everything.
+    """
+
+    literals: list[str] = []
+    masks: list[str] = []
+    cursor = 0
+    for match in _ALREADY_MASKED.finditer(redacted):
+        literals.append(redacted[cursor : match.start()])
+        masks.append(match.group(0))
+        cursor = match.end()
+    literals.append(redacted[cursor:])
+    count = len(masks)
+    if not count or not text.startswith(literals[0]) or not text.endswith(literals[-1]):
+        return None
+    earliest = [0] * (count + 1)
+    cursor = len(literals[0])
+    for index in range(1, count):
+        found = text.find(literals[index], cursor + 1)
+        if found == -1:
+            return None
+        earliest[index] = found
+        cursor = found + len(literals[index])
+    tail = len(text) - len(literals[-1])
+    if tail < cursor + 1:
+        return None
+    earliest[count] = tail
+    latest = [0] * (count + 1)
+    latest[count] = bound = tail
+    for index in range(count - 1, 0, -1):
+        # The earliest placement fits, so a latest one is found at or after it.
+        bound = latest[index] = text.rfind(literals[index], earliest[index], bound - 1)
+    return [
+        (earliest[index - 1] + len(literals[index - 1]), latest[index], masks[index - 1])
+        for index in range(1, count + 1)
+    ]
+
+
+def _mask_spans(redactor: _RedactsText, joined: str) -> list[tuple[int, int, tuple[str, ...]]]:
+    """The stretches of ``joined`` the redactor masks, merged, with the masks each shows.
+
+    ``redact_text`` drops its two stash delimiters before it reads a text, or writes them out
+    when that masks nothing, so a text holding one is read both ways, the first through the
+    positions of the characters it keeps, and what either masks is masked.
+    """
+
+    if _STASH_DELIMITERS.isdisjoint(joined):
+        forms: list[tuple[str, list[int] | None]] = [(joined, None)]
+    else:
+        kept = [index for index, char in enumerate(joined) if char not in _STASH_DELIMITERS]
+        forms = [
+            ("".join(joined[index] for index in kept), kept),
+            (visible_stash_delimiters(joined), None),
+        ]
+    spans: list[tuple[int, int, str]] = []
+    for text, positions in forms:
+        redacted = redactor.redact_text(text)
+        if redacted == text:
+            continue
+        for start, end, mask in _placed_masks(text, redacted) or [(0, len(text), _FRAGMENT_MASK)]:
+            if positions is not None:
+                start, end = positions[start], positions[end - 1] + 1
+            spans.append((start, end, mask))
+    spans.sort(key=lambda span: (span[0], span[1]))
+    merged: list[tuple[int, int, tuple[str, ...]]] = []
+    for start, end, mask in spans:
+        if merged and start < merged[-1][1]:
+            first, last, shown = merged[-1]
+            merged[-1] = (first, max(last, end), shown if mask in shown else (*shown, mask))
+        else:
+            merged.append((start, end, (mask,)))
+    return merged
+
+
+def _masked_pieces(redactor: _RedactsText, pieces: Sequence[str]) -> list[str]:
+    """``pieces`` with the stretches the redactor masks in their joined text masked.
+
+    A piece a masked stretch covers in part keeps the rest of its text and shows the mask in
+    place of that part; one it covers whole is the mask. Joined again, the pieces read as the
+    redacted text, with a mask repeated once for each piece it covers.
+    """
+
+    joined = "".join(pieces)
+    spans = _mask_spans(redactor, joined)
+    if not spans:
+        return list(pieces)
+    out: list[str] = []
+    start = first = 0
+    for piece in pieces:
+        end = start + len(piece)
+        while first < len(spans) and spans[first][1] <= start:
+            first += 1
+        parts: list[str] = []
+        cursor, index = start, first
+        while start < end and index < len(spans) and spans[index][0] < end:
+            span_start, span_end, shown = spans[index]
+            if span_start > cursor:
+                parts.append(joined[cursor:span_start])
+            parts.append("".join(shown))
+            cursor = min(max(cursor, span_end), end)
+            if span_end > end:  # it goes on into the next piece
+                break
+            index += 1
+        if parts and cursor < end:
+            parts.append(joined[cursor:end])
+        out.append("".join(parts) if parts else piece)
+        start = end
+    return out
+
+
+def _thawed(node: object) -> object:
+    """A copy of ``node``'s dicts and lists (its strings and scalars shared), to edit in place."""
+
+    if isinstance(node, Mapping):
+        return {key: _thawed(value) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_thawed(value) for value in node]
+    return node
+
+
+def _with_leaf(node: object, path: _LeafPath, value: str) -> object:
+    """``node`` (a thawed copy) with the string at ``path`` replaced by ``value``."""
+
+    if not path:
+        return value
+    holder: Any = node
+    for step in path[:-1]:
+        holder = holder[step]
+    holder[path[-1]] = value
+    return node
+
+
+def _mask_alternatives(item: object, token: str) -> None:
+    """Show the masks of ``token`` in place of every alternative of a logprob item (in place).
+
+    A token a mask covers is a piece of a secret, and its alternatives are what the model weighed
+    for that same piece: other pieces of the secret, often, which no rank's sequence joins whole.
+    They show the token's masks, and only those, whatever literal text the token kept. The
+    token's ``bytes`` (OpenAI writes each token's UTF-8 as a list of numbers, which an unreadable
+    reply's excerpt quotes) and each alternative's are dropped: they spell what was masked.
+    """
+
+    if not isinstance(item, dict):  # pragma: no cover - a thawed logprob item is a dict
+        return
+    shown = "".join(match.group(0) for match in _ALREADY_MASKED.finditer(token))
+    if item.get(_BYTES) is not None:
+        item[_BYTES] = None
+    pairs = item.get("top")
+    if isinstance(pairs, list):
+        for pair in pairs:
+            if isinstance(pair, list) and pair and isinstance(pair[0], str):
+                pair[0] = shown
+    alternatives = item.get("top_logprobs")
+    if isinstance(alternatives, list):
+        for alternative in alternatives:
+            if isinstance(alternative, dict) and isinstance(alternative.get(_TOKEN), str):
+                alternative[_TOKEN] = shown
+                if alternative.get(_BYTES) is not None:
+                    alternative[_BYTES] = None
+
+
+def _mask_streams_of(
+    redactor: _RedactsText, items: list[object], streams: list[_Stream], *, logprobs: bool
+) -> list[object] | None:
+    """``items`` with each stream masked as one text (a copy), or None when nothing is masked."""
+
+    edits: dict[int, list[tuple[_LeafPath, str]]] = {}
+    for stream in streams:
+        masked = _masked_pieces(redactor, [text for _, _, text in stream])
+        for (index, path, text), piece in zip(stream, masked, strict=True):
+            if piece != text:
+                edits.setdefault(index, []).append((path, piece))
+    if not edits:
+        return None
+    out = list(items)
+    for index, leaves in edits.items():
+        item = _thawed(out[index])
+        for path, piece in leaves:
+            item = _with_leaf(item, path, piece)
+            if logprobs and path == (_TOKEN,):
+                _mask_alternatives(item, piece)
+        out[index] = item
+    return out
+
+
+def _mask_streams(redactor: _RedactsText, node: object) -> tuple[object, bool]:
+    """One pass over ``node``: each stream in it masked as one text, inner ones first.
+
+    Returns ``node`` itself when nothing is masked, and whether anything was.
+    """
+
+    if isinstance(node, Mapping):
+        changed = False
+        out: dict[object, object] = {}
+        for key, value in node.items():
+            out[key], hit = _mask_streams(redactor, value)
+            changed = changed or hit
+        result: Mapping[object, object] = out if changed else node
+        protocol = _protocol_paths(result)
+        if protocol is not None:
+            frames = cast("list[object]", result[TRANSCRIPT_FRAMES])
+            masked = _mask_streams_of(
+                redactor, frames, _transcript_streams(frames, protocol), logprobs=False
+            )
+            if masked is not None:
+                result, changed = {**result, TRANSCRIPT_FRAMES: masked}, True
+        return result, changed
+    if not isinstance(node, list):
+        return node, False
+    items: list[object] = []
+    changed = False
+    for value in node:
+        item, hit = _mask_streams(redactor, value)
+        items.append(item)
+        changed = changed or hit
+    if _is_logprob_list(items):
+        masked = _mask_streams_of(redactor, items, _logprob_streams(items), logprobs=True)
+        if masked is not None:
+            items, changed = masked, True
+    return (items if changed else node), changed
+
+
+def mask_split(redactor: _RedactsText, obj: object) -> object:
+    """``obj`` with every stream in it masked as the text its pieces make (A-77).
+
+    ``obj`` is JSON-shaped (dicts, lists, strings and scalars) and is not changed: what is
+    masked is copied, and ``obj`` itself comes back when nothing is. A stream is a logprob
+    list's tokens, each rank of their alternatives, or a WebSocket transcript's received
+    content field by field (see the block comment above); its pieces are joined in order and
+    redacted once, each piece a mask covers shows that mask, and a token a mask covers has its
+    alternatives show it too. Inner streams are read first, and the whole is read again until
+    nothing more is masked, as ``redact_text`` reads a text to a fixed point. Only the joined
+    texts are masked here: each string on its own is left to :meth:`Redactor.redact`
+    (:func:`redact_split` does both).
+    """
+
+    current = obj
+    for _ in range(_SPLIT_ROUNDS):
+        current, changed = _mask_streams(redactor, current)
+        if not changed:
+            break
+    return current
+
+
+def redact_split(redactor: _RedactsBoth, obj: object) -> object:
+    """``redactor.redact(obj)``, with every stream masked as the text it makes too (A-77).
+
+    The joined texts are read first, as the target wrote them (:func:`mask_split`), then every
+    string on its own, and the two again while either masks something more, so the result is
+    a fixed point of both: the evidence store's guard redacts each string and each joined text
+    of what it stores (:func:`split_texts`) and refuses the write when one changes.
+    """
+
+    masked, changed = _mask_streams(redactor, obj)
+    current = redactor.redact(masked)
+    for _ in range(_SPLIT_ROUNDS - 1):
+        if not changed:
+            break
+        masked, changed = _mask_streams(redactor, current)
+        if changed:
+            current = redactor.redact(masked)
+    return current
+
+
+class KeysNotDistinct(ValueError):
+    """Two keys of one mapping still read alike once masked, whatever number the second got."""
+
+
+def mask_keys(redactor: _RedactsText, obj: object) -> object:
+    """``obj`` with the keys of its mappings redacted, values as they are (DL2, MEDIUM 2).
+
+    :meth:`Redactor.redact` masks values only, so a secret written as a key (a model-controlled
+    tool-call argument name, a usage field, a WebSocket frame's) is masked here. Two keys can
+    mask to one (`a@x.io` and `b@y.io` both read `«REDACTED:email»`): the second used to replace
+    the first, and one value was gone (pre-merge audit of the hostile-text block). A later one
+    is numbered instead, and the numbered name is redacted itself: a suffix changes what the
+    rules see (` (2)` after a date made a phone, ` #10000` after a label word a labelled secret,
+    and `, #2` after `password: Secret` let the label rule take a value it refuses at the end),
+    so a name that was not a fixed point made the evidence guard refuse the reply. Each base
+    counts on from its last number, so many colliding keys stay linear. More tries than names
+    taken means the redaction swallows the number (from 10^8 it reads as a phone):
+    :class:`KeysNotDistinct` rather than a loop (no reply holds that many).
+    """
+
+    if isinstance(obj, Mapping):
+        masked: dict[str, object] = {}
+        last: dict[str, int] = {}
+        for key, value in obj.items():
+            name = base = redactor.redact_text(str(key))
+            for _ in range(len(masked) + 1):
+                if name not in masked:
+                    break
+                last[base] = last.get(base, 1) + 1
+                name = redactor.redact_text(f"{base}, #{last[base]}")
+            else:
+                raise KeysNotDistinct("keys could not be told apart once masked")
+            masked[name] = mask_keys(redactor, value)
+        return masked
+    if isinstance(obj, list):
+        return [mask_keys(redactor, item) for item in obj]
+    return obj
