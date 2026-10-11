@@ -384,10 +384,13 @@ class WebSocketAdapter:
     def unreadable_advice(self) -> str:
         """What to check when no frame reads as the block says (OD-21, u08 A-74)."""
 
+        # A turn the server ends on a provider filter's word, with no text, is unreadable until
+        # the file declares that word (u04 A-79; pre-merge audit of a55710e9, LOW 2).
         return (
             "check the target file's endpoint and its websocket block: the paths a frame's text, "
             "tool calls and final stop are read at (response.text_path, tool_calls_path, "
-            "final_path)"
+            "final_path), and response.filter_stops when the server ends a turn the provider's "
+            "filter withheld on its filter word"
         )
 
     def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:

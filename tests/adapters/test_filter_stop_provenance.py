@@ -295,3 +295,17 @@ def test_the_fingerprint_does_not_call_a_foreign_stop_a_filter() -> None:
     claimed = ModelResponse(text="ok", finish_reason=stop, foreign_stop=True)
     assert reply_outcome(claimed) != "filtered"
     assert reply_outcome(ModelResponse(text="ok", finish_reason=stop)) == "filtered"
+
+
+def test_a_websocket_targets_advice_names_the_filter_declaration() -> None:
+    """Pre-merge audit of a55710e9, LOW 2: a file written before A-79 whose server ends a withheld
+    turn on ``content_filter`` now gets unreadable replies (a run of them is unreachable), and
+    the advice it is given must name the field that fixes it."""
+
+    from ildottore.adapters import WebSocketAdapter
+    from tests.adapters.test_websocket import _spec
+
+    adapter = WebSocketAdapter(
+        id="ws", url="ws://127.0.0.1:9/ws/chat", allowlist=EndpointAllowlist([]), spec=_spec()
+    )
+    assert "response.filter_stops" in adapter.unreadable_advice
