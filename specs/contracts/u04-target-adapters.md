@@ -386,8 +386,25 @@ reads as U+FFFD, since httpx decodes the stream as text.
   resends a query on its own, so no send escapes the ledger. A later turn of a multi-turn attempt
   whose connection is gone is inconclusive, never a silent new session. Whether a stateless
   server (`{{messages}}` in the template) should be allowed to reconnect mid-conversation is open.
-- **OD-37** (open, 2026-10-07, PR #87): `dottore fleet` infers `rest` from a `wss://` endpoint and
-  writes no `websocket:` block, and `run` refuses the file it writes (a `ws://` or `wss://`
-  endpoint is dialled only by `provider: websocket`), so a WebSocket target is declared by hand
-  today; the scope `fleet` writes pins the port (443 for `wss`, 80 for `ws`). Whether a fleet
-  entry should carry the block is open.
+- **OD-37** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: a fleet refuses a WebSocket entry; built, u12 §9**): `dottore fleet`
+  refuses a `ws://` or `wss://` endpoint (read as `run` reads it, stripped and case-folded,
+  whatever `provider` the entry gives) and `provider: websocket` (on any endpoint), in a target
+  and in the `judge:` block, before it writes anything (exit 3). The refusal names the entry
+  (`targets.1.endpoint of 'ws-assistant-staging' is a wss:// URL`) and points to
+  `examples/target.websocket.yaml` and `examples/scope.websocket.yaml`. Before: it inferred `rest`
+  from a `wss://` path and wrote no `websocket:` block, and `run`, `fleet --run` and the printed
+  `dottore run` refused that file (a `ws://` or `wss://` endpoint is dialled only by
+  `provider: websocket`); `provider: websocket` wrote a file with no block, refused the same way.
+  Why: a fleet entry is the shorthand for a target whose wire shape is standard and read from its
+  endpoint (OpenAI-compatible, Anthropic, a REST URL, an MCP server); a WebSocket target's shape is
+  the deployment's own, declared in a block `run` checks field by field before it sends
+  (`_websocket_spec`: the placeholder rules, the reserved upgrade headers, the walks of A-44 and
+  A-54), and the fleet already leaves the other per-deployment blocks (`seeded_setup`,
+  `sampling_defaults`) to a target file written by hand. Refused, not skipped: the unused
+  `skipped` list would let `fleet --run` exit on the other targets' findings with one target never
+  scanned. Alternative not taken: a `websocket:` block in a fleet entry, the provider read as
+  `websocket` from the scheme and the block checked by `_websocket_spec` before anything is
+  written (its scope entry pinned to host, port and path, as now). Reversal: `_refuse_websocket`,
+  `_websocket_problem` and `_WEBSOCKET_BY_HAND` in `cli/fleet.py` and their call in
+  `materialize_fleet`, and `tests/cli/test_fleet_websocket.py`.

@@ -350,6 +350,54 @@ def _check_judge(config: FleetConfig, judge: Target | None) -> None:
         raise ValueError("--judge does not match the fleet's judge: " + "; ".join(mismatches))
 
 
+#: Where a refused WebSocket entry is pointed: the hand-written target and its scope entry.
+_WEBSOCKET_BY_HAND = (
+    "a fleet entry cannot carry that block (OD-37). Write that target file by hand "
+    "(examples/target.websocket.yaml, docs/MANUAL.md §4.2), authorize it in a scope of its own "
+    "(examples/scope.websocket.yaml) and scan it with dottore run"
+)
+
+
+def _websocket_problem(where: str, entry_id: str, endpoint: str, provider: str | None) -> str:
+    """Why ``fleet`` cannot write this entry, or ``""``: a WebSocket target it would misdeclare.
+
+    A fleet entry has no ``websocket:`` block, so a ``ws://`` or ``wss://`` endpoint was written
+    as ``provider: rest`` (inferred from its path), and ``provider: websocket`` with no block;
+    ``run`` refuses both files (PR #87). The scheme is read as ``run`` reads it, stripped and
+    case-folded. Decided 2026-10-11 under the owner's delegation, revisable (OD-37).
+    """
+
+    if (provider or "").strip().lower() == "websocket":
+        return (
+            f"{where}.provider of {quoted(entry_id)} is websocket, whose websocket: block "
+            f"declares the wire shape; {_WEBSOCKET_BY_HAND}"
+        )
+    scheme = _split(endpoint).scheme.lower()
+    if scheme in ("ws", "wss"):
+        return (
+            f"{where}.endpoint of {quoted(entry_id)} is a {scheme}:// URL, which only a provider "
+            f"websocket target dials, with a websocket: block declaring its wire shape; "
+            f"{_WEBSOCKET_BY_HAND}"
+        )
+    return ""
+
+
+def _refuse_websocket(config: FleetConfig) -> None:
+    """Refuse a target or a judge the fleet would write as a file ``run`` refuses (OD-37)."""
+
+    for index, target in enumerate(config.targets):
+        problem = _websocket_problem(
+            f"targets.{index}", target.id, target.endpoint, target.provider
+        )
+        if problem:
+            raise ValueError(problem)
+    judge = config.judge
+    if judge is not None:
+        problem = _websocket_problem("judge", judge.id, judge.endpoint, judge.provider)
+        if problem:
+            raise ValueError(problem)
+
+
 def _shown(field: str, value: str | None) -> str:
     """A judge field as an error may quote it: an ``auth_ref`` literal never (it is a key).
 
@@ -436,6 +484,9 @@ def materialize_fleet(
             "each target an id that differs in more than case"
         )
 
+    # A WebSocket target's wire shape is declared by hand: written from a fleet entry, its file
+    # was one `run` refuses (OD-37).
+    _refuse_websocket(config)
     _check_judge(config, judge)
 
     scannable = list(config.targets)

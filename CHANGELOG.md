@@ -5,6 +5,25 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Decided (eight open decisions, closed on 2026-10-11 under the owner's delegation)
+
+The owner delegated these on 2026-10-11 ("arreglalo todo según mejores prácticas"). Each is
+recorded as decided under that delegation, by best practice and revisable, with its reasoning,
+the alternative not taken and how to reverse it, in its `00-INDEX` row and its unit's §9.
+
+- **`dottore fleet` no longer writes a WebSocket target that `run` refuses (OD-37).** A fleet
+  entry carries no `websocket:` block, so a `wss://` endpoint was written as `provider: rest`
+  (inferred from its path) and `provider: websocket` as a file with no block, and `run`,
+  `fleet --run` and the printed `dottore run` refused both. Now a `ws://` or `wss://` endpoint
+  (stripped and case-folded, whatever `provider` says) and `provider: websocket`, in a target or
+  in the `judge:` block, are refused before anything is written (exit 3): `error: targets.1.endpoint
+  of 'ws-assistant-staging' is a wss:// URL, which only a provider websocket target dials, with a
+  websocket: block declaring its wire shape; a fleet entry cannot carry that block (OD-37). Write
+  that target file by hand (examples/target.websocket.yaml, ...)`. Refused rather than skipped, so
+  `fleet --run` never exits on the other targets' findings with one target unscanned. Not taken:
+  a `websocket:` block in a fleet entry, checked by `run`'s own `_websocket_spec` before writing.
+  `tests/cli/test_fleet_websocket.py`: 17 tests, 16 of them failing before the change.
+
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 
 - **A SIGTERM inside one of asyncio's callbacks no longer leaves the run waiting for a second.**

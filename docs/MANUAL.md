@@ -790,10 +790,12 @@ transcript is never read as a tell). The probes go out at the deployment's own s
 no template carries a temperature, so a fingerprint is as repeatable as the deployment is.
 
 **Not covered.** A connection shared by several concurrent queries (a correlation id); an
-HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (`dottore fleet`
-infers `rest` from a `wss://` endpoint and writes no `websocket:` block, so `run` refuses the
-target file it writes until you set `provider: websocket` and add the block; its scope pins the
-port, 443 for `wss`); a session that must survive a reconnect.
+HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (a fleet entry
+carries no `websocket:` block, so `dottore fleet` refuses a `ws://` or `wss://` endpoint and
+`provider: websocket`, exit 3 and nothing written, and points here: write the target and its
+scope entry by hand, as `examples/target.websocket.yaml` and `examples/scope.websocket.yaml` do;
+until 2026-10-11 it wrote a `provider: rest` file `run` refused, OD-37); a session that must
+survive a reconnect.
 
 ### 4.3 `fleet.yaml`, many targets in one file
 
@@ -816,9 +818,12 @@ targets:
 ```
 
 `provider` is inferred from the endpoint when omitted: `/chat/completions` -> `openai`,
-`/messages` -> `anthropic`, otherwise `rest`. `dottore fleet` expands this into a scope plus
-one target file per model, named for its `id` (`target-<id>.yaml`). Two ids that differ only by
-case (`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
+`/messages` -> `anthropic`, otherwise `rest`. A WebSocket target is not a fleet entry: a `ws://`
+or `wss://` endpoint (whatever `provider` says) and `provider: websocket` are refused, in a
+target and in the `judge:` block, before anything is written (exit 3), since the target file it
+needs carries a `websocket:` block a fleet entry cannot hold (§4.2, OD-37). `dottore fleet`
+expands this into a scope plus one target file per model, named for its `id`
+(`target-<id>.yaml`). Two ids that differ only by case (`Prod` and `prod`) are refused (exit 3, nothing written) on every file system: on a
 case-insensitive one (the macOS and Windows default) they are one file, and the second entry
 used to overwrite the first. The message locates both entries as validation errors do
 (`targets.0.id`, counted from 0), since the CLI may mask an id that looks random. A `judge:` id

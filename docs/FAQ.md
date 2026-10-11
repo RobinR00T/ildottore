@@ -194,7 +194,11 @@ to ignore and the per-turn timeout. The adapter knows nothing about any product;
 the whole description. The scope gates `wss://` like `https://` (cleartext `ws://` only to
 loopback), a redirect at the upgrade is never followed, every frame is kept in the evidence
 with the credential as its placeholder, and `-sV` works (one connection per probe). Start from
-[`../examples/target.websocket.yaml`](../examples/target.websocket.yaml) and `--dry-run`.
+[`../examples/target.websocket.yaml`](../examples/target.websocket.yaml) and `--dry-run`. Not
+from a fleet file: a fleet entry carries no `websocket:` block, so `dottore fleet` refuses a
+`ws://` or `wss://` endpoint (exit 3, nothing written) and the error points to that example
+(OD-37). One query at a time per connection, and no reconnect in the middle of a conversation:
+both by design (OD-35, OD-36).
 
 ### Does `dottore fingerprint` tell me whether my endpoint has an output filter?
 

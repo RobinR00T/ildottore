@@ -186,10 +186,13 @@ ports (an offline `mock://` entry sends nothing and keeps a bare host).
 
 Keys are never written to the file: each entry names an env var (`api_key_env`), resolved
 only at send time. `provider` is inferred from the endpoint (`/chat/completions` -> openai,
-`/messages` -> anthropic, else `rest`). A `kind: mcp` entry routes to the read-only MCP
-adapter, which discovers a Model Context Protocol server's advertised tool/resource/prompt
-metadata (it never calls a tool); point the `mcp` suite at it. See
-[`specs/fleet.example.yaml`](specs/fleet.example.yaml).
+`/messages` -> anthropic, else `rest`). A WebSocket target is not a fleet entry: a `ws://` or
+`wss://` endpoint, or `provider: websocket`, is refused before anything is written (exit 3),
+since its target file needs a `websocket:` block; write it by hand from
+[`examples/target.websocket.yaml`](examples/target.websocket.yaml) (OD-37). A `kind: mcp`
+entry routes to the read-only MCP adapter, which discovers a Model Context Protocol server's
+advertised tool/resource/prompt metadata (it never calls a tool); point the `mcp` suite at it.
+See [`specs/fleet.example.yaml`](specs/fleet.example.yaml).
 
 An MCP server reachable over the wire uses `provider: mcp` with an `endpoint`; a local one
 uses `transport: stdio` + `command` and is launched as a subprocess only if the scope target's

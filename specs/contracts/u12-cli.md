@@ -1158,6 +1158,13 @@ probe's failure is named `guardrail/guardrail_benign: ProviderFilterBlock`. Chec
   Anthropic rule (`sent_sampling`, the `sent_sampling` argument of `CampaignRunner`,
   `sent_sampling_for` and `_AsSent`'s `wire`) is a fix of its own and stays: without it a spec
   that sets `top_p` stops an Anthropic campaign, block or no block.
+- **OD-37** (shared with u04; decided 2026-10-11 under the owner's delegation (best practice),
+  revisable; built): `dottore fleet` refuses a WebSocket entry, a `ws://` or `wss://` endpoint
+  or `provider: websocket`, in a target and in the `judge:` block, before it writes anything
+  (exit 3), so it never writes a target file `run` refuses; until then it wrote `provider: rest`
+  for a `wss://` endpoint. The reasoning, the alternative not taken (a `websocket:` block in a
+  fleet entry, checked by `_websocket_spec` before writing) and the reversal are in u04 §9.
+  Checked by `tests/cli/test_fleet_websocket.py` (17 tests, 16 of them failing on `6d5f7ae`).
 - **OD-32** how far `--runs` may go (2026-10-07). **Decided 2026-10-08 by the owner: the runner
   counts what is stored instead of building the plan (A-59, u08), and `--runs` keeps its `2**53`
   bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The

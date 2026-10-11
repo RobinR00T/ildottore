@@ -53,7 +53,9 @@ block, which the scope authorizes and
 .B fleet
 writes to judge.yaml; a
 .B --judge
-file must name the same id, endpoint and credential, or it is refused.
+file must name the same id, endpoint and credential, or it is refused. A ws:// or wss://
+endpoint, or provider websocket, is refused before anything is written (exit 3): a fleet entry
+carries no websocket block, so that target file is written by hand (OD-37).
 .TP
 .B lint
 Schema, policy and fixtures-prove-detection lint of the specs.
