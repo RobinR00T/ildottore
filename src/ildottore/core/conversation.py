@@ -172,7 +172,10 @@ async def execute_conversation(
 
     An env error on **any** turn aborts the conversation and returns an ``env_error``
     result whose attempt has ``response=None`` (the runner records ``inconclusive``, never
-    a fabricated fail from a half-finished dialogue). So does a turn the provider's input filter
+    a fabricated fail from a half-finished dialogue), as does a reply the adapter could not read.
+    When the model had called a tool by then, the result carries its last reply with the whole
+    trace so far in ``trace_so_far``, beside the attempt: the runner's trace evaluators read it,
+    and only a fail of theirs changes what is stored. So does a turn the provider's input filter
     refused (OD-41): the conversation stops there, its result is ``filter_blocked`` and carries
     that turn's error, and the runner records it ``inconclusive: blocked_by_provider_filter``.
     The turns before it reached the model; the one it refused did not, so the dialogue never
@@ -218,9 +221,12 @@ async def execute_conversation(
         # A turn the provider's input filter refused did not reach the model, but the turns
         # before it did, and a tool the model called on one of them was called (OD-41, u08 A-69):
         # the trace so far rides on the model's last reply, so the runner's trace evaluators can
-        # read it. Without a call there is nothing to read, and an environment error keeps none.
+        # read it. So it does when a later send ended in an environment error or an unreadable
+        # reply, kept beside the attempt rather than on it (``AttemptResult.trace_so_far``): it
+        # used to be dropped, and a forbidden call already made passed the spec (audit of the
+        # scoring, 2026-10-11, HIGH 2). Without a call there is nothing to read.
         partial = None
-        if result.filter_blocked and trace_tool_calls and answered is not None:
+        if trace_tool_calls and answered is not None:
             partial = answered.model_copy(
                 update={"tool_calls": [dict(call) for call in trace_tool_calls]}
             )
@@ -231,7 +237,7 @@ async def execute_conversation(
             messages=messages,
             system_prompt=system_prompt,
             sampling=sampling,
-            response=partial,
+            response=partial if result.filter_blocked else None,
             latency_ms=None,
             error=result.attempt.error or "conversation aborted after an environment error",
             setup=setup,
@@ -251,6 +257,7 @@ async def execute_conversation(
             retries=result.retries,
             errors=result.errors,
             unreadable=result.unreadable,
+            trace_so_far=None if result.filter_blocked else partial,
         )
 
     async def send(turn_index: int, suffix: str) -> AttemptResult:

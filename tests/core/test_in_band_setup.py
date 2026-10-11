@@ -148,7 +148,12 @@ async def test_a_tool_result_carrying_an_injection_reaches_the_model(fixtures) -
     assert "UNTRUSTED TOOL OUTPUT" in history[-1]["content"]
 
     attempt = result.findings[0].attempts[0]
-    assert attempt.request.metadata == {"turns": 1, "setup_delivery": IN_BAND, "tool_rounds": 1}
+    assert attempt.request.metadata == {
+        "turns": 1,
+        "setup_delivery": IN_BAND,
+        "tool_rounds": 1,
+        "send_number": 1,
+    }
     assert [t["name"] for t in attempt.request.tools or []] == ["lookup_ticket"]
     assert attempt.response is not None and len(attempt.response.tool_calls) == 1
 
