@@ -44,8 +44,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   (seeded_setup.granted_tools, destructive: false), so no call to it was judged destructive`, in
   the form of the scene's own clearing note and after it when both apply, carried by the runner to
   the stored aggregate, and the finding counts them. `_run_evaluators` takes the target and reads
-  the grants and the declaration off it, so a path added later (OD-42's `_cut_verdict`) gets it
-  by passing the target. The JSON summary's `operator_declarations` (always emitted; the golden
+  the grants and the declaration off it, and every path that judges a reply passes it:
+  `_evaluate`, `_trace_before_block` and, since the merge of `main` at `0685f2ce` (#105, #106),
+  OD-42's `_cut_verdict`, so a hand-off in a reply the provider's filter cut is no fail (the
+  attempt stays a cut needing review, its verdict carrying the note; the coordinator's M4). The JSON summary's `operator_declarations` (always emitted; the golden
   JSON snapshot gains the empty key, the other three snapshots do not move), the SARIF run and
   results, each JUnit suite and case, the HTML targets and summary, the terminal summary's last
   line, the run store (`context_json.not_destructive_tools`, masked as a target id is) and

@@ -38,6 +38,9 @@ versioning: [SemVer](https://semver.org/).
   entry and never the value. No new key in `seeded_setup` or at the top level: the declaration is
   written on the grant, so it cannot name a tool the file does not grant. A null `destructive` is
   refused here, while a scene's reads as left out: that entry predates the check, this one is new.
+- **Every path that judges a reply reads it**, OD-42's for a reply the provider's filter cut
+  included: a hand-off in a cut reply is no fail, and the attempt stays a cut needing review,
+  saying the declaration was read.
 - **No name map reaches it.** A map renames a call only to one of the spec's scene tools, which
   the declaration never applies to, and a scene tool mapped onto a declared name is refused by the
   loader and again by `seeding_gap` (`setup_not_seeded`), as the A-71 audit refused a map onto
