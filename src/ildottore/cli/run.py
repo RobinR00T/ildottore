@@ -43,7 +43,7 @@ from typing import Any
 from ildottore.cli import interrupts, wiring
 from ildottore.cli import resume as resume_mod
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
-from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
+from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing, unknown_suite
 from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import (
     DEFAULT_COMPLETION_TOKENS,
@@ -1672,6 +1672,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # parsed, so a one-letter typo removed a spec from the battery and the run still printed
     # "Specs run: 1 of 1 planned" and `complete` (audit 2026-10-03, F-10).
     registry, load_errors = wiring.load_registry(spec_paths)
+    wiring.refuse_spec_paths_that_hold_nothing(load_errors, to="run")
     if load_errors:
         # Counted by FILE: one bad file yields many findings (17 for one target example), and
         # the message said "17 spec file(s)" (review of PR #32).
@@ -1703,10 +1704,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     if suite_name is not None:
         suite_id = resolve_suite_id(suite_name)
         if not registry.has_suite(suite_id):
-            known = ", ".join(sorted(s.id for s in registry.suites())) or "<none>"
             raise ScopeError(  # operational error surfaced to exit >2 by the caller
-                f"suite {suite_name!r} (resolved to {suite_id!r}) is not registered. "
-                f"Registered suites: {known}"
+                unknown_suite(suite_name, suite_id, [s.id for s in registry.suites()])
             )
         suite_specs = registry.resolve(suite_id)
 

@@ -32,6 +32,7 @@ def describe_spec(spec_paths: list[Path], spec_id: str) -> AttackSpec:
     """Return the spec with ``spec_id`` (raises :class:`DescribeError` if absent)."""
 
     registry, errors = wiring.load_registry(spec_paths)
+    wiring.refuse_spec_paths_that_hold_nothing(errors, to="describe")
     try:
         return registry.get(spec_id)
     except SpecNotFoundError as exc:

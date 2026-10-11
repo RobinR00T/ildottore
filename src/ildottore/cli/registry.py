@@ -28,8 +28,9 @@ def list_specs(
     """Return the registered specs matching every provided filter.
 
     ``--suite`` narrows to a suite's spec set first, then the other filters apply
-    (AND semantics, matching the registry's ``list``). An unknown suite yields an
-    empty list rather than raising - ``registry ls`` is a read-only inspection.
+    (AND semantics, matching the registry's ``list``). An unknown suite raises
+    ``ValueError``, as ``run`` and ``coverage`` refuse it: an empty listing read as "this suite
+    holds no spec" and exited 0 (u12 A-82, CLI audit L7).
     """
 
     return list_specs_and_unloaded(
@@ -52,12 +53,13 @@ def list_specs_and_unloaded(
     """
 
     registry, unloaded = wiring.load_registry(spec_paths)
+    wiring.refuse_spec_paths_that_hold_nothing(unloaded, to="list")
     if suite is not None:
-        from ildottore.cli.flags import resolve_suite_id
+        from ildottore.cli.flags import resolve_suite_id, unknown_suite
 
         suite_id = resolve_suite_id(suite)
         if not registry.has_suite(suite_id):
-            return [], unloaded
+            raise ValueError(unknown_suite(suite, suite_id, [s.id for s in registry.suites()]))
         base = registry.resolve(suite_id)
         result = []
         for spec in base:
@@ -82,6 +84,8 @@ def unloaded_warnings(errors: list[LintError]) -> list[str]:
     """
 
     prefix = "path not found: "
+    # A path that does not exist or holds nothing is refused before this is reached (A-82);
+    # `describe` still lists the notes of a spec it did not find.
     missing = [e.message.removeprefix(prefix) for e in errors if e.message.startswith(prefix)]
     failed = len(errors) - len(missing)
     notes = []

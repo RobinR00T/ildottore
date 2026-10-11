@@ -27,6 +27,7 @@ __all__ = [
     "resolve_suite_id",
     "resolve_timing",
     "timing_for_template",
+    "unknown_suite",
 ]
 
 
@@ -104,6 +105,20 @@ def resolve_timing(
         concurrency=concurrency if concurrency is not None else base.concurrency,
         timeout_s=timeout_s if timeout_s is not None else base.timeout_s,
     )
+
+
+def unknown_suite(name: str, suite_id: str, registered: list[str]) -> str:
+    """The refusal of a suite the registry does not hold, one wording for every command.
+
+    The resolved id is named only when the name is an alias of another (``mitre:atlas``, of
+    ``mitre-atlas``): written as ``(resolved to ...)`` after a name ending in ``passwd``, the
+    redactor read the bracket as the password of a ``passwd`` label and masked the word
+    (``suite '../../etc/passwd' «REDACTED...» to ...``, CLI audit L8, u12 A-82).
+    """
+
+    alias = f" (an alias of {suite_id!r})" if suite_id != name.strip() else ""
+    known = ", ".join(sorted(registered)) or "<none>"
+    return f"suite {name!r}{alias} is not registered. Registered suites: {known}"
 
 
 def resolve_suite_id(name: str) -> str:

@@ -7,7 +7,7 @@ any code or making any network call** (contract §2/§4, ``docs/06 §2/§5``), a
 
 from __future__ import annotations
 
-from .errors import LintCode, LintCounts, LintError, LintReport, Severity
+from .errors import PATH_CODES, LintCode, LintCounts, LintError, LintReport, Severity
 from .fixtures_engine import DEFAULT_STUB_TABLE, EvalInput, StubEvaluator, evaluate_fixture
 from .linter import lint, lint_packs, uncompilable_patterns
 from .loader import LoadResult, load_path, load_paths
@@ -24,6 +24,7 @@ from .schema import (
 __all__ = [
     "DEFAULT_STUB_TABLE",
     "FLAGGED_FAMILIES",
+    "PATH_CODES",
     "EvalInput",
     "LintCode",
     "LintCounts",

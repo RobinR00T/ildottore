@@ -65,17 +65,16 @@ def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> Bat
     """
 
     registry, load_errors = wiring.load_registry(spec_paths)
+    # A path that does not exist or holds nothing printed 0% on every axis and exited 0: the
+    # same wrong answer as an unknown suite (u12 A-82, CLI audit L7).
+    wiring.refuse_spec_paths_that_hold_nothing(load_errors, to="measure")
     specs: list[AttackSpec]
     if suite is not None:
-        from ildottore.cli.flags import resolve_suite_id
+        from ildottore.cli.flags import resolve_suite_id, unknown_suite
 
         suite_id = resolve_suite_id(suite)
         if not registry.has_suite(suite_id):
-            known = ", ".join(sorted(s.id for s in registry.suites())) or "<none>"
-            raise ValueError(
-                f"suite {suite!r} (resolved to {suite_id!r}) is not registered. "
-                f"Registered suites: {known}"
-            )
+            raise ValueError(unknown_suite(suite, suite_id, [s.id for s in registry.suites()]))
         specs = list(registry.resolve(suite_id))
     else:
         specs = list(registry.list())

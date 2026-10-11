@@ -5,7 +5,8 @@ u12 wires this into the Typer app later; this module only provides the pure func
 * :func:`lint` - load + lint search paths → :class:`~ildottore.registry.LintReport`.
 * :func:`render_text` / :func:`render_json` - the two renderings (contract §6).
 * :func:`run_lint` - the callable u12's command delegates to; returns a process exit code
-  (0 = clean, 1 = any error-severity finding) and the rendered output string.
+  (0 = clean, 1 = any error-severity finding, 3 = a path that does not exist or yields nothing
+  to lint, which wins over 1) and the rendered output string.
 
 No side effects beyond reading the given paths (no exec, no network).
 """
@@ -16,11 +17,15 @@ import json
 from pathlib import Path
 
 from ildottore.redactor import log_safe_json, visible_controls
-from ildottore.registry import LintCode, LintError, LintReport, Severity
+from ildottore.registry import PATH_CODES, LintCode, LintError, LintReport, Severity
 from ildottore.registry import lint as _lint
 
 EXIT_OK = 0
 EXIT_LINT_FAILED = 1
+#: A path that does not exist or yields nothing to lint (``PATH_NOT_FOUND``, ``NO_SPECS``): the
+#: I/O code of every other command, and it wins over 1 (u12 A-82, CLI audit M9). ``lint
+#: nonexistent`` exited 1, and a path holding no spec printed ``lint OK`` and exited 0.
+EXIT_IO = 3
 
 
 def lint(paths: list[Path]) -> LintReport:
@@ -88,5 +93,7 @@ def run_lint(paths: list[Path], *, as_json: bool = False) -> tuple[int, str]:
     """Lint ``paths`` and return ``(exit_code, rendered_output)``."""
     report = lint(paths)
     output = render_json(report) if as_json else render_text(report)
+    if any(e.code in PATH_CODES for e in report.errors):
+        return EXIT_IO, output
     exit_code = EXIT_OK if report.ok else EXIT_LINT_FAILED
     return exit_code, output

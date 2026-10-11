@@ -84,7 +84,17 @@ from ildottore.policy import (
 )
 from ildottore.policy.scope import MAX_ID_CHARS
 from ildottore.redactor import register_known_secret
-from ildottore.registry import LintError, Registry, load_paths, non_json_values, non_string_keys
+from ildottore.registry import (
+    PATH_CODES,
+    LintError,
+    Registry,
+    load_paths,
+    non_json_values,
+    non_string_keys,
+)
+from ildottore.registry import (
+    Severity as LintSeverity,
+)
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.config_errors import (
@@ -154,6 +164,7 @@ __all__ = [
     "planted_secrets",
     "read_target_file",
     "real_adapter_factory",
+    "refuse_spec_paths_that_hold_nothing",
     "request_url_for",
     "resolve_auth_ref",
     "sampling_fallback",
@@ -231,7 +242,22 @@ def load_registry(spec_paths: list[Path]) -> tuple[Registry, list[LintError]]:
     """
 
     result = load_paths(spec_paths)
-    return Registry.from_packs(result.packs), list(result.errors)
+    # A warning (``FILES_NOT_READ``) is lint's to print: it refuses nothing here.
+    errors = [e for e in result.errors if e.severity is LintSeverity.ERROR]
+    return Registry.from_packs(result.packs), errors
+
+
+def refuse_spec_paths_that_hold_nothing(load_errors: list[LintError], *, to: str) -> None:
+    """Refuse a spec path that does not exist or yields no spec or suite (u12 A-82).
+
+    ``registry ls --spec-path nonexistent`` warned and exited 0, ``coverage`` of a missing or
+    empty path printed 0% and exited 0, and ``run`` said "spec file(s) failed to load" of a
+    path that holds none (CLI audit L7, M9). ``to`` is the command's verb (``run``, ``list``).
+    """
+
+    problems = [e.message for e in load_errors if e.code in PATH_CODES]
+    if problems:
+        raise ValueError(f"a spec path gives nothing to {to}: {'; '.join(problems)}")
 
 
 # --- policy / scope ----------------------------------------------------------------
