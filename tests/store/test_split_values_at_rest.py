@@ -168,6 +168,50 @@ def test_the_guard_joins_the_pieces_of_a_list(
     assert not any(store_root.rglob("*.json"))
 
 
+_URLS = (
+    ("postgresql://user:password@localhost:5432/mydb", "password", "@localhost:5432/mydb"),
+    ("redis://:hunter2hunter2@cache:6379/0", "hunter2hunter2", "@cache:6379/0"),
+    ("mongodb+srv://admin:S3cr3tPass@cluster0.example.net/db", "S3cr3tPass", "@cluster0."),
+)
+
+
+@pytest.mark.parametrize("size", [1, 2, 3, 4, 6, 8])
+@pytest.mark.parametrize(("url", "password", "host"), _URLS)
+def test_a_url_password_in_pieces_is_stored_masked_not_refused(
+    store_root: Path, url: str, password: str, host: str, size: int
+) -> None:
+    """A mask repeated in every piece read, joined, as a run of masks the URL rule masks again,
+    and the guard refused a reply masked correctly; the run aborted (audit of c4bd2012, HIGH 1)."""
+
+    text = f"Use {url} to connect."
+    frames: list[dict[str, object]] = [
+        {"direction": "received", "frame": {"type": "delta", "delta": {"text": piece}}}
+        for piece in _pieces(text, size)
+    ]
+    attempt = Attempt(
+        attempt_id=f"a-{size}",
+        spec_id="PI-DEMO-001",
+        request=ModelRequest(prompt="x"),
+        response=ModelResponse(
+            text=text,
+            logprobs=[TokenLogprob(token=p, logprob=-0.1) for p in _pieces(text, size)],
+            raw_ids={"websocket": {"frames": frames, "protocol_paths": ["type"]}},
+        ),
+    )
+    ref = FsEvidenceStore(store_root, redactor=Redactor(salt="s")).put("run-url", attempt)
+    assert ref.sha256 is not None
+    doc = json.loads(paths.attempt_path(store_root, "run-url", ref.sha256).read_text("utf-8"))
+    for joined in (
+        "".join(entry["token"] for entry in doc["response"]["logprobs"]),
+        "".join(
+            f["frame"]["delta"]["text"] for f in doc["response"]["raw_ids"]["websocket"]["frames"]
+        ),
+    ):
+        assert joined == f"Use {url.split('://')[0]}://" + joined.split("://", 1)[1]
+        assert "«REDACTED:url_password»" in joined and host in joined
+        assert password not in joined.replace("«REDACTED:url_password»", "")
+
+
 def test_a_media_digest_is_put_back_only_in_the_shape_the_runner_writes(
     store_root: Path, no_known_secrets: None
 ) -> None:

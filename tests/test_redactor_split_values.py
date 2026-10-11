@@ -11,6 +11,8 @@ mask covers shows it, and a list that is no stream is left to the redaction of e
 
 from __future__ import annotations
 
+import random
+import re
 import string
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -30,6 +32,7 @@ from ildottore.redactor import (
     redact_split,
     register_known_secret,
     split_texts,
+    withhold_split,
 )
 
 KEY = "sk-proj-Qx7Lm2Vt9Rw4Zb8Nc3Kp6Hy1Js5Df0Ga"
@@ -94,11 +97,19 @@ def test_a_key_and_a_credential_in_three_character_tokens_are_masked_joined(
         assert not any(piece in joined for piece in _pieces(secret)[1:-1])
     assert joined.startswith("Developer mode on. The key «REDACTED:")
     assert joined.endswith(" ok")
-    # The figures stay, one entry per token, and an alternative of a masked token shows the mask.
-    assert [entry["logprob"] for entry in tokens] == [e["logprob"] for e in _tokens(_pieces(text))]
-    masked = [entry for entry in tokens if "«REDACTED:" in str(entry["token"])]
-    assert masked and all("«REDACTED:" in entry["top"][1][0] for entry in masked)
-    assert all(entry["top"][1][0] == "zz" for entry in tokens if entry not in masked)
+    # Joined, the tokens read as the reply's redacted text, each mask once.
+    assert joined == Redactor(salt="s").redact_text(text)
+    # The figures stay, one entry per token; an alternative of a covered token shows its masks,
+    # and one written as the token shows what the token shows now.
+    original = _pieces(text)
+    assert [entry["logprob"] for entry in tokens] == [e["logprob"] for e in _tokens(original)]
+    covered = [i for i, entry in enumerate(tokens) if entry["token"] != original[i]]
+    assert covered
+    for i, entry in enumerate(tokens):
+        if i in covered:
+            assert entry["top"][0][0] == entry["token"] and "«REDACTED:" in entry["top"][1][0]
+        else:
+            assert entry["top"] == [[original[i], -0.01], ["zz", -4.0]]
 
 
 def test_the_wire_shape_of_openai_logprobs_is_a_stream_too(registered: str) -> None:
@@ -173,15 +184,10 @@ def test_a_piece_keeps_its_text_outside_the_mask() -> None:
         Redactor(salt="s"), _tokens(["Contact ", "alice.w", "ong@corp-example.com", " now"])
     )
     assert isinstance(out, list)
-    assert [entry["token"] for entry in out] == [
-        "Contact ",
-        "«REDACTED:email»",
-        "«REDACTED:email»",
-        " now",
-    ]
+    assert [entry["token"] for entry in out] == ["Contact ", "«REDACTED:email»", "", " now"]
     out = mask_split(Redactor(salt="s"), _tokens(["Mail alice.w", "ong@corp-example.com today"]))
     assert isinstance(out, list)
-    assert [entry["token"] for entry in out] == ["Mail «REDACTED:email»", "«REDACTED:email» today"]
+    assert [entry["token"] for entry in out] == ["Mail «REDACTED:email»", " today"]
 
 
 def test_nothing_split_comes_back_as_it_was_and_the_input_is_not_changed(
@@ -226,7 +232,7 @@ def test_masks_that_cannot_be_placed_mask_every_piece() -> None:
 
     out = mask_split(Rewrites(salt="s"), _tokens(["alice", "@corp", ".io"]))
     assert isinstance(out, list)
-    assert [entry["token"] for entry in out] == ["«REDACTED:fragment»"] * 3
+    assert [entry["token"] for entry in out] == ["«REDACTED:fragment»", "", ""]
     # A fragment mask is the tool's own: kept as written by the redactor.
     assert Redactor().redact_text("«REDACTED:fragment»") == "«REDACTED:fragment»"
 
@@ -237,7 +243,97 @@ def test_split_texts_yields_the_text_of_each_stream() -> None:
         "websocket": _transcript("Hel", "lo"),
         "records": [{"t": "x"}, {"t": "y"}],
     }
-    assert sorted(split_texts(value)) == ["Hello", "abcd", "abcd", "zzzz"]
+    # A rank of alternatives is no stream: side by side they are text no one wrote (LOW 5).
+    assert sorted(split_texts(value)) == ["Hello", "abcd"]
+
+
+def test_an_alternative_keeps_nothing_of_a_masked_token(no_known_secrets: None) -> None:
+    """The alternatives are masked once every edit of the item is made (audit of c4bd2012, M2).
+
+    A rank's own edit used to land after them and leave 10 characters of a labelled password in
+    an alternative the model weighed for the same piece.
+    """
+
+    key = "sk-bWvZb09c2UtWLhweqZ9hEafMIF4SMdBEE9pt8JmK"
+    pieces = ["the", " password", ": vA4z", "IISwZmSo#K", " " + key[:12], key[12:24], key[24:]]
+    items = _tokens([*pieces, " end"])
+    items[3]["top"] = [["IISwZmSo#K", -0.1], ["IISwZmSo#K " + key[:30], -1.0]]
+    out = redact_split(Redactor(salt="s"), {"lp": items})
+    assert isinstance(out, dict)
+    for entry in out["lp"]:
+        for alternative, _ in entry["top"]:
+            assert "vA4zIISwZmSo" not in alternative and "IISwZmSo" not in alternative
+            assert key[:12] not in alternative
+
+
+def test_a_clean_reply_s_alternatives_are_kept_as_they_came() -> None:
+    """A rank of alternatives is not joined: side by side they read as a key (LOW 5)."""
+
+    rng = random.Random(7)  # noqa: S311 - a seeded fixture, not a secret
+    text = "The answer depends on the configuration you chose earlier today."
+    pieces = _pieces(text)
+    items = [
+        {
+            "token": piece,
+            "logprob": -0.2,
+            "top": [
+                [piece, -0.2],
+                ["".join(rng.choice(string.ascii_letters) for _ in range(4)), -3],
+            ],
+        }
+        for piece in pieces
+    ]
+    assert redactor_mod._shannon_entropy("".join(i["top"][1][0] for i in items)) > 4.0
+    assert mask_split(Redactor(salt="s"), items) is items
+
+
+def test_the_bytes_of_a_masked_token_or_alternative_are_dropped() -> None:
+    """OpenAI's `bytes` spell a token whatever its text shows (audit of c4bd2012, LOW 4)."""
+
+    def entry(token: str, alternative: str) -> dict[str, object]:
+        return {
+            "token": token,
+            "logprob": -0.1,
+            "bytes": list(token.encode()),
+            "top_logprobs": [
+                {"token": token, "logprob": -0.1, "bytes": list(token.encode())},
+                {"token": alternative, "logprob": -1.0, "bytes": list(alternative.encode())},
+            ],
+        }
+
+    items = [entry("Mail ", "x"), entry(EMAIL, "y"), entry(" or", KEY), entry(" now", "z")]
+    out = redact_split(Redactor(salt="s"), {"content": items})
+    assert isinstance(out, dict)
+    kept = out["content"]
+    assert kept[1]["bytes"] is None and kept[1]["top_logprobs"][0]["bytes"] is None
+    assert kept[2]["bytes"] == list(b" or") and kept[2]["top_logprobs"][1]["bytes"] is None
+    assert kept[2]["top_logprobs"][0] == {"token": " or", "logprob": -0.1, "bytes": list(b" or")}
+    assert kept[0]["bytes"] == list(b"Mail ") and kept[3]["top_logprobs"][1]["bytes"] == [122]
+    spelled = bytes(b for e in kept for a in (e, *e["top_logprobs"]) for b in a["bytes"] or [])
+    assert EMAIL.encode() not in spelled and KEY.encode() not in spelled
+
+
+def test_withholding_empties_every_piece_and_keeps_the_rest() -> None:
+    value = {
+        "text": "kept as it is",
+        "logprobs": _tokens(["ab", "cd"]),
+        "raw_ids": {"id": "r-1", "websocket": _transcript("Hel", "lo")},
+    }
+    out = withhold_split(value)
+    assert isinstance(out, dict)
+    assert out["text"] == "kept as it is" and out["raw_ids"]["id"] == "r-1"
+    assert [e["token"] for e in out["logprobs"]] == ["", ""]
+    assert [e["top"] for e in out["logprobs"]] == [[["", -0.01], ["", -4.0]]] * 2
+    assert [e["logprob"] for e in out["logprobs"]] == [-0.01, -0.02]
+    assert _deltas(out["raw_ids"]["websocket"]) == ""
+    frames = out["raw_ids"]["websocket"][TRANSCRIPT_FRAMES]
+    assert [f["frame"]["type"] for f in frames] == [
+        f["frame"]["type"]
+        for f in value["raw_ids"]["websocket"][TRANSCRIPT_FRAMES]  # type: ignore[index]
+    ]
+    assert list(split_texts(out)) == ["", ""]
+    plain = {"text": "x", "tool_calls": [{"name": "a"}, {"name": "b"}]}
+    assert withhold_split(plain) is plain
 
 
 def test_mask_keys_numbers_keys_that_mask_alike() -> None:
@@ -272,6 +368,14 @@ def _registering(value: str) -> Iterator[None]:
             redactor_mod._KNOWN_SECRETS.update(saved)
 
 
+#: URLs whose password the URL rule masks, by the password (pre-merge audit of c4bd2012, HIGH 1).
+_URLS = {
+    "postgresql://user:password@localhost:5432/mydb": "password",
+    "redis://:hunter2hunter2@cache:6379/0": "hunter2hunter2",
+    "postgresql://u:longpassword123@h/x": "longpassword123",
+    "mongodb+srv://admin:S3cr3tPass@cluster0.example.net/db": "S3cr3tPass",
+}
+
 _FILLER = st.text(alphabet=string.ascii_lowercase + " ,.", min_size=0, max_size=30)
 
 
@@ -279,14 +383,16 @@ _FILLER = st.text(alphabet=string.ascii_lowercase + " ,.", min_size=0, max_size=
 @given(
     before=_FILLER,
     after=_FILLER,
-    which=st.sampled_from([KEY, REGISTERED, EMAIL]),
+    which=st.sampled_from([KEY, REGISTERED, EMAIL, *_URLS]),
     cuts=st.lists(st.integers(min_value=1, max_value=4), min_size=1, max_size=80),
     streamed=st.booleans(),
 )
 def test_no_split_of_a_secret_survives_joined(
     before: str, after: str, which: str, cuts: list[int], streamed: bool
 ) -> None:
-    """Wherever the pieces are cut, as tokens or as deltas, no secret is in them joined."""
+    """Wherever the pieces are cut, as tokens or as deltas, no secret is in them joined, and
+    every joined text is a fixed point: a URL password masked in pieces read as a run of masks
+    the URL rule masked again, and the store's guard refused it (audit of c4bd2012, HIGH 1)."""
 
     text = f"{before} {which} {after}"
     pieces: list[str] = []
@@ -297,13 +403,17 @@ def test_no_split_of_a_secret_survives_joined(
         pieces.append(text[start : start + size])
         start += size
     pieces.append(text[start:])
+    redactor = Redactor(salt="s")
     with _registering(REGISTERED):
         if streamed:
-            out = redact_split(Redactor(salt="s"), _transcript(*pieces))
+            out: object = redact_split(redactor, _transcript(*pieces))
             joined = _deltas(out)
         else:
-            tokens = redact_split(Redactor(salt="s"), _tokens(pieces))
-            assert isinstance(tokens, list) and len(tokens) == len(pieces)
-            joined = "".join(entry["token"] for entry in tokens)
-    assert which not in joined
-    assert which[2:-2] not in joined
+            out = redact_split(redactor, _tokens(pieces))
+            assert isinstance(out, list) and len(out) == len(pieces)
+            joined = "".join(entry["token"] for entry in out)
+        assert all(redactor.redact_text(text) == text for text in split_texts(out))
+    private = _URLS.get(which, which)
+    bare = re.sub(r"«REDACTED:[^»]*»", "", joined)  # `url_password` names a mask, not a value
+    assert private not in bare
+    assert private[2:-2] not in bare

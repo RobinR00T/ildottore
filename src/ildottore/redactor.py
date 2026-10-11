@@ -1756,13 +1756,18 @@ def redact_identity(value: str) -> str:
 # the evidence or of the JSON report while `response.text` read masked (audit of main de122e26,
 # HIGH 1). The pieces are kept, since they are the reply as the target sent it (the figures the
 # membership evaluator reads, the transcript a reviewer reads), and are masked as the text they
-# make: the pieces of one stream are joined in order, the joined text is redacted once, and every
-# piece a mask covers shows that mask. Two streams are read as such, where the data says what
-# they are: a logprob list (its tokens, and each rank of their alternatives) and a WebSocket
-# transcript (the fields of the frames received that are not the protocol's, which the transcript
-# names). Any other list is a list of records, each string masked on its own: joining every list
-# read the `type` of a transcript's frames as `auth_oksessiondeltaping...`, one high-entropy
-# token, and masked the type of every frame.
+# make: the pieces of one stream are joined in order, the joined text is redacted once, the first
+# piece a mask covers shows it and every piece it covers loses the text under it, so the pieces
+# joined read as the redacted text. A mask repeated in every piece it covered read, joined,
+# `user:«REDACTED:url_password»«REDACTED:url_password»@host`, which the URL rule masks again as
+# one, and the store's guard refused a reply it had masked correctly (pre-merge audit of
+# c4bd2012, HIGH 1). Two streams are read as such, where the data says what they are: a
+# logprob list's tokens (an alternative shows the masks of the token it stands beside; its rank
+# is no stream: alternatives side by side are text no one wrote, and joining them masked 7.0% of
+# the alternatives of clean replies, LOW 5) and a WebSocket transcript (the fields of the frames
+# received that are not the protocol's, which the transcript names). Any other list is a list of
+# records, each string masked on its own: joining every list read the `type` of a transcript's
+# frames as `auth_oksessiondeltaping...`, one high-entropy token, and masked every frame's type.
 
 #: The mask a piece shows when the redactor masked its stream's joined text and where it masked
 #: could not be placed: every piece of that stream shows it.
@@ -1774,6 +1779,9 @@ _STASH_DELIMITERS: Final = frozenset((_STASH_OPEN, _STASH_CLOSE))
 _TOKEN: Final = "token"  # noqa: S105 - a field name, not a credential
 _LOGPROB: Final = "logprob"
 _BYTES: Final = "bytes"
+#: Where a logprob item keeps its alternatives: a list there is the candidates for one piece, not
+#: a stream, though OpenAI writes each as a logprob item (``top_logprobs``).
+_ALTERNATIVES: Final = frozenset({"top", "top_logprobs"})
 #: A WebSocket transcript (``raw_ids["websocket"]``, OD-34): its frames, each ``{"direction",
 #: "frame"}``, and the dotted paths of the frame fields the target file declares as the
 #: protocol's (the frame type, the final marker, an error, ids, usage, tool calls).
@@ -1821,31 +1829,13 @@ def _is_logprob_list(items: Sequence[object]) -> bool:
 
 
 def _logprob_streams(items: Sequence[object]) -> list[_Stream]:
-    """The tokens of a logprob list, then each rank of their alternatives, as streams.
+    """The tokens of a logprob list, as one stream (its alternatives are not one, LOW 5)."""
 
-    An alternative is a ``[token, figure]`` pair of ``top`` (the stored shape) or an object with
-    a ``token`` in ``top_logprobs`` (OpenAI's, which an unreadable reply's excerpt quotes).
-    """
-
-    tokens: _Stream = []
-    ranks: dict[_LeafPath, _Stream] = {}
-    for index, item in enumerate(items):
-        if not isinstance(item, Mapping):  # pragma: no cover - _is_logprob_list checked it
-            continue
-        tokens.append((index, (_TOKEN,), cast("str", item[_TOKEN])))
-        pairs = item.get("top")
-        if isinstance(pairs, list):
-            for rank, pair in enumerate(pairs):
-                if isinstance(pair, list) and pair and isinstance(pair[0], str):
-                    path: _LeafPath = ("top", rank, 0)
-                    ranks.setdefault(path, []).append((index, path, pair[0]))
-        alternatives = item.get("top_logprobs")
-        if isinstance(alternatives, list):
-            for rank, alternative in enumerate(alternatives):
-                if isinstance(alternative, Mapping) and isinstance(alternative.get(_TOKEN), str):
-                    path = ("top_logprobs", rank, _TOKEN)
-                    ranks.setdefault(path, []).append((index, path, alternative[_TOKEN]))
-    return [stream for stream in (tokens, *ranks.values()) if len(stream) > 1]
+    tokens: _Stream = [
+        (index, (_TOKEN,), cast("str", cast("Mapping[str, object]", item)[_TOKEN]))
+        for index, item in enumerate(items)
+    ]
+    return [tokens] if len(tokens) > 1 else []
 
 
 def _protocol_paths(node: Mapping[object, object]) -> list[list[str]] | None:
@@ -1884,7 +1874,7 @@ def _transcript_streams(frames: Sequence[object], protocol: list[list[str]]) -> 
     return [stream for stream in streams.values() if len(stream) > 1]
 
 
-def split_texts(obj: object) -> Iterator[str]:
+def split_texts(obj: object, *, alternatives: bool = False) -> Iterator[str]:
     """Every text a stream of ``obj`` makes joined: a logprob list's, a transcript's (A-77).
 
     For the evidence store's fail-closed guard, which redacts each and refuses a write when one
@@ -1892,8 +1882,8 @@ def split_texts(obj: object) -> Iterator[str]:
     """
 
     if isinstance(obj, Mapping):
-        for value in obj.values():
-            yield from split_texts(value)
+        for key, value in obj.items():
+            yield from split_texts(value, alternatives=key in _ALTERNATIVES)
         protocol = _protocol_paths(obj)
         if protocol is not None:
             for stream in _transcript_streams(obj[TRANSCRIPT_FRAMES], protocol):
@@ -1901,7 +1891,7 @@ def split_texts(obj: object) -> Iterator[str]:
     elif isinstance(obj, list):
         for item in obj:
             yield from split_texts(item)
-        if _is_logprob_list(obj):
+        if not alternatives and _is_logprob_list(obj):
             for stream in _logprob_streams(obj):
                 yield "".join(text for _, _, text in stream)
 
@@ -1989,38 +1979,46 @@ def _mask_spans(redactor: _RedactsText, joined: str) -> list[tuple[int, int, tup
     return merged
 
 
-def _masked_pieces(redactor: _RedactsText, pieces: Sequence[str]) -> list[str]:
-    """``pieces`` with the stretches the redactor masks in their joined text masked.
+def _masked_pieces(
+    redactor: _RedactsText, pieces: Sequence[str]
+) -> list[tuple[str, tuple[str, ...]]]:
+    """``pieces`` with the stretches the redactor masks in their joined text masked, each with
+    the masks of the stretches it lies in.
 
-    A piece a masked stretch covers in part keeps the rest of its text and shows the mask in
-    place of that part; one it covers whole is the mask. Joined again, the pieces read as the
-    redacted text, with a mask repeated once for each piece it covers.
+    The first piece a masked stretch covers shows its masks in place of the part it covers; every
+    later piece it covers loses the part it covers (a piece it covers whole is empty). Joined
+    again, the pieces read as the redacted text, each mask once: shown in every piece, a mask the
+    URL rule had set read joined as a run of masks behind `user:`, which the rule masked again
+    as one, and the store's guard refused the reply (pre-merge audit of c4bd2012, HIGH 1).
     """
 
     joined = "".join(pieces)
     spans = _mask_spans(redactor, joined)
     if not spans:
-        return list(pieces)
-    out: list[str] = []
+        return [(piece, ()) for piece in pieces]
+    out: list[tuple[str, tuple[str, ...]]] = []
     start = first = 0
     for piece in pieces:
         end = start + len(piece)
         while first < len(spans) and spans[first][1] <= start:
             first += 1
         parts: list[str] = []
+        masks: list[str] = []
         cursor, index = start, first
         while start < end and index < len(spans) and spans[index][0] < end:
             span_start, span_end, shown = spans[index]
             if span_start > cursor:
                 parts.append(joined[cursor:span_start])
-            parts.append("".join(shown))
+            if span_start >= start:  # this piece is the first the stretch covers
+                parts.append("".join(shown))
+            masks.extend(mask for mask in shown if mask not in masks)
             cursor = min(max(cursor, span_end), end)
             if span_end > end:  # it goes on into the next piece
                 break
             index += 1
-        if parts and cursor < end:
+        if masks and cursor < end:
             parts.append(joined[cursor:end])
-        out.append("".join(parts) if parts else piece)
+        out.append(("".join(parts), tuple(masks)) if masks else (piece, ()))
         start = end
     return out
 
@@ -2047,33 +2045,72 @@ def _with_leaf(node: object, path: _LeafPath, value: str) -> object:
     return node
 
 
-def _mask_alternatives(item: object, token: str) -> None:
-    """Show the masks of ``token`` in place of every alternative of a logprob item (in place).
+def _mask_alternatives(item: object, token: str, shown: str, masks: tuple[str, ...]) -> None:
+    """Mask the alternatives of a logprob item whose token, ``token``, a mask covers (in place).
 
     A token a mask covers is a piece of a secret, and its alternatives are what the model weighed
-    for that same piece: other pieces of the secret, often, which no rank's sequence joins whole.
-    They show the token's masks, and only those, whatever literal text the token kept. The
-    token's ``bytes`` (OpenAI writes each token's UTF-8 as a list of numbers, which an unreadable
-    reply's excerpt quotes) and each alternative's are dropped: they spell what was masked.
+    for that same piece: other pieces of the secret, often, which no join of them reads whole. An
+    alternative written as the token was shows what the token shows now (``shown``); any other
+    shows the token's masks. Called once an item's every edit is made, so nothing written after
+    undoes it (pre-merge audit of c4bd2012, MEDIUM 2).
     """
 
     if not isinstance(item, dict):  # pragma: no cover - a thawed logprob item is a dict
         return
-    shown = "".join(match.group(0) for match in _ALREADY_MASKED.finditer(token))
-    if item.get(_BYTES) is not None:
-        item[_BYTES] = None
+    stands_for = "".join(masks)
     pairs = item.get("top")
     if isinstance(pairs, list):
         for pair in pairs:
             if isinstance(pair, list) and pair and isinstance(pair[0], str):
-                pair[0] = shown
+                pair[0] = shown if pair[0] == token else stands_for
     alternatives = item.get("top_logprobs")
     if isinstance(alternatives, list):
         for alternative in alternatives:
             if isinstance(alternative, dict) and isinstance(alternative.get(_TOKEN), str):
-                alternative[_TOKEN] = shown
-                if alternative.get(_BYTES) is not None:
+                written = alternative[_TOKEN]
+                alternative[_TOKEN] = shown if written == token else stands_for
+                if alternative.get(_BYTES) is not None:  # they spell what was written (LOW 4)
                     alternative[_BYTES] = None
+
+
+def _spelled(redactor: _RedactsText, entry: Mapping[object, object]) -> bool:
+    """Whether a logprob entry's ``bytes`` spell what is masked: its token is or will be."""
+
+    token = entry.get(_TOKEN)
+    if not isinstance(token, str) or entry.get(_BYTES) is None:
+        return False
+    return _ALREADY_MASKED.search(token) is not None or redactor.redact_text(token) != token
+
+
+def _drop_spelled_bytes(redactor: _RedactsText, items: list[object]) -> list[object] | None:
+    """``items`` with the ``bytes`` of every masked token and alternative dropped, or None.
+
+    OpenAI writes each token's UTF-8 as a list of numbers beside it, which an unreadable reply's
+    excerpt quotes: the numbers spell a token whatever its text shows, so wherever a token, or an
+    alternative's, is masked, by its stream or on its own, they go (pre-merge audit of c4bd2012,
+    LOW 4). A list with no ``bytes`` (the stored ``TokenLogprob``) costs one look per item.
+    """
+
+    out: list[object] | None = None
+    for index, item in enumerate(items):
+        if not isinstance(item, Mapping):  # pragma: no cover - a logprob list holds objects
+            continue
+        alternatives = item.get("top_logprobs")
+        listed = alternatives if isinstance(alternatives, list) else []
+        spelled = [isinstance(alt, Mapping) and _spelled(redactor, alt) for alt in listed]
+        if not _spelled(redactor, item) and not any(spelled):
+            continue
+        thawed = cast("dict[object, object]", _thawed(item))
+        if _spelled(redactor, item):
+            thawed[_BYTES] = None
+        for alternative, drop in zip(
+            cast("list[object]", thawed.get("top_logprobs") or []), spelled, strict=False
+        ):
+            if drop and isinstance(alternative, dict):
+                alternative[_BYTES] = None
+        out = list(items) if out is None else out
+        out[index] = thawed
+    return out
 
 
 def _mask_streams_of(
@@ -2081,26 +2118,32 @@ def _mask_streams_of(
 ) -> list[object] | None:
     """``items`` with each stream masked as one text (a copy), or None when nothing is masked."""
 
-    edits: dict[int, list[tuple[_LeafPath, str]]] = {}
+    edits: dict[int, list[tuple[_LeafPath, str, str, tuple[str, ...]]]] = {}
     for stream in streams:
         masked = _masked_pieces(redactor, [text for _, _, text in stream])
-        for (index, path, text), piece in zip(stream, masked, strict=True):
-            if piece != text:
-                edits.setdefault(index, []).append((path, piece))
+        for (index, path, text), (piece, masks) in zip(stream, masked, strict=True):
+            if masks:
+                edits.setdefault(index, []).append((path, text, piece, masks))
     if not edits:
         return None
     out = list(items)
     for index, leaves in edits.items():
         item = _thawed(out[index])
-        for path, piece in leaves:
+        for path, _text, piece, _masks in leaves:
             item = _with_leaf(item, path, piece)
-            if logprobs and path == (_TOKEN,):
-                _mask_alternatives(item, piece)
+        if logprobs:
+            for path, text, piece, masks in leaves:
+                if path == (_TOKEN,):
+                    _mask_alternatives(item, text, piece, masks)
+                    if isinstance(item, dict) and item.get(_BYTES) is not None:
+                        item[_BYTES] = None
         out[index] = item
     return out
 
 
-def _mask_streams(redactor: _RedactsText, node: object) -> tuple[object, bool]:
+def _mask_streams(
+    redactor: _RedactsText, node: object, *, alternatives: bool = False
+) -> tuple[object, bool]:
     """One pass over ``node``: each stream in it masked as one text, inner ones first.
 
     Returns ``node`` itself when nothing is masked, and whether anything was.
@@ -2110,7 +2153,7 @@ def _mask_streams(redactor: _RedactsText, node: object) -> tuple[object, bool]:
         changed = False
         out: dict[object, object] = {}
         for key, value in node.items():
-            out[key], hit = _mask_streams(redactor, value)
+            out[key], hit = _mask_streams(redactor, value, alternatives=key in _ALTERNATIVES)
             changed = changed or hit
         result: Mapping[object, object] = out if changed else node
         protocol = _protocol_paths(result)
@@ -2130,11 +2173,77 @@ def _mask_streams(redactor: _RedactsText, node: object) -> tuple[object, bool]:
         item, hit = _mask_streams(redactor, value)
         items.append(item)
         changed = changed or hit
-    if _is_logprob_list(items):
+    if not alternatives and _is_logprob_list(items):
         masked = _mask_streams_of(redactor, items, _logprob_streams(items), logprobs=True)
         if masked is not None:
             items, changed = masked, True
+        unspelled = _drop_spelled_bytes(redactor, items)
+        if unspelled is not None:
+            items, changed = unspelled, True
     return (items if changed else node), changed
+
+
+def _blank_leaves(items: list[object], streams: list[_Stream], *, logprobs: bool) -> list[object]:
+    """``items`` (a copy) with every piece of ``streams`` empty, and a token's alternatives too."""
+
+    out = list(items)
+    for index in sorted({index for stream in streams for index, _, _ in stream}):
+        item = _thawed(out[index])
+        for stream in streams:
+            for at, path, _ in stream:
+                if at == index:
+                    item = _with_leaf(item, path, "")
+        if logprobs and isinstance(item, dict):
+            _mask_alternatives(item, cast("str", item.get(_TOKEN)), "", ())
+            if item.get(_BYTES) is not None:
+                item[_BYTES] = None
+        out[index] = item
+    return out
+
+
+def _withheld(node: object, *, alternatives: bool = False) -> tuple[object, bool]:
+    """``node`` with every piece of every stream in it empty, and whether there was one."""
+
+    if isinstance(node, Mapping):
+        changed = False
+        out: dict[object, object] = {}
+        for key, value in node.items():
+            out[key], hit = _withheld(value, alternatives=key in _ALTERNATIVES)
+            changed = changed or hit
+        result: Mapping[object, object] = out if changed else node
+        protocol = _protocol_paths(result)
+        if protocol is not None:
+            frames = cast("list[object]", result[TRANSCRIPT_FRAMES])
+            streams = _transcript_streams(frames, protocol)
+            if streams:
+                blank = _blank_leaves(frames, streams, logprobs=False)
+                result, changed = {**result, TRANSCRIPT_FRAMES: blank}, True
+        return result, changed
+    if not isinstance(node, list):
+        return node, False
+    items: list[object] = []
+    changed = False
+    for value in node:
+        item, hit = _withheld(value)
+        items.append(item)
+        changed = changed or hit
+    if not alternatives and _is_logprob_list(items):
+        items, changed = _blank_leaves(items, _logprob_streams(items), logprobs=True), True
+    return (items if changed else node), changed
+
+
+def withhold_split(obj: object) -> object:
+    """``obj`` with every piece of its streams withheld: each token, alternative and content
+    field of a transcript empty, the figures, the shape and the protocol's fields kept (A-77).
+
+    For an attempt the evidence store refused to write because a joined text of its streams was
+    still not a fixed point of the redactor: the pieces are what it could not prove masked, so
+    they are left out and the rest, the reply's text included, is stored (pre-merge audit of
+    c4bd2012, HIGH 1: one such refusal ended the campaign). ``obj`` itself comes back when it
+    holds no stream.
+    """
+
+    return _withheld(obj)[0]
 
 
 def mask_split(redactor: _RedactsText, obj: object) -> object:
