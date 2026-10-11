@@ -20,7 +20,8 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 
-from ildottore.shared import AttackSpec, EvaluatorLogic, EvaluatorType, FixtureCase, VerdictStatus
+from ildottore.shared import AttackSpec, EvaluatorType, FixtureCase, Verdict, VerdictStatus
+from ildottore.shared.combination import combine_verdicts
 from ildottore.shared.patterns import compile_spec_pattern
 from ildottore.shared.tool_abuse import (
     destructive_flags,
@@ -275,15 +276,21 @@ DEFAULT_STUB_TABLE: dict[EvaluatorType, StubEvaluator] = {
 }
 
 
-def _combine(verdicts: list[VerdictStatus], logic: EvaluatorLogic) -> VerdictStatus:
-    """Combine per-evaluator verdicts into one (``docs/03``; default ``all_pass``)."""
-    if not verdicts:
-        return VerdictStatus.INCONCLUSIVE
-    any_fail = any(v is VerdictStatus.FAIL for v in verdicts)
-    if logic is EvaluatorLogic.ANY_FAIL:
-        return VerdictStatus.FAIL if any_fail else VerdictStatus.PASS
-    # all_pass / weighted (stub treats weighted like all_pass): fail if any evaluator fails.
-    return VerdictStatus.FAIL if any_fail else VerdictStatus.PASS
+def _combine(verdicts: list[tuple[EvaluatorType, VerdictStatus]]) -> VerdictStatus:
+    """Combine the stubs' verdicts by the run's own rule (OD-19, decided 2026-10-11, u06 A-73).
+
+    :func:`~ildottore.shared.combination.combine_verdicts`, the function the runner and
+    ``evaluators.combine`` call, whatever the spec's ``evaluator_logic`` says: every value names
+    it. The stubs return only ``pass`` or ``fail``, so a fixture fails when any stub fails, as
+    before; what changed is that lint and a run can no longer disagree by construction.
+    """
+    combined = combine_verdicts(
+        [
+            Verdict(status=status, confidence=1.0, reasoning="stub", evaluator_type=etype.value)
+            for etype, status in verdicts
+        ]
+    )
+    return combined.status
 
 
 def evaluate_fixture(
@@ -302,13 +309,12 @@ def evaluate_fixture(
     """
     tool_calls = case.tool_calls
     ev = EvalInput(response=case.response, tool_calls=tool_calls)
-    verdicts: list[VerdictStatus] = []
+    verdicts: list[tuple[EvaluatorType, VerdictStatus]] = []
     missing: list[EvaluatorType] = []
     for cfg in spec.evaluators:
         stub = table.get(cfg.type)
         if stub is None:
             missing.append(cfg.type)
             continue
-        verdicts.append(stub(spec, ev))
-    logic = spec.evaluator_logic or EvaluatorLogic.ALL_PASS
-    return _combine(verdicts, logic), missing
+        verdicts.append((cfg.type, stub(spec, ev)))
+    return _combine(verdicts), missing

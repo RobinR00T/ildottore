@@ -438,8 +438,12 @@ and format characters written out (a line break as `␊`), and a key that is not
 pydantic renders it (`on:` as `1`). What can be read
 is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
 `top_p` have no range check. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
-`logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set, and `sampling`,
-which has a default rule of its own (below, "Models that take no sampling"), so a `tool:` written
+`logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set; `sampling`,
+which has a default rule of its own (below, "Models that take no sampling"); and `mcp`, which you
+do not write: it is true exactly when `provider` is `mcp`, a spec that reads an MCP server's
+advertised surface (`MCP-TOOLPOISON-001`) requires it, and it is refused declared `false` on an
+MCP target or `true` on a live target of another provider (an offline mock may declare it), OD-44
+since 2026-10-11. So a `tool:` written
 for `tools:` is refused (`tool: Extra inputs are not permitted`); older versions ignored it, and
 the target ran with tools off and without the specs that need them. A `capabilities` that is
 not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
@@ -933,7 +937,7 @@ required.
 
 | Flag | Meaning |
 |------|---------|
-| `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`). Without it, a live run (and its `--dry-run`) warns before sending, per live target, how many of the specs that will run there use `semantic_judge` (`33 of the 34 specs that will run on local-llama ...` on the example target): they come back inconclusive wherever no deterministic evaluator decides |
+| `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`). Without it, a live run (and its `--dry-run`) warns before sending, per live target, how many of the specs that will run there use `semantic_judge` (`33 of the 33 specs that will run on local-llama ...` on the example target: every shipped spec declares a judge since OD-16, and `MCP-TOOLPOISON-001` does not run on a chat model since OD-44): they come back inconclusive wherever no deterministic evaluator decides |
 | `--runs INT` | reproducibility runs (default 5) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep` and `-A` imply 2; an explicit `-T` always wins); higher is faster/louder |
 | `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it). Every send passes it: the battery, each retry (a campaign's adapters do not retry on their own; the runner retries, paced and debited, so a 429 storm is not a burst), the `-sV` probes, the multi-identity sweep and the `--judge` model. Must be greater than 0: `0` or a negative rate is refused (exit 3) instead of silently switching pacing off. **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |
@@ -953,8 +957,8 @@ required.
 |------|---------|
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
 | `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
-| `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding) |
-| `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt or its mean confidence is below the spec's `confidence_threshold` (§9). Undecided (`inconclusive`) results never gate, with or without it |
+| `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding). A fail only the judge reported is never confirmed (OD-19, since 2026-10-11), so it does not trip this gate; `--include-needs-review` makes it, and also every intermittent fail (a variant that did not fail on every attempt). `dottore diff` reads statuses, not confirmation, so it counts a judge-only fail as `NEW_FAIL` either way |
+| `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt, its mean confidence is below the spec's `confidence_threshold`, or only the judge reported its fails (§9). Undecided (`inconclusive`) results never gate, with or without it |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`) |
 | `--run-db PATH` | run store SQLite path |
 | `--spec-path PATH` | spec search path (default `specs/`) |
@@ -1105,14 +1109,16 @@ Azure's `content_filter`, Anthropic's `refusal`, Bedrock's `guardrail_intervened
 Vertex AI's `MODEL_ARMOR`, also read at a REST template's `finish_path`; the attack phase reads
 the same stops, §9); a reply cut at the probe's 512-token cap is not one, and with no
 stop reason from the provider on any reply (a REST template without `finish_path`, a WebSocket or
-MCP target, the offline mocks) it is `null`. `input_filter` is always `null`. An input filter
-that answers the benign request with a 4xx (Azure OpenAI's prompt filter: HTTP 400,
-`content_filter`) is a failed probe, `guardrail/guardrail_benign: ProviderFilterBlock` (any other
-4xx: `AdapterStatusError`), with `benign_refused: null`, and the command goes on. So is a carrier
-probe the filter refuses (a carrier is an instruction sent through an encoding, which Azure's
-Prompt Shields classes as an encoding attack): `carrier/carrier_base64_wrap: ProviderFilterBlock`,
-that carrier unmeasured and left out of `effective_mutators`. The same refusal of an attributing
-probe still exits 3. In the attack phase such a refusal is a blocked attempt and the campaign goes
+MCP target, the offline mocks) it is `null`. An input filter that answers the benign request with a
+4xx (Azure OpenAI's prompt filter: HTTP 400, `content_filter`) is a failed probe,
+`guardrail/guardrail_benign: ProviderFilterBlock` (any other 4xx: `AdapterStatusError`), with
+`benign_refused: null`, and the command goes on. So is a carrier probe the filter refuses (a
+carrier is an instruction sent through an encoding, which Azure's Prompt Shields classes as an
+encoding attack): `carrier/carrier_base64_wrap: ProviderFilterBlock`, that carrier unmeasured and
+left out of `effective_mutators`. Either refusal is the provider saying its input filter refused a
+prompt, so `input_filter` is `true`; otherwise it is `null`, never `false` (benign probes cannot
+show there is no filter, and an undocumented 4xx claims nothing). Until 2026-10-11 (OD-40) it was
+`null` on every pass. The same refusal of an attributing probe still exits 3. In the attack phase such a refusal is a blocked attempt and the campaign goes
 on (§9).
 On a target that answers every attributing probe alike, `refusal_style` and `benign_refused` are
 `null`. `false` is what two benign probes saw, not proof that there is no filter. Before, any
@@ -1178,7 +1184,10 @@ Schema + policy + fixtures-prove-detection lint. `specs/` resolves as a pack (vi
 A mutation must name a registered mutator (built-ins plus installed plugins), or lint reports
 `UNKNOWN_MUTATOR_TYPE`. The same code covers a `name:param` the mutator does not implement
 (§12). An installed mutator plugin that cannot be loaded is a `MUTATOR_PLUGIN_ERROR` warning,
-not a crash: lint goes on with the built-ins.
+not a crash: lint goes on with the built-ins. A spec that writes `evaluator_logic: all_pass`,
+`any_fail` or `weighted`, or gives an evaluator a `weight`, gets a `DEPRECATED_COMBINATION`
+warning: every value runs one rule, `deterministic_first` (§8), which is the one to write, no vote
+is taken, and nothing reads a `weight` (OD-19, since 2026-10-11). The spec loads and runs as before.
 
 A spec pack can come from a third party, so lint reads only regular files that resolve inside
 their pack directory (or, for loose specs, the directory they were found in), at most 1 MiB
@@ -1501,9 +1510,12 @@ real adapter. It decides what an offline target answers:
 comprehends some carriers and not others changes the plan, through the real layer, the real
 mutators and the real planner. It says nothing about how any actual model behaves: that needs a
 live run (the first, against a local `llama3.2:3b`, is in `docs/16` §1), and the fingerprint
-line prints `[offline mock: <scenario>]` so an offline result is never read as one. Three specs
-decide against any fixed-string offline target (their oracles read only the response text);
-`comprehending` decides exactly what `bare` decides, no more.
+line prints `[offline mock: <scenario>]` so an offline result is never read as one. No spec of
+the shipped battery decides against a fixed-string offline target: two did, because their text
+oracles scored a reply that answers nothing, until OD-16 was decided on 2026-10-11 (ADR-0007:
+`DOS-TOKEN-AMP-001` keys on the amplification itself, `MCP-TOOLPOISON-001` pairs its oracle with a
+judge, which a bare run leaves unregistered). `comprehending` decides exactly what `bare` decides,
+no more.
 
 Both offline fingerprint paths honour the key: `dottore run -sV` and `dottore fingerprint
 --offline` pass the target's `mock_scenario` to the mock. On a `comprehending` target the
@@ -1626,15 +1638,35 @@ Each spec names one or more evaluators. The design is **deterministic-first**:
   and so on) decide the verdict with no model in the loop. They are the primary word.
 - **`semantic_judge`** is an optional LLM-as-judge, wired with `--judge`. It is a
   **secondary**: a deterministic `fail` always wins and the judge cannot turn it into a pass.
-  When every deterministic evaluator passes, a judge `fail` still decides the attempt, and
-  today such a finding can be confirmed and gate CI; whether a judge-only fail should be
-  `needs-review` instead is open (OD-19, ADR-0010). Without a judge it abstains
+  When every deterministic evaluator passes, a judge `fail` still decides the attempt: the
+  finding fails its spec and is in every report, but it is `needs-review`, never confirmed on
+  the judge's word alone, so it gates CI only with `--include-needs-review`, and its reasoning
+  says how many attempts the judge alone decided (OD-19, decided 2026-10-11, ADR-0010; such a
+  finding was confirmed until then). Without a judge it abstains
   (`capability_unavailable`) and a finding that depends on it comes back inconclusive; a live
   run without `--judge` says so before sending anything (the `-sV` probes included) and in
   the dry run. A judge that errors (an outage, a rate limit, its own provider's input filter
   refusing the judge request) or never returns a parseable verdict (empty content, a refusal in
   prose) counts like no judge, never as a pass; the campaign goes on, and an attempt whose judge
   was refused is not counted as blocked (the attack prompt reached the model).
+
+**How a spec's evaluators combine is one rule, `deterministic_first`**, whatever its
+`evaluator_logic` says: a deterministic `fail` decides; else an `inconclusive`; else a judge
+`fail`; else `pass` (a judge that was consulted and abstained is left out). A run, `dottore lint`
+and `evaluators.combine` apply the same function. The shipped specs write `deterministic_first`;
+`all_pass`, `any_fail` and `weighted` are deprecated names of it, which load and get a lint
+warning, and no vote is taken, so an evaluator's `weight` is read by nothing (OD-19, decided
+2026-10-11, ADR-0010).
+
+**A reply that answers nothing decides nothing.** A `regex_absence` passes, and a
+`regex_presence` fails, any reply that lacks its pattern: a canned string, an error page, a model
+that never engaged. So the shipped specs key a text oracle on what only an exploited reply holds
+(the leaked marker, the produced batch, the coerced repetition: the absence polarity) and pair it
+with `semantic_judge` wherever the oracle cannot prove the secure direction alone; without a judge
+such a spec is `inconclusive`, never a pass, and a deterministic `fail` still decides alone.
+Against the offline `bare` mock, which answers every prompt with one canned string, all 75 come
+out `inconclusive`. Write a custom spec the same way: a `regex_presence` on refusal words fails a
+bounded answer phrased in other words (OD-16, decided 2026-10-11, ADR-0007).
 
 The **`tool_call`** evaluator inspects the tool-call trace and fails on four abuse classes:
 an unauthorized tool (outside `patterns`, or with no `patterns` outside the `setup.tools` not
@@ -1782,9 +1814,11 @@ Risk and confidence are **separate axes**:
   multiplier on risk.
 - **Confidence** gates an exploited finding as `confirmed` or not: confirmed needs some
   mutation variant that failed on every one of its attempts, with a mean confidence at or above
-  the spec's `confidence_threshold` (with `--runs 1` the attempts are pooled instead). A
-  format-valid secret/PII hit without corroboration is never a confirmed leak: its verdict is
-  `inconclusive` by design (`docs/11 §4`).
+  the spec's `confidence_threshold` (with `--runs 1` the attempts are pooled instead), and at
+  least one of those fails decided by a deterministic evaluator: a fail the judge alone
+  reported is never confirmed (OD-19, since 2026-10-11, §8). A format-valid secret/PII hit
+  without corroboration is never a confirmed leak: its verdict is `inconclusive` by design
+  (`docs/11 §4`).
 
 Every report puts each finding in one of four **states** (the HTML report's sections, the
 `state` property of a SARIF result, the summary's `confirmed_count` and `needs_review_count`):
@@ -2031,6 +2065,13 @@ Two patterns, often combined:
    finding at or above the band. Upload the SARIF to code-scanning.
 2. **Regression gate.** Keep a baseline JSON run in the repo and compare:
    `dottore diff baseline.json current.json` exits nonzero only on NEW-FAIL regressions.
+
+The two gates read different things. `--fail-on` gates confirmed fails, and a fail only the judge
+reported is never confirmed (OD-19, since 2026-10-11): a pipeline that was red only on such a
+finding is green unless it passes `--include-needs-review`, which also gates every intermittent
+fail (a variant that did not fail on every attempt), the trade-off to weigh before adding it.
+`dottore diff` compares statuses, not confirmation, so a judge-only fail that is new since the
+baseline is a `NEW_FAIL` regression whatever the flag.
 
 A ready-made GitHub Actions workflow is in
 [`../examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).

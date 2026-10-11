@@ -555,7 +555,9 @@ def test_the_judge_share_comes_off_only_for_what_the_resume_will_not_judge() -> 
         )
 
     judged = load("PI-DIRECT-001")
-    unjudged_spec = load("MCP-TOOLPOISON-001")  # declares no semantic_judge
+    # Every shipped spec declares a judge since OD-16 (2026-10-11), so one without is derived.
+    mcp = load("MCP-TOOLPOISON-001")
+    unjudged_spec = mcp.model_copy(update={"evaluators": [mcp.evaluators[0]]})
     risk = RiskScore(
         impact=1, exploitability=1, reproducibility=0.0, risk=0.0, band=ScanBand.INFO,
         confidence=0.0,

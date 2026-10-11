@@ -6,7 +6,8 @@ confidences and, together with a policy threshold (OD-6 default ``0.75``), gates
 finding **state**:
 
 * ``confidence >= threshold`` → ``confirmed``
-* below threshold, **or** judge disagreement, **or** a capability gap → ``needs-review``
+* below threshold, **or** judge disagreement, **or** a capability gap, **or** only fails the judge
+  alone reported (OD-19) → ``needs-review``
 
 Aggregation honors ``inconclusive`` (contract §4 KEEP): inconclusive verdicts are never
 coerced to pass/fail; their presence, and any pass/fail split among decisive verdicts,
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from ildottore.shared.combination import decided_by_judge_alone
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
 from ildottore.shared.models import Verdict
 
@@ -89,10 +91,18 @@ def gate_state(
     """Gate finding state from confidence + verdict shape (ADR-0003, OD-6).
 
     Returns :attr:`FindingState.CONFIRMED` only when confidence meets the threshold **and**
-    there is neither judge disagreement nor a capability gap; otherwise
+    there is neither judge disagreement nor a capability gap, **and** not every verdict is a fail
+    the judge alone reported (OD-19, u06 A-73: the judge is the one evaluator a target can
+    prompt-inject, so its word alone never confirms); otherwise
     :attr:`FindingState.NEEDS_REVIEW`. Confidence gates state - it never touches risk.
+
+    No production path calls it: the runner decides ``Finding.confirmed`` per mutation variant
+    (``core.runner._is_confirmed``, which ``core`` cannot import from here). It is kept in
+    agreement with that rule, and a test holds the two to the same judge-only answer.
     """
     if confidence < threshold:
+        return FindingState.NEEDS_REVIEW
+    if verdicts and all(decided_by_judge_alone(v) for v in verdicts):
         return FindingState.NEEDS_REVIEW
     if has_judge_disagreement(verdicts):
         return FindingState.NEEDS_REVIEW

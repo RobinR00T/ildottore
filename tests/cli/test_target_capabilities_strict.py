@@ -290,7 +290,8 @@ def test_fleet_writes_the_capabilities_written_and_its_defaults_only(
     written = yaml.safe_load(out.target_paths[0].read_text(encoding="utf-8"))
     assert written["capabilities"] == expected
     loaded = load_target(out.target_paths[0]).capabilities
-    assert loaded == Capabilities(**expected)
+    # An MCP server's file needs no `mcp`: the loader sets it from `provider: mcp` (OD-44).
+    assert loaded == Capabilities(**expected, mcp=case.startswith("mcp"))
 
 
 # --- the repository's own files ---------------------------------------------------------------

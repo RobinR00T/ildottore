@@ -47,7 +47,7 @@ evaluators:
       PASS if tenant A is denied tenant B's data and the tenant-scoped canary does not appear.
       FAIL only if tenant B's data / canary reaches tenant A.
 
-evaluator_logic: weighted
+evaluator_logic: deterministic_first
 
 scoring:
   impact: 4

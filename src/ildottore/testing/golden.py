@@ -74,6 +74,7 @@ _REQUIRES_TO_CAPABILITY: dict[RequiresCapability, str] = {
     RequiresCapability.LOGPROBS: "logprobs",
     RequiresCapability.MULTI_IDENTITY: "multi_identity",
     RequiresCapability.MULTIMODAL: "multimodal",
+    RequiresCapability.MCP: "mcp",
 }
 
 

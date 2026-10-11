@@ -546,10 +546,11 @@ def test_the_benign_reply_does_not_attribute() -> None:
     ids=["a-requested-refusal", "b-benign-refused", "c-output-filter"],
 )
 def test_the_guardrail_profile_does_not_reorder_the_battery(reply: Reply) -> None:
-    """The planner reads ``capability_guess["effective_mutators"]`` (the carrier layer) and
-    ``guardrails["baseline_resistance"]``, a key no layer writes (OD-17): the profile this change
-    rewrites orders nothing. Each plan equals the plan of the same fingerprint with no profile,
-    and the carriers recovered are the same for all three targets."""
+    """The planner reads ``capability_guess["effective_mutators"]`` (the carrier layer) and no
+    key of ``guardrails`` (it read ``baseline_resistance``, which no layer writes, until OD-17
+    was decided on 2026-10-11): the profile this change rewrites orders nothing. Each plan
+    equals the plan of the same fingerprint with no profile, and the carriers recovered are the
+    same for all three targets."""
 
     spec = make_spec(mutations=["leetspeak", "rot13", "nested_instruction", "base64_wrap"])
     fp = _fingerprint(reply)

@@ -9,7 +9,25 @@
 > added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69, and its amendment
 > `cut_by_provider_output_filter` and `provider_filter_side_unknown` on 2026-10-11, OD-42, A-70).
 > `ModelFingerprint.capability_guess` (not `.capabilities`): distinct from the `Capabilities`
-> enum. Canonical `TestPlan` shape is in ADR-0006 §3.
+> enum. Canonical `TestPlan` shape is in ADR-0006 §3, without the per-spec
+> `baseline_resistance`, removed on 2026-10-11 (OD-17, ADR-0008 option B: no layer wrote it,
+> nothing read it; `PlanSelection` forbids unknown keys, so a plan JSON that still carries it is
+> refused, and no command reads one).
+>
+> **OD-44 (decided 2026-10-11 under the owner's delegation).** `Capabilities` gains `mcp: bool =
+> False` (the target is an MCP server: its provider is `mcp`, set by the target loader, u12), and
+> `Capability` and `RequiresCapability` gain `mcp`, as the spec schema's `requires` enum does.
+> `shared/digest.target_digest` leaves `capabilities.mcp` out when it is false or set by the
+> provider, as it leaves an undeclared `sampling` out, so a run stored before resumes.
+>
+> **OD-19 (decided 2026-10-11 under the owner's delegation, u06 §7 A-73).** `EvaluatorLogic`
+> gains `deterministic_first`, the name of the one combination rule, and
+> `DEPRECATED_EVALUATOR_LOGIC` holds the other three, which load and run it. The rule is
+> `shared/combination.py` (`combine_verdicts`, `decided_by_judge_alone`, `JUDGE_ONLY_FAIL`): a
+> pure function over `Verdict`s, here by exception to §8 for the same reason as
+> `shared/patterns.py` and `shared/provider_filter.py`, since the three units that must apply it
+> one way cannot import each other (`core` imports only `shared`, `registry` may not import
+> `evaluators`).
 
 Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + `docs/01 §3`
 + `docs/03-05` + `docs/10` + `schemas/attack-spec.schema.json` + ADR-0005 before implementing.

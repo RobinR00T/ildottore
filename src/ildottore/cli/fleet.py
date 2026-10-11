@@ -51,7 +51,7 @@ from typing import Literal
 from urllib.parse import SplitResult, urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from ildottore import safe_yaml
 from ildottore.cli.wiring import shown_auth_ref
@@ -91,6 +91,19 @@ class FleetTarget(BaseModel):
     # The target file's own model, so a key it does not know is refused here, before anything is
     # written: as `dict[str, bool]` any text key was copied into the target file (A-50).
     capabilities: Capabilities = Field(default_factory=Capabilities)
+
+    @model_validator(mode="after")
+    def _mcp_is_the_kind(self) -> FleetTarget:
+        """``mcp`` is not declared: ``kind: mcp`` makes an MCP server (OD-44).
+
+        The target file's loader sets ``capabilities.mcp`` from ``provider: mcp`` and refuses it
+        declared on a live target of another provider, so ``fleet`` refuses it here, before it
+        writes a file that ``run`` would refuse (as A-50 does for an unknown key).
+        """
+
+        if "mcp" in self.capabilities.model_fields_set:
+            raise ValueError("capabilities.mcp is not declared: write kind: mcp for an MCP server")
+        return self
 
 
 class FleetJudge(BaseModel):

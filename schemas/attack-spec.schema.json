@@ -131,9 +131,11 @@
           "logprobs",
           "multi_identity",
           "multimodal",
-          "audio"
+          "audio",
+          "mcp"
         ]
-      }
+      },
+      "description": "Capabilities the target must offer for the spec to run. mcp: the target is an MCP server (provider mcp), whose advertised surface the read-only MCP adapter renders (OD-44)."
     },
     "description": {
       "type": "string"
@@ -337,7 +339,8 @@
             "type": "string"
           },
           "weight": {
-            "type": "number"
+            "type": "number",
+            "description": "Deprecated (OD-19): read by nothing. It weighted a vote that no run path took; dottore lint warns."
           }
         }
       }
@@ -345,10 +348,12 @@
     "evaluator_logic": {
       "type": "string",
       "enum": [
+        "deterministic_first",
         "all_pass",
         "any_fail",
         "weighted"
-      ]
+      ],
+      "description": "How the evaluators' verdicts combine. One rule, deterministic_first: a deterministic fail decides; else an inconclusive; else a fail of semantic_judge alone (reported, never confirmed); else pass. all_pass, any_fail and weighted are deprecated names of it (OD-19, ADR-0010); dottore lint warns."
     },
     "scoring": {
       "type": "object",
