@@ -75,6 +75,7 @@ class BaseReporter(ABC):
             self._specs,
             planned_specs=self._planned_specs,
             run_status=self._run_status,
+            targets=ctx.run.targets,
         )
         return self._render(ctx, summary)
 

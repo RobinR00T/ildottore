@@ -24,7 +24,7 @@ import jsonschema
 
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
-from ildottore.reporting.summary import RunSummary, finding_state
+from ildottore.reporting.summary import RunSummary, declared_attempt_ids, finding_state
 from ildottore.shared.enums import ReportFormat, ScanBand
 from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import AttackSpec, Finding
@@ -124,6 +124,14 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
             f"; {blocked} of {len({a.attempt_id for a in finding.attempts})} attempt(s) blocked "
             "by the provider's input filter before the model saw them"
         )
+    # Attempts whose verdict the operator's target file changed (OD-43): said in the message,
+    # and counted in the properties, only when there are any.
+    declared = len(declared_attempt_ids(finding.attempts))
+    if declared:
+        message += (
+            f"; {declared} of {len({a.attempt_id for a in finding.attempts})} attempt(s) with a "
+            "call the target file declares not destructive (operator declaration, OD-43)"
+        )
     result: dict[str, Any] = {
         "ruleId": finding.spec_id,
         "ruleIndex": rule_index,
@@ -148,9 +156,32 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
             "status": finding.status.value,
             "target_id": finding.target_id,
             **({"blocked_by_provider_filter": blocked} if blocked else {}),
+            **({"operator_declaration_attempts": declared} if declared else {}),
         },
     }
     return result
+
+
+def _declaration_property(summary: RunSummary) -> dict[str, Any]:
+    """The run's operator declaration (OD-43, u06 A-72), or ``{}`` when no target file makes one.
+
+    ``{"operator_declarations": {"not_destructive_tools": {target: [names]}, "attempts": n}}``,
+    so a dashboard that reads only SARIF still sees which tools were not judged destructive by
+    the operator's word, and on how many attempts it changed the verdict.
+    """
+
+    declarations = summary.operator_declarations
+    if not declarations.not_destructive_tools:
+        return {}
+    return {
+        "operator_declarations": {
+            "not_destructive_tools": {
+                target_id: list(names) for target_id, names in declarations.not_destructive_tools
+            },
+            "attempts": declarations.attempts,
+            "specs": list(declarations.specs),
+        }
+    }
 
 
 def _blocked_property(findings: list[Finding]) -> dict[str, int]:
@@ -165,7 +196,7 @@ class SarifReporter(BaseReporter):
 
     format = ReportFormat.SARIF.value
 
-    def build_document(self, ctx: MaskingContext) -> dict[str, Any]:
+    def build_document(self, ctx: MaskingContext, summary: RunSummary) -> dict[str, Any]:
         """Build (and validate) the SARIF document dict for ``ctx``.
 
         The run-level state travels in ``runs[0].invocations[0]``, which is SARIF 2.1.0's own
@@ -206,6 +237,8 @@ class SarifReporter(BaseReporter):
                         "run_status": self._run_status.state,
                         # Attempts the provider's input filter refused (OD-41), when any were.
                         **_blocked_property(ctx.findings),
+                        # What the operator's target file declares not destructive (OD-43).
+                        **_declaration_property(summary),
                         # The editions the rule tags refer to (A-14, audit R12).
                         "framework_editions": framework_editions(),
                         # The authorization record the run went out under (S4, audit D-17).
@@ -237,7 +270,7 @@ class SarifReporter(BaseReporter):
         return invocation
 
     def _render(self, ctx: MaskingContext, summary: RunSummary) -> bytes:
-        document = self.build_document(ctx)
+        document = self.build_document(ctx, summary)
         text = json.dumps(
             document,
             sort_keys=True,

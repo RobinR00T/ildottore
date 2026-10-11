@@ -20,7 +20,7 @@ from xml.etree import ElementTree as ET  # nosec B405
 
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
-from ildottore.reporting.summary import RunSummary, finding_state
+from ildottore.reporting.summary import RunSummary, declared_attempt_ids, finding_state
 from ildottore.shared.enums import ReportFormat, VerdictStatus
 from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import Finding
@@ -59,6 +59,11 @@ class JunitReporter(BaseReporter):
         blocked = len(blocked_attempt_ids(finding.attempts))
         if blocked:
             detail += f" blocked_by_provider_filter={blocked}"
+        # Attempts whose verdict the operator's target file changed (OD-43): the reasoning a
+        # failure or a skip quotes says so, and a passing case's detail counts them.
+        declared = len(declared_attempt_ids(finding.attempts))
+        if declared:
+            detail += f" operator_declaration_attempts={declared}"
         if finding.status is VerdictStatus.FAIL:
             failure = ET.SubElement(
                 case,
@@ -110,6 +115,17 @@ class JunitReporter(BaseReporter):
             if ctx.run.scope_sha256:  # the authorization record (S4, audit D-17)
                 ET.SubElement(
                     properties, "property", {"name": "scope_sha256", "value": ctx.run.scope_sha256}
+                )
+            # The operator's declaration (OD-43, u06 A-72): which granted tools each target's
+            # file declares not destructive, so a CI dashboard sees it beside every suite.
+            for target_id, names in summary.operator_declarations.not_destructive_tools:
+                ET.SubElement(
+                    properties,
+                    "property",
+                    {
+                        "name": f"operator_declaration.not_destructive.{target_id}",
+                        "value": ", ".join(names),
+                    },
                 )
             for finding in findings:
                 suite.append(self._testcase(finding))

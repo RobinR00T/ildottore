@@ -122,6 +122,16 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
             "attempts": summary.provider_filter.attempts,
             "specs": list(summary.provider_filter.specs),
         },
+        # What the operator's target files declare of their own tools (OD-43, u06 A-72), and
+        # the attempts it changed: always emitted, optional in report-1.0 for older reports.
+        "operator_declarations": {
+            "not_destructive_tools": {
+                target_id: list(names)
+                for target_id, names in summary.operator_declarations.not_destructive_tools
+            },
+            "attempts": summary.operator_declarations.attempts,
+            "specs": list(summary.operator_declarations.specs),
+        },
     }
     if summary.model_comparison is not None:
         wire["model_comparison"] = _comparison_to_wire(summary.model_comparison)

@@ -45,7 +45,15 @@
     <h2>Targets</h2>
     <ul>
       {% for t in targets %}
-      <li><code>{{ t.id }}</code> - {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}</li>
+      <li><code>{{ t.id }}</code> - {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}
+        {# OD-43: the operator's word on its own tools, stated for every run that makes one. #}
+        {% if t.not_destructive %}
+        <br><span class="operator-declaration">Operator declaration: its target file declares
+        {% for name in t.not_destructive %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+        not destructive (seeded_setup.granted_tools, OD-43), so <code>tool_call</code> does not
+        fail a call to {{ 'it' if t.not_destructive | length == 1 else 'them' }} by the name alone.</span>
+        {% endif %}
+      </li>
       {% endfor %}
     </ul>
   </section>
@@ -65,6 +73,17 @@
       {{ summary.blocked_by_provider_filter.specs | length }} spec(s)
       ({{ summary.blocked_by_provider_filter.specs | join(', ') }}) never reached the model.
       They are inconclusive: not refusals by the model and not exploits.
+    </p>
+    {% endif %}
+    {# OD-43: optional in report-1.0, so an older document renders exactly as before. #}
+    {% if summary.operator_declarations and summary.operator_declarations.not_destructive_tools %}
+    <p class="operator-declaration">
+      Operator declaration (OD-43): a call to a tool the target file declares not destructive
+      was not judged destructive on
+      <strong>{{ summary.operator_declarations.attempts }}</strong> attempt(s){% if summary.operator_declarations.specs %}
+      in {{ summary.operator_declarations.specs | length }} spec(s)
+      ({{ summary.operator_declarations.specs | join(', ') }}){% endif %}; each such attempt's
+      reasoning names the tool.
     </p>
     {% endif %}
 

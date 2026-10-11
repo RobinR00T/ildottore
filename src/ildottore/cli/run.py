@@ -89,6 +89,7 @@ from ildottore.shared.models import (
     TestRunSummary,
 )
 from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
+from ildottore.shared.tool_abuse import is_destructive
 
 __all__ = [
     "CATEGORY_ALIASES",
@@ -1127,8 +1128,12 @@ def _print_dry_run_plan(
     judge_notes = judge_notes or []
     headline = "resolved, sending now." if sending else "plan resolved, sent nothing."
     label = "plan" if sending else "dry-run"
+    declared = sum(len(_declared(plan.target)) for plan in plans)
     if quiet:
-        print(f"{label}: {specs} specs, {requests} requests, {len(plans)} target(s)")
+        print(
+            f"{label}: {specs} specs, {requests} requests, {len(plans)} target(s)"
+            + (f", {declared} tool(s) declared not destructive" if declared else "")
+        )
         return
     print(f"{label}: {headline}")
     print(f"  scope:   {scope_path}")
@@ -1183,6 +1188,9 @@ def _print_dry_run_plan(
             if detail >= 2:
                 for spec_id, reason in plan.not_seeded:
                     print(f"    - {spec_id}: {visible_controls(reason)}")
+        # What the operator's file says of its own tools, before anything is sent (OD-43).
+        for line in _declaration_lines(plan.target):
+            print(f"  declared: {line}")
         # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
         # temperature reaches none of the shipped battery), and what never goes out (OD-39).
         for note in plan.sampling_notes:
@@ -1224,6 +1232,38 @@ def _print_dry_run_plan(
     )
 
 
+def _declared(target: Target) -> list[str]:
+    """The tools ``target``'s file declares not destructive (OD-43), empty when none."""
+
+    return list(target.seeded_setup.not_destructive) if target.seeded_setup is not None else []
+
+
+def _declaration_lines(target: Target) -> list[str]:
+    """What ``--dry-run``, ``-v`` and ``-sn`` say of the operator's declaration (OD-43, A-72).
+
+    One line naming the tools and saying it is the operator's word and what it clears, and one
+    for each declared tool no destructive verb is in, for which the declaration changes nothing.
+    The names are the operator's text, written out as every such line is (u12 §6).
+    """
+
+    names = _declared(target)
+    if not names:
+        return []
+    listed = ", ".join(visible_controls(name) for name in names)
+    lines = [
+        f"{listed} not destructive, by {visible_controls(target.id)}'s target file (an operator "
+        "declaration: seeded_setup.granted_tools, OD-43); it clears the destructive check of "
+        "tool_call only, never for a tool of a spec's scene"
+    ]
+    for name in names:
+        if not is_destructive(name, {}):
+            lines.append(
+                f"{visible_controls(name)}: no destructive verb is in its name, so the "
+                "declaration changes nothing for it"
+            )
+    return lines
+
+
 def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
     """``-sn``: report what is authorized and what the target declares. Sends nothing.
 
@@ -1237,7 +1277,11 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
     """
 
     if quiet:
-        print(f"discovery: {len(plans)} target(s), sent nothing")
+        declared = sum(len(_declared(plan.target)) for plan in plans)
+        print(
+            f"discovery: {len(plans)} target(s), sent nothing"
+            + (f", {declared} tool(s) declared not destructive" if declared else "")
+        )
         return
     print("discovery (-sn): no attacks sent.")
     for plan in plans:
@@ -1249,6 +1293,8 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
         print(f"    declares:  {', '.join(caps) if caps else 'no optional capabilities'}")
         if plan.no_sampling is not None:
             print(f"    sampling:  {visible_controls(plan.no_sampling)}")
+        for line in _declaration_lines(plan.target):
+            print(f"    declared:  {line}")
         print(
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "
@@ -2266,7 +2312,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         _print_progress(printer, plan.selected, result.findings)
         all_findings.extend(result.findings)
 
-    printer.summary(all_findings, specs_by_id, planned_specs=planned_specs)
+    printer.summary(
+        all_findings,
+        specs_by_id,
+        planned_specs=planned_specs,
+        targets=[target for result in results for target in result.run.targets],
+    )
 
     # A campaign that did not finish says so in all three places a consumer looks: the
     # terminal, the report and the exit code. The runner already computed this state and
@@ -2767,6 +2818,10 @@ def _persist_run_integrity(
                 # resume continues as the run started; None for an offline route or no judge.
                 "takes_sampling": takes_sampling,
                 "judge_takes_sampling": judge_takes_sampling,
+                # The tools the operator's target file declares not destructive (OD-43, u06
+                # A-72), as an operator declaration of this run: the target digest holds them
+                # too, and a resume after a change names them in its refusal.
+                "not_destructive_tools": resume_mod.declared_not_destructive(target),
             },
         )
 

@@ -87,6 +87,12 @@ def target_digest(target: Target, *, mock_scenario: str | None = None) -> str:
     for optional in ("seeded_setup", "websocket"):
         if payload.get(optional) is None:
             payload.pop(optional, None)
+    # The tools the target file declares not destructive (OD-43, u06 A-72): none declared, the
+    # key is left out, so a run stored before a file could declare one still resumes; declared,
+    # it is part of what judges, and a resume after a change is refused as another target.
+    seeded = payload.get("seeded_setup")
+    if isinstance(seeded, dict) and not seeded.get("not_destructive"):
+        seeded.pop("not_destructive", None)
     # Likewise `capabilities.sampling` (u12 A-68): not declared, it is left out, so a run stored
     # before the capability existed still resumes; declared, it is part of what answers.
     capabilities = payload.get("capabilities")

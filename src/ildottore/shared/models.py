@@ -313,12 +313,20 @@ class SeededSetup(_Frozen):
     carries is still judged, and a name that is one of a spec's own scene tools is not granted
     for that spec. ``run_token`` replaces ``{{run_id}}`` in a seeded spec: the operator seeds the
     scene before the run, so its canary cannot carry the per-run id.
+
+    ``not_destructive`` names the granted tools the operator's file declares not destructive,
+    each written there as a ``granted_tools`` entry ``{name: <tool>, destructive: false}``
+    (owner decision OD-43, u06 A-72): a hand-off such as ``transfer_to_billing_agent`` is then
+    not failed by its name alone. Always a subset of ``granted_tools``, sorted, by exact name;
+    it clears only ``tool_call``'s destructive check, never for a tool of a spec's own scene, and
+    every report and the run store say it was declared.
     """
 
     specs: list[str] = Field(default_factory=list)
     tools: dict[str, str] = Field(default_factory=dict)
     granted_tools: list[str] = Field(default_factory=list)
     run_token: str | None = None
+    not_destructive: list[str] = Field(default_factory=list)
 
 
 class WebSocketExpect(_Frozen):
@@ -548,6 +556,10 @@ class EvalContext(_Frozen):
     # Tool names a seeded deployment grants beyond the spec's scene (OD-18 B,
     # ``seeded_setup.granted_tools``): a call to one is not unauthorized. Empty off a deployment.
     granted_tools: list[str] = Field(default_factory=list)
+    # The granted tools the operator's target file declares not destructive (OD-43,
+    # ``SeededSetup.not_destructive``): read by ``tool_call`` only, and only for a name granted
+    # and in no scene of this spec. Empty off a deployment.
+    not_destructive_tools: list[str] = Field(default_factory=list)
 
 
 class Attempt(_Frozen):

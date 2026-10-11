@@ -376,6 +376,11 @@
       ]
     },
     "needs_review_count": 0,
+    "operator_declarations": {
+      "attempts": 0,
+      "not_destructive_tools": {},
+      "specs": []
+    },
     "repro_distribution": {
       "count": 2.0,
       "max": 1.0,
