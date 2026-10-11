@@ -2607,8 +2607,39 @@ def _filtered_reason(result: CampaignResult) -> str | None:
         f"{unread} ({', '.join(c for c in counts if c)}), so no reply the model wrote whole was "
         "evaluated: the run measured the filter, not the model. To measure the model, run it "
         "where the filter lets the attack prompts through; every such attempt is in the "
-        "reports, none of them a pass"
+        f"reports, none of them a pass{_unread_advice(attempts)}"
     )
+
+
+def _unread_advice(attempts: list[Attempt]) -> str:
+    """What to check for the attempts of a filtered run that got no reply at all (u12 A-79).
+
+    The filter's advice says nothing about them, so the unreachable reason's is added: the
+    adapter's own for a reply it could not read, the endpoint for a transport failure, with the
+    first error (pre-merge audit of ``a55710e9``, LOW 1: 3 withheld and 4 transport failures were
+    told only to find a deployment whose filter lets the prompts through).
+    """
+
+    others = [a for a in attempts if not _filtered(a)]
+    if not others:
+        return ""
+    unreadable = [a for a in others if unreadable_reply(a)]
+    if unreadable:
+        kept = (unreadable[0].request.metadata or {}).get(UNREADABLE_REPLY_KEY)
+        advice = kept.get("advice") if isinstance(kept, dict) else None
+        if not isinstance(advice, str):
+            advice = "check the target file's endpoint and provider"
+        what = (
+            "got a reply that could not be read as the provider's"
+            if len(unreadable) == len(others)
+            else f"failed on transport or ({len(unreadable)} of them) with a reply that could "
+            "not be read as the provider's"
+        )
+    else:
+        advice = "check the target file's endpoint, and that the target is up"
+        what = "failed on transport"
+    first = next((a.error for a in others if a.error), "no response")
+    return f". The other {len(others)} {what}: {advice}. The first: {first}"
 
 
 def probe_failure_warning(

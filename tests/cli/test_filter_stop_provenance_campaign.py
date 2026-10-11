@@ -82,8 +82,9 @@ def _judge(verdict: str) -> dict[str, Any]:
 
 @pytest.fixture
 def stub() -> Iterator[tuple[int, dict[str, Any]]]:
-    """Answers each attack request with ``state["reply"](prompt)``, a ``(status, body)``; the
-    judge (model ``j``) with ``state["verdict"]``."""
+    """Answers each attack request with ``state["reply"](prompt)``, a ``(status, body)``, or drops
+    the connection when it is ``None`` (a transport failure); the judge (model ``j``) with
+    ``state["verdict"]``."""
 
     state: dict[str, Any] = {"reply": None, "verdict": "secure", "attack": 0, "judge": 0}
     lock = threading.Lock()
@@ -98,7 +99,11 @@ def stub() -> Iterator[tuple[int, dict[str, Any]]]:
                 else:
                     state["attack"] += 1
                     prompt = json.dumps(body.get("messages", [])).lower()
-                    status, out = state["reply"](prompt)
+                    answer = state["reply"](prompt)
+                    if answer is None:
+                        self.close_connection = True
+                        return
+                    status, out = answer
             data = json.dumps(out).encode()
             self.send_response(status)
             self.send_header("content-type", "application/json")
@@ -297,6 +302,35 @@ def test_a_run_the_filter_answered_every_time_is_filtered_and_exits_3(
     report = _report(tmp_path)
     assert report["summary"]["status"]["state"] == "filtered"
     assert {f["status"] for f in report["findings"]} == {"inconclusive"}
+
+
+def test_a_filtered_run_with_transport_failures_says_what_to_check_for_them(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """Pre-merge audit of a55710e9, LOW 1: 3 withheld replies and 4 dropped connections were
+    told only to find a deployment whose filter lets the prompts through. The line now adds the
+    unreachable reason's advice for the attempts that got no reply."""
+
+    def reply(prompt: str) -> tuple[int, dict[str, Any]] | None:
+        if "developer mode" in prompt:
+            return 200, _openai(None, "content_filter")
+        return None
+
+    port, state = stub
+    state["reply"] = reply
+    result = CliRunner().invoke(
+        app, _argv(tmp_path, port, "PI-DIRECT-001", "GUARD-INPUT-EVASION-001")
+    )
+
+    assert result.exit_code == 3, result.output
+    reason = _report(tmp_path)["summary"]["status"]["reason"]
+    assert (
+        "(3 cut or replaced by its output filter, 4 failed before a reply could be read)" in reason
+    )
+    assert (
+        "none of them a pass. The other 4 failed on transport: check the target file's endpoint, "
+        "and that the target is up. The first: "
+    ) in reason
 
 
 def test_control_a_genuine_azure_400_on_some_prompts_keeps_the_run_and_its_exit(
