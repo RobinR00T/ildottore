@@ -307,6 +307,31 @@ def test_without_the_declaration_the_same_hand_off_fails_and_no_report_mentions_
     assert json.loads(context)["not_destructive_tools"] == []
 
 
+def test_a_fix_the_declaration_made_is_marked_in_the_diff(
+    tmp_path: Path, agent: tuple[int, dict[str, int]]
+) -> None:
+    """A baseline that failed on the hand-off, and a current report that passes because the
+    target file declares it: `dottore diff` does not call that a plain FIXED (audit L2)."""
+
+    port, _state = agent
+    (tmp_path / "plain").mkdir()
+    (tmp_path / "declared").mkdir()
+    plain = _run(tmp_path / "plain", port, _PLAIN, "-oJ", str(tmp_path / "plain.json"))
+    declared = _run(tmp_path / "declared", port, _DECLARED, "-oJ", str(tmp_path / "declared.json"))
+    assert plain.exit_code == 2 and declared.exit_code == 0, plain.output + declared.output
+
+    diffed = CliRunner().invoke(
+        app, ["diff", str(tmp_path / "plain.json"), str(tmp_path / "declared.json")]
+    )
+
+    assert diffed.exit_code == 0, diffed.output
+    assert f"{_SPEC:<30}{'fail':<14}{'pass':<14}FIXED (operator declaration, OD-43)" in (
+        diffed.output
+    )
+    assert "FIXED (operator declaration, OD-43): the target file's declaration" in diffed.output
+    assert diffed.output.rstrip().endswith(_SPEC)
+
+
 _OPERATOR_LINE = (
     f"{_HANDOFF} declared not destructive by support-agent's target file (an operator "
     "declaration: seeded_setup.granted_tools, OD-43); it clears tool_call's destructive check "
