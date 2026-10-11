@@ -3,6 +3,45 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (afternoon): five open decisions of robustness and output closed
+
+- On `feat/decide-robustness-and-output`, rebased on `0685f2ce` (OD-42). The owner delegated these
+  on 2026-10-11 at 10:09 ("arreglalo todo según mejores prácticas"); each is recorded in its
+  contract and its 00-INDEX row as decided under that delegation (best practice), revisable, with
+  the reasoning, the alternative not taken and where to reverse it. One commit per decision.
+- **OD-22, kept:** a spec regex that does not compile still refuses the run before anything is
+  sent; lint keeps `EVALUATOR_MISCONFIGURED`. Fail fast on configuration; `--exclude` runs the rest.
+- **OD-25, kept:** the name of a missing file stays masked in CLI errors (A-38): a key given where a
+  file belongs must not reach a CI log.
+- **OD-24, kept:** a logprob block with one impossible figure reads as none (A-39); a positive
+  figure counts as impossible; an absent entry is still skipped.
+- **OD-20, built:** every JSON output (`lint --json`, `coverage --json`, `dottore fingerprint`,
+  `schema export`, the JSON and SARIF reports) writes the second `#` of `##<letters>[` as `\u0023`
+  (`redactor.log_safe_json`). Before, a target id holding `##vso[...]` put 1 such line in the
+  fingerprint and 3 each in the JSON and SARIF reports. Property-tested: the parsed document is the
+  plain serializer's, and serialized again with the output's options it is the plain bytes.
+  `tests/test_json_log_commands.py` (18; does not collect on `6d5f7ae`).
+- **OD-21, built (u08 A-74, with u04's and u12's halves):** a 200 the adapters cannot read (not
+  JSON, not an object, not the provider's or the template's shape; a WebSocket frame or an MCP
+  reply of that kind) is `ResponseMalformed`, an environment failure with `retryable = False`: the
+  attempt is inconclusive, sent once, kept by a resume, re-derived by `replay`, and a `-sV` probe
+  that gets one fails alone. One watch per invocation stops a campaign whose first 5 replies all
+  cannot be read, with none that can (`aborted on UnreadableReplies`, exit 3, naming the endpoint,
+  provider and template to check); a shorter run that read nothing is `unreachable` with the same
+  advice. Measured against a loopback stub answering HTML to everything: 8 requests at
+  `--concurrency 4`, 5 at 1, 26 with `-sV` (23 at 1); on `6d5f7ae` 4 and 1. Tests: 24 in
+  `tests/adapters/test_malformed_replies.py`, 9 in `tests/core/test_unreadable_replies.py`, 8 in
+  `tests/cli/test_malformed_reply_campaign.py` (7 fail on `6d5f7ae`); 12 files that pinned the
+  old rule assert the new one, `tests/adapters/test_provider_output_filter.py` (OD-42's) included.
+- `make --no-print-directory gates` green (2026-10-11, 11:57 to 12:03, on `927d747b`): ruff, format
+  (400 files), mypy strict (158 source files), import-linter (4 kept), spec lint (0 errors, 0
+  warnings across 75 specs, 14 suites, 1 pack), 5,288 tests with 97.87% coverage, self-scan 0
+  high/critical, bandit, pip-audit (no known vulnerabilities).
+- Left open, not part of the decisions: the `-sV` pass seeding the stop (a wrong endpoint under
+  `-sV` costs its 18 probes first); a stop for a target that goes bad after a readable reply; the
+  evidence field saying a logprob block was unreadable rather than absent (u00); JUnit XML and
+  HTML are not JSON and OD-20 does not change them.
+
 ## State, 2026-10-11 (noon): the verification of `91845524` (OD-42), two mediums fixed
 
 - Every earlier finding closed; two new mediums, fixed in `0a293438`. (1) The recording-only judge
