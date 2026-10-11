@@ -3,6 +3,30 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (late morning): the pre-merge audit of `be3f2e71`, closed
+
+- Not merge-ready on `be3f2e71`: one HIGH, two MEDIUM, four LOW, closed in new commits on top.
+  HIGH 1 (`ccae01a`): the first OD-37 build refused a WebSocket `judge:` block even with a matching
+  hand-written `--judge` file, which worked on `6d5f7ae` (fleet exit 0, `run --dry-run` planning
+  220 judge requests); the block is now checked only without `--judge`, no `judge.yaml` is written
+  for it, the refusal says to pass the file with `--judge`, and docs, contracts and CHANGELOG no
+  longer say `run` refused every file the fleet wrote; 3 tests, failing on `be3f2e71`. MEDIUM 2
+  (`850747e`): `context_json.mutator_orders` records each invocation's order (`fingerprint`,
+  `declared`, `unrecorded` first for an older run), a resume of an adaptive campaign with no
+  fingerprint prints one `note:` line, and the planning-mode refusal says the mode changes the
+  order, never which attempts are sent; `tests/cli/test_resume_mutator_order.py`, 8 tests, all
+  failing on `be3f2e71`. MEDIUM 3 (`6e44655`): the OD-2 recipe states its custody rules (the
+  reviewer's own key, `allowed_signers` out of the editors' reach, one private copy verified and
+  run, `specs/` reachable), run as written with a throwaway key: verify, run exit 0, `shasum` of
+  the copy equal to `run.scope_sha256`, exit 255 after one appended line. LOWs (`7258ac1`, OD-2's
+  reversal in `6e44655`): reversal lines for OD-2, OD-7 and OD-11, OD-11's tests cited
+  (`tests/policy/test_policy_audit_2026_10_03.py:55` and `:69`), OD-34's key cost softened,
+  paragraphs rewrapped to 100 columns, and the OD-35 refusal says `--concurrency` sets how many
+  run at once.
+- `make --no-print-directory gates` green on `7258ac1` (11:27 to 11:33 CEST): 5,099 tests, 97.69%
+  coverage, ruff and the format check clean (392 files), mypy clean (157 source files), four
+  import contracts kept, 75 specs lint OK, self-scan 0 high/critical, bandit and pip-audit clean.
+
 ## State, 2026-10-11: eight open decisions closed under the owner's delegation
 
 - On `feat/decide-signoffs-and-websocket` (from `main` at `6d5f7ae`). The owner delegated the open
