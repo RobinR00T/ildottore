@@ -134,3 +134,30 @@ def test_an_http_body_in_the_wrong_shape_is_quoted_with_its_logprobs_masked(
         _openai_body("I cannot help with that.", None),
     ):
         assert reply_excerpt(unchanged, Redactor(salt="s"))[0] == unchanged.decode()
+
+
+@pytest.mark.parametrize("secret", SECRETS)
+def test_an_event_stream_s_excerpt_does_not_rebuild_a_streamed_secret(
+    registered: None, secret: str
+) -> None:
+    """A reply streamed as server-sent events when none was asked for is not JSON: it was quoted
+    as it came, each delta redacted alone (pre-merge audit of c4bd2012, MEDIUM 3)."""
+
+    text = f"Sure, here it is: {secret} done"
+    chunks = [text[i : i + 3] for i in range(0, len(text), 3)]
+    events = [
+        {"id": "c1", "object": "chat.completion.chunk", "choices": [{"delta": {"content": c}}]}
+        for c in chunks
+    ]
+    body = "".join(f"data: {json.dumps(e)}\n\n" for e in events) + "data: [DONE]\n\n"
+    excerpt, size = reply_excerpt(body.encode(), Redactor(salt="s"))
+    assert size == len(body.encode())
+    lines = [line for line in excerpt.splitlines() if line.startswith("data: {")]
+    deltas = "".join(json.loads(line[6:])["choices"][0]["delta"]["content"] for line in lines)
+    assert secret not in deltas and "REDACTED:" in deltas
+    assert deltas.startswith("Sure, here it is: ") and deltas.endswith(" done")
+    # The protocol's fields stay as the server wrote them, and so do the lines that are no event.
+    assert {json.loads(line[6:])["object"] for line in lines} == {"chat.completion.chunk"}
+    assert excerpt.rstrip().endswith("data: [DONE]")
+    clean = "".join(f"data: {json.dumps({'type': 'delta', 'text': c})}\n\n" for c in "a b c")
+    assert reply_excerpt(clean, Redactor(salt="s"))[0] == clean

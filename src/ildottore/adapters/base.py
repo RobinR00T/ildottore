@@ -36,12 +36,19 @@ import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, Final, cast
 
 import httpx
 
 from ildottore.policy import EndpointAllowlist
-from ildottore.redactor import Redactor, mask_split, redact_split, registered_secrets
+from ildottore.redactor import (
+    TRANSCRIPT_FRAMES,
+    TRANSCRIPT_PROTOCOL_PATHS,
+    Redactor,
+    mask_split,
+    redact_split,
+    registered_secrets,
+)
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
@@ -253,20 +260,69 @@ def _clean_cut(text: str, cut: int) -> int:
     return start
 
 
-def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:
-    """``body``, or, when it is JSON holding a value split over the items of a list, that JSON
-    written again with the value masked (:func:`ildottore.redactor.mask_split`, A-77).
+#: The fields of a server-sent event that are its protocol's, not the reply's: an event's type and
+#: kind, and the id, object and model OpenAI's and Anthropic's chunks repeat in every event.
+_SSE_PROTOCOL_PATHS: Final = ("type", "event", "object", "id", "model")
+_SSE_DATA: Final = "data:"
 
-    A WebSocket turn with no text is quoted as its frames, and a reply in the wrong shape as
-    its body: a secret streamed in deltas, or kept as tokens, was redacted piece by piece and
-    rebuilt from the excerpt (audit of main de122e26, HIGH 1). A body that is not JSON, or holds
-    no such value, is returned as it is, so its excerpt is byte for byte what it was.
+
+def _sse_masked(text: str, redactor: Redactor) -> str | None:
+    """``text``, a server-sent event stream, with its events' content masked across the events
+    as a WebSocket transcript's is (A-77), or None when it is no such stream or holds nothing to
+    mask.
+
+    A reply streamed as events when no stream was asked for is not JSON, so it was quoted as it
+    came, each delta redacted alone, and a key or a registered credential in 3-character deltas
+    was rebuilt from the excerpt (pre-merge audit of c4bd2012, MEDIUM 3). Each ``data:`` line
+    that holds a JSON object or array is an event; every other line is kept as it is.
+    """
+
+    lines = text.splitlines(keepends=True)
+    events: list[tuple[int, Any]] = []
+    for index, line in enumerate(lines):
+        if not line.startswith(_SSE_DATA):
+            continue
+        try:
+            value = well_formed_json(bounded_loads(line[len(_SSE_DATA) :].strip()))
+        except ValueError:
+            continue
+        if isinstance(value, (dict, list)):
+            events.append((index, value))
+    if len(events) < 2:
+        return None
+    transcript = {
+        TRANSCRIPT_FRAMES: [{"direction": "received", "frame": value} for _, value in events],
+        TRANSCRIPT_PROTOCOL_PATHS: list(_SSE_PROTOCOL_PATHS),
+    }
+    masked = mask_split(redactor, transcript)
+    if masked is transcript:
+        return None
+    frames = cast("dict[str, list[dict[str, Any]]]", masked)[TRANSCRIPT_FRAMES]
+    for (index, _), frame in zip(events, frames, strict=True):
+        ending = lines[index][len(lines[index].rstrip("\r\n")) :]
+        lines[index] = f"{_SSE_DATA} {json.dumps(frame['frame'])}{ending}"
+    return "".join(lines)
+
+
+def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:
+    """``body``, or, when it holds a reply kept in pieces, the same written again with them
+    masked as the text they make (:func:`ildottore.redactor.mask_split`, A-77).
+
+    A WebSocket turn with no text is quoted as its frames, a reply in the wrong shape as its
+    body, and a reply streamed as server-sent events as its events: a secret streamed in deltas,
+    or kept as tokens, was redacted piece by piece and rebuilt from the excerpt (audit of main
+    de122e26, HIGH 1; pre-merge audit of c4bd2012, MEDIUM 3). A JSON body's logprob lists are
+    masked, and so is an event stream's content across its events (:func:`_sse_masked`); a body
+    that is neither, or holds no such piece, is returned as it is, so its excerpt is byte for
+    byte what it was.
     """
 
     try:
         parsed = well_formed_json(bounded_loads(body))
     except ValueError:
-        return body
+        text = body if isinstance(body, str) else bytes(body).decode("utf-8", "replace")
+        streamed = _sse_masked(text, redactor) if _SSE_DATA in text else None
+        return body if streamed is None else streamed
     masked = mask_split(redactor, parsed)
     return body if masked is parsed else json.dumps(masked)
 
