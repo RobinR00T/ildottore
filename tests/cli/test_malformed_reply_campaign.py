@@ -85,6 +85,10 @@ def stub() -> Iterator[tuple[int, dict[str, Any]]]:
             if json.loads(raw).get("model") == "j":  # the judge: a secure verdict
                 state["judged"] += 1
                 body = _SECURE.encode()
+            elif state.get("waf"):  # a content filter's 200 block page for some prompts
+                state["served"] += 1
+                text = raw.decode("utf-8", "replace").lower()
+                body = (_HTML if any(w in text for w in state["waf"]) else _REPLY).encode()
             else:
                 state["served"] += 1
                 body = state["script"].get(state["served"], state["default"]).encode()
@@ -202,11 +206,12 @@ def test_a_target_that_answers_nothing_readable_stops_after_five_requests(
     result = CliRunner().invoke(app, _argv(tmp_path, port))
 
     assert result.exit_code == 3, result.output
-    assert state["served"] == 5
+    assert state["served"] == 6  # five attacks and the benign check, all answered with HTML
     assert (
         "error: run on hostile did not complete: aborted on UnreadableReplies: the target's "
         "first 5 replies in this run could not be read"
     ) in result.stderr
+    assert "nor a benign check sent then" in result.stderr
     assert "endpoint is an OpenAI chat completions URL" in result.stderr
     assert "response template" not in result.stderr  # a target file declares none (LOW 2)
     assert "ResponseMalformed: hostile: success response was not valid JSON" in result.stderr
@@ -229,17 +234,20 @@ def test_a_resume_after_the_stop_sends_the_unreadable_attempts_again(
     state["default"] = _HTML
     first = CliRunner().invoke(app, _argv(tmp_path, port, "--runs", "2"))
     assert first.exit_code == 3, first.output
-    assert state["served"] == 5
+    assert state["served"] == 6  # five attacks and the benign check
     run_id = _run_id(tmp_path)
 
     state["default"] = _REPLY
     resumed = CliRunner().invoke(app, _argv(tmp_path, port, "--runs", "2", "--resume", run_id))
     assert resumed.exit_code != 3, resumed.output
-    assert "5 that could not be read will be sent again" in resumed.stdout + resumed.stderr
+    said = resumed.stdout + resumed.stderr
+    assert "5 that could not be read will be sent again" in said
+    # It keeps none: verification of 07aa0b3a, LOW 2 ("keeps 0 attempt(s) across 1 spec(s)").
+    assert "keeps none of the 5 attempt(s) it stored" in said and "keeps 0 attempt" not in said
     report = _report(tmp_path)
     attempts = {a["attempt_id"] for f in report["findings"] for a in f["attempts"]}
     assert report["summary"]["unreadable_reply"]["attempts"] == 0
-    assert state["served"] == 5 + len(attempts)
+    assert state["served"] == 6 + len(attempts)
 
 
 def test_fewer_attempts_than_the_stop_all_unreadable_is_not_a_clean_scan(
@@ -368,8 +376,42 @@ def test_a_target_that_breaks_mid_run_stops_after_twenty_unreadable_replies_in_a
     result = CliRunner().invoke(app, _argv(tmp_path, port, "--concurrency", "1"))
 
     assert result.exit_code == 3, result.output
-    assert state["served"] == 22
+    assert state["served"] == 23  # 2 read, 20 in a row, and the benign check, HTML too
     assert (
         "aborted on UnreadableReplies: the target's last 20 replies in this run could not be read "
         "as replies, in a row after ones that could"
     ) in result.stderr
+
+
+def test_a_target_behind_a_filter_that_blocks_attack_prompts_finishes_its_battery(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """Verification of 07aa0b3a, MEDIUM: a content filter that answers prompts holding some words
+    with a 200 HTML block page. With the auditor's words, the default battery at `--concurrency 1`
+    read 69 of 284 replies as block pages, 20 of them in a row, and stopped with exit 3; every
+    resume then sent the 69 first, and a fresh watch stopped it after five: it could never finish.
+    Before each stop the watch now sends one benign request, the filter lets it through, and the
+    run goes on to the end with the blocked attempts inconclusive and counted."""
+
+    port, state = stub
+    state["waf"] = [
+        "ignore",
+        "instruction",
+        "system prompt",
+        "pretend",
+        "rules",
+        "secret",
+        "password",
+        "bypass",
+    ]
+    # The default battery, as the auditor ran it.
+    result = CliRunner().invoke(app, _argv(tmp_path, port, "--concurrency", "1", specs=()))
+
+    assert result.exit_code != 3, result.stderr
+    assert "did not complete" not in result.stderr
+    report = _report(tmp_path)
+    assert report["summary"]["status"]["state"] == "complete"
+    assert report["summary"]["unreadable_reply"]["attempts"] > 20
+    assert "Unreadable replies:" in result.stdout
+    probes = list((tmp_path / "ev").rglob("probes/*.json"))
+    assert probes, "the run of block pages was checked with a benign request"

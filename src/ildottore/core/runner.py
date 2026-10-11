@@ -54,9 +54,11 @@ from ildottore.core.execute import (
     UNREADABLE_REPLIES_TO_STOP,
     UNREADABLE_STREAK_TO_STOP,
     AttemptResult,
+    ReplyOverBudget,
     RetryPolicy,
     UnreadableReplies,
     default_is_env_error,
+    execute_attempt,
     is_provider_filter_block,
     is_unreadable_reply,
 )
@@ -268,6 +270,19 @@ class IdentityProbe:
     canary: str | None = None
 
 
+#: The benign request the watch sends before it stops a campaign on a run of unreadable replies
+#: (verification of 07aa0b3a, MEDIUM): a content filter that answers attack prompts with a 200 block
+#: page lets it through, a wrong endpoint or a broken target does not. Worded to hold none of the
+#: words such a filter keys on (instructions, rules, secrets, pretending).
+UNREADABLE_CHECK_PROMPT = "Please reply with the single word: ready."
+#: How the check is filed: with the recognition probes (``probes/``), never as an attack attempt.
+_PROBE_SPEC_ID = "__probe__"  # the spec id every recognition probe is stored under
+_CHECK_PROBE = "unreadable_check"
+
+#: ``(readable, why not)``: what the benign check got (``core.runner._ReplyWatch``).
+_Check = Callable[[TargetAdapter], Awaitable[tuple[bool, str | None]]]
+
+
 class _ReplyWatch:
     """The run of replies one invocation of a campaign could not read (OD-21, u08 A-74).
 
@@ -279,22 +294,40 @@ class _ReplyWatch:
     provider answering in its own documented shape); a transport failure does neither. The
     campaign stops at :data:`UNREADABLE_REPLIES_TO_STOP` in a row while it has read nothing, and
     at :data:`UNREADABLE_STREAK_TO_STOP` in a row once it has (pre-merge audit of 598f0858,
-    MEDIUM 2: it stopped counting after the first reply it read). Once it has stopped the
+    MEDIUM 2). A resume of a run that read replies starts proven.
+
+    Before it stops, it sends one benign request (:data:`UNREADABLE_CHECK_PROMPT`, debited and
+    recorded with the recognition probes): a target behind a content filter that answers attack
+    prompts with a 200 block page answers that one, and the run goes on, the count started again;
+    only when the check cannot be read either does the campaign stop (verification of 07aa0b3a,
+    MEDIUM: such a target stopped at a run of 20 block pages, and every resume, which sends its
+    unreadable attempts first, stopped after 5, so the run could never finish). One check at a
+    time: a spec that reaches the count meanwhile waits for its answer. Once it has stopped the
     campaign, every later unreadable reply stops the spec it came to, with the same message, so a
     spec already sending does not finish its batch. Shared by every spec of the invocation: the
-    specs run concurrently on one event loop, so the counts need no lock.
+    specs run concurrently on one event loop.
     """
 
     def __init__(
         self,
         first: int = UNREADABLE_REPLIES_TO_STOP,
         later: int = UNREADABLE_STREAK_TO_STOP,
+        *,
+        proven: bool = False,
+        check: _Check | None = None,
     ) -> None:
         self._first = first
         self._later = later
         self._streak = 0
-        self._proven = False
+        self._proven = proven
+        self._check = check
+        self._lock = asyncio.Lock()
+        self._check_note: str | None = None
+        self._checked = False
         self._halt: str | None = None
+
+    def _limit(self) -> int:
+        return self._later if self._proven else self._first
 
     def read(self) -> None:
         """A reply the adapter read: the endpoint speaks the provider's shape, and the run ends."""
@@ -302,33 +335,70 @@ class _ReplyWatch:
         self._proven = True
         self._streak = 0
 
-    def unreadable(self, exc: BaseException) -> UnreadableReplies | None:
+    async def unreadable(
+        self, exc: BaseException, adapter: TargetAdapter
+    ) -> UnreadableReplies | None:
         """Count an unreadable reply; the error that stops the campaign, or ``None``."""
 
         if self._halt is None:
             self._streak += 1
-            if self._streak < (self._later if self._proven else self._first):
+            if self._streak < self._limit():
                 return None
-            advice = getattr(exc, "advice", None) or "check the target's endpoint and provider"
-            last = f"(the last: {type(exc).__name__}: {exc})"
-            if self._proven:
-                what = (
-                    f"the target's last {self._streak} replies in this run could not be read as "
-                    f"replies, in a row after ones that could {last}: it may have stopped "
-                    "answering as it did (an expired session behind a proxy that serves a login "
-                    f"page, a maintenance page): {advice}"
-                )
-            else:
-                what = (
-                    f"the target's first {self._streak} replies in this run could not be read "
-                    f"as replies {last}, and none could: {advice}"
-                )
-            self._halt = (
-                f"{what}. The run stopped rather than send the rest of the battery to be scored "
-                "inconclusive; the replies are stored as inconclusive attempts, and a resume "
-                "sends them again"
-            )
+            if self._check is not None and await self._still_answers(adapter):
+                return None
+            if self._halt is None:
+                self._halt = self._reason(exc)
         return UnreadableReplies(self._halt, reply=exc)
+
+    async def _still_answers(self, adapter: TargetAdapter) -> bool:
+        """Send the benign check, once at a time; ``True`` when its reply was read."""
+
+        check = self._check
+        if check is None:
+            return False
+        async with self._lock:
+            if self._halt is not None:
+                return False
+            if self._streak < self._limit():  # a check made while this one waited was read
+                return True
+            readable, why = await check(adapter)
+            self._checked = True
+            if readable:
+                self._proven = True
+                self._streak = 0
+                return True
+            self._check_note = why
+            return False
+
+    def _reason(self, exc: BaseException) -> str:
+        advice = getattr(exc, "advice", None) or "check the target's endpoint and provider"
+        last = f"(the last: {type(exc).__name__}: {exc})"
+        note = f" ({self._check_note})" if self._check_note else ""
+        if self._proven:
+            checked = (
+                f", and a benign check sent then could not be read either{note}"
+                if self._checked
+                else ""
+            )
+            what = (
+                f"the target's last {self._streak} replies in this run could not be read as "
+                f"replies, in a row after ones that could {last}{checked}: it may have stopped "
+                "answering as it did (an expired session behind a proxy that serves a login "
+                "page, a maintenance page, a filter that now answers every request with a "
+                f"block page): {advice}"
+            )
+        else:
+            checked = f", nor a benign check sent then{note}" if self._checked else ""
+            what = (
+                f"the target's first {self._streak} replies in this run could not be read as "
+                f"replies {last}, and none could{checked}: {advice} (a filter in front of the "
+                "endpoint that answers every request with a block page reads the same)"
+            )
+        return (
+            f"{what}. The run stopped rather than send the rest of the battery to be scored "
+            "inconclusive; the replies are stored as inconclusive attempts, and a resume sends "
+            "them again"
+        )
 
 
 class _WatchedAdapter:
@@ -354,7 +424,8 @@ class _WatchedAdapter:
             response = await self._inner.send(request)
         except Exception as exc:
             if is_unreadable_reply(exc):
-                halt = self._watch.unreadable(exc)
+                # The check goes to the wrapped adapter, so it is not counted by the watch.
+                halt = await self._watch.unreadable(exc, self._inner)
                 if halt is not None:
                     raise halt from exc
             elif is_provider_filter_block(exc):
@@ -568,6 +639,10 @@ class CampaignRunner:
                     semaphore=semaphore,
                     prior_by_spec=prior_by_spec,
                     seeding=seeding,
+                    # A resume of a run that read replies starts with its endpoint proven: it
+                    # sends its unreadable attempts first, and a fresh watch read the first five
+                    # as a wrong endpoint (verification of 07aa0b3a, MEDIUM).
+                    proven=_read_a_reply(resume_from),
                 )
         finally:
             if self._spend_sink is not None:
@@ -633,6 +708,7 @@ class CampaignRunner:
         semaphore: asyncio.Semaphore,
         prior_by_spec: dict[str, Finding],
         seeding: dict[str, str | None] | None = None,
+        proven: bool = False,
     ) -> tuple[list[Finding], str | None, str | None]:
         """Run every selected spec concurrently (bounded); report a halt and why.
 
@@ -655,7 +731,48 @@ class CampaignRunner:
         breach: str | None = None
         error: str | None = None
         abort = asyncio.Event()
-        watch = _ReplyWatch()
+        checks = 0
+
+        async def check(adapter: TargetAdapter) -> tuple[bool, str | None]:
+            """The watch's benign request: debited, paced, recorded with the probes."""
+
+            nonlocal checks
+            sampling = Sampling(temperature=0.0, max_tokens=16)
+            if self._sent_sampling is not None:
+                sampling = self._sent_sampling(sampling)
+            request = ModelRequest(
+                prompt=UNREADABLE_CHECK_PROMPT, sampling=sampling, metadata={"probe": _CHECK_PROBE}
+            )
+            attempt_id = f"probe::{_CHECK_PROBE}#{checks}"
+            checks += 1
+            try:
+                result = await execute_attempt(
+                    adapter,
+                    request,
+                    attempt_id=attempt_id,
+                    spec_id=_PROBE_SPEC_ID,
+                    mutation="identity",
+                    sampling=sampling,
+                    ledger=ledger,
+                    retry=self._retry,
+                    timeout_s=self._timeout_s,
+                    is_env_error=default_is_env_error,
+                    sleep=self._sleep,
+                    now=self._now,
+                    pacer=self._pacer,
+                )
+            except ReplyOverBudget as crossed:
+                # Its reply is the check's, not a spec's: recorded, then the plain ceiling.
+                self._record_probe(run_id, crossed.result.attempt)
+                raise BudgetExhausted(crossed.axis, crossed.limit, crossed.attempted) from crossed
+            except UnreadableReplies:  # pragma: no cover - the check is sent unwatched
+                raise
+            self._record_probe(run_id, result.attempt)
+            if result.attempt.response is not None or result.filter_blocked:
+                return True, None
+            return False, None if result.unreadable else f"it failed: {result.attempt.error}"
+
+        watch = _ReplyWatch(proven=proven, check=check)
 
         async def _one(spec: AttackSpec) -> Finding | None:
             async with semaphore:
@@ -721,6 +838,13 @@ class CampaignRunner:
         if breach is not None:
             return findings, breach, "budget_exhausted"
         return findings, None, None
+
+    def _record_probe(self, run_id: str, attempt: Attempt) -> None:
+        """File the watch's benign check with the recognition probes, where the store has them."""
+
+        put_probe = getattr(self._evidence, "put_probe", None)
+        if callable(put_probe):
+            put_probe(run_id, attempt)
 
     def _holds_plan(
         self, done: set[str] | frozenset[str], spec_id: str, mutators: Sequence[str]
@@ -2470,6 +2594,18 @@ def _completed_attempt_ids(run: TestRun | None) -> set[str]:
             ):
                 ids.add(attempt.attempt_id)
     return ids
+
+
+def _read_a_reply(run: TestRun | None) -> bool:
+    """True when a prior run holds a reply that was read (or a provider's filter block)."""
+
+    if run is None:
+        return False
+    return any(
+        a.response is not None or blocked_by_provider_filter(a)
+        for finding in run.findings
+        for a in finding.attempts
+    )
 
 
 def answered_attempt_ids(run: TestRun | None) -> set[str]:

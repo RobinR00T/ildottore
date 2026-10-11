@@ -47,15 +47,23 @@ class Scripted:
 
     id = "t1"
 
-    def __init__(self, script: list[str], default: str = _BAD) -> None:
+    def __init__(
+        self, script: list[str], default: str = _BAD, probe: str = HARDENED_RESPONSE
+    ) -> None:
         self._script: Iterator[str] = iter(script)
         self._default = default
-        self.sends = 0
+        self._probe = probe
+        self.sends = 0  # attack sends; the watch's benign checks are counted apart
+        self.probes: list[ModelRequest] = []
 
     async def send(self, request: ModelRequest) -> ModelResponse:
-        self.sends += 1
         await asyncio.sleep(0)  # let concurrent specs interleave
-        outcome = next(self._script, self._default)
+        if (request.metadata or {}).get("probe") == "unreadable_check":
+            self.probes.append(request)
+            outcome = self._probe
+        else:
+            self.sends += 1
+            outcome = next(self._script, self._default)
         if outcome == _BAD:
             raise ResponseMalformed(
                 "t1: success response was not valid JSON: Expecting value: line 1 column 1 "
@@ -132,17 +140,20 @@ def test_a_target_that_breaks_after_readable_replies_stops_after_twenty_in_a_row
     exited 0. The watch counts unreadable replies in a row, reset by each one it reads: 20 in a
     row after the endpoint was proven stop the campaign too, with a reason of their own."""
 
-    adapter = Scripted([HARDENED_RESPONSE, HARDENED_RESPONSE])  # then every reply unreadable
+    # Then every reply unreadable, the benign check's too.
+    adapter = Scripted([HARDENED_RESPONSE, HARDENED_RESPONSE], probe=_BAD)
     result = _run(adapter, tmp_path, specs=6, n=5)
 
     assert result.status == "aborted"
     assert adapter.sends == 2 + UNREADABLE_STREAK_TO_STOP
+    assert len(adapter.probes) == 1
     reason = result.status_reason or ""
     assert reason.startswith(
         "aborted on UnreadableReplies: the target's last 20 replies in this run could not be "
         "read as replies, in a row after ones that could"
     ), reason
-    assert "expired session" in reason and "check the stub" in reason
+    assert "and a benign check sent then could not be read either" in reason
+    assert "expired session" in reason and "block page" in reason and "check the stub" in reason
 
 
 def test_a_readable_reply_resets_the_run_of_unreadable_ones(tmp_path: Path) -> None:
@@ -201,26 +212,32 @@ def test_an_unreadable_reply_never_lets_its_spec_pass(tmp_path: Path) -> None:
 def test_a_target_whose_first_replies_are_all_unreadable_stops_the_campaign(
     tmp_path: Path,
 ) -> None:
-    adapter = Scripted([])  # every reply unreadable
+    adapter = Scripted([], probe=_BAD)  # every reply unreadable, the benign check's too
     result = _run(adapter, tmp_path, specs=4, n=5)
 
     assert result.status == "aborted"
     assert adapter.sends == UNREADABLE_REPLIES_TO_STOP
+    assert len(adapter.probes) == 1
     reason = result.status_reason or ""
     assert reason.startswith("aborted on UnreadableReplies: the target's first 5 replies")
     assert "ResponseMalformed: t1: success response was not valid JSON" in reason
-    assert "and none could: check the stub." in reason  # the adapter's own advice
+    assert "and none could, nor a benign check sent then" in reason
+    assert "a block page" in reason  # a filter answering every request with one reads the same
+    assert "check the stub (a filter" in reason  # the adapter's own advice
     assert "a resume sends them again" in reason
     assert reason.endswith("; 4 of 4 specs never ran or did not finish")
     # The halted spec has no finding; every reply it was sent is in the evidence as an
     # inconclusive attempt, the fifth (which carried the stop) included (pre-merge audit of
     # 598f0858, MEDIUM 1: it went with the halt, and its token reservation stayed spent).
     assert result.findings == []
-    stored = sorted((tmp_path / "ev").rglob("*.json"))
+    stored = sorted((tmp_path / "ev").rglob("attempts/*.json"))
     assert len(stored) == UNREADABLE_REPLIES_TO_STOP
     assert all(b"ResponseMalformed" in path.read_bytes() for path in stored)
-    assert result.spend.requests == UNREADABLE_REPLIES_TO_STOP
+    assert result.spend.requests == UNREADABLE_REPLIES_TO_STOP + 1  # the check is debited
     assert result.spend.tokens == 0  # no reply was read: every reservation released
+    # The check is recorded where recognition traffic goes, apart from the attempts.
+    (probe,) = sorted((tmp_path / "ev").rglob("probes/*.json"))
+    assert b"probe::unreadable_check#0" in probe.read_bytes()
 
 
 def test_one_readable_reply_first_proves_the_endpoint(tmp_path: Path) -> None:
@@ -232,6 +249,61 @@ def test_one_readable_reply_first_proves_the_endpoint(tmp_path: Path) -> None:
     attempts = _attempts(result)
     assert sum(1 for a in attempts if a.error) == 9
     assert {f.status for f in result.findings} == {VerdictStatus.INCONCLUSIVE}
+
+
+def test_a_benign_check_that_reads_tells_a_filter_from_a_wrong_endpoint(tmp_path: Path) -> None:
+    """Verification of 07aa0b3a, MEDIUM: a content filter that answers attack prompts with a 200
+    block page is not a wrong endpoint. Before stopping, the watch sends one benign request; when
+    that one reads, the run goes on, the endpoint proven, and the unreadable attempts stay
+    inconclusive."""
+
+    adapter = Scripted([_BAD] * UNREADABLE_REPLIES_TO_STOP, default=HARDENED_RESPONSE)
+    result = _run(adapter, tmp_path, specs=2, n=5)
+
+    assert result.status == "complete", result.status_reason
+    assert len(adapter.probes) == 1
+    assert adapter.probes[0].prompt and "secret" not in adapter.probes[0].prompt.lower()
+    assert result.spend.requests == 10 + 1
+    assert sum(1 for a in _attempts(result) if a.error) == UNREADABLE_REPLIES_TO_STOP
+
+
+def test_twenty_in_a_row_after_a_read_send_a_benign_check_and_go_on_when_it_reads(
+    tmp_path: Path,
+) -> None:
+    """The same check before the stop at twenty: a filter that blocks every variant of a few
+    specs reads twenty in a row, and the endpoint still answers a benign request."""
+
+    script = [HARDENED_RESPONSE, *[_BAD] * (UNREADABLE_STREAK_TO_STOP + 5)]
+    adapter = Scripted(script, default=HARDENED_RESPONSE)
+    result = _run(adapter, tmp_path, specs=8, n=5)
+
+    assert result.status == "complete", result.status_reason
+    assert len(adapter.probes) == 1
+    assert adapter.sends == 40
+
+
+def test_a_resume_of_a_run_that_read_replies_starts_with_the_endpoint_proven(
+    tmp_path: Path,
+) -> None:
+    """Verification of 07aa0b3a, MEDIUM: a resume sends its unreadable attempts first, and a
+    fresh watch read the first five as a wrong endpoint and stopped every resume after five
+    requests, though the run had answered replies: it could never finish. A prior run that holds
+    a read reply starts the watch proven, so only twenty in a row stop it (after a check)."""
+
+    first = _run(
+        Scripted([HARDENED_RESPONSE] * 4 + [_BAD] * 6, default=HARDENED_RESPONSE),
+        tmp_path,
+        specs=2,
+        n=5,
+    )
+    assert first.status == "complete"
+    again = Scripted([], default=_BAD)  # the six are blocked again
+    (tmp_path / "again").mkdir()
+    second = _run(again, tmp_path / "again", specs=2, n=5, resume_from=first.run)
+
+    assert second.status == "complete", second.status_reason
+    assert again.sends == 6
+    assert again.probes == []  # six in a row is no reason to check a proven endpoint
 
 
 def test_a_readable_reply_among_the_first_disarms_the_stop(tmp_path: Path) -> None:
@@ -249,7 +321,7 @@ def test_a_provider_filter_block_is_the_provider_answering(tmp_path: Path) -> No
 
 def test_a_transport_failure_neither_counts_nor_disarms(tmp_path: Path) -> None:
     script = [_DOWN, _BAD, _DOWN, _BAD, _BAD, _BAD]
-    adapter = Scripted(script)
+    adapter = Scripted(script, probe=_BAD)
     result = _run(adapter, tmp_path, specs=2, n=5)
     assert result.status == "aborted"
     # Each 503 is retried (RetryPolicy(max_retries=3)) and the fifth unreadable reply stops it.
@@ -261,12 +333,13 @@ def test_concurrent_specs_stop_at_their_next_unreadable_reply(tmp_path: Path) ->
     reply instead of finishing its batch, so the campaign sends at most the figure plus one
     reply per other spec in flight."""
 
-    adapter = Scripted([])
+    adapter = Scripted([], probe=_BAD)
     result = _run(adapter, tmp_path, specs=6, n=5, concurrency=4)
     assert result.status == "aborted"
+    assert len(adapter.probes) == 1  # one check, however many specs reach the count
     assert UNREADABLE_REPLIES_TO_STOP <= adapter.sends <= UNREADABLE_REPLIES_TO_STOP + 3
     # Every reply sent is stored, the ones that stopped the specs in flight included.
-    assert len(sorted((tmp_path / "ev").rglob("*.json"))) == adapter.sends
+    assert len(sorted((tmp_path / "ev").rglob("attempts/*.json"))) == adapter.sends
     assert result.spend.tokens == 0
 
 

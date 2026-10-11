@@ -1889,10 +1889,18 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             trimmed = len(cut_attempt_ids(prior_attempts)) + len(
                 side_unknown_attempt_ids(prior_attempts)
             )
+            # It keeps none when every stored attempt is sent again: "keeps 0 attempt(s) across 4
+            # spec(s)" read as a resume with nothing to do (verification of 07aa0b3a, LOW 2).
+            kept = (
+                f"keeps {done} attempt(s) across {len(resume_from.findings)} spec(s) (answered, "
+                "or failed in a way a retry would repeat); they will not be re-sent"
+                if done
+                else f"keeps none of the {again} attempt(s) it stored across "
+                f"{len(resume_from.findings)} spec(s): none was answered, or failed in a way a "
+                "retry would repeat, so every one is sent again"
+            )
             print(
-                f"resume: {opts.resume} keeps {done} attempt(s) across "
-                f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
-                "would repeat); they will not be re-sent"
+                f"resume: {opts.resume} {kept}"
                 + (
                     f"; {blocked} of them the provider's input filter refused, kept as blocked"
                     if blocked
