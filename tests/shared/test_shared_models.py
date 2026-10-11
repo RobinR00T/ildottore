@@ -232,7 +232,6 @@ def test_build_test_plan() -> None:
                 spec_id="PI-INDIRECT-RAG-001",
                 reason="target has rag capability",
                 mutators=["identity", "html_comment_carrier"],
-                baseline_resistance=0.7,
             )
         ],
         skipped=[PlanSkip(spec_id="TOOL-ABUSE-001", reason="no tools capability")],

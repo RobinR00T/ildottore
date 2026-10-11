@@ -5,6 +5,25 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed (the plan's `baseline_resistance`, dead at both ends: OD-17)
+
+- **`PlanSelection.baseline_resistance` is gone.** No fingerprint layer wrote the
+  `guardrails["baseline_resistance"]` map the planner read it from, and nothing read the field the
+  planner wrote, so every plan said `null` in a shape that read as a working feature. Decided on
+  2026-10-11 under the owner's delegation (best practice, revisable): ADR-0008 option B, now
+  rather than after a live run, since a reserved field pre-commits a design nobody has data for;
+  it comes back with the layer that measures per-category resistance. Removed from the u00 model,
+  `core/planner._baseline_resistance`, the golden plan and the u08 and u09 contracts; `docs/10`
+  and `docs/16` say it was removed.
+- **Schema note.** `dottore schema export --name test-plan` no longer lists the property, and
+  `PlanSelection` still forbids unknown keys, so a plan JSON that carries `baseline_resistance`
+  fails validation against this version's model and schema. No command reads a plan from disk
+  (the run store keeps the integrity context, not the plan) and `report-1.0` never held it, so
+  nothing the tool reads or writes changes: no verdict, no plan ordering, no report.
+- Tests: `tests/core/test_no_baseline_resistance.py` (4, all failing on `52cd923`); three planner
+  tests that pinned the dead reader removed; the guardrail-profile ordering test's docstring
+  updated.
+
 ### Changed (one rule combines a spec's evaluators, and a judge-only fail needs review: OD-19)
 
 - **`evaluator_logic` named three behaviours and every path ran a different one.** 33 specs

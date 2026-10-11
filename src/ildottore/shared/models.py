@@ -656,12 +656,16 @@ class ModelFingerprint(_Frozen):
 
 
 class PlanSelection(_Frozen):
-    """A selected spec in a ``TestPlan`` (ADR-0006 §3; per-spec mutators/baseline)."""
+    """A selected spec in a ``TestPlan`` (ADR-0006 §3; its per-spec mutators).
+
+    ``baseline_resistance`` was removed on 2026-10-11 (OD-17, ADR-0008 option B, decided under
+    the owner's delegation): no fingerprint layer wrote the map it was read from and nothing read
+    the field, so every plan said ``null``. It comes back with the layer that measures it.
+    """
 
     spec_id: str
     reason: str
     mutators: list[str] = Field(default_factory=list)
-    baseline_resistance: float | None = None
 
 
 class PlanSkip(_Frozen):

@@ -26,14 +26,14 @@ Two roles for fingerprinting: both first-class:
    The alternative was a hand-written "mutators known to work against family X" table. We
    have no empirical basis for one, and shipping it would attach a confidence to a fiction.
 
-   The other hook, the planner function `core/planner._baseline_resistance`, is **dead at both
-   ends**: it reads a per-category expectation from `guardrails["baseline_resistance"]`, a key no
-   fingerprint layer writes, so it always returns `None`; and the
-   `PlanSelection.baseline_resistance` field it fills has no reader anywhere in `src/` (OD-17).
-   No layer writes the key because benign probes
-   cannot measure per-category resistance, so nothing emits it and no result is scored
-   relative to an expectation. Tracked in `docs/12`. That one really is inert, and saying so
-   is cheaper than a number nobody can defend.
+   There was a second hook, the planner function `core/planner._baseline_resistance`, **dead at
+   both ends**: it read a per-category expectation from `guardrails["baseline_resistance"]`, a
+   key no fingerprint layer writes, so it always returned `None`, into a
+   `PlanSelection.baseline_resistance` field nothing in `src/` read. No layer writes the key
+   because benign probes cannot measure per-category resistance. The function and the field were
+   removed on 2026-10-11 (OD-17, ADR-0008 option B, decided under the owner's delegation): a
+   field that always says `null` in a shape that looks like a working feature is a claim the
+   code cannot back. It comes back with a layer that measures resistance, after a live run.
 
    **Only obscuring carriers are probed, and that is a safety boundary.** A carrier that
    leaves the instruction readable and wraps it in new text (a refusal-suppression preamble, a
@@ -383,9 +383,9 @@ What the planner does today, with and without a fingerprint:
    rest follow, in declared order. It selects no spec and drops no variant. Seen over the wire
    once, against a local 3B model (`docs/16` §1, 2026-10-07).
 3. **Does not set baseline expectations.** The design was to record the family's known
-   resistance and score a result relative to it. That half is the dead `_baseline_resistance`
-   hook described above §1: nothing writes the guardrails key it reads, and nothing reads the
-   plan field it fills (OD-17, ADR-0008). The same
+   resistance and score a result relative to it. The hook for it, `_baseline_resistance`, was
+   dead at both ends and was removed with its plan field on 2026-10-11 (above §1; OD-17,
+   ADR-0008). The same
    goes for the original idea of weighting variants "historically effective against the
    detected family", which the introduction rejects for lack of an empirical basis.
 4. **Emits an explicit, reviewable `TestPlan`** (which specs, why, which were skipped and why).

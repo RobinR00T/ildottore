@@ -3,8 +3,9 @@
 > **RECONCILIATION (ADR-0006: authoritative).** This unit is the **sole owner of the
 > plan-builder**: `core/planner.py :: build_plan(specs, fingerprint: ModelFingerprint | None,
 > capabilities) -> TestPlan`. `TestPlan` is defined in `shared.models` (u00), not here: import
-> it. Use the canonical `TestPlan` shape from ADR-0006 §3 (per-spec `mutators` +
-> `baseline_resistance`; `adaptive`; `fingerprint_ref`; `budgets`). Adaptive planning is
+> it. Use the canonical `TestPlan` shape from ADR-0006 §3 (per-spec `mutators`; `adaptive`;
+> `fingerprint_ref`; `budgets`; the per-spec `baseline_resistance` was removed on 2026-10-11,
+> OD-17, ADR-0008 option B). Adaptive planning is
 > implied by `-sV` and `-A` (OD-5 as built: there is no `--adaptive` flag; `--deep` also sets
 > adaptive mode, which orders nothing without a fingerprint). u09 does not build plans.
 
@@ -86,8 +87,9 @@ concretes:
 3. `planner.py`: `build_plan(specs, fingerprint|None, capabilities)` → `TestPlan`: capability
    filter, family-effective mutator weighting, baseline expectations, explicit skip reasons
    (`docs/10 §3`); `--no-adaptive` = pass-through (benchmark parity). As built the planner
-   orders mutators by carrier comprehension only; the family weighting and baseline
-   expectations are not implemented (OD-17), and there is no `--no-adaptive` flag.
+   orders mutators by carrier comprehension only; the family weighting is not implemented, the
+   baseline expectations were removed as dead at both ends (OD-17, 2026-10-11), and there is
+   no `--no-adaptive` flag.
 4. `execute.py`: single-attempt send with retry/backoff/rate-limit/timeout; classify env-error
    vs product-signal; record `Attempt` (masked via redactor before evidence write).
 5. `reproduce.py`: run one (spec,variant) N times, aggregate `repro` + per-attempt raw.
@@ -125,11 +127,11 @@ concretes:
 
 ## §6 Data/wire shapes
 `TestPlan = {plan_ref: str, target_id: str, adaptive: bool, fingerprint_ref: str|None,
-selected: [{spec_id, reason, mutators: [str], baseline_resistance: float|None}],
-# NOTE (2026-09-23, OD-17): `baseline_resistance` is dead at both ends today. No fingerprint
-# layer writes the `guardrails` key it is read from, and nothing in src/ reads the field it is
-# written to. It is in the shape, and in this contract, as if it flowed. Decide before a
-# reader is written against it.
+selected: [{spec_id, reason, mutators: [str]}],
+# OD-17, decided 2026-10-11 under the owner's delegation (ADR-0008 option B): the per-spec
+# `baseline_resistance: float|None` was removed. No fingerprint layer wrote the `guardrails` key
+# it was read from and nothing in src/ read it, so every plan said null. It comes back with the
+# layer that measures it (after a live run, docs/16), and a reader in the same change.
 skipped: [{spec_id, reason}], budgets: {max_tokens, max_requests, max_wall_s, max_attempts}}`
 - reviewable, persisted with the run (validates vs the test-plan schema, which is generated on
   demand by `dottore schema export --name test-plan` and not committed under `schemas/`,
@@ -446,6 +448,12 @@ aggregate carried no reply. Not re-run against a live Azure endpoint.
   budgets (tokens/requests/wall-clock): surfaced in `config.py` (u01), confirmed by human.
 - Concurrency degree (bounded semaphore default) vs provider rate-limit headers: propose adaptive
   from observed 429s, capped by config.
+- **OD-17** (2026-09-23, ADR-0008): `baseline_resistance` was dead at both ends of the plan.
+  **Decided 2026-10-11 under the owner's delegation (best practice, revisable): B, drop it.**
+  Removed from `PlanSelection` (u00), from `build_plan` (`_baseline_resistance`), from the
+  generated test-plan schema and from the golden plan; the alternative kept open by the ADR
+  (C, leave it in the shape documented as dead) and the one it deferred (A, a fingerprint layer
+  measuring per-category resistance, which needs a live run) were not taken now.
 - **OD-19** (2026-10-03, ADR-0010): `evaluator_logic` was read by no run path and a judge-only
   fail was confirmed. **Decided 2026-10-11 under the owner's delegation (best practice,
   revisable):** option B with the amendment, built as u06 §7 A-73 (this unit's half above).

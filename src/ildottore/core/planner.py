@@ -11,15 +11,18 @@ set + the target's declared :class:`Capabilities` (+ an optional
 2. **Per-spec mutator selection** - the spec's declared ``mutations`` (``identity``
    is always included as the baseline carrier), ordered family-effectively when a
    fingerprint is supplied.
-3. **Baseline resistance** - when a fingerprint is present, records the family's
-   known resistance so a result is scored *relative to expectation* (``docs/10 §3``).
-4. **Explicit, byte-stable output** - deterministic ordering (specs in input order,
+3. **Explicit, byte-stable output** - deterministic ordering (specs in input order,
    skips in input order) so the same inputs produce a byte-identical plan
    (contract §7 determinism replay).
 
+The planner reads one key of a fingerprint, ``capability_guess["effective_mutators"]``.
+It used to read a per-category ``guardrails["baseline_resistance"]`` map, which no
+fingerprint layer writes, into a plan field nothing read; both were removed on
+2026-10-11 (OD-17, ADR-0008 option B), to come back with a layer that measures it.
+
 ``--no-adaptive`` (``adaptive=False``) is a **pass-through**: no fingerprint
-tailoring, no baseline resistance, mutator order is the spec's declared order - the
-full selected suite runs for apples-to-apples benchmark parity (``docs/10 §3``).
+tailoring, mutator order is the spec's declared order - the full selected suite runs
+for apples-to-apples benchmark parity (``docs/10 §3``).
 
 Pure and side-effect-free: no I/O, no clock, no RNG. ``core`` imports only shared
 models here (contract §8).
@@ -132,27 +135,6 @@ def _order_family_effective(mutations: list[str], fingerprint: ModelFingerprint)
     return sorted(mutations, key=lambda name: 0 if name in promoted else 1)
 
 
-def _baseline_resistance(
-    spec: AttackSpec, *, fingerprint: ModelFingerprint | None, adaptive: bool
-) -> float | None:
-    """Family baseline resistance for a spec, or ``None`` in non-adaptive mode.
-
-    Read from the fingerprint's ``guardrails.baseline_resistance`` map keyed by the
-    spec's ``category`` (``docs/10 §3``). Only populated in adaptive mode with a
-    fingerprint present - benchmark-parity runs score absolutely, not relative.
-    """
-
-    if not adaptive or fingerprint is None:
-        return None
-    table = fingerprint.guardrails.get("baseline_resistance")
-    if not isinstance(table, dict):
-        return None
-    value = table.get(spec.category.value)
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return float(value)
-    return None
-
-
 def build_plan(
     specs: list[AttackSpec],
     fingerprint: ModelFingerprint | None,
@@ -167,9 +149,8 @@ def build_plan(
 
     ``adaptive=False`` (``--no-adaptive``) is a pass-through: capability filtering
     still applies (a spec that *cannot* run is always skipped, adaptive or not), but
-    no fingerprint tailoring / baseline resistance is recorded and mutators keep the
-    spec's declared order. ``adaptive=True`` with a ``fingerprint`` enables
-    family-effective mutator ordering + baseline expectations.
+    no fingerprint tailoring is recorded and mutators keep the spec's declared order.
+    ``adaptive=True`` with a ``fingerprint`` enables family-effective mutator ordering.
 
     Deterministic: same inputs ⇒ byte-identical plan (specs kept in input order;
     skips recorded in input order; no clock/RNG).
@@ -199,9 +180,6 @@ def build_plan(
                 spec_id=spec.id,
                 reason=_selection_reason(spec, adaptive=adaptive),
                 mutators=_select_mutators(spec, fingerprint=effective_fp),
-                baseline_resistance=_baseline_resistance(
-                    spec, fingerprint=effective_fp, adaptive=adaptive
-                ),
             )
         )
 

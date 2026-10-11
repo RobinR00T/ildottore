@@ -25,7 +25,8 @@ Two first-class roles (`docs/10`): (1) **standalone recognition**: probe an unkn
 with benign signals, return a `ModelFingerprint{family, version, capabilities, guardrails,
 evidence, spoofing_flags}` and stop; (2) **adaptive first pass**: feed that fingerprint to
 `planner` to emit a reviewable `TestPlan` (specs kept/dropped + why, family-effective mutator
-weights, baseline resistance). Six signal layers run independently, each emitting weighted
+weights; a baseline resistance was planned and removed as dead on 2026-10-11, OD-17). Six
+signal layers run independently, each emitting weighted
 `Evidence`; `combine` fuses them into per-field guesses + confidence. Self-report is a **weak**
 signal: any layer contradicting the statistical layer surfaces a `spoofing_flag`, never
 suppressed. Every run is **reproducible** offline (fixed seeded probe battery); live, as far as
@@ -107,7 +108,8 @@ probe adapter reports the target file's capabilities, and the adapters redact th
 without the entropy rule. See `docs/10 §2`, "Attribution rules".) Signature pack entry:
 `{family, version, signals:{layer→matcher}, weights}`.
 `TestPlan = {plan_ref, target_id, selected:list[{spec_id, reason}], skipped:list[{spec_id,
-reason}], mutator_weights, baseline_resistance}`: nothing silently dropped (`docs/07`).
+reason}], mutator_weights}`: nothing silently dropped (`docs/07`). (`baseline_resistance` was
+removed from the shape on 2026-10-11, OD-17: no layer wrote it and nothing read it.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/fingerprint -q` green; coverage ≥ 90% for `src/ildottore/fingerprint/`.
@@ -261,9 +263,10 @@ requested no longer counts as a filter. The criterion:
   the same ten. With one probe unanswered the keys it measures are `null`; with both, the
   guardrails stay `{}`;
 - the pass costs one request more, 18, through `probe_count` (A-3). The planner reads no key of
-  the profile (it reads `capability_guess["effective_mutators"]`, and
-  `guardrails["baseline_resistance"]`, which no layer writes, OD-17), so the `-sV` ordering is
-  unchanged: a test builds the plan with and without each profile and finds it equal.
+  the profile (it reads `capability_guess["effective_mutators"]`; it read
+  `guardrails["baseline_resistance"]`, which no layer writes, until OD-17 removed it on
+  2026-10-11), so the `-sV` ordering is unchanged: a test builds the plan with and without each
+  profile and finds it equal.
 The pre-merge audit of `cd413c0` (2026-10-09) found one high and six lesser defects in that
 first build, each reproduced, and added to the criterion:
 - **an input filter on the benign request costs that probe, not the pass.** Azure OpenAI's

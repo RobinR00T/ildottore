@@ -8,7 +8,10 @@
 > `capability_unavailable | blocked_by_policy | judge_compromised`, extensible via ADR; ADR-0011
 > added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69).
 > `ModelFingerprint.capability_guess` (not `.capabilities`): distinct from the `Capabilities`
-> enum. Canonical `TestPlan` shape is in ADR-0006 §3.
+> enum. Canonical `TestPlan` shape is in ADR-0006 §3, without the per-spec
+> `baseline_resistance`, removed on 2026-10-11 (OD-17, ADR-0008 option B: no layer wrote it,
+> nothing read it; `PlanSelection` forbids unknown keys, so a plan JSON that still carries it is
+> refused, and no command reads one).
 >
 > **OD-19 (decided 2026-10-11 under the owner's delegation, u06 §7 A-73).** `EvaluatorLogic`
 > gains `deterministic_first`, the name of the one combination rule, and

@@ -24,7 +24,9 @@ exist while every unit declares `schemas/` must-not-touch.
    `{plan_ref, target_id, adaptive: bool, fingerprint_ref: str | None,
    selected: [{spec_id, reason, mutators: [str], baseline_resistance}],
    skipped: [{spec_id, reason}], budgets: {max_tokens, max_requests, max_wall_s, max_attempts}}`.
-   Per-spec `mutators`/`baseline_resistance` (not top-level).
+   Per-spec `mutators`/`baseline_resistance` (not top-level). (Amended 2026-10-11, OD-17,
+   ADR-0008 option B: `baseline_resistance` is removed from the shape; no layer wrote it and
+   nothing read it.)
 4. **`ModelFingerprint.capability_guess`** is renamed from `.capabilities` to make explicit that
    a fingerprint *guess* (may include `json_mode`, `vision`, `max_context_tokens`) is a distinct
    shape from the target-declared `Capabilities` enum.
