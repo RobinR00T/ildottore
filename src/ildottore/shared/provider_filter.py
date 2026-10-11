@@ -44,7 +44,7 @@ from collections.abc import Iterable
 from typing import Final
 
 from ildottore.shared.amounts import is_count
-from ildottore.shared.enums import InconclusiveReason
+from ildottore.shared.enums import InconclusiveReason, VerdictStatus
 from ildottore.shared.filter_stops import (
     BEDROCK_FILTER_STOPS,
     FILTER_STOPS,
@@ -70,6 +70,8 @@ __all__ = [
     "filter_side",
     "filter_side_unknown",
     "filter_stop",
+    "filtered_attempt",
+    "filtered_run",
     "is_filter_stop",
     "partial_reply",
     "replaced_reply",
@@ -338,6 +340,36 @@ def cut_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:
     """The ids of the attempts the provider's output filter cut (one per id)."""
 
     return {attempt.attempt_id for attempt in attempts if cut_by_output_filter(attempt)}
+
+
+def filtered_attempt(attempt: Attempt) -> bool:
+    """True when the provider's filter refused, cut or stopped this attempt (OD-41, OD-42)."""
+
+    return (
+        blocked_by_provider_filter(attempt)
+        or cut_by_output_filter(attempt)
+        or filter_side_unknown(attempt)
+    )
+
+
+def filtered_run(attempts: Iterable[Attempt]) -> bool:
+    """True when the provider's filter answered every attempt for the model (u12 A-79).
+
+    Every attempt was refused, cut or stopped by the filter, or got no reply at all (a transport
+    failure, a reply the adapter could not read); at least one was the filter's; and none is a
+    fail, on a trace or on what came back, which was measured. The CLI makes such a run
+    ``filtered`` and exits 3; ``dottore replay`` names it, one attempt per id, from what the
+    attempts stored (the run store keeps no run state). One rule for both.
+    """
+
+    listed = list(attempts)
+    if not any(filtered_attempt(a) for a in listed):
+        return False
+    if any(a.verdict is not None and a.verdict.status is VerdictStatus.FAIL for a in listed):
+        return False
+    return not any(
+        a.error is None and a.response is not None and not filtered_attempt(a) for a in listed
+    )
 
 
 def side_unknown_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:

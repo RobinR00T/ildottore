@@ -310,6 +310,40 @@ def test_a_run_the_filter_answered_every_time_is_filtered_and_exits_3(
     assert {f["status"] for f in report["findings"]} == {"inconclusive"}
 
 
+def test_the_replay_of_a_filtered_run_names_it_and_of_a_partly_filtered_one_does_not(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """Pre-merge audit of a55710e9, LOW 5: the run store keeps no run state, so `dottore replay`
+    never said `filtered`. It says it from the attempts, by the rule `run` applies."""
+
+    port, state = stub
+    state["reply"] = lambda _prompt: (400, _AZURE_400)
+    assert CliRunner().invoke(app, _argv(tmp_path, port, "PI-DIRECT-001")).exit_code == 3
+
+    def replay(root: Path) -> str:
+        run_id = next(p.name for p in (root / "ev").iterdir())
+        argv = ["replay", run_id, "--evidence-root", str(root / "ev")]
+        result = CliRunner().invoke(app, [*argv, "--run-db", str(root / "runs.sqlite")])
+        assert result.exit_code == 0, result.output
+        return result.output
+
+    assert "run: filtered: the provider's filter answered every attempt for the model" in replay(
+        tmp_path
+    )
+
+    def some(prompt: str) -> tuple[int, dict[str, Any]]:
+        if "developer mode" in prompt:
+            return 400, _AZURE_400
+        return 200, _openai(_REFUSAL, "stop")
+
+    other = tmp_path / "partly"
+    other.mkdir()
+    state["reply"] = some
+    argv = _argv(other, port, "GUARD-INPUT-EVASION-001", "PI-DIRECT-001")
+    assert CliRunner().invoke(app, argv).exit_code == 0
+    assert "run: filtered" not in replay(other)
+
+
 def test_a_filtered_run_with_transport_failures_says_what_to_check_for_them(
     tmp_path: Path, stub: tuple[int, dict[str, Any]]
 ) -> None:

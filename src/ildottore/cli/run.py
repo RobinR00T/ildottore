@@ -77,7 +77,7 @@ from ildottore.registry import uncompilable_patterns
 from ildottore.reporting import RunStatus
 from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
-from ildottore.shared.enums import Category, EvaluatorType, VerdictStatus
+from ildottore.shared.enums import Category, EvaluatorType
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -94,7 +94,8 @@ from ildottore.shared.provider_filter import (
     blocked_by_provider_filter,
     cut_attempt_ids,
     cut_by_output_filter,
-    filter_side_unknown,
+    filtered_attempt,
+    filtered_run,
     side_unknown_attempt_ids,
 )
 from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, scene_tool_names
@@ -2585,16 +2586,6 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     )
 
 
-def _filtered(attempt: Attempt) -> bool:
-    """True when the provider's filter refused, cut or stopped this attempt (OD-41, OD-42)."""
-
-    return (
-        blocked_by_provider_filter(attempt)
-        or cut_by_output_filter(attempt)
-        or filter_side_unknown(attempt)
-    )
-
-
 def _filtered_reason(result: CampaignResult) -> str | None:
     """Why this target's run measured the provider's filter and not the model, or ``None``.
 
@@ -2617,13 +2608,9 @@ def _filtered_reason(result: CampaignResult) -> str | None:
     """
 
     attempts = [a for finding in result.findings for a in finding.attempts]
-    filtered = [a for a in attempts if _filtered(a)]
-    if not filtered:
+    if not filtered_run(attempts):
         return None
-    if any(a.verdict is not None and a.verdict.status is VerdictStatus.FAIL for a in attempts):
-        return None
-    if any(a.error is None and a.response is not None and not _filtered(a) for a in attempts):
-        return None
+    filtered = [a for a in attempts if filtered_attempt(a)]
     blocked = sum(blocked_by_provider_filter(a) for a in filtered)
     withheld = sum(cut_by_output_filter(a) for a in filtered)
     unsaid = len(filtered) - blocked - withheld
@@ -2654,7 +2641,7 @@ def _unread_advice(attempts: list[Attempt]) -> str:
     told only to find a deployment whose filter lets the prompts through).
     """
 
-    others = [a for a in attempts if not _filtered(a)]
+    others = [a for a in attempts if not filtered_attempt(a)]
     if not others:
         return ""
     unreadable = [a for a in others if unreadable_reply(a)]
