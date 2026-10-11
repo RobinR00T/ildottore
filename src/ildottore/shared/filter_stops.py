@@ -35,6 +35,8 @@ __all__ = [
     "PROVIDER_FILTER_STOPS",
     "documented_stops",
     "normalized_stop",
+    "own_filter_stops_of",
+    "target_filter_stops",
 ]
 
 #: OpenAI's and Azure OpenAI's. OpenAI API reference, the Completions object,
@@ -139,3 +141,47 @@ def documented_stops(values: Iterable[object]) -> frozenset[str]:
             )
         honoured.add(stop)
     return frozenset(honoured)
+
+
+def own_filter_stops_of(provider: object) -> frozenset[str]:
+    """The words a target of ``provider`` may list in its top-level ``filter_stops`` (u04 A-79).
+
+    :data:`PROVIDER_FILTER_STOPS`'s, for an ``openai`` or ``anthropic`` target (compared trimmed
+    and in lower case). Any other provider takes no such declaration and is refused; the message
+    names the field, never a value (A-53), and its reader adds where it was written.
+    """
+
+    lowered = provider.strip().lower() if isinstance(provider, str) else ""
+    own = PROVIDER_FILTER_STOPS.get(lowered)
+    if own is None:
+        raise ValueError(
+            "'filter_stops' is for a provider: openai or anthropic target; a websocket target "
+            "declares its stops under websocket.response.filter_stops, and a rest target reads none"
+        )
+    return own
+
+
+def target_filter_stops(provider: object, values: Iterable[object]) -> frozenset[str]:
+    """``values``, a target's top-level ``filter_stops``, as its adapter reads them (u04 A-79).
+
+    Trimmed and in lower case, each one ``provider``'s own word (:func:`own_filter_stops_of`):
+    the declaration may only narrow what the adapter reads, to its own word or to nothing, never
+    widen it to another provider's. One rule for every path a :class:`~ildottore.shared.models.
+    Target` is built by: the target file's loader and the Python API (pre-merge audit of
+    ``10cb526b``, LOW: ``Target(provider="openai", filter_stops=["refusal"])`` built an adapter
+    that read ``refusal`` as OpenAI's filter). Refused in words that name the field and the
+    provider's own word, never a value.
+    """
+
+    own = own_filter_stops_of(provider)
+    try:
+        stops = documented_stops(values)
+    except ValueError:
+        stops = frozenset({""})
+    if not stops <= own:
+        raise ValueError(
+            f"'filter_stops' may list only the provider's own filter stop "
+            f"({', '.join(sorted(own))}), or nothing ([]) for an endpoint that is not the "
+            "provider"
+        )
+    return stops

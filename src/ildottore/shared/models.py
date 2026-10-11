@@ -16,6 +16,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    ValidationInfo,
     field_validator,
     model_serializer,
     model_validator,
@@ -32,7 +33,7 @@ from ildottore.shared.enums import (
     TargetType,
     VerdictStatus,
 )
-from ildottore.shared.filter_stops import documented_stops
+from ildottore.shared.filter_stops import documented_stops, target_filter_stops
 
 # --- shared field constraints (schema §properties) ---------------------------------
 
@@ -511,6 +512,10 @@ class Target(_Frozen):
     optional fields - no change to existing mock behavior).
     """
 
+    # A refusal never quotes what was written (A-53): pydantic's own text would, after the
+    # message, and a Target carries an endpoint that may hold a password.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     type: TargetType
     capabilities: Capabilities = Field(default_factory=Capabilities)
@@ -530,10 +535,29 @@ class Target(_Frozen):
     # The wire shape of a ``provider: websocket`` target (``None`` for every other provider).
     websocket: WebSocketSpec | None = None
     # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
-    # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and is not the
-    # provider, so neither its stops nor Azure's HTTP 400 are read as a filter's. ``None``: the
-    # provider's own. Validated by the loader (``cli.wiring``); left out of a dump when ``None``.
+    # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and has no such
+    # filter behind it, so its stops on a reply with text or a tool call, and Azure's HTTP 400,
+    # are not read as a filter's (an empty reply on the provider's own word still is). ``None``:
+    # the provider's own. Its own word or nothing, checked here for every path (below) and by the
+    # loader first (``cli.wiring``, which names the file); left out of a dump when ``None``.
     filter_stops: list[str] | None = None
+
+    @field_validator("filter_stops")
+    @classmethod
+    def _the_providers_own_filter_stops(
+        cls, value: list[str] | None, info: ValidationInfo
+    ) -> list[str] | None:
+        """The provider's own word, or nothing, trimmed, in lower case and sorted (u04 A-79).
+
+        ``shared.filter_stops.target_filter_stops``, the loader's rule: until the pre-merge audit
+        of ``10cb526b`` (LOW) only the loader applied it, so ``Target(provider="openai",
+        filter_stops=["refusal", "guardrail_intervened"])`` built an adapter that read those two
+        as OpenAI's filter. ``provider`` is declared above, so it is validated before this.
+        """
+
+        if value is None:
+            return None
+        return sorted(target_filter_stops(info.data.get("provider"), value))
 
     @model_serializer(mode="wrap")
     def _without_an_undeclared_filter(

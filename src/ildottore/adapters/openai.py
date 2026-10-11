@@ -97,8 +97,11 @@ class OpenAIAdapter(BaseAdapter):
         still the filter's withheld one (:attr:`own_filter_stops`).
         """
 
+        # Narrowed, never widened: a declaration built past the Target model's check (an
+        # adapter made by hand, a ``model_copy``) cannot add another provider's word (pre-merge
+        # audit of 10cb526b, LOW).
         if self.declared_filter_stops is not None:
-            return self.declared_filter_stops
+            return self.declared_filter_stops & OPENAI_FILTER_STOPS
         return OPENAI_FILTER_STOPS
 
     @property

@@ -574,6 +574,56 @@ def test_a_target_files_filter_stops_is_refused_outside_its_providers_words(
     assert "sk-123456789" not in str(info.value)
 
 
+@pytest.mark.parametrize(
+    ("provider", "declared", "match"),
+    [
+        (
+            "openai",
+            ["refusal", "guardrail_intervened"],
+            "may list only the provider's own filter stop (content_filter)",
+        ),
+        ("anthropic", ["content_filter"], "may list only the provider's own filter stop (refusal)"),
+        ("openai", ["sk-123456789-moderated"], "may list only the provider's own filter stop"),
+        ("rest", [], "is for a provider: openai or anthropic target"),
+        ("websocket", ["content_filter"], "is for a provider: openai or anthropic target"),
+        (None, [], "is for a provider: openai or anthropic target"),
+    ],
+)
+def test_a_hand_built_target_may_declare_only_its_providers_own_word(
+    provider: str | None, declared: list[str], match: str
+) -> None:
+    """Pre-merge audit of ``10cb526b``, LOW: the rule lived only in the loader, so
+    ``Target(provider="openai", filter_stops=["refusal", "guardrail_intervened"])`` built an
+    ``OpenAIAdapter`` that read those two as OpenAI's filter. The model now applies it, and its
+    error quotes no value, pydantic's own text included."""
+
+    from pydantic import ValidationError
+
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    with pytest.raises(ValidationError, match=re.escape(match)) as info:
+        Target(id="t", type=TargetType.CHATBOT, provider=provider, filter_stops=declared)
+    assert "sk-123456789" not in str(info.value)
+    assert "input_value" not in str(info.value)
+
+
+def test_a_hand_built_targets_own_word_is_written_as_the_loader_writes_it() -> None:
+    from ildottore.policy import EndpointAllowlist
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    target = Target(
+        id="t",
+        type=TargetType.CHATBOT,
+        provider="openai",
+        filter_stops=[" Content_Filter ", "content_filter"],
+    )
+    assert target.filter_stops == ["content_filter"], "trimmed, in lower case, once"
+    adapter = wiring.build_real_adapter(target, EndpointAllowlist([]), api_key=None)
+    assert adapter.filter_stops == frozenset({"content_filter"})  # type: ignore[attr-defined]
+
+
 def test_a_hand_built_anthropic_target_may_declare_none() -> None:
     from ildottore.policy import EndpointAllowlist
     from ildottore.shared.enums import TargetType

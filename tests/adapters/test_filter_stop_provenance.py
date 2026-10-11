@@ -235,6 +235,26 @@ def test_a_gemini_template_that_declares_none_reads_its_own_word_on_an_empty_rep
     assert _send(_rest(template), url, written).foreign_stop is True
 
 
+def test_an_adapter_never_reads_another_providers_word_whatever_it_is_given() -> None:
+    """Pre-merge audit of ``10cb526b``, LOW: a declaration built past the ``Target`` model's check
+    (an adapter made by hand, a ``model_copy``) narrows what the adapter reads, never widens it."""
+
+    from ildottore.cli.wiring import build_real_adapter
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    assert _openai(frozenset({"refusal", "guardrail_intervened"})).filter_stops == _NONE
+    widened = _anthropic(frozenset({"content_filter", "refusal"}))
+    assert widened.filter_stops == frozenset({"refusal"})
+    copied = Target(id="t", type=TargetType.CHATBOT, provider="openai").model_copy(
+        update={"filter_stops": ["refusal"]}
+    )
+    adapter = build_real_adapter(copied, EndpointAllowlist([]), api_key=None)
+    assert adapter.filter_stops == _NONE  # type: ignore[attr-defined]
+    forged = _send(_openai(frozenset({"refusal"})), _OPENAI_URL, _openai_body(_HARMFUL, "refusal"))
+    assert forged.foreign_stop is True and filter_side(forged) is None
+
+
 # --- REST: the template's shape, or its declaration --------------------------------------------
 
 

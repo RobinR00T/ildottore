@@ -98,9 +98,9 @@ from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.files import read_text_capped
 from ildottore.shared.filter_stops import (
-    ANTHROPIC_FILTER_STOPS,
-    OPENAI_FILTER_STOPS,
     documented_stops,
+    own_filter_stops_of,
+    target_filter_stops,
 )
 from ildottore.shared.models import (
     AttackSpec,
@@ -851,48 +851,28 @@ def _declared_filter_stops(target: Target) -> frozenset[str] | None:
     return None if target.filter_stops is None else documented_stops(target.filter_stops)
 
 
-#: The filter stops a target file's top-level ``filter_stops`` may list, per provider: its own
-#: (u04 A-79). A WebSocket target declares its stops in its block, a REST one reads none.
-_OWN_FILTER_STOPS: dict[str, frozenset[str]] = {
-    "openai": OPENAI_FILTER_STOPS,
-    "anthropic": ANTHROPIC_FILTER_STOPS,
-}
-
-
 def _filter_stops(path: Path, raw: object, provider: object) -> list[str] | None:
     """A target file's ``filter_stops``, checked (u04 A-79; pre-merge audit of ``a55710e9``).
 
     For an ``openai`` or ``anthropic`` target only, and only the provider's own words: ``[]``
-    switches the provider's filter reading off for an endpoint that speaks its API and is not
-    the provider (a gateway, a local server), so a stop it writes, and Azure's 400, are ordinary.
-    Refused anywhere else: a WebSocket target declares its stops under
-    ``websocket.response.filter_stops``, and a REST target file reads none. The refusals name the
-    file and the field, never a value (A-53).
+    switches the provider's filter reading off, on a reply with text or a tool call and on
+    Azure's 400, for an endpoint that speaks its API and has no such filter behind it (a local
+    server); an empty reply on the provider's own word is still its filter's (pre-merge audit of
+    ``10cb526b``, MEDIUM). Refused anywhere else: a WebSocket target declares its stops under
+    ``websocket.response.filter_stops``, and a REST target file reads none. The rule is
+    ``shared.filter_stops.target_filter_stops``, which the ``Target`` model applies too; here it
+    is read first, so the refusal names the file and the field, never a value (A-53).
     """
 
     if raw is None:
         return None
-    lowered = provider.strip().lower() if isinstance(provider, str) else ""
-    own = _OWN_FILTER_STOPS.get(lowered)
-    if own is None:
-        raise ValueError(
-            f"target file {path} 'filter_stops' is for a provider: openai or anthropic target; a "
-            "websocket target declares its stops under websocket.response.filter_stops, and a "
-            "rest target reads none"
-        )
-    if not (isinstance(raw, list) and all(isinstance(stop, str) for stop in raw)):
-        raise ValueError(f"target file {path} 'filter_stops' must be a list of stop reasons")
     try:
-        stops = documented_stops(raw)
-    except ValueError:
-        stops = frozenset({""})
-    if not stops <= own:
-        raise ValueError(
-            f"target file {path} 'filter_stops' may list only the provider's own filter stop "
-            f"({', '.join(sorted(own))}), or nothing ([]) for an endpoint that is not the "
-            "provider"
-        )
-    return sorted(stops)
+        own_filter_stops_of(provider)
+        if not (isinstance(raw, list) and all(isinstance(stop, str) for stop in raw)):
+            raise ValueError("'filter_stops' must be a list of stop reasons")
+        return sorted(target_filter_stops(provider, raw))
+    except ValueError as exc:
+        raise ValueError(f"target file {path} {exc}") from exc
 
 
 #: What a target file's ``provider: rest`` target is told to check when no reply can be read.
