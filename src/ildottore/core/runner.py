@@ -1552,11 +1552,7 @@ class CampaignRunner:
         evaluators = [config for config in spec.evaluators if config.type in kinds]
         if not evaluators:
             return None
-        response = (
-            canonical_tool_calls(attempt.response, target, spec)
-            if target is not None
-            else attempt.response
-        )
+        response = canonical_tool_calls(stopped, target, spec) if target is not None else stopped
         verdicts = await self._run_evaluators(
             spec.model_copy(update={"evaluators": evaluators}),
             attempt.request,
