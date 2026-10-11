@@ -24,13 +24,14 @@ from ildottore.store.replay import (
     replay_run,
     verify_ref,
 )
-from ildottore.store.run_sqlite import SqliteRunStore, finding_id_of
+from ildottore.store.run_sqlite import RunStoreError, SqliteRunStore, finding_id_of
 
 __all__ = [
     "SCHEMA_VERSION",
     "FsEvidenceStore",
     "RedactionLeakError",
     "ReplayResult",
+    "RunStoreError",
     "SqliteRunStore",
     "TamperError",
     "UnsafePathError",

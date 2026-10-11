@@ -8,15 +8,27 @@ without rewriting existing rows (contract §4 KEEP: forward-only).
 Every connection is opened with ``PRAGMA journal_mode=WAL`` and
 ``PRAGMA foreign_keys=ON`` (contract §4 KEEP). ``migrate()`` is idempotent: a
 re-run on an already-current DB does nothing and returns the current version.
+
+Several processes may open one store at the same time (six ``dottore run`` sharing a
+``--run-db``): a connection waits :data:`BUSY_TIMEOUT_S` for a lock another one holds, the switch
+to WAL is retried while SQLite refuses it as busy (it does not wait for that one), and a
+migration takes the write lock before it reads the version it starts from (u10 A-80).
 """
 
 from __future__ import annotations
 
 import os
 import sqlite3
+import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final
+from typing import Final, TypeVar
+
+_T = TypeVar("_T")
+
+#: How long one connection waits for a lock another connection holds, in seconds. SQLite's
+#: busy handler sleeps for it; the WAL switch and the migration's write lock are retried for it.
+BUSY_TIMEOUT_S: Final = 30.0
 
 _SCHEMA_SQL_PATH: Final = Path(__file__).with_name("schema.sql")
 
@@ -80,19 +92,56 @@ _MIGRATIONS: Final[list[tuple[int, str | Callable[[sqlite3.Connection], None]]]]
 ]
 
 
-def connect(db_path: Path) -> sqlite3.Connection:
+def connect(db_path: Path, *, timeout_s: float = BUSY_TIMEOUT_S) -> sqlite3.Connection:
     """Open a SQLite connection with WAL + foreign keys enforced (contract §4).
 
-    Creates the parent directory if needed; paths-with-spaces safe (``Path``).
+    Creates the parent directory if needed; paths-with-spaces safe (``Path``). The connection
+    waits ``timeout_s`` for a lock another connection holds. SQLite answers the switch to WAL
+    with SQLITE_BUSY at once, without that wait, while another connection holds the file (it
+    would deadlock otherwise), so the switch is retried for as long: six processes opening a new
+    store together lost five of them to "database is locked" (u10 A-80).
     """
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     _create_private(db_path)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn = sqlite3.connect(db_path, timeout=timeout_s)
+    try:
+        conn.row_factory = sqlite3.Row
+        _while_busy(lambda: conn.execute("PRAGMA journal_mode=WAL").fetchone(), timeout_s)
+        conn.execute("PRAGMA foreign_keys=ON")
+    except BaseException:
+        conn.close()
+        raise
     return conn
+
+
+def _busy(exc: sqlite3.OperationalError) -> bool:
+    """Whether ``exc`` is SQLite saying another connection holds the lock (BUSY or LOCKED)."""
+
+    code = getattr(exc, "sqlite_errorcode", None)
+    if isinstance(code, int):
+        return code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+    text = str(exc).lower()
+    return "locked" in text or "busy" in text
+
+
+def _while_busy(operation: Callable[[], _T], timeout_s: float) -> _T:
+    """Run ``operation``, again after a pause each time SQLite answers busy, for ``timeout_s``.
+
+    For the two statements SQLite's own busy handler does not cover: the switch to WAL and a
+    ``BEGIN IMMEDIATE`` it refuses to wait for because waiting could deadlock.
+    """
+
+    deadline = time.monotonic() + timeout_s
+    pause = 0.005
+    while True:
+        try:
+            return operation()
+        except sqlite3.OperationalError as exc:
+            if not _busy(exc) or time.monotonic() + pause > deadline:
+                raise
+        time.sleep(pause)
+        pause = min(pause * 2, 0.25)
 
 
 def _create_private(db_path: Path) -> None:
@@ -128,25 +177,69 @@ def current_version(conn: sqlite3.Connection) -> int:
     return int(value) if value is not None else 0
 
 
-def migrate(conn: sqlite3.Connection) -> int:
+def migrate(conn: sqlite3.Connection, *, timeout_s: float = BUSY_TIMEOUT_S) -> int:
     """Apply every pending migration in one transaction; return the new version.
 
     Idempotent: if the DB is already at ``SCHEMA_VERSION`` nothing runs. DDL is
     written to be re-runnable (``CREATE TABLE IF NOT EXISTS``) so a partially
     applied step is safe to re-apply.
+
+    The write lock is taken (``BEGIN IMMEDIATE``) before the version is read again, so two
+    processes migrating one new store together apply each step once: reading it outside the
+    lock, both found the same version and the second ``ADD COLUMN`` failed with "duplicate
+    column name". It is one transaction for real: ``executescript`` commits whatever is open
+    before it runs, so each script step used to commit on its own (u10 A-80).
     """
 
-    start = current_version(conn)
-    with conn:  # single transaction; rolls back on error
+    if current_version(conn) >= SCHEMA_VERSION:
+        return current_version(conn)
+    if conn.in_transaction:
+        conn.commit()
+    _while_busy(lambda: conn.execute("BEGIN IMMEDIATE"), timeout_s)
+    try:
+        start = current_version(conn)
         for version, step in _MIGRATIONS:
             if version <= start:
                 continue
             if callable(step):
                 step(conn)
             else:
-                conn.executescript(step)
+                for statement in _statements(step):
+                    conn.execute(statement)
             conn.execute(
                 "INSERT OR IGNORE INTO schema_version (version) VALUES (?)",
                 (version,),
             )
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
     return current_version(conn)
+
+
+def _statements(script: str) -> list[str]:
+    """``script`` cut into its statements, each complete as SQLite reads it (one per execute).
+
+    A semicolon inside a string literal or a trigger body does not end a statement:
+    ``sqlite3.complete_statement`` decides, not the character.
+    """
+
+    statements: list[str] = []
+    buffer = ""
+    for piece in script.split(";"):
+        buffer += piece
+        if sqlite3.complete_statement(buffer + ";"):
+            if _has_code(buffer):
+                statements.append(buffer + ";")
+            buffer = ""
+        else:
+            buffer += ";"
+    if _has_code(buffer):
+        statements.append(buffer)
+    return statements
+
+
+def _has_code(text: str) -> bool:
+    """Whether ``text`` holds anything but whitespace and ``--`` comments."""
+
+    return any(line.strip() and not line.strip().startswith("--") for line in text.splitlines())

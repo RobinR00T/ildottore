@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -34,14 +35,48 @@ def finding_id_of(finding: Finding) -> str:
     return f"{finding.spec_id}::{finding.target_id}"
 
 
+class RunStoreError(OSError):
+    """The run store could not be opened, or failed while open; the message names its path.
+
+    An ``OSError``, so every CLI handler that maps an I/O failure to exit 3 maps this one too: a
+    bare ``sqlite3`` error reached the terminal as a traceback with exit 1, which this tool uses
+    for "findings below --fail-on" (u10 A-80).
+    """
+
+
+def _open_reason(db_path: Path, exc: BaseException) -> str:
+    """Why ``db_path`` could not be opened, in the words an operator acts on."""
+
+    if db_path.is_dir():
+        return "it is a directory, not a file"
+    return str(exc)
+
+
 class SqliteRunStore:
     """RunStore over a single SQLite file; opened/migrated on construction."""
 
     def __init__(self, db_path: Path, *, redactor: Redactor | None = None) -> None:
         self._db_path = Path(db_path)
         self._redactor = redactor if redactor is not None else Redactor()
-        self._conn = migrations.connect(self._db_path)
-        migrations.migrate(self._conn)
+        try:
+            self._conn = migrations.connect(self._db_path)
+        except (sqlite3.Error, OSError) as exc:
+            raise RunStoreError(
+                f"cannot open the run store at {self._db_path}: {_open_reason(self._db_path, exc)}"
+            ) from exc
+        try:
+            migrations.migrate(self._conn)
+        except (sqlite3.Error, OSError) as exc:
+            self._conn.close()
+            raise RunStoreError(
+                f"cannot open the run store at {self._db_path}: {_open_reason(self._db_path, exc)}"
+            ) from exc
+
+    @property
+    def path(self) -> Path:
+        """The SQLite file this store reads and writes."""
+
+        return self._db_path
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -58,6 +93,10 @@ class SqliteRunStore:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+        if isinstance(exc, sqlite3.Error):
+            # Named, so a lock held past the busy timeout or a disk that filled up says which
+            # store failed, and reaches the CLI as the I/O error it is (exit 3, u10 A-80).
+            raise RunStoreError(f"the run store at {self._db_path} failed: {exc}") from exc
 
     # --- writes --------------------------------------------------------------
 
