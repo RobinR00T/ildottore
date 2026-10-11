@@ -111,7 +111,8 @@ concretes:
    the scene, with no send, when `setup_delivery.seeding_gap` names a reason (not declared in
    `seeded_setup.specs`; a per-run canary in the scene and no `run_token`; two of its scene tools
    under one deployment name; one of them mapped to the name of another, since 2026-10-11, u06
-   A-71's pre-merge audit; asked of the spec before its canary is bound), or
+   A-71's pre-merge audit; one of them mapped to a granted tool the target file declares not
+   destructive, since 2026-10-11, u06 A-72; asked of the spec before its canary is bound), or
    `setup_delivery.trace_gap` (a trace spec through an adapter without `returns_tool_calls`)
    does, unless the adapter is an offline mock (`offline_mock`). A sent one binds `{{run_id}}` to
    `<run_token>-<spec id>` when its canary has to be seeded, records `setup_delivery: seeded`
@@ -417,9 +418,15 @@ key it reads. The two cut-conversation tests with a tool call fail on `3d739f3`,
 aggregate carried no reply. Not re-run against a live Azure endpoint.
 
 **A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) The runner carries the operator's
-declaration to the evaluators and to every verdict it changed.** `_evaluate` and
-`_trace_before_block` read `seeded_setup.granted_tools` and `seeded_setup.not_destructive` off the
-target and hand both to every evaluator's context; only `tool_call` reads the second. Only the
+declaration to the evaluators and to every verdict it changed.** `_run_evaluators` takes the
+target and reads `seeded_setup.granted_tools` and `seeded_setup.not_destructive` off it for every
+evaluator's context (only `tool_call` reads the second), so each path that judges a reply
+(`_evaluate`, `_trace_before_block`, and any added later, such as a reply the provider's filter
+cut) gets the declaration by passing the target. A name map cannot carry a call onto it: a map
+renames a call only to one of the spec's scene tools, the declaration never applies to a scene
+tool, and `seeding_gap` refuses a scene tool mapped onto a declared name
+(`setup_not_seeded: seeded_setup.tools maps <spec tool> to <tool>, a granted tool the target file
+declares not destructive (OD-43), ...`), which the loader refuses too. Only the
 aggregate is stored, and it says nothing of the `tool_call` verdict it combined ("all evaluators
 reported secure"), so `_note_operator_declaration` appends `; operator declaration (OD-43): the
 target file declares '<tool>' (its name holds '<verb>') not destructive (seeded_setup.granted_tools,

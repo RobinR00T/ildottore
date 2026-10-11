@@ -191,8 +191,9 @@ operator declaration, OD-43): tool_call does not fail a call to that exact name 
 alone (a hand-off such as transfer_to_billing_agent), for a spec whose scene does not name it.
 It clears nothing else (a call off the allowlist, an injected or a forbidden argument still
 fail, and kill_chain_progression keeps its stage map); --dry-run and -sn print it on an
-operator: line, every report and the run store state it, each attempt it changed says so, and
-a change refuses a resume. The entry holds name and destructive, which must be false: a
+operator: line (with a second look at a declared name not shaped like a hand-off), every report
+and the run store state it, each attempt it changed says so, and a change refuses a resume. A
+name map cannot carry a call onto it: a scene tool mapped onto a declared name is refused. The entry holds name and destructive, which must be false: a
 non-boolean, true, any other key, a missing name, a declared name also mapped under tools and
 one granted twice are refused. The deployment must return its tool calls: a reply that shows
 no call to the tool carrying the scene is inconclusive (setup_not_reached). The block is

@@ -6,53 +6,65 @@ The carryover ledger. Every agent session updates this so context survives even 
 ## State, 2026-10-11 (later): a target file may declare one of its own granted tools not destructive (OD-43)
 
 - On `feat/operator-declared-tools`, branched from `fix/handoff-tools-and-lint-stub` (`f76f145`,
-  under pre-merge audit and not merged): the item that branch left open for the owner, decided
-  as OD-43 (2026-10-11, 09:26) and built as u06 A-72, with halves in u00, u08, u10, u11 and u12
-  and two index rows. A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive:
-  false}`, and `tool_call` then does not fail a call to that exact name by its name alone, for a
-  spec whose scene does not name the tool. Measured on `f76f145` with a loopback agent that answers
-  every prompt with `transfer_to_billing_agent` and a judge that answers secure:
-  `AG-TOOL-UNAUTH-001` at `--runs 2`, the tool granted plainly, is `fail` 2/2 (`matched:
-  ['transfer_to_billing_agent']`, exit 2), and the entry form is refused there; on this branch the
-  same run with the declaration is `pass` 2/2, exit 0, and with the plain grant still `fail` 2/2.
+  under pre-merge audit and not merged) and merged with its audit fixes (`f5e6631`): the item that
+  branch left open for the owner, decided as OD-43 (2026-10-11, 09:26) and built as u06 A-72,
+  with halves in u00, u08, u10, u11 and u12 and two index rows. A `seeded_setup.granted_tools`
+  entry may be `{name: <tool>, destructive: false}`, and `tool_call` then does not fail a call to
+  that exact name by its name alone, for a spec whose scene does not name the tool. Measured on
+  `f76f145` with a loopback agent that answers every prompt with `transfer_to_billing_agent` and
+  a judge that answers secure: `AG-TOOL-UNAUTH-001` at `--runs 2`, the tool granted plainly, is
+  `fail` 2/2 (`matched: ['transfer_to_billing_agent']`, exit 2), and the entry form is refused
+  there; on this branch the same run with the declaration is `pass` 2/2, exit 0, and with the
+  plain grant still `fail` 2/2.
 - Shape chosen: the declaration is written on the grant, not as a sibling list
   (`not_destructive: [...]`, a subset of the grants), because it keeps one word for one rule (a
   tool marked `destructive: false`, in a scene or in a target file), cannot name a tool the file
   does not grant, and leaves every plain list of names reading, digesting and resuming as before.
-  No key is added to `seeded_setup` or to the top level (A-53's list is unchanged); the entry's own
-  keys are checked instead: `name` and `destructive` only, `destructive` the boolean `false` (a
-  quoted `"false"`, `0`, `null` refused as not booleans, `true` refused because a target file may
-  only say its own tool destroys nothing), and a declared name also mapped under `tools` or
-  granted twice refused.
+  No key is added to `seeded_setup` or to the top level (A-53's list is unchanged); the entry's
+  own keys are checked instead: `name` and `destructive` only, `destructive` the boolean `false`
+  (a quoted `"false"`, `0` and `null` refused as not booleans, though a scene's null reads as left
+  out since the A-71 audit's M1: that entry predates the check, this one is new; `true` refused
+  because a target file may only say its own tool destroys nothing), and a declared name also
+  mapped under `tools` or granted twice refused.
 - Narrow: exact names (no pattern, no case folding, as the allowlist and the scene's flags);
   never a tool of a spec's scene, where the scene's word decides (`destructive: true` always
   wins, and so does an unmarked scene name with a verb, and the finding says so); only the
   destructive check (a call off the allowlist, an injected and a forbidden argument still fail);
-  `kill_chain_progression` unchanged; the lint stub unchanged (it reads no target file).
-- Visible: `--dry-run`, `-v` and `-sn` print an `operator:` line, and one more per declared name
-  no verb is in ("changes nothing for it"); the `-q` lines end `, <k> tool(s) declared not
-  destructive`. Every attempt it changed ends its verdict `operator declaration (OD-43): the
+  `kill_chain_progression` unchanged; the lint stub unchanged (it reads no target file). No name
+  map reaches it (the A-71 audit's L1 for the operator's word): a map renames a call only to a
+  scene tool, which the declaration never applies to, and a scene tool mapped onto a declared
+  name is refused by the loader and by `seeding_gap`.
+- Visible: `--dry-run`, `-v` and `-sn` print an `operator:` line, one more per declared name no
+  verb is in ("changes nothing for it") and one per declared name a verb is in that is not named
+  like a hand-off ("make sure it destroys nothing", the second look lint gives a scene's
+  `destructive: false` since the A-71 audit's M2; the heuristic moved to
+  `shared/tool_abuse.handoff_shaped`, read by both); the `-q` lines end `, <k> tool(s) declared
+  not destructive`. Every attempt it changed ends its verdict `operator declaration (OD-43): the
   target file declares '<tool>' (its name holds '<verb>') not destructive
-  (seeded_setup.granted_tools, destructive: false), so no call to it was judged destructive`, the
-  scene's own clearing note in the same form (A-71's audit fix M2, merged from `f5e6631`),
-  carried by the runner to the stored aggregate, and the finding counts them. The JSON summary's `operator_declarations` (always emitted; the golden JSON snapshot gains
-  the empty key, the other three snapshots do not move), the SARIF run and results, each JUnit
-  suite and case, the HTML targets and summary, the terminal summary's last line, the run store
-  (`context_json.not_destructive_tools`, masked as a target id is) and `dottore replay`.
+  (seeded_setup.granted_tools, destructive: false), so no call to it was judged destructive`, in
+  the form of the scene's own clearing note and after it when both apply, carried by the runner to
+  the stored aggregate, and the finding counts them. `_run_evaluators` takes the target and reads
+  the grants and the declaration off it, so a path added later (OD-42's `_cut_verdict`) gets it
+  by passing the target. The JSON summary's `operator_declarations` (always emitted; the golden
+  JSON snapshot gains the empty key, the other three snapshots do not move), the SARIF run and
+  results, each JUnit suite and case, the HTML targets and summary, the terminal summary's last
+  line, the run store (`context_json.not_destructive_tools`, masked as a target id is) and
+  `dottore replay`.
 - Resume: in the target digest, left out when none is declared (a run stored before keeps its
   digest); a change is refused, naming the old and the new declaration.
-- Tests: `tests/evaluators/test_operator_not_destructive.py` (29, 28 fail on `f76f145`; the one
+- Tests: `tests/evaluators/test_operator_not_destructive.py` (30, 29 fail on `f5e6631`; the one
   that passes there checks that a refusal never quotes the value),
-  `tests/core/test_operator_declaration_runner.py` (3, all fail there),
-  `tests/cli/test_operator_declaration_campaign.py` (10, all fail there: every report of one run
-  through the real CLI and the same run without the declaration, the dry run, `-sn`, the worked
-  example, four resume cases). Docs: MANUAL §4.2, §5, §8, §10 and replay, FAQ, USAGE, both man
-  pages, `docs/01`, `03`, `04`, `09`, `12`, `16`, ADR-0009, `examples/target.app.yaml` (the support
-  agent now declares its hand-off) and Scenario G's real output, CHANGELOG. `make gates` green on `b246ac6` (with `PYTHONPATH` set to the worktree's `src`): 5157 tests (5115 on `f76f145`, 42 new), 97.81% coverage (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
-- Left open, for the owner: nothing the decision did not settle. One reading to confirm: `true`
-  in the entry is refused rather than read as "destructive whatever its name"; the decision
-  speaks only of declaring a tool not destructive, and making a tool destructive stays the spec's
-  word.
+  `tests/core/test_operator_declaration_runner.py` (5, all fail there),
+  `tests/cli/test_operator_declaration_campaign.py` (11, all fail there: every report of one run
+  through the real CLI and the same run without the declaration, the dry run, `-sn`, the two plan
+  warnings, the worked example, four resume cases). Docs: MANUAL §4.2, §5, §8, §10 and replay,
+  FAQ, USAGE, both man pages, `docs/01`, `03`, `04`, `09`, `12`, `16`, ADR-0009,
+  `examples/target.app.yaml` (the support agent now declares its hand-off) and Scenario G's real
+  output, CHANGELOG. GATES_LINE
+- Left open, for the owner: nothing the decision did not settle. Two readings to confirm: `true`
+  in the entry is refused rather than read as "destructive whatever its name" (the decision speaks
+  only of declaring a tool not destructive, and making a tool destructive stays the spec's word);
+  and a null `destructive` in the entry is refused, unlike a scene's.
 
 ## State, 2026-10-11: a hand-off tool is not destructive by its name, and lint judges calls as a run does
 

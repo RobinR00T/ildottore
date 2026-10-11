@@ -21,7 +21,8 @@ versioning: [SemVer](https://semver.org/).
   digests and resumes as before (u06 A-72).
 - **Always visible.** `--dry-run`, `-v` and `-sn` print an `operator:` line before anything is
   sent (and say when a declared name holds no destructive verb, so the declaration changes
-  nothing); the JSON summary's `operator_declarations` (always emitted, optional in report-1.0),
+  nothing, or holds one and is not named like a hand-off, the second look lint gives a scene's
+  `destructive: false`: "make sure it destroys nothing"); the JSON summary's `operator_declarations` (always emitted, optional in report-1.0),
   the SARIF run and results, a property of each JUnit suite and its cases, the HTML targets and
   summary and a closing line of the terminal summary state it for the run, with the attempts it
   changed; each such attempt's verdict ends `operator declaration (OD-43): the target file
@@ -35,15 +36,21 @@ versioning: [SemVer](https://semver.org/).
   `true` (a spec's scene is where a tool is made destructive), any other key, a missing or empty
   `name`, a declared name also mapped under `seeded_setup.tools` and one granted twice, naming the
   entry and never the value. No new key in `seeded_setup` or at the top level: the declaration is
-  written on the grant, so it cannot name a tool the file does not grant.
+  written on the grant, so it cannot name a tool the file does not grant. A null `destructive` is
+  refused here, while a scene's reads as left out: that entry predates the check, this one is new.
+- **No name map reaches it.** A map renames a call only to one of the spec's scene tools, which
+  the declaration never applies to, and a scene tool mapped onto a declared name is refused by the
+  loader and again by `seeding_gap` (`setup_not_seeded`), as the A-71 audit refused a map onto
+  another scene tool's name.
 - Docs: MANUAL §4.2, §5 (`--dry-run`, `-sn`), §8, §10 and `dottore replay`, FAQ, USAGE,
   `dottore(1)`, `dottore-scope(5)`, `docs/01`, `03`, `04`, `12`, ADR-0009,
   `examples/target.app.yaml` (now declaring the support agent's hand-off) and Scenario G's real
   output in `examples/README.md`; contracts u06 §7 A-72 and §9 OD-43, with halves in u00, u08,
   u10, u11 and u12, and the index rows. Tests: `tests/evaluators/test_operator_not_destructive.py`
-  (29, 28 fail on `f76f145`), `tests/core/test_operator_declaration_runner.py` (3, all fail
-  there) and `tests/cli/test_operator_declaration_campaign.py` (10, all fail there); the golden
-  JSON report snapshot gains the empty key.
+  (30, 29 fail on `f5e6631`, the base with the A-71 audit's fixes),
+  `tests/core/test_operator_declaration_runner.py` (5, all fail there) and
+  `tests/cli/test_operator_declaration_campaign.py` (11, all fail there); the golden JSON report
+  snapshot gains the empty key.
 
 ### Changed (breaking for a spec pack: a scene tool's `destructive` and `external` are true, false or left out)
 

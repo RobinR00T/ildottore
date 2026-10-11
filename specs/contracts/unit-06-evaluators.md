@@ -227,14 +227,20 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   holds '<verb>') not destructive (seeded_setup.granted_tools, destructive: false), so no call to
   it was judged destructive` (`shared.tool_abuse.operator_note`, opened by
   `OPERATOR_DECLARATION`), after the scene's note when both apply, and the runner puts the same
-  note on the stored aggregate (u08 half). Considered and not
-  adopted: a sibling list `seeded_setup.not_destructive: [...]` that must be a subset of the
+  note on the stored aggregate (u08 half). A seeded name map cannot carry a call onto the
+  declaration (the A-71 audit's L1, for the operator's word): a map renames a call only to a
+  scene tool, which the declaration never reaches, and a scene tool mapped onto a declared name is
+  refused by the loader and by `seeding_gap`. And it gets the second look lint gives a scene's
+  `destructive: false` (A-71's M2): the plan flags a declared name a verb is in that is not named
+  like a hand-off (`shared.tool_abuse.handoff_shaped`, the heuristic lint reads too). Considered
+  and not adopted: a sibling list `seeded_setup.not_destructive: [...]` that must be a subset of the
   grants. Writing the declaration on the grant itself keeps one word for one rule (a tool marked
   `destructive: false`, in a scene or in a target file), cannot name a tool the file does not
   grant, and leaves every plain list of names reading, digesting and resuming as before. Checks:
-  `tests/evaluators/test_operator_not_destructive.py` (29 tests, 28 failing on `f76f145`),
-  `tests/core/test_operator_declaration_runner.py` (3, all failing there) and
-  `tests/cli/test_operator_declaration_campaign.py` (10, all failing there).
+  `tests/evaluators/test_operator_not_destructive.py` (30 tests, 29 failing on `f5e6631`, the base
+  with the A-71 audit's fixes; the other checks that a refusal never quotes the value),
+  `tests/core/test_operator_declaration_runner.py` (5, all failing there) and
+  `tests/cli/test_operator_declaration_campaign.py` (11, all failing there).
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden

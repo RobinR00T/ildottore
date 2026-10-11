@@ -126,7 +126,9 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   granted and in no scene of the spec; `operator_cleared_calls`: of those, the ones a call made and
   a verb or the scene's flag would make destructive) and the note every changed verdict carries
   (`OPERATOR_DECLARATION`, `operator_note`), so the evaluator's verdict, the runner's aggregate and
-  the reports' counts read one rule. `shared/digest.target_digest` leaves `not_destructive` out of
+  the reports' counts read one rule, and `handoff_shaped`, the hand-off heuristic lint applies to
+  a scene's `destructive: false` (moved here from `registry/linter.py`) and the plan to a target
+  file's declaration. `shared/digest.target_digest` leaves `not_destructive` out of
   the seeded block when it is empty, so a target that declares none keeps the digest it had
   before the field existed (`tests/evaluators/test_operator_not_destructive.py`).
 
