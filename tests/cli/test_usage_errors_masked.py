@@ -1,0 +1,227 @@
+"""A usage error never prints the value the operator typed in clear (u12 A-82, CLI audit M7).
+
+``dottore run --runs "$KEY"`` (a shell variable expanded into the wrong flag, a paste into the
+wrong place) printed ``Invalid value for '--runs': 'sk-ant-api03-...' is not a valid
+integer.`` on stderr, the key whole, and so did ``-T``, ``--rate``, the ``--budget-*`` flags and
+``fleet --runs``: click printed the error itself, before any of this tool's masking ran. The
+console scripts now run :func:`ildottore.cli.main.main`, which runs the command tree in click's
+non-standalone mode and prints the usage block with its message through the CLI's redactor
+(``_masked``), exit 3.
+
+Every option of every command whose type refuses a key-shaped value is tried, found by walking
+the command tree, so an option added later is covered without a list to keep in step.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from collections.abc import Iterator
+from typing import Any
+
+import pytest
+import typer
+
+from ildottore.cli.main import app, main
+
+#: Shaped like an Anthropic key (the redactor masks it by shape), random enough to be no pattern.
+KEY = "sk-ant-api03-Q7xZ2mV9pL4kR8tN1wB6yH3jF5dS0aC-QwErTyUiOpAsDfGh"
+#: Any run of it this long in the output is a leak.
+FRAGMENTS = [KEY[i : i + 12] for i in range(0, len(KEY) - 12, 6)]
+
+
+def _commands() -> Iterator[tuple[list[str], Any]]:
+    """Every command of the tree with the words that reach it (``["registry", "ls"]``).
+
+    Read by shape (a group has ``commands``): Typer 0.26 builds the tree from its own copy of
+    click, so the classes of an installed ``click`` are not its classes.
+    """
+
+    def walk(path: list[str], command: Any) -> Iterator[tuple[list[str], Any]]:
+        if hasattr(command, "commands"):
+            for name, sub in sorted(command.commands.items()):
+                yield from walk([*path, name], sub)
+        else:
+            yield path, command
+
+    yield from walk([], typer.main.get_command(app))
+
+
+def _refuses(param: Any) -> bool:
+    try:
+        param.type.convert(KEY, param, None)
+    except Exception:  # click's BadParameter, from whichever copy
+        return True
+    return False
+
+
+def _typed_options() -> list[tuple[list[str], str]]:
+    """(command words, option) for each option that takes a value and refuses a key."""
+
+    found = []
+    for path, command in _commands():
+        for param in command.params:
+            if param.param_type_name != "option" or param.is_flag or param.count:
+                continue
+            if _refuses(param):
+                found.append((path, max(param.opts, key=len)))
+    return found
+
+
+TYPED = _typed_options()
+
+
+def _invoke(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, str, str]:
+    """``main()`` as the console script calls it: no arguments, the words in ``sys.argv``."""
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(sys, "argv", ["dottore", *argv])
+        with pytest.raises(SystemExit) as exit_info:
+            main()
+    out, err = capsys.readouterr()
+    code = exit_info.value.code
+    return (code if isinstance(code, int) else 1), out, err
+
+
+def _assert_masked(code: int, out: str, err: str) -> None:
+    assert code == 3, err
+    assert "Traceback" not in out + err
+    for fragment in FRAGMENTS:
+        assert fragment not in out + err, err
+    assert "«REDACTED" in err, err
+
+
+def test_the_options_the_audit_named_are_among_those_tried() -> None:
+    named = {(" ".join(path), option) for path, option in TYPED}
+    for expected in [
+        ("run", "--runs"),
+        ("run", "-T"),
+        ("run", "--rate"),
+        ("run", "--budget-tokens"),
+        ("run", "--budget-requests"),
+        ("run", "--budget-wall"),
+        ("run", "--timeout"),
+        ("run", "--concurrency"),
+        ("run", "--top-tests"),
+        ("fleet", "--runs"),
+    ]:
+        assert expected in named, sorted(named)
+
+
+@pytest.mark.parametrize(("path", "option"), TYPED, ids=[f"{' '.join(p)} {o}" for p, o in TYPED])
+def test_a_key_given_to_a_typed_option_is_masked(
+    path: list[str], option: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, out, err = _invoke([*path, option, KEY], capsys)
+    _assert_masked(code, out, err)
+    # Still a usage error that says which option, and how to get help.
+    assert f"'{option}'" in err or option in err, err
+    assert err.splitlines()[0].startswith(f"Usage: dottore {' '.join(path)}"), err
+    assert any(line.startswith("error: ") for line in err.splitlines()), err
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        [KEY],  # as a command
+        ["run", f"--{KEY}"],  # as an option
+        ["lint", "--json", "x", f"--{KEY}"],
+        ["registry", KEY],  # as a sub-command
+        ["schema", "export", KEY],  # as an extra argument
+        ["fleet", "f.yaml", "--runs"],  # an option missing its value (no key: still exit 3)
+    ],
+    ids=["command", "option", "lint-option", "subcommand", "extra-argument", "missing-value"],
+)
+def test_every_other_usage_error_goes_through_the_mask(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, out, err = _invoke(argv, capsys)
+    assert code == 3, err
+    assert "Traceback" not in out + err
+    for fragment in FRAGMENTS:
+        assert fragment not in out + err, err
+    assert any(line.startswith("error: ") for line in err.splitlines()), err
+
+
+def test_control_characters_in_a_usage_error_are_written_out(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The mask's last step (``visible_controls``) runs on a usage error too."""
+
+    code, _, err = _invoke(["run", "--runs", "\x1b]0;pwned\x07X"], capsys)
+    assert code == 3
+    assert "\x1b" not in err and "\x07" not in err, err
+
+
+def test_what_is_not_an_error_keeps_its_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, _ = _invoke(["--version"], capsys)
+    assert code == 0 and out.startswith("dottore ")
+    code, out, _ = _invoke(["run", "--help"], capsys)
+    assert code == 0 and "Usage" in out
+    # A bare `dottore` prints the help and exits 3, as before (no_args_is_help).
+    code, out, err = _invoke([], capsys)
+    assert code == 3 and "Usage" in out and "error:" not in err
+
+
+def test_the_console_scripts_point_at_main() -> None:
+    """``pip install`` makes ``dottore`` and ``dott`` call :func:`main`, not the Typer app."""
+
+    import tomllib
+    from pathlib import Path
+
+    project = tomllib.loads(
+        (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]
+    assert project["scripts"] == {
+        "dottore": "ildottore.cli.main:main",
+        "dott": "ildottore.cli.main:main",
+    }
+
+
+def test_the_entry_point_masks_in_a_real_process() -> None:
+    """The same through ``python -m ildottore.cli.main``, as an installed script runs it."""
+
+    result = subprocess.run(  # noqa: S603 - this interpreter running this CLI
+        [sys.executable, "-m", "ildottore.cli.main", "run", "--runs", KEY],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    _assert_masked(result.returncode, result.stdout, result.stderr)
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected_code", "expected_err"),
+    [
+        ("ClickException", 1, "error: "),
+        ("Abort", 1, "Aborted!"),
+    ],
+)
+def test_the_other_click_exceptions_are_handled_as_standalone_mode_did(
+    raised: str,
+    expected_code: int,
+    expected_err: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A click error that is not a usage error is printed masked with its own code; an abort
+    exits 1. No command raises either today; the branches keep click's standalone meaning."""
+
+    try:
+        from typer._click import exceptions
+    except ImportError:  # a Typer without the vendored copy raises click's own
+        from click import exceptions  # type: ignore[no-redef]
+
+    class _Raising:
+        def main(self, **_kwargs: object) -> None:
+            if raised == "Abort":
+                raise exceptions.Abort()
+            raise exceptions.ClickException(f"could not open {KEY}")
+
+    monkeypatch.setattr(typer.main, "get_command", lambda _app: _Raising())
+    code, out, err = _invoke(["run"], capsys)
+    assert code == expected_code
+    assert expected_err in err
+    for fragment in FRAGMENTS:
+        assert fragment not in out + err, err
