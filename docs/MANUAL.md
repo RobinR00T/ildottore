@@ -676,7 +676,7 @@ websocket:
   session:
     start: {type: "new_conversation"}              # once per connection, after the handshake
     expect: {path: "type", equals: "session"}      # optional acknowledgement
-    one_query_in_flight: true                      # the only policy built
+    one_query_in_flight: true                      # the only policy (OD-35)
   message:
     send: {type: "query", text: "{{prompt}}"}      # {{prompt}}, or {{messages}} for the history
   response:
@@ -709,7 +709,8 @@ that carries a query, a fragment or a user:password; a placeholder that is neith
 in `vars`; `{{token}}` without an `auth_ref`, or inside `vars`; a request placeholder in a
 connection template; a `message.send` with neither `{{prompt}}` nor `{{messages}}`; an upgrade
 header the library writes itself (`Host`, `Connection`, `Upgrade`, and `Sec-WebSocket-Key`,
-`-Version`, `-Extensions`, `-Protocol` and `-Accept`); `one_query_in_flight: false`; a
+`-Version`, `-Extensions`, `-Protocol` and `-Accept`); `one_query_in_flight: false` (by
+design, OD-35, below); a
 `timeout_seconds` outside (0, 600]; a `reconnect.max_attempts` outside 0 to 5; a key that is
 not text anywhere in the block (YAML reads `on:`, `~:` and `5:` as a boolean, null and a
 number; `opts: {on: true}` went on the wire as `{"True": true}`) and a value JSON cannot hold
@@ -789,7 +790,10 @@ model name only when `model_path` is declared (there is no HTTP envelope to read
 transcript is never read as a tell). The probes go out at the deployment's own sampling, since
 no template carries a temperature, so a fingerprint is as repeatable as the deployment is.
 
-**Not covered.** A connection shared by several concurrent queries (a correlation id); an
+**Not covered.** A connection shared by several concurrent queries (by design, OD-35, decided
+2026-10-11: on a shared socket a reply frame is tied to its attempt only by an id the server
+echoes, and one frame misread puts one attempt's reply into another's verdict; `--concurrency`
+gives each conversation a connection of its own); an
 HTTP-polled or SSE stream (declare it as `rest`); binary frames; a fleet entry (a fleet entry
 carries no `websocket:` block, so `dottore fleet` refuses a `ws://` or `wss://` endpoint and
 `provider: websocket`, exit 3 and nothing written, and points here: write the target and its

@@ -198,8 +198,10 @@ dottore run does not use, since its runner retries a socket that fails to open, 
 debited request); headers (on the upgrade) and vars (plain values the templates use as
 {{name}}, never secrets). A key that is not text (on, ~, 5) or a value JSON cannot hold (an
 unquoted date, a set, binary data, NaN, half a character) anywhere in the block is refused when
-the file is loaded, and so is a ws:// or wss:// endpoint on any other provider. One connection
-per conversation; every frame is kept in the evidence with the credential as its placeholder.
+the file is loaded, and so is a ws:// or wss:// endpoint on any other provider, and
+session.one_query_in_flight false (OD-35: one query at a time per connection, by design). One
+connection per conversation; every frame is kept in the evidence with the credential as its
+placeholder.
 Worked file:
 examples/target.websocket.yaml; reference in docs/MANUAL.md section 4.2.
 .SH "FLEET FILE"

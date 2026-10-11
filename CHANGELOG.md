@@ -23,6 +23,13 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   `fleet --run` never exits on the other targets' findings with one target unscanned. Not taken:
   a `websocket:` block in a fleet entry, checked by `run`'s own `_websocket_spec` before writing.
   `tests/cli/test_fleet_websocket.py`: 17 tests, 16 of them failing before the change.
+- **One query per WebSocket connection, by design (OD-35).** `session.one_query_in_flight: false`
+  is still refused when the target file loads, and the refusal now says it is by design: "is
+  refused by design (OD-35): with several queries on one socket a reply frame is tied to its
+  attempt only by an id the server echoes; leave it true (--concurrency gives each conversation a
+  connection of its own)" (it said "is not built"). One frame misattributed would put one
+  attempt's reply into another's verdict, which nothing downstream can detect. Not taken: a
+  correlation id in `message.send` and a `response.correlation_path` read from every frame.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 

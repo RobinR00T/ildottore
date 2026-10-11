@@ -27,7 +27,7 @@ websocket:
     expect: { path: "type", equals: "auth_ok" }     # the first reply must say this, or the run stops
   session:                           # sent once per connection, after the handshake (optional)
     start: { type: "new_conversation" }
-    one_query_in_flight: true        # the only policy built: one query at a time per connection
+    one_query_in_flight: true        # the only policy (OD-35): one query at a time per connection
   message:                           # one query; {{prompt}} is the attack text of the turn
     send: { type: "query", text: "{{prompt}}" }
   response:                          # how the streamed reply is read

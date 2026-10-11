@@ -356,9 +356,9 @@ class WebSocketResponse(_Frozen):
 class WebSocketSession(_Frozen):
     """A conversation's start: a frame sent once per connection, after the handshake.
 
-    ``one_query_in_flight`` is the only policy built: one query at a time per connection, one
+    ``one_query_in_flight`` is the only policy: one query at a time per connection, one
     connection per conversation. ``false`` (several queries multiplexed on one socket, which
-    needs a correlation id) is refused by the loader.
+    needs a correlation id) is refused by the loader, by design (OD-35, decided 2026-10-11).
     """
 
     start: JsonDict | None = None

@@ -374,9 +374,22 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `transcript` field on the frozen u00 `ModelResponse` would be the honest shape, but it changes
   every stored attempt's dump and the report snapshots; the nested value is skipped by the
   fingerprint's envelope layer. Decide whether to add the field.
-- **OD-35** (open, 2026-10-07, PR #87): a WebSocket target's `session.one_query_in_flight: false`
-  is refused. Several concurrent queries on one socket need a correlation id in the templates and
-  in the reply frames; whether that is wanted, and how a target declares it, is the owner's call.
+- **OD-35** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: refused by design, as built**): a WebSocket target's
+  `session.one_query_in_flight: false` is refused by the loader, before anything is sent, and the
+  refusal says so ("is refused by design (OD-35)", until then "is not built"). Why: an attempt's
+  evidence is the frames of its own turn. On a shared socket the frames of concurrent queries
+  interleave, and a frame is tied to its query only by a correlation id the server must echo in
+  every frame it sends (each delta, the final frame, an error frame); one frame misread puts one
+  attempt's reply text (a canary, a leak) into another attempt's verdict, which no evaluator can
+  detect afterwards and `dottore replay` would re-derive faithfully. Nothing is lost by refusing:
+  concurrency comes from one connection per conversation, which `--concurrency` already gives (up
+  to `MAX_OPEN_CONVERSATIONS`, 256). Alternative not taken: `one_query_in_flight: false` with a
+  `{{correlation_id}}` placeholder the adapter fills per query in `message.send`, a
+  `response.correlation_path` read from every frame, and a frame with no id or an unknown one
+  refused as a product error. Revisit when a deployment caps connections per client and has to be
+  scanned faster than one conversation at a time. Reversal: drop the `one_query_in_flight` check
+  in `cli/wiring._websocket_spec` and build the alternative in `adapters/websocket.py`.
 - **OD-36** (open, 2026-10-07, PR #87): a WebSocket reconnect is attempted only before a query is
   on the wire, and never more often than the adapter's own retry allowance: under `run` (and
   `-sV`, the identity sweep and a metered judge) every live adapter retries nothing itself, so a
