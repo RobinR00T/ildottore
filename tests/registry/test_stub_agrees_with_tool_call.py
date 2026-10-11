@@ -20,10 +20,12 @@ import pytest
 import yaml
 from tests.evaluators.conftest import make_ctx, make_spec
 
+from ildottore.evaluators import tool_call
 from ildottore.evaluators.tool_call import ToolCallEvaluator
 from ildottore.evaluators.tool_sequence import ToolSequenceEvaluator
-from ildottore.registry import lint
+from ildottore.registry import fixtures_engine, lint
 from ildottore.registry.fixtures_engine import EvalInput, _tool_call, _tool_sequence
+from ildottore.shared import tool_abuse
 from ildottore.shared.enums import EvaluatorType, VerdictStatus
 from ildottore.shared.models import AttackSpec, EvaluatorConfig, JsonDict
 
@@ -38,8 +40,10 @@ def _spec(**config: object) -> AttackSpec:
     return spec.model_copy(update={"evaluators": [cfg]})
 
 
-async def _real(spec: AttackSpec, calls: list[JsonDict]) -> VerdictStatus:
-    ctx = make_ctx(tool_calls=calls, config=spec.evaluators[0])
+async def _real(
+    spec: AttackSpec, calls: list[JsonDict], config: EvaluatorConfig | None = None
+) -> VerdictStatus:
+    ctx = make_ctx(tool_calls=calls, config=config or spec.evaluators[0])
     verdict = await ToolCallEvaluator().evaluate(ctx.model_copy(update={"spec": spec}))
     return verdict.status
 
@@ -100,16 +104,26 @@ async def test_the_stub_agrees_on_every_shipped_fixture_trace() -> None:
         for case in (spec.fixtures.vulnerable, spec.fixtures.hardened)
         if case.tool_calls
     ]
-    judged = [spec for spec in specs if spec.evaluators[0].type is EvaluatorType.TOOL_CALL]
-    assert len(traces) > 20 and len(judged) > 15  # the sweep is not empty
-    for spec in judged:
+    # Every tool_call config, not only a first evaluator: AG-CRED-SWEEP-001 and
+    # AG-TOOLCHAIN-EXFIL-001 declare tool_call second (pre-merge audit of A-71).
+    judged = [
+        (spec, config)
+        for spec in specs
+        for config in spec.evaluators
+        if config.type is EvaluatorType.TOOL_CALL
+    ]
+    ids = {spec.id for spec, _ in judged}
+    assert len(traces) > 20 and len(judged) >= 22  # the sweep is not empty
+    assert {"AG-CRED-SWEEP-001", "AG-TOOLCHAIN-EXFIL-001"} <= ids
+    for spec, config in judged:
         for calls in traces:
-            assert _tool_call(spec, EvalInput("", calls)) is await _real(spec, calls), spec.id
+            stub = _tool_call(spec, EvalInput("", calls))
+            assert stub is await _real(spec, calls, config), spec.id
 
 
-#: An unclosed backtick before this many letters took about 4 s in the stub's old pattern
-#: (quadratic: 0.7 s at 40,000, 2.5 s at 80,000) and takes about 3 ms in the evaluator's.
-_LETTERS = 100_000
+#: An unclosed backtick before this many letters would take about 17 s in the stub's old
+#: pattern (quadratic: 0.7 s at 40,000, 2.5 s at 80,000) and takes about 6 ms in the evaluator's.
+_LETTERS = 200_000
 
 
 @pytest.mark.parametrize(
@@ -121,13 +135,30 @@ _LETTERS = 100_000
     ids=["at the top", "nested"],
 )
 def test_an_unclosed_backtick_is_scanned_in_linear_time(arguments: JsonDict) -> None:
-    """Bounded with a ceiling 500 times the linear cost, so a slow machine does not flake it."""
+    """Bounded with a ceiling 250 times the linear cost, so a slow machine does not flake it.
 
-    calls = [_call(arguments)]
+    Only the stub's judgement is timed: the spec and its input are built before the clock starts.
+    """
+
+    spec = _spec()
+    given = EvalInput("", [_call(arguments)])
     started = time.perf_counter()
-    verdict = _tool_call(_spec(), EvalInput("", calls))
+    verdict = _tool_call(spec, given)
     assert time.perf_counter() - started < 1.5
     assert verdict is VerdictStatus.PASS  # an unclosed backtick is no command
+
+
+def test_the_stub_and_the_evaluator_share_one_set_of_checks() -> None:
+    """One source: what the stub calls is the very function and pattern the evaluator calls."""
+
+    for helper in ("injection_hits", "forbidden_arg_hits", "is_destructive", "destructive_flags"):
+        assert getattr(fixtures_engine, helper) is getattr(tool_abuse, helper), helper
+        assert getattr(tool_call, helper) is getattr(tool_abuse, helper), helper
+    assert (
+        fixtures_engine.scene_allowlist is tool_call.scene_allowlist is tool_abuse.scene_allowlist
+    )
+    assert tool_call._INJECTION_RE is tool_abuse.INJECTION_RE
+    assert not [name for name in vars(fixtures_engine) if "INJECTION" in name]
 
 
 def test_lint_proves_a_spec_whose_injection_is_nested(tmp_path: Path) -> None:
