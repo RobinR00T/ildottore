@@ -353,21 +353,29 @@ reads as U+FFFD, since httpx decodes the stream as text.
 - **OD-1** (ADR-0005 Accepted): Anthropic logprob availability/shape: if the provider exposes no
   usable per-token logprobs in MVP-1, `anthropic.py` reports `logprobs=False` and returns `None`;
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
-- **OD-24** (open, built reversibly 2026-10-07, A-39): what a logprob block with one figure no
-  model produces reads as. Built: when the figure is a token's own, the whole block is `None`, as
-  if the reply carried none, so nothing is scored from it; when it is an alternative's, only that
-  token's alternatives are dropped (no alternative is scored). The other choice for a token
-  figure, dropping only the bad entries as a null one is dropped, scores the rest as if it were
-  the reply: four confident tokens with one positive figure among them then read "likely
-  memorized". Also decided here, and the owner's to confirm: a positive figure counts as
-  impossible (`log p` is never above 0, and a gateway that writes probabilities into the field
-  is caught). Not measured: whether a provider sends rounding-level positive figures (`2e-07`);
-  if one does in a token's own figure, its membership spec is inconclusive, with nothing in the
-  evidence saying why (in an alternative it costs only that token's alternatives). Also the
-  owner's: an entry that is not an object (a list such as `["a", 0.9]`, a string, a number) or
-  that carries no figure is skipped and the rest is scored, as before this change, though the
-  whole-block reasoning applies to it too (pre-merge audit). Open: whether the evidence should
-  say a block was unreadable rather than absent, which needs an additive field on
+- **OD-24** (built 2026-10-07, A-39; **decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: kept as built**): what a logprob block with one figure no model produces
+  reads as. When the figure is a token's own, the whole block is `None`, as if the reply carried
+  none, so nothing is scored from it; when it is an alternative's, only that token's alternatives
+  are dropped (no alternative is scored). Why: one impossible figure is evidence the block is not a
+  model's (a gateway writing probabilities into the field, a forged reply), and a verdict read from
+  the rest would be one the reply never had; a tool should not raise a finding from data it has
+  caught being wrong, and the cost is an inconclusive membership spec. Not taken: dropping only the
+  bad entries, as a null one is dropped, which scores the rest as if it were the reply: four
+  confident tokens with one positive figure among them then read "likely memorized". Also decided
+  under the same delegation: a positive figure counts as impossible (`log p` is never above 0, and
+  a gateway that writes probabilities into the field is caught). Not measured: whether a provider
+  sends rounding-level positive figures (`2e-07`); if one does in a token's own figure, its
+  membership spec is inconclusive, never a false "memorized", with nothing in the evidence saying
+  why (in an alternative it costs only that token's alternatives). And an entry that is not an
+  object (a list such as `["a", 0.9]`, a string, a number) or that carries no figure is still
+  skipped and the rest is scored, as before A-39: absence is not a contradiction, and voiding the
+  block on it would protect nothing, since a target can send confident figures a model could
+  produce and is believed (A-39, "Not claimed"). Not taken: void the block on such an entry too
+  (the pre-merge audit's reading). Reversing the main rule is one line, the `except
+  _UnreadableLogprob` in `map_logprobs`, which would skip the entry instead of returning `None`;
+  `tests/cli/test_logprob_figures.py` pins it. Left open, not part of the decision: whether the
+  evidence should say a block was unreadable rather than absent, which needs an additive field on
   `ModelResponse` (u00).
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default
   in MVP-1 to shrink the secret-leak surface: needs sign-off.

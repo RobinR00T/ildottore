@@ -24,6 +24,11 @@ where to reverse it.
   belongs (`<key>.json`, a connection string) stays masked in a terminal and a CI log. No behaviour
   change.
 
+- **OD-24, a logprob block with one figure no model produces: kept as built (A-39).** The whole
+  block still reads as none (`logprobs: null`, membership inconclusive), since a verdict from the
+  rest would be one the reply never had; a positive figure counts as impossible; an entry that is
+  not an object or has no figure is still skipped as absent. No behaviour change.
+
 ### Changed (a reply the provider's filter cut or replaced is never a pass: OD-42)
 
 - **An empty or canned reply from the provider's filter passed the spec.** A provider's output
