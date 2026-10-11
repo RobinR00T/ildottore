@@ -5,6 +5,20 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Decided (five open decisions closed under the owner's delegation, 2026-10-11)
+
+On 2026-10-11 at 10:09 the owner delegated the open decisions of robustness and output: "arreglalo
+todo según mejores prácticas". Each is recorded in its contract and its 00-INDEX row as decided
+under that delegation (best practice), revisable, with the reasoning, the alternative not taken and
+where to reverse it.
+
+- **OD-22, a spec regex that does not compile: kept as built (A-33).** `dottore run` still refuses
+  the run before anything is sent (exit 3), as it refuses a spec file that fails to load (F-10): a
+  configuration error is caught before any traffic, and a skipped spec would leave a smaller
+  battery than the one asked for behind an exit 0 or 2. `--exclude <id>`, which the refusal names,
+  runs the rest. Lint keeps `EVALUATOR_MISCONFIGURED` rather than a code of its own. No behaviour
+  change.
+
 ### Changed (a reply the provider's filter cut or replaced is never a pass: OD-42)
 
 - **An empty or canned reply from the provider's filter passed the spec.** A provider's output
