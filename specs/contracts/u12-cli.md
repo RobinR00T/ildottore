@@ -1219,7 +1219,7 @@ level gains `filter_stops` (a `Target` field, so A-53's check reads it): for an 
 the field, never a value (`_filter_stops` in `cli/wiring.py`; LOW 3, best-practice addition), and
 `--dry-run`, `-v` and `-sn` print a `filters:` line for a file that declares it or a WebSocket
 file's `response.filter_stops` (`_filter_stops_line`). Checked by
-`tests/cli/test_filter_stop_provenance_campaign.py` (23 tests; 19 fail on `de122e26`; the first 13: the two ways a run is filtered, an
+`tests/cli/test_filter_stop_provenance_campaign.py` (26 tests; 22 fail on `de122e26`; the first 13: the two ways a run is filtered, an
 `openai` target's foreign stops, an `anthropic` target answering Azure's 400, the judge's fail on
 cut text with and without `--include-needs-review`, a WebSocket file's declaration and its refusal,
 and three controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal before and

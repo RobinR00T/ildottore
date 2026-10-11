@@ -28,8 +28,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   `run: filtered: ...`, by `shared.provider_filter.filtered_run`, the rule `run` uses. LOW 6: the
   resume across the upgrade is stated in u10 and the CHANGELOG for `fix/resume-judging-rules`.
 - Tests added: 7 in `tests/core/test_filter_stop_scoring.py` (now 14, 6 fail on `de122e26`), 1 in
-  `tests/adapters/test_filter_stop_provenance.py` (now 25, 23 fail there), 10 in
-  `tests/cli/test_filter_stop_provenance_campaign.py` (now 23, 19 fail there).
+  `tests/adapters/test_filter_stop_provenance.py` (now 25, 23 fail there), 13 in
+  `tests/cli/test_filter_stop_provenance_campaign.py` (now 26, 22 fail there).
 
 ## State, 2026-10-12 (early hours): a forged filter stop, closed (A-79; security audit MEDIUM 3)
 
