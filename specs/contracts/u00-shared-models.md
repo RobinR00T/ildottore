@@ -107,9 +107,11 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   src/ildottore/shared` clean (strict); `lint-imports` green: **`shared` imports nothing
   in-repo** (import-linter independence contract).
 - **A-71 (u06's clause; this unit's half, added 2026-10-11):** `Setup.tools` refuses a tool
-  whose `destructive` or `external` is present and not a boolean, as the schema's
-  `setup.tools.items.properties` now does (a quoted `"false"` is truthy, so it read as true;
-  `tests/fixtures/specs/invalid/setup-tool-destructive-not-boolean.yaml`). `shared/tool_abuse.py`
+  whose `destructive` or `external` is a string or a number, as the schema's
+  `setup.tools.items.properties` now does (`type: [boolean, null]`; a quoted `"false"` is truthy,
+  so it read as true; `tests/fixtures/specs/invalid/setup-tool-destructive-not-boolean.yaml`).
+  Null reads as left out: refusing it too broke a pack that left the key empty (pre-merge audit
+  of `f76f145`, M1). `shared/tool_abuse.py`
   holds what `tool_call` judges in one call (the allowlist a scene resolves to, the destructive
   verbs and the scene's `destructive` flags, the injection markers and their walk, the
   forbidden-argument walk), because the evaluator and the linter's stub must give one verdict and

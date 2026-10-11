@@ -110,7 +110,8 @@ concretes:
    target type, OD-18 option B: a spec with setup is `inconclusive` (`setup_not_seeded`) before
    the scene, with no send, when `setup_delivery.seeding_gap` names a reason (not declared in
    `seeded_setup.specs`; a per-run canary in the scene and no `run_token`; two of its scene tools
-   under one deployment name; asked of the spec before its canary is bound), or
+   under one deployment name; one of them mapped to the name of another, since 2026-10-11, u06
+   A-71's pre-merge audit; asked of the spec before its canary is bound), or
    `setup_delivery.trace_gap` (a trace spec through an adapter without `returns_tool_calls`)
    does, unless the adapter is an offline mock (`offline_mock`). A sent one binds `{{run_id}}` to
    `<run_token>-<spec id>` when its canary has to be seeded, records `setup_delivery: seeded`

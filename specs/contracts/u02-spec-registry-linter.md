@@ -414,9 +414,14 @@ it. The stub now reads a call through `shared/toolcalls.py` and judges it throug
 `shared/tool_abuse.py`, the module the evaluator uses (this package may not import
 `evaluators`), and the `tool_sequence` stub reads arguments the same way; `_stub_tool_allowlist`
 stays, resolved by the shared rule. The stub honours a scene's `destructive: false` as the
-evaluator does, and lint warns (`EVALUATOR_MISCONFIGURED`) on one that no verb in the tool's
-name makes necessary: it clears only a tool a verb would make destructive, never an unauthorized
-call or an argument. `dottore lint specs/` is byte-identical to `6d5f7ae`'s. Checked by
+evaluator does, and lint warns (`EVALUATOR_MISCONFIGURED`) on one worth a second look: on a name
+a verb matches that is not shaped like a hand-off (`transfer_to_<...>agent`, `assistant`, `bot`,
+`specialist`, `team` or `human`, snake or camel case; a heuristic no verdict reads), since a
+scene can clear `delete_account` as easily as a hand-off (pre-merge audit of `f76f145`, M2); on a
+name no verb matches, since it clears only a tool a verb would make destructive, never an
+unauthorized call or an argument; and in a spec that declares no `tool_call`, the only evaluator
+that reads it (the message names `kill_chain_progression`'s own stage map when the spec declares
+that evaluator). `dottore lint specs/` is byte-identical to `6d5f7ae`'s. Checked by
 `tests/registry/test_stub_agrees_with_tool_call.py` (agreement at every depth and in every
 provider shape, on every shipped fixture trace under every shipped spec that declares
 `tool_call`, and a bounded timing test) and `tests/evaluators/test_scene_not_destructive.py`.

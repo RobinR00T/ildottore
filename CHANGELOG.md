@@ -5,6 +5,17 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking for a spec pack: a scene tool's `destructive` and `external` are true, false or left out)
+
+- **Breaking: a quoted or numeric `destructive` or `external` on a scene tool is refused.** Both
+  are now `true`, `false`, or left out (an empty key, null, reads as left out, as it always did).
+  Before, any value was read for its truth, so a quoted `"false"` read as true. A spec that writes
+  one now fails `dottore lint` with `SCHEMA (<id>): setup/tools/2/destructive: 'false' is not of
+  type 'boolean', 'null'` (or `1 is not of type ...` for a number), and `dottore run`, the dry
+  run included, refuses the whole battery before sending anything (exit 3): `error: 1 spec
+  file(s) failed to load and would silently leave the battery: ...`. Migration: write `true` or
+  `false` unquoted, or drop the key. No shipped spec is affected (u06 A-71).
+
 ### Fixed (a hand-off tool is not destructive by its name, and lint judges tool calls as a run does)
 
 - **A scene can mark a tool `destructive: false`.** The destructive verbs are matched anywhere in
@@ -21,9 +32,21 @@ versioning: [SemVer](https://semver.org/).
   `bulkdelete` or `airdrop_tokens`, and would not clear the hand-off (`transfer` is a whole word
   of it). A tool a deployment grants under `seeded_setup.granted_tools` is in no scene and is
   still judged by its name (u06 A-71).
-- **`destructive` and `external` on a scene tool are booleans.** The schema and the model refuse
-  any other value: a quoted `"false"` is truthy, so it read as true. `dottore lint` warns
-  (`EVALUATOR_MISCONFIGURED`) on a `destructive: false` that no verb in the name makes necessary.
+- **A tool the scene cleared is on the record.** When a scene's `destructive: false` overrules a
+  verb in the name of a tool the agent called, the `tool_call` verdict's reasoning says so, on a
+  pass and on a fail alike: `the spec's scene marks 'transfer_to_billing_agent' (its name holds
+  'transfer') destructive: false, so no call to it was judged destructive`. `dottore lint` warns
+  (`EVALUATOR_MISCONFIGURED`) where a clearing deserves a second look: on a name a verb matches
+  that is not shaped like a hand-off (`transfer_to_<...>agent`, `assistant`, `bot`,
+  `specialist`, `team` or `human`, in snake or camel case; a heuristic, lint only, so
+  `delete_account: destructive: false` or `transfer_to_account: destructive: false` is a
+  warning), on a name no verb matches (the flag changes nothing), and in a spec that declares no
+  `tool_call`, the only evaluator that reads it (found by the pre-merge audit of A-71).
+- **A seeded name map that renames a scene tool onto another one's name is refused.**
+  `seeded_setup.tools: {transfer_to_billing_agent: delete_account}` on a scene that also has
+  `delete_account` judged the deployment's real delete as the hand-off, which the scene may have
+  cleared. Such a spec is now `inconclusive` (`setup_not_seeded`) with nothing sent, the reason
+  naming the pair; a swap is refused too, and a tool mapped to its own name is fine.
 - **The lint stub of `tool_call` judges a call through the evaluator's own helpers.** It was a
   copy that had drifted: it kept the backtick pattern the evaluator dropped as quadratic (an
   unclosed backtick before 100,000 letters took about 4 s, and takes about 3 ms now), read an
@@ -33,10 +56,12 @@ versioning: [SemVer](https://semver.org/).
   both read calls through `shared/toolcalls.py`, so a fixture lint proves gets the same verdict
   in a run. Every shipped fixture's verdict, under the real evaluators and under the stubs, is
   unchanged, and so are `dottore lint specs/` and `dottore coverage --json`, byte for byte.
-- Docs: `docs/03`, `docs/04` §1, MANUAL §8, FAQ, `examples/target.app.yaml`; contracts u06 §7
-  A-71, u02, u00 and the index. Tests: `tests/evaluators/test_scene_not_destructive.py` (28,
-  12 fail on `6d5f7ae`), `tests/registry/test_stub_agrees_with_tool_call.py` (21, 12 fail on
-  `6d5f7ae`) and an invalid schema-parity fixture (fails on `6d5f7ae`).
+- Docs: `docs/03`, `docs/04` §1, MANUAL §4.2, §5 (`dottore lint`) and §8, FAQ,
+  `dottore-scope(5)`, `examples/target.app.yaml`; contracts u06 §7 A-71, u02, u00, u08 and the
+  index. Tests: `tests/evaluators/test_scene_not_destructive.py` (43, 26 fail on `6d5f7ae`),
+  `tests/registry/test_stub_agrees_with_tool_call.py` (22, 13 fail on `6d5f7ae`), four in
+  `tests/core/test_seeded_setup.py` (3 fail on `6d5f7ae`) and an invalid schema-parity fixture
+  (fails on `6d5f7ae`).
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 
