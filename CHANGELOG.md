@@ -25,7 +25,9 @@ versioning: [SemVer](https://semver.org/).
   lint says of a scene's `destructive: false`) and at a granted name that is a selected spec's
   scene tool but for case or Unicode form. The JSON summary's `operator_declarations` (always
   emitted, optional in report-1.0: a new report fails an older copy of the schema, an older
-  report validates against the new one), the SARIF run and results, a property of each JUnit
+  report validates against the new one; an older build refuses to `diff` or `replay` a run in
+  which the declaration cleared a call, since its verdicts carry `operator_cleared`, while a run
+  with nothing declared reads as before), the SARIF run and results, a property of each JUnit
   suite and its cases, the HTML targets and summary and a closing line of the terminal summary
   state it for the run, with the attempts it changed. Each such attempt's verdict carries
   `operator declaration (OD-43): the target file declares '<tool>' (its name holds '<verb>') not
