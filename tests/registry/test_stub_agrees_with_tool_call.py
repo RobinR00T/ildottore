@@ -25,7 +25,6 @@ from ildottore.evaluators.tool_call import ToolCallEvaluator
 from ildottore.evaluators.tool_sequence import ToolSequenceEvaluator
 from ildottore.registry import fixtures_engine, lint
 from ildottore.registry.fixtures_engine import EvalInput, _tool_call, _tool_sequence
-from ildottore.shared import tool_abuse
 from ildottore.shared.enums import EvaluatorType, VerdictStatus
 from ildottore.shared.models import AttackSpec, EvaluatorConfig, JsonDict
 
@@ -150,6 +149,8 @@ def test_an_unclosed_backtick_is_scanned_in_linear_time(arguments: JsonDict) -> 
 
 def test_the_stub_and_the_evaluator_share_one_set_of_checks() -> None:
     """One source: what the stub calls is the very function and pattern the evaluator calls."""
+
+    from ildottore.shared import tool_abuse  # imported here, so the file collects on older trees
 
     for helper in ("injection_hits", "forbidden_arg_hits", "is_destructive", "destructive_flags"):
         assert getattr(fixtures_engine, helper) is getattr(tool_abuse, helper), helper
