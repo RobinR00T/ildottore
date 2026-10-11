@@ -46,7 +46,6 @@ from typing import Final
 from ildottore.shared.amounts import is_count
 from ildottore.shared.enums import InconclusiveReason
 from ildottore.shared.filter_stops import (
-    ANTHROPIC_FILTER_STOPS,
     BEDROCK_FILTER_STOPS,
     FILTER_STOPS,
     GEMINI_FILTER_STOPS,
@@ -119,7 +118,7 @@ _OUTPUT_STOPS: Final = OPENAI_FILTER_STOPS | GEMINI_FILTER_STOPS
 # attempt that produced the returned message, and ``usage.iterations`` records every attempt
 # ("The usage.iterations array records every attempt", the same page): an output token in any of
 # them is the output side too.
-_REFUSAL: Final = next(iter(ANTHROPIC_FILTER_STOPS))
+_REFUSAL: Final = "refusal"  # the one word of ANTHROPIC_FILTER_STOPS
 # Amazon Bedrock Converse's ``guardrail_intervened`` and ``content_filtered``: a guardrail returns
 # "The blocked content text that you have configured in the guardrail" as the output, whether it
 # blocked the prompt or the reply. Only the optional trace (``guardrailConfig.trace: enabled``)

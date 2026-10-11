@@ -172,7 +172,8 @@ cut over a judge's fail, so its verdict could not decide, and on a canned messag
 verdict is exactly the false assurance this amendment removes. On a partial reply (text the model
 wrote before the cut) it is consulted after the deciding evaluators, alone, and its verdict
 recorded in the reasoning for the reviewer; a ceiling that refuses it is a note, not a halt that
-would leave the attempt unscored.
+would leave the attempt unscored. (Its fail on a partial reply stands since the second amendment
+below, as a fail that needs review; its pass is still only recorded.)
 
 ### Consequences
 
