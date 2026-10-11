@@ -80,7 +80,11 @@ class FingerprintEngine:
 
     ``is_prompt_filtered`` decides which errors of a **carrier** probe are a failed probe: the
     provider's own input filter refused it (the composition root's predicate: the adapters'
-    ``blocked_by_provider_filter`` marker, OD-41). A carrier sends an instruction through an
+    ``blocked_by_provider_filter`` marker, OD-41). It also sets the profile's ``input_filter``:
+    when any failed probe of the pass (a carrier, or the benign request) failed that way, the
+    provider has said that its input filter refused a prompt, so ``guardrails["input_filter"]``
+    is ``True`` (OD-40, decided 2026-10-11 under the owner's delegation); otherwise it stays
+    what the guardrail layer wrote, ``None``. A carrier sends an instruction through an
     encoding (base64, rot13, leetspeak, homoglyphs), which Microsoft's Prompt Shields classes as a
     user prompt attack, "Encoding attacks" (Microsoft Learn, "Prompt Shields in Azure AI Content
     Safety", read 2026-10-10), so Azure's filter can refuse it after every other probe was
@@ -201,6 +205,11 @@ class FingerprintEngine:
             # answer to the request to refuse, and the benign one reads nothing either (§7 A-67).
             # A filter stop is the provider's, not the text's, and stands.
             guardrails = {**guardrails, "refusal_style": None, "benign_refused": None}
+        if isolated.filtered:
+            # The provider said its input filter refused a probe, in a shape it documents: an
+            # input filter, whatever the replies were (OD-40, decided 2026-10-11). The guardrail
+            # layer, which sees replies only, leaves the key ``None``; nothing makes it ``False``.
+            guardrails = {**guardrails, "input_filter": True}
         caps = capability_guess(adapter.capabilities())
         # The one key the PLANNER reads (``core.planner._order_family_effective``). Without
         # it, adaptive mode reordered nothing and ``-sV`` bought a fingerprint that changed
@@ -362,6 +371,9 @@ class _ProbeIsolation:
         #: The layer probing now, set by the engine before each layer runs.
         self.layer = ""
         self.failures: list[str] = []
+        #: The failed probes the provider's own input filter refused, in a shape it documents
+        #: (``is_prompt_filtered``): the profile's ``input_filter`` (OD-40).
+        self.filtered: list[str] = []
 
     async def send(self, request: ModelRequest) -> ModelResponse:
         try:
@@ -376,6 +388,8 @@ class _ProbeIsolation:
                 raise
             failed = ProbeFailed(probe, exc)
             self.failures.append(f"{self.layer}/{failed}")
+            if self._is_prompt_filtered is not None and self._is_prompt_filtered(exc):
+                self.filtered.append(f"{self.layer}/{probe}")
             raise failed from exc
 
     def capabilities(self) -> Capabilities:

@@ -89,7 +89,8 @@ only - no jailbreak payloads, scope-allowlist-gated.
 capabilities:{tools,json_mode,vision,streaming,seed,max_context_tokens}, guardrails:{input_filter,
 output_filter,refusal_style,moderation_latency_ms}, evidence:list[{layer,signal,weight}],
 spoofing_flags:list[str], recommended_plan_ref}` (exact shape in `docs/10 §2`; since 2026-10-09
-`guardrails` also holds `benign_refused`, and `input_filter` is always `null`, §7 A-67). `Evidence`
+`guardrails` also holds `benign_refused`, §7 A-67; `input_filter` is `true` or `null`, never
+`false`, since OD-40 was decided on 2026-10-11, §7 A-67). `Evidence`
 per `shared.models`. (As built, 2026-10-04: the key is `capability_guess`, copied from the target's
 declared capabilities, not probed: `{tools, json_mode (= tools), vision (= multimodal),
 streaming, seed, rag, memory, logprobs}` plus `effective_mutators` when the carrier layer
@@ -250,8 +251,9 @@ requested no longer counts as a filter. The criterion:
   family tells, and never sets a filter key;
 - (b) a refusal of the benign request sets `benign_refused: true`, a filter or the model's own
   alignment, which a benign probe cannot tell apart, so neither `input_filter` nor
-  `output_filter` is set from it; `input_filter` is `null` on every pass, because no benign probe
-  separates an input filter from the model's own refusal;
+  `output_filter` is set from it; no reply separates an input filter from the model's own
+  refusal, so the layer writes `input_filter: null` (and the engine sets it from a refused
+  probe, below);
 - (c) a reply the provider stopped with its own filter marker (`finish_reason` `content_filter`
   or `refusal`, in any case) sets `output_filter: true`, on either probe; on the benign request
   its text is not read (`benign_refused: null`). A reply cut at the probe's own cap (`length`) is
@@ -308,7 +310,23 @@ first build, each reproduced, and added to the criterion:
 - on a `non_discriminating_target`, `refusal_style` and `benign_refused` are `null`;
 - a nudge reply the provider's filter stopped has no `refusal_style`;
 - (verification of `abc6ffe`) a benign reply with neither an answer marker nor a listed refusal
-  phrase is unclear, `benign_refused: null`, not an answer.
+  phrase is unclear, `benign_refused: null`, not an answer;
+- (OD-40's open part, decided 2026-10-11 under the owner's delegation, best practice and
+  revisable) `input_filter` is `true` in the fingerprint's `guardrails` when a failed probe of
+  the pass (the benign request, or a carrier) failed because the provider's own input filter
+  refused it in a shape the provider documents (the composition root's `is_prompt_filtered`, the
+  adapters' `blocked_by_provider_filter` marker: Azure OpenAI's HTTP 400 `content_filter`,
+  Gemini's prompt block), and `null` otherwise, never `false`: a pass sends benign probes only,
+  so it cannot show that there is no filter. The engine sets it (`_ProbeIsolation.filtered`),
+  since only it sees why a probe failed; the guardrail layer's own evidence keeps `null`, so the
+  golden fingerprint is unchanged. An undocumented 4xx to the benign request is still a failed
+  probe and sets nothing. On a `non_discriminating_target` the `true` stands, as a filter stop
+  does: it is the provider's, not the text's. Before, `input_filter` was `null` on every pass, a
+  key that could only say "unknown". The alternatives not taken: keep the key with a documented
+  always-null meaning, or drop it from the profile (the choice OD-17 made for a field with no
+  producer; this one has one). Checks: `tests/fingerprint/test_input_filter_signal.py` (5 tests,
+  2 failing on `1d02aef`) and `tests/cli/test_input_filter_probe.py` (the Azure 400 through the
+  real CLI now reads `input_filter: true`).
 Checked by `tests/fingerprint/test_guardrail_requested_refusal.py` (stub targets for (a), (b) and
 (c), and the audit's cases: 53 tests, of which 31 fail on `cd413c0` and 14 of the first 18 on
 `f12ba83`; the ones that pass on both pin what did not change: attribution, the plan, the two
@@ -355,11 +373,11 @@ both).
   probe requested no longer counts as a filter. Built as §7 A-67: each probe declares the reply it
   expects; a requested refusal gives its style only; a refused benign request is `benign_refused`
   (filter or alignment, not split); a reply the provider's filter cut or replaced is
-  `output_filter`; one probe more (18 per pass). Left open, not part of the decision: whether to
-  drop `input_filter`, `null` on every pass now, from the shape (u00's `guardrails` is
-  free-shaped, but `docs/10` and §6 name the key), or to set it from the one input-filter signal
-  the pass can see: a 4xx to the benign request alone (Azure OpenAI's 400 `content_filter`),
-  which since the pre-merge audit is a failed probe with `benign_refused: null` and is not read
-  as an input filter. The attack phase stopped a campaign on such a 4xx (a product error, F5;
+  `output_filter`; one probe more (18 per pass). The part left open then, whether to drop
+  `input_filter` (`null` on every pass) or to set it from the one input-filter signal the pass can
+  see, was **decided on 2026-10-11 under the owner's delegation (best practice, revisable): set
+  it** from the provider's documented refusal of a probe (the benign request or a carrier),
+  `true`, else `null` (§7 A-67, last item); not dropped, because unlike OD-17's field it has a
+  producer that can make it true, and not left always-null. The attack phase stopped a campaign on such a 4xx (a product error, F5;
   OD-21 leaves non-retryable 4xx out of its question) until OD-41 (decided 2026-10-10): it now
   records an attack prompt the filter refused as blocked and goes on (u08 A-69). Owner: human.

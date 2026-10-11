@@ -229,10 +229,12 @@ model to refuse, and refusing is doing as asked, so it only gives the refusal's 
 cannot tell which. If an input filter rejects that question outright with a 4xx (Azure's prompt
 filter answers HTTP 400), the probe is listed as failed (`guardrail/guardrail_benign:
 ProviderFilterBlock`) and `benign_refused` is `null`; the fingerprint goes on, as it does when the
-filter refuses a carrier probe (an encoded instruction). `input_filter` is always `null`. A `false`
-is what two benign probes saw, not proof that there is no filter: a filter that acts only on harmful
-content never acts on them. Until 2026-10-09 any refusal of the first probe was reported as an
-output filter, so a model that followed the instruction looked filtered
+filter refuses a carrier probe (an encoded instruction). Either refusal sets `input_filter` to
+`true`: the provider said, in a shape it documents, that its input filter refused a prompt (since
+2026-10-11, OD-40; it was always `null`). Otherwise `input_filter` is `null`, never `false`. A
+`false` `output_filter` is what two benign probes saw, not proof that there is no filter: a filter
+that acts only on harmful content never acts on them. Until 2026-10-09 any refusal of the first
+probe was reported as an output filter, so a model that followed the instruction looked filtered
 ([`10-fingerprint.md`](10-fingerprint.md) §1, OD-40).
 
 ### My Azure OpenAI deployment's content filter refuses some attacks. Does the scan stop?

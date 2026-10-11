@@ -360,8 +360,9 @@ def refused_request(exc: BaseException) -> bool:
     goes out after seven probes the same credential and route got answers to, so a 4xx to it is
     about its prompt: Azure OpenAI's prompt filter answers a blocked prompt with HTTP 400 and the
     error code ``content_filter``, and stopped ``-sV`` on it (pre-merge audit of ``cd413c0``).
-    It is the one input-filter signal the pass can see, and the profile reads it as unknown, not
-    as an input filter (OD-40). A 3xx or a 5xx the retries do not cover is not one.
+    A 3xx or a 5xx the retries do not cover is not one. An undocumented 4xx says nothing about a
+    filter; the provider's documented refusal (below) is the one input-filter signal the pass can
+    see, and the engine reads it as one (``input_filter: true``, OD-40, decided 2026-10-11).
 
     Since OD-41 the adapters raise Azure's refusal as a ``ProviderFilterBlock``, which carries its
     status but is not an ``AdapterStatusError``, and Gemini's prompt block (a success body) as

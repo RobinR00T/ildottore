@@ -5,6 +5,27 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (`input_filter` says when the provider's input filter refused a probe: OD-40)
+
+- **The guardrail profile's `input_filter` was `null` on every pass.** Since u09 A-67
+  (2026-10-09) no reply could set it, and the one input-filter signal a `-sV` pass sees, a probe
+  the provider's own filter refused, was a failed probe that set nothing. Decided on 2026-10-11
+  under the owner's delegation (best practice, revisable), the part OD-40 left open: the key is
+  kept and filled. `input_filter` is `true` when the benign request or a carrier probe failed
+  because the provider's input filter refused it in a shape the provider documents (the adapters'
+  `ProviderFilterBlock`: Azure OpenAI's HTTP 400 `content_filter`, Gemini's prompt block), and
+  `null` otherwise, never `false`: a pass sends benign probes only and cannot show that there is
+  no filter. An undocumented 4xx to the benign request is still a failed probe and claims nothing.
+  The engine sets it, since only it sees why a probe failed; the guardrail layer's own evidence
+  keeps `null`, so the golden fingerprint and every offline pass are unchanged. Against the
+  Azure stub of `tests/cli/test_input_filter_probe.py`, `dottore fingerprint` now prints
+  `"input_filter": true` beside `guardrail/guardrail_benign: ProviderFilterBlock`.
+- Kept, not dropped: unlike the plan's `baseline_resistance` (OD-17, removed the same day), this
+  key has a producer that can make it true. u09 §6 and §7 A-67, OD-40's row and u09 §9, `docs/10`
+  §1-§2, the MANUAL and the FAQ. Tests: `tests/fingerprint/test_input_filter_signal.py` (5, 2 of
+  them failing on `1d02aef`: the benign request and a carrier refused by the filter); the CLI test
+  asserts `true`.
+
 ### Removed (the plan's `baseline_resistance`, dead at both ends: OD-17)
 
 - **`PlanSelection.baseline_resistance` is gone.** No fingerprint layer wrote the

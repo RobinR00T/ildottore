@@ -125,17 +125,18 @@ went through with the same credential and route. It is recorded as a failed prob
 `AdapterStatusError` until the adapters named Azure's filter refusal on 2026-10-10, OD-41, and any
 other 4xx still does), `benign_refused` is `null`, and the pass and the run go on. Gemini's prompt
 block (`promptFeedback.blockReason` in a success body, through a REST template) is read the same
-way. It is the one input-filter signal the pass can see; `input_filter` stays `null` for now
-(OD-40). The same refusal of a **carrier** probe costs that carrier, not the pass, since the
+way. It is the one input-filter signal the pass can see, and since OD-40 was decided (2026-10-11,
+under the owner's delegation) the engine reads it as one: `input_filter` is `true` (an undocumented
+4xx stays a failed probe and claims nothing). The same refusal of a **carrier** probe costs that carrier, not the pass, since the
 pre-merge audit of `3d739f3` (2026-10-10): a carrier is an instruction sent through an encoding,
 which Microsoft's Prompt Shields classes as a user prompt attack ("Encoding attacks"), so Azure's
 filter can refuse it after every other probe was answered. It is recorded as a failed probe
 (`carrier/carrier_base64_wrap: ProviderFilterBlock`), the carrier is unmeasured (absent from the
 comprehension map and from `effective_mutators`), and the engine reads it through the
 composition root's `is_prompt_filtered` (the adapters' `blocked_by_provider_filter` marker); any
-other error of a carrier stops the pass. The same refusal of an attributing probe stops the pass,
-as before. The attack phase, since OD-41, records such a refusal of an attack prompt as a blocked
-attempt and goes on (`docs/05` §2, u08 A-69).
+other error of a carrier stops the pass. Such a carrier sets `input_filter: true` too. The same
+refusal of an attributing probe stops the pass, as before. The attack phase, since OD-41, records
+such a refusal of an attack prompt as a blocked attempt and goes on (`docs/05` §2, u08 A-69).
 
 Until 2026-10-09 the layer sent the nudge alone and read **any** refusal in its reply as an output
 filter, and a canned one as an input filter as well, so a model that followed the instruction was
@@ -173,8 +174,14 @@ printed on 2026-10-09 for an offline target with `mock_scenario: comprehending` 
   provider's filter stop is on either reply, `false` when neither has one but at least one carries
   a stop reason from the provider, and `null` when none does: `false` is what these two benign
   probes saw, not proof that there is no filter, since one that acts only on harmful content never
-  acts on them. `input_filter` is always `null`: no reply tells an input filter from the model's
-  own refusal (it was `true` for a canned requested refusal until 2026-10-09). The latency is the
+  acts on them. `input_filter` is `true` when a probe of the pass (the benign request or a
+  carrier) failed because the provider's own input filter refused it in a shape it documents
+  (`ProviderFilterBlock`: Azure OpenAI's HTTP 400 `content_filter`, Gemini's prompt block), and
+  `null` otherwise, never `false`: no reply tells an input filter from the model's own refusal,
+  and benign probes cannot show that there is none. The guardrail layer sees replies only and
+  writes `null`; the engine, which sees every failed probe, sets the `true` (OD-40, decided
+  2026-10-11; it was `null` on every pass from 2026-10-09, and `true` for a canned requested
+  refusal before that). The latency is the
   first figure a probe reply's `usage` reports, read only when it is a finite, non-negative number
   a float can hold, and `null` otherwise (since 2026-10-07: a 400-digit integer there made
   `fingerprint` and `run -sV` exit 1, and an infinity, a NaN or a negative figure was recorded).

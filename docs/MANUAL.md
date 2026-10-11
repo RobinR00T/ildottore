@@ -1045,14 +1045,16 @@ Azure's `content_filter`, Anthropic's `refusal`, Bedrock's `guardrail_intervened
 `content_filtered`, Gemini's `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST` or `SPII`, also read at a
 REST template's `finish_path`); a reply cut at the probe's 512-token cap is not one, and with no
 stop reason from the provider on any reply (a REST template without `finish_path`, a WebSocket or
-MCP target, the offline mocks) it is `null`. `input_filter` is always `null`. An input filter
-that answers the benign request with a 4xx (Azure OpenAI's prompt filter: HTTP 400,
-`content_filter`) is a failed probe, `guardrail/guardrail_benign: ProviderFilterBlock` (any other
-4xx: `AdapterStatusError`), with `benign_refused: null`, and the command goes on. So is a carrier
-probe the filter refuses (a carrier is an instruction sent through an encoding, which Azure's
-Prompt Shields classes as an encoding attack): `carrier/carrier_base64_wrap: ProviderFilterBlock`,
-that carrier unmeasured and left out of `effective_mutators`. The same refusal of an attributing
-probe still exits 3. In the attack phase such a refusal is a blocked attempt and the campaign goes
+MCP target, the offline mocks) it is `null`. An input filter that answers the benign request with a
+4xx (Azure OpenAI's prompt filter: HTTP 400, `content_filter`) is a failed probe,
+`guardrail/guardrail_benign: ProviderFilterBlock` (any other 4xx: `AdapterStatusError`), with
+`benign_refused: null`, and the command goes on. So is a carrier probe the filter refuses (a
+carrier is an instruction sent through an encoding, which Azure's Prompt Shields classes as an
+encoding attack): `carrier/carrier_base64_wrap: ProviderFilterBlock`, that carrier unmeasured and
+left out of `effective_mutators`. Either refusal is the provider saying its input filter refused a
+prompt, so `input_filter` is `true`; otherwise it is `null`, never `false` (benign probes cannot
+show there is no filter, and an undocumented 4xx claims nothing). Until 2026-10-11 (OD-40) it was
+`null` on every pass. The same refusal of an attributing probe still exits 3. In the attack phase such a refusal is a blocked attempt and the campaign goes
 on (§9).
 On a target that answers every attributing probe alike, `refusal_style` and `benign_refused` are
 `null`. `false` is what two benign probes saw, not proof that there is no filter. Before, any
@@ -1118,7 +1120,10 @@ Schema + policy + fixtures-prove-detection lint. `specs/` resolves as a pack (vi
 A mutation must name a registered mutator (built-ins plus installed plugins), or lint reports
 `UNKNOWN_MUTATOR_TYPE`. The same code covers a `name:param` the mutator does not implement
 (§12). An installed mutator plugin that cannot be loaded is a `MUTATOR_PLUGIN_ERROR` warning,
-not a crash: lint goes on with the built-ins.
+not a crash: lint goes on with the built-ins. A spec that writes `evaluator_logic: all_pass`,
+`any_fail` or `weighted`, or gives an evaluator a `weight`, gets a `DEPRECATED_COMBINATION`
+warning: every value runs one rule, `deterministic_first` (§8), which is the one to write, no vote
+is taken, and nothing reads a `weight` (OD-19, since 2026-10-11). The spec loads and runs as before.
 
 A spec pack can come from a third party, so lint reads only regular files that resolve inside
 their pack directory (or, for loose specs, the directory they were found in), at most 1 MiB
@@ -1575,6 +1580,14 @@ Each spec names one or more evaluators. The design is **deterministic-first**:
   refusing the judge request) or never returns a parseable verdict (empty content, a refusal in
   prose) counts like no judge, never as a pass; the campaign goes on, and an attempt whose judge
   was refused is not counted as blocked (the attack prompt reached the model).
+
+**How a spec's evaluators combine is one rule, `deterministic_first`**, whatever its
+`evaluator_logic` says: a deterministic `fail` decides; else an `inconclusive`; else a judge
+`fail`; else `pass` (a judge that was consulted and abstained is left out). A run, `dottore lint`
+and `evaluators.combine` apply the same function. The shipped specs write `deterministic_first`;
+`all_pass`, `any_fail` and `weighted` are deprecated names of it, which load and get a lint
+warning, and no vote is taken, so an evaluator's `weight` is read by nothing (OD-19, decided
+2026-10-11, ADR-0010).
 
 **A reply that answers nothing decides nothing.** A `regex_absence` passes, and a
 `regex_presence` fails, any reply that lacks its pattern: a canned string, an error page, a model

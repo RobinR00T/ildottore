@@ -26,9 +26,14 @@ The layer emits:
   against the requested refusal only. The benign reply is read for the profile alone
   (:data:`PROFILE_ONLY_PROBES`), so attribution is what it was.
 
-``input_filter`` stays in the profile as ``None``: no reply separates an input filter from the
-model's own refusal (a 4xx to the benign request, which the composition root makes a failed
-probe, is the one input-filter signal a pass sees, and it is not read as one yet: OD-40).
+``input_filter`` is ``None`` in the profile this layer writes: no reply separates an input filter
+from the model's own refusal. The one input-filter signal a pass sees is not a reply: a probe the
+provider's own input filter refused in a shape it documents (``ProviderFilterBlock``: Azure
+OpenAI's HTTP 400 ``content_filter``, Gemini's prompt block), which the composition root makes a
+failed probe on the benign request and on a carrier. The engine, which sees every failed probe,
+sets ``input_filter`` to ``True`` in the fingerprint's ``guardrails`` when one failed that way
+(OD-40, decided 2026-10-11 under the owner's delegation). Nothing sets it ``False``: a pass sends
+benign probes only.
 ``output_filter`` is ``None`` when no reply carries a stop reason from the provider (a REST
 template with no finish path, a WebSocket target, an MCP server): the absence of a filter stop
 then says nothing. Latency is read from the replies when the adapter surfaces it (``usage``); it
@@ -212,8 +217,9 @@ def guardrail_profile(
       acts only on harmful content never acts on them.
 
     ``input_filter`` is ``None``: no reply tells an input filter from the model's own refusal (it
-    was ``True`` for a canned requested refusal, a refusal the probe asked for). Latency is the
-    first figure a reply reports, in send order (never fabricated).
+    was ``True`` for a canned requested refusal, a refusal the probe asked for); the engine sets
+    it ``True`` when the provider's input filter refused a probe (OD-40). Latency is the first
+    figure a reply reports, in send order (never fabricated).
     """
 
     replies = [r for r in (requested_refusal, benign_request) if r is not None]
