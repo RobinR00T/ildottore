@@ -35,8 +35,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   runs of the same code do).
   `dottore lint specs/` (text and `--json`) and `dottore coverage --json` are byte-identical to
   `6d5f7ae`'s. No shipped spec marks a tool `destructive: false`.
-- Pre-merge audit of `f76f145`: merge-ready after one CHANGELOG fix, with two MEDIUMs and four
-  LOWs, all closed in new commits on top (no history rewritten: `feat/operator-declared-tools`
+- Pre-merge audit of `f76f145`: merge-ready after one CHANGELOG fix, with three MEDIUMs and five
+  LOWs (M3, the granted hand-off, is the owner's question; L5 asked only not to rewrite history),
+  the rest closed in new commits on top (no history rewritten: `feat/operator-declared-tools`
   is built on `f76f145`). M1: the booleans-only tightening broke a pack that left the key empty
   (null) or wrote a quote or a number (lint `SCHEMA`, and `run` refused the whole battery); null
   reads as left out again, a quote or a number is still refused, and the CHANGELOG says so as a
