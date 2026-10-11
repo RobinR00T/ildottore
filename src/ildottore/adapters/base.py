@@ -41,6 +41,7 @@ import httpx
 
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor, registered_secrets
+from ildottore.shared.filter_stops import NO_FILTER_STOPS, OPENAI_FILTER_STOPS
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
@@ -49,7 +50,7 @@ from ildottore.shared.models import (
     TokenLogprob,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
-from ildottore.shared.provider_filter import INPUT_FILTER_REFUSED
+from ildottore.shared.provider_filter import INPUT_FILTER_REFUSED, stop_provenance
 from ildottore.shared.toolcalls import check_argument_nesting
 from ildottore.shared.wellformed import well_formed_json
 
@@ -759,6 +760,19 @@ class BaseAdapter(ABC):
 
         return "check the target's endpoint and provider"
 
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """The stop reasons this adapter reads as its provider's filter (u04 A-79).
+
+        None here: a provider documents its own, and the adapter that speaks it says which
+        (OpenAI's ``content_filter``, Anthropic's ``refusal``, a REST template's). Any other
+        filter word in a reply is some other provider's: it is marked ``foreign_stop`` and read
+        as an ordinary stop, so a target cannot hide its reply behind a word it chose. Azure's
+        HTTP 400 ``content_filter`` (OD-41) is read only by an adapter that reads that stop.
+        """
+
+        return NO_FILTER_STOPS
+
     #: True for an adapter whose replies may be a JSON array (a REST template rooted at an index).
     @property
     def reads_array_body(self) -> bool:
@@ -785,7 +799,9 @@ class BaseAdapter(ABC):
                 raise ResponseTooDeep(
                     f"{label} has a tool call whose arguments are {exc}; not evaluated"
                 ) from exc
-        return parsed
+        # Every success reply leaves through here: its stop is read as a filter's only when this
+        # adapter's provider documents it (u04 A-79).
+        return stop_provenance(parsed, self.filter_stops)
 
     def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
         """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
@@ -959,8 +975,14 @@ class BaseAdapter(ABC):
             return self._checked(parsed, label)
 
         # The provider's input filter refused the prompt (OD-41): the attempt is blocked, not a
-        # defect. Read first: its 400 names the prompt, never a sampling parameter.
-        filtered = azure_prompt_filter(response.status_code, raw)
+        # defect. Read first: its 400 names the prompt, never a sampling parameter. Only by an
+        # adapter that reads Azure's filter vocabulary (u04 A-79): from another provider that
+        # body is not its filter's, and any 4xx it does not document stops the campaign.
+        filtered = (
+            azure_prompt_filter(response.status_code, raw)
+            if self.filter_stops & OPENAI_FILTER_STOPS
+            else None
+        )
         if filtered is not None:
             raise ProviderFilterBlock(
                 f"{self.id}: non-retryable HTTP {response.status_code} from "

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from ildottore.adapters.base import BaseAdapter, ResponseMalformed, map_logprobs
+from ildottore.shared.filter_stops import OPENAI_FILTER_STOPS
 from ildottore.shared.media import render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
@@ -79,6 +80,18 @@ class OpenAIAdapter(BaseAdapter):
     @property
     def _endpoint_path(self) -> str:
         return "/v1/chat/completions"
+
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """OpenAI's and Azure OpenAI's ``content_filter``, and no other provider's (u04 A-79).
+
+        The API documents no other filter stop, so ``refusal``, ``SAFETY`` or
+        ``guardrail_intervened`` in a reply is an ordinary stop: a gateway or a target that writes
+        one cannot make its reply read as a filter's. With it, Azure's HTTP 400 ``content_filter``
+        is the prompt filter's block (OD-41).
+        """
+
+        return OPENAI_FILTER_STOPS
 
     @property
     def carries_tool_definitions(self) -> bool:

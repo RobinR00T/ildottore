@@ -69,6 +69,7 @@ from ildottore.adapters.rest import get_path
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
 from ildottore.shared.config_errors import quoted
+from ildottore.shared.filter_stops import normalized_stop
 from ildottore.shared.models import (
     Capabilities,
     JsonDict,
@@ -78,7 +79,7 @@ from ildottore.shared.models import (
     WebSocketSpec,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
-from ildottore.shared.provider_filter import is_filter_stop
+from ildottore.shared.provider_filter import stop_provenance
 from ildottore.shared.toolcalls import check_argument_nesting
 from ildottore.shared.wellformed import well_formed_json
 
@@ -393,6 +394,16 @@ class WebSocketAdapter:
         """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
 
         return ResponseMalformed(message).with_reply(body, self.redactor, self.unreadable_advice)
+
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """The stops the target file declares under ``response.filter_stops`` (u04 A-79).
+
+        None by default: no WebSocket chat API has a standard stop, so a filter word at the final
+        frame's ``final_path`` is the filter's only when the file says the endpoint relays one.
+        """
+
+        return frozenset(self.spec.response.filter_stops)
 
     @property
     def returns_tool_calls(self) -> bool:
@@ -719,16 +730,19 @@ class WebSocketAdapter:
 
         finish = get_path(final, reading.final_path) if final is not None else None
         # A turn with no text is still a reply when it carries tool calls (an agent that only
-        # acts) or a stop the provider's filter writes (OD-42 reads it as the filter's cut). Read
-        # first: raised before them, the call was never evaluated (pre-merge audit of 598f0858).
+        # acts) or a stop the provider's filter writes (OD-42 reads it as the filter's cut), one
+        # the target file declares (u04 A-79). Read first: raised before them, the call was never
+        # evaluated (pre-merge audit of 598f0858).
         if (
             not parts
             and not calls
-            and not is_filter_stop(finish if isinstance(finish, str) else None)
+            and normalized_stop(finish if isinstance(finish, str) else None)
+            not in self.filter_stops
         ):
             raise self._unreadable(
                 f"{self.id}: no frame of the turn carried text at path "
-                f"{quoted(reading.text_path)}, a tool call or a filter's stop; not evaluated",
+                f"{quoted(reading.text_path)}, a tool call or a filter stop the file declares; "
+                "not evaluated",
                 json.dumps(
                     [e["frame"] for e in frames[start:] if e.get("direction") == "received"],
                     default=str,
@@ -737,7 +751,7 @@ class WebSocketAdapter:
         recorded = frames if whole else frames[start:]
         conversation.reported = len(frames)
         ids["websocket"] = {"frames": [dict(f) for f in recorded]}
-        return ModelResponse(
+        reply = ModelResponse(
             text="".join(parts),
             tool_calls=calls,
             logprobs=None,  # no WebSocket chat exposes logprobs; never fabricated (ADR-0005)
@@ -745,6 +759,8 @@ class WebSocketAdapter:
             raw_ids=redact_ids(self.redactor, ids),
             usage=usage,
         )
+        # A filter word the file does not declare is an ordinary stop (u04 A-79).
+        return stop_provenance(reply, self.filter_stops)
 
     # --- frames --------------------------------------------------------------------------
 

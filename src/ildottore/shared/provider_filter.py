@@ -20,9 +20,18 @@ model's answer, so an empty or canned reply, or a judge's secure verdict on one,
   ``blocked_by_provider_filter``.
 * ``output``: the model wrote something and the filter cut or replaced it, so the model may have
   produced what the spec tests for. ``inconclusive: cut_by_provider_output_filter``, needing
-  review; a deterministic evaluator's fail on the text that came back still stands.
+  review; a deterministic evaluator's fail on the text that came back still stands, and so,
+  since the amendment to OD-42 (u08 A-79), does the judge's on text the model wrote, as a fail
+  that needs review: that text was delivered, whatever the filter says.
 * ``unknown``: the provider says its filter intervened and not on which side (Bedrock without a
   guardrail trace). ``inconclusive: provider_filter_side_unknown``, never a pass either.
+
+A stop is a filter's only from the provider whose word it is (u04 A-79, the amendment to OD-42,
+decided 2026-10-11 under the owner's delegation, best practice, revisable): each adapter marks a
+filter word its provider does not document, or its target file does not declare, as
+``foreign_stop`` (:func:`stop_provenance`), and every function here reads such a reply as one
+with an ordinary stop. A target controls its own stop reason; until then any target could send
+any provider's word and hide a judged exploit behind it (security audit of 2026-10-11, MEDIUM 3).
 
 Here, in ``shared``, because several peers read it: the runner records and scores it, the replay
 and every report count it, a resume keeps it without sending it again, and the fingerprint's
@@ -36,6 +45,14 @@ from typing import Final
 
 from ildottore.shared.amounts import is_count
 from ildottore.shared.enums import InconclusiveReason
+from ildottore.shared.filter_stops import (
+    ANTHROPIC_FILTER_STOPS,
+    BEDROCK_FILTER_STOPS,
+    FILTER_STOPS,
+    GEMINI_FILTER_STOPS,
+    OPENAI_FILTER_STOPS,
+    normalized_stop,
+)
 from ildottore.shared.models import Attempt, ModelResponse
 
 __all__ = [
@@ -57,6 +74,7 @@ __all__ = [
     "is_filter_stop",
     "partial_reply",
     "side_unknown_attempt_ids",
+    "stop_provenance",
 ]
 
 #: Appended to a blocked attempt's ``error``: the stored attempt says so without its verdict, so
@@ -80,52 +98,13 @@ CUT_REASONS: Final = frozenset(
     }
 )
 
-# Every value below is compared trimmed and in lower case, whichever adapter carries it as
-# ``finish_reason``: the OpenAI and Anthropic adapters pass the provider's value through, a REST
-# template reads it at its ``finish_path``, a WebSocket target at its final frame's path. Each is
-# sourced; the documentation was read on 2026-10-11 unless a line says otherwise.
+# Which side each stop says the filter acted on. The vocabularies, each value sourced, and which
+# adapter may send which (u04 A-79), are in ``shared.filter_stops``.
 #
-# The output side, documented as a reply the filter stopped, cut or withheld:
-_OUTPUT_STOPS: Final = frozenset(
-    {
-        # OpenAI's and Azure OpenAI's. OpenAI API reference, the Completions object,
-        # ``choices[].finish_reason`` (developers.openai.com/api/docs/api-reference/completions/
-        # object): "content_filter if content was omitted due to a flag from our content
-        # filters". Microsoft Learn, "Content filtering for Microsoft Foundry Models (classic)",
-        # "Content filtering scenarios" (learn.microsoft.com/en-us/azure/foundry-classic/
-        # foundry-models/concepts/content-filter, updated 2026-09-08): a prompt it filters is an
-        # HTTP 400 (OD-41), and "Non-streaming completions calls don't return any content when
-        # the content is filtered", with ``finish_reason`` ``content_filter``; "In rare cases
-        # with longer responses, a partial result can be returned". So on a 200 it is the reply.
-        "content_filter",
-        # Gemini API reference, ``GenerateContentResponse``, ``FinishReason``
-        # (ai.google.dev/api/generate-content): SAFETY "The response candidate content was
-        # flagged for safety reasons"; BLOCKLIST "Token generation stopped because the content
-        # contains forbidden terms"; PROHIBITED_CONTENT "Token generation stopped for potentially
-        # containing prohibited content"; SPII, the same for "Sensitive Personally Identifiable
-        # Information". A prompt Gemini blocks has no candidate at all (``promptFeedback``,
-        # OD-41), so a candidate's stop is about what the model generated.
-        "safety",
-        "blocklist",
-        "prohibited_content",
-        "spii",
-        # Vertex AI's reference, ``FinishReason`` (docs.cloud.google.com/vertex-ai/generative-ai/
-        # docs/reference/rest/v1/GenerateContentResponse): MODEL_ARMOR "The model response was
-        # blocked by Model Armor".
-        "model_armor",
-        # Gemini's RECITATION, "The response candidate content was flagged for recitation
-        # reasons" (Gemini API reference), "the content may be a recitation from a source"
-        # (Vertex AI's). Not a safety filter but a filter on what the model generated, and a
-        # training-data extraction spec is about exactly such a reply, so it is a cut like the
-        # others: decided under the owner's delegation on 2026-10-11 (OD-42), revisable. A cut,
-        # not a fail: ``verbatim_overlap`` still fails when enough of the text came back.
-        "recitation",
-    }
-)
-# Not read, for want of a source that makes them a filter on either side: Gemini's LANGUAGE,
-# OTHER ("Unknown reason"), the IMAGE_* values (image generation, which no spec asks for),
-# ESCALATION ("Request was filtered by an escalation rule", with no word on what was filtered)
-# and PUP_LIMITED_DISABLED (the account, not the content).
+# The output side, documented as a reply the filter stopped, cut or withheld: OpenAI's and Azure
+# OpenAI's ``content_filter`` (on a 200 it is the reply; a prompt Azure filters is a 400, OD-41),
+# Gemini's and Vertex AI's candidate stops (a prompt Gemini blocks has no candidate at all).
+_OUTPUT_STOPS: Final = OPENAI_FILTER_STOPS | GEMINI_FILTER_STOPS
 #
 # Anthropic's ``refusal``: "Refusals and fallback" (platform.claude.com/docs/en/build-with-claude/
 # refusals-and-fallback): "A refusal is a successful HTTP 200 response with stop_reason:
@@ -140,35 +119,57 @@ _OUTPUT_STOPS: Final = frozenset(
 # attempt that produced the returned message, and ``usage.iterations`` records every attempt
 # ("The usage.iterations array records every attempt", the same page): an output token in any of
 # them is the output side too.
-_REFUSAL: Final = "refusal"
-# Amazon Bedrock Converse: the API reference (docs.aws.amazon.com/bedrock/latest/APIReference/
-# API_runtime_Converse.html) lists ``guardrail_intervened`` and ``content_filtered`` among the
-# ``stopReason`` values, and the user guide, "Include a guardrail with the Converse API"
-# (docs.aws.amazon.com/bedrock/latest/userguide/guardrails-use-converse-api.html), says a
-# guardrail that "detects blocked content" sets ``stopReason`` to ``guardrail_intervened`` and
-# returns "The blocked content text that you have configured in the guardrail" as the output,
-# whether it blocked the prompt or the reply. Only the optional trace (``guardrailConfig.trace:
-# enabled``) says which: ``adapters.rest`` reads it into ``ModelResponse.filter_side`` (``unknown``
-# when a trace is there and names neither a blocked prompt nor a blocked or masked reply, a masked
-# prompt alone, say). Without it the side is unknown too. ``content_filtered`` is listed and not
-# described anywhere AWS publishes that this change found, so its side is unknown as well.
-_UNSAID_SIDE_STOPS: Final = frozenset({"guardrail_intervened", "content_filtered"})
-
-#: Every stop reason a provider sets when its own filter declined, cut or replaced the reply.
-#: ``length`` and ``max_tokens`` (a reply cut at its token cap) are not among them.
-FILTER_STOPS: Final = frozenset({*_OUTPUT_STOPS, _REFUSAL, *_UNSAID_SIDE_STOPS})
+_REFUSAL: Final = next(iter(ANTHROPIC_FILTER_STOPS))
+# Amazon Bedrock Converse's ``guardrail_intervened`` and ``content_filtered``: a guardrail returns
+# "The blocked content text that you have configured in the guardrail" as the output, whether it
+# blocked the prompt or the reply. Only the optional trace (``guardrailConfig.trace: enabled``)
+# says which: ``adapters.rest`` reads it into ``ModelResponse.filter_side`` (``unknown`` when a
+# trace is there and names neither a blocked prompt nor a blocked or masked reply, a masked prompt
+# alone, say). Without it the side is unknown too, and so is ``content_filtered``'s.
+_UNSAID_SIDE_STOPS: Final = BEDROCK_FILTER_STOPS
 
 
 def is_filter_stop(stop: str | None) -> bool:
-    """True when ``stop``, as a provider wrote it, is one of :data:`FILTER_STOPS`."""
+    """True when ``stop``, as a provider wrote it, is one of :data:`FILTER_STOPS`.
 
-    return (stop or "").strip().lower() in FILTER_STOPS
+    Some provider's word, not necessarily the target's: an adapter reads a stop as its filter's
+    only when it is among the ones it honours (:func:`stop_provenance`, u04 A-79).
+    """
+
+    return normalized_stop(stop) in FILTER_STOPS
+
+
+def stop_provenance(response: ModelResponse, honoured: frozenset[str]) -> ModelResponse:
+    """``response``, its stop marked foreign when it is a filter's the adapter does not honour.
+
+    Each adapter calls it on the reply it read, with the stops its provider documents or its
+    target file declares (``filter_stops``, u04 A-79): ``content_filter`` for OpenAI and Azure
+    OpenAI, ``refusal`` for Anthropic, Gemini's or Bedrock's for a REST template in their shape,
+    what a WebSocket target file lists, nothing otherwise. A stop that is some other provider's
+    filter word (``refusal`` from an OpenAI-compatible endpoint, ``content_filter`` from a socket
+    that declared none) keeps its spelling, as evidence, and gets ``foreign_stop``: every reader
+    here then reads it as an ordinary stop, so the reply is scored as the model's answer. Until
+    the amendment to OD-42 any target could send any provider's word and have a judged exploit
+    recorded without deciding (security audit of 2026-10-11, MEDIUM 3).
+    """
+
+    stop = normalized_stop(response.finish_reason)
+    foreign = stop in FILTER_STOPS and stop not in honoured
+    if foreign == response.foreign_stop:
+        return response
+    return response.model_copy(update={"foreign_stop": foreign})
 
 
 def filter_stop(response: ModelResponse) -> str | None:
-    """The reply's stop reason, trimmed and in lower case, when it is a filter's; else ``None``."""
+    """The reply's stop reason, trimmed and in lower case, when it is a filter's; else ``None``.
 
-    stop = (response.finish_reason or "").strip().lower()
+    Not when the adapter marked it foreign (:func:`stop_provenance`): a stop the target's provider
+    does not document, or its target file does not declare, is an ordinary stop.
+    """
+
+    if response.foreign_stop:
+        return None
+    stop = normalized_stop(response.finish_reason)
     return stop if stop in FILTER_STOPS else None
 
 

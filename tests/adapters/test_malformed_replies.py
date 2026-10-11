@@ -274,9 +274,23 @@ async def test_a_websocket_turn_its_filter_stopped_with_no_text_is_a_reply() -> 
         [{"type": "end", "finish_reason": "content_filter"}],
         final_path="finish_reason",
         final_value=None,
+        filter_stops=["content_filter"],
     )
     assert (response.text, response.finish_reason) == ("", "content_filter")
     assert filter_side(response) == "output"
+
+
+async def test_a_websocket_turn_with_an_undeclared_filter_stop_and_no_text_is_unreadable() -> None:
+    """A filter word the target file does not declare is no filter's (u04 A-79): a turn with no
+    text, no call and only that word carried nothing to read."""
+
+    with pytest.raises(ResponseMalformed, match="a filter stop the file declares") as raised:
+        await _ws_turn(
+            [{"type": "end", "finish_reason": "content_filter"}],
+            final_path="finish_reason",
+            final_value=None,
+        )
+    _is_one_attempt_failure(raised.value)
 
 
 async def test_a_websocket_turn_with_neither_text_nor_calls_nor_a_filter_stop_is_unreadable() -> (

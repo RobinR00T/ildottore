@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Final
 
 from ildottore.adapters.base import BaseAdapter, ResponseMalformed
+from ildottore.shared.filter_stops import ANTHROPIC_FILTER_STOPS
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
@@ -151,6 +152,17 @@ class AnthropicAdapter(BaseAdapter):
     @property
     def _endpoint_path(self) -> str:
         return "/v1/messages"
+
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """Anthropic's ``refusal``, and no other provider's (u04 A-79).
+
+        The Messages API documents no other filter stop, so ``content_filter`` or ``SAFETY`` in a
+        reply is an ordinary stop, and so is Azure's HTTP 400 ``content_filter`` body: an
+        undocumented 4xx, which stops the campaign as any other does.
+        """
+
+        return ANTHROPIC_FILTER_STOPS
 
     @property
     def carries_tool_definitions(self) -> bool:

@@ -32,6 +32,7 @@ from ildottore.shared.enums import (
     TargetType,
     VerdictStatus,
 )
+from ildottore.shared.filter_stops import documented_stops
 
 # --- shared field constraints (schema §properties) ---------------------------------
 
@@ -423,6 +424,41 @@ class WebSocketResponse(_Frozen):
     model_path: Annotated[str, Field(min_length=1)] | None = None
     id_path: Annotated[str, Field(min_length=1)] | None = None
     timeout_seconds: Annotated[float, Field(gt=0.0, le=600.0)] = 30.0
+    #: The stop reasons the endpoint writes at ``final_path`` when a provider's filter acted on
+    #: the reply (u04 A-79, the amendment to OD-42): each one a provider documents for its own
+    #: filter (``shared.filter_stops``), in the spelling the endpoint sends. None by default: a
+    #: socket's final value is the operator's wire shape, and a filter word there is read as the
+    #: filter's only when the file says the endpoint relays one.
+    filter_stops: list[str] = Field(default_factory=list)
+
+    @field_validator("filter_stops")
+    @classmethod
+    def _documented_filter_stops(cls, value: list[str]) -> list[str]:
+        """Each one a provider documents for its own filter, trimmed and in lower case, once."""
+
+        return sorted(documented_stops(value))
+
+    @model_validator(mode="after")
+    def _filter_stops_need_a_read_final_value(self) -> WebSocketResponse:
+        """A turn that ends on ``final_value`` always stops with it: no filter stop is read."""
+
+        if self.filter_stops and self.final_value is not None:
+            raise ValueError(
+                "response.filter_stops needs final_value left out: a turn ends on the frame where "
+                "final_path equals final_value, so that value is the only stop it can read"
+            )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _without_undeclared_filter_stops(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """The dump as before A-79 when the file declares no filter stop."""
+
+        dumped: dict[str, Any] = handler(self)
+        if not dumped.get("filter_stops"):
+            dumped.pop("filter_stops", None)
+        return dumped
 
 
 class WebSocketSession(_Frozen):
@@ -539,6 +575,13 @@ class ModelResponse(_Frozen):
     ``None`` and ``shared.provider_filter`` reads the side from the stop reason. A ``None`` is
     left out of a dump, so a reply without one is stored, reported and hashed byte for byte as
     before the field existed.
+
+    ``foreign_stop`` is ``True`` when ``finish_reason`` is some provider's filter word that the
+    target's own provider does not document, or its target file does not declare (u00 and u04
+    A-79, the amendment to OD-42): ``refusal`` from an OpenAI-compatible endpoint, say. The
+    adapter that read the reply sets it (``shared.provider_filter.stop_provenance``); the stop is
+    kept as sent, as evidence, and read as an ordinary one, so the reply is the model's answer.
+    ``False`` is left out of a dump, so every other reply is stored, reported and hashed as before.
     """
 
     text: str
@@ -548,14 +591,18 @@ class ModelResponse(_Frozen):
     raw_ids: JsonDict = Field(default_factory=dict)
     usage: JsonDict | None = None
     filter_side: Literal["input", "output", "unknown"] | None = None
+    foreign_stop: bool = False
 
     @model_serializer(mode="wrap")
     def _without_unset_filter_side(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """The dump as before OD-42 when no trace said which side a filter acted on."""
+        """The dump as before OD-42 when no trace said which side a filter acted on, and as
+        before A-79 when the stop is not another provider's filter word."""
 
         dumped: dict[str, Any] = handler(self)
         if dumped.get("filter_side") is None:
             dumped.pop("filter_side", None)
+        if not dumped.get("foreign_stop"):
+            dumped.pop("foreign_stop", None)
         return dumped
 
 

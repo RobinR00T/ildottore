@@ -109,16 +109,24 @@ def _anthropic() -> TargetAdapter:
     )
 
 
-def _rest(text_path: str = "output") -> RestAdapter:
+def _rest(text_path: str = "output", filter_stops: frozenset[str] | None = None) -> RestAdapter:
     return RestAdapter(
         id="rest",
         base_url="https://llm.example.com",
         allowlist=EndpointAllowlist(
             [Endpoint(host="llm.example.com", path_prefixes=["/generate"])]
         ),
-        template=RestTemplate(path="/generate", prompt_field="input", text_path=text_path),
+        template=RestTemplate(
+            path="/generate", prompt_field="input", text_path=text_path, filter_stops=filter_stops
+        ),
         retry=_FAST,
     )
+
+
+def _rest_azure() -> RestAdapter:
+    """A REST template that declares Azure's filter vocabulary (u04 A-79)."""
+
+    return _rest(filter_stops=frozenset({"content_filter"}))
 
 
 def _mcp() -> TargetAdapter:
@@ -130,8 +138,16 @@ def _mcp() -> TargetAdapter:
     )
 
 
+#: The adapters that read Azure's filter vocabulary (u04 A-79): OpenAI's, and a REST template that
+#: declares ``content_filter``. Until A-79 every adapter read Azure's 400 as its own filter's.
 _PROMPT_ADAPTERS: dict[str, tuple[Callable[[], TargetAdapter], str]] = {
     "openai": (_openai, "https://x.openai.azure.com/v1/chat/completions"),
+    "rest": (_rest_azure, "https://llm.example.com/generate"),
+}
+
+#: The adapters whose provider does not document Azure's 400: Anthropic's, and a REST template
+#: that declares no filter stop (a target file's ``provider: rest`` target has that template).
+_NOT_AZURE: dict[str, tuple[Callable[[], TargetAdapter], str]] = {
     "anthropic": (_anthropic, "https://api.anthropic.com/v1/messages"),
     "rest": (_rest, "https://llm.example.com/generate"),
 }
@@ -170,6 +186,23 @@ async def test_azure_prompt_filter_400_is_a_provider_filter_block(
     expected = "; filtered: jailbreak, violence)" if body is AZURE_PROMPT_FILTERED else ")"
     assert message.endswith(expected)
     assert Redactor().redact_text(message) == message, "nothing in it reads as a secret"
+
+
+@pytest.mark.parametrize("name", sorted(_NOT_AZURE))
+async def test_azure_prompt_filter_400_from_another_provider_is_an_ordinary_4xx(name: str) -> None:
+    """Azure's body from a provider that does not document it is not its filter (u04 A-79).
+
+    A target controls its own error bodies: an Anthropic endpoint, or a REST target that declares
+    no filter stop, answering every attack with Azure's 400 had every attempt recorded as blocked,
+    every spec inconclusive and the run exit 0 (security audit of 2026-10-11, MEDIUM 3). It is an
+    undocumented 4xx, which stops the campaign as any other does.
+    """
+
+    build, url = _NOT_AZURE[name]
+    with pytest.raises(AdapterStatusError) as raised:
+        await _send(build, url, 400, AZURE_PROMPT_FILTERED)
+    assert not isinstance(raised.value, ProviderFilterBlock)
+    assert raised.value.status_code == 400
 
 
 @pytest.mark.parametrize(
