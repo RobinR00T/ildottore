@@ -466,26 +466,97 @@ reads as U+FFFD, since httpx decodes the stream as text.
   credential split that way is masked whole, since PR #57 reads U+FFFD as a splitter (u01 A-32), as
   the owner approved for whichever of the two landed second. Not built: an evidence field
   saying a reply was altered (an additive `ModelResponse` field, u00); U+FFFD is the mark.
-- **OD-34** (open, 2026-10-07, PR #87; it numbered these four OD-30 to OD-33, which `main` and
-  PR #88 had taken, and they were renumbered on 2026-10-09): a WebSocket target's frame
-  transcript lives in `ModelResponse.raw_ids["websocket"]` rather than in a dedicated field. A
-  `transcript` field on the frozen u00 `ModelResponse` would be the honest shape, but it changes
-  every stored attempt's dump and the report snapshots; the nested value is skipped by the
-  fingerprint's envelope layer. Decide whether to add the field.
-- **OD-35** (open, 2026-10-07, PR #87): a WebSocket target's `session.one_query_in_flight: false`
-  is refused. Several concurrent queries on one socket need a correlation id in the templates and
-  in the reply frames; whether that is wanted, and how a target declares it, is the owner's call.
-- **OD-36** (open, 2026-10-07, PR #87): a WebSocket reconnect is attempted only before a query is
-  on the wire, and never more often than the adapter's own retry allowance: under `run` (and
-  `-sV`, the identity sweep and a metered judge) every live adapter retries nothing itself, so a
-  socket that fails to open is retried by the runner, one debited and paced send per dial (since
-  the pre-merge audit of 2026-10-09: `max_attempts: 1` made 8 dials for 4 debits). A connection
-  closed mid-turn is an environment error the runner retries and debits; the adapter never
-  resends a query on its own, so no send escapes the ledger. A later turn of a multi-turn attempt
-  whose connection is gone is inconclusive, never a silent new session. Whether a stateless
-  server (`{{messages}}` in the template) should be allowed to reconnect mid-conversation is open.
-- **OD-37** (open, 2026-10-07, PR #87): `dottore fleet` infers `rest` from a `wss://` endpoint and
-  writes no `websocket:` block, and `run` refuses the file it writes (a `ws://` or `wss://`
-  endpoint is dialled only by `provider: websocket`), so a WebSocket target is declared by hand
-  today; the scope `fleet` writes pins the port (443 for `wss`, 80 for `ws`). Whether a fleet
-  entry should carry the block is open.
+- **OD-34** (opened 2026-10-07, PR #87; it numbered these four OD-30 to OD-33, which `main` and PR
+  #88 had taken, and they were renumbered on 2026-10-09; **decided 2026-10-11 under the owner's
+  delegation (best practice), revisable: the transcript stays in `raw_ids["websocket"]["frames"]`,
+  as built**): a WebSocket target's frame transcript lives in `ModelResponse.raw_ids["websocket"]`
+  rather than in a dedicated field. Why: `ModelResponse` is u00's frozen shape, which every adapter,
+  evaluator, store and reporter codes against, so a field is a program-level change, and `raw_ids`
+  is already where a transport puts what it returns beyond text, tool calls, logprobs, finish reason
+  and usage, under its own key; it is redacted where the adapter builds it (`redact_ids`) and again
+  at rest, it is in each attempt's stored artifact, and `dottore replay` re-derives a verdict from
+  it, so the evidence is the same either way. A field for one transport would be designed around one
+  transport's frames; when a second streaming transport needs a transcript (an SSE chat, a realtime
+  API), one field can be shaped for both in a single u00 revision. The one reader of `raw_ids` as
+  tells, the fingerprint's envelope layer, skips a nested value, so a reply's text in the frames
+  never names a family (`test_the_transcript_is_not_a_metadata_tell`). Measured on a copy of
+  `0bdb6ee` with an optional `transcript: list[JsonDict] | None = None` added: 1 of 5,082 tests
+  fails (the JSON report's golden snapshot, `tests/reporting/test_golden_snapshot.py`), and with the
+  default serializer every attempt artifact and report written after it carries one more key
+  (`"transcript": null` on each response). That cost is small and avoidable (a serializer that drops
+  a `None` field, as `ModelResponse` now does for OD-42's `filter_side`, keeps the stored output
+  byte-identical), so it is not what decides; the frozen shape and the single transport are.
+  Alternative not taken: that field, the WebSocket adapter writing it instead of
+  `raw_ids["websocket"]`, with the snapshot regenerated. Revisit when a second transport records a
+  transcript. Reversal: add the field in `shared/models.py`, write it in `adapters/websocket.py`
+  where `ids["websocket"]` is set, and regenerate the snapshot.
+- **OD-35** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: refused by design, as built**): a WebSocket target's
+  `session.one_query_in_flight: false` is refused by the loader, before anything is sent, and the
+  refusal says so ("is refused by design (OD-35)", until then "is not built"). Why: an attempt's
+  evidence is the frames of its own turn. On a shared socket the frames of concurrent queries
+  interleave, and a frame is tied to its query only by a correlation id the server must echo in
+  every frame it sends (each delta, the final frame, an error frame); one frame misread puts one
+  attempt's reply text (a canary, a leak) into another attempt's verdict, which no evaluator can
+  detect afterwards and `dottore replay` would re-derive faithfully. Nothing is lost by refusing:
+  concurrency comes from one connection per conversation, which `--concurrency` already gives (up
+  to `MAX_OPEN_CONVERSATIONS`, 256). Alternative not taken: `one_query_in_flight: false` with a
+  `{{correlation_id}}` placeholder the adapter fills per query in `message.send`, a
+  `response.correlation_path` read from every frame, and a frame with no id or an unknown one
+  refused as a product error. Revisit when a deployment caps connections per client and has to be
+  scanned faster than one conversation at a time. Reversal: drop the `one_query_in_flight` check
+  in `cli/wiring._websocket_spec` and build the alternative in `adapters/websocket.py`.
+- **OD-36** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: no reconnect mid-conversation, as built**): a WebSocket reconnect is
+  attempted only before a query is on the wire, and never more often than the adapter's own retry
+  allowance: under `run` (and `-sV`, the identity sweep and a metered judge) every live adapter
+  retries nothing itself, so a socket that fails to open is retried by the runner, one debited
+  and paced send per dial (since the pre-merge audit of 2026-10-09: `max_attempts: 1` made 8
+  dials for 4 debits). A connection closed mid-turn is an environment error the runner retries
+  and debits; the adapter never resends a query on its own, so no send escapes the ledger. A
+  later turn of a multi-turn attempt whose connection is gone is inconclusive (`WebSocketLost`,
+  not retried), never a silent new session, and that holds for a stateless server too
+  (`{{messages}}` in the template). Why: `{{messages}}` shows that the client resends the
+  history, not that the server ignores its own per-connection state, and the tool cannot check
+  which; on a server that keeps state, a re-dialled turn (a new handshake and `session.start`)
+  is answered in a fresh conversation, and a multi-turn attack's later turn is scored without the
+  context its earlier turns built, a pass of a model that was never asked the question in
+  context. Inconclusive says what happened; a silent new session would not, and it is the
+  conservative reading where the evidence is at stake. Alternative not taken: an operator
+  declaration (`session.stateless: true`, accepted only with `{{messages}}` in `message.send`)
+  under which a lost connection is dialled again through the runner (each dial a debited, paced
+  send), the handshake and session start sent again, the whole history sent in one frame, and the
+  reconnect marked in the frame transcript. Revisit when a live target loses conversations to
+  idle timeouts often enough to show in its inconclusive count. Reversal: build the alternative
+  in `adapters/websocket.py` (the `WebSocketLost` branch of `send`).
+- **OD-37** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: a fleet refuses a WebSocket entry; built, u12 §9**): `dottore fleet`
+  refuses a `ws://` or `wss://` endpoint (read as `run` reads it, stripped and case-folded,
+  whatever `provider` the entry gives) and `provider: websocket` (on any endpoint) in a target
+  before it writes anything (exit 3). The refusal names the entry
+  (`targets.1.endpoint of 'ws-assistant-staging' is a wss:// URL`) and points to
+  `examples/target.websocket.yaml` and `examples/scope.websocket.yaml`. In the `judge:` block the
+  same declaration is accepted when `--judge` names a hand-written file that matches the block
+  (`_check_judge`): that file is what the run reads, the block authorizes it in the generated
+  scope, and no `judge.yaml` is written for it; without `--judge` the block is refused, and the
+  refusal says to write the judge's file and pass it with `--judge` (the first build of this
+  decision refused it either way, which broke a fleet that worked on `6d5f7ae`, where `fleet`
+  exited 0 and `run --dry-run` planned 220 judge requests; pre-merge audit of `be3f2e71`).
+  Before: a target entry with a `wss://` path was inferred `rest` and written with no
+  `websocket:` block, and `run`, `fleet --run` and the printed `dottore run` refused that target
+  file (a `ws://` or `wss://` endpoint is dialled only by `provider: websocket`);
+  `provider: websocket` wrote a file with no block, refused the same way; a WebSocket judge
+  worked only through a matching `--judge` file, beside a `judge.yaml` written as `rest`.
+  Why: a fleet entry is the shorthand for a target whose wire shape is standard and read from its
+  endpoint (OpenAI-compatible, Anthropic, a REST URL, an MCP server); a WebSocket target's shape is
+  the deployment's own, declared in a block `run` checks field by field before it sends
+  (`_websocket_spec`: the placeholder rules, the reserved upgrade headers, the walks of A-44 and
+  A-54), and the fleet already leaves the other per-deployment blocks (`seeded_setup`,
+  `sampling_defaults`) to a target file written by hand. Refused, not skipped: the unused
+  `skipped` list would let `fleet --run` exit on the other targets' findings with one target never
+  scanned. Alternative not taken: a `websocket:` block in a fleet entry, the provider read as
+  `websocket` from the scheme and the block checked by `_websocket_spec` before anything is
+  written (its scope entry pinned to host, port and path, as now). Reversal: `_refuse_websocket`,
+  `_websocket_problem`, `_WEBSOCKET_BY_HAND`, `_WEBSOCKET_JUDGE_BY_HAND` and the `judge_doc`
+  argument of `_documents` in `cli/fleet.py`, their use in `materialize_fleet`, and
+  `tests/cli/test_fleet_websocket.py`.

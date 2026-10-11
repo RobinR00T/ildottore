@@ -28,7 +28,13 @@ from ildottore.adapters.websocket import (
 )
 from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode
-from ildottore.cli.fleet import FleetTarget, _scope_entry, _target_doc
+from ildottore.cli.fleet import (
+    FleetConfig,
+    FleetTarget,
+    _scope_entry,
+    _target_doc,
+    materialize_fleet,
+)
 from ildottore.cli.run import RunOptions, execute_run
 from ildottore.core.budgets import BudgetLedger
 from ildottore.core.execute import (
@@ -401,17 +407,26 @@ def test_a_fleet_wss_entry_authorizes_one_port(endpoint: str, host: str) -> None
         assert not allowlist.is_allowed(other)
 
 
-def test_a_fleet_wss_entry_writes_a_target_run_refuses(tmp_path: Path) -> None:
-    """``fleet`` infers ``rest`` and writes no block (OD-37); ``run`` refuses that file."""
+def test_a_fleet_wss_entry_is_refused_rather_than_written_as_a_file_run_refuses(
+    tmp_path: Path,
+) -> None:
+    """``fleet`` inferred ``rest`` for a ``wss://`` entry and wrote no block, and ``run`` refused
+    that file. Since OD-37 was decided (2026-10-11) the fleet refuses the entry before it writes
+    anything; ``tests/cli/test_fleet_websocket.py`` covers the rest of the rule."""
 
     import yaml
 
-    doc = _target_doc(FleetTarget(id="ws", endpoint="wss://assistant.example.test/ws/chat"))
+    entry = FleetTarget(id="ws", endpoint="wss://assistant.example.test/ws/chat")
+    doc = _target_doc(entry)  # what the fleet wrote before the decision
     assert doc["provider"] == "rest" and "websocket" not in doc
     path = tmp_path / "target-ws.yaml"
     path.write_text(yaml.safe_dump(doc), encoding="utf-8")
     with pytest.raises(ValueError, match="dialled only by provider websocket"):
         wiring.load_target(path)
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match=r"targets\.0\.endpoint of 'ws' is a wss:// URL"):
+        materialize_fleet(FleetConfig(targets=[entry]), out)
+    assert not out.exists()
 
 
 # --- second pre-merge audit, MEDIUM 1: no error class name reads as a credential --------------

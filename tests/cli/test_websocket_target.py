@@ -149,7 +149,7 @@ def test_the_block_loads_and_is_part_of_the_target(tmp_path: Path) -> None:
                     "    one_query_in_flight: false\n",
                 )
             },
-            "one_query_in_flight: false is not built",
+            r"one_query_in_flight: false is refused by design \(OD-35\)",
         ),
         (
             {"block": _BLOCK.replace('vars: {client: "ildottore"}', 'vars: {client: "{{token}}"}')},

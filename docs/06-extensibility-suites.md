@@ -19,7 +19,8 @@ The design goal: **95% of "new techniques" are L1/L2 (pure declarative), zero co
 - A **spec pack** is a directory: `pack.yaml` (`id`, `pack_version`, `name`, optional
   `specs`, `suites`, `signature`, `checksum`) + `attacks/*.yaml` + `suites/*.yaml`. Fixtures
   live inline in each spec (`fixtures.vulnerable` / `fixtures.hardened`); a sidecar fixtures
-  directory is not supported (OD-7).
+  directory is not supported, by decision (OD-7, 2026-10-11: the proof stays inside the spec's
+  digest, so the lint proof, the resume binding and a reviewer's diff cover it with the spec).
 - Packs are discovered from configured search paths (`--spec-path`, env, config) and merged
   into the **Attack Spec Registry** at startup. Later packs can extend but not silently
   override earlier ids (id collisions are a lint error).

@@ -383,9 +383,9 @@ class WebSocketResponse(_Frozen):
 class WebSocketSession(_Frozen):
     """A conversation's start: a frame sent once per connection, after the handshake.
 
-    ``one_query_in_flight`` is the only policy built: one query at a time per connection, one
+    ``one_query_in_flight`` is the only policy: one query at a time per connection, one
     connection per conversation. ``false`` (several queries multiplexed on one socket, which
-    needs a correlation id) is refused by the loader.
+    needs a correlation id) is refused by the loader, by design (OD-35, decided 2026-10-11).
     """
 
     start: JsonDict | None = None
@@ -482,7 +482,10 @@ class ModelRequest(_Frozen):
 class ModelResponse(_Frozen):
     """A target response (``docs/01 §3``, contract §6).
 
-    ``logprobs is None`` when the target lacks the logprobs capability (ADR-0005).
+    ``logprobs is None`` when the target lacks the logprobs capability (ADR-0005). ``raw_ids``
+    holds what a transport returns beyond these fields: scalars at the top (a request id, a model
+    echo) and a transport's record under its own key, such as the WebSocket frame transcript in
+    ``raw_ids["websocket"]["frames"]`` (OD-34: no field of its own, decided 2026-10-11).
 
     ``filter_side`` is the side the provider's own trace says its filter acted on, for a reply
     stopped by that filter (OD-42, u00 and u08 A-70): ``input`` (the prompt was blocked),

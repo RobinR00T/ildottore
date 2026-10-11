@@ -53,7 +53,12 @@ block, which the scope authorizes and
 .B fleet
 writes to judge.yaml; a
 .B --judge
-file must name the same id, endpoint and credential, or it is refused.
+file must name the same id, endpoint and credential, or it is refused. A ws:// or wss://
+endpoint, or provider websocket, is refused before anything is written (exit 3): a fleet entry
+carries no websocket block, so that target file is written by hand (OD-37). A WebSocket judge
+block is accepted only with a matching hand-written
+.B --judge
+file, and no judge.yaml is written for it.
 .TP
 .B lint
 Schema, policy and fixtures-prove-detection lint of the specs.
@@ -207,9 +212,11 @@ evidence the tree does not hold, and one that predates that journal. A campaign 
 spent its wall-clock ceiling is refused before anything is sent: raise --budget-wall, or start
 a fresh run.
 It must keep the campaign's planning mode (adaptive with -sV, -A or --deep), which is
-checked before any ceiling; with -sV, a request ceiling too small for the probe pass is
-refused: raise --budget-requests, or drop -sV only if the campaign did not plan adaptively
-and the ceiling holds the rest of it without the probes.
+checked before any ceiling; a resume with --deep alone plans in each spec's declared order and,
+when an earlier part planned with a fingerprint, says so on stderr; the run store records what
+each invocation planned with (mutator_orders); with -sV, a request ceiling too small for the
+probe pass is refused: raise --budget-requests, or drop -sV only if the campaign did not plan
+adaptively and the ceiling holds the rest of it without the probes.
 A run an older version started sent none of its target files' sampling_defaults, and resumes
 without them; stderr says so (dottore-scope(5)).
 .TP

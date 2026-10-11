@@ -19,7 +19,7 @@ store files it redacted, and a turn is bounded in time, bytes and frames.
 One connection per conversation: a single-turn attempt opens, queries and closes; a multi-turn
 attempt keeps its connection across turns (the runner's ``conversation`` metadata names it) and
 closes it after the last turn. Concurrent specs therefore never interleave on one socket, and
-one query is in flight per connection (``session.one_query_in_flight``, the only policy built).
+one query is in flight per connection (``session.one_query_in_flight``, the only policy: OD-35).
 A live conversation is never evicted: past :data:`MAX_OPEN_CONVERSATIONS` a new one is refused.
 
 The pre-commit audit (2026-10-07) found and this module now closes: a frame nested past what
@@ -430,7 +430,8 @@ class WebSocketAdapter:
         A request with no ``conversation`` in its metadata is a single-turn attempt: it opens
         its own connection and closes it. A multi-turn request keeps one connection for the
         conversation (opened on turn 0, closed after the last turn); a later turn whose
-        connection is gone is an environment error, not a silent restart of the session.
+        connection is gone is an environment error, not a silent restart of the session, even
+        for a template that resends the history (``{{messages}}``): OD-36, by design.
         """
 
         self._check_allowlist()  # BEFORE any socket is opened: unbypassable.
