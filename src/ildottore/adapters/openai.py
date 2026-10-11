@@ -68,6 +68,15 @@ class OpenAIAdapter(BaseAdapter):
     sends_sampling: ClassVar[bool] = True
 
     @property
+    def unreadable_advice(self) -> str:
+        """What to check when no reply reads as OpenAI's (OD-21, u08 A-74)."""
+
+        return (
+            "check that the target file's endpoint is an OpenAI chat completions URL (or a server "
+            "that speaks that API) and its provider is openai"
+        )
+
+    @property
     def _endpoint_path(self) -> str:
         return "/v1/chat/completions"
 

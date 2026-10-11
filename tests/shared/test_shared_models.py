@@ -131,6 +131,7 @@ def test_inconclusive_reason_coverage() -> None:
         "blocked_by_provider_filter",
         "cut_by_provider_output_filter",
         "provider_filter_side_unknown",
+        "unreadable_reply",  # ADR-0012 (OD-21, u08 A-74)
     }
 
 

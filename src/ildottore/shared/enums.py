@@ -177,6 +177,10 @@ class InconclusiveReason(StrEnum):
     output filter cut or replaced a reply the model wrote, so the model may have produced what the
     spec tests for and the attempt needs review; ``provider_filter_side_unknown``, the provider's
     filter stopped the reply without saying whether it refused the prompt or cut the reply.
+    ``unreadable_reply`` was added by ADR-0012 (OD-21, u08 A-74): the target answered with a
+    success reply the adapter could not read as the provider's (not JSON, not an object, not its
+    shape), so there is nothing to evaluate, and the spec cannot pass: the reply that broke may be
+    the one an attack changed.
     """
 
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
@@ -185,6 +189,7 @@ class InconclusiveReason(StrEnum):
     BLOCKED_BY_PROVIDER_FILTER = "blocked_by_provider_filter"
     CUT_BY_PROVIDER_OUTPUT_FILTER = "cut_by_provider_output_filter"
     PROVIDER_FILTER_SIDE_UNKNOWN = "provider_filter_side_unknown"
+    UNREADABLE_REPLY = "unreadable_reply"
 
 
 #: The reasoning prefix of an ``inconclusive`` verdict whose in-band scene never reached the model

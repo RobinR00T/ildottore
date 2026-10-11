@@ -238,6 +238,27 @@
               }
             }
           }
+        },
+        "unreadable_reply": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "specs"
+          ],
+          "description": "The attempts whose reply the adapter could not read as the provider's (OD-21, ADR-0012, u08 A-74): a success body that is not JSON, not a JSON object or not the provider's or the template's shape, a WebSocket frame or an MCP reply of that kind. Each is an inconclusive attempt with the reason unreadable_reply, its spec never a pass: the reply that broke may be the one an attack changed; the attempt keeps a redacted excerpt of the body under request.metadata.unreadable_reply. specs lists the spec ids with at least one. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one.",
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "specs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },

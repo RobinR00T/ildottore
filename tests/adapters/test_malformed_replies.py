@@ -285,3 +285,60 @@ async def test_a_websocket_turn_with_neither_text_nor_calls_nor_a_filter_stop_is
     with pytest.raises(ResponseMalformed, match="carried text") as raised:
         await _ws_turn([{"type": "done", "other": 1}], tool_calls_path="tool_calls")
     _is_one_attempt_failure(raised.value)
+
+
+# --- what an unreadable reply keeps for review (pre-merge audit of 598f0858, HIGH 1) --------
+
+
+async def test_the_error_keeps_a_bounded_redacted_excerpt_of_the_body() -> None:
+    from ildottore.adapters.base import UNREADABLE_EXCERPT_BYTES
+
+    secret = "AKIAIOSFODNN7EXAMPLE"
+    body = ("<html>login " + secret + " " + "é" * 6000 + "</html>").encode()
+    with pytest.raises(ResponseMalformed) as raised:
+        await _openai(body, []).send(ModelRequest(prompt="hi"))
+    excerpt = raised.value.excerpt
+    assert excerpt is not None and excerpt.startswith("<html>login ")
+    assert secret not in excerpt and "REDACTED:aws_access_key" in excerpt
+    assert len(excerpt.encode("utf-8")) <= UNREADABLE_EXCERPT_BYTES
+    assert raised.value.size == len(body)
+
+
+async def test_a_shape_error_keeps_the_body_too() -> None:
+    with pytest.raises(ResponseMalformed, match="has no choices") as raised:
+        await _openai(b'{"object": "error", "message": "quota"}', []).send(ModelRequest(prompt="x"))
+    assert raised.value.excerpt == '{"object": "error", "message": "quota"}'
+
+
+@pytest.mark.parametrize(
+    ("build", "said"),
+    [
+        (lambda body: _openai(body, []), "an OpenAI chat completions URL"),
+        (lambda body: _anthropic(body, []), "Anthropic Messages API"),
+        (lambda body: _rest(body, []), "the template's text_path ('output')"),
+    ],
+    ids=["openai", "anthropic", "rest"],
+)
+async def test_the_advice_names_what_to_check_for_each_adapter(build: Any, said: str) -> None:
+    with pytest.raises(ResponseMalformed) as raised:
+        await build(b"<html></html>").send(ModelRequest(prompt="hi"))
+    assert said in (raised.value.advice or "")
+
+
+def test_a_target_file_rest_target_is_not_told_to_check_a_template_it_cannot_declare() -> None:
+    """Pre-merge audit of 598f0858, LOW 2: a target file's `provider: rest` target reads the
+    generic template (text at `text`); a template is the Python API's, so the advice says so."""
+
+    from ildottore.cli import wiring
+    from ildottore.shared.models import Target
+
+    target = Target(id="r", type="chatbot", provider="rest", endpoint="https://api.example.test/x")
+    adapter = wiring.build_real_adapter(target, _ALLOW, api_key=None)
+    advice = adapter.unreadable_advice  # type: ignore[attr-defined]
+    assert "text at `text`" in advice and "response template" not in advice
+
+
+def test_the_class_keeps_its_excerpt_and_advice_through_copy_and_pickle() -> None:
+    error = ResponseMalformed("t1: x; not evaluated", excerpt="<p>", size=3, advice="check it")
+    for clone in (copy.copy(error), pickle.loads(pickle.dumps(error))):  # noqa: S301
+        assert (clone.excerpt, clone.size, clone.advice) == ("<p>", 3, "check it")

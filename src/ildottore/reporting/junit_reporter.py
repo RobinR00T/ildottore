@@ -29,6 +29,7 @@ from ildottore.shared.provider_filter import (
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.unreadable import unreadable_attempt_ids
 
 __all__ = ["JunitReporter"]
 
@@ -74,6 +75,10 @@ class JunitReporter(BaseReporter):
         unsaid = len(side_unknown_attempt_ids(finding.attempts))
         if unsaid:
             counts += f" provider_filter_side_unknown={unsaid}"
+        # And the replies the adapter could not read (OD-21, u08 A-74), which never pass either.
+        unreadable = len(unreadable_attempt_ids(finding.attempts))
+        if unreadable:
+            counts += f" unreadable_reply={unreadable}"
         if finding.status is VerdictStatus.FAIL:
             failure = ET.SubElement(
                 case,

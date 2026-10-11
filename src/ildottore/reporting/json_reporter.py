@@ -133,6 +133,12 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
             "attempts": summary.filter_side_unknown.attempts,
             "specs": list(summary.filter_side_unknown.specs),
         },
+        # The replies the adapter could not read (OD-21, u08 A-74): always emitted, optional in
+        # report-1.0 so an older report still validates.
+        "unreadable_reply": {
+            "attempts": summary.unreadable.attempts,
+            "specs": list(summary.unreadable.specs),
+        },
     }
     if summary.model_comparison is not None:
         wire["model_comparison"] = _comparison_to_wire(summary.model_comparison)

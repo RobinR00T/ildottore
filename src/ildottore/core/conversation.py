@@ -36,6 +36,7 @@ from ildottore.core.execute import (
     AttemptResult,
     ReplyOverBudget,
     RetryPolicy,
+    UnreadableReplies,
     default_is_env_error,
     execute_attempt,
 )
@@ -51,6 +52,7 @@ from ildottore.core.setup_delivery import (
 from ildottore.shared.models import Attempt, JsonDict, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
 from ildottore.shared.toolcalls import call_arguments, call_id, call_name
+from ildottore.shared.unreadable import UNREADABLE_REPLY_KEY
 
 __all__ = [
     "execute_conversation",
@@ -235,12 +237,20 @@ async def execute_conversation(
             setup=setup,
             tool_rounds=tool_rounds,
         )
+        # A turn the adapter could not read keeps what came back for review (u08 A-74).
+        kept = (result.attempt.request.metadata or {}).get(UNREADABLE_REPLY_KEY)
+        if result.unreadable and kept is not None:
+            metadata: JsonDict = {**(attempt.request.metadata or {}), UNREADABLE_REPLY_KEY: kept}
+            attempt = attempt.model_copy(
+                update={"request": attempt.request.model_copy(update={"metadata": metadata})}
+            )
         return AttemptResult(
             attempt=attempt,
             env_error=not result.filter_blocked,
             filter_blocked=result.filter_blocked,
             retries=result.retries,
             errors=result.errors,
+            unreadable=result.unreadable,
         )
 
     async def send(turn_index: int, suffix: str) -> AttemptResult:
@@ -277,6 +287,12 @@ async def execute_conversation(
         except ReplyOverBudget as halt:
             crossed = halt
             return halt.result
+        except UnreadableReplies as halt:
+            # The conversation ends on the turn the campaign's watch stopped on, as on any
+            # unreadable turn, and travels on the stop (u08 A-74).
+            if halt.result is not None:
+                halt.result = aborted(halt.result)
+            raise
 
     # The side of the reply the provider's filter cut, when one ended the conversation (OD-42).
     cut: str | None = None
@@ -504,6 +520,10 @@ async def reproduce_conversation(
             )
         except ReplyOverBudget as halt:
             results.append(halt.result)
+            raise
+        except UnreadableReplies as halt:
+            if halt.result is not None:
+                results.append(halt.result)
             raise
         results.append(result)
     return results

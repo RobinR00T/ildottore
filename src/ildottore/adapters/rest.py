@@ -136,10 +136,24 @@ class RestAdapter(BaseAdapter):
     logprobs_enabled: bool = False
     multi_identity_enabled: bool = False
     multimodal_enabled: bool = False
+    #: What to check when no reply reads as the template's, set by whoever built the adapter: a
+    #: target file declares no template, so it is not told to check one (OD-21 audit, LOW 2).
+    advice: str | None = None
 
     @property
     def _endpoint_path(self) -> str:
         return self.template.path
+
+    @property
+    def unreadable_advice(self) -> str:
+        """What to check when no reply reads as the template says (OD-21, u08 A-74)."""
+
+        if self.advice is not None:
+            return self.advice
+        return (
+            "check the endpoint and the template's text_path "
+            f"({self.template.text_path!r}): the reply's text is read there"
+        )
 
     #: A REST template reads no tool calls from a reply (``tool_calls`` is always empty), so a
     #: seeded spec judged on its tool trace is not sent through it (OD-18 B).

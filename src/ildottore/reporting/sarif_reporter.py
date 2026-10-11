@@ -34,6 +34,7 @@ from ildottore.shared.provider_filter import (
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.unreadable import unreadable_attempt_ids
 
 __all__ = ["SARIF_SCHEMA_VERSION", "SarifReporter", "band_to_level", "load_sarif_schema"]
 
@@ -144,6 +145,13 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
             f"; {unsaid} of {sent} attempt(s) stopped by the provider's filter on a side it did "
             "not report: review them"
         )
+    # Replies the adapter could not read (OD-21, u08 A-74): never the model resisting either.
+    unreadable = len(unreadable_attempt_ids(finding.attempts))
+    if unreadable:
+        message += (
+            f"; {unreadable} of {sent} attempt(s) whose reply could not be read as the "
+            "provider's, which may be the one an attack changed: review them"
+        )
     result: dict[str, Any] = {
         "ruleId": finding.spec_id,
         "ruleIndex": rule_index,
@@ -170,6 +178,7 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
             **({"blocked_by_provider_filter": blocked} if blocked else {}),
             **({"cut_by_provider_output_filter": cut} if cut else {}),
             **({"provider_filter_side_unknown": unsaid} if unsaid else {}),
+            **({"unreadable_reply": unreadable} if unreadable else {}),
         },
     }
     return result
@@ -188,6 +197,8 @@ def _blocked_property(findings: list[Finding]) -> dict[str, int]:
         "provider_filter_side_unknown": sum(
             len(side_unknown_attempt_ids(f.attempts)) for f in findings
         ),
+        # The replies the adapter could not read (OD-21, u08 A-74).
+        "unreadable_reply": sum(len(unreadable_attempt_ids(f.attempts)) for f in findings),
     }
     return {key: count for key, count in counts.items() if count}
 

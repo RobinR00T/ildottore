@@ -120,6 +120,20 @@ class MCPAdapter:
 
         return Capabilities(tools=True)
 
+    @property
+    def unreadable_advice(self) -> str:
+        """What to check when no reply reads as MCP's JSON-RPC (OD-21, u08 A-74)."""
+
+        return (
+            "check that the target file's endpoint (or command) is an MCP server speaking "
+            "JSON-RPC over Streamable HTTP or stdio"
+        )
+
+    def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
+        """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
+
+        return ResponseMalformed(message).with_reply(body, self.redactor, self.unreadable_advice)
+
     async def send(self, request: ModelRequest) -> ModelResponse:
         """Return the server's advertised catalogue (read-only discovery).
 
@@ -175,8 +189,9 @@ class MCPAdapter:
             session_id=None,
         )
         if not isinstance(result, dict):
-            raise ResponseMalformed(
-                f"{self.id}: initialize returned no result object; not evaluated"
+            raise self._unreadable(
+                f"{self.id}: initialize returned no result object; not evaluated",
+                response.content,
             )
         raw_info = result.get("serverInfo")
         server_info: dict[str, Any] = dict(raw_info) if isinstance(raw_info, dict) else {}
@@ -331,8 +346,8 @@ class MCPAdapter:
             for line in response.text.splitlines():
                 if line.startswith("data:"):
                     return self._parse(line[len("data:") :].strip(), f"MCP {method} SSE data")
-            raise ResponseMalformed(
-                f"{self.id}: MCP {method} SSE carried no data event; not evaluated"
+            raise self._unreadable(
+                f"{self.id}: MCP {method} SSE carried no data event; not evaluated", response.text
             )
         return self._parse(response.content, f"MCP {method} response")
 
@@ -349,8 +364,8 @@ class MCPAdapter:
         except NestedTooDeeply as exc:
             raise ResponseTooDeep(f"{self.id}: {what} is {exc}; not evaluated") from exc
         except ValueError as exc:
-            raise ResponseMalformed(
-                f"{self.id}: {what} was not valid JSON: {exc}; not evaluated"
+            raise self._unreadable(
+                f"{self.id}: {what} was not valid JSON: {exc}; not evaluated", text
             ) from exc
 
     # --- stdio transport (local subprocess, newline-delimited JSON-RPC) --------
@@ -393,8 +408,9 @@ class MCPAdapter:
                 },
             )
             if not isinstance(init, dict):
-                raise ResponseMalformed(
-                    f"{self.id}: stdio initialize returned no result; not evaluated"
+                raise self._unreadable(
+                    f"{self.id}: stdio initialize returned no result; not evaluated",
+                    json.dumps(init, default=str),
                 )
             raw_info = init.get("serverInfo")
             server_info: dict[str, Any] = dict(raw_info) if isinstance(raw_info, dict) else {}

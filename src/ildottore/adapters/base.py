@@ -56,6 +56,7 @@ from ildottore.shared.wellformed import well_formed_json
 __all__ = [
     "ACCEPT_ENCODING",
     "FILTER_REFUSED",
+    "UNREADABLE_EXCERPT_BYTES",
     "AdapterEnvError",
     "AdapterError",
     "AdapterProductError",
@@ -73,6 +74,7 @@ __all__ = [
     "map_logprobs",
     "read_capped",
     "redact_ids",
+    "reply_excerpt",
     "sampling_params_named",
 ]
 
@@ -163,14 +165,71 @@ class ResponseMalformed(AdapterEnvError):
     owner's delegation (best practice), revisable, as #65 decided for a reply nested too deeply:
     the attempt is inconclusive and the campaign goes on. A wrong endpoint answers every request
     this way, so the runner reads ``malformed_reply`` and stops a campaign whose first replies
-    all are unreadable (``core.execute.UNREADABLE_REPLIES_TO_STOP``, u08 A-74).
+    all are unreadable, or which reads none of 20 in a row later (``core.execute``, u08 A-74).
+
+    It carries what the attempt keeps for review (pre-merge audit of ``598f0858``, HIGH 1): an
+    ``excerpt`` of the body, at most :data:`UNREADABLE_EXCERPT_BYTES` of UTF-8 through the
+    adapter's redactor (:func:`reply_excerpt`), the body's ``size`` in bytes, and the adapter's
+    ``advice`` on what to check, worded for the adapter and for how it was built (a target file
+    declares no REST template, so it is not told to check one: LOW 2).
     """
 
     is_env_error = True
-    #: The same request gets the same reply: sent once, and kept by a resume.
+    #: The same request gets the same reply: sent once within a run (a resume sends it again,
+    #: since the target may have been fixed: ``shared.unreadable.UNREADABLE_MARK``).
     retryable = False
     #: The structural marker the runner's stop reads (``core.execute.is_unreadable_reply``).
     malformed_reply = True
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        excerpt: str | None = None,
+        size: int | None = None,
+        advice: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.excerpt = excerpt
+        self.size = size
+        self.advice = advice
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Rebuild with what it keeps (the default reduction passes the message alone)."""
+
+        rebuild = functools.partial(
+            type(self), excerpt=self.excerpt, size=self.size, advice=self.advice
+        )
+        return (rebuild, self.args)
+
+    def with_reply(
+        self, body: bytes | str, redactor: Redactor, advice: str | None
+    ) -> ResponseMalformed:
+        """This error, with the excerpt, the size and the advice it lacks filled in."""
+
+        if self.excerpt is None:
+            self.excerpt, self.size = reply_excerpt(body, redactor)
+        if self.advice is None:
+            self.advice = advice
+        return self
+
+
+#: The most of an unreadable reply an attempt keeps for review, in bytes of UTF-8 (4 KiB).
+UNREADABLE_EXCERPT_BYTES = 4096
+
+
+def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
+    """``(excerpt, size)``: the start of ``body`` for review, redacted, and its size in bytes.
+
+    Redacted over twice what is kept, then cut, so a credential that crosses the cut is masked
+    whole before the cut takes part of its mask; bytes that are not UTF-8 read as U+FFFD, and the
+    cut never splits a character.
+    """
+
+    data = body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body)
+    head = data[: 2 * UNREADABLE_EXCERPT_BYTES].decode("utf-8", "replace")
+    shown = redactor.redact_text(head).encode("utf-8")[:UNREADABLE_EXCERPT_BYTES]
+    return shown.decode("utf-8", "ignore"), len(data)
 
 
 class AdapterProductError(AdapterError):
@@ -653,6 +712,17 @@ class BaseAdapter(ABC):
         Raise :class:`ResponseMalformed` on a malformed / unexpected shape (OD-21).
         """
 
+    @property
+    def unreadable_advice(self) -> str:
+        """What to check when this target's replies cannot be read (OD-21, u08 A-74)."""
+
+        return "check the target's endpoint and provider"
+
+    def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
+        """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
+
+        return ResponseMalformed(message).with_reply(body, self.redactor, self.unreadable_advice)
+
     def _prompt_blocked(self, payload: Mapping[str, Any]) -> tuple[str, str] | None:
         """``(code, detail)`` when a success body says the provider's filter refused the prompt.
 
@@ -789,12 +859,12 @@ class BaseAdapter(ABC):
             except NestedTooDeeply as exc:
                 raise ResponseTooDeep(f"{label} is {exc}; not evaluated") from exc
             except ValueError as exc:  # non-JSON success body = malformed (OD-21)
-                raise ResponseMalformed(
-                    f"{self.id}: success response was not valid JSON: {exc}; not evaluated"
+                raise self._unreadable(
+                    f"{self.id}: success response was not valid JSON: {exc}; not evaluated", raw
                 ) from exc
             if not isinstance(payload, Mapping):
-                raise ResponseMalformed(
-                    f"{self.id}: success response JSON was not an object; not evaluated"
+                raise self._unreadable(
+                    f"{self.id}: success response JSON was not an object; not evaluated", raw
                 )
             blocked = self._prompt_blocked(payload)
             if blocked is not None:
@@ -804,7 +874,11 @@ class BaseAdapter(ABC):
                     status_code=response.status_code,
                     code=code,
                 )
-            parsed = self._parse_response(payload)
+            try:
+                parsed = self._parse_response(payload)
+            except ResponseMalformed as exc:  # not the provider's shape: keep the body too
+                exc.with_reply(raw, self.redactor, self.unreadable_advice)
+                raise
             # OpenAI carries a call's arguments as a JSON string, which the parse above never
             # opened: the evaluators and the in-band tool loop do, so it is measured here.
             for call in parsed.tool_calls:

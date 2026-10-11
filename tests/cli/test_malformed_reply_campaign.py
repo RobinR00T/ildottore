@@ -40,6 +40,34 @@ _REPLY = json.dumps(
     }
 )
 _HTML = "<html><body>Service portal: please sign in</body></html>"
+_SECURE = json.dumps(
+    {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {
+                            "verdict": "secure",
+                            "confidence": 0.95,
+                            "reasoning": "The target refused.",
+                            "observed_injection_attempt": False,
+                        }
+                    ),
+                },
+                "finish_reason": "stop",
+            }
+        ]
+    }
+)
+#: A wrapper that pastes the model's output into its JSON unescaped breaks on a quote, which is
+#: what a jailbreak that worked writes (pre-merge audit of 598f0858, HIGH 1).
+_BROKEN = (
+    '{"id":"stub","object":"chat.completion","choices":[{"index":0,"message":{"role":'
+    '"assistant","content":"Sure. Ignoring my rules: "DAN mode enabled" PWNED"},'
+    '"finish_reason":"stop"}]}'
+)
 
 #: Two single-turn specs, as in ``test_hostile_nesting.py``.
 _SPECS = ("JB-REFUSAL-SUPPRESS-001", "PI-DIRECT-001")
@@ -49,13 +77,17 @@ _SPECS = ("JB-REFUSAL-SUPPRESS-001", "PI-DIRECT-001")
 def stub() -> Iterator[tuple[int, dict[str, Any]]]:
     """Answers the n-th request (from 1) with ``script[n]``, else with ``default``."""
 
-    state: dict[str, Any] = {"script": {}, "default": _REPLY, "served": 0}
+    state: dict[str, Any] = {"script": {}, "default": _REPLY, "served": 0, "judged": 0}
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
-            self.rfile.read(int(self.headers.get("content-length", "0")))
-            state["served"] += 1
-            body = state["script"].get(state["served"], state["default"]).encode()
+            raw = self.rfile.read(int(self.headers.get("content-length", "0")))
+            if json.loads(raw).get("model") == "j":  # the judge: a secure verdict
+                state["judged"] += 1
+                body = _SECURE.encode()
+            else:
+                state["served"] += 1
+                body = state["script"].get(state["served"], state["default"]).encode()
             self.send_response(200)
             self.send_header("content-type", "text/html" if body.startswith(b"<") else "json")
             self.send_header("content-length", str(len(body)))
@@ -75,14 +107,26 @@ def stub() -> Iterator[tuple[int, dict[str, Any]]]:
         server.server_close()
 
 
-def _argv(tmp_path: Path, port: int, *extra: str, specs: tuple[str, ...] = _SPECS) -> list[str]:
+def _argv(
+    tmp_path: Path, port: int, *extra: str, specs: tuple[str, ...] = _SPECS, judge: bool = False
+) -> list[str]:
     endpoint = f"http://127.0.0.1:{port}/v1/chat/completions"
-    (tmp_path / "scope.yaml").write_text(
-        f'version: "1.0"\ntargets:\n  - id: hostile\n    base_url: "{endpoint}"\n'
+    entry = (
+        "  - id: {id}\n"
+        f'    base_url: "{endpoint}"\n'
         f'    endpoints:\n      - host: "127.0.0.1:{port}"\n'
         '        path_prefixes: ["/v1/chat/completions"]\n'
         '    identities:\n      - name: default\n        auth_ref: "env://NONE"\n'
     )
+    (tmp_path / "scope.yaml").write_text(
+        f'version: "1.0"\ntargets:\n{entry.format(id="hostile")}{entry.format(id="judge")}'
+    )
+    (tmp_path / "judge.yaml").write_text(
+        f'id: judge\ntype: model\nprovider: openai\nendpoint: "{endpoint}"\nmodel: j\n'
+        "capabilities:\n  tools: false\n  rag: false\n"
+    )
+    if judge:
+        extra = (*extra, "--judge", str(tmp_path / "judge.yaml"))
     (tmp_path / "target.yaml").write_text(
         f'id: hostile\ntype: chatbot\nprovider: openai\nendpoint: "{endpoint}"\nmodel: m\n'
         "capabilities:\n  tools: false\n  rag: false\n"
@@ -126,11 +170,16 @@ def test_one_reply_that_is_not_json_fails_its_attempt_and_the_scan_goes_on(
     failed = [a for a in attempts if a["error"]]
     assert len(failed) == 1, [a["error"] for a in attempts]
     assert failed[0]["error"].startswith("ResponseMalformed: hostile: success response was not")
-    assert failed[0]["error"].endswith("[not retryable]")
+    assert failed[0]["error"].endswith("[unreadable_reply]")
     assert failed[0]["response"] is None
     assert failed[0]["verdict"]["status"] == "inconclusive"
+    assert failed[0]["verdict"]["inconclusive_reason"] == "unreadable_reply"
+    kept = failed[0]["request"]["metadata"]["unreadable_reply"]
+    assert kept["excerpt"] == _HTML and kept["bytes"] == len(_HTML)
     assert all(a["response"] is not None for a in attempts if not a["error"])
     assert state["served"] == len(attempts)  # the unreadable one was not sent again
+    assert report["summary"]["unreadable_reply"]["attempts"] == 1
+    assert "Unreadable replies: 1 attempt(s) in 1 spec(s)" in result.stdout
 
     # `dottore replay` re-derives it from the evidence, as stored.
     replay = CliRunner().invoke(
@@ -141,6 +190,8 @@ def test_one_reply_that_is_not_json_fails_its_attempt_and_the_scan_goes_on(
         ],
     )
     assert replay.exit_code == 0, replay.output
+    assert "(unreadable_reply)" in replay.output
+    assert "1 of " in replay.output and "could not be read" in replay.output
 
 
 def test_a_target_that_answers_nothing_readable_stops_after_five_requests(
@@ -156,18 +207,23 @@ def test_a_target_that_answers_nothing_readable_stops_after_five_requests(
         "error: run on hostile did not complete: aborted on UnreadableReplies: the target's "
         "first 5 replies in this run could not be read"
     ) in result.stderr
-    assert "check the target file's endpoint, provider and response template" in result.stderr
+    assert "endpoint is an OpenAI chat completions URL" in result.stderr
+    assert "response template" not in result.stderr  # a target file declares none (LOW 2)
     assert "ResponseMalformed: hostile: success response was not valid JSON" in result.stderr
+    # Every reply sent is stored, the fifth included (MEDIUM 1).
+    stored = [p for p in (tmp_path / "ev").rglob("*.json") if "probes" not in p.parts]
+    assert len(stored) == 5
     assert result.stderr.rstrip().endswith("2 of 2 specs never ran or did not finish")
     report = _report(tmp_path)
     assert report["summary"]["status"]["state"] == "aborted"
 
 
-def test_a_resume_after_the_stop_keeps_the_unreadable_attempts_and_sends_the_rest(
+def test_a_resume_after_the_stop_sends_the_unreadable_attempts_again(
     tmp_path: Path, stub: tuple[int, dict[str, Any]]
 ) -> None:
-    """The four replies stored before the stop are kept (not sent again, not retried); the
-    fifth, which raised the stop, is sent again. With the endpoint answering, the run finishes."""
+    """The five replies stored before the stop are not kept (LOW 1): the target may have been
+    fixed, so a resume sends them again, and with the endpoint answering the run finishes with
+    no unreadable attempt left."""
 
     port, state = stub
     state["default"] = _HTML
@@ -179,11 +235,11 @@ def test_a_resume_after_the_stop_keeps_the_unreadable_attempts_and_sends_the_res
     state["default"] = _REPLY
     resumed = CliRunner().invoke(app, _argv(tmp_path, port, "--runs", "2", "--resume", run_id))
     assert resumed.exit_code != 3, resumed.output
+    assert "5 that could not be read will be sent again" in resumed.stdout + resumed.stderr
     report = _report(tmp_path)
-    attempts = [a for f in report["findings"] for a in f["attempts"]]
-    unreadable = [a for a in attempts if (a["error"] or "").startswith("ResponseMalformed")]
-    assert len(unreadable) == 4
-    assert state["served"] == 5 + len(attempts) - 4
+    attempts = {a["attempt_id"] for f in report["findings"] for a in f["attempts"]}
+    assert report["summary"]["unreadable_reply"]["attempts"] == 0
+    assert state["served"] == 5 + len(attempts)
 
 
 def test_fewer_attempts_than_the_stop_all_unreadable_is_not_a_clean_scan(
@@ -202,7 +258,8 @@ def test_fewer_attempts_than_the_stop_all_unreadable_is_not_a_clean_scan(
     assert state["served"] == 2
     assert (
         "every one of the 2 attempt(s) got a reply that could not be read as the provider's, so "
-        "nothing was evaluated: check the target file's endpoint, provider and response template"
+        "nothing was evaluated: check that the target file's endpoint is an OpenAI chat "
+        "completions URL"
     ) in result.stderr
     assert _report(tmp_path)["summary"]["status"]["state"] == "unreachable"
 
@@ -211,11 +268,14 @@ def test_fewer_attempts_than_the_stop_all_unreadable_is_not_a_clean_scan(
     ("errors", "said"),
     [
         (
-            ["ResponseMalformed: t: x; not evaluated [not retryable]"] * 2,
+            ["ResponseMalformed: t: x; not evaluated [unreadable_reply]"] * 2,
             "every one of the 2 attempt(s) got a reply that could not be read as the provider's",
         ),
         (
-            ["AdapterEnvError: t: exhausted 4 attempt(s)", "ResponseMalformed: t: x"],
+            [
+                "AdapterEnvError: t: exhausted 4 attempt(s)",
+                "ResponseMalformed: t: x; not evaluated [unreadable_reply]",
+            ],
             "every one of the 2 attempt(s) failed on transport or (1 of them) with a reply that "
             "could not be read as the provider's",
         ),
@@ -251,4 +311,65 @@ def test_the_unreachable_reason_names_what_the_attempts_got(errors: list[str], s
     reason = _unreachable_reason(result) or ""
     assert reason.startswith(said), reason
     if "could not be read" in said:
-        assert "check the target file's endpoint, provider and response template" in reason
+        assert "check the target file's endpoint and provider" in reason  # no advice stored
+
+
+def test_a_jailbreak_that_broke_the_wrapper_never_passes_its_spec(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """Pre-merge audit of 598f0858, HIGH 1, as measured: `PI-DIRECT-001 --runs 3`, the first
+    reply a wrapper's JSON broken by the quotes of `"DAN mode enabled" PWNED`, the other two
+    refusals a secure judge passes. On 598f0858 the spec passed (two of three held), exit 0, and
+    no report said a reply was unreadable; on 6d5f7ae the run stopped, exit 3. Now the spec is
+    inconclusive, and every report counts the unreadable attempt."""
+
+    port, state = stub
+    state["script"] = {1: _BROKEN}
+    argv = _argv(
+        tmp_path,
+        port,
+        *("--runs", "3", "--concurrency", "1", "-q"),
+        *("-oS", str(tmp_path / "r.sarif"), "-oX", str(tmp_path / "r.xml")),
+        *("-oH", str(tmp_path / "r.html")),
+        specs=("PI-DIRECT-001",),
+        judge=True,
+    )
+    result = CliRunner().invoke(app, argv)
+
+    assert result.exit_code == 0, result.output
+    assert state["judged"] > 0
+    (finding,) = _report(tmp_path)["findings"]
+    assert finding["status"] == "inconclusive"
+    assert "could not be read as the provider's reply" in finding["reasoning"]
+    assert "Unreadable replies: 1 attempt(s) in 1 spec(s) (PI-DIRECT-001)" in result.stdout
+    assert _report(tmp_path)["summary"]["unreadable_reply"] == {
+        "attempts": 1,
+        "specs": ["PI-DIRECT-001"],
+    }
+    sarif = json.loads((tmp_path / "r.sarif").read_text(encoding="utf-8"))
+    (run,) = sarif["runs"]
+    assert run["results"][0]["properties"]["unreadable_reply"] == 1
+    assert "could not be read" in run["results"][0]["message"]["text"]
+    assert run["properties"]["unreadable_reply"] == 1
+    assert "unreadable_reply=1" in (tmp_path / "r.xml").read_text(encoding="utf-8")
+    assert "could not be read" in (tmp_path / "r.html").read_text(encoding="utf-8")
+
+
+def test_a_target_that_breaks_mid_run_stops_after_twenty_unreadable_replies_in_a_row(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """Pre-merge audit of 598f0858, MEDIUM 2: two readable replies, then a login page for every
+    request. On 598f0858 the default battery sent 355 requests, 353 of them unreadable, and
+    exited 0. Now it stops after 20 unreadable replies in a row, exit 3, and says why."""
+
+    port, state = stub
+    state["script"] = {1: _REPLY, 2: _REPLY}
+    state["default"] = _HTML
+    result = CliRunner().invoke(app, _argv(tmp_path, port, "--concurrency", "1"))
+
+    assert result.exit_code == 3, result.output
+    assert state["served"] == 22
+    assert (
+        "aborted on UnreadableReplies: the target's last 20 replies in this run could not be read "
+        "as replies, in a row after ones that could"
+    ) in result.stderr

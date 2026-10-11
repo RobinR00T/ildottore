@@ -380,6 +380,21 @@ class WebSocketAdapter:
     # --- traits the runner and the plan read -------------------------------------------
 
     @property
+    def unreadable_advice(self) -> str:
+        """What to check when no frame reads as the block says (OD-21, u08 A-74)."""
+
+        return (
+            "check the target file's endpoint and its websocket block: the paths a frame's text, "
+            "tool calls and final stop are read at (response.text_path, tool_calls_path, "
+            "final_path)"
+        )
+
+    def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
+        """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
+
+        return ResponseMalformed(message).with_reply(body, self.redactor, self.unreadable_advice)
+
+    @property
     def returns_tool_calls(self) -> bool:
         """True only when ``response.tool_calls_path`` is declared (OD-18 B)."""
 
@@ -710,9 +725,13 @@ class WebSocketAdapter:
             and not calls
             and not is_filter_stop(finish if isinstance(finish, str) else None)
         ):
-            raise ResponseMalformed(
+            raise self._unreadable(
                 f"{self.id}: no frame of the turn carried text at path "
-                f"{quoted(reading.text_path)}, a tool call or a filter's stop; not evaluated"
+                f"{quoted(reading.text_path)}, a tool call or a filter's stop; not evaluated",
+                json.dumps(
+                    [e["frame"] for e in frames[start:] if e.get("direction") == "received"],
+                    default=str,
+                ),
             )
         recorded = frames if whole else frames[start:]
         conversation.reported = len(frames)
@@ -757,9 +776,10 @@ class WebSocketAdapter:
         except ConnectionClosed as exc:
             raise self._closed(exc, "mid-turn") from exc
         if isinstance(raw, bytes):
-            raise ResponseMalformed(
+            raise self._unreadable(
                 f"{self.id}: received a binary frame; this adapter reads JSON text frames; "
-                "not evaluated"
+                "not evaluated",
+                raw,
             )
         too_deep = WebSocketFrameTooDeep(
             f"{self.id}: a frame is nested deeper than {MAX_FRAME_DEPTH} levels; not evaluated"
@@ -773,11 +793,12 @@ class WebSocketAdapter:
         except NestedTooDeeply as exc:
             raise too_deep from exc
         except ValueError as exc:
-            raise ResponseMalformed(
-                f"{self.id}: a frame was not valid JSON: {self._safe(str(exc))}; not evaluated"
+            raise self._unreadable(
+                f"{self.id}: a frame was not valid JSON: {self._safe(str(exc))}; not evaluated",
+                raw,
             ) from exc
         if not isinstance(frame, dict):
-            raise ResponseMalformed(f"{self.id}: a frame was not a JSON object; not evaluated")
+            raise self._unreadable(f"{self.id}: a frame was not a JSON object; not evaluated", raw)
         if _depth(frame) > MAX_FRAME_DEPTH:
             raise too_deep
         frames.append({"direction": "received", "frame": _scrub(frame, self.api_key)})

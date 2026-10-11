@@ -40,7 +40,6 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
-from ildottore.adapters import ResponseMalformed
 from ildottore.cli import interrupts, wiring
 from ildottore.cli import resume as resume_mod
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
@@ -94,6 +93,11 @@ from ildottore.shared.provider_filter import (
     blocked_by_provider_filter,
     cut_attempt_ids,
     side_unknown_attempt_ids,
+)
+from ildottore.shared.unreadable import (
+    UNREADABLE_REPLY_KEY,
+    unreadable_attempt_ids,
+    unreadable_reply,
 )
 
 __all__ = [
@@ -721,9 +725,6 @@ def resolve_target_plans(
 
 #: Why a field of a target file's ``sampling_defaults`` does not go out (OD-39, u12 A-66).
 _ANTHROPIC_TOP_P = "anthropic takes no top_p beside a temperature, and every request carries one"
-#: How an attempt's error starts when its reply could not be read (``core.execute`` writes
-#: ``<class>: <message>``; OD-21).
-_UNREADABLE_PREFIX = f"{ResponseMalformed.__name__}: "
 _SAMPLING_PROVIDERS = ("openai", "anthropic")
 
 
@@ -1860,7 +1861,18 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         elif not opts.quiet:
             done, again = resume_progress(resume_from)
             unjudged = len(unjudged_attempt_ids(resume_from))
-            errored = again - unjudged
+            # OD-21: a reply the adapter could not read is sent again (the target may have been
+            # fixed since), and said apart from the environment errors.
+            kept_now = answered_attempt_ids(resume_from)
+            unread = len(
+                unreadable_attempt_ids(
+                    a
+                    for finding in resume_from.findings
+                    for a in finding.attempts
+                    if a.attempt_id not in kept_now
+                )
+            )
+            errored = again - unjudged - unread
             # OD-41: a prompt the provider's input filter refused would be refused again.
             # Only among the attempts it keeps: a cut reply stored without a verdict is sent again,
             # and was counted as kept for review beside "will be sent again" (verification of
@@ -1897,6 +1909,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     if errored
                     else ""
                 )
+                + (f"; {unread} that could not be read will be sent again" if unread else "")
                 + (
                     f"; {unjudged} answered but not evaluated before the halt will be sent again"
                     if unjudged
@@ -2390,7 +2403,9 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
         for a in attempts
     ):
         return None
-    unreadable = [a.error for a in attempts if (a.error or "").startswith(_UNREADABLE_PREFIX)]
+    # By the attempt's own record (its verdict's reason, or its error's mark), never by the
+    # error's class name (pre-merge audit of 598f0858, LOW 3).
+    unreadable = [a for a in attempts if unreadable_reply(a)]
     if unreadable:
         what = (
             "got a reply that could not be read as the provider's"
@@ -2398,10 +2413,13 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
             else f"failed on transport or ({len(unreadable)} of them) with a reply that could "
             "not be read as the provider's"
         )
+        kept = (unreadable[0].request.metadata or {}).get(UNREADABLE_REPLY_KEY)
+        advice = kept.get("advice") if isinstance(kept, dict) else None
+        if not isinstance(advice, str):
+            advice = "check the target file's endpoint and provider"
         return (
             f"every one of the {len(attempts)} attempt(s) {what}, so nothing was evaluated: "
-            f"check the target file's endpoint, provider and response template. The first: "
-            f"{unreadable[0]}"
+            f"{advice}. The first: {unreadable[0].error}"
         )
     first = next((a.error for a in attempts if a.error), "no response")
     return (

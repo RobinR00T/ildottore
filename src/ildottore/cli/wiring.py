@@ -828,8 +828,19 @@ def build_real_adapter(
         api_key=api_key,
         model=target.model,
         template=template,
+        # A target file declares no template: the generic one reads the text at `text`, and it
+        # is not told to check a template it cannot write (OD-21 audit, LOW 2).
+        advice=REST_TARGET_FILE_ADVICE,
         **extra,
     )
+
+
+#: What a target file's ``provider: rest`` target is told to check when no reply can be read.
+REST_TARGET_FILE_ADVICE = (
+    "check the target file's endpoint and provider: a `provider: rest` target reads a JSON object "
+    "with the reply's text at `text` (another shape needs a RestTemplate, which only the Python "
+    "API takes)"
+)
 
 
 def _authorized_api_key(scope: Scope, target: Target) -> str | None:

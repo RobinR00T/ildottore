@@ -140,6 +140,15 @@ class AnthropicAdapter(BaseAdapter):
     sends_sampling: ClassVar[bool] = True
 
     @property
+    def unreadable_advice(self) -> str:
+        """What to check when no reply reads as Anthropic's (OD-21, u08 A-74)."""
+
+        return (
+            "check that the target file's endpoint is the Anthropic Messages API and its provider "
+            "is anthropic"
+        )
+
+    @property
     def _endpoint_path(self) -> str:
         return "/v1/messages"
 
