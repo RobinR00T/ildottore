@@ -77,9 +77,10 @@ from ildottore.registry import uncompilable_patterns
 from ildottore.reporting import RunStatus
 from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
-from ildottore.shared.enums import Category, EvaluatorType
+from ildottore.shared.enums import Category, EvaluatorType, VerdictStatus
 from ildottore.shared.models import (
     AttackSpec,
+    Attempt,
     Finding,
     ModelFingerprint,
     PlanBudgets,
@@ -92,6 +93,8 @@ from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
     blocked_by_provider_filter,
     cut_attempt_ids,
+    cut_by_output_filter,
+    filter_side_unknown,
     side_unknown_attempt_ids,
 )
 from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, scene_tool_names
@@ -2442,6 +2445,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         if unreachable is not None:
             incomplete[target_id] = unreachable
             states.append("unreachable")
+            continue
+        # The same false green one step further: the provider answered, and its filter answered
+        # for the model every time (u12 A-79, the amendment to OD-41 and OD-42).
+        filtered = _filtered_reason(result)
+        if filtered is not None:
+            incomplete[target_id] = filtered
+            states.append("filtered")
     run_status = RunStatus(
         state=states[0] if states else "complete",
         reason="; ".join(f"{k}: {v}" for k, v in sorted(incomplete.items())) or None,
@@ -2500,8 +2510,8 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     bad spec is not this, because the run still measured something.
 
     A prompt the provider's input filter refused is not a transport failure (OD-41): the
-    provider answered it. A run whose every attempt it refused is complete, its specs
-    inconclusive, and the summary counts the blocked attempts; it is not "unreachable".
+    provider answered it, so a run whose every attempt it refused is not "unreachable". It is
+    :func:`_filtered_reason`'s since the amendment to OD-41 (u12 A-79), and exits 3 too.
 
     A reply the adapter could not read (``ResponseMalformed``, OD-21) fails its attempt; a run
     of fewer attempts than the runner's stop (u08 A-74) that got only such replies, or such
@@ -2538,6 +2548,66 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     return (
         f"every one of the {len(attempts)} attempt(s) failed on transport, so nothing was "
         f"evaluated: {first}"
+    )
+
+
+def _filtered(attempt: Attempt) -> bool:
+    """True when the provider's filter refused, cut or stopped this attempt (OD-41, OD-42)."""
+
+    return (
+        blocked_by_provider_filter(attempt)
+        or cut_by_output_filter(attempt)
+        or filter_side_unknown(attempt)
+    )
+
+
+def _filtered_reason(result: CampaignResult) -> str | None:
+    """Why this target's run measured the provider's filter and not the model, or ``None``.
+
+    The rule (u12 A-79, the amendment to OD-41 and OD-42, decided 2026-10-11 under the owner's
+    delegation, best practice, revisable): every attempt was refused, cut or stopped by the
+    provider's filter, or failed before a reply could be read, at least one of them by the
+    filter, and none failed. No reply the model wrote whole was evaluated, so the run is
+    reported as not complete and exits 3, as an unreachable target does. Until the amendment it
+    was complete with every spec inconclusive and exited 0: a fully filtered run read green, and
+    a target that wrote its own filter's answer to every attack (a 400 ``content_filter`` from
+    any adapter, or an empty reply with a filter's stop) turned CI green with no exploit read
+    (security audit of 2026-10-11, MEDIUM 3).
+
+    Every attempt, not a share of them: the share that settles a spec (a pass needs more than
+    half of its attempts) would make a deployment whose filter refuses most of an attack
+    battery, the defence working, an error on every CI run, and a target that forges a filter's
+    answer can stay under any share below all. A partly filtered run keeps its exit code: each
+    spec with such an attempt is inconclusive, never a pass, and is counted apart in every
+    report. A fail, on a trace or on the text that came back, was measured, and decides.
+    """
+
+    attempts = [a for finding in result.findings for a in finding.attempts]
+    filtered = [a for a in attempts if _filtered(a)]
+    if not filtered:
+        return None
+    if any(a.verdict is not None and a.verdict.status is VerdictStatus.FAIL for a in attempts):
+        return None
+    if any(a.error is None and a.response is not None and not _filtered(a) for a in attempts):
+        return None
+    blocked = sum(blocked_by_provider_filter(a) for a in filtered)
+    withheld = sum(cut_by_output_filter(a) for a in filtered)
+    unsaid = len(filtered) - blocked - withheld
+    counts = [
+        f"{blocked} refused by its input filter" if blocked else "",
+        f"{withheld} cut or replaced by its output filter" if withheld else "",
+        f"{unsaid} stopped by it on a side it did not report" if unsaid else "",
+        f"{len(attempts) - len(filtered)} failed before a reply could be read"
+        if len(attempts) > len(filtered)
+        else "",
+    ]
+    unread = " or got no reply that could be read" if len(attempts) > len(filtered) else ""
+    return (
+        f"every one of the {len(attempts)} attempt(s) was answered by the provider's filter"
+        f"{unread} ({', '.join(c for c in counts if c)}), so no reply the model wrote whole was "
+        "evaluated: the run measured the filter, not the model. To measure the model, run it "
+        "where the filter lets the attack prompts through; every such attempt is in the "
+        "reports, none of them a pass"
     )
 
 
