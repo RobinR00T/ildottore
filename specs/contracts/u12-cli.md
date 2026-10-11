@@ -54,9 +54,10 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   although an inconclusive that was sent reads `needs_review` in the reports, `docs/05 §2`).
 - KEEP: `-T0..-T5` expand to concrete rate/concurrency/timeout defaults in `flags.py` (documented
   table); explicit `--rate/--concurrency/--timeout` override the template.
-- DECIDE (OD-5), resolved as built: there is no `--adaptive` flag. `-sV` and `-A` fingerprint
-  and the planner orders mutators by the result; `--deep` sets adaptive mode too, which orders
-  nothing without a fingerprint (`00-INDEX.md` OD-5).
+- DECIDED (OD-5, signed off as built on 2026-10-11 under the owner's delegation, revisable):
+  there is no `--adaptive` flag. `-sV` and `-A` fingerprint and the planner orders mutators by
+  the result; `--deep` sets adaptive mode too, which orders nothing without a fingerprint
+  (`00-INDEX.md` OD-5, reasoning in u08 §9).
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `app.py` + `flags.py` + `exit_codes.py`: Typer root, `-T` template table, exit-code enum,
@@ -1090,8 +1091,10 @@ probe's failure is named `guardrail/guardrail_benign: ProviderFilterBlock`. Chec
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-5** whether `--adaptive` defaults ON under `-sV`/`-A` or is opt-in (CLI mirrors engine
-  default; propose opt-in for MVP‑1 to bound cost). Resolved as built: no flag, `-sV`/`-A` imply
-  adaptive ordering (see §4 and `00-INDEX.md`).
+  default; propose opt-in for MVP‑1 to bound cost). **Decided 2026-10-11 under the owner's
+  delegation (best practice), revisable: signed off as built**, no flag, `-sV`/`-A` imply
+  adaptive ordering (see §4, `00-INDEX.md` and u08 §9, where the measured resume case and the
+  alternatives are).
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).

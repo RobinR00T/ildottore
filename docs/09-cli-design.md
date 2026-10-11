@@ -114,7 +114,9 @@ result, and only `-sV` produces a fingerprint, so `--deep` without `-sV` keeps e
 declared order. The mode is still recorded: the in-memory plan is marked adaptive (each
 selection's reason reads "adaptive-tailored", which no output prints), and the run's integrity
 record stores the planning mode, so a `--resume` that changes it is refused. `-A` is the form
-that does both. Measured with `--dry-run` on `examples/target.local.yaml` (a chat model with no
+that does both. Signed off as built on 2026-10-11 (OD-5): no `--adaptive` flag, since the
+ordering changes which attempt goes first and never which attempts are sent (an attempt is named
+by its spec, mutation and run), so it matters only to what a halt leaves stored. Measured with `--dry-run` on `examples/target.local.yaml` (a chat model with no
 tools, RAG or memory): no flag, `--deep` and `-A` each select the same 34 specs and 550
 requests; the pacing line reads 5.0 req/s with no flag and 2.0 with `--deep` or `-A`, and `-A`
 adds `+18 probe(s) per target`.

@@ -71,6 +71,14 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   would enable nothing. The policy-pack flag itself stays open, since it also gates the seven
   `agentic-extortion` specs. Not taken: one flag that enables it alone, dropping the spec, an
   opt-in in the scope file.
+- **Adaptive ordering stays implied by `-sV` and `-A`, with no `--adaptive` flag (OD-5).** Signed
+  off as built (`--deep` sets the mode too, and orders nothing without a fingerprint): the
+  ordering changes which attempt goes first, never which attempts are sent, since an attempt is
+  named by its spec, mutation and run and no spec stops early. Measured and documented: a `-sV`
+  campaign halted on the mock (exit 3, 9 of 18 specs) and resumed with `--deep` alone keeps the
+  recorded mode and completes (exit 2, 18 of 18) with the rest in declared order. Not taken: an
+  `--adaptive`/`--no-adaptive` switch; `--deep` as timing only, which would need a compatibility
+  path for halted `--deep` campaigns.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 

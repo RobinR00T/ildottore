@@ -65,8 +65,8 @@ only - no jailbreak payloads, scope-allowlist-gated.
   temperature at all: the fingerprint is then only as repeatable as the model's own sampling,
   and `run -sV` and `dottore fingerprint` say so.
 - DECIDE (OD-5): adaptive planner default ON with `-sV` or opt-in (`--no-adaptive` always
-  disables). Resolved as built: `-sV` (and `-A`) imply adaptive ordering; there is no
-  `--no-adaptive` flag (`00-INDEX.md` OD-5). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs
+  disables). Resolved as built, signed off 2026-10-11 under the owner's delegation: `-sV` (and
+  `-A`) imply adaptive ordering; there is no `--no-adaptive` flag (`00-INDEX.md` OD-5, u08 §9). DECIDE (OD-9): statistical layer embedding source: bundled small embedder vs
   response-feature vector (propose feature-vector + nearest-neighbor to avoid a heavy dep).
 
 ## §5 Implementation plan (each step its own commit, green before next)
@@ -329,7 +329,8 @@ both).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-5** (shared w/ u08): adaptive planner default ON with `-sV` vs opt-in. Owner: human.
-  Resolved as built: `-sV`/`-A` imply adaptive ordering, no flag (`00-INDEX.md`).
+  Decided 2026-10-11 under the owner's delegation (best practice), revisable: signed off as
+  built, `-sV`/`-A` imply adaptive ordering, no flag (`00-INDEX.md`; reasoning in u08 §9).
 - **OD-9** (new): statistical-layer embedding source: bundled embedder vs response
   feature-vector nearest-neighbor. Propose: feature-vector (no heavy/ambiguous-license dep,
   `AGENTS.md §3`). Owner: human / ADR.
