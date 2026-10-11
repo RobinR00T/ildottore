@@ -5,6 +5,39 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a hand-off tool is not destructive by its name, and lint judges tool calls as a run does)
+
+- **A scene can mark a tool `destructive: false`.** The destructive verbs are matched anywhere in
+  a tool's name, so a hand-off in the OpenAI Agents SDK's `transfer_to_<agent>` style
+  (`transfer_to_billing_agent`) matched `transfer`, and since OD-38 no flag can excuse a
+  destructive call: every agent spec whose agent hands off failed (found by the pre-merge audit
+  of OD-38). No name is exempt by its shape, since `transfer_to_account` moves money: a tool the
+  spec's `setup.tools` marks `destructive: false` is not destructive whatever its name, under
+  that exact name only. `destructive: true` still makes any name destructive, an unmarked name
+  is still judged by its verbs, a name marked both ways is destructive, and the flag clears only
+  that check (an unauthorized call, an injected or a forbidden argument still fail).
+  `kill_chain_progression` keeps its own stage map. The verbs stay substrings: a whole-word rule
+  changes no shipped verdict (measured) but would stop flagging `deleteall`, `droptable`,
+  `bulkdelete` or `airdrop_tokens`, and would not clear the hand-off (`transfer` is a whole word
+  of it). A tool a deployment grants under `seeded_setup.granted_tools` is in no scene and is
+  still judged by its name (u06 A-71).
+- **`destructive` and `external` on a scene tool are booleans.** The schema and the model refuse
+  any other value: a quoted `"false"` is truthy, so it read as true. `dottore lint` warns
+  (`EVALUATOR_MISCONFIGURED`) on a `destructive: false` that no verb in the name makes necessary.
+- **The lint stub of `tool_call` judges a call through the evaluator's own helpers.** It was a
+  copy that had drifted: it kept the backtick pattern the evaluator dropped as quadratic (an
+  unclosed backtick before 100,000 letters took about 4 s, and takes about 3 ms now), read an
+  injection marker only in a top-level argument value while the evaluator walks nested maps and
+  lists, skipped lists in the forbidden-argument walk, and read no arguments from OpenAI's JSON
+  string (nor did the `tool_sequence` stub). The checks live once in `shared/tool_abuse.py`, and
+  both read calls through `shared/toolcalls.py`, so a fixture lint proves gets the same verdict
+  in a run. Every shipped fixture's verdict, under the real evaluators and under the stubs, is
+  unchanged, and so are `dottore lint specs/` and `dottore coverage --json`, byte for byte.
+- Docs: `docs/03`, `docs/04` §1, MANUAL §8, FAQ, `examples/target.app.yaml`; contracts u06 §7
+  A-71, u02, u00 and the index. Tests: `tests/evaluators/test_scene_not_destructive.py` (28,
+  12 fail on `6d5f7ae`), `tests/registry/test_stub_agrees_with_tool_call.py` (21, 12 fail on
+  `6d5f7ae`) and an invalid schema-parity fixture (fails on `6d5f7ae`).
+
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 
 - **A SIGTERM inside one of asyncio's callbacks no longer leaves the run waiting for a second.**

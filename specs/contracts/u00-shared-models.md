@@ -106,6 +106,16 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 - `ruff check src/ildottore/shared tests/shared` + `ruff format --check` clean; `mypy
   src/ildottore/shared` clean (strict); `lint-imports` green: **`shared` imports nothing
   in-repo** (import-linter independence contract).
+- **A-71 (u06's clause; this unit's half, added 2026-10-11):** `Setup.tools` refuses a tool
+  whose `destructive` or `external` is present and not a boolean, as the schema's
+  `setup.tools.items.properties` now does (a quoted `"false"` is truthy, so it read as true;
+  `tests/fixtures/specs/invalid/setup-tool-destructive-not-boolean.yaml`). `shared/tool_abuse.py`
+  holds what `tool_call` judges in one call (the allowlist a scene resolves to, the destructive
+  verbs and the scene's `destructive` flags, the injection markers and their walk, the
+  forbidden-argument walk), because the evaluator and the linter's stub must give one verdict and
+  may not import each other; stdlib only, like `shared/patterns.py` (A-33) and
+  `shared/refusal_tells.py` (A-27) before it. The verdict stays with u06 and u02: these are the
+  predicates both apply, the one kind of behaviour this unit holds despite §8, as with A-33 and A-27.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.

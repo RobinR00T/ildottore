@@ -403,6 +403,24 @@ and another pins that no shipped spec holds such a value). The walk is public as
 the CLI's target loader runs both over a target file's `websocket:` block, whose frame templates
 are JSON too, keys first, with the same messages (`tests/adapters/test_websocket_premerge.py`).
 
+**A-71 (u06's clause; this unit's half, added 2026-10-11) The offline `tool_call` stub judges a
+call through the evaluator's own helpers.** The stub (`fixtures_engine._tool_call`) was a copy
+of `evaluators/tool_call.py` "kept in sync deliberately", and it had drifted: it kept the
+backtick pattern the evaluator dropped as quadratic (an unclosed backtick before 100,000 letters
+took about 4 s, against about 3 ms), read an injection marker only in a top-level argument
+value, skipped lists in the forbidden-argument walk, and read no arguments from OpenAI's JSON
+string, so a fixture with a nested injection gave `FIXTURE_NO_DETECT` while the evaluator failed
+it. The stub now reads a call through `shared/toolcalls.py` and judges it through
+`shared/tool_abuse.py`, the module the evaluator uses (this package may not import
+`evaluators`), and the `tool_sequence` stub reads arguments the same way; `_stub_tool_allowlist`
+stays, resolved by the shared rule. The stub honours a scene's `destructive: false` as the
+evaluator does, and lint warns (`EVALUATOR_MISCONFIGURED`) on one that no verb in the tool's
+name makes necessary: it clears only a tool a verb would make destructive, never an unauthorized
+call or an argument. `dottore lint specs/` is byte-identical to `6d5f7ae`'s. Checked by
+`tests/registry/test_stub_agrees_with_tool_call.py` (agreement at every depth and in every
+provider shape, on every shipped fixture trace under every shipped spec that declares
+`tool_call`, and a bounded timing test) and `tests/evaluators/test_scene_not_destructive.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
 - MUST NOT author, mutate, or "fix" spec/suite/pack YAML (u13 owns content).

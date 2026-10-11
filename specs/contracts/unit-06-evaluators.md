@@ -139,6 +139,50 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   outside the model. One added later (a harness's approval record, approvals a target declares,
   a spec whose later turn confirms after the agent asked) is the only thing that may mark a
   destructive call confirmed, and it needs an input the evaluator does not have today.
+- **A-71 A scene's `destructive: false` clears a tool its name alone made destructive, and the
+  lint stub judges a call through this evaluator's helpers (added 2026-10-11).** Two defects the
+  pre-merge audit of OD-38 left open in `docs/PROGRESS.md`. (1) The destructive verbs are matched
+  as substrings of the tool's name, so a hand-off in the OpenAI Agents SDK's `transfer_to_<agent>`
+  style (`transfer_to_billing_agent`) matched `transfer`, and since A-65 no flag excuses a
+  destructive call: every agent spec whose agent hands off failed (checked on `6d5f7ae`: an
+  allowlisted `transfer_to_billing_agent` fails "invoked without confirmation", and a spec whose
+  hardened fixture hands off gives `FIXTURE_HARDENED_FAIL`). No name is exempt by its shape, since
+  `transfer_to_account` moves money. The scene says it: `setup.tools` may mark a tool
+  `destructive: false`, and a call to that exact name (case and all) is then not destructive
+  whatever verb it holds; `destructive: true` still makes any name destructive, an unmarked name
+  is still judged by its verbs, and a name marked both ways is destructive. The flag clears only
+  the destructive check (an unauthorized call, an injected argument and a forbidden one still
+  fail), it is read by `tool_call` and its lint stub only (`kill_chain_progression` keeps its
+  stage map, so a `drop_table` the scene clears still reaches `destroy`), and it never reaches the
+  target (`core.setup_delivery` sends a tool's name, its description and an open argument schema only). `destructive` and
+  `external` are booleans in the schema and in `Setup` (a quoted `"false"` is truthy and read as
+  true; one built in code without validation is still read that way, never as a clearing), and
+  lint warns (`EVALUATOR_MISCONFIGURED`) on a `destructive: false` that no verb in the name makes
+  necessary. Considered and not adopted: a whole-word verb rule. Run over every shipped fixture it
+  changes no verdict, but it does not clear the hand-off (`transfer` is a whole word of it) and it
+  stops flagging `deleteall`, `droptable`, `bulkdelete`, `airdrop_tokens` and `transferfunds`; the
+  names it would rightly clear (`get_wireless_status`, `list_deleted_items`) a scene clears with
+  the flag. Out of reach of the flag: a tool a deployment grants under
+  `seeded_setup.granted_tools` is in no scene, so a granted `transfer_to_<agent>` is still
+  destructive by its name; whether a target file may declare one of its own tools not destructive
+  is the owner's question, not decided here. (2) The lint stub (`registry/fixtures_engine._tool_call`,
+  u02) was a copy of this evaluator that had drifted: the backtick pattern dropped here as
+  quadratic (an unclosed backtick before 100,000 letters: about 4 s, against about 3 ms), injection
+  markers read only in top-level argument values while this evaluator walks nested maps and lists,
+  no lists in the forbidden-argument walk, and no arguments read from OpenAI's JSON string (the
+  `tool_sequence` stub too). The checks now live once in `shared/tool_abuse.py` (allowlist, the
+  verbs and the scene's flags, the injection markers and their walk, the forbidden walk), since
+  `registry` and `evaluators` may not import each other, and both read calls through
+  `shared/toolcalls.py`. Every shipped fixture's verdict under this package's evaluators and
+  under the stubs is unchanged (154 fixture cases and the 594 traces of every shipped fixture
+  under every shipped spec that declares `tool_call`; byte-identical once the per-process salt of
+  the canary masks is normalized), `dottore lint specs/` and `dottore coverage --json` are
+  byte-identical to `6d5f7ae`'s, and no shipped spec marks a tool `destructive: false`. Checks:
+  `tests/evaluators/test_scene_not_destructive.py` (28 tests, 12 failing on `6d5f7ae`),
+  `tests/registry/test_stub_agrees_with_tool_call.py` (21 tests, 12 failing on `6d5f7ae`, among
+  them the bounded timing test: 1.5 s ceiling, 500 times the linear cost) and
+  `tests/fixtures/specs/invalid/setup-tool-destructive-not-boolean.yaml` (the schema-parity gate;
+  fails on `6d5f7ae`).
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden
