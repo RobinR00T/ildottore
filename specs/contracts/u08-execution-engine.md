@@ -546,61 +546,85 @@ the other 6 pin what did not change there (a SARIF count, the JUnit messages wit
 fallback shapes and two stops that are no filter's). The 4 added after the verification of
 `91845524` fail on it. Not run against a live Azure, Bedrock, Gemini or Anthropic endpoint.
 
-**A-74 A reply the adapters cannot read fails its attempt, and a campaign that has read none of
-its first five replies stops (added 2026-10-11, OD-21; the adapters' half is u04).** A 200 whose
-body is not JSON (brackets that do not balance, an integer of more than 4,300 digits, bytes that
-are not text), not a JSON object or not the provider's or the template's shape, a WebSocket frame
-that is binary, not JSON or not an object (or a turn with no text, no tool call and no filter's
-stop), and an MCP
-reply that is not JSON-RPC, was an `AdapterProductError`, and the runner aborted the campaign on the
-first one (F5): through the CLI against a loopback stub on `6d5f7ae`, one `<html>` reply among
-ordinary ones made `run` exit 3 ("aborted on AdapterProductError: hostile: success response was not
-valid JSON: Expecting value: line 1 column 1 (char 0); 1 of 2 specs never ran or did not finish"),
-whichever request it answered, and a stub answering every request that way stopped the default
-battery after 4 requests (one per spec in flight) and `run -sV` after 1. #65 (a reply nested too
-deeply), #68 (a refused `-sV` probe) and OD-41 (a provider's filter block) had already moved
-neighbouring cases to "fail the attempt, not the campaign". Decided on 2026-10-11 under the owner's
-delegation (best practice), revisable. The criterion:
+**A-74 A reply the adapters cannot read fails its attempt, never lets its spec pass, and a run of
+them stops the campaign (added 2026-10-11, OD-21; amended the same day after the pre-merge audit of
+`598f0858`; the adapters' half is u04, the reports' u11, the evidence's u10, the CLI's u12).** A
+200 whose body is not JSON (brackets that do not balance, an integer of more than 4,300 digits,
+bytes that are not text), not a JSON object or not the provider's or the template's shape, a
+WebSocket frame that is binary, not JSON or not an object (or a turn with no text, no tool call and
+no filter's stop), and an MCP reply that is not JSON-RPC, was an `AdapterProductError`, and the
+runner aborted the campaign on the first one (F5): through the CLI against a loopback stub on
+`6d5f7ae`, one `<html>` reply among ordinary ones made `run` exit 3 ("aborted on
+AdapterProductError: hostile: success response was not valid JSON: Expecting value: line 1 column
+1 (char 0); 1 of 2 specs never ran or did not finish"), whichever request it answered, and a stub
+answering every request that way stopped the default battery after 4 requests (one per spec in
+flight) and `run -sV` after 1. #65 (a reply nested too deeply), #68 (a refused `-sV` probe) and
+OD-41 (a provider's filter block) had already moved neighbouring cases to "fail the attempt, not
+the campaign". Decided on 2026-10-11 under the owner's delegation (best practice), revisable. As
+first built (`598f0858`) it opened two false passes its pre-merge audit measured: the attempt got
+the generic environment verdict, which a strict majority of passes outvoted, so a wrapper whose
+JSON the quotes of `"DAN mode enabled" PWNED` broke passed `PI-DIRECT-001 --runs 3` with exit 0
+(HIGH 1: a wrapper breaks precisely when a jailbreak works); and after one readable reply nothing
+stopped a target that broke mid-run (MEDIUM 2: 355 requests, 353 unreadable, exit 0). The criterion,
+as amended:
 - the adapters raise `ResponseMalformed` (u04), an `AdapterEnvError` with `is_env_error = True`,
-  `retryable = False` and the marker `malformed_reply = True`; `execute_attempt` treats it as every
-  environment failure that would repeat: one send, not retried, the request debited and its token
-  reservation released, the error `ResponseMalformed: <message>; not evaluated [not retryable]`,
-  the attempt `inconclusive` without an evaluator; a resume keeps it (`_completed_attempt_ids`, by
-  the mark) and `dottore replay` re-derives it; the judge and the identity sweep read it as any
-  `AdapterError`, as before;
+  `retryable = False`, the marker `malformed_reply = True`, and `excerpt`, `size` and `advice`;
+  `execute_attempt` reads the marker before the environment question: one send, not retried, the
+  request debited and its token reservation released, the result `unreadable`, the error
+  `ResponseMalformed: <message>; not evaluated [unreadable_reply]` (`shared.unreadable`), the
+  request recorded with `metadata.unreadable_reply = {excerpt, bytes, advice}` (a conversation's
+  aggregate keeps it from the turn that broke); the judge and the identity sweep read the error as
+  any `AdapterError`, as before;
+- the runner's verdict is `inconclusive` with `inconclusive_reason: unreadable_reply` (ADR-0012),
+  confidence 0, without an evaluator, and a spec with one such attempt is never a pass, however
+  many others held (`_NEVER_A_PASS`, beside OD-42's cut reasons): a `fail` on another attempt
+  still fails it, anything else is `inconclusive`. The finding's reasoning adds `; <k>/<n> could not
+  be read as the provider's reply, which may be the one an attack changed`; reproducibility counts
+  it in `N` and never as a success; a resume sends it again (the mark is not the not-retryable one:
+  the target may have been fixed), its re-send scored in its place (LOW 1);
 - every spec's adapter goes through one `_ReplyWatch` per invocation of `CampaignRunner.run`
-  (`_WatchedAdapter`, which forwards every other attribute): a reply the adapter read, or a
-  `ProviderFilterBlock` (the provider answering in its documented shape), proves the endpoint for
-  the rest of the invocation; until one does, the `UNREADABLE_REPLIES_TO_STOP`-th unreadable reply
-  (`core.execute`, 5) raises `UnreadableReplies` instead (`is_env_error = False`, a name the
-  redactor keeps), which halts the campaign as `aborted` with the reason `aborted on
-  UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the
-  last: <class>: <message>), and none could: check the target file's endpoint, provider and
-  response template. ...; <k> of <n> specs never ran or did not finish` (exit 3); a transport
-  failure neither counts nor proves; once stopped, every later unreadable reply raises the same
-  halt, so a spec already sending stops at its own next one; the four replies stored before the
-  stop are inconclusive attempts a resume keeps, and the fifth, which carried the halt, is sent
-  again by a resume, as a product error's reply is;
-- the figure is five because a wrong endpoint answers every request alike: it is caught for five
-  requests instead of the battery's hundreds, while a target has to garble each of the first five
-  attacks to stop a scan, and one garbled after a readable reply costs only its attempt. A run of
-  fewer attempts that read nothing is `unreachable` (u12's half of this clause).
+  (`_WatchedAdapter`, which forwards every other attribute). It counts unreadable replies in a row:
+  each reply the adapter read, and a `ProviderFilterBlock` (the provider answering in its
+  documented shape), resets the count; a transport failure does neither. The
+  `UNREADABLE_REPLIES_TO_STOP`-th in a row (5) while the campaign has read nothing, or the
+  `UNREADABLE_STREAK_TO_STOP`-th (20) once it has, raises `UnreadableReplies` in its place
+  (`is_env_error = False`, a name the redactor keeps), which halts the campaign as `aborted`, exit
+  3, with `aborted on UnreadableReplies: the target's first 5 replies in this run could not be read
+  as replies (the last: <class>: <message>), and none could: <the adapter's advice>. ...` or `...
+  the target's last 20 replies in this run could not be read as replies, in a row after ones that
+  could (the last: ...): it may have stopped answering as it did (an expired session behind a proxy
+  that serves a login page, a maintenance page): <advice>. ...`, both ending `the replies are
+  stored as inconclusive attempts, and a resume sends them again; <k> of <n> specs never ran or did
+  not finish`. Once stopped, every later unreadable reply raises the same halt, so a spec already
+  sending stops at its own next one. The halt carries the result its reply makes, refunded, and
+  `reproduce` and the conversation executor keep it before it goes on, as a `ReplyOverBudget`'s
+  (MEDIUM 1: the reply that stopped each spec was sent, debited and never stored, and its token
+  reservation stayed spent, 2,455 tokens recorded for a run with no reply read);
+- the figures are five and twenty because a wrong endpoint, and a target that broke, answers
+  every request alike: it is caught for five requests instead of the battery's hundreds, and a
+  proven endpoint earns more doubt (an attack battery garbles in runs: a wrapper that breaks on a
+  quote breaks on every variant of a jailbreak that works). A run of fewer attempts that read
+  nothing is `unreachable` (u12's half).
 Measured through the CLI against a loopback stub answering every request with an HTML page,
-2026-10-11: the default battery stops after 8 requests (5, then one per other spec in flight at the
-default `--concurrency 4`), 5 with `--concurrency 1`; `run -sV` after 26 (18 probes, each a failed
-probe since the reply is refused, u09 A-35, then 8), 23 with `--concurrency 1`. Checked by
-`tests/core/test_unreadable_replies.py` (9: one unreadable reply among readable ones, the stop at
-five, a readable reply first or among the first four, a filter block, transport failures that
-neither count nor prove, concurrent specs stopping at their next unreadable reply, a resume that
-keeps the attempt), `tests/adapters/test_malformed_replies.py` (24, u04) and
-`tests/cli/test_malformed_reply_campaign.py` (8: five through the real CLI, one unreadable reply
-at the first or the fourth request, the stop after five, a resume after the stop that keeps the
-four and finishes, and a two-attempt run that is `unreachable`; three on the unreachable reason's
-words). The first two files do not collect on `6d5f7ae` (no `ResponseMalformed`); in the third, 7
-of 8 fail there, and the transport-only reason, unchanged, passes. Not built: the `-sV` probe pass
-seeding the watch, which would stop such a run after its probes (u09 A-35); a breaker for a target
-that goes bad mid-run (after a readable reply each unreadable one fails only its attempt, and the
-report counts them as inconclusive).
+2026-10-11, on `c97317c2`: the default battery stops after 8 requests (5, then one per other spec
+in flight at the default `--concurrency 4`) with 8 attempts stored and 0 tokens recorded, 5 with
+`--concurrency 1`; `run -sV` after 26 (18 probes, each a failed probe since the reply is refused,
+u09 A-35, then 8), 23 with `--concurrency 1`; two readable replies, then that page for everything:
+25 requests (2, 20 in a row, then one per other spec in flight), exit 3; the auditor's
+`PI-DIRECT-001 --runs 3` with the broken wrapper first: `inconclusive`, exit 0, `Unreadable replies:
+1 attempt(s) in 1 spec(s)` in the summary (on `598f0858`, PASS). Checked by
+`tests/core/test_unreadable_replies.py` (12: one unreadable reply among readable ones and the spec
+it keeps from passing, the stop at five with every reply stored and no token left reserved, a
+readable reply first or among the first four, a filter block, transport failures that neither
+count nor reset, concurrent specs stopping at their next unreadable reply with every reply stored,
+twenty in a row after readable replies, a readable reply that resets the run, a resume that sends
+the attempt again), `tests/adapters/test_malformed_replies.py` (34, u04) and
+`tests/cli/test_malformed_reply_campaign.py` (10, through the real CLI: one unreadable reply at
+the first or the fourth request, the stop after five, a resume after the stop that sends them
+again and finishes, a two-attempt run that is `unreachable`, the auditor's broken wrapper with the
+JSON, SARIF, JUnit and HTML reports, a target that breaks mid-run, and three on the unreachable
+reason's words). Not built: the `-sV` probe pass seeding the watch, which would stop a run whose
+every probe was unreadable after its probes (u09 A-35).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
@@ -648,12 +672,20 @@ report counts them as inconclusive).
   under the owner's delegation (best practice), revisable:** the attempt is inconclusive, not
   retried, and the campaign goes on; a campaign whose first five replies all cannot be read, with
   none that can, stops early (`aborted on UnreadableReplies`, exit 3), so a wrong endpoint is not a
-  silent all-inconclusive run. Built as §7 A-74. Why: it is the rule #65, #68 and OD-41 already
+  silent all-inconclusive run. **Amended the same day after the pre-merge audit of `598f0858`:**
+  the attempt is `inconclusive: unreadable_reply` (ADR-0012) and keeps its spec from passing (a
+  majority of passes outvoted it, and the reply that broke may be the one an attack changed), it
+  keeps a redacted excerpt and is counted apart in every report, the reply that stops the
+  campaign is stored like the others, the stop counts unreadable replies in a row (5 before any
+  reply was read, 20 after, so a target that breaks mid-run stops too), and a resume sends such an
+  attempt again. Built as §7 A-74. Why: it is the rule #65, #68 and OD-41 already
   follow for neighbouring cases, a hostile reply should not decide whether the rest of a battery is
   measured, and the early stop keeps what the old rule bought (a misconfigured endpoint caught at
   once) for 5 requests instead of 1. Not taken: keep stopping at the first one (one hostile reply
   ends a scan); fail the attempt with no stop (a wrong endpoint sends the whole battery and ends
   `unreachable`, hundreds of requests later); retry such a reply (the same request gets the same
-  reply at temperature 0, and each retry is debited). Reversal: make `ResponseMalformed` an
-  `AdapterProductError` again, without `is_env_error` (u04), and the first one halts as before;
-  the watch (`_WatchedAdapter` in `core/runner.py`) can then go. Owner: human.
+  reply at temperature 0, and each retry is debited); the generic environment verdict, which a
+  majority outvotes (the audit's HIGH 1); stop counting after the first reply read (MEDIUM 2).
+  Reversal: make `ResponseMalformed` an `AdapterProductError` again, without `is_env_error` (u04),
+  and the first one halts as before; the watch (`_WatchedAdapter` in `core/runner.py`) can then go.
+  Owner: human.

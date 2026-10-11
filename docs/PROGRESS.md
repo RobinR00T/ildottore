@@ -3,6 +3,35 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (afternoon, later): the pre-merge audit of `598f0858` (OD-21, OD-20), fixed
+
+- Not merge-ready per the audit: OD-21 opened two false passes the old rule did not have. Fixed in
+  new commits on the same branch, history kept. `6a301b8c` HIGH 2: a WebSocket turn's tool calls
+  and its filter stop are read before the turn is called unreadable. `37b9beeb` HIGH 1, MEDIUM 1
+  and 2, LOW 1 and 3: an unreadable reply is `inconclusive: unreadable_reply` (ADR-0012, u00
+  additive) and never lets its spec pass (the auditor's broken wrapper among two refusals passed
+  `PI-DIRECT-001 --runs 3`, exit 0; now inconclusive), keeps a 4 KiB redacted excerpt with the
+  body's size and the adapter's advice under `request.metadata.unreadable_reply`, and is counted in
+  the terminal summary (never silenced by `-q`), the JSON report, SARIF, JUnit, HTML and replay;
+  the stop's reply is stored and refunded (8 requests, 8 attempts, 0 tokens where 598f0858 stored 4
+  and recorded 2,455 tokens); the watch counts unreadable replies in a row, 5 before any reply was
+  read and 20 after (two readable replies then HTML: 25 requests and exit 3, where it sent 355 and
+  exited 0); a resume sends unreadable attempts again; the CLI reads the verdict's reason or the
+  error's mark, not the class name; the advice is per provider (a `provider: rest` target file is
+  not told to check a template). `7c2e18f7` LOW 2: a template rooted at an index reads a JSON array
+  (`0.generated_text`). `c97317c2` LOW 4 and 5: the JUnit report writes the log command's `#` as
+  `&#35;`; the rules return a text with no `##` unscanned (60 MB in 0.03 s).
+- Tests: `tests/adapters/test_malformed_replies.py` 34 (9 fail on `598f0858`),
+  `tests/adapters/test_rest_array_body.py` 1 (fails there), `tests/core/test_unreadable_replies.py`
+  12 (does not collect there), `tests/cli/test_malformed_reply_campaign.py` 10 (9 fail there),
+  `tests/test_json_log_commands.py` 20 (2 fail there). The auditor's probes (`probe_cli.py`,
+  `probe_adapters.py`, `probe_od20.py`) re-run on `c97317c2`: figures in u08 A-74 and the
+  CHANGELOG. `make --no-print-directory gates` green on `c97317c2` (5,306 tests, 97.79% coverage)
+  and again after the docs (below).
+- Left open: the `-sV` pass seeding the stop (a wrong endpoint under `-sV` pays its 18 probes);
+  a WebSocket filter stop written at a path the block does not declare as `final_path` is not
+  read, as OD-42 reads only that path.
+
 ## State, 2026-10-11 (afternoon): five open decisions of robustness and output closed
 
 - On `feat/decide-robustness-and-output`, rebased on `0685f2ce` (OD-42). The owner delegated these

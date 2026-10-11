@@ -84,7 +84,8 @@ and counted under the pooled rate; replies its filter cut or replaced as
 .B "inconclusive (cut_by_provider_output_filter)"
 or
 .BR "inconclusive (provider_filter_side_unknown)" ,
-counted the same way.
+counted the same way; replies that could not be read as
+.BR "inconclusive (unreadable_reply)" .
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
@@ -230,8 +231,9 @@ report.json, report.html, report.sarif, report.xml). A report directory that doe
 or two formats writing the same file (compared case-insensitively and after Unicode
 normalization), is refused before anything is sent. The JSON and SARIF reports, like every JSON
 output (lint --json, coverage --json, fingerprint, schema export), write the second # of
-##<letters>[ as \eu0023, so a CI runner reading a printed report finds no log command
-(GitHub's legacy ##[error], Azure's ##vso[...]); every JSON reader parses it as #.
+##<letters>[ as \eu0023, and the JUnit report as &#35;, so a CI runner reading a printed report
+finds no log command (GitHub's legacy ##[error], Azure's ##vso[...]); every JSON or XML reader
+parses it as #.
 .TP
 .B --fail-on \fIBAND\fR
 CI gate on confirmed findings: info|low|medium|high|critical (default high; info gates on
@@ -271,8 +273,8 @@ At least one gated finding at or above --fail-on.
 Operational error (bad scope, unknown suite, I/O), a usage error (unknown option, bad value),
 or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
 transport or got a reply that could not be read, or an error stopped it: a non-retryable 4xx,
-or a run whose first 5 replies all could not be read, aborted on UnreadableReplies). 3 takes
-precedence over 2: a run that did not finish exits 3 even when it found
+or replies that could not be read, 5 in a row before any was read or 20 in a row after, aborted
+on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
 confirmed exploits, so read summary.status.reason before treating 3 as a retryable
 infrastructure error.
 .PP
@@ -306,9 +308,12 @@ cut or replaced"); they do not trip
 .PP
 A success reply the adapter cannot read (not JSON, not an object, not the provider's or the
 template's shape, a WebSocket frame or an MCP reply included) fails its attempt, inconclusive
-with the error ResponseMalformed, and is not sent again; the run goes on. A run whose first 5
-replies all cannot be read, with none that can, stops with exit 3 and says to check the target
-file's endpoint, provider and response template.
+with the reason unreadable_reply, and is not sent again in the run (a resume sends it again); the
+run goes on, but the spec it belongs to is never a pass, the attempt keeps an excerpt of the
+body under request.metadata.unreadable_reply, and the summary says how many ("Unreadable
+replies: N attempt(s) in S spec(s)"). Such replies 5 in a row before any reply was read, or 20 in
+a row after (a target that broke mid-run), stop the run with exit 3 and say what to check for the
+target's provider.
 .SH FILES
 .TP
 .I scope.yaml

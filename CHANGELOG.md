@@ -11,40 +11,84 @@ versioning: [SemVer](https://semver.org/).
   balance, an integer of more than 4,300 digits, bytes that are not text), not a JSON object, or
   not the shape the provider or the template declares (OpenAI's `choices`, Anthropic's `content`
   array, a REST template's `text_path`), a WebSocket frame that is binary, not JSON or not an
-  object, a turn with no text, no tool call and no filter's stop, and an MCP reply that is not JSON-RPC, was an
-  `AdapterProductError`, and the runner stopped the campaign on the first one: through the CLI
-  against a loopback stub on `6d5f7ae`, one `<html>` reply among ordinary ones made `run` exit 3
-  at that reply, the fourth request here ("aborted on AdapterProductError: hostile: success
-  response was not valid JSON: Expecting value: line 1 column 1 (char 0); 1 of 2 specs never ran
-  or did not finish"), the first when it answered the first. Each is a
+  object, a turn with no text, no tool call and no filter's stop, and an MCP reply that is not
+  JSON-RPC, was an `AdapterProductError`, and the runner stopped the campaign on the first one:
+  through the CLI against a loopback stub on `6d5f7ae`, one `<html>` reply among ordinary ones made
+  `run` exit 3 at that reply, the fourth request here ("aborted on AdapterProductError: hostile:
+  success response was not valid JSON: Expecting value: line 1 column 1 (char 0); 1 of 2 specs
+  never ran or did not finish"), the first when it answered the first. Each is a
   `ResponseMalformed` now, an environment failure with `retryable = False`: the attempt is
-  `inconclusive` (`ResponseMalformed: ...; not evaluated [not retryable]`), sent once, debited with
-  its token reservation released, kept by a resume and re-derived by `dottore replay`, and the
-  campaign goes on; during a `-sV` probe pass that probe fails alone (u09 A-35). A non-retryable
-  4xx, a JSON-RPC error and a handshake reply that does not satisfy `expect` still stop the run.
-- **A target that answers nothing readable still stops early.** A wrong endpoint, provider or
-  template answers every request that way, so every spec's adapter goes through one watch per
-  invocation: a reply read, or a provider's filter block, proves the endpoint; until one does, the
-  fifth unreadable reply stops the campaign (exit 3): `error: run on api did not complete: aborted on
-  UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the
-  last: ResponseMalformed: ...), and none could: check the target file's endpoint, provider and
-  response template. ...`. A spec already sending stops at its own next unreadable reply. Measured
-  against a stub answering every request with an HTML page: 8 requests at the default
-  `--concurrency 4` (5 at 1), 26 with `-sV` (18 probes, then 8); on `6d5f7ae`, 4 and 1. A shorter
-  run that read nothing is `unreachable`, and its reason now says the replies could not be read and
-  what to check (it said "failed on transport"). The report schema's `status` description names
-  `aborted` and the wider `unreachable`.
+  `inconclusive` with the new reason `unreadable_reply` (ADR-0012; its error `ResponseMalformed:
+  ...; not evaluated [unreadable_reply]`), sent once, debited with its token reservation released,
+  re-derived by `dottore replay`, and the campaign goes on; during a `-sV` probe pass that probe
+  fails alone (u09 A-35). A non-retryable 4xx, a JSON-RPC error and a handshake reply that does not
+  satisfy `expect` still stop the run.
+- **An unreadable reply never lets its spec pass.** A wrapper that pastes the model's output into
+  its JSON breaks on the quotes a jailbreak that worked writes, so the reply that broke may be the
+  exploit: a spec with one such attempt is `inconclusive` whatever the others did (a `fail`
+  elsewhere still fails it), as OD-42 rules for a cut reply. The attempt keeps what came back for
+  review under `request.metadata.unreadable_reply` (at most 4 KiB of the body through the
+  adapter's redactor, its size, and what to check), and the terminal summary (never silenced by
+  `-q`: `Unreadable replies: 1 attempt(s) in 1 spec(s) (PI-DIRECT-001) got a reply that could not
+  be read as the provider's; ...`), the JSON report (`summary.unreadable_reply`), SARIF, JUnit, HTML
+  and `dottore replay` count them apart. A resume sends such an attempt again: the target may have
+  been fixed since.
+- **A run of them stops the campaign.** A wrong endpoint, provider or template answers every
+  request that way, and so does a target that breaks mid-run (an expired session behind a proxy that
+  serves a login page). Every spec's adapter goes through one watch per invocation that counts
+  unreadable replies in a row, each reply read (or a provider's filter block) starting the count
+  again: 5 in a row before any reply was read, or 20 in a row after, stop the campaign (exit 3),
+  `error: run on api did not complete: aborted on UnreadableReplies: the target's first 5 replies
+  in this run could not be read as replies (the last: ResponseMalformed: ...), and none could:
+  check that the target file's endpoint is an OpenAI chat completions URL (or a server that speaks
+  that API) and its provider is openai. ...`, the advice worded per provider. A spec already sending
+  stops at its own next unreadable reply, and every reply sent is stored. Measured against a stub
+  answering every request with an HTML page: 8 requests at the default `--concurrency 4` (5 at 1),
+  26 with `-sV` (18 probes, then 8), 23 at 1; on `6d5f7ae`, 4 and 1; two readable replies and then
+  that page: 25 requests, exit 3. A shorter run that read nothing is `unreachable`, and its reason
+  says the replies could not be read and what to check (it said "failed on transport"). The report
+  schema's `status` description names `aborted` and the wider `unreachable`.
+- A REST template whose `text_path` starts at an index (Hugging Face's `0.generated_text`) reads a
+  body that is a JSON array; it was refused as not an object.
 - Decided under the owner's delegation (best practice), revisable: OD-21 in u04 and u08 §9 and its
-  00-INDEX row, the new clause A-74 (u08, with u04's and u12's halves), u09 A-35 (a 200 that is not
-  JSON was out of it), the MANUAL (§3 "A reply the adapter cannot read", `-sV`, the exit codes, the
-  WebSocket turn, troubleshooting), the FAQ, USAGE, `dottore(1)`, `docs/02-threat-model.md`,
-  `docs/10-fingerprint.md`. Tests: `tests/adapters/test_malformed_replies.py` (24),
-  `tests/core/test_unreadable_replies.py` (9), `tests/cli/test_malformed_reply_campaign.py` (8; 7
-  fail on `6d5f7ae`, the first two files do not collect there); the tests that pinned the old rule
-  assert this one (`tests/adapters/test_base.py`, `test_openai.py`, `test_anthropic.py`,
-  `test_rest.py`, `test_deep_replies.py`, `test_websocket.py`, `test_websocket_premerge.py`,
-  `test_provider_filter_block.py`, `tests/cli/test_probe_pass_spend.py`,
-  `tests/fingerprint/test_probe_failures.py`, `tests/cli/test_input_filter_probe.py`).
+  00-INDEX row, the new clause A-74 (u08, with u04's, u10's, u11's and u12's halves), ADR-0012,
+  u00, u09 A-35 (a 200 that is not JSON was out of it), the MANUAL (§3 "A reply the adapter cannot
+  read", `-sV`, the exit codes, the WebSocket turn, `dottore replay`, troubleshooting), the FAQ,
+  USAGE, `dottore(1)`, `docs/01-architecture.md`, `docs/02-threat-model.md`,
+  `docs/05-scoring-model.md`, `docs/10-fingerprint.md`, the examples. Tests:
+  `tests/adapters/test_malformed_replies.py` (34), `tests/adapters/test_rest_array_body.py` (1),
+  `tests/core/test_unreadable_replies.py` (12), `tests/cli/test_malformed_reply_campaign.py` (10);
+  the tests that pinned the old rule assert this one (`tests/adapters/test_base.py`,
+  `test_openai.py`, `test_anthropic.py`, `test_rest.py`, `test_deep_replies.py`, `test_websocket.py`,
+  `test_websocket_premerge.py`, `test_provider_filter_block.py`, `test_provider_output_filter.py`,
+  `tests/cli/test_probe_pass_spend.py`, `tests/fingerprint/test_probe_failures.py`,
+  `tests/cli/test_input_filter_probe.py`), and the golden JSON report snapshot gains
+  `summary.unreadable_reply`.
+
+### Fixed (what the pre-merge audit of `598f0858` found in OD-21 and OD-20, before it lands)
+
+- HIGH 1: an unreadable reply got the generic environment verdict, which a strict majority of passes
+  outvoted: the auditor's `PI-DIRECT-001 --runs 3`, its first reply a wrapper broken by the quotes
+  of `"DAN mode enabled" PWNED`, passed with exit 0 and no report said a reply was unreadable (on
+  `6d5f7ae` it exited 3). Now `inconclusive: unreadable_reply`, never a pass, kept and counted, as
+  above.
+- HIGH 2: a WebSocket turn with tool calls (with `tool_calls_path`) or a filter's stop at
+  `final_path` and no text was unreadable, so an agent's destructive call was never evaluated and a
+  filter's cut was not OD-42's: the turn's calls and stop are read first, and it is a reply with
+  empty text.
+- MEDIUM 1: the replies that stopped the campaign were sent and debited and never stored, and their
+  token reservations stayed spent (at `--concurrency 4`, 8 requests went out, 4 attempts were
+  stored, a resume sent 4 again, and 2,455 tokens were recorded for a run that read no reply). The
+  stop now carries each one's result, refunded and stored, as a reply that crossed a token ceiling
+  is.
+- MEDIUM 2: after one readable reply nothing stopped a target that broke mid-run (2 readable, then
+  HTML: 355 requests, 353 unreadable, exit 0). The watch counts unreadable replies in a row, 20 after
+  the endpoint was proven.
+- LOW 1, a resume sends unreadable attempts again; LOW 2, a template rooted at an index reads an
+  array, and a target file's `provider: rest` target is not told to check a template it cannot
+  declare; LOW 3, the CLI recognises an unreadable attempt by its verdict's reason or its error's
+  mark, not the class name; LOW 4, the JUnit XML report writes the `#` of a CI log command as
+  `&#35;` (OD-20, below); LOW 5, `log_safe_json` returns a text with no `##` as it is, unscanned.
 
 ### Changed (a JSON output carries no CI log command, OD-20)
 
@@ -58,12 +102,15 @@ versioning: [SemVer](https://semver.org/).
   `redactor.log_safe_json`. `\u0023` is JSON's own escape for `#` (RFC 8259 §7): every JSON reader
   parses the same value, and the document serialized again with the output's options is the plain
   bytes. A program that compares bytes rather than parsed values sees the escape; none of the
-  shipped specs holds such a sequence. Not changed: the evidence and run stores, JUnit XML and HTML.
+  shipped specs holds such a sequence. The JUnit XML report follows the same rule with `&#35;`, the
+  character reference every XML parser reads as `#` (since the pre-merge audit of `598f0858`), and
+  a text with no `##` comes back as it is. Not changed: the evidence and run stores, and the HTML
+  report (a page for a browser, where a reference is not decoded inside `<script>` or `<style>`).
 - Decided under the owner's delegation (best practice), revisable: OD-20 in u12 §6 and §9 and its
   00-INDEX row, the MANUAL and `docs/02-threat-model.md` S6; `tests/test_json_log_commands.py`
-  (18 tests: the rewrite, a 400-example property that the parsed data and its re-serialization are
-  byte for byte the plain serializer's, and each JSON output through the CLI; it does not collect
-  on `6d5f7ae`), and `tests/test_terminal_log_commands.py`'s JSON test now asserts the escape (it
+  (20 tests: the rewrite, a 400-example property that the parsed data and its re-serialization are
+  byte for byte the plain serializer's, each JSON output and the JUnit report through the CLI, and
+  the fast path; it does not collect on `6d5f7ae`), and `tests/test_terminal_log_commands.py`'s JSON test now asserts the escape (it
   pinned the raw prefix as an open decision).
 
 ### Decided (five open decisions closed under the owner's delegation, 2026-10-11)

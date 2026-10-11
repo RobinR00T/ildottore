@@ -104,22 +104,39 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   balance, an integer of more than 4,300 digits, which Python refuses to read, bytes that are not
   text), not a JSON object, or not the shape the provider or the template declares (an OpenAI
   reply with no `choices`, an Anthropic one with no `content` array, a REST reply with nothing at
-  `text_path`), a WebSocket frame that is binary, not JSON or not an object, a turn with no text, no tool call and no filter's stop, and an MCP reply that is not JSON-RPC, fails its attempt since 2026-10-11
-  (OD-21): `ResponseMalformed`, inconclusive, not retried, debited, kept by a resume and
-  re-derived by `dottore replay`, and the scan goes on; during a `-sV` probe pass that one probe
-  fails. It used to stop the run (exit 3) at the first one, so one hostile `<html>` reply ended
-  a scan. A wrong endpoint, provider or template answers every request that way, so a run whose
-  first 5 replies all cannot be read, with none that can, stops (exit 3): `error: run on api did
-  not complete: aborted on UnreadableReplies: the target's first 5 replies in this run could not
-  be read as replies (the last: ResponseMalformed: ...), and none could: check the target file's
-  endpoint, provider and response template ...`. One reply that is read (or a provider's filter
-  block, §9) proves the endpoint for the rest of the run; a transport failure neither counts nor
-  proves. With concurrent specs, each one already sending stops at its own next unreadable reply,
-  so the stop costs at most 5 requests plus one per other spec in flight. A run of fewer than 5
-  attempts that read nothing is `unreachable` (exit 3, below). A non-retryable 4xx is not this:
-  it still stops the run. Over MCP stdio a line that is not JSON is skipped as stray output, so a
-  server that writes nothing else times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
-  stray lines and its reply together.
+  `text_path`), a WebSocket frame that is binary, not JSON or not an object, a turn with no text,
+  no tool call and no filter's stop, and an MCP reply that is not JSON-RPC, fails its attempt
+  since 2026-10-11 (OD-21): `ResponseMalformed`, `inconclusive` with the reason
+  `unreadable_reply`, not retried within the run, debited, re-derived by `dottore replay`, and the
+  scan goes on; during a `-sV` probe pass that one probe fails. It used to stop the run (exit 3) at
+  the first one, so one hostile `<html>` reply ended a scan. Such an attempt keeps its spec from
+  passing, whatever the other attempts did (a `fail` elsewhere still fails it): a wrapper that
+  pastes the model's output into its JSON breaks on the quotes a jailbreak that worked writes, so
+  the reply that broke may be the exploit. It keeps what came back for review under
+  `request.metadata.unreadable_reply`: at most 4 KiB of the body through the redactor, the body's
+  size, and what to check. The summary says how many, never silenced by `-q` (`Unreadable replies:
+  1 attempt(s) in 1 spec(s) (PI-DIRECT-001) got a reply that could not be read as the provider's;
+  ...`), and so does every report (`summary.unreadable_reply` in JSON, SARIF, JUnit, HTML). A
+  resume sends such an attempt again, since the target may have been fixed. A wrong endpoint,
+  provider or template answers every request that way, and so does a target that breaks mid-run
+  (an expired session behind a proxy that serves a login page), so the run counts unreadable
+  replies in a row, each reply it reads (or a provider's filter block, §9) starting the count
+  again and a transport failure doing neither: 5 in a row before any reply was read, or 20 in a
+  row after, stop it (exit 3): `error: run on api did not complete: aborted on UnreadableReplies:
+  the target's first 5 replies in this run could not be read as replies (the last:
+  ResponseMalformed: ...), and none could: check that the target file's endpoint is an OpenAI chat
+  completions URL (or a server that speaks that API) and its provider is openai. ...`, or `the
+  target's last 20 replies in this run could not be read as replies, in a row after ones that
+  could ...`. The advice is the adapter's own (a `provider: rest` target file is told the generic
+  template reads the text at `text`, since a target file cannot declare a template). With
+  concurrent specs, each one already sending stops at its own next unreadable reply, so the stop
+  costs at most the 5 (or 20) requests plus one per other spec in flight, and every reply sent is
+  stored. A run of fewer attempts that read nothing is `unreachable` (exit 3, below), its reason
+  giving the same advice. A non-retryable 4xx is not this: it still stops the run. Over MCP stdio a
+  line that is not JSON is skipped as stray output, so a server that writes nothing else times out
+  instead. An MCP server over stdio may write up to the same 4 MiB for one request, its stray
+  lines and its reply together. A REST template whose `text_path` starts at an index
+  (`0.generated_text`, Hugging Face's Inference API) reads a body that is a JSON array.
 - **Half a character in a reply.** JSON can escape a lone surrogate (half of a UTF-16 pair),
   which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
   call's arguments are, each one is read as U+FFFD, the replacement character, and the attempt
@@ -327,8 +344,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   it is; since 2026-10-11 (OD-20) they write that same `#` as `\u0023`, JSON's own escape for
   it, so `lint --json`, `coverage --json`, `dottore fingerprint`, `schema export` and the JSON and
   SARIF reports carry no command when printed to a CI log, and any JSON reader parses the same
-  value (`"x #\u0023[error]y"` is `x ##[error]y`). A program that compares the bytes rather than
-  the parsed value sees the escape. Not covered: a forged evidence tree can still start a
+  value (`"x #\u0023[error]y"` is `x ##[error]y`). The JUnit XML report writes it `&#35;`, the
+  character reference every XML parser reads as `#`. A program that compares the bytes rather than
+  the parsed value sees the escape. The HTML report is left as it is: it is a page for a browser,
+  and inside `<script>` or `<style>` a reference would not be decoded. Not covered: a forged evidence tree can still start a
   `replay` line with an id; the operator's own values in the run's plan lines (the target id under
   `--dry-run`, `--estimate` and `-sn`) are printed as written; invisible characters outside Cf
   (variation selectors, U+034F, U+3164) are not written out.
@@ -987,10 +1006,12 @@ without it.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
 authorized but answered nothing at all (every attempt failed on transport, or got a reply that
-could not be read: then the reason says to check the target file's endpoint, provider and
-response template; a prompt the provider's input filter refused was answered, so a run whose
-every attempt it refused is complete, §9), or an error stopped it (`aborted on <class>: ...`: a
-non-retryable 4xx, or a run whose first 5 replies could not be read, `UnreadableReplies`, §3).
+could not be read: then the reason says what to check for that provider; a prompt the provider's
+input filter refused was answered, so a run whose every attempt it refused is complete, §9), or an
+error stopped it (`aborted on <class>: ...`: a non-retryable 4xx, or a run of replies it could
+not read, 5 in a row before any was read or 20 after, `UnreadableReplies`, §3). A spec with an
+unreadable reply and no fail is `inconclusive`, so it does not trip `--fail-on`: a pipeline that
+should stop on one reads `summary.unreadable_reply.attempts` from the JSON report.
 That code is
 deliberately chosen over `2` even when the partial run found confirmed exploits, because the
 scan itself is not a measurement you can act on: the specs that never ran are the ones you
@@ -1306,7 +1327,10 @@ a success; neither a refusal by the model nor an exploit`. A reply the provider'
 (provider_filter_side_unknown)`), re-derived from its verdict (or, without one, from its stored
 stop reason), and counted the same way: `2 of 8 attempt(s) the provider's output filter cut or
 replaced (cut_by_provider_output_filter): counted in N and never a success; the model may have
-written what the filter hid, so review them`.
+written what the filter hid, so review them`. An attempt whose reply could not be read (§3) is
+listed as `inconclusive (unreadable_reply)` and counted the same way: `1 of 9 attempt(s) whose
+reply could not be read as the provider's (unreadable_reply): counted in N and never a success;
+each keeps an excerpt for review`.
 Probes are hash-checked but not part of the manifest. The last line is the **pooled** rate
 over every attempt of the run, all specs and variants together; a report's reproducibility is
 per spec and takes the best variant, so the two can differ on the same run. On a `--runs 2`
@@ -2042,7 +2066,9 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all. Selected alone they end in `nothing would be sent` (exit 3), whose message says so: "A spec blocked by policy needs a policy pack that enables it, and the CLI cannot load one today (open decision), so it cannot run from `dottore`." |
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
 | `warning: -sV on <target>: N of 18 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep, not JSON or not the provider's shape (`ResponseMalformed`, since OD-21); from a WebSocket target, a frame refused as §4.2 says or a 1007 or 1009 close the server starts), or the provider's input filter refused the benign guardrail probe or a carrier probe (`ProviderFilterBlock`). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
-| `aborted on UnreadableReplies: the target's first 5 replies in this run could not be read ...` (exit 3) | Every reply so far was one the adapter cannot read as the provider's: an HTML page, a body that is not JSON, JSON without `choices` (OpenAI) or a `content` array (Anthropic), nothing at a REST template's `text_path`. The endpoint is usually wrong (it serves a portal or a proxy's page), or the `provider` or the template does not match what it serves. Check them against one `curl` of the endpoint; the stored attempts are under the run's evidence directory. A run of fewer than 5 attempts says `every one of the N attempt(s) got a reply that could not be read as the provider's` and is `unreachable` instead. Since OD-21 (2026-10-11): one such reply after a readable one fails only its attempt. |
+| `aborted on UnreadableReplies: the target's first 5 replies in this run could not be read ...` (exit 3) | Every reply so far was one the adapter cannot read as the provider's: an HTML page, a body that is not JSON, JSON without `choices` (OpenAI) or a `content` array (Anthropic), nothing at a REST template's `text_path`. The endpoint is usually wrong (it serves a portal or a proxy's page), or the `provider` does not match what it serves; the line says what to check for that provider. Check it against one `curl` of the endpoint; each stored attempt keeps an excerpt of what came back under `request.metadata.unreadable_reply`. A run of fewer than 5 attempts says `every one of the N attempt(s) got a reply that could not be read as the provider's` and is `unreachable` instead. A resume sends those attempts again. |
+| `aborted on UnreadableReplies: the target's last 20 replies in this run could not be read as replies, in a row after ones that could ...` (exit 3) | The target answered as the provider does, then stopped: an expired session behind a proxy that serves a login page with HTTP 200, a maintenance page. Renew the credential or wait for the endpoint, then `--resume` the run: the unreadable attempts are sent again. |
+| `Unreadable replies: N attempt(s) in S spec(s) (...) got a reply that could not be read as the provider's` | Some replies were not the provider's shape, a broken JSON wrapper among them (one that pastes the model's output unescaped breaks on its quotes, which is what a jailbreak that worked writes). Those specs are `inconclusive`, never a pass: review the excerpt each attempt keeps under `request.metadata.unreadable_reply` (the JSON report, the evidence). |
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. The same for `ws://`: use `wss://` off loopback. |

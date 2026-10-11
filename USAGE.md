@@ -145,10 +145,11 @@ budget ceiling halts the campaign, the exit code is `3`, the reason is printed, 
 carries `summary.status.state = "budget_exhausted"` with `coverage.specs.total` (planned) above
 `coverage.specs.run` (completed); a target that was authorized but answered nothing (every
 attempt failed on transport, or got a reply that could not be read as the provider's) is
-`"unreachable"`, and one whose first 5 replies all could not be read stops early as
-`"aborted"` (`aborted on UnreadableReplies: ...`: check the target file's endpoint, provider and
-template). One unreadable reply after a readable one fails only its attempt (OD-21). A partial
-scan is never reported as a clean one. Read `summary.status.reason` before you treat it as a flake;
+`"unreachable"`, and one whose replies could not be read 5 in a row before any was read, or 20
+in a row after, stops early as `"aborted"` (`aborted on UnreadableReplies: ...`, with what to
+check for that provider). One unreadable reply fails only its attempt (OD-21), and its spec is
+`inconclusive`, never a pass; `summary.unreadable_reply` counts them. A partial scan is never
+reported as a clean one. Read `summary.status.reason` before you treat it as a flake;
 [`docs/MANUAL.md`](docs/MANUAL.md) explains why. Only an **exploited** (`fail`) finding trips
 the gate; `pass`/`inconclusive` never do.
 

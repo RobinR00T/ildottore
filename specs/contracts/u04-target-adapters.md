@@ -329,8 +329,21 @@ reads as U+FFFD, since httpx decodes the stream as text.
   JSON-RPC `error` an MCP server answers, a WebSocket handshake reply that does not satisfy
   `expect`, a refused upgrade, and configuration the adapter cannot send. Since the `-sV` probe
   pass isolates every refused reply by the same marker (u09 A-35), such a probe fails alone, as
-  `layer/probe: ResponseMalformed`. Checked by `tests/adapters/test_malformed_replies.py` (24
-  tests; it does not collect on `6d5f7ae`) and the tests that pinned the old rule, now asserting
+  `layer/probe: ResponseMalformed`. The error carries what the attempt keeps for review (pre-merge
+  audit of `598f0858`, HIGH 1): `excerpt`, at most 4 KiB (`UNREADABLE_EXCERPT_BYTES`) of the body's
+  UTF-8 through the adapter's redactor, redacted over twice that and then cut so a credential across
+  the cut is masked whole (`reply_excerpt`); `size`, the body's bytes; `advice`, the adapter's
+  `unreadable_advice`, worded for it (openai: an OpenAI chat completions URL and `provider: openai`;
+  anthropic: the Messages API; websocket: the block's `text_path`, `tool_calls_path` and
+  `final_path`; mcp: an MCP server; a REST template built in Python: its `text_path`; a target
+  file's `provider: rest` target, built by `cli.wiring`, the generic template's `text` and that a
+  template is the Python API's, never "check the response template", which a target file cannot
+  declare: LOW 2). A shape error raised inside `_parse_response` gets the body in
+  `_handle_final_response`. A REST template whose `text_path` starts at an index
+  (`reads_array_body`, Hugging Face's `0.generated_text`) reads a body that is a JSON array; every
+  other adapter and template still refuses one as not an object (LOW 2). Checked by
+  `tests/adapters/test_malformed_replies.py` (it does not collect on `6d5f7ae`),
+  `tests/adapters/test_rest_array_body.py` and the tests that pinned the old rule, now asserting
   this one (`test_base.py`, `test_openai.py`, `test_anthropic.py`, `test_rest.py`,
   `test_deep_replies.py`, `test_websocket.py`, `test_websocket_premerge.py`,
   `test_provider_filter_block.py`).

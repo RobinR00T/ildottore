@@ -121,7 +121,8 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   and non-ASCII inside pydantic's own output) and keep every value as it is; since OD-20 (decided
   2026-10-11 under the owner's delegation, revisable) each of them, `lint --json`, `coverage
   --json`, `dottore fingerprint`, `schema export`, the JSON report and the SARIF report, writes
-  that same `#` as `\u0023` (`redactor.log_safe_json`), JSON's own escape for it, so a JSON
+  that same `#` as `\u0023` (`redactor.log_safe_json`), JSON's own escape for it, and the JUnit XML
+  report as `&#35;` (`redactor.log_safe_xml`, since the pre-merge audit of `598f0858`, LOW 4), so a
   reader parses the same value and a CI log carries no command from it
   (`tests/test_json_log_commands.py`: the parsed document is the plain serializer's, and
   serialized again with the output's options it is the plain bytes). This does not cover the
@@ -1108,19 +1109,29 @@ providers whose stops are read are openai (Azure), anthropic and websocket: a `p
 target is the generic template, so Bedrock's and Gemini's shapes are library-only (u04). Checked
 by `tests/cli/test_provider_output_filter_campaign.py`.
 
-**A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21) A run that read nothing says
-to check the target file.** A run halted by the runner's stop prints `error: run on <id> did not
-complete: aborted on UnreadableReplies: the target's first 5 replies in this run could not be read
-as replies (the last: ResponseMalformed: ...), and none could: check the target file's endpoint,
-provider and response template. ...` through `for_terminal`, and every report carries the state
-`aborted` with that reason (exit 3). A run of fewer attempts that read nothing is `unreachable`
-(`_unreachable_reason`): when every attempt's error starts with `ResponseMalformed: ` the reason
-reads `every one of the <n> attempt(s) got a reply that could not be read as the provider's, so
-nothing was evaluated: check the target file's endpoint, provider and response template. The
-first: <error>`; with transport failures among them, `failed on transport or (<k> of them) with a
-reply that could not be read as the provider's`; with transport failures only, the reason is as
-before. The report schema's `status` description names `aborted` and the new meaning of
-`unreachable`. Checked by `tests/cli/test_malformed_reply_campaign.py`.
+**A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21; amended after the pre-merge audit
+of `598f0858`) The CLI says how many replies it could not read, and a run that read nothing says
+what to check.** The terminal summary, under the coverage block (never silenced by `-q`), prints
+`Unreadable replies: <k> attempt(s) in <s> spec(s) (<spec ids>) got a reply that could not be read
+as the provider's; inconclusive, never a pass: each keeps an excerpt for review under
+request.metadata.unreadable_reply, and a resume sends them again` when `k` is not 0, and the `Not
+exercised` line names such a reply among its causes. A run halted by the runner's stop prints
+`error: run on <id> did not complete: aborted on UnreadableReplies: ...` through `for_terminal`, the
+advice in it the adapter's own (an OpenAI chat completions URL and `provider: openai`; the Messages
+API; the websocket block's paths; for a `provider: rest` target file, the generic template's `text`
+and that a template is the Python API's, `cli.wiring.REST_TARGET_FILE_ADVICE`: it was told to check
+a response template it cannot declare, LOW 2), and every report carries the state `aborted` with
+that reason (exit 3). A run of fewer attempts that read nothing is `unreachable`
+(`_unreachable_reason`): an attempt counts as unreadable by its verdict's reason or, without a
+verdict, by the error's mark ` [unreadable_reply]` (`shared.unreadable`; it read the class name,
+LOW 3); when every failed attempt is one, the reason reads `every one of the <n> attempt(s) got a
+reply that could not be read as the provider's, so nothing was evaluated: <advice>. The first:
+<error>`, the advice read from the attempt's `request.metadata.unreadable_reply`; with transport
+failures among them, `failed on transport or (<k> of them) with a reply that could not be read as
+the provider's`; with transport failures only, the reason is as before. A resume says how many it
+sends again because they could not be read (`; <k> that could not be read will be sent again`,
+LOW 1). The report schema's `status` description names `aborted` and the wider `unreachable`.
+Checked by `tests/cli/test_malformed_reply_campaign.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
@@ -1167,10 +1178,15 @@ before. The report schema's `status` description names `aborted` and the new mea
   such a sequence (none of the shipped specs does), so a consumer that compares bytes rather than
   parsed values sees the escape. Not taken: A, leave it and tell the operator to write JSON to a
   file; B as first proposed, the `[` written as `\u005b`, equally lossless, but a second shape
-  for one rule. Not covered: the evidence store and the run store, the tool's own storage read
-  back by `replay` and `--resume`, whose bytes are content-addressed and are not an output; the
-  JUnit XML and HTML reports, which are not JSON. Reversal: drop the `log_safe_json` calls (seven,
-  in `cli/app.py`, `cli/lint.py`, `cli/coverage.py` and the two reporters).
+  for one rule. Amended after the pre-merge audit of `598f0858`: the JUnit XML report follows the
+  same rule (LOW 4), its `#` written `&#35;`, the character reference every XML parser reads as `#`
+  (`ElementTree` writes a `#` only in text or an attribute value, where a reference is read), and a
+  text with no `##` is returned as it is, unscanned (LOW 5). Not covered: the evidence store and the
+  run store, the tool's own storage read back by `replay` and `--resume`, whose bytes are
+  content-addressed and are not an output; the HTML report, a page for a browser, where a
+  reference is not decoded inside a raw-text element (`<script>`, `<style>`). Reversal: drop the
+  `log_safe_json` calls (seven, in `cli/app.py`, `cli/lint.py`, `cli/coverage.py` and the two
+  reporters) and the `log_safe_xml` one (`reporting/junit_reporter.py`).
 - **OD-23** (shared with u09, 2026-10-07): what `run -sV` / `-A` and `dottore fingerprint` do
   when one probe's reply comes back refused. Built reversibly as option A: the probe fails, a
   `warning:` line on stderr names it (never silenced by `-q`), the fingerprint line ends
