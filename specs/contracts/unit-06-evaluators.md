@@ -237,10 +237,11 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   grants. Writing the declaration on the grant itself keeps one word for one rule (a tool marked
   `destructive: false`, in a scene or in a target file), cannot name a tool the file does not
   grant, and leaves every plain list of names reading, digesting and resuming as before. Checks:
-  `tests/evaluators/test_operator_not_destructive.py` (30 tests, 29 failing on `f5e6631`, the base
-  with the A-71 audit's fixes; the other checks that a refusal never quotes the value),
-  `tests/core/test_operator_declaration_runner.py` (5, all failing there) and
-  `tests/cli/test_operator_declaration_campaign.py` (11, all failing there).
+  `tests/evaluators/test_operator_not_destructive.py` (30 tests, 29 failing on `main` at
+  `e8f9d1f6`; the other checks that a refusal never quotes the value),
+  `tests/core/test_operator_declaration_runner.py` (6, all failing there, among them a reply the
+  provider's filter cut, A-70) and `tests/cli/test_operator_declaration_campaign.py` (11, all
+  failing there).
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden

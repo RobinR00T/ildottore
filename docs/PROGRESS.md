@@ -6,16 +6,17 @@ The carryover ledger. Every agent session updates this so context survives even 
 ## State, 2026-10-11 (later): a target file may declare one of its own granted tools not destructive (OD-43)
 
 - On `feat/operator-declared-tools`, branched from `fix/handoff-tools-and-lint-stub` (`f76f145`,
-  under pre-merge audit and not merged) and merged with its audit fixes (`f5e6631`): the item that
-  branch left open for the owner, decided as OD-43 (2026-10-11, 09:26) and built as u06 A-72,
-  with halves in u00, u08, u10, u11 and u12 and two index rows. A `seeded_setup.granted_tools`
-  entry may be `{name: <tool>, destructive: false}`, and `tool_call` then does not fail a call to
-  that exact name by its name alone, for a spec whose scene does not name the tool. Measured on
-  `f76f145` with a loopback agent that answers every prompt with `transfer_to_billing_agent` and
-  a judge that answers secure: `AG-TOOL-UNAUTH-001` at `--runs 2`, the tool granted plainly, is
-  `fail` 2/2 (`matched: ['transfer_to_billing_agent']`, exit 2), and the entry form is refused
-  there; on this branch the same run with the declaration is `pass` 2/2, exit 0, and with the
-  plain grant still `fail` 2/2.
+  under pre-merge audit and not merged), merged with its audit fixes (`f5e6631`) and then with
+  `main` at `0685f2ce` (#105, the hand-off fix as merged, and #106, OD-42) and `e8f9d1f6` (#107):
+  the item that branch left open for the owner, decided as OD-43 (2026-10-11, 09:26) and built as
+  u06 A-72, with halves in u00, u08, u10, u11 and u12 and two index rows. A
+  `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`, and `tool_call`
+  then does not fail a call to that exact name by its name alone, for a spec whose scene does not
+  name the tool. Measured on `f76f145` with a loopback agent that answers every prompt with
+  `transfer_to_billing_agent` and a judge that answers secure: `AG-TOOL-UNAUTH-001` at `--runs 2`,
+  the tool granted plainly, is `fail` 2/2 (`matched: ['transfer_to_billing_agent']`, exit 2), and
+  the entry form is refused there; on this branch the same run with the declaration is `pass` 2/2,
+  exit 0, and with the plain grant still `fail` 2/2.
 - Shape chosen: the declaration is written on the grant, not as a sibling list
   (`not_destructive: [...]`, a subset of the grants), because it keeps one word for one rule (a
   tool marked `destructive: false`, in a scene or in a target file), cannot name a tool the file
@@ -47,16 +48,17 @@ The carryover ledger. Every agent session updates this so context survives even 
   the grants and the declaration off it, and every path that judges a reply passes it:
   `_evaluate`, `_trace_before_block` and, since the merge of `main` at `0685f2ce` (#105, #106),
   OD-42's `_cut_verdict`, so a hand-off in a reply the provider's filter cut is no fail (the
-  attempt stays a cut needing review, its verdict carrying the note; the coordinator's M4). The JSON summary's `operator_declarations` (always emitted; the golden
-  JSON snapshot gains the empty key, the other three snapshots do not move), the SARIF run and
+  attempt stays a cut needing review, its verdict carrying the note). The JSON summary's
+  `operator_declarations` (always emitted; the golden JSON snapshot gains the empty key beside
+  OD-42's, the other three snapshots do not move), the SARIF run and
   results, each JUnit suite and case, the HTML targets and summary, the terminal summary's last
   line, the run store (`context_json.not_destructive_tools`, masked as a target id is) and
   `dottore replay`.
 - Resume: in the target digest, left out when none is declared (a run stored before keeps its
   digest); a change is refused, naming the old and the new declaration.
-- Tests: `tests/evaluators/test_operator_not_destructive.py` (30, 29 fail on `f5e6631`; the one
-  that passes there checks that a refusal never quotes the value),
-  `tests/core/test_operator_declaration_runner.py` (5, all fail there),
+- Tests: `tests/evaluators/test_operator_not_destructive.py` (30, 29 fail on `main` at
+  `e8f9d1f6`; the one that passes there checks that a refusal never quotes the value),
+  `tests/core/test_operator_declaration_runner.py` (6, all fail there, among them a cut reply),
   `tests/cli/test_operator_declaration_campaign.py` (11, all fail there: every report of one run
   through the real CLI and the same run without the declaration, the dry run, `-sn`, the two plan
   warnings, the worked example, four resume cases). Docs: MANUAL §4.2, §5, §8, §10 and replay,

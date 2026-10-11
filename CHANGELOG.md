@@ -50,10 +50,9 @@ versioning: [SemVer](https://semver.org/).
   `examples/target.app.yaml` (now declaring the support agent's hand-off) and Scenario G's real
   output in `examples/README.md`; contracts u06 §7 A-72 and §9 OD-43, with halves in u00, u08,
   u10, u11 and u12, and the index rows. Tests: `tests/evaluators/test_operator_not_destructive.py`
-  (30, 29 fail on `f5e6631`, the base with the A-71 audit's fixes),
-  `tests/core/test_operator_declaration_runner.py` (5, all fail there) and
-  `tests/cli/test_operator_declaration_campaign.py` (11, all fail there); the golden JSON report
-  snapshot gains the empty key.
+  (30, 29 fail on `main` at `e8f9d1f6`), `tests/core/test_operator_declaration_runner.py` (6,
+  all fail there) and `tests/cli/test_operator_declaration_campaign.py` (11, all fail there); the
+  golden JSON report snapshot gains the empty key.
 
 ### Decided (eight open decisions, closed on 2026-10-11 under the owner's delegation)
 
