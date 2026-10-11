@@ -773,6 +773,20 @@ class BaseAdapter(ABC):
 
         return NO_FILTER_STOPS
 
+    @property
+    def own_filter_stops(self) -> frozenset[str]:
+        """The stop reasons this adapter's provider documents for its filter, whatever is declared.
+
+        :attr:`filter_stops` without a declaration; a declaration may only narrow it (u04 A-79).
+        A reply with no text and no tool call that ends on one of these is the filter's withheld
+        reply even when the target file's declaration leaves the word out: a gateway in front of
+        Azure OpenAI relays Azure's empty ``content_filter``, and there is nothing of the model's
+        in it to score (``shared.provider_filter.stop_provenance``; pre-merge audit of
+        ``10cb526b``, MEDIUM). None here.
+        """
+
+        return NO_FILTER_STOPS
+
     #: True for an adapter whose replies may be a JSON array (a REST template rooted at an index).
     @property
     def reads_array_body(self) -> bool:
@@ -800,8 +814,8 @@ class BaseAdapter(ABC):
                     f"{label} has a tool call whose arguments are {exc}; not evaluated"
                 ) from exc
         # Every success reply leaves through here: its stop is read as a filter's only when this
-        # adapter's provider documents it (u04 A-79).
-        return stop_provenance(parsed, self.filter_stops)
+        # adapter's provider documents it (u04 A-79), and its own word on an empty reply always.
+        return stop_provenance(parsed, self.filter_stops, self.own_filter_stops)
 
     def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
         """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""

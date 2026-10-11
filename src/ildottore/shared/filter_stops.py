@@ -21,7 +21,8 @@ says otherwise.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from types import MappingProxyType
 from typing import Final
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     "GEMINI_FILTER_STOPS",
     "NO_FILTER_STOPS",
     "OPENAI_FILTER_STOPS",
+    "PROVIDER_FILTER_STOPS",
     "documented_stops",
     "normalized_stop",
 ]
@@ -96,6 +98,16 @@ NO_FILTER_STOPS: Final = frozenset[str]()
 #: ``length`` and ``max_tokens`` (a reply cut at its token cap) are not among them.
 FILTER_STOPS: Final = (
     OPENAI_FILTER_STOPS | GEMINI_FILTER_STOPS | ANTHROPIC_FILTER_STOPS | BEDROCK_FILTER_STOPS
+)
+
+
+#: The filter stops each ``provider`` of a target file reads by default, for the two whose file
+#: may narrow them with a top-level ``filter_stops`` (u04 A-79): its own word, or nothing. A
+#: declaration never takes the word from a reply with no text and no tool call, which is the
+#: filter's withheld one (``shared.provider_filter.stop_provenance``). A WebSocket target declares
+#: its stops in its block, and a REST one reads none.
+PROVIDER_FILTER_STOPS: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
+    {"openai": OPENAI_FILTER_STOPS, "anthropic": ANTHROPIC_FILTER_STOPS}
 )
 
 

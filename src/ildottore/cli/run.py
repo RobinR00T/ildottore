@@ -78,6 +78,7 @@ from ildottore.reporting import RunStatus
 from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import Category, EvaluatorType
+from ildottore.shared.filter_stops import PROVIDER_FILTER_STOPS
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -1308,9 +1309,18 @@ def _filter_stops_line(target: Target) -> str | None:
     if declared is None:
         return None
     if not declared:
+        # Its own word still reads on an empty reply (pre-merge audit of 10cb526b, MEDIUM).
+        own = PROVIDER_FILTER_STOPS.get((target.provider or "").strip().lower(), frozenset())
+        withheld = (
+            f"; an empty reply that ends on {', '.join(sorted(own))} is still the filter's "
+            "withheld one, never a pass"
+            if own
+            else ""
+        )
         return (
-            f"{visible_controls(target.id)}'s target file declares {where}: [], so no stop and no "
-            "HTTP 400 is read as its provider's filter; every reply is scored as the model's"
+            f"{visible_controls(target.id)}'s target file declares {where}: [], so no HTTP 400 is "
+            "read as its provider's filter and a reply with text or a tool call is scored as the "
+            f"model's, whatever its stop{withheld}"
         )
     return (
         f"{visible_controls(target.id)}'s target file declares {where}: "

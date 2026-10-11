@@ -92,11 +92,19 @@ class OpenAIAdapter(BaseAdapter):
         ``guardrail_intervened`` in a reply is an ordinary stop: a gateway or a target that writes
         one cannot make its reply read as a filter's. With it, Azure's HTTP 400 ``content_filter``
         is the prompt filter's block (OD-41). A target file that declares ``filter_stops: []``
-        (an endpoint that speaks the API and is not OpenAI or Azure) reads none.
+        (an endpoint that speaks the API and is not OpenAI or Azure) reads none on a reply with
+        text or a tool call, and no HTTP 400; an empty reply that ends on ``content_filter`` is
+        still the filter's withheld one (:attr:`own_filter_stops`).
         """
 
         if self.declared_filter_stops is not None:
             return self.declared_filter_stops
+        return OPENAI_FILTER_STOPS
+
+    @property
+    def own_filter_stops(self) -> frozenset[str]:
+        """``content_filter``, whatever the file declares: on an empty reply, the filter's."""
+
         return OPENAI_FILTER_STOPS
 
     @property

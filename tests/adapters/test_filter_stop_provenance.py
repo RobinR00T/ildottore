@@ -51,23 +51,25 @@ def _send(adapter: TargetAdapter, url: str, body: dict[str, Any]) -> ModelRespon
     return asyncio.run(go())
 
 
-def _openai() -> OpenAIAdapter:
+def _openai(declared: frozenset[str] | None = None) -> OpenAIAdapter:
     return OpenAIAdapter(
         id="openai",
         base_url="https://gw.example.com",
         allowlist=EndpointAllowlist([Endpoint(host="gw.example.com", path_prefixes=["/v1"])]),
         model="m",
         retry=_FAST,
+        declared_filter_stops=declared,
     )
 
 
-def _anthropic() -> AnthropicAdapter:
+def _anthropic(declared: frozenset[str] | None = None) -> AnthropicAdapter:
     return AnthropicAdapter(
         id="anthropic",
         base_url="https://api.anthropic.com",
         allowlist=EndpointAllowlist([Endpoint(host="api.anthropic.com", path_prefixes=["/v1"])]),
         model="claude-stub",
         retry=_FAST,
+        declared_filter_stops=declared,
     )
 
 
@@ -165,6 +167,72 @@ def test_control_an_ordinary_stop_is_not_marked() -> None:
     response = _send(_openai(), _OPENAI_URL, _openai_body("hello", "stop"))
     assert not getattr(response, "foreign_stop", False)
     assert "foreign_stop" not in response.model_dump()
+
+
+# --- a declaration that leaves the provider's own word out (pre-merge audit of 10cb526b) ------
+#
+# MEDIUM: ``filter_stops: []`` made Azure's withheld reply (no content, ``content_filter``) the
+# model's empty answer, so ``PI-DIRECT-001`` passed and the run exited 0, where without the
+# declaration it is cut, ``filtered``, exit 3. A gateway in front of Azure relays that reply. A
+# reply with no text and no tool call that ends on the provider's own word is now the filter's
+# whatever is declared; one with text or a tool call is the model's, as declared.
+
+_NONE: frozenset[str] = frozenset()
+
+
+@pytest.mark.parametrize("text", [None, "", "  \n"])
+def test_an_empty_reply_on_openais_own_word_is_the_filters_whatever_is_declared(
+    text: str | None,
+) -> None:
+    withheld = _send(_openai(_NONE), _OPENAI_URL, _openai_body(text, "content_filter"))
+    assert withheld.foreign_stop is False, "10cb526b: foreign, scored as an empty answer"
+    assert filter_side(withheld) == "output", "as without the declaration: the filter's cut"
+    assert "foreign_stop" not in withheld.model_dump()
+
+
+def test_an_empty_refusal_from_an_anthropic_target_is_the_filters_whatever_is_declared() -> None:
+    refused = _send(_anthropic(_NONE), _ANTHROPIC_URL, _anthropic_body("", "refusal"))
+    assert refused.foreign_stop is False
+    assert filter_side(refused) == "input", "as without the declaration: a block"
+
+
+def test_under_the_declaration_a_reply_with_text_or_a_tool_call_is_still_the_models() -> None:
+    cut = _send(_openai(_NONE), _OPENAI_URL, _openai_body(_HARMFUL, "content_filter"))
+    assert cut.foreign_stop is True and filter_side(cut) is None
+    called = _openai_body(None, "content_filter")
+    called["choices"][0]["message"]["tool_calls"] = [
+        {"id": "c1", "type": "function", "function": {"name": "send_email", "arguments": "{}"}}
+    ]
+    acted = _send(_openai(_NONE), _OPENAI_URL, called)
+    assert acted.tool_calls and acted.foreign_stop is True and filter_side(acted) is None
+    partial = _send(_anthropic(_NONE), _ANTHROPIC_URL, _anthropic_body(_HARMFUL, "refusal"))
+    assert partial.foreign_stop is True and filter_side(partial) is None
+
+
+def test_another_providers_word_on_an_empty_reply_stays_ordinary() -> None:
+    """Only the provider's own word: an empty ``refusal`` from an ``openai`` target is not."""
+
+    for declared in (None, _NONE):
+        empty = _send(_openai(declared), _OPENAI_URL, _openai_body(None, "refusal"))
+        assert empty.foreign_stop is True and filter_side(empty) is None
+
+
+def test_a_gemini_template_that_declares_none_reads_its_own_word_on_an_empty_reply() -> None:
+    """The same rule for a REST template's shape: 10cb526b read the reply as unreadable."""
+
+    template = RestTemplate(
+        path=_GEMINI.path,
+        prompt_field=_GEMINI.prompt_field,
+        text_path=_GEMINI.text_path,
+        finish_path=_GEMINI.finish_path,
+        filter_stops=frozenset(),
+    )
+    url = "https://llm.example.com/x"
+    withheld = _send(_rest(template), url, {"candidates": [{"finishReason": "SAFETY"}]})
+    assert (withheld.text, withheld.foreign_stop) == ("", False)
+    assert filter_side(withheld) == "output"
+    written = {"candidates": [{"finishReason": "SAFETY", "content": {"parts": [{"text": "x"}]}}]}
+    assert _send(_rest(template), url, written).foreign_stop is True
 
 
 # --- REST: the template's shape, or its declaration --------------------------------------------

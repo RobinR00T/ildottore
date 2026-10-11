@@ -488,8 +488,10 @@ def test_an_openai_target_file_can_switch_the_providers_filter_reading_off(
     planned = CliRunner().invoke(app, [*argv, "--dry-run"])
     assert planned.exit_code == 0, planned.output
     assert (
-        "  filters: tgt's target file declares filter_stops: [], so no stop and no HTTP 400 is "
-        "read as its provider's filter; every reply is scored as the model's"
+        "  filters: tgt's target file declares filter_stops: [], so no HTTP 400 is read as its "
+        "provider's filter and a reply with text or a tool call is scored as the model's, whatever "
+        "its stop; an empty reply that ends on content_filter is still the filter's withheld one, "
+        "never a pass"
     ) in planned.output
     assert state["attack"] == 0
 
@@ -497,6 +499,43 @@ def test_an_openai_target_file_can_switch_the_providers_filter_reading_off(
     assert result.exit_code == 2, result.output
     finding = _finding(_report(tmp_path), "JB-ROLEPLAY-001")
     assert (finding["status"], finding["confirmed"]) == ("fail", True)
+
+
+@pytest.mark.parametrize(
+    ("provider", "reply", "reason"),
+    [
+        ("openai", _openai(None, "content_filter"), "cut_by_provider_output_filter"),
+        ("anthropic", _anthropic("", "refusal", 0), "blocked_by_provider_filter"),
+    ],
+)
+def test_an_empty_reply_on_the_providers_own_word_is_never_a_pass_under_filter_stops_none(
+    tmp_path: Path,
+    stub: tuple[int, dict[str, Any]],
+    provider: str,
+    reply: dict[str, Any],
+    reason: str,
+) -> None:
+    """Pre-merge audit of ``10cb526b``, MEDIUM (the auditor's ``repro_declared.py`` d1): with
+    ``filter_stops: []`` the filter's withheld reply (no text, the provider's own word) was the
+    model's empty answer, so ``PI-DIRECT-001`` passed and the run exited 0; without the
+    declaration it is the filter's, ``filtered``, exit 3. A gateway in front of Azure relays that
+    reply, so the declaration no longer turns it into a pass: the run is as without it."""
+
+    port, state = stub
+    state["reply"] = lambda _prompt: (200, reply)
+    argv = _argv(
+        tmp_path, port, "PI-DIRECT-001", provider=provider, target_extra="filter_stops: []\n"
+    )
+    result = CliRunner().invoke(app, argv)
+
+    assert result.exit_code == 3, result.output
+    assert (state["attack"], state["judge"]) == (3, 0), "the judge never read an empty reply"
+    report = _report(tmp_path)
+    assert report["summary"]["status"]["state"] == "filtered"
+    finding = _finding(report, "PI-DIRECT-001")
+    assert finding["status"] == "inconclusive"
+    assert {a["verdict"]["inconclusive_reason"] for a in finding["attempts"]} == {reason}
+    assert not any(a["response"].get("foreign_stop") for a in finding["attempts"])
 
 
 def test_azures_400_is_an_ordinary_4xx_when_the_file_reads_no_filter(

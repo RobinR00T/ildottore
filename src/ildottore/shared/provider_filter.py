@@ -32,6 +32,9 @@ filter word its provider does not document, or its target file does not declare,
 ``foreign_stop`` (:func:`stop_provenance`), and every function here reads such a reply as one
 with an ordinary stop. A target controls its own stop reason; until then any target could send
 any provider's word and hide a judged exploit behind it (security audit of 2026-10-11, MEDIUM 3).
+One reply is never marked, whatever the file declares: one with no text and no tool call that
+ends on its provider's own word, which is that filter's withheld reply (pre-merge audit of
+``10cb526b``, MEDIUM).
 
 Here, in ``shared``, because several peers read it: the runner records and scores it, the replay
 and every report count it, a resume keeps it without sending it again, and the fingerprint's
@@ -49,6 +52,7 @@ from ildottore.shared.filter_stops import (
     BEDROCK_FILTER_STOPS,
     FILTER_STOPS,
     GEMINI_FILTER_STOPS,
+    NO_FILTER_STOPS,
     OPENAI_FILTER_STOPS,
     normalized_stop,
 )
@@ -141,7 +145,11 @@ def is_filter_stop(stop: str | None) -> bool:
     return normalized_stop(stop) in FILTER_STOPS
 
 
-def stop_provenance(response: ModelResponse, honoured: frozenset[str]) -> ModelResponse:
+def stop_provenance(
+    response: ModelResponse,
+    honoured: frozenset[str],
+    own: frozenset[str] = NO_FILTER_STOPS,
+) -> ModelResponse:
     """``response``, its stop marked foreign when it is a filter's the adapter does not honour.
 
     Each adapter calls it on the reply it read, with the stops its provider documents or its
@@ -153,10 +161,18 @@ def stop_provenance(response: ModelResponse, honoured: frozenset[str]) -> ModelR
     here then reads it as an ordinary stop, so the reply is scored as the model's answer. Until
     the amendment to OD-42 any target could send any provider's word and have a judged exploit
     recorded without deciding (security audit of 2026-10-11, MEDIUM 3).
+
+    ``own`` is what the adapter's provider documents, whatever the file declares. A reply with no
+    text and no tool call that ends on one of them is the filter's withheld reply even when the
+    declaration leaves the word out (``filter_stops: []``): a gateway in front of Azure OpenAI
+    relays Azure's empty ``content_filter``, and an empty reply holds nothing of the model's to
+    score, so it is read as it is without the declaration, never as a pass (pre-merge audit of
+    ``10cb526b``, MEDIUM). A reply with text, or a tool call, is the model's, as declared.
     """
 
     stop = normalized_stop(response.finish_reason)
-    foreign = stop in FILTER_STOPS and stop not in honoured
+    withheld = stop in own and not response.text.strip() and not response.tool_calls
+    foreign = stop in FILTER_STOPS and stop not in honoured and not withheld
     if foreign == response.foreign_stop:
         return response
     return response.model_copy(update={"foreign_stop": foreign})

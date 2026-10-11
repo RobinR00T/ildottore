@@ -120,7 +120,9 @@ class RestTemplate:
       (``shared.filter_stops``). Left ``None``, the template's shape says: one in Bedrock
       Converse's (``finish_path`` ``stopReason``) reads Bedrock's, one in Gemini's (``text_path``
       under ``candidates.``) Gemini's and Vertex AI's, any other none. A filter word the template
-      does not read is an ordinary stop (``ModelResponse.foreign_stop``).
+      does not read is an ordinary stop (``ModelResponse.foreign_stop``), except its shape's own
+      word on a reply with no text, which is that filter's withheld reply whatever is declared
+      (:attr:`shape_filter_stops`; pre-merge audit of ``10cb526b``, MEDIUM).
     """
 
     path: str = "/"
@@ -146,6 +148,16 @@ class RestTemplate:
 
         if self.filter_stops is not None:
             return self.filter_stops
+        return self.shape_filter_stops
+
+    @property
+    def shape_filter_stops(self) -> frozenset[str]:
+        """The stops of the provider whose shape the template has, whatever it declares.
+
+        Bedrock's for a ``finish_path`` of ``stopReason``, Gemini's and Vertex AI's for a
+        ``text_path`` under ``candidates.``, none otherwise (u04 A-79).
+        """
+
         if self.finish_path == _CONVERSE_STOP_PATH:
             return BEDROCK_FILTER_STOPS
         if self.text_path.startswith(_GEMINI_TEXT_ROOT):
@@ -185,6 +197,12 @@ class RestAdapter(BaseAdapter):
         """
 
         return self.template.reads_filter_stops
+
+    @property
+    def own_filter_stops(self) -> frozenset[str]:
+        """The stops of its template's shape (:attr:`RestTemplate.shape_filter_stops`)."""
+
+        return self.template.shape_filter_stops
 
     @property
     def unreadable_advice(self) -> str:
@@ -303,14 +321,18 @@ class RestAdapter(BaseAdapter):
                 finish_reason = candidate
 
         text = get_path(payload, self.template.text_path)
-        if text is None and normalized_stop(finish_reason) in self.filter_stops:
+        if (
+            text is None
+            and normalized_stop(finish_reason) in self.filter_stops | self.own_filter_stops
+        ):
             # The provider's filter stopped the reply and left no text (OD-42): a Gemini candidate
             # stopped with ``SAFETY`` can come without its text (Vertex AI's reference, on
             # ``FinishReason`` ``SAFETY``: "When streaming, the content field is empty if
             # content filters block the output", read 2026-10-11). It was a product error that
             # stopped the campaign; it is a reply with no text and that stop reason, which the
             # runner never reads as the model's answer. Read at ``finish_path`` only, as before,
-            # and only for a stop the template reads (u04 A-79): another is a reply with no text.
+            # and only for a stop the template reads (u04 A-79), or its shape's own word, which on
+            # a reply with no text is the filter's whatever is declared: another is no text.
             text = ""
         if text is None:
             raise ResponseMalformed(
