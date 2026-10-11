@@ -248,6 +248,29 @@ def test_every_report_states_the_declaration_and_the_attempts_it_changed(
         (context,) = db.execute("SELECT context_json FROM runs").fetchone()
     assert json.loads(context)["not_destructive_tools"] == [_HANDOFF]
 
+    # And `dottore replay` reads it back from the evidence.
+    (run_id,) = [p.name for p in (tmp_path / "ev").iterdir() if p.is_dir()]
+    replayed = CliRunner().invoke(
+        app,
+        [
+            "replay",
+            run_id,
+            "--evidence-root",
+            str(tmp_path / "ev"),
+            "--run-db",
+            str(tmp_path / "runs.sqlite"),
+        ],
+    )
+    assert replayed.exit_code == 0, replayed.output
+    assert f"{_SPEC}::identity#0  {_SPEC}  identity  pass (operator declaration)" in (
+        replayed.output
+    )
+    assert (
+        "  2 of 2 attempt artifact(s) with a call to a tool the target file declares not "
+        "destructive, not judged destructive (operator declaration, OD-43): each verdict names "
+        "the tool"
+    ) in replayed.output
+
 
 def test_without_the_declaration_the_same_hand_off_fails_and_no_report_mentions_one(
     tmp_path: Path, agent: tuple[int, dict[str, int]]

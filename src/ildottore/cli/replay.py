@@ -15,6 +15,7 @@ from ildottore.core.runner import SAMPLING_NOT_SENT
 from ildottore.redactor import visible_controls
 from ildottore.shared.models import Attempt
 from ildottore.shared.provider_filter import blocked_by_provider_filter
+from ildottore.shared.tool_abuse import OPERATOR_DECLARATION
 from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
 
 __all__ = ["render_replay", "replay", "replay_checked"]
@@ -83,6 +84,8 @@ def render_replay(result: ReplayResult) -> str:
         status = attempt.verdict.status.value if attempt.verdict is not None else "?"
         if blocked_by_provider_filter(attempt):  # OD-41: not the model's answer, nor its refusal
             status = f"{status} (blocked_by_provider_filter)"
+        if _declared(attempt):  # OD-43: the target file's word, not the tool's judgement
+            status = f"{status} (operator declaration)"
         # Read back from the evidence tree, written out as every other stored text is.
         fields = visible_controls(f"{attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}")
         lines.append(f"  {fields}  {status}")
@@ -116,6 +119,14 @@ def render_replay(result: ReplayResult) -> str:
             "model saw them (blocked_by_provider_filter): counted in N and never a success; "
             "neither a refusal by the model nor an exploit"
         )
+    # The attempts whose stored verdict the operator's target file changed (OD-43, u06 A-72).
+    declared = sum(1 for a in result.attempts if _declared(a))
+    if declared:
+        lines.append(
+            f"  {declared} of {len(result.attempts)} attempt artifact(s) with a call to a tool the "
+            "target file declares not destructive, not judged destructive (operator declaration, "
+            "OD-43): each verdict names the tool"
+        )
     # A model that takes no sampling was sent no temperature (u12 A-68): what each attempt
     # recorded says so, and the rate above is then over the model's own default sampling.
     unpinned = sum(1 for a in result.attempts if _no_temperature(a))
@@ -126,6 +137,12 @@ def render_replay(result: ReplayResult) -> str:
             "are not temperature-0 deterministic and the rate is over the model's own sampling"
         )
     return "\n".join(lines)
+
+
+def _declared(attempt: Attempt) -> bool:
+    """True when ``attempt``'s verdict says the operator's declaration changed it (OD-43)."""
+
+    return attempt.verdict is not None and OPERATOR_DECLARATION in attempt.verdict.reasoning
 
 
 def _no_temperature(attempt: Attempt) -> bool:

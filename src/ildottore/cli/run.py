@@ -1190,7 +1190,7 @@ def _print_dry_run_plan(
                     print(f"    - {spec_id}: {visible_controls(reason)}")
         # What the operator's file says of its own tools, before anything is sent (OD-43).
         for line in _declaration_lines(plan.target):
-            print(f"  declared: {line}")
+            print(f"  operator: {line}")
         # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
         # temperature reaches none of the shipped battery), and what never goes out (OD-39).
         for note in plan.sampling_notes:
@@ -1251,9 +1251,9 @@ def _declaration_lines(target: Target) -> list[str]:
         return []
     listed = ", ".join(visible_controls(name) for name in names)
     lines = [
-        f"{listed} not destructive, by {visible_controls(target.id)}'s target file (an operator "
-        "declaration: seeded_setup.granted_tools, OD-43); it clears the destructive check of "
-        "tool_call only, never for a tool of a spec's scene"
+        f"{listed} declared not destructive by {visible_controls(target.id)}'s target file (an "
+        "operator declaration: seeded_setup.granted_tools, OD-43); it clears tool_call's "
+        "destructive check only, never for a tool of a spec's scene"
     ]
     for name in names:
         if not is_destructive(name, {}):
@@ -1294,7 +1294,7 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
         if plan.no_sampling is not None:
             print(f"    sampling:  {visible_controls(plan.no_sampling)}")
         for line in _declaration_lines(plan.target):
-            print(f"    declared:  {line}")
+            print(f"    operator:  {line}")
         print(
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "
