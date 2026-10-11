@@ -493,7 +493,12 @@ such a reply is never a pass. The criterion:
   (`shared.combination.combine_verdicts`, OD-19, u06 A-73). On a partial reply (text the model
   wrote before an output-side stop or Anthropic's `refusal`, not a Bedrock replacement) the judge
   is consulted and its verdict recorded after the reasoning, `; semantic_judge on what came back,
-  recorded and not deciding: <status> (<confidence>): <its words, at most 240 characters>` (L8);
+  recorded and not deciding: <status> (<confidence>): <its words, at most 240 characters>` (L8;
+  since 2026-10-12 redacted, folded onto one line, redacted again and then cut, never inside a
+  mask or a token, and so is the note below: cut first, a secret across the cut kept a head no
+  rule recognises, 61 of 305 placements leaving 6 or more characters readable, and folded first,
+  a credential registered with a tab was shown whole; audit of main `de122e26`, LOW 5, checked by
+  `tests/core/test_judge_note_redaction.py`, which fails on `de122e26`);
   on an empty or replaced reply it is not asked. It runs after the deciding evaluators and in a
   call of its own, so a request ceiling that refuses it, or any error of its own, is the note
   `; semantic_judge on what came back not consulted, and not deciding: <class>: <message>` and

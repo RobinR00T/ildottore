@@ -239,6 +239,23 @@ control, L4), so the golden JSON snapshot gains the key and the SARIF, JUnit and
 move. Checked by `tests/cli/test_operator_declaration_campaign.py` (every format of one run, the
 JSON against the schema, and the same run without the declaration).
 
+**A-77 (u01's clause; this unit's half, added 2026-10-12, audit of main `de122e26`, HIGH 1 and
+MEDIUM 2) A report masks each attempt as the evidence store does.** `mask_run` and
+`mask_findings` mask everything but the attempts string by string as before, and each attempt
+through `_masked_attempt`: the keys of its free-form fields (`request.messages`, `tools`, `media`
+and `metadata`; `response.tool_calls`, `raw_ids` and `usage`) with `redactor.mask_keys`, two
+that mask alike numbered apart as in the evidence (`«REDACTED:email»`, `«REDACTED:email», #2`),
+then its values with `redactor.redact_split`, so a reply kept as logprob tokens, their
+alternatives or a transcript's deltas is masked as the text it makes. Before, `r.json` wrote a
+tool call's argument names, a usage field's and a frame's in clear (an `sk-proj-` key, a
+registered credential and an email measured as keys), since the redactor masks values only, and
+the pieces of a reply rebuilt the canary and a key the text masked. The model's own keys stay as
+they are, so the masked run validates, and the tool's own fields are restored as before (spec ids,
+attempt ids, evidence references). SARIF, JUnit and HTML read the same masked copies. Checked by
+`tests/reporting/test_split_values_and_keys.py` (three of its seven tests fail on `de122e26`;
+SARIF, JUnit and HTML carried none of those values there either) and through the CLI by
+`tests/cli/test_split_values_e2e.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
 - MUST NOT read/persist to the run or evidence store beyond the injected read interface (u10).

@@ -684,6 +684,48 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
 `InvalidProxyMessage` (an `InvalidHandshake`, reworded without its class) and six of pydantic's
 (`PydanticSchemaGenerationError` among them); nor a plugin's own.
 
+**A-77 A reply kept in pieces is masked as the text the pieces make (added 2026-10-12, audit of
+main `de122e26`, HIGH 1 and MEDIUM 2; halves in u04, u08, u10 and u11).** The redactor masked
+each string on its own, and the evidence store and the reports inherit that: `response.text`
+read masked while the same text was kept in pieces of 1 to 4 characters in
+`response.logprobs[*].token` and each token's `top` alternatives (the OpenAI adapter asks for
+logprobs by default, so every `provider: openai` target) and in the deltas of
+`raw_ids.websocket.frames`, each piece too short for any rule. Against a loopback stub, joining
+the `token` fields of the evidence and of `r.json` gave back the run's canary and an `sk-proj-`
+key, and joining a transcript's deltas a registered credential, an email and a key.
+`redactor.redact_split(redactor, value)` reads the streams of a value as the text they make. A
+logprob list (a list of objects each with a string `token` and a `logprob`: the stored
+`TokenLogprob` and OpenAI's wire shape) gives its tokens and each rank of their alternatives
+(`top` pairs, `top_logprobs` objects); a WebSocket transcript (an object with `frames`, each
+`{direction, frame}`, and `protocol_paths`, u04's half) gives each field of the frames received
+that is not under a protocol path, field by field. A stream's pieces are joined in order and
+redacted once, and the masks are placed back on the joined text: each literal of the redacted
+copy is placed as early and as late as it can be, so a mask spans every character it could stand
+for (`_placed_masks`), and each piece a mask covers shows it, keeping its text outside the mask.
+A mask that cannot be placed masks every piece of its stream (`«REDACTED:fragment»`, a type the
+tool writes). A token a mask covers has its alternatives show its masks, since they are what the
+model weighed for the same piece, and loses the `bytes` OpenAI writes beside it, which spell it.
+Then each string is redacted on its own (`Redactor.redact`), and both again while either masks
+more, so the result is a fixed point of both; a text holding a stash delimiter is read both ways
+`redact_text` reads it. The figures, the shape and every piece no mask covers are kept, so
+`logprob_membership`, `dottore replay` and a reviewer read what they read before. The pieces are
+masked rather than dropped (the audit's other proposal, since `response.text` holds the text)
+because the alternatives and a transcript's other content fields are in no other field, a figure
+is read with its token, and a transcript is the record of what went over the socket (OD-34). Only
+streams are joined: joined, every list of a transcript read its frame types as one high-entropy
+token (`auth_oksessiondeltapingdelta...`) and masked the type of every frame, so a list of
+records (messages, tool calls, matched values) is masked string by string as before; a
+transcript that names no `protocol_paths` (stored before they were recorded, or built by hand)
+is read with the frame type at `type`, the default `type_path`. `redactor.split_texts` gives the joined texts the store's guard checks, and
+`redactor.mask_keys` masks a mapping's keys with the store's numbering (moved from the store;
+the store and the reports both use it, MEDIUM 2; `KeysNotDistinct` where no number tells two apart). Not
+covered: a secret a target splits over a list of its own JSON that is no stream (a REST body's
+array), a secret encoded rather than split, and a field of a transcript that the target file
+declares as the protocol's. Checks: `tests/test_redactor_split_values.py` (a property test cuts a
+key, a registered credential and an email into pieces of 1 to 4 characters, as tokens and as
+deltas), `tests/store/test_split_values_at_rest.py`, `tests/reporting/test_split_values_and_keys.py`,
+`tests/adapters/test_split_values_in_replies.py` and `tests/cli/test_split_values_e2e.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).

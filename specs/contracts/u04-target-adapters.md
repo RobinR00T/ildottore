@@ -350,6 +350,26 @@ reads as U+FFFD, since httpx decodes the stream as text.
   this one (`test_base.py`, `test_openai.py`, `test_anthropic.py`, `test_rest.py`,
   `test_deep_replies.py`, `test_websocket.py`, `test_websocket_premerge.py`,
   `test_provider_filter_block.py`).
+- **A-77 (u01's clause; this unit's half, added 2026-10-12, audit of main `de122e26`, HIGH 1) A
+  WebSocket transcript names its protocol's fields, and nothing the adapter quotes rebuilds a
+  secret from its pieces.** The transcript is `raw_ids["websocket"] = {"frames": [...],
+  "protocol_paths": [...]}`: beside the frames (OD-34, unchanged), the dotted paths the target file
+  declares as the protocol's (`type_path`, `final_path`, `error_path`, `tool_calls_path`,
+  `usage_path`, `model_path`, `id_path`, and the `expect` path of the handshake and of the session
+  start), never `text_path` or a path above it. Every other field of a frame received is the
+  reply's content, which the redactor joins across the frames field by field (`redact_split`, u01
+  A-77), in memory where `redact_ids` builds the record and again at rest and in the reports, which
+  read the paths from the transcript without the target file (a transcript stored before them is
+  read with the frame type at `type`, the default `type_path`). A secret the server streams in deltas
+  was redacted delta by delta and rebuilt from the evidence (an `sk-proj-` key, a registered
+  credential and an email in three deltas, measured with the loopback fake chat server). A turn
+  with no text quotes its frames received in the excerpt with that content masked as one text
+  (`mask_split` over the transcript): the frames were `json.dumps`ed and redacted as one string, so
+  each delta was masked alone. `reply_excerpt` reads a JSON body's logprob streams the same way
+  (`_split_masked`: OpenAI's `logprobs.content`, tokens, `top_logprobs` and the token `bytes`,
+  which spell a masked token and are dropped), and quotes a body that is not JSON, or holds no
+  such stream, byte for byte as before; its `size` is the body's as it came. Checked by
+  `tests/adapters/test_split_values_in_replies.py` (all seven fail on `de122e26`).
 
 - **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
   Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop

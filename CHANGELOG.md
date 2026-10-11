@@ -5,6 +5,51 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (a secret kept in pieces is masked as the text they make: u01 A-77, audit of main `de122e26`)
+
+- **No secret is rebuilt from a reply's logprob tokens or a transcript's deltas (HIGH 1).** The
+  redactor masked each string on its own, and the evidence store and the reports inherit that:
+  `response.text` read masked while the same text was kept in pieces of 1 to 4 characters in
+  `response.logprobs[*].token` and each token's `top` alternatives (the OpenAI adapter asks for
+  logprobs by default, so every `provider: openai` target) and in the deltas of
+  `raw_ids.websocket.frames`. Joined, they gave back the run's canary and an `sk-proj-` key from
+  the evidence and `r.json` (the auditor's loopback stub, `PI-DIRECT-001`: the joined tokens held
+  both in all three evidence files and in `r.json`; now in none), and a registered credential, an
+  email and a key from a transcript's three deltas (rebuilt in all three cases; now in none). A
+  logprob list's tokens and each rank of their alternatives, and a transcript's received content
+  field by field, are now joined, redacted once, and each piece a mask covers shows it; a masked
+  token's alternatives show its masks and lose the `bytes` OpenAI writes beside it. The figures,
+  the token count and every other piece are kept, so `dottore replay` and `logprob_membership`
+  read the run as before. The pieces are masked rather than dropped because the alternatives and
+  a transcript's other content are in no other field, and a figure is read with its token.
+- **The evidence store's guard reads the pieces joined.** The fail-closed guard redacted one
+  string at a time and passed the pieces; it now redacts every joined text of the stored streams
+  too, and refuses the write when one still masks something.
+- **A WebSocket transcript names its protocol's fields.** `raw_ids.websocket` gains
+  `protocol_paths`, the frame fields the target file declares (`type_path`, `final_path`,
+  `error_path`, the ids, `usage_path`, `tool_calls_path`, the `expect` paths): joined, every frame
+  type read as one high-entropy token and was masked, so those fields are never joined, and the
+  rest of a frame received is masked across the frames as the text it makes, in memory, at rest
+  and in reports. A turn with no text quotes its frames in the excerpt masked the same way, and an
+  unreadable JSON body's OpenAI logprobs are quoted masked; any other excerpt is byte for byte as
+  before.
+- **The JSON report masks the keys of an attempt's free-form fields (MEDIUM 2).** `redact()` masks
+  values only, and the report had no key masking: a tool call whose argument names were an
+  `sk-proj-` key, a registered credential and an email showed all three in `r.json`, and so did
+  `usage` and frame keys. Each attempt's `request.messages`, `tools`, `media` and `metadata` and
+  `response.tool_calls`, `raw_ids` and `usage` now have their keys masked as the evidence store
+  masks them, two that mask alike numbered apart (`«REDACTED:email»`, `«REDACTED:email», #2`); the
+  model's own keys stay, so the report validates. The key masking moved to
+  `redactor.mask_keys`, which the store and the reports share.
+- **A judge's words beside a cut reply are redacted before they are cut (LOW 5).**
+  `_judge_record` and `_judge_not_consulted` folded the text and cut it at 240 characters before
+  any redaction: 61 of the auditor's 305 placements of a secret across the cut left 6 or more of
+  its characters readable, and a credential registered with a tab was shown whole. They now
+  redact, fold, redact again and cut, never inside a mask or a token: 0 of 305.
+- **`media_sha256` is put back verbatim only as SHA-256 hex digests (LOW 7).** The evidence store
+  exempted the value by its key name; anything but a list of 64-hex digests is now redacted like
+  any value.
+
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
 - **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a
