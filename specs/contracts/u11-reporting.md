@@ -175,8 +175,9 @@ the schema).
 fail that needs review is no `error` in SARIF.** A fail only the judge reported is never confirmed
 (OD-19), and neither is one not reproduced on every attempt of a variant: `--fail-on` gates neither
 without `--include-needs-review`. SARIF gave such a fail its band's level, so a judge-only critical
-fail was an `error`, which GitHub code scanning fails a pull request's check on by default, while
-`dottore` exited 0 for it. A `fail` result whose `properties.state` is `needs_review` is now at most
+fail was an `error`, which GitHub code scanning fails a pull request's check on by default
+("Triaging code scanning alerts in pull requests": a result "with a severity of `error`,
+`critical`, or `high`" fails the check, read 2026-10-12), while `dottore` exited 0 for it. A `fail` result whose `properties.state` is `needs_review` is now at most
 `warning` (`error` becomes `warning`; `warning` and `note` stay), its band unchanged in
 `properties.band`; a confirmed fail keeps its band's level, and every other kind keeps `none`.
 The golden SARIF snapshot does not move (its fail is confirmed). Checked by

@@ -157,7 +157,12 @@ aborted on one), except an error that would repeat identically (a reply over the
 undecodable body, a reply nested too deeply: recorded with `[not retryable]`). The failed try
 stays in the evidence tree
 and is cited as evidence; the finding scores one attempt per id, the answered one, as `replay`
-counts. A resume halted by a ceiling while re-sending keeps the finding a spec already had when
+counts. Since 2026-10-11 both read that from one rule (`shared.resend`, u08 A-74): between two
+artifacts of a rank, a reply that could not be read, or that the provider's filter cut, over an
+environment error or a block, whichever came first, then the later send by the `send_number`
+every stored attempt carries; each kept the first at a tie in file-name order, so an unreadable
+re-send could be dropped and its spec published as a pass. The resume message names each id it
+sends again once, by that attempt. A resume halted by a ceiling while re-sending keeps the finding a spec already had when
 that finding held every planned attempt. The resume message says how many attempts are kept and
 how many will be sent again, and `--estimate --resume` subtracts the requests already done (one
 per turn of each). What made this safe: the run store journals every attempt artifact as it is

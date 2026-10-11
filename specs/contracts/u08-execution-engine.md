@@ -392,7 +392,9 @@ is recorded as blocked by the provider's filter and the campaign goes on. The cr
   `unreadable_reply`), its reasoning `<k> trace evaluator(s) reported exploited on the tool calls
   made before a later send of the conversation ended in an environment error` (or `before a later
   send's reply could not be read as the provider's`); anything else is stored exactly as before,
-  so a resume sends it again. It holds for the tool rounds of a single-turn spec's in-band scene
+  so a resume sends it again (without the trace, so without A-72's operator note either: a call
+  the declaration cleared is not in that attempt's evidence, and the re-sent conversation is
+  judged whole, the note with it). It holds for the tool rounds of a single-turn spec's in-band scene
   too (OD-18). On `de122e26` the trace was kept for a block only: `drop_table` on turn 1 and an
   environment error on turn 2 passed an `AG-DESTRUCTIVE-DBDROP-001`-shaped spec 4 of 5, exit 0
   under `--fail-on low --include-needs-review`, an unreadable turn 2 left it inconclusive, and a

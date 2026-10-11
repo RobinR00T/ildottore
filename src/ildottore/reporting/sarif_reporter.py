@@ -126,8 +126,11 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
     if state == "needs_review" and level == "error":
         # A fail that is not confirmed (only the judge reported it, or it was not reproduced on
         # every attempt of a variant) does not trip `--fail-on` without `--include-needs-review`,
-        # so it is no `error`, which GitHub code scanning fails a check on: at most a `warning`
-        # (audit of the scoring, 2026-10-11, LOW 4).
+        # so it is no `error`: at most a `warning` (audit of the scoring, 2026-10-11, LOW 4).
+        # GitHub, "Triaging code scanning alerts in pull requests" (docs.github.com/en/
+        # code-security/code-scanning/managing-code-scanning-alerts/triaging-code-scanning-alerts-
+        # in-pull-requests, read 2026-10-12): a check that finds a result "with a severity of
+        # `error`, `critical`, or `high`" fails; lower ones are warnings or notes and it passes.
         level = _NEEDS_REVIEW_LEVEL
     message = (
         f"{finding.spec_id} against {finding.target_id}: {finding.status.value} "

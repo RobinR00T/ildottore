@@ -49,8 +49,8 @@ versioning: [SemVer](https://semver.org/).
   confirmed fail on the operator's words; now a cut needing review, a forbidden tool call beside it
   still a fail.
 - Docs: MANUAL §3, §5 (`--resume`, `dottore replay`), §9, §10, §11, §13, FAQ, USAGE,
-  `dottore(1)`, `docs/05` §2 and §3, `examples/ci-github-actions.yml`, contracts u06, u08, u10,
-  u11, u12 and the index. Tests: 44 new (28 failing on `de122e26`), 3 changed expectations.
+  `dottore(1)`, `docs/05` §2 and §3, `docs/09`, `docs/12`, `examples/ci-github-actions.yml`,
+  contracts u06, u08, u10, u11, u12 and the index. Tests: 44 new (28 failing on `de122e26`), 3 changed expectations.
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
