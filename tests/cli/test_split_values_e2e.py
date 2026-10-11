@@ -165,3 +165,51 @@ def test_no_secret_is_rebuilt_from_the_tokens_of_the_evidence_or_the_report(
     )
     assert replayed.exit_code == 0, replayed.output
     assert "PI-DIRECT-001" in replayed.output
+
+
+def test_a_refused_write_withholds_the_pieces_and_the_campaign_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_known_secrets: None
+) -> None:
+    """A guard refusal ended the campaign: every spec after it never ran (audit of c4bd2012,
+    HIGH 1). The attempt is stored again with the pieces of its reply withheld, and said so."""
+
+    from ildottore.store import evidence_fs
+
+    refusals: list[str] = []
+    guarded = evidence_fs.FsEvidenceStore._assert_no_leak
+
+    def refuse_pieces(self: evidence_fs.FsEvidenceStore, payload: str) -> None:
+        tokens = json.loads(payload).get("response", {}).get("logprobs") or []
+        if any(entry["token"] for entry in tokens):  # as if no fixed point were reached
+            refusals.append(payload[:40])
+            raise evidence_fs.RedactionLeakError("a test refusal of the pieces")
+        guarded(self, payload)
+
+    monkeypatch.setattr(evidence_fs.FsEvidenceStore, "_assert_no_leak", refuse_pieces)
+    monkeypatch.setenv("ILDOTTORE_SPLIT_KEY", CREDENTIAL)
+    specs = ("JB-REFUSAL-SUPPRESS-001", "PI-DIRECT-001")
+    with _serving({}) as port:
+        target, scope = _files(tmp_path, port)
+        result = CliRunner().invoke(
+            app,
+            [
+                *("run", "-t", str(target), "--scope", str(scope)),
+                *(arg for spec in specs for arg in ("--spec", spec)),
+                *("--runs", "1", "--rate", "1000", "--concurrency", "1", "--no-color"),
+                *("--evidence-root", str(tmp_path / "ev"), "--run-db", str(tmp_path / "r.db")),
+                *("-oJ", str(tmp_path / "r.json")),
+            ],
+        )
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.output
+    assert "aborted" not in result.output and "never ran" not in result.output, result.output
+    assert len(refusals) >= 2
+    report = json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))
+    assert sorted(f["spec_id"] for f in report["findings"]) == sorted(specs)
+    for finding in report["findings"]:
+        assert "stored with the pieces of the reply withheld" in finding["reasoning"]
+    for path in sorted((tmp_path / "ev").rglob("*/attempts/*.json")):
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        assert "evidence_withheld" in stored["request"]["metadata"]
+        assert stored["response"]["text"].startswith("Developer mode on.")
+        assert {entry["token"] for entry in stored["response"]["logprobs"]} == {""}
+        assert all(entry["logprob"] == -0.01 for entry in stored["response"]["logprobs"])

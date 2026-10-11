@@ -83,7 +83,7 @@ from ildottore.core.setup_delivery import (
     tool_name_map,
     trace_gap,
 )
-from ildottore.redactor import Redactor
+from ildottore.redactor import Redactor, withhold_split
 from ildottore.shared.combination import combine_verdicts, decided_by_judge_alone
 from ildottore.shared.combination import union_matched as _union_matched
 from ildottore.shared.enums import (
@@ -1098,7 +1098,7 @@ class CampaignRunner:
                     stored = attempt.model_copy(update={"verdict": verdict})
                     if result.filter_blocked and verdict is not None:
                         stored = _cut_by_filter(stored)
-                    ref = self._evidence.put(run_id, stored)
+                    ref, stored = self._stored(run_id, stored)
                     # A re-send that failed byte-identically lands on the artifact the prior
                     # run already cited: cite it once.
                     if all(ref.sha256 != known.sha256 for known in evidence_refs):
@@ -1119,6 +1119,43 @@ class CampaignRunner:
         return self._score_finding(
             spec, target, attempts=attempts, verdicts=verdicts, evidence=evidence_refs
         )
+
+    def _stored(self, run_id: str, attempt: Attempt) -> tuple[EvidenceRef, Attempt]:
+        """Store ``attempt``; refused, store it with the pieces of its reply withheld (A-77).
+
+        The evidence store refuses a write whose redacted payload is not a fixed point of the
+        redactor, which is right, and the refusal used to end the campaign: every spec after it
+        never ran, for one reply the redactor had in fact masked (pre-merge audit of c4bd2012,
+        HIGH 1). A refusal the store marks (``evidence_refused``) is answered by storing the
+        attempt again with every piece of its streams empty (``redactor.withhold_split``: its
+        logprob tokens and their alternatives, a transcript's content), the reply's text, the
+        figures and the verdict kept, and ``request.metadata`` naming what was withheld and why;
+        that attempt is the one scored and reported, and the finding's line counts it. A second
+        refusal, or one with no piece to withhold, ends the campaign as before: nothing raw is
+        ever written.
+        """
+
+        try:
+            return self._evidence.put(run_id, attempt), attempt
+        except Exception as exc:
+            if not getattr(exc, "evidence_refused", False) or attempt.response is None:
+                raise
+            dumped = attempt.response.model_dump(mode="json")
+            kept = withhold_split(dumped)
+            if kept is dumped:
+                raise
+            note = (
+                "the pieces of this reply (its logprob tokens and their alternatives, a "
+                f"transcript's content) were withheld from the evidence: {exc}"
+            )
+            metadata: JsonDict = {**(attempt.request.metadata or {}), EVIDENCE_WITHHELD: note}
+            withheld = attempt.model_copy(
+                update={
+                    "response": ModelResponse.model_validate(kept),
+                    "request": attempt.request.model_copy(update={"metadata": metadata}),
+                }
+            )
+            return self._evidence.put(run_id, withheld), withheld
 
     async def _reproduce_single_turn(
         self,
@@ -1804,6 +1841,7 @@ class CampaignRunner:
         cut = len(cut_attempt_ids(attempts))
         unsaid = len(side_unknown_attempt_ids(attempts))
         unreadable = len(unreadable_attempt_ids(attempts))
+        withheld = sum(1 for a in attempts if EVIDENCE_WITHHELD in (a.request.metadata or {}))
         return Finding(
             spec_id=spec.id,
             target_id=target.id,
@@ -1817,7 +1855,13 @@ class CampaignRunner:
             attempts=attempts,
             evidence=evidence,
             reasoning=_finding_reasoning(
-                status, verdicts, blocked=blocked, cut=cut, unsaid=unsaid, unreadable=unreadable
+                status,
+                verdicts,
+                blocked=blocked,
+                cut=cut,
+                unsaid=unsaid,
+                unreadable=unreadable,
+                withheld=withheld,
             ),
         )
 
@@ -2055,6 +2099,8 @@ CUT_DECIDING_EVALUATORS: Final = frozenset(
 CUT_NOT_DECIDING_EVALUATORS: Final = frozenset(
     {EvaluatorType.REGEX_PRESENCE, EvaluatorType.SEMANTIC_JUDGE}
 )
+#: Where an attempt stored with the pieces of its reply withheld says so (A-77).
+EVIDENCE_WITHHELD: Final = "evidence_withheld"
 #: The most of the judge's own words a cut verdict records (they are the judge model's text).
 _JUDGE_NOTE_CHARS = 240
 #: Redacts a judge's words before they are cut, as the report redacts every reasoning after.
@@ -2548,6 +2594,7 @@ def _finding_reasoning(
     cut: int = 0,
     unsaid: int = 0,
     unreadable: int = 0,
+    withheld: int = 0,
 ) -> str:
     """The finding's one-line account, with how many attempts the provider's filter stopped.
 
@@ -2584,6 +2631,11 @@ def _finding_reasoning(
         line += (
             f"; {unreadable}/{total} could not be read as the provider's reply, which may be the "
             "one an attack changed"
+        )
+    if withheld:
+        line += (
+            f"; {withheld}/{total} stored with the pieces of the reply withheld, since the "
+            "redactor could not prove them masked as one text (A-77)"
         )
     # The attempts whose verdict the operator's target file changed (OD-43), counted from their
     # record and naming the tools, so the line SARIF, JUnit, the HTML and the terminal show for a

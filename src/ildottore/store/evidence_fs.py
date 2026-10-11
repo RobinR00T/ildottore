@@ -34,7 +34,14 @@ from ildottore.store import paths
 
 
 class RedactionLeakError(RuntimeError):
-    """A raw secret/PII shape survived redaction - the write is refused (DL2)."""
+    """A raw secret/PII shape survived redaction - the write is refused (DL2).
+
+    ``evidence_refused`` is the structural marker the runner reads (``core`` imports no store):
+    it stores the attempt again with the pieces of its reply withheld (u01 A-77) instead of
+    ending the campaign, and a second refusal ends it as before.
+    """
+
+    evidence_refused = True
 
 
 def _strip_media_carrier_bytes(obj: object) -> None:
