@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -82,6 +83,7 @@ from ildottore.core.setup_delivery import (
     tool_name_map,
     trace_gap,
 )
+from ildottore.redactor import Redactor
 from ildottore.shared.combination import combine_verdicts, decided_by_judge_alone
 from ildottore.shared.combination import union_matched as _union_matched
 from ildottore.shared.enums import (
@@ -2055,6 +2057,10 @@ CUT_NOT_DECIDING_EVALUATORS: Final = frozenset(
 )
 #: The most of the judge's own words a cut verdict records (they are the judge model's text).
 _JUDGE_NOTE_CHARS = 240
+#: Redacts a judge's words before they are cut, as the report redacts every reasoning after.
+_NOTE_REDACTOR: Final = Redactor()
+#: A character a token of the redactor's rules can be made of, as the adapters' excerpt reads it.
+_TOKEN_CHAR: Final = re.compile(r"[\w+/=.:@-]")
 
 
 def _tagged_seeded(attempt: Attempt, seeded_tools: dict[str, str]) -> Attempt:
@@ -2357,29 +2363,61 @@ def _swept_note(verdict: Verdict, spec: AttackSpec, filtered: dict[str, str] | N
     )
 
 
+def _one_line(text: str) -> str:
+    """``text`` redacted, on one line, and redacted again.
+
+    Redacted before anything else, as ``websocket._shown`` does: cut first, a secret across the
+    cut kept its head, which no rule recognises (61 of 305 placements left 6 or more characters
+    readable), and folded first, a credential holding a tab no longer read as registered and
+    was shown whole (audit of main de122e26, LOW 5). Again after the fold, since joining the
+    lines can make a text a rule reads (a credential registered with a space, written over
+    two lines).
+    """
+
+    return _NOTE_REDACTOR.redact_text(" ".join(_NOTE_REDACTOR.redact_text(text).split()))
+
+
+def _clipped(words: str) -> str:
+    """``words`` cut at :data:`_JUDGE_NOTE_CHARS`, never inside a mask or a token.
+
+    A cut inside a mask moves before it, and one inside a run of the characters a key is made of
+    moves before the run, so no head of a value the later redactors know (a canary planted by
+    the run) is kept where its whole would be masked.
+    """
+
+    if len(words) <= _JUDGE_NOTE_CHARS:
+        return words
+    cut = _JUDGE_NOTE_CHARS - 3
+    opened = words.rfind("«", 0, cut)
+    if opened != -1 and words.find("»", opened) >= cut:
+        cut = opened
+    while cut > 0 and _TOKEN_CHAR.match(words, cut) and _TOKEN_CHAR.match(words, cut - 1):
+        cut -= 1
+    return words[:cut] + "..."
+
+
 def _judge_not_consulted(exc: Exception) -> str:
     """The note a cut verdict carries when the recording-only judge could not be consulted."""
 
-    words = " ".join(f"{type(exc).__name__}: {exc}".split())
-    if len(words) > _JUDGE_NOTE_CHARS:
-        words = words[: _JUDGE_NOTE_CHARS - 3] + "..."
+    words = _clipped(_one_line(f"{type(exc).__name__}: {exc}"))
     return f"semantic_judge on what came back not consulted, and not deciding: {words}"
 
 
 def _judge_record(verdict: Verdict) -> str:
     """The judge's verdict on a cut reply, as recorded beside the cut and not deciding (OD-42).
 
-    Its own words are the judge model's text: cut at :data:`_JUDGE_NOTE_CHARS`, one line, and the
-    report's redactor masks them as it masks every reasoning.
+    Its own words are the judge model's text: redacted, one line, and cut at
+    :data:`_JUDGE_NOTE_CHARS` (:func:`_one_line`, :func:`_clipped`); the report's redactor masks
+    them again as it masks every reasoning.
     """
 
     # The judge's words never read as the operator's note (OD-43): nothing counts from that text
     # now, and a reader should not take a judge's echo of it for one (audit of `ed381359`, L1).
-    words = " ".join(verdict.reasoning.split()).replace(
-        OPERATOR_DECLARATION, "[the judge wrote: operator declaration]"
+    words = _clipped(
+        _one_line(verdict.reasoning).replace(
+            OPERATOR_DECLARATION, "[the judge wrote: operator declaration]"
+        )
     )
-    if len(words) > _JUDGE_NOTE_CHARS:
-        words = words[: _JUDGE_NOTE_CHARS - 3] + "..."
     return (
         f"semantic_judge on what came back, recorded and not deciding: {verdict.status.value} "
         f"({verdict.confidence:.2f}): {words}"
