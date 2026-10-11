@@ -62,6 +62,7 @@ from pydantic import (
 
 from ildottore import safe_yaml
 from ildottore.cli.wiring import TARGET_PROVIDERS, shown_auth_ref
+from ildottore.policy.scope import SCOPE_VERSION
 from ildottore.shared.config_errors import (
     quoted,
     shown_endpoint,
@@ -200,6 +201,17 @@ class FleetConfig(BaseModel):
     version: str = "1"
     targets: list[FleetTarget] = Field(min_length=1)
     judge: FleetJudge | None = None
+
+    @field_validator("version")
+    @classmethod
+    def _version_is_one(cls, value: str) -> str:
+        """``1`` or ``1.<minor>``: any text was a version (u12 A-82, CLI audit L7)."""
+
+        if not SCOPE_VERSION.fullmatch(value):
+            raise ValueError(
+                'this build reads fleet version 1 (1, or 1.<minor>: write version: "1")'
+            )
+        return value
 
 
 class MaterializedFleet(BaseModel):

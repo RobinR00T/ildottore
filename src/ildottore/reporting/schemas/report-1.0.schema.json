@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ildottore.dev/schemas/report-1.0.schema.json",
   "title": "Il Dottore canonical report (u11 \u00a76)",
-  "description": "Lossless canonical JSON report: the run, its findings and the aggregated summary. All strings are redactor-masked before serialization (u11 \u00a72).",
+  "description": "Lossless canonical JSON report: the run, its findings and the aggregated summary. All strings are redactor-masked before serialization (u11 \u00a72). Versioning: report-1.0 grows additively. A key a later build adds is optional here, so a report an earlier build wrote validates against this copy, and a consumer validating a newer report needs the newer copy. The run and each finding name the keys every build since report-1.0 writes and the types, values and ranges the models that write them enforce (a verdict's status, a risk's band and figures), and leave the rest open (additionalProperties true), so neither an older report nor a newer key fails them (u11 and u12 A-82, CLI audit L5). dottore schema export --name report prints this document; dottore diff reads schema_version 1 or 1.<minor>.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,12 +16,111 @@
       "const": "1.0"
     },
     "run": {
-      "type": "object"
+      "description": "The run: its id, the targets it scanned (as their files declared them, the credential a reference only), its findings (the same list as the top-level findings) and the authorization record's digest.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "run_id",
+        "targets",
+        "findings",
+        "summary"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "suite_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "model",
+                  "chatbot",
+                  "api",
+                  "agent",
+                  "rag"
+                ]
+              }
+            }
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/finding"
+          }
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "by_status": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "by_band": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "by_category": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "findings": {
       "type": "array",
       "items": {
-        "type": "object"
+        "$ref": "#/definitions/finding"
       }
     },
     "summary": {
@@ -496,6 +595,183 @@
         },
         "mean": {
           "type": "number"
+        }
+      }
+    },
+    "riskScore": {
+      "description": "A finding's risk (docs/05): impact and exploitability from the spec, reproducibility and confidence from the attempts, risk their product, band the risk's band.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "impact",
+        "exploitability",
+        "reproducibility",
+        "risk",
+        "band",
+        "confidence"
+      ],
+      "properties": {
+        "impact": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "exploitability": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "reproducibility": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "risk": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "band": {
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "info"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "attempt": {
+      "description": "One attempt of a spec: the request sent and, when there was one, the reply, its verdict and the error. Only what identifies it is required; its inner records stay open.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "attempt_id",
+        "spec_id",
+        "request"
+      ],
+      "properties": {
+        "attempt_id": {
+          "type": "string"
+        },
+        "spec_id": {
+          "type": "string"
+        },
+        "mutation": {
+          "type": "string"
+        },
+        "request": {
+          "type": "object"
+        },
+        "response": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "verdict": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "sampling": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "latency_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "finding": {
+      "description": "One spec's result on one target: its status, its risk, whether it was confirmed, the attempts behind it and their evidence.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "spec_id",
+        "target_id",
+        "status",
+        "risk",
+        "confirmed"
+      ],
+      "properties": {
+        "spec_id": {
+          "type": "string"
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "inconclusive"
+          ]
+        },
+        "risk": {
+          "$ref": "#/definitions/riskScore"
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/attempt"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "run_id",
+              "attempt_id",
+              "uri"
+            ],
+            "properties": {
+              "run_id": {
+                "type": "string"
+              },
+              "attempt_id": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "reasoning": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     }

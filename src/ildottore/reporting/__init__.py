@@ -15,7 +15,7 @@ from ildottore.reporting.base import (
     register_reporter,
 )
 from ildottore.reporting.html_reporter import HtmlReporter
-from ildottore.reporting.json_reporter import JsonReporter
+from ildottore.reporting.json_reporter import JsonReporter, report_schema
 from ildottore.reporting.junit_reporter import JunitReporter
 from ildottore.reporting.masking import MaskingContext, Redactor, default_redactor
 from ildottore.reporting.sarif_reporter import SarifReporter
@@ -36,4 +36,5 @@ __all__ = [
     "get_reporter",
     "list_formats",
     "register_reporter",
+    "report_schema",
 ]

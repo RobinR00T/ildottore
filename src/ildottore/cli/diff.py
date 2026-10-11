@@ -23,7 +23,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from ildottore.shared.config_errors import validation_problems
+from ildottore.shared.config_errors import quoted, validation_problems
 from ildottore.shared.digits import described
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import SPEC_ID_PATTERN, Finding
@@ -116,6 +116,46 @@ def _read_report(path: Path) -> Any:
         raise ValueError(f"the report {shown} holds {described('read')}") from exc
 
 
+#: The report schema versions this build reads: report-1.0 and every minor version after it,
+#: which grow additively (u11). A report of another major version may mean something else.
+_SCHEMA_VERSION = re.compile(r"1(?:\.[0-9]+)?")
+
+
+def _read_run_report(path: Path) -> Any:
+    """:func:`_read_report`, refused unless it is a JSON run report of schema 1 or a bare list of
+    findings (u12 A-82, CLI audit L4).
+
+    ``schema_version`` ``2.0``, ``9.0`` or none was compared as if it were this build's, and a
+    SARIF log passed by mistake gave ``error: 'findings'``, the bare name of a missing key.
+    """
+
+    data = _read_report(path)
+    if isinstance(data, list):
+        return data
+    shown = path.absolute()
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: expected a JSON run report or a list of findings")
+    if isinstance(data.get("runs"), list) and "findings" not in data:
+        raise ValueError(
+            f"the report {shown} is a SARIF log (-oS), not the JSON run report (-oJ) that "
+            "dottore diff compares; pass the -oJ report of each run"
+        )
+    if "schema_version" not in data:
+        raise ValueError(
+            f"the report {shown} has no schema_version, so it is not a JSON run report this "
+            "tool wrote (-oJ); pass one, or a bare list of findings"
+        )
+    version = data["schema_version"]
+    if not (isinstance(version, str) and _SCHEMA_VERSION.fullmatch(version)):
+        raise ValueError(
+            f"the report {shown} has schema_version {quoted(version)}; this build reads report "
+            "schema 1 (1.0, or 1.<minor>)"
+        )
+    if not isinstance(data.get("findings"), list):
+        raise ValueError(f"the report {shown} has no findings list: is it a JSON run report (-oJ)?")
+    return data
+
+
 def incomplete_reason(path: Path) -> str | None:
     """Why this report describes a run that did not finish, or ``None`` when it did.
 
@@ -128,10 +168,11 @@ def incomplete_reason(path: Path) -> str | None:
     say, so it is treated as complete: silence there is age, not a claim.
     """
 
-    data = _read_report(path)
+    data = _read_run_report(path)
     if not isinstance(data, dict):
         return None  # a bare findings list carries no run-level state
-    status = (data.get("summary") or {}).get("status")
+    summary = data.get("summary")
+    status = summary.get("status") if isinstance(summary, dict) else None
     if not isinstance(status, dict) or status.get("complete", True):
         return None
     # Text only: this tool writes both as text, and formatting a list nested 70,000 levels deep
@@ -181,10 +222,8 @@ def load_findings(path: Path) -> dict[str, Finding]:
     Compare one target's report at a time.
     """
 
-    data = _read_report(path)
+    data = _read_run_report(path)
     raw_findings = data["findings"] if isinstance(data, dict) else data
-    if not isinstance(raw_findings, list):
-        raise ValueError(f"{path}: expected a JSON run report or a list of findings")
     findings = [_validate_finding(path, index, raw) for index, raw in enumerate(raw_findings)]
     # Every row of `dottore diff` starts with a spec id, so a report holding `::error ...` there
     # printed a line a CI runner reads as a workflow command, control characters or not

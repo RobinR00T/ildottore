@@ -51,6 +51,7 @@ from ildottore.redactor import (
     log_safe_json,
     visible_controls,
 )
+from ildottore.reporting import report_schema
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
@@ -1062,12 +1063,15 @@ def calibrate(
 @schema_app.command("export")
 def schema_export(
     name: Annotated[
-        str | None, typer.Option("--name", help="One schema (suite|pack|test-plan|attack-spec).")
+        str | None,
+        typer.Option("--name", help="One schema (suite|pack|test-plan|attack-spec|report)."),
     ] = None,
 ) -> None:
-    """Export the generated JSON schemas to stdout."""
+    """Export the generated JSON schemas, and the JSON report's, to stdout."""
 
-    schemas = export_schemas()
+    # The report's schema is hand-authored and ships with the reporter (u11); it is printed
+    # beside the generated ones, which it could not be (u12 A-82, CLI audit L5).
+    schemas = {**export_schemas(), "report": report_schema()}
     if name is not None:
         if name not in schemas:
             typer.echo(
