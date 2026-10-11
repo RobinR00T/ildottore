@@ -3,6 +3,33 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (night, later): the pre-merge audit of `c4bd2012` (A-77), fixed
+
+- Not merge-ready on `c4bd2012`: one HIGH regression and two MEDIUMs, plus two LOWs; fixed as new
+  commits on `fix/no-secret-in-fragments` (no history rewritten).
+- HIGH: a mask shown in every piece it covered read, joined, as a run of masks behind `user:`,
+  which the URL rule masks again as one, so the store's guard refused a URL password the
+  redactor had masked and the run aborted (`aborted on RedactionLeakError`, exit 3; `main` exits
+  0). The first piece a mask covers now shows it and the others lose the text under it, so the
+  pieces joined read as the redacted text. Measured: `url_tokens.py` 18 of 18 refused, now 18
+  stored; `ws_dsn.py` 2 of 2 refused, now stored; the auditor's DSN run exit 3, now 0;
+  `fuzz_rejoin.py` 110, 120 and 122 refusals per 1,000 cases (seeds 1 to 3), now 0. A refused
+  write no longer ends the campaign alone: `runner._stored` stores the attempt again with its
+  pieces withheld (`redactor.withhold_split`), `request.metadata.evidence_withheld` and the
+  finding's line saying so; a second refusal ends it as before. The A-77 property test now cuts
+  four URLs with a password too and checks every joined text is a fixed point (it fails on
+  `c4bd2012`).
+- MEDIUM 2: an item's alternatives are masked once its every edit is made (`clobber.py`: 10
+  characters of a labelled password in an alternative, now none). MEDIUM 3: a body streamed as
+  server-sent events is quoted with its events masked across the events (`sse_excerpt.py`: key
+  and credential rebuilt, now neither). LOW 4: the `bytes` of every masked token and alternative
+  are dropped. LOW 5: alternatives are no stream, neither a rank nor one token's; a clean reply's
+  alternatives changed where the token was kept, 6.9% of 83,950 on the auditor's 898 clean
+  replies, now 0%, and `fuzz_rejoin.py` rank leaks 19 to 25 per 1,000, now 0. Left, in A-77's
+  not-covered list: a secret the alternatives alone spell beside kept tokens (`excerpt_bytes.py`
+  case B), and evidence written before A-77 (a CHANGELOG line says so).
+- Tests: 31 more (5547 here, 5476 on `main`). `make gates` green on `78f94404` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (422 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5547 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
 ## State, 2026-10-12 (night): a secret kept in pieces, the report's keys, judge notes (A-77)
 
 - On `fix/no-secret-in-fragments`, from `main` at `de122e26`: four findings of the security audit

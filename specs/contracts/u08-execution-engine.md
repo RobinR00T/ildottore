@@ -704,6 +704,24 @@ behind a filter on attack words that finishes its battery, and three on the unre
 words). Not built: the `-sV` probe pass seeding the watch, which would stop a run whose
 every probe was unreadable after its probes (u09 A-35).
 
+**A-77 (u01's clause; this unit's half, added 2026-10-12, pre-merge audit of `c4bd2012`, HIGH 1)
+A refused evidence write withholds the reply's pieces; it never ends the campaign alone.** The
+evidence store refuses a write whose redacted payload is not a fixed point of the redactor (u10),
+which is right, and the refusal propagated out of the spec and ended the campaign: `aborted on
+RedactionLeakError ... 1 of 1 specs never ran or did not finish`, exit 3, for a reply holding a
+URL password the redactor had masked, which `main` stored (exit 0). The runner stores each
+attempt through `_stored`: a refusal the store marks (`evidence_refused`, a structural marker,
+since `core` imports no store) is answered by storing the attempt again with every piece of its
+reply's streams empty (`redactor.withhold_split`: the logprob tokens and their alternatives, a
+transcript's content), the reply's text, the figures and the verdict kept, and
+`request.metadata.evidence_withheld` saying what was withheld and quoting the refusal. That
+attempt is the one scored, stored and reported, and the finding's line counts it (`; <k>/<n>
+stored with the pieces of the reply withheld, since the redactor could not prove them masked as
+one text (A-77)`), which every format and the terminal show. A second refusal, or one for a reply
+with no piece to withhold, ends the campaign as before: nothing raw is ever written. Checked by
+`tests/cli/test_split_values_e2e.py` (a store refusing every reply's pieces: both specs run, every
+attempt is stored withheld and each finding says so; on `c4bd2012` the run aborts).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.

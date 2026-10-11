@@ -926,9 +926,11 @@ socket. Beside the frames the record names the fields the target file declares a
 (`raw_ids.websocket.protocol_paths`: `type_path`, `final_path`, `error_path`, the ids, `usage_path`,
 `tool_calls_path` and the `expect` paths, never `text_path`); every other field of a frame received
 is the reply's content, masked across the frames as the text it makes (§10, A-77), so a secret
-streamed in deltas is masked in each of them, and the protocol's fields read as the server wrote
-them. A turn the adapter cannot read quotes its frames in the attempt's excerpt the same way. In a multi-turn attempt the stored attempt is built from the final turn, whose record
-carries the whole conversation's frames (an intermediate turn's record carries only its own).
+streamed in deltas is masked where it starts and its later deltas lose its text, and the
+protocol's fields read as the server wrote them. A turn the adapter cannot read quotes its frames
+in the attempt's excerpt the same way. In a multi-turn attempt the stored attempt is built from
+the final turn, whose record carries the whole conversation's frames (an intermediate turn's
+record carries only its own).
 The credential is inserted in memory at send time and recorded as `{{token}}`; a server that
 echoes it back, in a frame, an error frame or a close reason, has it scrubbed by value from
 the record and from the error message, which is redacted too. `-sV` probes a WebSocket target
@@ -2215,13 +2217,18 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   and as tokens of 1 to 4 characters with their alternatives in `response.logprobs` (the adapter
   asks for logprobs on every request), and a WebSocket target's as the deltas it was streamed in
   (`response.raw_ids.websocket.frames`). The evidence and every report mask those pieces as the
-  text they make: a logprob list's tokens and each rank of their alternatives, and the content of
-  the frames received field by field, are joined and redacted once, and each piece a mask covers
-  shows it, a token's alternatives too. A key streamed in three deltas is stored as
-  `«REDACTED:high_entropy:<digest>»` three times; a refusal is stored as it came. The figures, the
+  text they make: a logprob list's tokens, and the content of the frames received field by field,
+  are joined and redacted once; the first piece a mask covers shows it and the others lose the
+  text under it, so the pieces joined read as `response.text` reads, and a masked token's
+  alternatives and `bytes` are masked with it. A key streamed in three deltas is stored as
+  `«REDACTED:high_entropy:<digest>»`, `""`, `""`; a refusal is stored as it came. The figures, the
   token count and the frames' protocol fields are kept, so `dottore replay` and the membership
   evaluator read the same run. The evidence store refuses a write in which a joined text still
-  masks something, as it refuses one in which a string does (A-77). The keys of an attempt's
+  masks something, as it refuses one in which a string does; the attempt is then stored with the
+  pieces of its reply withheld (empty tokens and content, the text, figures and verdict kept,
+  `request.metadata.evidence_withheld` saying why) and its finding's line says `stored with the
+  pieces of the reply withheld`, so the run goes on (A-77). Evidence written before A-77 keeps an
+  OpenAI or WebSocket target's reply in pieces as it came. The keys of an attempt's
   free-form fields (a tool call's argument names, `usage`, a frame's fields) are masked in the
   reports as in the evidence, two that mask alike numbered apart (`«REDACTED:email»`,
   `«REDACTED:email», #2`).

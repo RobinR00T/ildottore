@@ -366,10 +366,15 @@ reads as U+FFFD, since httpx decodes the stream as text.
   with no text quotes its frames received in the excerpt with that content masked as one text
   (`mask_split` over the transcript): the frames were `json.dumps`ed and redacted as one string, so
   each delta was masked alone. `reply_excerpt` reads a JSON body's logprob streams the same way
-  (`_split_masked`: OpenAI's `logprobs.content`, tokens, `top_logprobs` and the token `bytes`,
-  which spell a masked token and are dropped), and quotes a body that is not JSON, or holds no
-  such stream, byte for byte as before; its `size` is the body's as it came. Checked by
-  `tests/adapters/test_split_values_in_replies.py` (all seven fail on `de122e26`).
+  (`_split_masked`: OpenAI's `logprobs.content` tokens, their `top_logprobs` shown masked beside a
+  masked token, and the `bytes` of every masked token or alternative, which spell it, dropped), and
+  a body streamed as server-sent events when no stream was asked for (each `data:` line holding
+  JSON an event, masked across the events as a transcript is, with `type`, `event`, `object`,
+  `id` and `model` as its protocol's fields: it is not JSON, so it was quoted as it came, each
+  delta redacted alone, pre-merge audit of `c4bd2012`, MEDIUM 3), and quotes any other body, or
+  one holding no such stream, byte for byte as before; its `size` is the body's as it came.
+  Checked by `tests/adapters/test_split_values_in_replies.py` (its first seven fail on
+  `de122e26`, the three event-stream cases on `c4bd2012`).
 
 - **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
   Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop

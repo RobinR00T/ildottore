@@ -5,6 +5,36 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (what the pre-merge audit of `c4bd2012` found in A-77, before it lands)
+
+- **A URL password masked in pieces no longer makes the guard refuse the reply and end the run
+  (HIGH).** Each piece a mask covered showed the mask, so the pieces joined read
+  `user:«REDACTED:url_password»«REDACTED:url_password»...@host`, which the URL rule masks again as
+  one, and the guard refused a reply masked correctly: `postgresql://user:password@localhost:5432/mydb`
+  in 3-character tokens aborted the campaign (`aborted on RedactionLeakError ... 1 of 1 specs never
+  ran`, exit 3, where `main` exits 0), and so did 18 of 18 connection strings at token sizes 1 to
+  8 and two in WebSocket deltas. The first piece a mask covers now shows it and the others lose
+  the text under it, so the pieces joined read as the redacted text: 18 of 18 stored, the run
+  exits 0, and the auditor's fuzz counts 0 refusals in 3,000 cases (110 to 122 per 1,000 before).
+  A refused write no longer ends the campaign alone: the attempt is stored with the pieces of its
+  reply withheld, its text, figures and verdict kept and `request.metadata.evidence_withheld`
+  saying why, and the finding's line says `stored with the pieces of the reply withheld`; a second
+  refusal ends the run as before.
+- **An alternative keeps nothing of a masked token (MEDIUM).** A rank's own edit landed after the
+  alternatives were masked and left 10 characters of a labelled password in one. They are masked
+  once the item's every edit is made, an alternative written as the token showing what the token
+  shows.
+- **A reply streamed as server-sent events is quoted masked (MEDIUM).** A body that is not JSON
+  was quoted as it came, each delta redacted alone, so a key or a registered credential in
+  3-character deltas was rebuilt from the excerpt; its `data:` events are masked across the events
+  as a transcript is.
+- **The `bytes` of every masked token and alternative are dropped (LOW),** whether the mask comes
+  from its stream or from the token alone: they spelled a key a rank's mask hid.
+- **A rank of alternatives is no stream (LOW).** Side by side, alternatives are text no one wrote:
+  joining a rank masked 6.9% of the alternatives of clean replies whose token was kept, now 0%
+  (the auditor's 898 clean replies). Not covered, recorded in A-77: a secret that the alternatives
+  alone spell beside kept tokens.
+
 ### Fixed (a secret kept in pieces is masked as the text they make: u01 A-77, audit of main `de122e26`)
 
 - **No secret is rebuilt from a reply's logprob tokens or a transcript's deltas (HIGH 1).** The
@@ -16,15 +46,21 @@ versioning: [SemVer](https://semver.org/).
   the evidence and `r.json` (the auditor's loopback stub, `PI-DIRECT-001`: the joined tokens held
   both in all three evidence files and in `r.json`; now in none), and a registered credential, an
   email and a key from a transcript's three deltas (rebuilt in all three cases; now in none). A
-  logprob list's tokens and each rank of their alternatives, and a transcript's received content
-  field by field, are now joined, redacted once, and each piece a mask covers shows it; a masked
-  token's alternatives show its masks and lose the `bytes` OpenAI writes beside it. The figures,
+  logprob list's tokens, and a transcript's received content field by field, are now joined and
+  redacted once; the first piece a mask covers shows it and the others lose the text under it,
+  so the pieces joined read as the redacted text, and a masked token's alternatives show its
+  masks and lose the `bytes` OpenAI writes beside them. The figures,
   the token count and every other piece are kept, so `dottore replay` and `logprob_membership`
   read the run as before. The pieces are masked rather than dropped because the alternatives and
   a transcript's other content are in no other field, and a figure is read with its token.
 - **The evidence store's guard reads the pieces joined.** The fail-closed guard redacted one
   string at a time and passed the pieces; it now redacts every joined text of the stored streams
-  too, and refuses the write when one still masks something.
+  too, and refuses the write when one still masks something; the runner then stores the attempt
+  with the pieces of its reply withheld instead of ending the campaign.
+- **Evidence written before this change keeps the pieces.** An attempt stored by an earlier
+  build against a `provider: openai` target (its `response.logprobs`) or a `provider: websocket`
+  one (its `raw_ids.websocket.frames`) may hold a secret the text masks, rebuilt by joining the
+  pieces: treat such evidence trees as holding the reply in clear, and delete or re-run them.
 - **A WebSocket transcript names its protocol's fields.** `raw_ids.websocket` gains
   `protocol_paths`, the frame fields the target file declares (`type_path`, `final_path`,
   `error_path`, the ids, `usage_path`, `tool_calls_path`, the `expect` paths): joined, every frame

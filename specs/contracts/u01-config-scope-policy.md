@@ -685,46 +685,63 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
 (`PydanticSchemaGenerationError` among them); nor a plugin's own.
 
 **A-77 A reply kept in pieces is masked as the text the pieces make (added 2026-10-12, audit of
-main `de122e26`, HIGH 1 and MEDIUM 2; halves in u04, u08, u10 and u11).** The redactor masked
-each string on its own, and the evidence store and the reports inherit that: `response.text`
-read masked while the same text was kept in pieces of 1 to 4 characters in
-`response.logprobs[*].token` and each token's `top` alternatives (the OpenAI adapter asks for
-logprobs by default, so every `provider: openai` target) and in the deltas of
+main `de122e26`, HIGH 1 and MEDIUM 2, amended after the pre-merge audit of `c4bd2012`; halves in
+u04, u08, u10 and u11).** The redactor masked each string on its own, and the evidence store and
+the reports inherit that: `response.text` read masked while the same text was kept in pieces of 1
+to 4 characters in `response.logprobs[*].token` and each token's `top` alternatives (the OpenAI
+adapter asks for logprobs by default, so every `provider: openai` target) and in the deltas of
 `raw_ids.websocket.frames`, each piece too short for any rule. Against a loopback stub, joining
 the `token` fields of the evidence and of `r.json` gave back the run's canary and an `sk-proj-`
 key, and joining a transcript's deltas a registered credential, an email and a key.
 `redactor.redact_split(redactor, value)` reads the streams of a value as the text they make. A
 logprob list (a list of objects each with a string `token` and a `logprob`: the stored
-`TokenLogprob` and OpenAI's wire shape) gives its tokens and each rank of their alternatives
-(`top` pairs, `top_logprobs` objects); a WebSocket transcript (an object with `frames`, each
-`{direction, frame}`, and `protocol_paths`, u04's half) gives each field of the frames received
-that is not under a protocol path, field by field. A stream's pieces are joined in order and
-redacted once, and the masks are placed back on the joined text: each literal of the redacted
-copy is placed as early and as late as it can be, so a mask spans every character it could stand
-for (`_placed_masks`), and each piece a mask covers shows it, keeping its text outside the mask.
-A mask that cannot be placed masks every piece of its stream (`«REDACTED:fragment»`, a type the
-tool writes). A token a mask covers has its alternatives show its masks, since they are what the
-model weighed for the same piece, and loses the `bytes` OpenAI writes beside it, which spell it.
-Then each string is redacted on its own (`Redactor.redact`), and both again while either masks
-more, so the result is a fixed point of both; a text holding a stash delimiter is read both ways
-`redact_text` reads it. The figures, the shape and every piece no mask covers are kept, so
-`logprob_membership`, `dottore replay` and a reviewer read what they read before. The pieces are
-masked rather than dropped (the audit's other proposal, since `response.text` holds the text)
-because the alternatives and a transcript's other content fields are in no other field, a figure
-is read with its token, and a transcript is the record of what went over the socket (OD-34). Only
-streams are joined: joined, every list of a transcript read its frame types as one high-entropy
-token (`auth_oksessiondeltapingdelta...`) and masked the type of every frame, so a list of
-records (messages, tool calls, matched values) is masked string by string as before; a
-transcript that names no `protocol_paths` (stored before they were recorded, or built by hand)
-is read with the frame type at `type`, the default `type_path`. `redactor.split_texts` gives the joined texts the store's guard checks, and
-`redactor.mask_keys` masks a mapping's keys with the store's numbering (moved from the store;
-the store and the reports both use it, MEDIUM 2; `KeysNotDistinct` where no number tells two apart). Not
-covered: a secret a target splits over a list of its own JSON that is no stream (a REST body's
-array), a secret encoded rather than split, and a field of a transcript that the target file
-declares as the protocol's. Checks: `tests/test_redactor_split_values.py` (a property test cuts a
-key, a registered credential and an email into pieces of 1 to 4 characters, as tokens and as
-deltas), `tests/store/test_split_values_at_rest.py`, `tests/reporting/test_split_values_and_keys.py`,
-`tests/adapters/test_split_values_in_replies.py` and `tests/cli/test_split_values_e2e.py`.
+`TokenLogprob` and OpenAI's wire shape) gives its tokens; a WebSocket transcript (an object with
+`frames`, each `{direction, frame}`, and `protocol_paths`, u04's half) gives each field of the
+frames received that is not under a protocol path, field by field. A stream's pieces are joined
+in order and redacted once, and the masks are placed back on the joined text: each literal of the
+redacted copy is placed as early and as late as it can be, so a mask spans every character it
+could stand for (`_placed_masks`). The first piece a mask covers shows it in place of the part it
+covers, and every later piece it covers loses that part (one it covers whole is empty), so the
+pieces joined read as the redacted text, each mask once. A mask shown in every piece it covered
+read, joined, `user:«REDACTED:url_password»«REDACTED:url_password»...@host`, which the URL rule
+masks again as one, and the store's guard refused a URL password the redactor had masked (18 of
+18 connection strings at token sizes 1 to 8, and two in WebSocket deltas; the run aborted, where
+`main` exits 0: pre-merge audit of `c4bd2012`, HIGH 1). A mask that cannot be placed masks its
+stream (`«REDACTED:fragment»`, a type the tool writes, in the first piece). A token a mask covers
+has its alternatives masked once the item's every edit is made (an alternative written as the
+token shows what the token shows, any other the token's masks; a later edit used to undo them and
+leave 10 characters of a labelled password, MEDIUM 2), and wherever a token or an alternative is
+masked, by its stream or on its own, the `bytes` OpenAI writes beside it go, since they spell it
+(LOW 4). The alternatives are no stream: a rank of them side by side, or the alternatives of one
+token, is text no one wrote, and joining a rank masked 6.9% of the alternatives of clean replies
+whose token was kept (LOW 5; 0% now, on the auditor's 898 clean replies). Then each string is redacted
+on its own (`Redactor.redact`), and both again while either masks more, so the result is a fixed
+point of both; a text holding a stash delimiter is read both ways `redact_text` reads it. The
+figures, the shape and every piece no mask covers are kept, so `logprob_membership`, `dottore
+replay` and a reviewer read what they read before. The pieces are masked rather than dropped (the
+audit's other proposal, since `response.text` holds the text) because the alternatives and a
+transcript's other content fields are in no other field, a figure is read with its token, and a
+transcript is the record of what went over the socket (OD-34). Only streams are joined: joined,
+every list of a transcript read its frame types as one high-entropy token
+(`auth_oksessiondeltapingdelta...`) and masked the type of every frame, so a list of records
+(messages, tool calls, matched values) is masked string by string as before; a transcript that
+names no `protocol_paths` (stored before they were recorded, or built by hand) is read with the
+frame type at `type`, the default `type_path`. `redactor.split_texts` gives the joined texts the
+store's guard checks, `redactor.withhold_split` empties every piece of a value's streams (the
+runner's answer to a refused write, u08's half), and `redactor.mask_keys` masks a mapping's keys
+with the store's numbering (moved from the store; the store and the reports both use it, MEDIUM 2;
+`KeysNotDistinct` where no number tells two apart). Not covered: a secret a target splits over a
+list of its own JSON that is no stream (a REST body's array); a secret its alternatives alone
+spell while the tokens beside them are kept (a rank of `top` or `top_logprobs`, and the `bytes` of
+those alternatives, as an unreadable reply's excerpt quotes them: no model's alternatives spell a
+text, each being weighed for the token the model wrote before it, and joining them masked clean
+replies); a secret encoded rather than split; a field of a transcript that the target file
+declares as the protocol's; and evidence written before A-77, whose pieces stay on disk. Checks:
+`tests/test_redactor_split_values.py` (a property test cuts a key, a registered credential, an
+email and four URLs with a password into pieces of 1 to 4 characters, as tokens and as deltas,
+and checks every joined text is a fixed point), `tests/store/test_split_values_at_rest.py`,
+`tests/reporting/test_split_values_and_keys.py`, `tests/adapters/test_split_values_in_replies.py`
+and `tests/cli/test_split_values_e2e.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
