@@ -157,7 +157,17 @@
         "tools": {
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "destructive": {
+                "type": "boolean",
+                "description": "true: tool_call treats a call to this tool as destructive whatever its name; false: not destructive whatever its name (a hand-off such as transfer_to_billing_agent); absent: a destructive verb in the name decides (u06 A-71)"
+              },
+              "external": {
+                "type": "boolean",
+                "description": "true: egress, never authorized by an allowlist taken from the setup"
+              }
+            }
           }
         },
         "memory_seed": {

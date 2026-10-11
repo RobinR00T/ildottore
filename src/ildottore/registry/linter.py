@@ -48,6 +48,7 @@ from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 from ildottore.shared.refusal_tells import STRONG_COMPLIANCE
+from ildottore.shared.tool_abuse import is_destructive
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
 from .fixtures_engine import DEFAULT_STUB_TABLE, StubEvaluator, evaluate_fixture
@@ -523,7 +524,45 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
                     spec_id=spec.id,
                 )
             )
+    if any(cfg.type is EvaluatorType.TOOL_CALL for cfg in spec.evaluators):
+        errors.extend(_check_cleared_tools(spec))
     return errors
+
+
+def _check_cleared_tools(spec: AttackSpec) -> list[LintError]:
+    """Warn on a ``destructive: false`` that changes nothing: no destructive verb is in the name.
+
+    The flag clears a tool that a verb in its name would make destructive, a hand-off such as
+    ``transfer_to_billing_agent`` (A-71). On a name no verb matches it does nothing, which is
+    how a flag put on the wrong tool reads, or one meant to excuse something it cannot (a call
+    off the allowlist, an injected or a forbidden argument). A warning, as the allowlist's
+    undeclared name is: the spec still means what it says.
+    """
+
+    tools = spec.setup.tools if spec.setup is not None and spec.setup.tools else []
+    idle = sorted(
+        {
+            str(tool.get("name"))
+            for tool in tools
+            if isinstance(tool, dict)
+            and tool.get("name")
+            and tool.get("destructive") is False
+            and not is_destructive(str(tool.get("name")), {})
+        }
+    )
+    return [
+        LintError(
+            code=LintCode.EVALUATOR_MISCONFIGURED,
+            severity=Severity.WARNING,
+            message=(
+                f"setup tool {name!r} is marked destructive: false, but no destructive verb is "
+                "in its name, so the flag changes nothing: it clears only a tool a verb "
+                "would make destructive, never an unauthorized call or an argument"
+            ),
+            spec_id=spec.id,
+        )
+        for name in idle
+    ]
 
 
 def _check_tool_allowlist(spec: AttackSpec, allowlist: list[str]) -> list[LintError]:
