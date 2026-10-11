@@ -94,6 +94,8 @@ def render_replay(result: ReplayResult) -> str:
             status = f"{status} (provider_filter_side_unknown)"
         elif unreadable_reply(attempt):  # OD-21: the adapter could not read what came back
             status = f"{status} (unreadable_reply)"
+        if _declared(attempt):  # OD-43: the target file's word, not the tool's judgement
+            status = f"{status} (operator declaration)"
         # Read back from the evidence tree, written out as every other stored text is.
         fields = visible_controls(f"{attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}")
         lines.append(f"  {fields}  {status}")
@@ -148,6 +150,14 @@ def render_replay(result: ReplayResult) -> str:
             "not report (provider_filter_side_unknown): counted in N and never a success; "
             "review them"
         )
+    # The attempts whose stored verdict the operator's target file changed (OD-43, u06 A-72).
+    declared = sum(1 for a in result.attempts if _declared(a))
+    if declared:
+        lines.append(
+            f"  {declared} of {len(result.attempts)} attempt artifact(s) with a call to a tool the "
+            "target file declares not destructive, not judged destructive (operator declaration, "
+            "OD-43): each verdict names the tool"
+        )
     # A model that takes no sampling was sent no temperature (u12 A-68): what each attempt
     # recorded says so, and the rate above is then over the model's own default sampling.
     unpinned = sum(1 for a in result.attempts if _no_temperature(a))
@@ -158,6 +168,12 @@ def render_replay(result: ReplayResult) -> str:
             "are not temperature-0 deterministic and the rate is over the model's own sampling"
         )
     return "\n".join(lines)
+
+
+def _declared(attempt: Attempt) -> bool:
+    """True when ``attempt``'s verdict says the operator's declaration changed it (OD-43)."""
+
+    return attempt.verdict is not None and bool(attempt.verdict.operator_cleared)
 
 
 def _no_temperature(attempt: Attempt) -> bool:

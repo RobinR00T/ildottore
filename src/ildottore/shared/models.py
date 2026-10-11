@@ -18,6 +18,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     field_validator,
     model_serializer,
+    model_validator,
 )
 
 from ildottore.shared.enums import (
@@ -327,12 +328,50 @@ class SeededSetup(_Frozen):
     carries is still judged, and a name that is one of a spec's own scene tools is not granted
     for that spec. ``run_token`` replaces ``{{run_id}}`` in a seeded spec: the operator seeds the
     scene before the run, so its canary cannot carry the per-run id.
+
+    ``not_destructive`` names the granted tools the operator's file declares not destructive,
+    each written there as a ``granted_tools`` entry ``{name: <tool>, destructive: false}``
+    (owner decision OD-43, u06 A-72): a hand-off such as ``transfer_to_billing_agent`` is then
+    not failed by its name alone. Always a subset of ``granted_tools`` (refused otherwise,
+    however the setup is built), kept sorted and once each, by exact name; it clears only
+    ``tool_call``'s destructive check, never for a tool of a spec's own scene, and every report
+    and the run store say it was declared. Empty, it is left out of a dump, so a report of a
+    target that declares nothing is byte for byte what it was before the field existed.
     """
 
     specs: list[str] = Field(default_factory=list)
     tools: dict[str, str] = Field(default_factory=dict)
     granted_tools: list[str] = Field(default_factory=list)
     run_token: str | None = None
+    not_destructive: list[str] = Field(default_factory=list)
+
+    @field_validator("not_destructive")
+    @classmethod
+    def _sorted_once(cls, names: list[str]) -> list[str]:
+        # Sorted here rather than refused out of order: a report's redactor masks a name that
+        # reads as a secret, which can change where it sorts in the masked copy it validates.
+        return sorted(set(names))
+
+    @model_validator(mode="after")
+    def _declared_are_granted(self) -> SeededSetup:
+        stray = sorted(set(self.not_destructive) - set(self.granted_tools))
+        if stray:
+            raise ValueError(
+                "seeded_setup.not_destructive names a tool not in granted_tools: "
+                f"{', '.join(stray)}; only a granted tool may be declared not destructive"
+            )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _without_an_empty_declaration(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """The dump as before OD-43 when the file declares no tool not destructive."""
+
+        dumped: dict[str, Any] = handler(self)
+        if not dumped.get("not_destructive"):
+            dumped.pop("not_destructive", None)
+        return dumped
 
 
 class WebSocketExpect(_Frozen):
@@ -524,6 +563,12 @@ class Verdict(_Frozen):
     """Evaluator output (``docs/04 §1-§3``, contract §6).
 
     ``inconclusive_reason`` is set only when ``status == inconclusive``.
+
+    ``operator_cleared`` names the called tools only the target file's declaration kept from
+    being judged destructive (OD-43, u06 A-72): ``tool_call`` sets it on its verdict and the
+    runner on the attempt's aggregate, beside the note in ``reasoning``, and the reports count
+    from it, never from the text, which a judge or a tool's name can echo. Empty, it is left out
+    of a dump, so every other verdict is stored, reported and hashed byte for byte as before.
     """
 
     status: VerdictStatus
@@ -532,6 +577,16 @@ class Verdict(_Frozen):
     matched: list[str] = Field(default_factory=list)
     evaluator_type: str
     inconclusive_reason: InconclusiveReason | None = None
+    operator_cleared: list[str] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _without_an_empty_clearing(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The dump as before OD-43 when the operator's declaration cleared nothing."""
+
+        dumped: dict[str, Any] = handler(self)
+        if not dumped.get("operator_cleared"):
+            dumped.pop("operator_cleared", None)
+        return dumped
 
     def model_post_init(self, _context: object) -> None:
         if self.status is VerdictStatus.INCONCLUSIVE and self.inconclusive_reason is None:
@@ -583,6 +638,10 @@ class EvalContext(_Frozen):
     # Tool names a seeded deployment grants beyond the spec's scene (OD-18 B,
     # ``seeded_setup.granted_tools``): a call to one is not unauthorized. Empty off a deployment.
     granted_tools: list[str] = Field(default_factory=list)
+    # The granted tools the operator's target file declares not destructive (OD-43,
+    # ``SeededSetup.not_destructive``): read by ``tool_call`` only, and only for a name granted
+    # and in no scene of this spec. Empty off a deployment.
+    not_destructive_tools: list[str] = Field(default_factory=list)
 
 
 class Attempt(_Frozen):

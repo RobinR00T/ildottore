@@ -154,6 +154,20 @@ are never a success. `dottore replay` writes `inconclusive (cut_by_provider_outp
 Checked by `tests/cli/test_provider_output_filter_campaign.py` and
 `tests/core/test_provider_output_filter.py`.
 
+**A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) The run store records the
+operator's declaration for each run, and a replay reads it back.** The run's context
+(`context_json`, written before anything is sent) holds `not_destructive_tools`: the tools the
+target file declares not destructive, sorted, each masked with the fixed identity salt the store
+masks a target id with, so an ordinary tool name reads as written and one that reads as a secret is
+not kept in clear, and the record compares equal across processes; `[]` when none is declared, and
+absent from a run stored before 2026-10-11, which declared none; a record that is not a list of
+names says nothing of the declaration, and the target digest's own refusal speaks. Each attempt's
+stored verdict carries the note and the `operator_cleared` record when the declaration changed
+it (the record left out otherwise, so every other artifact is byte for byte as before), and
+`dottore replay` reads the record, never the text, to write `(operator declaration)` after such
+an attempt's status and a footer line with their count. Checked by
+`tests/cli/test_operator_declaration_campaign.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.

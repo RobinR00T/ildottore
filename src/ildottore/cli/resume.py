@@ -38,6 +38,7 @@ from ildottore.store.replay import replay_run
 __all__ = [
     "RESUME_PLACEHOLDER_RISK",
     "adopt_resumed",
+    "declared_not_destructive",
     "load_resume_run",
     "stored_adaptive",
     "stored_runs",
@@ -411,6 +412,45 @@ def stored_takes_sampling(run_db: Path, run_id: str) -> tuple[bool | None, bool 
     return values
 
 
+def declared_not_destructive(target: Target) -> list[str]:
+    """What the run store records of the tools ``target``'s file declares not destructive.
+
+    OD-43 (u06 A-72): the names, sorted, each masked with the fixed identity salt the store
+    masks a target id with (:func:`~ildottore.redactor.redact_identity`), so a name that reads as
+    a secret is not kept in clear and the record still compares equal across processes; an
+    ordinary tool name is kept as written. Empty when the file declares none.
+    """
+
+    from ildottore.redactor import redact_identity
+
+    seeded = target.seeded_setup
+    if seeded is None:
+        return []
+    return [redact_identity(name) for name in seeded.not_destructive]
+
+
+def _declaration_changed(context: dict[str, object], target: Target) -> str | None:
+    """How the target file's declaration differs from the halted run's, or ``None``.
+
+    A run stored before a file could declare one recorded nothing, which is no tool declared;
+    a record that is not a list of names says nothing, and the digest refusal then speaks.
+    """
+
+    stored = context.get("not_destructive_tools", [])
+    if not (isinstance(stored, list) and all(isinstance(name, str) for name in stored)):
+        return None
+    current = sorted(declared_not_destructive(target))
+    if sorted(stored) == current:
+        return None
+
+    def listed(names: list[str]) -> str:
+        return ", ".join(quoted(name) for name in names) if names else "no tool"
+
+    return (
+        f"it declared {listed(sorted(stored))} not destructive and now declares {listed(current)}"
+    )
+
+
 def _unverifiable(run_id: str, what: str, *, allow: bool, waivable: bool = True) -> None:
     """One decision for every "this cannot be checked" case: refuse, or say so loudly.
 
@@ -524,6 +564,17 @@ def _assert_same_context(
         _unverifiable(run_id, "the target and the route", allow=allow_unverified, waivable=False)
         return
     if stored_target != current_target:
+        # The operator's declaration is named when it is what changed (OD-43): the digest alone
+        # said "seeded_setup differ", and a reader could not tell a new grant from a tool the
+        # file now says destroys nothing, which changes verdicts.
+        changed = _declaration_changed(context or {}, target)
+        if changed is not None:
+            raise ValueError(
+                f"run {run_id!r} was made under another operator declaration in its target "
+                f"file's seeded_setup.granted_tools: {changed} (OD-43). It decides which "
+                "destructive calls fail, so the two halves would be judged two ways in one "
+                "report. Restore the declaration as it was, or start a fresh run."
+            )
         raise ValueError(
             f"run {run_id!r} was made against a different target than the one resolved now "
             "(its endpoint, model, capabilities, sampling_defaults, offline scenario or "

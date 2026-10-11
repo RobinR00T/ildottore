@@ -49,7 +49,7 @@ from ildottore.shared.iopc import (
     IOPC_TECHNIQUE_UNIVERSE,
     IOPC_TECHNIQUES,
 )
-from ildottore.shared.models import AttackSpec, Attempt, Finding
+from ildottore.shared.models import AttackSpec, Attempt, Finding, Target
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
     blocked_by_provider_filter,
@@ -75,11 +75,14 @@ __all__ = [
     "FrameworkCounts",
     "MatrixCell",
     "ModelComparison",
+    "OperatorDeclarations",
     "RunStatus",
     "RunSummary",
     "build_battery_coverage",
     "build_run_summary",
+    "declared_attempt_ids",
     "finding_state",
+    "operator_declarations",
     "pct_display",
 ]
 
@@ -228,6 +231,61 @@ class FilterCuts:
 
 
 @dataclass(frozen=True)
+class OperatorDeclarations:
+    """What the operator's target files declare of the deployments' own tools (OD-43, A-72).
+
+    An operator declaration, not a finding of the tool: the target file says which granted
+    tools destroy nothing, and ``tool_call`` does not fail a call to one by its name alone.
+    Every format states it for each run, and counts the attempts it changed, so a pass it made
+    never reads as any other pass.
+    """
+
+    #: ``(target id, the granted tools its file declares not destructive)`` for each target
+    #: whose file declares one, by target id; each list sorted.
+    not_destructive_tools: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    #: Attempts whose verdict says the declaration kept a call from being judged destructive,
+    #: one per attempt id, over every finding.
+    attempts: int = 0
+    #: Spec ids with at least one such attempt, sorted.
+    specs: tuple[str, ...] = ()
+
+
+def declared_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:
+    """The ids of the attempts whose verdict the operator's declaration changed (OD-43)."""
+
+    return {
+        attempt.attempt_id
+        for attempt in attempts
+        if attempt.verdict is not None and attempt.verdict.operator_cleared
+    }
+
+
+def operator_declarations(
+    targets: Iterable[Target], findings: list[Finding]
+) -> OperatorDeclarations:
+    """What ``targets``' files declare not destructive, and the attempts of ``findings`` it
+    changed (OD-43): the summary's :class:`OperatorDeclarations`, built without the rest."""
+
+    declared = {
+        target.id: tuple(sorted(target.seeded_setup.not_destructive))
+        for target in targets
+        if target.seeded_setup is not None and target.seeded_setup.not_destructive
+    }
+    attempts = 0
+    specs: set[str] = set()
+    for finding in findings:
+        changed = len(declared_attempt_ids(finding.attempts))
+        if changed:
+            attempts += changed
+            specs.add(finding.spec_id)
+    return OperatorDeclarations(
+        not_destructive_tools=tuple(sorted(declared.items())),
+        attempts=attempts,
+        specs=tuple(sorted(specs)),
+    )
+
+
+@dataclass(frozen=True)
 class RunStatus:
     """Whether the run that produced this summary actually finished (contract §6).
 
@@ -270,6 +328,7 @@ class RunSummary:
     #: OD-21 (u11's half of u08 A-74): replies the adapter could not read as the provider's,
     #: counted the same way. Never a pass of the model either: a spec with one is inconclusive.
     unreadable: FilterCuts = field(default_factory=FilterCuts)
+    operator_declarations: OperatorDeclarations = field(default_factory=OperatorDeclarations)
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -493,13 +552,15 @@ def build_run_summary(
     *,
     planned_specs: int | None = None,
     run_status: RunStatus | None = None,
+    targets: Iterable[Target] = (),
 ) -> RunSummary:
     """Aggregate ``findings`` into a :class:`RunSummary` (``docs/05 §4-§5``).
 
     ``specs`` maps ``spec_id → AttackSpec`` for framework attribution. ``model_comparison`` is
     populated only when the findings span more than one distinct ``target_id``.
     ``planned_specs`` / ``run_status`` carry what the run *intended* and whether it *finished*,
-    which findings alone cannot express (see :class:`RunStatus`).
+    which findings alone cannot express (see :class:`RunStatus`). ``targets`` are the run's
+    targets, whose files may declare tools not destructive (:class:`OperatorDeclarations`).
     """
 
     spec_map = specs or {}
@@ -512,7 +573,7 @@ def build_run_summary(
     conf_values: list[float] = []
     confirmed = 0
     needs_review = 0
-    targets: set[str] = set()
+    target_ids: set[str] = set()
     blocked = 0
     blocked_specs: set[str] = set()
     cut = 0
@@ -547,7 +608,7 @@ def build_run_summary(
         if finding.attempts:
             repro_values.append(finding.risk.reproducibility)
             conf_values.append(finding.risk.confidence)
-        targets.add(finding.target_id)
+        target_ids.add(finding.target_id)
         state = finding_state(finding)
         if state == "confirmed":
             confirmed += 1
@@ -563,7 +624,7 @@ def build_run_summary(
             atlas[spec.mitre_atlas.tactic] += 1
             nist[spec.nist_ai_rmf] += 1
 
-    comparison = _build_comparison(findings, spec_map) if len(targets) > 1 else None
+    comparison = _build_comparison(findings, spec_map) if len(target_ids) > 1 else None
 
     return RunSummary(
         total=len(findings),
@@ -585,6 +646,7 @@ def build_run_summary(
         output_filter=FilterCuts(attempts=cut, specs=tuple(sorted(cut_specs))),
         filter_side_unknown=FilterCuts(attempts=unsaid, specs=tuple(sorted(unsaid_specs))),
         unreadable=FilterCuts(attempts=unread, specs=tuple(sorted(unread_specs))),
+        operator_declarations=operator_declarations(targets, findings),
     )
 
 

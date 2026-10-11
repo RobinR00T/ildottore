@@ -133,6 +133,16 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
             "attempts": summary.filter_side_unknown.attempts,
             "specs": list(summary.filter_side_unknown.specs),
         },
+        # What the operator's target files declare of their own tools (OD-43, u06 A-72), and
+        # the attempts it changed: always emitted, optional in report-1.0 for older reports.
+        "operator_declarations": {
+            "not_destructive_tools": {
+                target_id: list(names)
+                for target_id, names in summary.operator_declarations.not_destructive_tools
+            },
+            "attempts": summary.operator_declarations.attempts,
+            "specs": list(summary.operator_declarations.specs),
+        },
         # The replies the adapter could not read (OD-21, u08 A-74): always emitted, optional in
         # report-1.0 so an older report still validates.
         "unreadable_reply": {

@@ -37,6 +37,7 @@ __all__ = [
     "incomplete_reason",
     "load_findings",
     "render_diff",
+    "report_declarations",
     "report_target",
 ]
 
@@ -67,6 +68,10 @@ class DriftEntry:
     drift: DriftClass
     baseline_status: VerdictStatus | None
     current_status: VerdictStatus | None
+    #: A FIXED the operator's target file may have made, not the target (OD-43): the current
+    #: report has attempts of this spec the declaration changed, or the two reports declare
+    #: different tools not destructive. Read with the label, never as a plain fix.
+    operator_declaration: bool = False
 
 
 @dataclass(frozen=True)
@@ -235,24 +240,68 @@ def _classify(baseline: Finding | None, current: Finding | None) -> DriftClass:
     return DriftClass.UNCHANGED
 
 
-def compare_runs(baseline: dict[str, Finding], current: dict[str, Finding]) -> DriftReport:
+def _cleared_by_declaration(finding: Finding | None) -> bool:
+    """Whether an attempt of ``finding`` was changed by the operator's declaration (OD-43)."""
+
+    return finding is not None and any(
+        attempt.verdict is not None and attempt.verdict.operator_cleared
+        for attempt in finding.attempts
+    )
+
+
+def compare_runs(
+    baseline: dict[str, Finding],
+    current: dict[str, Finding],
+    *,
+    declarations_differ: bool = False,
+) -> DriftReport:
     """Pure compare: classify every spec id present in either side.
 
     No I/O, no scoring - a dict-in/dataclass-out helper so the classification logic is
-    unit-testable without writing files (contract §7 determinism).
+    unit-testable without writing files (contract §7 determinism). A FIXED is marked as the
+    operator declaration's (OD-43) when ``declarations_differ`` (the two reports' target files
+    declare different tools not destructive) or the current finding has an attempt the
+    declaration changed: the spec may pass because the operator said a tool destroys nothing.
     """
 
     spec_ids = sorted(set(baseline) | set(current))
-    entries = [
-        DriftEntry(
-            spec_id=spec_id,
-            drift=_classify(baseline.get(spec_id), current.get(spec_id)),
-            baseline_status=baseline[spec_id].status if spec_id in baseline else None,
-            current_status=current[spec_id].status if spec_id in current else None,
+    entries = []
+    for spec_id in spec_ids:
+        drift = _classify(baseline.get(spec_id), current.get(spec_id))
+        entries.append(
+            DriftEntry(
+                spec_id=spec_id,
+                drift=drift,
+                baseline_status=baseline[spec_id].status if spec_id in baseline else None,
+                current_status=current[spec_id].status if spec_id in current else None,
+                operator_declaration=drift is DriftClass.FIXED
+                and (declarations_differ or _cleared_by_declaration(current.get(spec_id))),
+            )
         )
-        for spec_id in spec_ids
-    ]
     return DriftReport(entries=entries)
+
+
+def report_declarations(path: Path) -> dict[str, list[str]]:
+    """What the report says its target files declare not destructive (OD-43), by target id.
+
+    Read from ``summary.operator_declarations.not_destructive_tools``; a bare findings list, a
+    report written before the key existed, or a value that is not a map of names reads as
+    nothing declared, as such a report's run declared nothing.
+    """
+
+    data = _read_report(path)
+    if not isinstance(data, dict):
+        return {}
+    summary = data.get("summary")
+    declarations = summary.get("operator_declarations") if isinstance(summary, dict) else None
+    tools = declarations.get("not_destructive_tools") if isinstance(declarations, dict) else None
+    if not isinstance(tools, dict):
+        return {}
+    return {
+        str(target): sorted(str(name) for name in names)
+        for target, names in tools.items()
+        if isinstance(names, list)
+    }
 
 
 def diff_reports(baseline_path: Path, current_path: Path) -> DriftReport:
@@ -266,7 +315,8 @@ def diff_reports(baseline_path: Path, current_path: Path) -> DriftReport:
             f"the baseline is about target {base_target!r} and the current report about "
             f"{current_target!r}; a drift report compares one target with itself"
         )
-    return compare_runs(baseline, current)
+    differ = report_declarations(baseline_path) != report_declarations(current_path)
+    return compare_runs(baseline, current, declarations_differ=differ)
 
 
 _LABELS: dict[DriftClass, str] = {
@@ -287,7 +337,10 @@ def render_diff(report: DriftReport) -> str:
     for entry in report.entries:
         baseline_s = entry.baseline_status.value if entry.baseline_status is not None else "-"
         current_s = entry.current_status.value if entry.current_status is not None else "-"
-        lines.append(f"{entry.spec_id:<30}{baseline_s:<14}{current_s:<14}{_LABELS[entry.drift]}")
+        label = _LABELS[entry.drift]
+        if entry.operator_declaration:
+            label += " (operator declaration, OD-43)"
+        lines.append(f"{entry.spec_id:<30}{baseline_s:<14}{current_s:<14}{label}")
     regressions = report.regressions
     fixed = sum(1 for e in report.entries if e.drift is DriftClass.FIXED)
     unverified = [e.spec_id for e in report.entries if e.drift is DriftClass.UNVERIFIED]
@@ -299,6 +352,13 @@ def render_diff(report: DriftReport) -> str:
         lines.append(
             "UNVERIFIED (failed in the baseline, not evaluated now, so not shown fixed): "
             + ", ".join(unverified)
+        )
+    declared = [e.spec_id for e in report.entries if e.operator_declaration]
+    if declared:
+        lines.append(
+            "FIXED (operator declaration, OD-43): the target file's declaration that a granted "
+            "tool is not destructive changed these verdicts or differs between the two reports, "
+            "so the fix may be the operator's word and not the target's: " + ", ".join(declared)
         )
     if regressions:
         lines.append("REGRESSIONS: " + ", ".join(e.spec_id for e in regressions))

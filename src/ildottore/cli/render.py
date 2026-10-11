@@ -25,17 +25,20 @@ from ildottore.reporting.summary import (
     ATLAS_MATRIX_RELEASE,
     OWASP_LLM_EDITION,
     build_run_summary,
+    declared_attempt_ids,
+    operator_declarations,
     pct_display,
 )
 from ildottore.shared.enums import ScanBand
 from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
-from ildottore.shared.models import AttackSpec, Finding
+from ildottore.shared.models import AttackSpec, Finding, Target
 from ildottore.shared.provider_filter import filter_side_unknown, filter_stop
 
 __all__ = [
     "ProgressPrinter",
     "comparison_table",
     "coverage_lines",
+    "declaration_lines",
     "progress_line",
     "summary_rows",
     "summary_table",
@@ -127,6 +130,34 @@ def summary_table(
             f"{row.max_repro:.2f}",
         )
     return table
+
+
+def declaration_lines(findings: list[Finding], targets: list[Target]) -> list[str]:
+    """The terminal's account of the operator's declaration (OD-43, u06 A-72), one line per
+    target whose file declares a tool not destructive: which tools, that it is the operator's
+    word, and on how many attempts it kept a call from being judged destructive. Pure; the
+    names are the operator's text, written out as every such line is (u12 §6).
+    """
+
+    declared = operator_declarations(targets, findings)
+    lines: list[str] = []
+    for target_id, names in declared.not_destructive_tools:
+        changed = {
+            finding.spec_id: len(declared_attempt_ids(finding.attempts))
+            for finding in findings
+            if finding.target_id == target_id
+        }
+        attempts = sum(changed.values())
+        specs = sorted(spec_id for spec_id, count in changed.items() if count)
+        lines.append(
+            f"Operator declaration (OD-43): {visible_controls(target_id)}'s target file declares "
+            f"{', '.join(visible_controls(name) for name in names)} not destructive "
+            f"(seeded_setup.granted_tools); a call to {'it' if len(names) == 1 else 'them'} was "
+            f"not judged destructive on {attempts} attempt(s)"
+            + (f" in {len(specs)} spec(s) ({', '.join(specs)})" if specs else "")
+            + ", each named in that attempt's reasoning"
+        )
+    return lines
 
 
 def coverage_lines(
@@ -344,6 +375,7 @@ class ProgressPrinter:
         specs: dict[str, AttackSpec] | None = None,
         *,
         planned_specs: int | None = None,
+        targets: list[Target] | None = None,
     ) -> None:
         """Print the summary table + coverage block (always shown, even under ``-q``).
 
@@ -357,6 +389,9 @@ class ProgressPrinter:
             self._console.print(matrix)
         # Plain and unwrapped, like `error`: the off-universe line quotes a pack's values.
         for line in coverage_lines(findings, specs, planned_specs=planned_specs):
+            self._console.print(line, markup=False, emoji=False, soft_wrap=True)
+        # The operator's word on its own tools, for every run whose target file gives it (OD-43).
+        for line in declaration_lines(findings, targets or []):
             self._console.print(line, markup=False, emoji=False, soft_wrap=True)
 
 

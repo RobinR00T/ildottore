@@ -259,6 +259,37 @@
               }
             }
           }
+        },
+        "operator_declarations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not_destructive_tools",
+            "attempts",
+            "specs"
+          ],
+          "description": "What the operator's target files declare of the deployments' own tools (OD-43, u06 A-72): an operator declaration, not a finding. not_destructive_tools maps each target id whose file declares any to the granted tools it declares not destructive (seeded_setup.granted_tools entries {name, destructive: false}); tool_call does not fail a call to one by its name alone, and nothing else changes. attempts counts the attempts whose verdict that declaration changed (their reasoning says which tool, after 'operator declaration (OD-43)'), specs lists the spec ids with at least one. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one.",
+          "properties": {
+            "not_destructive_tools": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "specs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },

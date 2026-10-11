@@ -144,7 +144,18 @@ class HtmlReporter(BaseReporter):
             started_at=ctx.run.started_at,
             finished_at=ctx.run.finished_at,
             scope_sha256=ctx.run.scope_sha256,
-            targets=[{"id": t.id, "type": t.type.value, "name": t.name} for t in ctx.run.targets],
+            targets=[
+                {
+                    "id": t.id,
+                    "type": t.type.value,
+                    "name": t.name,
+                    # The granted tools its file declares not destructive (OD-43).
+                    "not_destructive": (
+                        list(t.seeded_setup.not_destructive) if t.seeded_setup is not None else []
+                    ),
+                }
+                for t in ctx.run.targets
+            ],
             summary=summary_to_wire(summary),
             # Code to title, so the impact axis reads as harm rather than as an opaque id.
             iopc_impact_titles=dict(IOPC_IMPACTS),

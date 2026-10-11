@@ -1649,11 +1649,17 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
     # specs, one `get_ticket` in the deployment): the map is applied per spec, and only two of
     # one spec's own scene tools sharing a name is refused, for that spec, at run time.
     deployment_names = list(tools.values())
-    granted = raw.get("granted_tools", [])
-    if not (isinstance(granted, list) and all(isinstance(g, str) and g for g in granted)):
+    granted, declared = _granted_tools(path, raw.get("granted_tools", []))
+    # A declaration is for the deployment's own tools, outside every scene: a mapped name is a
+    # spec's scene tool, on which the spec's word decides (OD-43). Said before the general
+    # refusal below, which it would otherwise read as.
+    mapped_declared = sorted(set(declared) & set(deployment_names))
+    if mapped_declared:
         raise ValueError(
-            f"target file {path} 'seeded_setup.granted_tools' must be a list of the deployment's "
-            "tool names"
+            f"target file {path} 'seeded_setup' declares {cut(', '.join(mapped_declared))} not "
+            "destructive and maps it to a spec's tool under 'tools'; only a tool the deployment "
+            "grants, outside every scene, may be declared not destructive (OD-43), and a spec's "
+            "scene says for its own tools"
         )
     both = sorted(set(granted) & set(deployment_names))
     if both:
@@ -1668,8 +1674,101 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
             "or '-' (it replaces {{run_id}} in the canaries the operator seeds)"
         )
     return SeededSetup(
-        specs=list(specs), tools=dict(tools), granted_tools=list(granted), run_token=token
+        specs=list(specs),
+        tools=dict(tools),
+        granted_tools=granted,
+        run_token=token,
+        not_destructive=sorted(declared),
     )
+
+
+#: The keys a ``granted_tools`` entry written as a mapping may hold (OD-43).
+_GRANTED_ENTRY_KEYS = ("name", "destructive")
+
+#: What every refusal of ``granted_tools`` says it must be.
+_GRANTED_SHAPE = (
+    "a list of the deployment's tool names, each a name or {name: <tool>, destructive: false}"
+)
+
+
+def _granted_tools(path: Path, raw: object) -> tuple[list[str], list[str]]:
+    """The deployment's granted tools, and the ones its operator declares not destructive.
+
+    Each entry is a tool name, as before, or a mapping ``{name: <tool>, destructive: false}``
+    that grants the tool and declares it not destructive (owner decision OD-43, u06 A-72): a
+    hand-off such as ``transfer_to_billing_agent`` is then not failed by its name alone. The
+    mapping holds ``name`` (text, with no space at either end: the evaluators compare names
+    exactly, so a padded one would declare a tool nobody calls) and ``destructive``, the boolean
+    ``false``; ``true`` is refused, since what a target file may say about its own tool is that
+    it destroys nothing, and the spec's scene is where a tool is made destructive whatever its
+    name; and a mapping without ``destructive`` is refused, a bare name being how a tool is only
+    granted. A declared name granted twice is refused, since the two entries would say two
+    things. Every refusal names the file and the entry, never a value (A-53).
+    """
+
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.granted_tools' must be {_GRANTED_SHAPE}"
+        )
+    granted: list[str] = []
+    declared: list[str] = []
+    for index, entry in enumerate(raw):
+        where = f"'seeded_setup.granted_tools[{index}]'"
+        if isinstance(entry, str) and entry:
+            granted.append(entry)
+            continue
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"target file {path} {where} is not a tool name; 'granted_tools' must be "
+                f"{_GRANTED_SHAPE}"
+            )
+        # A key that is a number too long to write out raised in `str` (A-40).
+        unknown = sorted(
+            described() if too_long(key) else str(key)
+            for key in entry
+            if key not in _GRANTED_ENTRY_KEYS
+        )
+        if unknown:
+            raise ValueError(
+                f"target file {path} {where} has unknown key(s) {cut(', '.join(unknown))}; "
+                "expected 'name' and 'destructive' (OD-43)"
+            )
+        name = entry.get("name")
+        if not (isinstance(name, str) and name):
+            raise ValueError(f"target file {path} {where}.name must be the deployment's tool name")
+        if name != name.strip():
+            raise ValueError(
+                f"target file {path} {where}.name has a space at one end; tool names are "
+                "compared exactly, so write the name as the deployment calls it (OD-43)"
+            )
+        if "destructive" not in entry:
+            raise ValueError(
+                f"target file {path} {where} has no 'destructive'; write a tool that is only "
+                "granted as its bare name, and one declared not destructive as "
+                "{name: <tool>, destructive: false} (OD-43)"
+            )
+        granted.append(name)
+        flag = entry["destructive"]
+        if not isinstance(flag, bool):
+            kind = "null" if flag is None else type(flag).__name__
+            raise ValueError(
+                f"target file {path} {where}.destructive must be false (a boolean), not {kind}"
+            )
+        if flag:
+            raise ValueError(
+                f"target file {path} {where}.destructive is true; a target file may declare one "
+                "of its own tools not destructive (false), and nothing more (OD-43): leave the "
+                "key out to have the tool judged by its name, and mark a tool destructive "
+                "whatever its name in a spec's scene"
+            )
+        declared.append(name)
+    twice = sorted({name for name in declared if granted.count(name) > 1})
+    if twice:
+        raise ValueError(
+            f"target file {path} 'seeded_setup.granted_tools' grants {cut(', '.join(twice))} "
+            "more than once and declares it not destructive; write each declared tool once"
+        )
+    return granted, declared
 
 
 #: A run token goes into a canary the evaluators match exactly: plain characters, and long

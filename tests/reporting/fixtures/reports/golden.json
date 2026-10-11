@@ -380,6 +380,11 @@
       ]
     },
     "needs_review_count": 0,
+    "operator_declarations": {
+      "attempts": 0,
+      "not_destructive_tools": {},
+      "specs": []
+    },
     "provider_filter_side_unknown": {
       "attempts": 0,
       "specs": []

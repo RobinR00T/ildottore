@@ -143,7 +143,11 @@ class Reporter(Protocol):
    the media and, on the multi-identity sweep, the identity, and records `setup_delivery:
    seeded`; the evaluators judge its tool calls under the spec's names through
    `seeded_setup.tools`, and the deployment's own tools listed in `seeded_setup.granted_tools`
-   are not unauthorized unless they name one of the spec's own scene tools. The offline mocks
+   are not unauthorized unless they name one of the spec's own scene tools. A granted tool the
+   target file declares not destructive (`{name, destructive: false}`, OD-43) is not failed by
+   `tool_call` for its name alone, for a spec whose scene does not name it; the declaration
+   reaches `tool_call` through the evaluator context and nothing else, and every report states
+   it. The offline mocks
    answer from the spec, not from a deployment, and are exempt.
 3. **Mutate**: Prompt Mutator expands the base attack into declared variants (language,
    encoding, roleplay, nesting, obfuscation, indirect-injection carriers). Each variant is a

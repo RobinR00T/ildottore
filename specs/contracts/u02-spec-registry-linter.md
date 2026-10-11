@@ -422,7 +422,8 @@ it. The stub now reads a call through `shared/toolcalls.py` and judges it throug
 stays, resolved by the shared rule. The stub honours a scene's `destructive: false` as the
 evaluator does, and lint warns (`EVALUATOR_MISCONFIGURED`) on one worth a second look: on a name
 a verb matches that is not shaped like a hand-off (`transfer_to_<...>agent`, `assistant`, `bot`,
-`specialist`, `team` or `human`, snake or camel case; a heuristic no verdict reads), since a
+`specialist`, `team` or `human`, snake or camel case; a heuristic no verdict reads, in
+`shared.tool_abuse.handoff_shaped` since OD-43, whose plan lines read it too), since a
 scene can clear `delete_account` as easily as a hand-off (pre-merge audit of `f76f145`, M2); on a
 name no verb matches, since it clears only a tool a verb would make destructive, never an
 unauthorized call or an argument; and in a spec that declares no `tool_call`, the only evaluator

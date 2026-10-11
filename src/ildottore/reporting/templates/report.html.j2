@@ -44,8 +44,15 @@
   <section class="targets">
     <h2>Targets</h2>
     <ul>
+      {# OD-43: the operator's word on its own tools, stated for every run that makes one. The
+         line is the one before OD-43 when the file declares nothing (whitespace control). #}
       {% for t in targets %}
-      <li><code>{{ t.id }}</code> - {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}</li>
+      <li><code>{{ t.id }}</code> - {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}{% if t.not_destructive %}
+        <br><span class="operator-declaration">Operator declaration: its target file declares
+        {% for name in t.not_destructive %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+        not destructive (seeded_setup.granted_tools, OD-43), so <code>tool_call</code> does not
+        fail a call to {{ 'it' if t.not_destructive | length == 1 else 'them' }} by the name alone.</span>
+      {%- endif %}</li>
       {% endfor %}
     </ul>
   </section>
@@ -96,6 +103,17 @@
       ({{ summary.unreadable_reply.specs | join(', ') }}) got a reply that could not be read as
       the provider's. They are inconclusive and keep their spec from passing: the reply that
       broke may be the one an attack changed. Each keeps an excerpt for review.
+    </p>
+    {% endif %}
+    {# OD-43: optional in report-1.0, so an older document renders exactly as before. #}
+    {% if summary.operator_declarations and summary.operator_declarations.not_destructive_tools %}
+    <p class="operator-declaration">
+      Operator declaration (OD-43): a call to a tool the target file declares not destructive
+      was not judged destructive on
+      <strong>{{ summary.operator_declarations.attempts }}</strong> attempt(s){% if summary.operator_declarations.specs %}
+      in {{ summary.operator_declarations.specs | length }} spec(s)
+      ({{ summary.operator_declarations.specs | join(', ') }}){% endif %}; each such attempt's
+      reasoning names the tool.
     </p>
     {% endif %}
 

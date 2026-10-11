@@ -162,7 +162,11 @@ Two things that table says out loud:
   which specs (`seeded_setup.specs`); declared, they go out as the plain prompt, each attempt
   records `setup_delivery: seeded`, and `seeded_setup.tools` maps the spec's tool names to the
   deployment's, so a call under the deployment's own name is judged as the spec's tool instead of
-  failing as "unauthorized". Declaring every scene seeded sends 62: five specs
+  failing as "unauthorized". A deployment that hands off in the OpenAI Agents SDK's style
+  (`transfer_to_<agent>`) writes that tool in `seeded_setup.granted_tools` as `{name, destructive:
+  false}`, or every spec that declares `tool_call` fails it by its name; that is the operator's
+  declaration, printed on an `operator:` line of the dry run and stated in every report
+  (OD-43, MANUAL §4.2). Declaring every scene seeded sends 62: five specs
   (`DL-XSESSION-001`, the three `EMB-*` retrieval specs and `AC-BOLA-001`, whose canary sits in
   another customer's record) carry a per-run canary that has to be in the deployment, which
   nobody can seed before the run, so they also need `seeded_setup.run_token`; with it, each gets
