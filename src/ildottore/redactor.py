@@ -1848,6 +1848,34 @@ def redact(obj: object) -> object:
 _IDENTITY = Redactor(salt="ildottore:identity:v1")
 
 
+def _patterns_before_a78() -> list[Pattern]:
+    """The built-in patterns as they were before u01 A-78: the four key rules started with ``\b``,
+    no other key format, no UUID. Read only to recognise an identity mask a run store wrote then
+    (:func:`identity_masks`)."""
+
+    legacy = [
+        Pattern(
+            "jwt",
+            re.compile(
+                r"\b(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
+                r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
+            ),
+            hashed=True,
+        ),
+        Pattern("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), hashed=True),
+        Pattern("github_token", re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"), hashed=True),
+        Pattern("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), hashed=True),
+        Pattern("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), hashed=True),
+    ]
+    added = {pattern.type for pattern in _key_patterns()} | {"jwt"}
+    current = [pattern for pattern in _default_patterns() if pattern.type not in added]
+    return [current[0], *legacy, *current[1:]]  # the private key first, as it was
+
+
+_IDENTITY_BEFORE_A78 = Redactor(salt="ildottore:identity:v1", patterns=_patterns_before_a78())
+_IDENTITY_BEFORE_A78._hex_runs = False
+
+
 _SHA256_HEX_RE: Final = re.compile(r"[0-9a-f]{64}")
 
 
@@ -1881,3 +1909,19 @@ def redact_identity(value: str) -> str:
     """Mask an identifier with the fixed identity salt, so the mask is comparable later."""
 
     return _IDENTITY.redact_text(value)
+
+
+def identity_masks(value: str) -> tuple[str, ...]:
+    """Every mask a run store may hold for ``value``: :func:`redact_identity`'s, then the one it
+    wrote before u01 A-78, when they differ.
+
+    The key formats, the hex run and the UUID changed the identity mask of an id that holds one
+    (``prod-<uuid>`` was ``prod-<uuid with a phone mask in it>``, it is ``prod-«REDACTED:uuid:...»``
+    now), so a run halted before them was refused on resume as made against another target, and
+    a resume keyed its findings anew beside the old rows. The resume checks and the run store
+    accept both, and the store keeps the current one.
+    """
+
+    current = _IDENTITY.redact_text(value)
+    before = _IDENTITY_BEFORE_A78.redact_text(value)
+    return (current,) if before == current else (current, before)

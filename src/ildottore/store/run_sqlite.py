@@ -18,7 +18,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from ildottore.redactor import Redactor, redact_evidence_ref, redact_identity
+from ildottore.redactor import Redactor, identity_masks, redact_evidence_ref, redact_identity
 from ildottore.shared.amounts import is_amount
 from ildottore.shared.models import Finding, TestRun
 from ildottore.store import migrations
@@ -133,7 +133,14 @@ class SqliteRunStore:
         # like any other stored identifier (DL2), with the FIXED identity salt: the general
         # redactor's salt is random per process, and a resume in a new process must hit the
         # same row on conflict or it would duplicate every finding.
-        finding_id = redact_identity(finding_id_of(f))
+        finding_id, *before = identity_masks(finding_id_of(f))
+        # A row a run halted before u01 A-78 keyed under the identity mask of then: the finding is
+        # written again below under the current one, so the old row goes, or a resume across the
+        # change kept two rows for one finding.
+        for old in before:
+            self._conn.execute(
+                "DELETE FROM findings WHERE run_id = ? AND finding_id = ?", (run_id, old)
+            )
         self._conn.execute(
             """
             INSERT INTO findings
