@@ -4,8 +4,10 @@ The scope file is the **authorization record** (``docs/02 §3``): it lists the
 authorized targets, a per-target endpoint **allowlist** (host + path prefixes)
 and ``≥1`` auth identity *reference* (never an inline secret). Loading performs
 **no network I/O** (SSRF-safe, ``docs/02 §4``) and verifies file integrity via a
-**pluggable verifier** (OD-2: SHA-256 checksum in MVP-1, sigstore later drops in
-without a shape change).
+**pluggable verifier**. OD-2, decided 2026-10-11 (under the owner's delegation, revisable): the
+SHA-256 checksum is integrity only, and authenticity (who wrote or approved the scope) is a
+non-goal until there is key management; an operator signs the file out of band. The verifier
+seam stays, so a signature check can drop in without a shape change when that exists.
 """
 
 from __future__ import annotations
@@ -101,9 +103,9 @@ class IntegrityVerifier(Protocol):
     """Pluggable scope-integrity verifier (OD-2).
 
     ``compute`` derives an integrity token over the raw scope bytes;
-    ``verify`` checks a recorded token against freshly-computed bytes. SHA-256 in
-    MVP-1; a sigstore/cosign implementation can replace this without a shape
-    change to :class:`Scope`.
+    ``verify`` checks a recorded token against freshly-computed bytes. SHA-256 is the only
+    implementation (OD-2: integrity, not authenticity); a signature verifier can replace it
+    without a shape change to :class:`Scope` once trusted keys are managed somewhere.
     """
 
     def compute(self, raw: bytes) -> str: ...

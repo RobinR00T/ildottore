@@ -76,9 +76,10 @@ concretes:
 - KEEP: asyncio concurrency (bounded semaphore); no Celery/RQ in MVP‑1 (`docs/00 §8`).
 - DECIDE (OD-5): adaptive planner default-ON with `-sV`, or opt-in? Ship `-sV`=adaptive,
   `--no-adaptive`=full suite (`docs/10 §3`); default-on-with-`-sV` proposed, human sign-off.
-  Resolved as built (`00-INDEX.md` OD-5): `-sV` and `-A` imply adaptive ordering; neither
-  `--adaptive` nor `--no-adaptive` exists on the CLI; the pass-through is the default without a
-  fingerprint (`build_plan(adaptive=False)`), and adaptive only reorders mutators.
+  Resolved as built and signed off on 2026-10-11 under the owner's delegation (`00-INDEX.md`
+  OD-5, §9): `-sV` and `-A` imply adaptive ordering; neither `--adaptive` nor `--no-adaptive`
+  exists on the CLI; the pass-through is the default without a fingerprint
+  (`build_plan(adaptive=False)`), and adaptive only reorders mutators.
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `budgets.py`: `BudgetLedger` (tokens/requests/wall-clock/attempts), thread-safe debit, breach
@@ -572,8 +573,35 @@ fallback shapes and two stops that are no filter's). The 4 added after the verif
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-5** adaptive planner default-ON with `-sV` vs opt-in (proposed: `-sV`⇒adaptive on,
-  `--no-adaptive` escape hatch for benchmark parity). Resolved as built: `-sV`/`-A` imply
-  adaptive ordering, no flag either way (`00-INDEX.md`).
+  `--no-adaptive` escape hatch for benchmark parity). **Decided 2026-10-11 under the owner's
+  delegation (best practice), revisable: signed off as built.** `-sV`/`-A` imply adaptive ordering,
+  `--deep` sets the mode too (it orders nothing without a fingerprint), and there is no flag either
+  way. Why: the ordering changes no attempt that is sent, only which goes first. An attempt is named
+  by spec, mutation and run (`core/reproduce.attempt_id_for`), the planner keeps the same mutator
+  set (`_select_mutators` reorders, never drops), and the runner stops no spec early, so a completed
+  campaign sends and scores the same attempts in either order; the order matters only to what a halt
+  leaves stored. The cost an opt-in was meant to bound is the probe pass, which `-sV` already names
+  and `--estimate` prices, and the escape hatch for benchmark parity is a run without `-sV`.
+  Accepted consequence, measured on 2026-10-11 against the mock (`--quick --runs 2 -sV
+  --budget-requests 25` halted, exit 3, 9 of 18 specs): a resume with `--deep` alone keeps the
+  recorded mode, since both set it, and completed the campaign (exit 2, 18 of 18) with the rest in
+  declared order; a resume with no flag was refused ("halted with adaptive planning on"). Made
+  visible after the pre-merge audit of `be3f2e71`, which found that nothing recorded which order
+  each part used (both read `"adaptive": true`, and the report has no planning field): the run store
+  keeps `context_json.mutator_orders`, one entry per invocation (`fingerprint` when it planned
+  with a fingerprint, whether or not that moved a mutator, or `declared`, u10), a resume that
+  plans in declared order after a part that planned with a fingerprint prints one `note:` line on
+  stderr (only then: a `--deep` campaign resumed with `--deep` prints none, since the verification
+  of `877b2e2b`), and the planning-mode refusal no longer says that reordering makes the two halves
+  another campaign (it says the mode changes the order, never which attempts are sent).
+  `tests/cli/test_resume_mutator_order.py` (9 tests: 8 failing on `be3f2e71`, 1 on `877b2e2b`).
+  Alternatives not taken: an `--adaptive`/`--no-adaptive` switch (a knob with no effect on a
+  completed campaign's findings); `--deep` as timing only, adaptive only with a fingerprint (it
+  would close that resume case and make the recorded mode say whether a fingerprint ordered the
+  plan, at the cost of a compatibility path for halted campaigns recorded with `--deep`, whose
+  resume has to keep their mode). Reversal for the second: `adaptive = opts.fingerprint_first` in
+  `cli/run.py`, a new run-context key telling the two meanings apart, and the `--deep` cases of
+  `tests/cli/test_resume_sv_advice.py` and `tests/test_audit_block4_budget.py`.
 - Default N for reproducibility (propose 5, per `docs/01 §5`) and default per-campaign hard
   budgets (tokens/requests/wall-clock): surfaced in `config.py` (u01), confirmed by human.
 - Concurrency degree (bounded semaphore default) vs provider rate-limit headers: propose adaptive

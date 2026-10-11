@@ -54,9 +54,10 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   although an inconclusive that was sent reads `needs_review` in the reports, `docs/05 §2`).
 - KEEP: `-T0..-T5` expand to concrete rate/concurrency/timeout defaults in `flags.py` (documented
   table); explicit `--rate/--concurrency/--timeout` override the template.
-- DECIDE (OD-5), resolved as built: there is no `--adaptive` flag. `-sV` and `-A` fingerprint
-  and the planner orders mutators by the result; `--deep` sets adaptive mode too, which orders
-  nothing without a fingerprint (`00-INDEX.md` OD-5).
+- DECIDED (OD-5, signed off as built on 2026-10-11 under the owner's delegation, revisable):
+  there is no `--adaptive` flag. `-sV` and `-A` fingerprint and the planner orders mutators by
+  the result; `--deep` sets adaptive mode too, which orders nothing without a fingerprint
+  (`00-INDEX.md` OD-5, reasoning in u08 §9).
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `app.py` + `flags.py` + `exit_codes.py`: Typer root, `-T` template table, exit-code enum,
@@ -1123,8 +1124,10 @@ by `tests/cli/test_provider_output_filter_campaign.py`.
   `tests/cli/test_mcp_specs_need_an_mcp_target.py`. Alternative not taken: gate on `provider` in
   the planner directly.
 - **OD-5** whether `--adaptive` defaults ON under `-sV`/`-A` or is opt-in (CLI mirrors engine
-  default; propose opt-in for MVP‑1 to bound cost). Resolved as built: no flag, `-sV`/`-A` imply
-  adaptive ordering (see §4 and `00-INDEX.md`).
+  default; propose opt-in for MVP‑1 to bound cost). **Decided 2026-10-11 under the owner's
+  delegation (best practice), revisable: signed off as built**, no flag, `-sV`/`-A` imply
+  adaptive ordering (see §4, `00-INDEX.md` and u08 §9, where the measured resume case and the
+  alternatives are).
 - Short alias `dott` alongside `dottore`: confirm both ship in `[project.scripts]` (propose yes).
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
@@ -1191,6 +1194,16 @@ by `tests/cli/test_provider_output_filter_campaign.py`.
   Anthropic rule (`sent_sampling`, the `sent_sampling` argument of `CampaignRunner`,
   `sent_sampling_for` and `_AsSent`'s `wire`) is a fix of its own and stays: without it a spec
   that sets `top_p` stops an Anthropic campaign, block or no block.
+- **OD-37** (shared with u04; decided 2026-10-11 under the owner's delegation (best practice),
+  revisable; built): `dottore fleet` refuses a WebSocket target entry, a `ws://` or `wss://`
+  endpoint or `provider: websocket`, before it writes anything (exit 3), so it never writes a
+  target file `run` refuses; until then it wrote `provider: rest` for a `wss://` endpoint. A
+  WebSocket `judge:` block is accepted only with a matching hand-written `--judge` file, and no
+  `judge.yaml` is written for it; without `--judge` it is refused. The reasoning, the
+  alternative not taken (a `websocket:` block in a fleet entry, checked by `_websocket_spec`
+  before writing) and the reversal are in u04 §9. Checked by `tests/cli/test_fleet_websocket.py`
+  (20 tests: 16 of the first 17 failing on `6d5f7ae`, the 3 for a `--judge` file failing on
+  `be3f2e71`).
 - **OD-32** how far `--runs` may go (2026-10-07). **Decided 2026-10-08 by the owner: the runner
   counts what is stored instead of building the plan (A-59, u08), and `--runs` keeps its `2**53`
   bound.** A-55 bounds it at `2**53`, which only keeps the plan's float arithmetic finite. The
