@@ -22,7 +22,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   no text is a reply. Left for the OD-43 branch (M4): thread the operator's declared tools into
   `_cut_verdict` when it lands. 18 tests more (12 fail on `a55e953`), 90 in all for OD-42. With
   the stubs: `DOS-TOKEN-AMP-001` on empty cuts is inconclusive, exit 0; the canary run makes 12
-  judge requests, the Anthropic run 16 (the partial replies recorded).
+  judge requests, the Anthropic run 16 (the partial replies recorded). `make gates` green
+  (2026-10-11, 10:40, on `de4a9748`): ruff, format (393 files), mypy strict (157 source files),
+  import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs, 14 suites, 1 pack),
+  5,155 tests with 97.68% coverage, self-scan 0 high/critical, bandit, pip-audit (no known
+  vulnerabilities).
 
 ## State, 2026-10-11: a reply the provider's filter cut or replaced is never a pass (OD-42)
 
