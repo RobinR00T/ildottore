@@ -31,7 +31,7 @@ def _adapter(body: bytes) -> OpenAIAdapter:
         id="t1",
         base_url="https://api.example.test",
         allowlist=EndpointAllowlist([Endpoint(host="api.example.test", path_prefixes=["/"])]),
-        api_key="k",
+        api_key="test-key-1",
         model="m",
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
@@ -77,7 +77,7 @@ def _encoded_adapter(
         id="t1",
         base_url="https://api.example.test",
         allowlist=EndpointAllowlist([Endpoint(host="api.example.test", path_prefixes=["/"])]),
-        api_key="k",
+        api_key="test-key-1",
         model="m",
         retry=RetryConfig(max_retries=2, backoff_base_s=0.0, backoff_cap_s=0.0),
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
@@ -200,7 +200,7 @@ async def test_the_adapters_ask_only_for_encodings_they_decode(
         id="t1",
         base_url="https://api.example.test",
         allowlist=EndpointAllowlist([Endpoint(host="api.example.test", path_prefixes=["/"])]),
-        api_key="k",
+        api_key="test-key-1",
         model="m",
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
@@ -222,7 +222,7 @@ async def test_an_error_status_is_classified_by_its_status_not_its_body() -> Non
         id="t1",
         base_url="https://api.example.test",
         allowlist=EndpointAllowlist([Endpoint(host="api.example.test", path_prefixes=["/"])]),
-        api_key="k",
+        api_key="test-key-1",
         model="m",
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
@@ -255,7 +255,7 @@ async def test_an_error_status_over_the_cap_is_classified_by_its_status() -> Non
         id="t1",
         base_url="https://api.example.test",
         allowlist=EndpointAllowlist([Endpoint(host="api.example.test", path_prefixes=["/"])]),
-        api_key="k",
+        api_key="test-key-1",
         model="m",
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
