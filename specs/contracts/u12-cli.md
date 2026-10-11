@@ -1093,7 +1093,9 @@ the findings', unchanged: `--fail-on` gates a `fail` only, and a spec with a cut
 fail is `inconclusive` (0 when nothing else trips the gate); a team that wants CI to stop on one
 reads `summary.cut_by_provider_output_filter.attempts` from the JSON report. A resume says how many
 of the attempts it keeps the filter cut or stopped (`; <k> of them the provider's filter cut or
-stopped after the prompt, kept for review`) and does not send them again; `--estimate --resume`
+stopped after the prompt, kept for review`), counted among the kept attempts only (a cut reply
+stored without a verdict is sent again, and was counted as kept beside "will be sent again":
+verification of `91845524`, finding 1), and does not send them again; `--estimate --resume`
 counts them as done. `dottore replay` lists and counts them (u10). From a target file, the
 providers whose stops are read are openai (Azure), anthropic and websocket: a `provider: rest`
 target is the generic template, so Bedrock's and Gemini's shapes are library-only (u04). Checked

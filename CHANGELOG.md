@@ -52,8 +52,8 @@ versioning: [SemVer](https://semver.org/).
   reproducibility's `N` and never a success, and keeps its variant from confirming; `--fail-on`
   gates only a `fail`, as before, so it neither trips nor clears on one (read
   `summary.cut_by_provider_output_filter.attempts` to stop a pipeline on it). An identity whose
-  sweep reply has a filter stop is skipped, as one whose send failed, so `authz_leak` abstains with
-  one identity left instead of reading the hidden reply as no crossing.
+  sweep reply has a filter stop is left out and named, and `authz_leak` cannot pass beside it,
+  however many identities are left, instead of reading the hidden reply as no crossing.
 - **Conversations, resume, replay.** A conversation ends on a reply the filter cut; one cut before
   its last turn is read on its trace only. A cut attempt is not retried and its tokens count as any
   reply's; a resume keeps it and says so (`; 2 of them the provider's filter cut or stopped after
@@ -101,25 +101,34 @@ versioning: [SemVer](https://semver.org/).
   JUnit's counts moved to where they appear, and a SARIF side-unknown test. L5: the serializer is
   typed. L8: the judge's verdict on a partial reply is recorded; the heuristic `refusal` evaluator
   counts as deterministic. And `RECITATION` (above).
+- **Verification of `91845524`: two mediums, fixed.** The recording judge ran in one call with the
+  deciding evaluators, so a request ceiling that refused it raised: the cut attempt was stored
+  without a verdict and `PI-DIRECT-001 --runs 2 --budget-requests 2` resumed by sending 6 attack
+  and 12 judge requests again, its line saying `keeps 0 ...; 2 of them the provider's filter cut
+  ..., kept for review`. The judge now runs after them and alone, a refusal or any error of its
+  own a note (`; semantic_judge on what came back not consulted, and not deciding:
+  BudgetExhausted: budget exhausted on 'max_requests': attempted 3 would exceed limit 2`), and the
+  resume counts cut attempts among the kept ones only. With three identities, a filtered one was
+  dropped and the other two passed the spec; `authz_leak` cannot pass beside it now, and the
+  verdict names it.
 - Contract u08 A-70 (with halves in u00, u04, u09, u10, u11 and u12), OD-42 and the amendment to
-  ADR-0011, the `00-INDEX` rows. Tests (90 new): `tests/cli/test_provider_output_filter_campaign.py`
-  (8, through the real CLI and a loopback stub: every format of the Azure run with the JSON against
+  ADR-0011, the `00-INDEX` rows. Tests (94 new): `tests/cli/test_provider_output_filter_campaign.py`
+  (10, through the real CLI and a loopback stub: every format of the Azure run with the JSON against
   the schema, the canary, Anthropic's two sides, two controls that pass on `6d5f7ae` too, a resume
   with `--estimate --resume` and `dottore replay`, `DOS-TOKEN-AMP-001` on empty cuts, and a refusal
-  with no usage; the other 6 fail on `6d5f7ae`), `tests/core/test_provider_output_filter.py` (25:
-  Bedrock and Gemini through the real REST adapter and a loopback stub, then the runner's and the
-  conversation's rules, the evaluator classes, `RECITATION`) and
-  `tests/adapters/test_provider_output_filter.py` (49), neither of which collects on `6d5f7ae`,
-  the sweep in `tests/core/test_multi_identity.py` (1), SARIF and JUnit in
-  `tests/reporting/test_provider_filter_cut_counts.py` (3),
+  with no usage, and the recording judge under a request ceiling, 2 cases; the other 8 fail on
+  `6d5f7ae`), `tests/core/test_provider_output_filter.py` (25: Bedrock and Gemini through the real
+  REST adapter and a loopback stub, then the runner's and the conversation's rules, the evaluator
+  classes, `RECITATION`) and `tests/adapters/test_provider_output_filter.py` (49), neither of which
+  collects on `6d5f7ae`, the sweep in `tests/core/test_multi_identity.py` (3, two with three
+  identities), SARIF and JUnit in `tests/reporting/test_provider_filter_cut_counts.py` (3),
   `MODEL_ARMOR`, `RECITATION` and the shared set in
-  `tests/fingerprint/test_guardrail_requested_refusal.py` (3),
-  and every reason through the redactor in `tests/policy/test_redactor_error_class_names.py` (1,
-  with two new lines in its walk); the enum test and the JSON report snapshot gain the new values.
-  Docs: MANUAL §9 ("Replies the provider's filter cut or replaced") and the `run`, `fingerprint`,
-  `replay`, §10 and troubleshooting text, the FAQ, USAGE, `dottore(1)`, `docs/01`, `05`, `10` and
-  `12`, `examples/README.md` (Scenario D). Not run against a live Azure, Bedrock, Gemini or
-  Anthropic endpoint.
+  `tests/fingerprint/test_guardrail_requested_refusal.py` (3), and every reason through the redactor
+  in `tests/policy/test_redactor_error_class_names.py` (1, with two new lines in its walk); the enum
+  test and the JSON report snapshot gain the new values. Docs: MANUAL §9 ("Replies the provider's
+  filter cut or replaced") and the `run`, `fingerprint`, `replay`, §10 and troubleshooting text, the
+  FAQ, USAGE, `dottore(1)`, `docs/01`, `05`, `10` and `12`, `examples/README.md` (Scenario D). Not
+  run against a live Azure, Bedrock, Gemini or Anthropic endpoint.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 

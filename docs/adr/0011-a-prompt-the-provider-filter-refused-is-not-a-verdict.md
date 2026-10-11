@@ -168,7 +168,9 @@ fails it), applied to an exploit that may have happened. The judge does not deci
 under the priority every combination already uses, a deterministic fail wins over the cut and the
 cut over a judge's fail, so its verdict could not decide, and on a canned message its secure
 verdict is exactly the false assurance this amendment removes. On a partial reply (text the model
-wrote before the cut) it is consulted and its verdict recorded in the reasoning, for the reviewer.
+wrote before the cut) it is consulted after the deciding evaluators, alone, and its verdict
+recorded in the reasoning for the reviewer; a ceiling that refuses it is a note, not a halt that
+would leave the attempt unscored.
 
 ### Consequences
 
@@ -177,9 +179,11 @@ wrote before the cut) it is consulted and its verdict recorded in the reasoning,
   out of a dump when unset, so every reply without one is stored and hashed as before. A run or a
   report from this version is not readable by an earlier one: the earlier enum rejects the new
   reasons, and its report-1.0 schema the new summary keys.
-- The identity sweep skips an identity whose reply the filter stopped, as one whose send failed:
-  an empty or canned reply holds no canary, and `authz_leak` read the reply the filter hid as no
-  crossing (pre-merge audit, M2). With one identity left it abstains.
+- The identity sweep leaves out an identity whose reply the filter stopped and names it: an empty
+  or canned reply holds no canary, and `authz_leak` read the reply the filter hid as no crossing
+  (pre-merge audit, M2). However many identities are left, `authz_leak` cannot pass beside it
+  (with three, the other two passed it: verification of `91845524`); a crossing among the others
+  is still a fail.
 - From `dottore`, a REST target is the generic template (text at `text`, no `finish_path`), so
   Bedrock's and Gemini's stops, like OD-41's Gemini block, are read only through a `RestTemplate`
   built in Python; the OpenAI, Anthropic and WebSocket targets a target file declares carry their

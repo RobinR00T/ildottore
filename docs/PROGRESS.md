@@ -3,6 +3,19 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (noon): the verification of `91845524` (OD-42), two mediums fixed
+
+- Every earlier finding closed; two new mediums, fixed in `0a293438`. (1) The recording-only judge
+  on a partial cut reply ran in the same evaluator call as the deciding ones: a request ceiling
+  that refused it raised, the cut attempt was stored with no verdict and the resume sent it again,
+  its line counting it as kept for review. It now runs after them, alone, in its own try (a refusal
+  or any error a note), and `cli/run.py` counts cut attempts among the kept ones only. (2) With
+  three or more identities a filtered one was dropped silently and the other two could pass the
+  spec; `authz_leak` now cannot pass beside a filtered identity (a fail among the others stands)
+  and the stored verdict names it. 4 tests more (94 for OD-42): the judge under
+  `--budget-requests 2`, with and without a canary, through the CLI, and two sweeps of three
+  identities; all 4 fail on `91845524`.
+
 ## State, 2026-10-11 (late morning): the pre-merge audit of `a55e953` (OD-42), fixed
 
 - Not merge-ready per the audit, no HIGH; fixed on the same branch in new commits. M1: a cut reply
