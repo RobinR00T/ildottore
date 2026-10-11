@@ -345,8 +345,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
     candidate stopped with `SAFETY` can come without its text; Vertex AI's reference on
     `FinishReason` `SAFETY`, read 2026-10-11); it was a product error that stopped the campaign.
     `RECITATION` too, since it joined the stops (decided 2026-10-11 under the owner's delegation).
-    Any other body with no text stays one. A template with no `finish_path` reads no stop, as
-    before;
+    Any other body with no text stays one until OD-21 (decided 2026-10-11): a
+    `ResponseMalformed` now, which fails its attempt (A-74). A template with no `finish_path` reads
+    no stop, as before;
   - for a template whose `finish_path` is the Converse root `stopReason`, and a stop of
     `guardrail_intervened`, the adapter reads `trace.guardrail` (present with
     `guardrailConfig.trace: enabled`; the Converse API reference and the user guide, "Include a

@@ -342,7 +342,8 @@ resume that completes still records its own invocation's spend as the run's, whi
 clause and is not changed by it.
 
 Checked through the real CLI against a counting stub by `tests/cli/test_probe_pass_spend.py`: a
-503, a 401 and a 200 that is not JSON on the first and on the sixth probe; SIGINT and SIGTERM sent
+503 and a 401 on the first and on the sixth probe (a 200 that is not JSON stopped the pass too
+until OD-21, 2026-10-11; it fails only its probe now, checked beside a reply nested too deeply); SIGINT and SIGTERM sent
 to a subprocess with a probe on the wire (its Ctrl-C handler restored, since a shell that starts
 pytest with `&` passes SIGINT on ignored); an interruption at the write after a pass that
 succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases

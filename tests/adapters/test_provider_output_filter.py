@@ -18,9 +18,9 @@ import pytest
 import respx
 
 from ildottore.adapters import (
-    AdapterProductError,
     AnthropicAdapter,
     OpenAIAdapter,
+    ResponseMalformed,
     RestAdapter,
     RestTemplate,
     RetryConfig,
@@ -169,9 +169,12 @@ def test_a_gemini_candidate_stopped_by_its_filter_without_text_is_a_reply(stop: 
     assert filter_side(response) == "output"
 
 
-def test_a_gemini_candidate_without_text_and_another_stop_is_still_a_product_error() -> None:
+def test_a_gemini_candidate_without_text_and_another_stop_is_still_a_malformed_reply() -> None:
+    """Not a filter's stop: a body with no text at the template's path, which fails its attempt
+    as a ``ResponseMalformed`` since OD-21 (decided 2026-10-11; a product error before)."""
+
     for stop in ("STOP", "LANGUAGE", "OTHER", "MAX_TOKENS"):
-        with pytest.raises(AdapterProductError, match="response missing text"):
+        with pytest.raises(ResponseMalformed, match="response missing text"):
             _send(
                 _rest(_GEMINI),
                 "https://llm.example.com/x",
@@ -185,7 +188,7 @@ def test_a_template_without_a_finish_path_reads_no_stop_as_before() -> None:
     response = _send(_rest(template), "https://llm.example.com/x", body)
     assert (response.text, response.finish_reason) == ("partial", None)
     assert filter_side(response) is None
-    with pytest.raises(AdapterProductError):
+    with pytest.raises(ResponseMalformed):
         _send(
             _rest(template),
             "https://llm.example.com/x",
