@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import random
+import re
 import string
 import uuid
 from collections.abc import Callable
@@ -403,3 +404,28 @@ def test_a_secret_glued_to_a_uuid_with_number_groups_stays_masked(glue: str, aft
         text = f"x {value}{glue}{secret} y" if after else f"x {secret}{glue}{value} y"
         out = redactor.redact_text(text)
         assert value not in out and secret[:8] not in out and secret[-8:] not in out, out
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A labelled phone number runs on through a line break into a UUID's first digit, and
+        # the card rule, which runs first, had left the UUID's last two groups alone.
+        "tel +34 600 123 456\n 6f71e03a-8980-6909-1471-288481829900. ok",
+        # A phone number written right before a UUID that starts with digits.
+        "call 555 123 4567 36184319-d792-4451-a196-ea92ae3d9a2d/redis ok",
+        "+41494259-9176-5907-a0b4-819434834930 ok",
+    ],
+)
+def test_a_number_running_into_a_uuid_leaves_no_part_of_either(text: str) -> None:
+    """The number rules leave a UUID whole (``_number_mask``); what lies outside it is masked."""
+
+    out = Redactor(salt="s").redact_text(text)
+    uuid_text = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", text)
+    assert uuid_text is not None
+    value = uuid_text.group(0)
+    for group in value.split("-"):
+        assert group not in out, out
+    assert "«REDACTED:uuid:" in out, out
+    for number in ("600 123 456", "555 123 4567", "+4149"):
+        assert number not in out, out

@@ -798,7 +798,7 @@ _Cuts = dict[str, set[tuple[int, int]]]
 def _matches(pattern: Pattern, text: str) -> bool:
     """True if ``pattern`` finds a match in ``text`` (a ``skip`` match is none)."""
 
-    return any(not skipped(m) for m in pattern.regex.finditer(text))
+    return pattern.may_match(text) and any(not skipped(m) for m in pattern.regex.finditer(text))
 
 
 def _uuids_overlapping(text: str, start: int, end: int) -> list[tuple[int, int]]:
@@ -894,6 +894,15 @@ class Pattern:
     type: str
     regex: re.Pattern[str]
     hashed: bool = False
+    #: Literals a match always holds one of: a text holding none is not searched (empty: every
+    #: text is). The late patterns run over whole texts and inside tokens (A-78), so each is
+    #: tried only where it can match.
+    hints: tuple[str, ...] = ()
+
+    def may_match(self, text: str) -> bool:
+        """False only when ``text`` holds none of :attr:`hints`."""
+
+        return not self.hints or any(hint in text for hint in self.hints)
 
 
 def _luhn_ok(digits: str) -> bool:
@@ -921,7 +930,7 @@ _KEY_START: Final = r"(?<![A-Za-z0-9])"
 #: What the entropy fallback writes for a hex run (A-78), hashed as a key pattern's mask is.
 _HEX_TOKEN: Final = Pattern("hex_token", _HEX_RUN, hashed=True)
 #: The UUID shape, a late pattern, whose mask the fallback writes too (``_uuid_spans``).
-_UUID_PATTERN: Final = Pattern("uuid", _UUID, hashed=True)
+_UUID_PATTERN: Final = Pattern("uuid", _UUID, hashed=True, hints=("-",))
 
 
 def _key(body: str) -> re.Pattern[str]:
@@ -964,45 +973,59 @@ def _late_patterns() -> list[Pattern]:
     """
 
     return [
-        Pattern("anthropic_key", _key(r"sk-ant-[A-Za-z0-9_-]{20,}"), hashed=True),
+        Pattern(
+            "anthropic_key", _key(r"sk-ant-[A-Za-z0-9_-]{20,}"), hashed=True, hints=("sk-ant-",)
+        ),
         # The legacy body is letters and digits only; a typed key's (`sk-proj-`) holds `-` and
         # `_`, which cut the first rule (`\bsk-[A-Za-z0-9]{20,}\b`) at its `proj`.
         Pattern(
             "openai_key",
             _key(r"sk-(?:(?:proj|svcacct|admin|None)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})"),
             hashed=True,
+            hints=("sk-",),
         ),
         Pattern(
             "github_token",
             _key(r"(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
             hashed=True,
+            hints=("ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"),
         ),
         Pattern(
             "gitlab_token",
             _key(r"gl(?:pat|oas|dt|rtr|rt|cbt|ptt|ft|imt|agent|wt|soat|ffct)-[A-Za-z0-9_-]{20,}"),
             hashed=True,
+            hints=tuple(
+                f"gl{kind}-"
+                for kind in (
+                    *("pat", "oas", "dt", "rtr", "rt", "cbt", "ptt"),
+                    *("ft", "imt", "agent", "wt", "soat", "ffct"),
+                )
+            ),
         ),
         Pattern(
             "aws_access_key",
             _key(r"(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}(?![A-Za-z0-9])"),
             hashed=True,
+            hints=("AKIA", "ASIA", "ABIA", "ACCA"),
         ),
-        Pattern("google_api_key", _key(r"AIza[A-Za-z0-9_-]{35,}"), hashed=True),
-        Pattern("huggingface_token", _key(r"hf_[A-Za-z0-9]{30,}"), hashed=True),
+        Pattern("google_api_key", _key(r"AIza[A-Za-z0-9_-]{35,}"), hashed=True, hints=("AIza",)),
+        Pattern("huggingface_token", _key(r"hf_[A-Za-z0-9]{30,}"), hashed=True, hints=("hf_",)),
         # Slack bot + user + app tokens (the user/app forms were previously uncovered), and
         # the rotating forms.
         Pattern(
             "slack_token",
             _key(r"(?:xoxe\.(?:xox[bp]|xapp)|xox[abeprs]|xapp|xwfp)-[A-Za-z0-9-]{10,}"),
             hashed=True,
+            hints=("xox", "xapp-", "xwfp-"),
         ),
         Pattern(
             "stripe_key",
             _key(r"(?:(?:sk|rk)_(?:live|test|org)_[A-Za-z0-9_]{20,}|whsec_[A-Za-z0-9_+/=-]{20,})"),
             hashed=True,
+            hints=("_live_", "_test_", "_org_", "whsec_"),
         ),
-        Pattern("npm_token", _key(r"npm_[A-Za-z0-9]{36,}"), hashed=True),
-        Pattern("pypi_token", _key(r"pypi-[A-Za-z0-9_-]{50,}"), hashed=True),
+        Pattern("npm_token", _key(r"npm_[A-Za-z0-9]{36,}"), hashed=True, hints=("npm_",)),
+        Pattern("pypi_token", _key(r"pypi-[A-Za-z0-9_-]{50,}"), hashed=True, hints=("pypi-",)),
         Pattern(
             "jwt",
             # Started as the key formats are: after `_` a JWT is still one, as in GitHub's
@@ -1012,6 +1035,7 @@ def _late_patterns() -> list[Pattern]:
                 r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
             ),
             hashed=True,
+            hints=("eyJ",),
         ),
         _UUID_PATTERN,
     ]
@@ -1113,6 +1137,13 @@ class Redactor:
             list(patterns) if patterns is not None else _default_patterns()
         )
         self._late: list[Pattern] = _late_patterns() if late else []
+        # Every hint of the late patterns, searched once in a token before any of them is tried.
+        hints = [hint for pattern in self._late for hint in pattern.hints]
+        self._late_hint = (
+            re.compile("|".join(map(re.escape, hints)))
+            if self._late and all(pattern.hints for pattern in self._late)
+            else None
+        )
         # The mask types kept as written (`_redact_once`), kept in step with `register`.
         self._mask_types = _OWN_MASK_TYPES | {
             pattern.type for pattern in (*self._patterns, *self._late)
@@ -1514,7 +1545,8 @@ class Redactor:
 
         written = as_written or (lambda stretch: stretch)
         for pattern in self._late:
-            text = pattern.regex.sub(self._make_sub(pattern, written), text)
+            if pattern.may_match(text):
+                text = pattern.regex.sub(self._make_sub(pattern, written), text)
         return text
 
     def _redact_pem(self, pattern: Pattern, text: str, as_written: Callable[[str], str]) -> str:
@@ -1869,33 +1901,32 @@ class Redactor:
         return not is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start()))
 
     def _uuid_spans(self, token: str, cuts: _Cuts | None) -> list[tuple[int, int]]:
-        """Where, in ``token``, a UUID a number rule left whole is masked (A-78).
+        """Where, in ``token``, a UUID the number rules left whole is masked (A-78).
 
-        The UUID, and with it each stretch of the token the entropy rule would have masked
-        whole had the rule cut the UUID where it read a number (``cuts``, recorded by
-        :meth:`_number_mask`), as it did before A-78: the rule then read the token in pieces,
-        and a piece holding the UUID's tail and what is glued after it (`<uuid>_<secret>`) was
-        masked whole, which a mask of the UUID alone left readable (pre-commit differential
-        fuzz: 439 of 20,000 texts gluing a secret to such a UUID showed it). A UUID no number
-        rule read is the late pattern's.
+        The UUID, and with it each piece of the token around it that the entropy rule would
+        have masked whole had the card or the phone rule cut the UUID where it read a number
+        (``cuts``, recorded by :meth:`_number_mask`), as they did before A-78: the rule then read
+        the token in pieces, and a piece holding the UUID's tail and what is glued after it
+        (`<uuid>_<secret>`) was masked whole, which a mask of the UUID alone left readable
+        (pre-commit differential fuzz: 439 of 20,000 texts gluing a secret to such a UUID showed
+        it). A UUID with nothing glued to it, or no number read in it, is the late pattern's.
         """
 
         spans: list[tuple[int, int]] = []
         for found in _UUID.finditer(token):
-            inside = cuts.get(found.group()) if cuts else None
-            if not inside:
-                continue
             first, last = found.span()
+            inside = cuts.get(found.group()) if cuts else None
+            if not inside or (first == 0 and last == len(token)):
+                continue
             begin, finish = first, last
-            pieces: list[tuple[int, int]] = []
-            cursor = 0
-            for start, end in sorted((first + a, first + b) for a, b in inside):
-                pieces.append((cursor, start))
-                cursor = max(cursor, end)
-            pieces.append((cursor, len(token)))
-            for start, end in pieces:
-                if start < end and self._masks_whole(token[start:end]):
-                    begin, finish = min(begin, start), max(finish, end)
+            # Only the first piece and the last can reach past the UUID: a piece inside it is
+            # masked with it whatever the rule makes of it.
+            head = (0, first + min(a for a, _ in inside))
+            tail = (first + max(b for _, b in inside), len(token))
+            if first > 0 and head[0] < head[1] and self._masks_whole(token[slice(*head)]):
+                begin = 0
+            if last < len(token) and tail[0] < tail[1] and self._masks_whole(token[slice(*tail)]):
+                finish = len(token)
             spans.append((begin, finish))
         return spans
 
@@ -1942,17 +1973,31 @@ class Redactor:
         `sk-proj-«REDACTED:hex_token»`). ``cuts`` are the pass's (:meth:`_uuid_spans`).
         """
 
+        if self._hex_runs and self._late and _UUID.fullmatch(token):
+            # A UUID alone: masked whole either way, as the late pattern masks it.
+            return [(0, len(token), self._mask_token(_UUID_PATTERN, token))]
         if self._masks_whole(token):
-            kind = next((late.type for late in self._late if _matches(late, token)), "high_entropy")
+            hinted = self._late_hint is None or self._late_hint.search(token) is not None
+            kind = next(
+                (late.type for late in self._late if hinted and _matches(late, token)),
+                "high_entropy",
+            )
             mask = _MASK_TEMPLATE_HASHED.format(type=kind, digest=self._digest(token))
             return [(0, len(token), mask)]
         if not self._hex_runs or len(token) < _SHAPE_MIN_LEN:
             return []
         uuids = self._uuid_spans(token, cuts) if self._uuid_whole else []
         runs = list(_HEX_RUN.finditer(token))
+        hinted = self._late_hint is None or self._late_hint.search(token) is not None
         keys = (
-            [m.span() for late in self._late for m in late.regex.finditer(token) if not skipped(m)]
-            if runs
+            [
+                m.span()
+                for late in self._late
+                if late.may_match(token)
+                for m in late.regex.finditer(token)
+                if not skipped(m)
+            ]
+            if runs and hinted
             else []
         )
         taken = [*uuids, *keys]
