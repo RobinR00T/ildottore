@@ -247,7 +247,9 @@ both by design (OD-35, OD-36).
 
 Only when the provider says so. `guardrails.output_filter` is `true` when a probe's reply came back
 with the provider's own filter stop reason (declined, cut or replaced: OpenAI's and Azure's
-`content_filter`, Anthropic's `refusal`, Bedrock's and Gemini's equivalents), and `null` when no
+`content_filter`, Anthropic's `refusal`, Bedrock's and Gemini's equivalents, each only from the
+provider that documents it: an OpenAI-compatible endpoint that says `refusal` claims a filter it
+does not have, and is not believed, since 2026-10-11), and `null` when no
 reply carries any stop reason from the provider (a REST template without `finish_path`, a WebSocket
 or MCP target), since nothing could have been seen. A refusal does not count: one probe asks the
 model to refuse, and refusing is doing as asked, so it only gives the refusal's style
@@ -277,11 +279,13 @@ A blocked attempt never reached the model, so it is neither the model refusing (
 exploit (a fail): it is `inconclusive` with the reason `blocked_by_provider_filter`. A spec whose
 every attempt was blocked is `inconclusive` and not exercised, never a pass; one with some blocked
 attempts is decided by the usual rule (any `fail` is a `fail`; a `pass` needs more than half of the
-attempts to pass). The terminal summary, the finding's reasoning and every report count them
+attempts to pass). A run whose every attempt was blocked or cut, with no fail, exits 3 since
+2026-10-11 (state `filtered`): it measured the filter, not the model (next answer). The terminal summary, the finding's reasoning and every report count them
 (`Blocked by the provider's input filter: 8 attempt(s) in 2 spec(s) never reached the model`). A
 blocked attempt is not sent again, on a retry or a resume, and it counts against
-`--budget-requests`. Only those documented shapes count: any other 4xx (another code, the same body
-at 403) still stops the run; a Bedrock guardrail's canned reply (an HTTP 200) is read by the next
+`--budget-requests`. Only those documented shapes count, and only from the provider that documents
+them (Azure's 400 from an `openai` target; from an `anthropic` or `rest` target it is an ordinary
+4xx): any other 4xx (another code, the same body at 403) still stops the run; a Bedrock guardrail's canned reply (an HTTP 200) is read by the next
 answer. To measure the model rather than the deployment, scan a deployment whose filter annotates
 instead of blocking ([`MANUAL.md`](MANUAL.md) §9,
 [`adr/0011`](adr/0011-a-prompt-the-provider-filter-refused-is-not-a-verdict.md)).
@@ -304,14 +308,42 @@ something present in the text that did come back (a planted canary in a partial 
 a fail; one that rests on something absent is not, since everything is absent from an empty reply
 (`regex_presence` does not decide a cut reply). Gemini's `RECITATION` counts as a cut too. One whose
 side the provider does not report (a Bedrock guardrail without its trace) is `inconclusive:
-provider_filter_side_unknown`; enable the guardrail's trace to learn the side. The judge never
-decides a cut reply; on a partial one its verdict is recorded beside the cut. From `dottore`, the
-Azure (`provider: openai`), Anthropic and WebSocket shapes are read; Bedrock's and Gemini's only
-through a `RestTemplate` built in Python, since a target file's REST target has no template. Every
-report counts them apart, and `--fail-on` does not trip on them, since nobody saw an exploit: a
-pipeline that should stop reads `summary.cut_by_provider_output_filter.attempts` from the JSON
-report ([`MANUAL.md`](MANUAL.md) §9, the amendment in
+provider_filter_side_unknown`; enable the guardrail's trace to learn the side. The judge reads a
+partial reply, and since 2026-10-11 its fail on it stands as a fail that needs review (the text was
+delivered, whatever the filter says; `--include-needs-review` gates it); its pass is only recorded.
+From `dottore`, the Azure (`provider: openai`), Anthropic and WebSocket shapes are read; Bedrock's
+and Gemini's only through a `RestTemplate` built in Python, since a target file's REST target has
+no template. Every report counts them apart, and `--fail-on` does not trip on them, since nobody
+saw an exploit: a pipeline that should stop reads `summary.cut_by_provider_output_filter.attempts`
+from the JSON report. A run whose every attempt was cut or blocked, with no fail, exits 3
+(`filtered`) ([`MANUAL.md`](MANUAL.md) §9, the amendments in
 [`adr/0011`](adr/0011-a-prompt-the-provider-filter-refused-is-not-a-verdict.md)).
+
+### Could a target fake a filter stop to hide an exploit?
+
+Not since 2026-10-11 (A-79, the amendment to OD-41 and OD-42, decided under the owner's
+delegation as best practice, revisable). A target writes its own stop reason, and until then every
+adapter read every provider's filter words: an `openai` target that answered harmful text with
+`finish_reason: refusal` (Anthropic's word) or `SAFETY` (Gemini's) had it read as the filter's cut,
+the judge's fail on it was only recorded, and a target that answered every attack with Azure's
+400 `content_filter` had every attempt blocked and the run exit 0. Three rules close it:
+
+- **Only the provider's own words are read.** `content_filter` (and Azure's 400) from an `openai`
+  target, `refusal` from an `anthropic` one, Gemini's or Bedrock's from a `RestTemplate` in their
+  shape, what a WebSocket target file lists under `response.filter_stops` (none by default),
+  nothing from a target file's `provider: rest` target. Any other filter word is an ordinary stop
+  (kept in the reply with `foreign_stop: true`), and Azure's 400 from another provider stops the
+  run as any undocumented 4xx.
+- **Text that came back was delivered.** The judge's fail on a partial reply stands, as a fail
+  that needs review; a deterministic fail on it stood already; and the text of a reply a Bedrock
+  trace says it refused the prompt for is read too (a canary in it is a fail).
+- **A run the filter answered every time exits 3** (`filtered`), as an unreachable one does, so it
+  never reads green. A partly filtered run keeps its exit code: each spec with a filtered attempt
+  is inconclusive, never a pass.
+
+An OpenAI-compatible gateway that maps its own moderation to `content_filter` is still read as
+OpenAI's filter (it speaks OpenAI's vocabulary); what it lets through is scored as delivered, and
+a run it filters entirely exits 3 ([`MANUAL.md`](MANUAL.md) §9).
 
 ### My target answered an attack with an HTML page. Does the scan stop?
 

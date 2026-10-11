@@ -108,7 +108,20 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   model echo) and a transport's record under its own key: the WebSocket adapter's frame transcript
   is `raw_ids["websocket"]["frames"]`, not a field of its own (OD-34, decided 2026-10-11 under the
   owner's delegation, revisable; reasoning in u04 §9). A reader of the scalars skips a nested value
-  (the fingerprint's envelope layer does).
+  (the fingerprint's envelope layer does). Since A-79 (u08, the amendment to OD-42, 2026-10-11)
+  `foreign_stop: bool = False`: `true` when `finish_reason` is some provider's filter word that
+  the target's own provider does not document, or its target file does not declare; the adapter
+  that read the reply sets it (`shared.provider_filter.stop_provenance`, u04), the stop is kept as
+  sent, and every reader takes it for an ordinary stop. `false` is left out of a dump by the same
+  serializer, so every other reply is stored, reported and hashed as before.
+- `WebSocketResponse` gains `filter_stops: list[str]` (A-79): the provider filter words the
+  endpoint writes at `final_path`, each one of `shared.filter_stops.FILTER_STOPS` (validated,
+  stored trimmed, lower case, sorted, once), none by default, refused beside a `final_value`; an
+  empty list is left out of a dump, so a target file without it digests as before.
+- `shared.filter_stops` (A-79) holds the stop vocabularies, each sourced: `OPENAI_FILTER_STOPS`,
+  `ANTHROPIC_FILTER_STOPS`, `GEMINI_FILTER_STOPS`, `BEDROCK_FILTER_STOPS`, their union
+  `FILTER_STOPS`, `normalized_stop` and `documented_stops`. Apart from `shared.provider_filter` so
+  that `shared.models` can validate a declaration without importing the module that reads replies.
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],
   evaluator_type: str, inconclusive_reason: InconclusiveReason | None}` (`docs/04 §1-§3`).
 - `AttackSpec` = every field/constraint in `schemas/attack-spec.schema.json` (`docs/03 §2`),

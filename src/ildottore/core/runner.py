@@ -238,7 +238,8 @@ class CampaignResult:
     (``parked`` is RESERVED by the contract for the PITV park rule and is not produced by
     this runner; it was documented as a live state in three places and emitted by none, so
     a consumer switching on it would be handling a case that never arrives.) The CLI adds
-    ``unreachable`` when a target answered nothing at all. The shared :class:`TestRun`
+    ``unreachable`` when a target answered nothing at all, and ``filtered`` when the
+    provider's filter answered every attempt for the model (u12 A-79). The shared :class:`TestRun`
     model carries no ``status`` field
     (u00-owned, must-not-touch), so the runner surfaces it here and a downstream
     persister/reporter reads it from the result (contract §6).

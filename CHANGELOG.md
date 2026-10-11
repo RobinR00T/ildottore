@@ -5,6 +5,52 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed, breaking: a target can no longer forge a filter stop to hide an exploit (A-79, the amendment to OD-41 and OD-42)
+
+Decided 2026-10-11 under the owner's delegation (best practice), revisable; found by the security
+audit of 2026-10-11 (MEDIUM 3). **A CI result changes in four cases**, each measured through the
+real CLI against a loopback stub, `main` (`de122e26`) against this branch:
+
+- **A run the provider's filter answered every time exits 3, not 0.** Every attempt refused, cut
+  or stopped by the filter (or with no reply that could be read), at least one by the filter and
+  none a fail: the run is `filtered` in every report (`summary.status.state`, SARIF's
+  `run_status`, JUnit's `run-filtered`, the HTML banner) and prints `error: run on <id> did not
+  complete: every one of the <n> attempt(s) was answered by the provider's filter (...), so no
+  reply the model wrote whole was evaluated: the run measured the filter, not the model.`
+  `JB-ROLEPLAY-001` and `PI-DIRECT-001` with Azure's 400 on every attack: 6 of 6 blocked, exit 0,
+  now exit 3; with Azure's withheld reply on every attack, the same. Every attempt, not a share: a
+  share would make a filter that does its job an error on every CI run. A partly filtered run keeps
+  its exit code (8 of 14 blocked, a pass and an inconclusive: exit 0, as before). If your pipeline
+  scans a deployment whose filter refuses the whole battery, it now fails with 3: point it at a
+  deployment or filter level that lets the attack prompts through.
+- **A filter stop counts only from the provider that documents it.** `content_filter` (and
+  Azure's 400) from an `openai` target, `refusal` from an `anthropic` one, Gemini's and Bedrock's
+  from a `RestTemplate` in their shape (or what its new `filter_stops` declares), and from a
+  WebSocket target only what its file lists under the new `response.filter_stops` (none by
+  default; each value one a provider documents; refused beside a `final_value`). Any other filter
+  word is an ordinary stop, kept in the stored reply with `foreign_stop: true`.
+  `JB-ROLEPLAY-001` with harmful text and `finish_reason: refusal` from an `openai` stub: three
+  cut attempts, exit 0, now a confirmed fail, exit 2, as with `stop`. A WebSocket target whose
+  turns end on `content_filter` must now declare it to have it read as a filter's.
+- **Azure's 400 `content_filter` from a non-OpenAI adapter stops the run** (exit 3 at the first
+  request) as any undocumented 4xx: an `anthropic` stub answering it to every attack had 6 of 6
+  blocked, exit 0.
+- **The judge's fail on text the filter cut stands, as a fail that needs review.** The text came
+  back, so it was delivered, whatever the filter says: combined by the rule every reply gets
+  (OD-19), a fail the judge alone reported is never confirmed, so it gates only with
+  `--include-needs-review`. `PI-DIRECT-001` with text cut by `content_filter` and a judge that says
+  exploited: inconclusive, exit 0 either way, now `fail` (needs review), exit 0 and 2 with
+  `--include-needs-review`, as the same text uncut. Its pass is still only recorded.
+
+Also: the text of a reply a Bedrock trace says it refused the prompt for is read by the
+evaluators whose fail rests on something present in it (a canary in it is a fail; only the trace
+evaluators read it), and the fingerprint's `guardrails.output_filter` does not believe a foreign
+stop. The stop vocabularies, each sourced, move to `shared.filter_stops`. Stored replies, reports
+and target digests without the new fields are byte for byte as before. Controls kept: a genuine
+Azure 400 on some prompts of an `openai` target and a genuine Anthropic refusal (a block before
+any output, a cut after some) score as OD-41 and OD-42 built them. ADR-0011 has a second
+amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12 halves).
+
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
 - **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a

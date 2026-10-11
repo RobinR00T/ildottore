@@ -116,8 +116,12 @@ def _rest(text_path: str = "output", filter_stops: frozenset[str] | None = None)
         allowlist=EndpointAllowlist(
             [Endpoint(host="llm.example.com", path_prefixes=["/generate"])]
         ),
+        # Passed only when declared, so the template is built as before A-79 otherwise.
         template=RestTemplate(
-            path="/generate", prompt_field="input", text_path=text_path, filter_stops=filter_stops
+            path="/generate",
+            prompt_field="input",
+            text_path=text_path,
+            **({} if filter_stops is None else {"filter_stops": filter_stops}),
         ),
         retry=_FAST,
     )
@@ -142,7 +146,7 @@ def _mcp() -> TargetAdapter:
 #: declares ``content_filter``. Until A-79 every adapter read Azure's 400 as its own filter's.
 _PROMPT_ADAPTERS: dict[str, tuple[Callable[[], TargetAdapter], str]] = {
     "openai": (_openai, "https://x.openai.azure.com/v1/chat/completions"),
-    "rest": (_rest_azure, "https://llm.example.com/generate"),
+    "rest-azure": (_rest_azure, "https://llm.example.com/generate"),
 }
 
 #: The adapters whose provider does not document Azure's 400: Anthropic's, and a REST template
@@ -151,6 +155,9 @@ _NOT_AZURE: dict[str, tuple[Callable[[], TargetAdapter], str]] = {
     "anthropic": (_anthropic, "https://api.anthropic.com/v1/messages"),
     "rest": (_rest, "https://llm.example.com/generate"),
 }
+
+#: Every adapter that sends an attack prompt: none reads another 4xx as a block.
+_EVERY_ADAPTER = {**_PROMPT_ADAPTERS, **_NOT_AZURE}
 
 
 async def _send(build: Callable[[], TargetAdapter], url: str, status: int, body: object) -> None:
@@ -177,7 +184,7 @@ async def test_azure_prompt_filter_400_is_a_provider_filter_block(
     assert not isinstance(error, AdapterStatusError)
     assert isinstance(error, AdapterProductError)
     message = str(error)
-    assert message.startswith(f"{name}: non-retryable HTTP 400 from ")
+    assert message.startswith(f"{build().id}: non-retryable HTTP 400 from ")
     assert "the provider's input filter refused the prompt before the model saw it" in message
     assert "error code content_filter" in message
     # Neither the provider's message nor its inner code is written into the attempt.
@@ -218,9 +225,9 @@ async def test_azure_prompt_filter_400_from_another_provider_is_an_ordinary_4xx(
     ],
     ids=["403", "422", "other-code", "case", "list-code", "top-level-code", "list-body"],
 )
-@pytest.mark.parametrize("name", sorted(_PROMPT_ADAPTERS))
+@pytest.mark.parametrize("name", sorted(_EVERY_ADAPTER))
 async def test_every_other_4xx_stays_a_status_error(name: str, status: int, body: object) -> None:
-    build, url = _PROMPT_ADAPTERS[name]
+    build, url = _EVERY_ADAPTER[name]
     with pytest.raises(AdapterStatusError) as raised:
         await _send(build, url, status, body)
     assert type(raised.value) is AdapterStatusError

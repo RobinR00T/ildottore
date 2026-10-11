@@ -1074,9 +1074,9 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 
 **A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) The CLI says what the provider's
 input filter refused, and does not call it a dead target.** A run whose every attempt the filter
-refused completed: the provider answered every request, so it is not `unreachable` (which
-means every attempt failed on transport or, since A-74, got a reply that could not be read) and
-exits by the findings, 0 when none is a gated `fail`.
+refused is not `unreachable` (which means every attempt failed on transport or, since A-74, got a
+reply that could not be read): the provider answered every request. It completed and exited by the
+findings until A-79 (below), which makes it `filtered`, exit 3.
 The terminal summary, under the coverage block (never silenced by `-q`), prints `Blocked by the
 provider's input filter: <k> attempt(s) in <s> spec(s) never reached the model (<spec ids>); they
 are inconclusive, not refusals by the model and not exploits` when `k` is not 0, and the `Not
@@ -1181,6 +1181,39 @@ LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it st
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
 attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
 Checked by `tests/cli/test_malformed_reply_campaign.py`.
+
+**A-79 (u08's clause; this unit's half, added 2026-10-11, the amendment to OD-41 and OD-42,
+decided under the owner's delegation, best practice, revisable) A run the provider's filter
+answered every time is not complete, and exits 3.** Until A-79 a run whose every attempt the
+filter refused or cut was complete, every spec inconclusive, and exited 0: a fully filtered run
+read green, and a target that wrote a filter's answer to every attack (Azure's 400 from any
+adapter, an empty reply with a filter's stop) turned CI green with nothing evaluated (security
+audit of 2026-10-11, MEDIUM 3: `JB-ROLEPLAY-001` and `PI-DIRECT-001`, 6 of 6 blocked, exit 0).
+`_filtered_reason` (`cli/run.py`), read after `_unreachable_reason` for a target whose campaign
+completed, makes it `filtered` when every attempt was refused, cut or stopped by the filter
+(`blocked_by_provider_filter`, `cut_by_output_filter`, `filter_side_unknown` of
+`shared.provider_filter`, by the verdict's reason) or got no reply that could be read, at least one
+was the filter's, and none is a `fail` (a fail on a trace or on what came back was measured, and
+decides). The run prints `error: run on <id> did not complete: every one of the <n> attempt(s) was
+answered by the provider's filter[ or got no reply that could be read] (<k> refused by its input
+filter, <k> cut or replaced by its output filter, <k> stopped by it on a side it did not report,
+<k> failed before a reply could be read: the non-zero ones), so no reply the model wrote whole was
+evaluated: the run measured the filter, not the model. To measure the model, run it where the
+filter lets the attack prompts through; every such attempt is in the reports, none of them a pass`
+through `for_terminal`, every report carries the state `filtered` with that reason, and the exit
+code is 3 (A-9), as an unreachable target's. Every attempt, not a share: the share that settles a
+spec (a pass needs more than half of its attempts) was the alternative, not taken, because it
+would make a deployment whose filter refuses most of an attack battery, the filter working, an
+error on every CI run, and a target that forges a filter's answer could stay under any share below
+all. A partly filtered run keeps its exit code (the 8-of-14 run of A-69 still exits 0). The
+report schema's `status` description names `filtered`. Checked by
+`tests/cli/test_filter_stop_provenance_campaign.py` (13 tests: the two ways a run is filtered, an
+`openai` target's foreign stops, an `anthropic` target answering Azure's 400, the judge's fail on
+cut text with and without `--include-needs-review`, a WebSocket file's declaration and its refusal,
+and three controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal before and
+after output, the same text without a filter word; 9 fail on `de122e26`), and by the four tests of
+`test_provider_filter_campaign.py` and `test_provider_output_filter_campaign.py` whose every
+attempt was filtered, which now expect exit 3.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

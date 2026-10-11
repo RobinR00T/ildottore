@@ -385,11 +385,51 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `RECITATION` or `MODEL_ARMOR` stop, and OD-41's Gemini prompt block are read only by a
     `RestTemplate` built in Python (pre-merge audit, M3). A target file's openai, anthropic and
     websocket providers carry their stops as before.
-  - The stop words are generic, so they are read whichever adapter carries them: a WebSocket
-    target's final frame that holds `content_filter`, `refusal` or `safety` at its finish path is
-    read as that filter's stop too, as the fingerprint already read it (L7).
+  - The stop words were generic, read whichever adapter carried them (L7): a WebSocket target's
+    final frame that held `content_filter`, `refusal` or `safety` at its finish path was read as
+    that filter's stop. **Superseded by A-79 below**: each adapter reads its own provider's words.
   Checked by `tests/adapters/test_provider_output_filter.py` (49 tests; it does not collect on
   `6d5f7ae`).
+
+- **A-79 (this unit's half; the clause is u08's, added 2026-10-11, the amendment to OD-41 and
+  OD-42, decided under the owner's delegation, best practice, revisable) A stop is a filter's only
+  from the provider that documents it.** A target writes its own stop reason and error body, and
+  every adapter read every provider's filter words: an OpenAI-compatible target that answered
+  `refusal`, `SAFETY` or `guardrail_intervened`, or a WebSocket target that ended a turn on
+  `content_filter`, had its reply read as a filter's cut, and any adapter read Azure's HTTP 400
+  `content_filter` as a block (security audit of 2026-10-11, MEDIUM 3). The criterion:
+  - every adapter says which stops it honours, `filter_stops` (a `frozenset` of trimmed,
+    lower-case words): `BaseAdapter` none; `OpenAIAdapter` `content_filter`; `AnthropicAdapter`
+    `refusal`; `RestAdapter` its template's `reads_filter_stops`, which is `RestTemplate.filter_stops`
+    when set and otherwise the template's shape: Bedrock's (`guardrail_intervened`,
+    `content_filtered`) for a `finish_path` of `stopReason`, Gemini's and Vertex AI's (`safety`,
+    `blocklist`, `prohibited_content`, `spii`, `model_armor`, `recitation`) for a `text_path`
+    under `candidates.`, none otherwise (a target file's `provider: rest` target has the generic
+    template, with no `finish_path`, and reads none); `WebSocketAdapter` its file's
+    `response.filter_stops` (u00), none by default. The vocabularies, each sourced, are in
+    `shared.filter_stops`; a declaration must name values from them (`documented_stops`), refused
+    otherwise, and a WebSocket declaration beside a `final_value` is refused (every turn ends on
+    that value);
+  - every success reply leaves an adapter through `shared.provider_filter.stop_provenance`
+    (`BaseAdapter._checked`; the WebSocket adapter's turn): a stop that is some provider's filter
+    word and not one the adapter honours keeps its spelling and gets `ModelResponse.foreign_stop:
+    true` (u00), which every reader reads as an ordinary stop (u08). A REST body with no text and
+    a foreign stop is a `ResponseMalformed`, and so is a WebSocket turn with no text, no call and
+    only an undeclared word; the Bedrock trace is read only beside an honoured
+    `guardrail_intervened`;
+  - Azure's HTTP 400 `content_filter` is a `ProviderFilterBlock` only from an adapter that
+    honours `content_filter` (OpenAI's, or a REST template that declares it); from any other it is
+    an `AdapterStatusError`, an undocumented 4xx that stops the campaign, as before OD-41.
+    Gemini's `promptFeedback.blockReason` is read only by a template that honours one of Gemini's
+    stops (a template in Gemini's shape does, unless its `filter_stops` says otherwise).
+  Measured on `de122e26` through the CLI: an `openai` stub answering `JB-ROLEPLAY-001` with
+  harmful text and `finish_reason: refusal` gave three cut attempts and exit 0, and gives a
+  confirmed fail, exit 2, as the same text with `stop` does; an `anthropic` stub answering every
+  attack with Azure's 400 gave six blocked attempts and exit 0, and stops at the first, exit 3.
+  Checked by `tests/adapters/test_filter_stop_provenance.py` (24 tests; 22 fail on `de122e26`, the
+  two controls pass), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
+  adapters that do not read it, 2 of them failing on `de122e26`) and the WebSocket cases of
+  `tests/adapters/test_malformed_replies.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).

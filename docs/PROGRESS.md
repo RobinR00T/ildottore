@@ -3,6 +3,42 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (early hours): a forged filter stop, closed (A-79; security audit MEDIUM 3)
+
+- On `fix/filter-stop-provenance` from `de122e26`, under the owner's delegation of 2026-10-11
+  (best practice, revisable): the amendment to OD-41 and OD-42, clause u08 A-79 with its u00,
+  u04, u09, u10, u11 and u12 halves, ADR-0011's second amendment. Not pushed.
+- The finding, reproduced first with the auditor's stub (`scratch/audit-sec/e2e_logprobs.py`):
+  harmful text to `JB-ROLEPLAY-001` with `finish_reason: stop`, exit 2; with `content_filter`,
+  inconclusive 3/3, exit 0; Azure's 400 to every attack, 6 of 6 blocked, exit 0. On this branch:
+  2, 3 (all six cut, `filtered`) and 3 (`filtered`).
+- Rule 1, provenance: each adapter's `filter_stops` (OpenAI `content_filter`, Anthropic `refusal`,
+  a REST template's by shape or declaration, a WebSocket file's `response.filter_stops`, default
+  none) and `stop_provenance`, which marks any other filter word `ModelResponse.foreign_stop`;
+  Azure's 400 only from an adapter that reads `content_filter`. The vocabularies moved to
+  `shared.filter_stops`. No `core` reader changed: the provenance travels on the reply.
+- Rule 2, delivered text: the judge's fail on a partial reply joins `_combine_verdicts` in
+  `_cut_verdict` (a needs-review fail, OD-19), and `_trace_before_block` reads the text of an
+  input-side reply with `CUT_DECIDING_EVALUATORS`. Runner changes kept to those two methods and
+  one docstring, to ease the merge with `fix/scoring-audit-2026-10-11` (resume ranking, the
+  multi-turn trace on env errors, the identity sweep: none touched here).
+- Rule 3, every attempt filtered: `_filtered_reason` in `cli/run.py`, state `filtered`, exit 3.
+  Every attempt, not more than half: a share makes a filter that does its job a CI error and
+  still leaves a forger room under it.
+- Tests: 24 in `tests/adapters/test_filter_stop_provenance.py` (22 fail on `de122e26`), 7 in
+  `tests/core/test_filter_stop_scoring.py` (2), 13 in
+  `tests/cli/test_filter_stop_provenance_campaign.py` (9), the Azure 400 from `anthropic` and from
+  a plain REST template in `tests/adapters/test_provider_filter_block.py` (2; its `rest-azure`
+  cases fail there only because `RestTemplate` has no `filter_stops`) and one WebSocket case in
+  `tests/adapters/test_malformed_replies.py` (1). The ones that pass on `de122e26` are the
+  controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal, the same text
+  without a filter word, and the WebSocket loader's refusal (`de122e26` refuses the key itself).
+  Four existing CLI tests whose every attempt was filtered now expect exit 3; one WebSocket test
+  and one REST trace test now declare their stop.
+- Open, said in the docs: a target that answers some attacks, not all, with its own provider's
+  filter word and no text hides those attempts (inconclusive, never a pass); a conversation cut
+  before its last turn is still read on its trace only.
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on

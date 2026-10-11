@@ -145,7 +145,9 @@ budget ceiling halts the campaign, the exit code is `3`, the reason is printed, 
 carries `summary.status.state = "budget_exhausted"` with `coverage.specs.total` (planned) above
 `coverage.specs.run` (completed); a target that was authorized but answered nothing (every
 attempt failed on transport, or got a reply that could not be read as the provider's) is
-`"unreachable"`, and one whose replies could not be read 5 in a row before any was read, or 20
+`"unreachable"`, one whose every attempt the provider's filter refused, cut or stopped (or that
+got no reply that could be read), with none a fail, is `"filtered"` (it measured the filter, not
+the model; exit `0` until 2026-10-11), and one whose replies could not be read 5 in a row before any was read, or 20
 in a row after, and whose one benign check then could not be read either, stops early as
 `"aborted"` (`aborted on UnreadableReplies: ...`, with what to check for that provider); a filter
 that blocks only attack prompts lets the check through, and the run goes on. One unreadable reply fails only its attempt (OD-21), and its spec is
@@ -160,8 +162,9 @@ refuses before the model sees it (Azure OpenAI's HTTP 400 `content_filter`; Gemi
 attempt, `inconclusive: blocked_by_provider_filter`, and the campaign goes on; the summary counts
 them (`Blocked by the provider's input filter: N attempt(s) in S spec(s) never reached the model`,
 and `summary.blocked_by_provider_filter` in JSON). A spec whose every attempt was blocked is
-inconclusive, never a pass. Any other 4xx still stops the run with `3`
-([`docs/MANUAL.md`](docs/MANUAL.md) §9).
+inconclusive, never a pass, and a run whose every attempt was blocked or cut exits `3`
+(`filtered`). Azure's 400 is read only from an `openai` target: from another provider it is an
+ordinary 4xx. Any other 4xx still stops the run with `3` ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
 
 **A reply the provider's filter cut is never a pass.** A deployment's output filter answers
 HTTP 200 with an empty or canned reply and its own stop reason (Azure OpenAI's `content_filter`, a
@@ -171,7 +174,11 @@ target file's REST target has none). The model may
 have written what the filter hid, so such an attempt is `inconclusive:
 cut_by_provider_output_filter` (or `provider_filter_side_unknown` when the provider does not say
 whether it blocked the prompt or the reply), needs review, and keeps its spec from passing; a fail
-that rests on something present in what came back still stands. The summary counts them (`Cut by
+that rests on something present in what came back still stands, and so does the judge's on text
+the model wrote, as a fail that needs review (`--include-needs-review` gates it). Each adapter
+reads only its own provider's filter words (`content_filter` from `openai`, `refusal` from
+`anthropic`, what a WebSocket file lists under `response.filter_stops`, none by default): any other
+is an ordinary stop, so a target cannot hide its reply behind another provider's word. The summary counts them (`Cut by
 the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced`, and
 `summary.cut_by_provider_output_filter` in JSON). `--fail-on` does not trip on them: read that key
 if your pipeline should ([`docs/MANUAL.md`](docs/MANUAL.md) §9).

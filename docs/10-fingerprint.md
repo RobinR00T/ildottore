@@ -103,12 +103,17 @@ safety classifier declining, possibly with no text at all); Amazon Bedrock Conve
 `guardrail_intervened` and `content_filtered`; Gemini's `SAFETY`, `PROHIBITED_CONTENT`,
 `BLOCKLIST`, `SPII` and `RECITATION`; Vertex AI's `MODEL_ARMOR` (the last two since OD-42,
 2026-10-11). The set is
-`shared.provider_filter.FILTER_STOPS`, where each value is sourced, and the attack phase reads the
-same one to keep a reply the filter cut from passing a spec (u08 A-70). They are compared trimmed
-and in lower case, from whichever adapter
-carries them as `finish_reason`: the OpenAI and Anthropic adapters pass the provider's value
-through, a REST template reads it at its `finish_path` and a WebSocket target at its final
-frame's path, so a Gemini or Bedrock endpoint behind a REST template is read the same way. A
+`shared.filter_stops.FILTER_STOPS` (re-exported by `shared.provider_filter`), where each value is
+sourced, and the attack phase reads the same one to keep a reply the filter cut from passing a spec
+(u08 A-70). They are compared trimmed and in lower case, as each adapter carries them as
+`finish_reason`: the OpenAI and Anthropic adapters pass the provider's value through, a REST
+template reads it at its `finish_path` and a WebSocket target at its final frame's path, so a
+Gemini or Bedrock endpoint behind a REST template is read the same way. Since 2026-10-11 (A-79)
+each counts only from the provider that documents it: OpenAI's word from an `openai` target,
+Anthropic's from an `anthropic` one, Gemini's or Bedrock's from a REST template in their shape,
+what a WebSocket file declares under `response.filter_stops`. Another provider's word (an
+OpenAI-compatible endpoint that says `refusal`) is marked `foreign_stop` by the adapter and does
+not make `output_filter` true: a target cannot claim a filter it does not have. A
 reply cut at the probe's own 512-token cap (`length`, `max_tokens`) is not a filter, and an empty
 reply with no such stop reason says nothing. When **no** reply carries a stop reason from the
 provider (a REST template with no `finish_path`, a WebSocket target whose final frame has none,
