@@ -3,6 +3,48 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11: a hand-off tool is not destructive by its name, and lint judges calls as a run does
+
+- On `fix/handoff-tools-and-lint-stub`, the two items the pre-merge audit of OD-38 left open
+  (entry of 2026-10-09 below), closed as u06 A-71 (with halves in u02 and u00 and an index row).
+  (1) A hand-off named `transfer_to_<agent>` (the OpenAI Agents SDK's style) matched the verb
+  `transfer` and, since OD-38, could not be excused: a spec whose hardened fixture hands off gave
+  `FIXTURE_HARDENED_FAIL` on `6d5f7ae`. Now a scene tool marked `destructive: false` is not
+  destructive whatever its name, under that exact name only; `destructive: true` still makes any
+  name destructive, an unmarked name is judged by its verbs, a name marked both ways is
+  destructive, and the flag clears only that check. No `transfer_to_*` exemption:
+  `transfer_to_account` stays destructive. `destructive` and `external` are booleans in the
+  schema and in `Setup` (a quoted `"false"` read as true); lint warns on a `destructive: false`
+  that no verb makes necessary. A whole-word verb rule was measured and not adopted: over every
+  shipped fixture it changes no verdict, but it does not clear the hand-off and stops flagging
+  `deleteall`, `droptable`, `bulkdelete`, `airdrop_tokens` and `transferfunds`. (2) The lint
+  stub was a drifted copy of the evaluator (the quadratic backtick pattern, about 4 s on an
+  unclosed backtick before 100,000 letters, now about 3 ms; top-level argument values only; no
+  lists in the forbidden walk; no OpenAI JSON-string arguments, in the `tool_sequence` stub too).
+  The checks live once in `shared/tool_abuse.py`, and calls are read through
+  `shared/toolcalls.py` by both.
+- Verdict check, before and after, on every shipped fixture (`specs/attacks` and the valid
+  corpus, 78 specs): each declared evaluator's real verdict (status, reasoning, matched) and its
+  stub's, on 154 fixture cases, plus the 594 traces of every fixture under every spec that
+  declares `tool_call`: byte-identical once the per-process salt of the canary masks is
+  normalized (20 lines differ only by that salt, as two runs of the same code do).
+  `dottore lint specs/` (text and `--json`) and `dottore coverage --json` are byte-identical to
+  `6d5f7ae`'s. No shipped spec marks a tool `destructive: false`.
+- Tests: `tests/evaluators/test_scene_not_destructive.py` (28, 12 fail on `6d5f7ae`),
+  `tests/registry/test_stub_agrees_with_tool_call.py` (21, 12 fail on `6d5f7ae`, among them a
+  timing test bounded at 1.5 s, 500 times the linear cost), and the invalid schema-parity
+  fixture `setup-tool-destructive-not-boolean.yaml` (fails on `6d5f7ae`). Docs: `docs/03`,
+  `docs/04` §1, MANUAL §8, FAQ, `examples/target.app.yaml`, CHANGELOG. `make gates` green (with
+  `PYTHONPATH` set to the worktree's `src`): 5115 tests (5065 on `6d5f7ae`, 50 new), 97.77%
+  coverage (`shared/tool_abuse.py` 100%), 75 specs lint OK, four import contracts kept, self-scan,
+  bandit and pip-audit clean.
+- Left open, for the owner (not decided here, no OD opened): a tool a deployment grants under
+  `seeded_setup.granted_tools` is in no scene, so a granted `transfer_to_<agent>` is still
+  destructive by its name: an Agents SDK deployment that hands off during a seeded spec that
+  declares `tool_call` fails it (read from the code, not run against a live deployment). Whether a target file may declare one of its own tools not destructive
+  (for instance a `granted_tools` entry written as `{name, destructive: false}`) is a question of
+  who may say a tool is safe: the operator's file, not the spec.
+
 ## State, 2026-10-10 (night): the verification audit's three LOWs
 
 - The verification audit of `5bd7c45` found it merge-ready, with three LOWs, closed one commit each.
@@ -386,7 +428,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   pattern in `registry/fixtures_engine._STUB_INJECTION_RE` is still the one the evaluator dropped
   in the hostile-text audit (`[^`]*[A-Za-z][^`]*` between backticks): an unclosed backtick before
   40,000 letters takes 0.65 s to search there and 0.001 s in the evaluator's pattern. Only lint
-  reads it, over a spec's own fixtures.
+  reads it, over a spec's own fixtures. **Both closed on 2026-10-11** (u06 A-71, the entry of that
+  date above): a scene may mark a tool `destructive: false`, and the stub judges a call through
+  the evaluator's own helpers.
 
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 
