@@ -153,8 +153,12 @@ async def execute_conversation(
     now: Callable[[], float] | None = None,
     pacer: RateLimiter | None = None,
     setup: InBandSetup | None = None,
+    opens_attempt: bool = False,
 ) -> AttemptResult:
     """Run one multi-turn conversation and return one aggregate :class:`AttemptResult`.
+
+    ``opens_attempt``: the conversation is one attack attempt, counted with its first send
+    (u08 A-80); the turns and tool rounds after it are requests of the same attempt.
 
     Threads each attacker turn (optionally mutated by ``mutate_turn``) with the prior
     assistant replies as ``messages`` history, sending each through
@@ -254,7 +258,7 @@ async def execute_conversation(
         )
 
     async def send(turn_index: int, suffix: str) -> AttemptResult:
-        nonlocal crossed
+        nonlocal crossed, opens_attempt
         if crossed is not None:
             # Plain, not the reply-carrying subclass: that reply belongs to one turn, and this
             # conversation has none to store.
@@ -268,6 +272,9 @@ async def execute_conversation(
             tools=tools,
             turns_total=len(turns),
         )
+        # The first send counts the conversation as one attempt; a refused first send counts
+        # nothing and ends the conversation, so the flag is spent either way.
+        first, opens_attempt = opens_attempt, False
         try:
             return await execute_attempt(
                 adapter,
@@ -283,6 +290,7 @@ async def execute_conversation(
                 sleep=sleep,
                 now=now,
                 pacer=pacer,
+                opens_attempt=first,
             )
         except ReplyOverBudget as halt:
             crossed = halt
@@ -474,9 +482,9 @@ async def reproduce_conversation(
 ) -> list[AttemptResult]:
     """Execute the pinned conversation ``n`` times (repro), one aggregate attempt each.
 
-    Mirrors :func:`~ildottore.core.reproduce.reproduce` for the multi-turn path: one
-    ``debit_attempt`` per conversation (each turn additionally debits a request inside
-    :func:`execute_attempt`), stable ``attempt_id`` per run so resume skips completed
+    Mirrors :func:`~ildottore.core.reproduce.reproduce` for the multi-turn path: one attempt
+    per conversation, counted with its first request (each turn debits a request inside
+    :func:`execute_attempt`, u08 A-80), stable ``attempt_id`` per run so resume skips completed
     conversations, and results returned in order. Against the deterministic mock all ``n``
     conversations are byte-identical; against a real target they measure repro honestly.
 
@@ -494,7 +502,6 @@ async def reproduce_conversation(
         attempt_id = attempt_id_for(spec_id, mutation, run_index)
         if completed is not None and attempt_id in completed:
             continue
-        ledger.debit_attempt()
         try:
             result = await execute_conversation(
                 adapter,
@@ -517,6 +524,7 @@ async def reproduce_conversation(
                 # battery's requests, and the measured breach was 19x the authorized rate.
                 pacer=pacer,
                 setup=setup,
+                opens_attempt=True,
             )
         except ReplyOverBudget as halt:
             results.append(halt.result)

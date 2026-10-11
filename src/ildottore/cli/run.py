@@ -534,6 +534,7 @@ BUDGET_DERIVATION_CAP = PlanBudgets(
     max_tokens=5_000_000,
     max_requests=20_000,
     max_wall_s=7_200,
+    # Not applied (u08 A-80): the attempts ceiling is the request ceiling, see `budgets_for`.
     max_attempts=20_000,
 )
 
@@ -569,6 +570,13 @@ def budgets_for(
     derived from this plan, and the absolute :data:`BUDGET_DERIVATION_CAP`. ``overrides`` is
     the operator's own word (``--budget-tokens`` and friends) and wins outright on the axes it
     names, cap included: a human raising a ceiling is the authorization the derivation is not.
+
+    The attempts ceiling is the request ceiling (unless ``overrides`` names one of its own, as a
+    library caller may): every attempt is at least one request, and it is counted only once its
+    first request is accepted, so it cannot stop a run before the request ceiling does, and
+    ``--budget-requests`` raises both. Derived from the estimate and clamped at 20,000 on its
+    own, no flag raised it, and a campaign of more than 20,000 attempts could never finish
+    (u08 A-80).
     """
 
     def _axis(floor: int | None, derived: int, cap: int | None, override: int | None) -> int:
@@ -586,25 +594,21 @@ def budgets_for(
         # bound is past the cap, which bounds the result below as it did.
         paced = estimate.total_requests / rate_rps * BUDGET_HEADROOM
         wall_s = max(wall_s, int(min(paced, MAX_FLAG_VALUE)) + 1)
+    max_requests = _axis(
+        DEFAULT_PLAN_BUDGETS.max_requests,
+        requests,
+        BUDGET_DERIVATION_CAP.max_requests,
+        o.max_requests,
+    )
     return PlanBudgets(
         max_tokens=_axis(
             DEFAULT_PLAN_BUDGETS.max_tokens, tokens, BUDGET_DERIVATION_CAP.max_tokens, o.max_tokens
         ),
-        max_requests=_axis(
-            DEFAULT_PLAN_BUDGETS.max_requests,
-            requests,
-            BUDGET_DERIVATION_CAP.max_requests,
-            o.max_requests,
-        ),
+        max_requests=max_requests,
         max_wall_s=_axis(
             DEFAULT_PLAN_BUDGETS.max_wall_s, wall_s, BUDGET_DERIVATION_CAP.max_wall_s, o.max_wall_s
         ),
-        max_attempts=_axis(
-            DEFAULT_PLAN_BUDGETS.max_attempts,
-            requests,
-            BUDGET_DERIVATION_CAP.max_attempts,
-            o.max_attempts,
-        ),
+        max_attempts=o.max_attempts if o.max_attempts is not None else max_requests,
     )
 
 
@@ -1048,12 +1052,25 @@ def _print_estimate(
     requests it will not make for the attempts the resumed run keeps.
     """
 
-    if quiet:
-        return
     requests = sum(p.estimate.requests for p in plans)
     tokens_in = sum(p.estimate.input_tokens for p in plans)
     tokens_out = sum(p.estimate.output_tokens for p in plans)
     specs = sum(p.estimate.specs for p in plans)
+    if quiet:
+        # One machine-friendly line, as `--dry-run -q` prints: a command whose only output is
+        # its exit code cannot answer the question it exists for (it printed nothing).
+        judge_requests = sum(p.estimate.judge_requests for p in plans)
+        judge_tokens = sum(p.estimate.judge_tokens for p in plans)
+        probes = fingerprint_probes * len(plans)
+        print(
+            f"estimate: {requests} requests over {specs} spec-runs across {len(plans)} "
+            f"target(s) at runs={runs}, ~{tokens_in + tokens_out + judge_tokens} tokens"
+            + (f", +{judge_requests} judge request(s)" if judge_requests else "")
+            + (f", +{probes} probe(s)" if probes else "")
+            + (f", {already_done} request(s) already done" if already_done else "")
+            + (f", {judge_already_done} judge request(s) kept" if judge_already_done else "")
+        )
+        return
     print(
         f"estimate: {requests} requests over {specs} spec-runs "
         f"across {len(plans)} target(s) at runs={runs} (no sends made)"
@@ -1091,6 +1108,8 @@ def _print_estimate(
             f"  + {total} fingerprint probe(s) before the battery (-sV: "
             f"{fingerprint_probes} per target across {len(plans)})"
         )
+    for line in _ceiling_lines(plans):
+        print(line)
     for plan in plans:
         skipped = len(plan.skipped_capability)
         blocked = len(plan.blocked_by_policy)
@@ -1108,6 +1127,27 @@ def _print_estimate(
     for cat, n in sorted(by_category.items(), key=lambda kv: (-kv[1], kv[0])):
         print(f"  {cat}: {n} requests")
     print("  no per-model pricing known; multiply by your provider's per-token rate.")
+
+
+def _ceiling_lines(plans: list[TargetPlan]) -> list[str]:
+    """The hard ceilings each target's campaign runs under, as ``--estimate`` prints them.
+
+    One line when every target has the same, else one per target: each target's ledger is its
+    own, sized from its own plan. The attempts ceiling is printed too, because it is one the run
+    can stop on (u08 A-80): it is the request ceiling, one attempt per accepted request.
+    """
+
+    def text(budgets: PlanBudgets) -> str:
+        return (
+            f"{budgets.max_requests} requests, {budgets.max_attempts} attempts (one per accepted "
+            f"request), {budgets.max_tokens} tokens, {budgets.max_wall_s}s wall"
+        )
+
+    shown = {text(p.budgets) for p in plans}
+    tail = " (derived from this plan; --budget-requests, --budget-tokens, --budget-wall override)"
+    if len(shown) <= 1:
+        return [f"  ceilings: {text(plans[0].budgets)}{tail}"] if plans else []
+    return [f"  ceilings on {p.target.id}: {text(p.budgets)}{tail}" for p in plans]
 
 
 def _print_dry_run_plan(
@@ -1242,11 +1282,26 @@ def _print_dry_run_plan(
             f"  pacing:  not applied ({explicit_rate} req/s requested) - this is an offline "
             "mock run, nothing leaves the process"
         )
-    budgets = plans[0].budgets if plans else DEFAULT_PLAN_BUDGETS
-    print(
-        f"  budgets: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
-        f"{budgets.max_wall_s}s wall (derived from this plan)"
-    )
+    # Per target when they differ: each target's ledger is sized from its own plan, and the
+    # first target's ceilings were printed for all of them.
+    shown = {
+        (p.budgets.max_tokens, p.budgets.max_requests, p.budgets.max_attempts, p.budgets.max_wall_s)
+        for p in plans
+    }
+    for plan in plans if len(shown) > 1 else plans[:1]:
+        budgets = plan.budgets
+        where = f" on {plan.target.id}" if len(shown) > 1 else ""
+        print(
+            f"  budgets{where}: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
+            f"{budgets.max_attempts} attempts, {budgets.max_wall_s}s wall "
+            "(derived from this plan, or the --budget-* flags)"
+        )
+    if not plans:
+        budgets = DEFAULT_PLAN_BUDGETS
+        print(
+            f"  budgets: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
+            f"{budgets.max_attempts} attempts, {budgets.max_wall_s}s wall"
+        )
 
 
 def _declared(target: Target) -> list[str]:
@@ -2817,10 +2872,14 @@ def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) 
             file=sys.stderr,
         )
         return None
+    requests = int(stored.get("requests", 0))
     prior = Spend(
         tokens=int(stored.get("tokens", 0)),
-        requests=int(stored.get("requests", 0)),
-        attempts=int(stored.get("attempts", 0)),
+        requests=requests,
+        # No more attempts than requests: a run recorded before u08 A-80 counted an attempt its
+        # request ceiling refused (128 for 100 requests), and carried as recorded they would
+        # stop the resume on the attempts ceiling, now the request ceiling, with requests left.
+        attempts=min(int(stored.get("attempts", 0)), requests),
         wall_s=float(stored.get("wall_s", 0.0)),
     )
     ceiling = budgets.max_wall_s if budgets is not None else None

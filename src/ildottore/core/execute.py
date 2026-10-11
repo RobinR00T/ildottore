@@ -321,8 +321,12 @@ async def execute_attempt(
     sleep: Callable[[float], Awaitable[None]] | None = None,
     now: Callable[[], float] | None = None,
     pacer: RateLimiter | None = None,
+    opens_attempt: bool = False,
 ) -> AttemptResult:
     """Send one request with retry/backoff/timeout, debiting the budget per send.
+
+    ``opens_attempt``: this is the first request of an attack attempt, which its first send
+    counts against the attempts axis in the same debit (a retry never counts again, u08 A-80).
 
     Returns an :class:`AttemptResult`. Raises :class:`BudgetExhausted` (from the
     ledger) straight through - the runner converts that into a ``budget_exhausted``
@@ -363,7 +367,8 @@ async def execute_attempt(
             remaining = ledger.remaining_tokens()
             if ceiling is not None and estimate > ceiling and remaining:
                 reserved = remaining
-        ledger.debit_request(tokens=reserved)
+        ledger.debit_request(tokens=reserved, opens_attempt=opens_attempt)
+        opens_attempt = False  # counted with the first send; a retry is the same attempt
         started = clock()
         try:
             response = await _send_with_timeout(adapter, request, timeout_s, do_sleep)
