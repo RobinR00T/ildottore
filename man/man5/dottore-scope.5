@@ -173,7 +173,8 @@ A spec with setup is inconclusive (setup_not_seeded) with nothing sent when
 .B specs
 does not match it, when its canary has to be in the deployment and no
 .B run_token
-is declared, or when two of its scene tools map to one deployment name; a spec judged on its
+is declared, when two of its scene tools map to one deployment name, or when one maps to the
+name of another of its scene tools; a spec judged on its
 tool trace is not sent through an adapter that reads no tool calls (REST, MCP). With a token,
 each such spec's canary is <run_token>-<spec id>, and --dry-run -vv prints what to seed. A sent
 one records setup_delivery: seeded. Tool calls are judged under the spec's names through

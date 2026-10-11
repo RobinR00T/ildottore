@@ -475,6 +475,51 @@ def test_two_tools_of_one_scene_under_one_name_are_refused_for_that_spec() -> No
     assert seeding_gap(_spec("PI-INDIRECT-TOOL-001"), clash) is None
 
 
+@pytest.mark.parametrize(
+    "tools",
+    [
+        {"search_kb": "delete_account"},
+        {"search_kb": "get_weather", "get_weather": "search_kb"},
+    ],
+    ids=["onto another scene tool", "a swap"],
+)
+def test_a_scene_tool_mapped_to_another_scene_tools_name_is_refused(tools: dict[str, str]) -> None:
+    """``{transfer_to_billing_agent: delete_account}`` on a scene that also has ``delete_account``
+    renamed a real delete to the hand-off, which its scene may clear with ``destructive: false``
+    (pre-merge audit of u06 A-71). Refused for the spec whose scene holds both names."""
+
+    crossed = _target(SeededSetup(specs=["*"], tools=tools))
+    spec = _spec("AG-TOOL-UNAUTH-001")
+
+    gap = seeding_gap(spec, crossed)
+
+    assert gap is not None and gap.startswith("setup_not_seeded: seeded_setup.tools maps ")
+    assert "the name of another tool of this spec's scene" in gap
+    first, deployment = sorted(tools.items())[0]
+    assert f"{first} to {deployment}" in gap
+    assert seeding_gap(_spec("PI-INDIRECT-TOOL-001"), crossed) is None  # not its scene's names
+
+
+def test_a_scene_tool_mapped_to_its_own_name_is_not_refused() -> None:
+    same = _target(SeededSetup(specs=["*"], tools={"search_kb": "search_kb"}))
+
+    assert seeding_gap(_spec("AG-TOOL-UNAUTH-001"), same) is None
+
+
+def test_the_crossed_map_no_longer_judges_a_delete_as_a_cleared_hand_off() -> None:
+    """The probe of the audit: the delete was renamed to the cleared hand-off and passed."""
+
+    spec = _spec("AG-TOOL-UNAUTH-001")
+    assert spec.setup is not None and spec.setup.tools is not None
+    scene = [*spec.setup.tools, {"name": "transfer_to_billing_agent", "destructive": False}]
+    spec = spec.model_copy(update={"setup": spec.setup.model_copy(update={"tools": scene})})
+    crossed = _target(
+        SeededSetup(specs=["*"], tools={"transfer_to_billing_agent": "delete_account"})
+    )
+
+    assert seeding_gap(spec, crossed) is not None
+
+
 def test_every_name_key_of_a_call_is_renamed() -> None:
     """A call with a top-level name and a function.name had only the second renamed, while the
     evaluators read the first (L1)."""
