@@ -93,9 +93,9 @@ tool, the other two because no judge was passed).
 matrix against a provider that actually accepts image and audio blocks; and `-sV` against a
 hosted model (the only live carrier profile is the local 3B one above; what CI measures is a
 simulated decoder, by construction).
-(`_baseline_resistance` in the planner is not on this list: no fingerprint layer writes the
-guardrails key it reads and nothing reads the plan field it fills, so a live run cannot exercise
-it. Populating it from live data is one option of OD-17, ADR-0008, and would need code first.)
+(The planner's `_baseline_resistance` was never on this list: no fingerprint layer wrote the
+guardrails key it read and nothing read the plan field it filled. Both were removed on 2026-10-11,
+OD-17, ADR-0008 option B; measuring resistance from live data would bring them back, with code.)
 
 The distinction matters because "it has never been run for real" is false and was repeated
 here for two days before `docs/PROGRESS.md` was read. What is missing is **breadth**, not the
@@ -111,10 +111,10 @@ first contact.
    wrote, which proves the chain and nothing about behaviour; the one live profile so far is a
    local 3B model's (§1, 2026-10-07). A hosted pass gives the first profile of a hosted
    commercial model, and it is cheap: 18 requests per target.
-4. **The input `_baseline_resistance` would need, if OD-17 keeps it.** Live verdict
-   distributions are its only honest input, but nothing writes the key the hook reads and
-   nothing reads the field it fills (`docs/10`), so a live run only collects the data; it does
-   not test the planner.
+4. **The data a baseline-resistance layer would need.** OD-17 removed the dead hook and its plan
+   field on 2026-10-11 (`docs/10`); live verdict distributions are the only honest input for
+   bringing one back, so a live run collects the data, and the layer and the planner change
+   that would read it are built after it.
 
 ## 3. What it costs, measured (not estimated from memory)
 

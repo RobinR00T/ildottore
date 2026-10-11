@@ -321,6 +321,8 @@ def test_a_stored_run_without_the_block_keeps_its_digest() -> None:
     }
     # `capabilities.sampling` came later (u12 A-68) and is left out the same way when not declared.
     before["capabilities"].pop("sampling")
+    # And `capabilities.mcp` (OD-44, 2026-10-11), left out when false.
+    before["capabilities"].pop("mcp")
     before["__route__"] = "live"
     assert target_digest(plain) == digest._sha(before)
     assert target_digest(plain) != target_digest(_target(SeededSetup(specs=["*"])))

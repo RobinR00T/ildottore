@@ -3,8 +3,9 @@
 > **RECONCILIATION (ADR-0006: authoritative).** This unit is the **sole owner of the
 > plan-builder**: `core/planner.py :: build_plan(specs, fingerprint: ModelFingerprint | None,
 > capabilities) -> TestPlan`. `TestPlan` is defined in `shared.models` (u00), not here: import
-> it. Use the canonical `TestPlan` shape from ADR-0006 §3 (per-spec `mutators` +
-> `baseline_resistance`; `adaptive`; `fingerprint_ref`; `budgets`). Adaptive planning is
+> it. Use the canonical `TestPlan` shape from ADR-0006 §3 (per-spec `mutators`; `adaptive`;
+> `fingerprint_ref`; `budgets`; the per-spec `baseline_resistance` was removed on 2026-10-11,
+> OD-17, ADR-0008 option B). Adaptive planning is
 > implied by `-sV` and `-A` (OD-5 as built: there is no `--adaptive` flag; `--deep` also sets
 > adaptive mode, which orders nothing without a fingerprint). u09 does not build plans.
 
@@ -38,8 +39,9 @@ resumes, never restarts from zero (`AGENTS.md §5`). Reproducibility is the prod
 Depends on u00,u01,u02,u04,u05,u06,u07: all via `shared.protocols` / `shared.models`, never
 concretes:
 - `TargetAdapter` (u04): `send(ModelRequest)->ModelResponse`, `capabilities()->Capabilities`.
-- `Evaluator` (u06) pipeline + `combine` (spec `evaluator_logic`; as built the runner applies its
-  own fixed rule and does not read the field, OD-19); `Mutator` (u05); `RiskScorer`
+- `Evaluator` (u06) pipeline + the one combination rule every value of `evaluator_logic` names
+  (`shared.combination.combine_verdicts`, OD-19, u06 §7 A-73), which `core` calls from `shared`
+  because it may not import `evaluators.combine`; `Mutator` (u05); `RiskScorer`
   (u07); `EvidenceStore.put` + `RunStore.save_run/save_finding` (u10).
 - Policy Engine (u01): scope/allowlist/policy-pack gate + `redactor`. Spec Registry (u02):
   suite resolution + loaded `AttackSpec`s. Fingerprint (u09) supplies `ModelFingerprint` for
@@ -86,8 +88,9 @@ concretes:
 3. `planner.py`: `build_plan(specs, fingerprint|None, capabilities)` → `TestPlan`: capability
    filter, family-effective mutator weighting, baseline expectations, explicit skip reasons
    (`docs/10 §3`); `--no-adaptive` = pass-through (benchmark parity). As built the planner
-   orders mutators by carrier comprehension only; the family weighting and baseline
-   expectations are not implemented (OD-17), and there is no `--no-adaptive` flag.
+   orders mutators by carrier comprehension only; the family weighting is not implemented, the
+   baseline expectations were removed as dead at both ends (OD-17, 2026-10-11), and there is
+   no `--no-adaptive` flag.
 4. `execute.py`: single-attempt send with retry/backoff/rate-limit/timeout; classify env-error
    vs product-signal; record `Attempt` (masked via redactor before evidence write).
 5. `reproduce.py`: run one (spec,variant) N times, aggregate `repro` + per-attempt raw.
@@ -126,11 +129,11 @@ concretes:
 
 ## §6 Data/wire shapes
 `TestPlan = {plan_ref: str, target_id: str, adaptive: bool, fingerprint_ref: str|None,
-selected: [{spec_id, reason, mutators: [str], baseline_resistance: float|None}],
-# NOTE (2026-09-23, OD-17): `baseline_resistance` is dead at both ends today. No fingerprint
-# layer writes the `guardrails` key it is read from, and nothing in src/ reads the field it is
-# written to. It is in the shape, and in this contract, as if it flowed. Decide before a
-# reader is written against it.
+selected: [{spec_id, reason, mutators: [str]}],
+# OD-17, decided 2026-10-11 under the owner's delegation (ADR-0008 option B): the per-spec
+# `baseline_resistance: float|None` was removed. No fingerprint layer wrote the `guardrails` key
+# it was read from and nothing in src/ read it, so every plan said null. It comes back with the
+# layer that measures it (after a live run, docs/16), and a reader in the same change.
 skipped: [{spec_id, reason}], budgets: {max_tokens, max_requests, max_wall_s, max_attempts}}`
 - reviewable, persisted with the run (validates vs the test-plan schema, which is generated on
   demand by `dottore schema export --name test-plan` and not committed under `schemas/`,
@@ -486,7 +489,8 @@ such a reply is never a pass. The criterion:
   proven exploit; review it` (for the unknown side: `the provider's filter stopped the reply
   (<detail>) without saying whether it refused the prompt or cut what the model wrote`). The judge
   never decides it: a deterministic fail wins over the cut and the cut over a judge's fail, the
-  priority `_combine_decisive` already gives an inconclusive. On a partial reply (text the model
+  priority the one combination rule already gives an inconclusive
+  (`shared.combination.combine_verdicts`, OD-19, u06 A-73). On a partial reply (text the model
   wrote before an output-side stop or Anthropic's `refusal`, not a Bedrock replacement) the judge
   is consulted and its verdict recorded after the reasoning, `; semantic_judge on what came back,
   recorded and not deciding: <status> (<confidence>): <its words, at most 240 characters>` (L8);
@@ -547,6 +551,16 @@ controls that pass on `6d5f7ae` too, a resume with `--estimate --resume` and `do
 the other 6 pin what did not change there (a SARIF count, the JUnit messages without a cut, three
 fallback shapes and two stops that are no filter's). The 4 added after the verification of
 `91845524` fail on it. Not run against a live Azure, Bedrock, Gemini or Anthropic endpoint.
+- **A-73, this unit's half (added 2026-10-11, OD-19; the clause is u06 §7 A-73).** The runner
+  combines an attempt's verdicts by `shared.combination.combine_verdicts` (`_combine_verdicts`
+  keeps only its `authz_leak` set-aside around it; `_combine_decisive` and the local
+  `_shared_inconclusive_reason` and `_union_matched` moved to `shared`), and `_is_confirmed`
+  requires, in the confirming variant, at least one fail a deterministic evaluator decided: a
+  variant whose every fail reads `semantic judge reported exploited` does not confirm, alone or
+  pooled below `MIN_VARIANT_ATTEMPTS`. The finding's reasoning adds `; <j>/<k> decided by the
+  judge alone, which never confirms a finding on its own` when the judge alone decided any of
+  its `k` exploited attempts. Scoring is unchanged: a judge-only fail is a success in `k / N`
+  and fails the spec. Checks: `tests/evaluators/test_one_combination_rule.py`.
 
 **A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43) The runner carries the operator's
 declaration to the evaluators and to every verdict it changed.** `_run_evaluators` takes the target
@@ -623,6 +637,20 @@ declaration. The finding's reasoning counts those attempts and names the tools (
   budgets (tokens/requests/wall-clock): surfaced in `config.py` (u01), confirmed by human.
 - Concurrency degree (bounded semaphore default) vs provider rate-limit headers: propose adaptive
   from observed 429s, capped by config.
+- **OD-44** (2026-10-11): an MCP spec ran against any target. **Decided 2026-10-11 under the
+  owner's delegation (best practice, revisable):** `build_plan` maps the spec requirement `mcp`
+  to `Capabilities.mcp`, as it maps every other requirement, so a spec that reads an MCP server's
+  advertised surface is skipped (`capability_unavailable: target does not declare mcp`) on a
+  target that is not one; the target loader (u12) sets the capability from `provider: mcp`.
+- **OD-17** (2026-09-23, ADR-0008): `baseline_resistance` was dead at both ends of the plan.
+  **Decided 2026-10-11 under the owner's delegation (best practice, revisable): B, drop it.**
+  Removed from `PlanSelection` (u00), from `build_plan` (`_baseline_resistance`), from the
+  generated test-plan schema and from the golden plan; the alternative kept open by the ADR
+  (C, leave it in the shape documented as dead) and the one it deferred (A, a fingerprint layer
+  measuring per-category resistance, which needs a live run) were not taken now.
+- **OD-19** (2026-10-03, ADR-0010): `evaluator_logic` was read by no run path and a judge-only
+  fail was confirmed. **Decided 2026-10-11 under the owner's delegation (best practice,
+  revisable):** option B with the amendment, built as u06 §7 A-73 (this unit's half above).
 - **OD-41** (2026-10-10): a provider's input filter that refuses an attack prompt before the
   model sees it (Azure OpenAI's HTTP 400 `content_filter`) stopped the whole campaign, exit 3 after
   one request. **Decided by the owner, 2026-10-10 17:33:** the attempt is recorded as blocked by

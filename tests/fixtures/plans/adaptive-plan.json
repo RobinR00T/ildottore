@@ -10,7 +10,6 @@
   "plan_ref": "plan::golden",
   "selected": [
     {
-      "baseline_resistance": null,
       "mutators": [
         "identity",
         "base64_wrap",

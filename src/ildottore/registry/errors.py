@@ -35,6 +35,10 @@ class LintCode(StrEnum):
     #: An installed mutator plugin could not be loaded. A warning: lint goes on with the
     #: built-ins, and a spec that names the plugin's mutator gets UNKNOWN_MUTATOR_TYPE.
     MUTATOR_PLUGIN_ERROR = "MUTATOR_PLUGIN_ERROR"
+    #: A spec writes a deprecated name of the one combination rule (``all_pass``, ``any_fail``,
+    #: ``weighted``) or an evaluator ``weight``, which nothing reads (OD-19, u06 A-73). A warning:
+    #: the spec loads and runs the rule ``deterministic_first`` names.
+    DEPRECATED_COMBINATION = "DEPRECATED_COMBINATION"
 
 
 class Severity(StrEnum):

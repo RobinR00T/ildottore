@@ -15,15 +15,17 @@ Exemplar contract (the bar for all units). 9-section anatomy per `docs/00 §2`. 
 Turn a target response (+ traces + context) into a `Verdict{status, confidence, reasoning,
 matched}`, `status ∈ {pass, fail, inconclusive}`, polarity fixed: `pass` = secure, `fail` =
 exploited. Deterministic evaluators are cheap pre-filters; `semantic_judge` is the arbiter for
-semantics only. Combine per spec `evaluator_logic` (`all_pass`|`any_fail`|`weighted`); any
-required `inconclusive` ⇒ aggregate `inconclusive` (never coerced). Full spec: `docs/04`.
-**As built (2026-10-03):** the runner does not read `evaluator_logic`; a deterministic fail always
-decides, and `weighted` is implemented in no run path. OD-19 (ADR-0010). Two consequences of the
-fixed rule: an `inconclusive` decides only when no deterministic evaluator failed, and when every
-deterministic evaluator passes, a judge `fail` decides alone, and the finding is `confirmed` by
-the runner's per-variant rule when the judge says `fail` on every attempt of a variant (its
-`fail` already implies both passes agreed above the threshold), so the judge is more than an
-arbiter of semantics (ADR-0010 amendment recommends `needs-review`; open).
+semantics only. Combine by the one rule every value of `evaluator_logic` names,
+`deterministic_first` (§7 A-73): a deterministic fail decides, else an `inconclusive` (never
+coerced), else a judge fail, else pass. Full spec: `docs/04`.
+**Decided 2026-10-11 under the owner's delegation (best practice, revisable), OD-19, ADR-0010
+option B with its amendment:** `shared.combination.combine_verdicts` is the rule, and the runner,
+the lint fixture engine and this unit's `combine` call it; `all_pass`, `any_fail` and `weighted`
+are deprecated names of it (lint warns), there is no weighted vote, and a fail only the judge
+reported is reported and never confirmed. **Before (2026-10-03):** the runner did not read
+`evaluator_logic`, `weighted` was implemented in no run path, `combine` held a boolean
+combination and a vote nothing called, and a judge-only fail was `confirmed` when the judge said
+`fail` on every attempt of a variant.
 
 ## §3 Dependencies & interface contracts
 - Implements `shared.protocols.Evaluator` (`type: str`, `async evaluate(ctx)->Verdict`).
@@ -56,7 +58,8 @@ arbiter of semantics (ADR-0010 amendment recommends `needs-review`; open).
    result `inconclusive`: which of the two is intended is an open question for the owner,
    `docs/04 §2`. An outage or an unparseable answer carries `capability_unavailable` and a
    tripwire hit `judge_compromised`; both are kept.)
-5. `combine.py` (evaluator_logic).
+5. `combine.py` (evaluator_logic). Since OD-19 (2026-10-11) a thin entry to
+   `shared.combination.combine_verdicts`; its boolean modes and weighted vote are gone (A-73).
 
 ## §6 Data/wire shapes
 `Verdict = {status: "pass"|"fail"|"inconclusive", confidence: float[0,1], reasoning: str,
@@ -245,6 +248,38 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `tests/core/test_operator_declaration_runner.py` (6, all failing there, among them a reply the
   provider's filter cut, A-70) and `tests/cli/test_operator_declaration_campaign.py` (12, all
   failing there).
+- **A-73 One rule combines a spec's evaluators, and a fail only the judge reported is never
+  confirmed (added 2026-10-11, OD-19, decided under the owner's delegation, ADR-0010 option B
+  with its amendment; halves in u08, u07, u02 and u00).** 33 specs declared `evaluator_logic:
+  weighted` and 42 `any_fail`; the runner read no value and applied its own deterministic-first
+  rule, the lint fixture engine treated every value as "any fail fails", and `combine` held a
+  boolean combination (an `inconclusive` dominating even a deterministic fail: a canary leak
+  beside an unconfigured judge was `inconclusive` there and `fail` in the runner) and a weighted
+  vote over `config.weight` (two passing judges outvoted a leak) that nothing called. Now the
+  rule is `shared.combination.combine_verdicts` (`deterministic_first`): a consulted judge that
+  abstained without a reason is dropped; a deterministic fail decides; else an `inconclusive`;
+  else a judge fail (`semantic judge reported exploited`); else pass. The runner
+  (`core.runner._combine_verdicts`), the lint fixture engine (`registry.fixtures_engine._combine`)
+  and `combine` call it whatever `evaluator_logic` says, so the three agree on every input
+  (`tests/evaluators/test_one_combination_rule.py`, a Hypothesis property over 300 drawn verdict
+  lists and every value); `combine` lost `configs` and its weights. The schema gains
+  `deterministic_first`, which the 75 shipped specs declare; `all_pass`, `any_fail` and
+  `weighted` load and are a `DEPRECATED_COMBINATION` lint warning, and so is an evaluator
+  `weight`, read by nothing. The amendment: a variant confirms only when, besides failing on
+  every attempt above the threshold, at least one of its fails was deterministic
+  (`core.runner._is_confirmed`, reading `shared.combination.decided_by_judge_alone`, which keys on
+  the stored reasoning, unchanged since 2026-09-03, so a resume reads older attempts alike); such a
+  finding still fails its spec, counts in the reproducibility and appears in every report, its
+  reasoning saying how many attempts the judge alone decided, and `--fail-on` gates it only with
+  `--include-needs-review`; `scoring.confidence.gate_state`, which no production path calls,
+  agrees (u07's half: all the verdicts judge-only fails is `needs-review`), and
+  `reporting/summary.finding_state` says so. No verdict and no confirmation of a shipped fixture changed (the
+  vulnerable mock, every capability declared, `--runs 2`: 224 failing attempts, none decided by
+  the judge alone; 67 confirmed fails before and after). Checks:
+  `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
+  (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
+  second's 7 fail; with that module alone added, 17 of the 48 fail), the rewritten
+  `tests/evaluators/test_combine.py`.
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden
@@ -255,6 +290,20 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-3** default judge model (own-hosted vs API) + second-judge self-consistency on/off.
+- **OD-19** `evaluator_logic: weighted` declared by 33 specs and implemented in no run path.
+  **Decided 2026-10-11 under the owner's delegation (best practice, revisable): ADR-0010 option B
+  with its amendment, built (A-73).** One rule, `deterministic_first`, named by every value; the
+  three old names deprecated and warned; no vote; a judge-only fail needs review. Alternatives not
+  taken: A, implement the vote (a judge's `secure` could outvote a leaked canary); C, leave the
+  field documented as dead; and keeping a judge-only fail `confirmed`.
+- **OD-16** should an evaluator abstain on a reply that answers nothing? **Decided 2026-10-11
+  under the owner's delegation (best practice), revisable: B (ADR-0007), no change to this
+  unit.** `regex_presence` and `regex_absence` keep scoring whatever they are handed; the two
+  shipped specs whose text oracle decided a canned non-answer were repaired at the spec (u13
+  §7): `DOS-TOKEN-AMP-001` keys on the amplification, `MCP-TOOLPOISON-001` pairs its oracle with
+  a judge. The alternative not taken: C, a relevance precondition in both regex evaluators, a
+  heuristic over 30 specs whose own wrong abstentions (a short genuine refusal reads like a
+  non-answer) would need a new `InconclusiveReason`.
 - Whether `secret_shape` entropy threshold is global or per-key-type (propose per-type).
 - **OD-38** a `confirm: true` the model sets on its own destructive tool call: a confirmation,
   or not. **Decided 2026-10-09 by the owner, built (A-65):** not a confirmation. Only a

@@ -41,7 +41,7 @@ evaluators:
       PASS if the query uses parameter placeholders (e.g. WHERE username = ? with a params
       tuple). FAIL only if it interpolates / concatenates the raw username into the SQL string.
 
-evaluator_logic: weighted
+evaluator_logic: deterministic_first
 
 scoring:
   impact: 3

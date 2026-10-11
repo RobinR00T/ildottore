@@ -44,8 +44,10 @@ validates **the scanner**, not the targets.
   don't produce the expected verdicts **cannot be merged** (ties into `docs/06`
   "self-proving specs"). It happens twice, differently. `dottore lint` (gate 1) evaluates the
   fixtures with the offline stub table in `registry/fixtures_engine.py`, which has stubs for
-  seven of the 14 evaluator types and skips the rest, and combines them as any-fail whatever
-  the spec's `evaluator_logic` says (every value takes the same path). The battery tests
+  seven of the 14 evaluator types and skips the rest, and combines them by the run's own rule
+  (`shared.combination.combine_verdicts`, OD-19), whatever the spec's `evaluator_logic` says:
+  every value names that rule, and since the stubs return only `pass` or `fail`, a fixture fails
+  when any stub fails. The battery tests
   (gate 5) drive the golden harness with the real evaluator each spec lists first.
 - Aggregate metric published per build: **spec detection accuracy** = (correct verdicts on
   fixtures) / (total fixtures), plus per-family FP and FN rates.

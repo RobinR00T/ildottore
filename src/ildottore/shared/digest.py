@@ -98,5 +98,11 @@ def target_digest(target: Target, *, mock_scenario: str | None = None) -> str:
     capabilities = payload.get("capabilities")
     if isinstance(capabilities, dict) and capabilities.get("sampling") is None:
         capabilities.pop("sampling", None)
+    # And `capabilities.mcp` (OD-44): false, or set because the provider is `mcp` (already in the
+    # digest), it adds nothing, so it is left out and a run stored before it existed resumes;
+    # declared by an offline mock of another provider, it is part of what answers.
+    provider = str(payload.get("provider") or "").strip().lower()
+    if isinstance(capabilities, dict) and (not capabilities.get("mcp") or provider == "mcp"):
+        capabilities.pop("mcp", None)
     payload["__route__"] = mock_scenario or "live"
     return _sha(payload)

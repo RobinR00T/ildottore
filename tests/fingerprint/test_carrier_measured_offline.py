@@ -105,14 +105,15 @@ def test_it_changes_no_verdict_that_the_plain_mock_would_not_also_produce(tmp_pa
     """The scenario must buy the measurement without buying a single verdict.
 
     The first version of this test asserted "every spec stays inconclusive" over ONE spec the
-    test itself built, and that claim is false over the shipped battery: three specs decide
+    test itself built, and that claim was false over the shipped battery: three specs decided
     against any fixed-string offline target, because their oracles read only the response text
-    (`DOS-TOKEN-AMP-001` looks for a secure marker that a canned string does not carry, and
-    `MCP-TOOLPOISON-001` looks for the ABSENCE of injection markers, which a canned string
+    (`DOS-TOKEN-AMP-001` looked for a secure marker that a canned string does not carry, and
+    `MCP-TOOLPOISON-001` looked for the ABSENCE of injection markers, which a canned string
     trivially satisfies). `DOS-RESOURCE-HIJACK-001` was a third until its oracle was flipped to
     key on the capitulation rather than on refusal vocabulary, which also stopped it deciding
     anything at all against a canned string: the honest outcome for a reply that is evidence of
-    neither. An audit found it by running the real battery,
+    neither. The other two were repaired the same way on 2026-10-11 (OD-16, ADR-0007 option B),
+    so no spec decides against such a target now. An audit found it by running the real battery,
     which is what the test should have done: a universe the test builds itself proves nothing
     about the one that ships (clause A-21).
 
@@ -152,16 +153,12 @@ def test_it_changes_no_verdict_that_the_plain_mock_would_not_also_produce(tmp_pa
 
     assert decoding == plain, "the decoding scenario moved a verdict the plain mock did not"
     decided = {spec: v for spec, v in decoding.items() if v != VerdictStatus.INCONCLUSIVE.value}
-    assert set(decided) == {
-        "DOS-TOKEN-AMP-001",
-        "MCP-TOOLPOISON-001",
-    }, (
-        "the set of specs that decide against a fixed-string offline target changed: "
-        f"{sorted(decided)}. That is a property of those specs' oracles, not of this "
-        "scenario, and it is pinned here because the contract clause used to claim the "
-        "battery comes out inconclusive, which was never true."
+    assert decided == {}, (
+        "a spec decides against a fixed-string offline target: "
+        f"{sorted(decided)}. That is a property of its oracle, not of this scenario: it scores "
+        "a reply that is evidence of neither (OD-16)."
     )
-    assert Counter(decoding.values())[VerdictStatus.INCONCLUSIVE.value] == len(decoding) - 2
+    assert Counter(decoding.values())[VerdictStatus.INCONCLUSIVE.value] == len(decoding)
 
 
 def test_the_fingerprint_line_says_it_came_from_an_offline_mock(

@@ -16,6 +16,8 @@ Runs over a loaded pack set + the merged registry and emits a :class:`LintReport
 * **EVALUATOR_MISCONFIGURED** - an evaluator config that would silently not check what it
   declares, or a regex the spec writes that the engine cannot compile (A-33), whose spec is
   then not fixtures-proved.
+* **DEPRECATED_COMBINATION** (warning) - ``evaluator_logic`` written as a deprecated name of the
+  one combination rule, or an evaluator ``weight``, which nothing reads (OD-19, u06 A-73).
 
 The linter runs **no code and opens no socket**: it consumes already-parsed models and the
 offline stub evaluator table.
@@ -35,7 +37,11 @@ from ildottore.shared.aisvs import (
     AISVS_VERSION,
     unknown_aisvs_codes,
 )
-from ildottore.shared.enums import RequiresCapability
+from ildottore.shared.enums import (
+    DEPRECATED_EVALUATOR_LOGIC,
+    EvaluatorLogic,
+    RequiresCapability,
+)
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
     NIST_FUNCTIONS,
@@ -608,6 +614,51 @@ def _cleared_warning(spec: AttackSpec, message: str) -> LintError:
     )
 
 
+def _check_combination(spec: AttackSpec) -> list[LintError]:
+    """Warn of a deprecated name of the combination rule, and of a ``weight`` (OD-19, A-73).
+
+    Decided 2026-10-11 under the owner's delegation (ADR-0010 option B): every value of
+    ``evaluator_logic`` runs one rule, ``deterministic_first``. A spec that writes another name
+    still loads and runs it, so this is a warning, never an error: the name says something the
+    run does not do. ``weighted`` most of all: no path ever took the vote it names, and taking it
+    would let two passing judges outvote a leaked canary. A ``weight`` weighted that vote.
+    """
+
+    findings: list[LintError] = []
+    logic = spec.evaluator_logic
+    if logic is not None and logic in DEPRECATED_EVALUATOR_LOGIC:
+        vote = (
+            "; no vote is taken: a deterministic fail is never outvoted"
+            if logic is EvaluatorLogic.WEIGHTED
+            else ""
+        )
+        findings.append(
+            LintError(
+                code=LintCode.DEPRECATED_COMBINATION,
+                severity=Severity.WARNING,
+                message=(
+                    f"evaluator_logic {logic.value!r} is a deprecated name of the one "
+                    f"combination rule{vote}; write 'deterministic_first' (OD-19)"
+                ),
+                spec_id=spec.id,
+            )
+        )
+    weighted = [cfg.type.value for cfg in spec.evaluators if cfg.weight is not None]
+    if weighted:
+        findings.append(
+            LintError(
+                code=LintCode.DEPRECATED_COMBINATION,
+                severity=Severity.WARNING,
+                message=(
+                    f"evaluator weight on {', '.join(weighted)} is read by nothing: the vote it "
+                    "weighted is not taken (OD-19); remove it"
+                ),
+                spec_id=spec.id,
+            )
+        )
+    return findings
+
+
 def _check_tool_allowlist(spec: AttackSpec, allowlist: list[str]) -> list[LintError]:
     """Refuse a ``tool_call`` allowlist that reads as a list of exploits.
 
@@ -889,6 +940,7 @@ def lint_packs(
         findings.extend(_check_framework_map(spec))
         findings.extend(_check_media(spec))
         findings.extend(_check_evaluator_config(spec))
+        findings.extend(_check_combination(spec))
         uncompilable = check_spec_patterns(spec)
         findings.extend(uncompilable)
         findings.extend(_check_oracle_markers(spec))

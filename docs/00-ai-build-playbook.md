@@ -55,8 +55,9 @@ defect, and each one names it: a rule with no incident behind it is an opinion.
    scan uses the runner's fixed rule, where any deterministic fail decides, so 1 fail in 3 is
    still `fail`; the lint fixture engine treats `weighted` as `all_pass`, same result. Both were
    already so when this rule was written. So the incident was not a scan verdict; which path
-   produced it is not recorded. The lesson stands for any aggregate that counts votes, and
-   whether `weighted` should ever vote is OD-19.)
+   produced it is not recorded. The lesson stands for any aggregate that counts votes. OD-19
+   was decided on 2026-10-11: no path votes, `weighted` is a deprecated name of the one rule,
+   and the vote was removed from `evaluators/combine.py`.)
 8. **A gap you decide to keep goes in the spec, not in a test.** A test that pins a weakness in
    place is a test that argues against fixing it.
 

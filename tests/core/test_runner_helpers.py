@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ildottore.core import runner as R
 from ildottore.core.runner import CampaignRunner
+from ildottore.shared.combination import shared_inconclusive_reason  # moved there by OD-19
 from ildottore.shared.enums import (
     InconclusiveReason,
     VerdictStatus,
@@ -131,7 +132,7 @@ def test_shared_reason_none_when_conflicting() -> None:
         _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.CAPABILITY_UNAVAILABLE),
         _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.BLOCKED_BY_POLICY),
     ]
-    assert R._shared_inconclusive_reason(reasons) is None
+    assert shared_inconclusive_reason(reasons) is None
 
 
 def test_a_compromised_judge_outranks_any_other_reason() -> None:
@@ -141,7 +142,7 @@ def test_a_compromised_judge_outranks_any_other_reason() -> None:
         _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.CAPABILITY_UNAVAILABLE),
         _v(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.JUDGE_COMPROMISED),
     ]
-    assert R._shared_inconclusive_reason(reasons) is InconclusiveReason.JUDGE_COMPROMISED
+    assert shared_inconclusive_reason(reasons) is InconclusiveReason.JUDGE_COMPROMISED
 
 
 # --- status / repro helpers -------------------------------------------------
