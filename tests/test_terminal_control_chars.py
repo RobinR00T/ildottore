@@ -272,6 +272,7 @@ def test_dottore_diff_writes_a_halted_report_reason_out(tmp_path: Path) -> None:
     halted.write_text(
         json.dumps(
             {
+                "schema_version": "1.0",
                 "findings": [],
                 "summary": {
                     "status": {
@@ -650,6 +651,7 @@ def _report(path: Path, spec_id: str) -> Path:
     path.write_text(
         json.dumps(
             {
+                "schema_version": "1.0",
                 "findings": [
                     {
                         "spec_id": spec_id,
