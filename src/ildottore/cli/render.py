@@ -26,6 +26,7 @@ from ildottore.reporting.summary import (
     OWASP_LLM_EDITION,
     build_run_summary,
     declared_attempt_ids,
+    operator_declarations,
     pct_display,
 )
 from ildottore.shared.enums import ScanBand
@@ -137,7 +138,7 @@ def declaration_lines(findings: list[Finding], targets: list[Target]) -> list[st
     names are the operator's text, written out as every such line is (u12 §6).
     """
 
-    declared = build_run_summary(findings, targets=targets).operator_declarations
+    declared = operator_declarations(targets, findings)
     lines: list[str] = []
     for target_id, names in declared.not_destructive_tools:
         changed = {

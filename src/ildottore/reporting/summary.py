@@ -75,6 +75,7 @@ __all__ = [
     "build_run_summary",
     "declared_attempt_ids",
     "finding_state",
+    "operator_declarations",
     "pct_display",
 ]
 
@@ -233,9 +234,12 @@ def declared_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:
     }
 
 
-def _operator_declarations(
+def operator_declarations(
     targets: Iterable[Target], findings: list[Finding]
 ) -> OperatorDeclarations:
+    """What ``targets``' files declare not destructive, and the attempts of ``findings`` it
+    changed (OD-43): the summary's :class:`OperatorDeclarations`, built without the rest."""
+
     declared = {
         target.id: tuple(sorted(target.seeded_setup.not_destructive))
         for target in targets
@@ -580,7 +584,7 @@ def build_run_summary(
         model_comparison=comparison,
         run_status=run_status if run_status is not None else RunStatus(),
         provider_filter=FilterBlocks(attempts=blocked, specs=tuple(sorted(blocked_specs))),
-        operator_declarations=_operator_declarations(targets, findings),
+        operator_declarations=operator_declarations(targets, findings),
     )
 
 

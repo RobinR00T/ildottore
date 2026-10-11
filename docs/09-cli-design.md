@@ -14,7 +14,7 @@ are collected in §5, "Not implemented".
 | nmap concept | dottore equivalent | Flag | Status |
 |---|---|---|---|
 | `nmap <host>` | `dottore run <target.yaml>` | positional target file(s), or `-t` | built. The positional is a **file**: a URL or model id is read as a path and fails. `run` must be typed: there is no default subcommand (`dottore target.yaml` is "No such command") |
-| Host discovery `-sn` | Authorized endpoint + declared capabilities + what the battery would run. Sends nothing | `-sn` | built. A `discover` subcommand is not |
+| Host discovery `-sn` | Authorized endpoint + declared capabilities (and any granted tool the target file declares not destructive, OD-43) + what the battery would run. Sends nothing | `-sn` | built. A `discover` subcommand is not |
 | Service/version detect `-sV` | **Model & guardrail fingerprint** (which model, defenses, carrier comprehension) | `-sV`, or `dottore fingerprint <target.yaml>` | built (18 probes per target, printed in the plan; a probe whose reply is refused fails alone, said on stderr, and the run goes on; one that gets no answer stops it: OD-23) |
 | Port selection `-p 80,443` | Category selection | `-p pi,jailbreak,leakage` | built |
 | `--top-ports 100` | Top-N highest-signal tests | `--top-tests 20` | built |
