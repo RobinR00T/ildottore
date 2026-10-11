@@ -101,7 +101,10 @@ the owner on 2026-10-09; u09 §7 A-67). Its two probes and what a reply to each 
 acted, not from the text: OpenAI's and Azure OpenAI's `content_filter`; Anthropic's `refusal` (its
 safety classifier declining, possibly with no text at all); Amazon Bedrock Converse's
 `guardrail_intervened` and `content_filtered`; Gemini's `SAFETY`, `PROHIBITED_CONTENT`,
-`BLOCKLIST` and `SPII`. They are compared trimmed and in lower case, from whichever adapter
+`BLOCKLIST` and `SPII`; Vertex AI's `MODEL_ARMOR` (since OD-42, 2026-10-11). The set is
+`shared.provider_filter.FILTER_STOPS`, where each value is sourced, and the attack phase reads the
+same one to keep a reply the filter cut from passing a spec (u08 A-70). They are compared trimmed
+and in lower case, from whichever adapter
 carries them as `finish_reason`: the OpenAI and Anthropic adapters pass the provider's value
 through, a REST template reads it at its `finish_path` and a WebSocket target at its final
 frame's path, so a Gemini or Bedrock endpoint behind a REST template is read the same way. A
