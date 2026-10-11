@@ -3,6 +3,40 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (night): a secret kept in pieces, the report's keys, judge notes (A-77)
+
+- On `fix/no-secret-in-fragments`, from `main` at `de122e26`: four findings of the security audit
+  of `de122e26` (HIGH 1, MEDIUM 2, LOW 5, LOW 7), one new clause, u01 A-77, with halves in u04,
+  u10 and u11 and u08 A-70's judge note amended; no new open decision.
+- HIGH 1: `response.text` was masked while the same text sat in 1 to 4 character pieces in
+  `response.logprobs[*].token`, each token's `top`, and a WebSocket transcript's deltas, and the
+  store's guard scanned one string at a time. A logprob list's tokens and each rank of their
+  alternatives, and a transcript's received content field by field, are now joined, redacted
+  once, and each piece a mask covers shows it (`redactor.redact_split`, the masks placed back on
+  the joined text by `_placed_masks`); a masked token's alternatives show its masks and its
+  OpenAI `bytes` are dropped; the guard redacts every joined text (`split_texts`). Kept, not
+  dropped: the alternatives, the figures' tokens and a transcript's other content are in no other
+  field. Joining every list was tried first and masked the type of every frame of every
+  transcript (`auth_oksessiondeltaping...` joined is one high-entropy token), so only streams are
+  joined, and the transcript names its protocol's fields (`raw_ids.websocket.protocol_paths`,
+  written by the adapter from the target file; one stored before them is read with `type`).
+  Auditor's reproductions: `e2e_logprobs.py` canary and key rebuilt from the tokens in 3 evidence
+  files and `r.json`, now in none; `ws_frames.py` 3 of 3 rebuilt, now 0; the excerpt of a turn
+  with its text off `text_path` 3 of 3, now 0; `fuzz_sinks.py` logprob and frame rebuilds, now
+  none.
+- MEDIUM 2: `r.json` wrote a tool call's argument names, `usage` and frame keys in clear. Each
+  attempt in a report is masked as the store masks it: the keys of its free-form fields through
+  `redactor.mask_keys` (moved from the store, numbering kept), its values through `redact_split`;
+  `keys_in_reports.py` json 3 of 3 leaked, now 0.
+- LOW 5: the judge's words are redacted, folded, redacted again and cut, never inside a mask or a
+  token; `judge_record.py` 61 of 305 placements leaked 6+ characters, now 0. LOW 7: `media_sha256`
+  is put back verbatim only as a list of SHA-256 hex digests.
+- Tests: 40 new (5476 on `main`, 5516 here), 33 failing on `de122e26` and 7 passing there (replay
+  and `logprob_membership` read the stored attempt alike, the shape, the model's keys, SARIF,
+  JUnit and HTML, a labelled secret across the judge cut). `make gates` green on `143c94ae` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (421 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5516 tests, 97.84% coverage (`reporting/masking.py` 100%, `redactor.py` 98%), self-scan 0 high or critical, bandit and pip-audit clean.
+- Open: a secret a target splits over a list of its own JSON that is no stream, or encodes;
+  evidence written before this change keeps its pieces on disk.
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on

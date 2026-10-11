@@ -498,7 +498,7 @@ such a reply is never a pass. The criterion:
   mask or a token, and so is the note below: cut first, a secret across the cut kept a head no
   rule recognises, 61 of 305 placements leaving 6 or more characters readable, and folded first,
   a credential registered with a tab was shown whole; audit of main `de122e26`, LOW 5, checked by
-  `tests/core/test_judge_note_redaction.py`, which fails on `de122e26`);
+  `tests/core/test_judge_note_redaction.py`, six of whose seven tests fail on `de122e26`);
   on an empty or replaced reply it is not asked. It runs after the deciding evaluators and in a
   call of its own, so a request ceiling that refuses it, or any error of its own, is the note
   `; semantic_judge on what came back not consulted, and not deciding: <class>: <message>` and
