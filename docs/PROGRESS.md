@@ -3,6 +3,83 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (noon): the verification of `91845524` (OD-42), two mediums fixed
+
+- Every earlier finding closed; two new mediums, fixed in `0a293438`. (1) The recording-only judge
+  on a partial cut reply ran in the same evaluator call as the deciding ones: a request ceiling
+  that refused it raised, the cut attempt was stored with no verdict and the resume sent it again,
+  its line counting it as kept for review. It now runs after them, alone, in its own try (a refusal
+  or any error a note), and `cli/run.py` counts cut attempts among the kept ones only. (2) With
+  three or more identities a filtered one was dropped silently and the other two could pass the
+  spec; `authz_leak` now cannot pass beside a filtered identity (a fail among the others stands)
+  and the stored verdict names it. 4 tests more (94 for OD-42): the judge under
+  `--budget-requests 2`, with and without a canary, through the CLI, and two sweeps of three
+  identities; all 4 fail on `91845524`. `make gates` green (2026-10-11, 10:59, on `b4d4368a`):
+  ruff, format (393 files), mypy strict (157 source files), import-linter (4 kept), spec lint (0
+  errors, 0 warnings across 75 specs, 14 suites, 1 pack), 5,159 tests with 97.68% coverage,
+  self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
+
+## State, 2026-10-11 (late morning): the pre-merge audit of `a55e953` (OD-42), fixed
+
+- Not merge-ready per the audit, no HIGH; fixed on the same branch in new commits. M1: a cut reply
+  was read by every evaluator but the judge, `regex_presence` among them, which fails when its
+  secure marker is absent: an empty reply Azure withheld made `DOS-TOKEN-AMP-001` a confirmed fail,
+  exit 2. Now `core.runner.CUT_DECIDING_EVALUATORS` (the presence-based ones) read it, a test holds
+  every `EvaluatorType` classified, and only a fail on what is present stands. M2: the identity
+  sweep kept a filtered identity's empty reply, so `authz_leak` read it as no crossing; it is
+  skipped as a failed send is. M3: Bedrock and Gemini are library-only (a target file's REST target
+  has no template), said so in the docs; the side-unknown terminal line names its stop reasons and
+  prints the Bedrock hint only beside `guardrail_intervened`. L1 `usage.iterations` read after a
+  fallback; L2 ADR wording; L3 a trace naming no side is `filter_side: unknown`; L4 JUnit counts in
+  the skip or failure `message`, and a SARIF side-unknown test; L5 the serializer typed; L6 the
+  versioning note; L7 WebSocket stop words; L8 the judge's verdict on a partial reply recorded, not
+  deciding, and the `refusal` heuristic said to count as deterministic. Gemini's `RECITATION` is an
+  output-side cut, decided under the owner's delegation (revisable); a `RECITATION` candidate with
+  no text is a reply. Left for the OD-43 branch (M4): thread the operator's declared tools into
+  `_cut_verdict` when it lands. 18 tests more (12 fail on `a55e953`), 90 in all for OD-42. With
+  the stubs: `DOS-TOKEN-AMP-001` on empty cuts is inconclusive, exit 0; the canary run makes 12
+  judge requests, the Anthropic run 16 (the partial replies recorded). `make gates` green
+  (2026-10-11, 10:40, on `de4a9748`): ruff, format (393 files), mypy strict (157 source files),
+  import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs, 14 suites, 1 pack),
+  5,155 tests with 97.68% coverage, self-scan 0 high/critical, bandit, pip-audit (no known
+  vulnerabilities).
+
+## State, 2026-10-11: a reply the provider's filter cut or replaced is never a pass (OD-42)
+
+- On `fix/provider-output-filter-not-a-pass`, from `origin/main` at `6d5f7ae`: the owner decided
+  (2026-10-11, 08:55, "haz lo pendiente" after the recommendation) that a reply the provider's
+  filter cut or replaced is never scored as the model resisting. The gap was found by the
+  pre-merge audit of OD-41. Measured on `6d5f7ae` against loopback stubs that answer the filter's
+  reply to prompts holding "instructions for" or "developer mode", `GUARD-INPUT-EVASION-001` and
+  `PI-DIRECT-001` at `--runs 2` with a secure judge: Azure's withheld reply (`content: null`,
+  `content_filter`) and Anthropic's empty `refusal` both gave two passes, exit 0, 28 judge
+  requests; through the REST adapter, a Bedrock canned refusal passed with and without the
+  guardrail trace, a Gemini `SAFETY` candidate with refusing text passed, and one without text
+  stopped the campaign. Built (u08 A-70, with halves in u00, u04, u09, u10, u11 and u12; the
+  amendment to ADR-0011; OD-42 closed): one predicate in `shared.provider_filter` (the
+  fingerprint's `FILTER_STOPS`, moved, with Vertex AI's `MODEL_ARMOR`; every value sourced, read
+  2026-10-11) reads the stop reason and its side. Input (a Bedrock trace's `inputAssessment`,
+  Anthropic's `refusal` before any output): OD-41's block, reply kept. Output: `inconclusive:
+  cut_by_provider_output_filter`; unreported side (Bedrock without trace, `content_filtered`):
+  `provider_filter_side_unknown`; both new `InconclusiveReason`s, needing review, scored by the
+  deterministic evaluators on what came back (a fail stands; the judge is not asked); a spec with
+  one cannot pass; in `N`, never a success; `--fail-on` unchanged; a conversation ends on the cut
+  reply; kept by a resume, re-derived by `dottore replay`, counted apart in JSON, SARIF, JUnit, HTML
+  and the terminal. `ModelResponse.filter_side` carries a Bedrock trace's side and is left out of a
+  dump when unset. The REST adapter reads a filter stop at `finish_path` before the text, so a
+  `SAFETY` candidate with no text is a reply. With the stubs: Azure's run exits 0 with both specs
+  inconclusive (2/8 and 6/6 cut) and 12 judge requests; a canary in a cut partial reply is a
+  confirmed fail, exit 2; Anthropic's refusal before output is 6 blocked attempts, after partial
+  text 2 cut ones. Tests: 72 new (6 CLI, 4 of which fail on `6d5f7ae` and 2 controls that pass
+  there too; 22 core and 41 adapter, not collected on `6d5f7ae`; 2 fingerprint; 1 redactor). Left
+  open: Gemini's `RECITATION` (a reply cut for reciting a source: a question for the owner when a
+  training-data extraction spec is the one cut), a Gemini template without `finish_path`,
+  Bedrock's `InvokeModel` shape and streamed replies; the identity sweep reads its replies as
+  before. Not run against a live Azure, Bedrock, Gemini or Anthropic endpoint. `make gates` green
+  (2026-10-11, 09:45): ruff, format (392 files), mypy strict (157 source files), import-linter (4
+  kept), spec lint (0 errors, 0 warnings across 75 specs, 14 suites, 1 pack), 5,137 tests with
+  97.66% coverage, self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
+
 ## State, 2026-10-11: a hand-off tool is not destructive by its name, and lint judges calls as a run does
 
 - On `fix/handoff-tools-and-lint-stub`, the two items the pre-merge audit of OD-38 left open

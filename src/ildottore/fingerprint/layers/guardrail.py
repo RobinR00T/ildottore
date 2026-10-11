@@ -58,6 +58,7 @@ from ildottore.shared.models import (
     ModelResponse,
 )
 from ildottore.shared.protocols import TargetAdapter
+from ildottore.shared.provider_filter import FILTER_STOPS as SHARED_FILTER_STOPS
 
 __all__ = [
     "ADAPTER_STOPS",
@@ -97,20 +98,11 @@ _BENIGN_MARKERS: Final = next(
 #: its ``finish_path``, a WebSocket target at its final frame's path). OpenAI's and Azure
 #: OpenAI's ``content_filter``; Anthropic's ``refusal`` (its safety classifier, possibly with no
 #: text); Amazon Bedrock Converse's ``guardrail_intervened`` and ``content_filtered``; Gemini's
-#: ``SAFETY``, ``PROHIBITED_CONTENT``, ``BLOCKLIST`` and ``SPII``. ``length`` and
-#: ``max_tokens`` (the probe's own reply cap) are not among them.
-FILTER_STOPS: Final = frozenset(
-    {
-        "content_filter",
-        "refusal",
-        "guardrail_intervened",
-        "content_filtered",
-        "safety",
-        "prohibited_content",
-        "blocklist",
-        "spii",
-    }
-)
+#: ``SAFETY``, ``PROHIBITED_CONTENT``, ``BLOCKLIST`` and ``SPII``, and Vertex AI's
+#: ``MODEL_ARMOR``. ``length`` and ``max_tokens`` (the probe's own reply cap) are not among them.
+#: The set lives in ``shared.provider_filter`` since OD-42, where each value is sourced: the
+#: attack phase reads the same stops, and ``core`` may not import this layer.
+FILTER_STOPS: Final = SHARED_FILTER_STOPS
 
 #: Stop reasons an adapter writes when the target reported none, so they say nothing about a
 #: filter: the WebSocket adapter's ``final`` (``adapters/websocket.py``, when the final frame has

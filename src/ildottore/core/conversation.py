@@ -178,6 +178,12 @@ async def execute_conversation(
     carries its last reply with the whole trace so far, which the runner's trace evaluators read:
     a call already made can fail the attempt, and nothing else decides it.
 
+    A reply the provider's filter cut or replaced, or stopped on a side it does not report (OD-42,
+    u08 A-70), also ends the conversation there: what follows would build on a turn the model did
+    not write. The attempt carries that reply, its turn's text and the whole trace so far, and
+    the result says ``filter_cut`` with the side. On the last turn it is the reply the spec scores;
+    on an earlier one it is not (``cut_before_final``), and the runner reads its trace only.
+
     With an in-band ``setup`` (OD-18) the retrieved documents precede the first attacker turn
     (the memory seed is in ``system_prompt``, put there by the runner), every request carries
     the tool definitions, and a reply that calls tools is answered with each tool's declared
@@ -272,6 +278,9 @@ async def execute_conversation(
             crossed = halt
             return halt.result
 
+    # The side of the reply the provider's filter cut, when one ended the conversation (OD-42).
+    cut: str | None = None
+    cut_early = False
     for turn_index, raw_turn in enumerate(turns):
         user_text = mutate_turn(raw_turn) if mutate_turn is not None else raw_turn
         if setup is not None and turn_index == 0 and setup.context:
@@ -280,7 +289,8 @@ async def execute_conversation(
         messages.append({"role": "user", "content": user_text})
         result = await send(turn_index, "")
         response = result.attempt.response
-        if result.env_error or response is None:
+        # A reply the provider's filter refused the prompt with is a block (OD-42), as OD-41's.
+        if result.env_error or result.filter_blocked or response is None:
             return aborted(result)
 
         rounds = 0
@@ -294,6 +304,12 @@ async def execute_conversation(
             if result.attempt.latency_ms is not None:
                 total_latency += result.attempt.latency_ms
                 saw_latency = True
+            if result.filter_cut is not None:
+                # The provider's filter cut or replaced this reply (OD-42): the conversation
+                # ends on it, in the transcript as it came back, its calls left unanswered.
+                cut = result.filter_cut
+                messages.append(_assistant_turn(response, setup, None))
+                break
             calls = _neutral_calls(response, turn_index, rounds) if setup is not None else []
             answer = (
                 setup is not None
@@ -323,7 +339,7 @@ async def execute_conversation(
                 )
             result = await send(turn_index, f"r{rounds}")
             next_response = result.attempt.response
-            if result.env_error or next_response is None:
+            if result.env_error or result.filter_blocked or next_response is None:
                 return aborted(result)
             response = next_response
         last_response = response
@@ -337,6 +353,9 @@ async def execute_conversation(
                     kept.append(text)
             joined = "\n\n".join(kept)
             last_response = response.model_copy(update={"text": joined})
+        if cut is not None:
+            cut_early = turn_index < len(turns) - 1
+            break
 
     # The scored response: final turn's text, whole-conversation tool trace.
     scored = last_response
@@ -356,7 +375,14 @@ async def execute_conversation(
         setup=setup,
         tool_rounds=tool_rounds,
     )
-    finished = AttemptResult(attempt=final, env_error=False, retries=0, errors=[])
+    finished = AttemptResult(
+        attempt=final,
+        env_error=False,
+        retries=0,
+        errors=[],
+        filter_cut=cut,
+        cut_before_final=cut_early,
+    )
     if crossed is not None:
         raise ReplyOverBudget(crossed, finished) from crossed
     return finished

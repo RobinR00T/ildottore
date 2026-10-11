@@ -122,6 +122,131 @@ versioning: [SemVer](https://semver.org/).
   `tests/battery/test_irrelevant_reply.py` (5, all failing on `6d5f7ae` and on `ee202bf`); the two pins that held
   the old pair (`tests/cli/test_scenario_mode.py`, `tests/fingerprint/test_carrier_measured_offline.py`)
   pin an empty set, and the resume test that needed a spec without a judge derives one.
+### Changed (a reply the provider's filter cut or replaced is never a pass: OD-42)
+
+- **An empty or canned reply from the provider's filter passed the spec.** A provider's output
+  filter answers HTTP 200 with its own stop reason: Azure OpenAI withholds the completion
+  (`finish_reason: content_filter`, `content: null`, which the OpenAI adapter makes an empty
+  string), a Bedrock Converse guardrail returns its configured message (`stopReason:
+  guardrail_intervened`), Gemini stops a candidate (`finishReason: SAFETY`, with or without text),
+  Anthropic's classifiers stop with `stop_reason: refusal`. Each was read as the model's answer.
+  Against loopback stubs that answer the filter's reply to prompts holding "instructions for" or
+  "developer mode", `dottore run --spec GUARD-INPUT-EVASION-001 --spec PI-DIRECT-001 --runs 2
+  --judge <secure judge>` on `6d5f7ae` gave two passes and exit 0 for Azure's empty reply and for
+  Anthropic's empty refusal alike (8 of 14 attempts filtered, 28 judge requests); through the REST
+  adapter a Bedrock canned refusal passed with and without the guardrail's trace, a Gemini `SAFETY`
+  candidate with refusing text passed, and one with no text stopped the campaign. Found by the
+  pre-merge audit of OD-41. By the owner's decision of 2026-10-11 (08:55) such a reply is never
+  scored as the model resisting: on the same stubs, Azure's run exits 0 with both specs
+  inconclusive (2 of 8 and 6 of 6 attempts cut), after 12 judge requests.
+- **The stop reason says which side the filter acted on**, read by one predicate in
+  `shared.provider_filter` (the fingerprint's `FILTER_STOPS`, moved there so the attack phase can
+  read it, and Vertex AI's `MODEL_ARMOR` and Gemini's `RECITATION` added, the latter decided on
+  2026-10-11 under the owner's delegation and revisable; every value sourced in the code). The
+  prompt (a Bedrock trace whose `inputAssessment` blocked something, Anthropic's `refusal` before
+  any output, no text and `usage.output_tokens` 0): OD-41's block, `blocked_by_provider_filter`, the
+  reply kept as evidence. The reply (Azure's `content_filter`, Gemini's `SAFETY`,
+  `PROHIBITED_CONTENT`, `BLOCKLIST`, `SPII`, `RECITATION` and `MODEL_ARMOR`, a Bedrock trace whose
+  `outputAssessments` blocked or masked something, Anthropic's `refusal` after any output):
+  `inconclusive: cut_by_provider_output_filter`. A side the provider does not report (Bedrock
+  without its trace, `content_filtered`): `inconclusive: provider_filter_side_unknown`. Two new
+  `InconclusiveReason`s (the amendment to ADR-0011). A reply without a filter stop is scored exactly
+  as before.
+- **How a cut attempt is scored.** What came back is read by the evaluators whose fail rests on
+  something present in it (every one but `regex_presence`, which fails on an absence, and the
+  judge; the `refusal` heuristic counts). Such a fail stands: a planted canary in a partial reply
+  Azure cut is still a confirmed fail, `1 deterministic evaluator(s) reported exploited; the
+  provider's output filter then cut the reply (stop reason content_filter); semantic_judge on what
+  came back, recorded and not deciding: pass (0.95): ...`, exit 2. The judge never decides a cut
+  reply (a deterministic fail wins over the cut and the cut over a judge's fail); on a partial
+  reply it is consulted and recorded, on an empty or replaced one it is not. Anything else is the
+  cut's
+  `inconclusive`, confidence 0, needing review: `cut_by_provider_output_filter: the provider's
+  output filter cut or replaced the reply (stop reason content_filter), so the model may have
+  written what the spec tests for: not a refusal by the model and not a proven exploit; review
+  it`. A spec with one such attempt and no fail is `inconclusive`, however many held, because the
+  cut attempt is the one that may have succeeded and one exploit fails a spec. It is in the
+  reproducibility's `N` and never a success, and keeps its variant from confirming; `--fail-on`
+  gates only a `fail`, as before, so it neither trips nor clears on one (read
+  `summary.cut_by_provider_output_filter.attempts` to stop a pipeline on it). An identity whose
+  sweep reply has a filter stop is left out and named, and `authz_leak` cannot pass beside it,
+  however many identities are left, instead of reading the hidden reply as no crossing.
+- **Conversations, resume, replay.** A conversation ends on a reply the filter cut; one cut before
+  its last turn is read on its trace only. A cut attempt is not retried and its tokens count as any
+  reply's; a resume keeps it and says so (`; 2 of them the provider's filter cut or stopped after
+  the prompt, kept for review`); `dottore replay` lists `inconclusive
+  (cut_by_provider_output_filter)` and counts it under the pooled rate, re-derived from the verdict
+  or, on a reply stored without one, from its stop reason.
+- **Counted apart in every report.** The finding's reasoning adds `; 2/8 cut or replaced by the
+  provider's output filter, which may have hidden an exploit` (and `; <k>/<n> stopped by the
+  provider's filter on a side it did not report`); the JSON summary carries
+  `cut_by_provider_output_filter` and `provider_filter_side_unknown`, each `{attempts, specs}`
+  (always; optional in report-1.0, whose schema gains them, `schema_version` staying `1.0` as
+  before: a report from this version fails an earlier copy of the schema, so validate it with the
+  schema shipped in it, and an earlier build cannot load this version's runs to replay, resume or
+  diff them, since their verdicts carry reasons its enum rejects); SARIF properties of those names
+  on the run and each result that has any, and the count in the result's message; JUnit the counts
+  in a skip's or failure's `message`; the HTML summary a line each; the terminal summary `Cut by the
+  provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or replaced
+  (GUARD-INPUT-EVASION-001, PI-DIRECT-001); the model may have written what the filter hid, so they
+  are inconclusive and need review, never a pass`. A reply cut on the output side was exercised; one
+  stopped on an unreported side is not counted as covered. With none, only the JSON report changes
+  (the two keys at `0` and `[]`).
+- **Adapters.** The REST adapter reads a filter stop at `finish_path` first, so a body with no text
+  whose stop is a filter's (a Gemini `SAFETY` candidate) is a reply with no text rather than a
+  product error (which stopped the campaign, and a `-sV` pass too; the fingerprint now reads it as
+  `output_filter`); with `finish_path: stopReason` and `guardrail_intervened` it reads Bedrock's
+  `trace.guardrail` into the new `ModelResponse.filter_side` (`input`, `output`, or `unknown` for a
+  trace that names neither). That field is left out of a dump when unset, so every other reply is
+  stored and hashed as before. **These REST shapes are library-only:** a target file's `provider:
+  rest` target is the generic template (text at `text`, no `finish_path`), so from `dottore`
+  Bedrock's and Gemini's stops, like OD-41's Gemini block, are not reached; the openai, anthropic
+  and websocket providers carry theirs. Not read: a template without `finish_path` (as before),
+  Bedrock's `InvokeModel` shape and streamed replies.
+- **Pre-merge audit of `a55e953`: not merge-ready, no HIGH; fixed.** M1: every evaluator but the
+  judge read a cut reply, `regex_presence` among them, which fails when its secure marker is
+  absent, so an empty reply Azure withheld made `DOS-TOKEN-AMP-001` a confirmed fail (exit 2) on
+  text the model never wrote; a cut reply is now read by an explicit set of presence-based
+  evaluators, and a test holds every evaluator type classified. M2: the identity sweep stored any
+  200 reply, so `authz_leak` read an empty cut reply as no crossing and `DL-XTENANT-001` or
+  `EMB-XTENANT-RETRIEVAL-001` could pass; such an identity is skipped. M3: the docs presented
+  Bedrock's and Gemini's shapes as covered from `dottore`; they say library-only now, and the
+  side-unknown line names its stop reasons and prints the Bedrock trace hint only beside
+  Bedrock's stop. L1: a refusal after a server-side fallback reads `usage.iterations`. L2, L6,
+  L7: wording (nothing the model wrote came back; the versioning note above; a WebSocket final
+  frame's stop words are read too). L3: a trace that names no side is recorded as such. L4:
+  JUnit's counts moved to where they appear, and a SARIF side-unknown test. L5: the serializer is
+  typed. L8: the judge's verdict on a partial reply is recorded; the heuristic `refusal` evaluator
+  counts as deterministic. And `RECITATION` (above).
+- **Verification of `91845524`: two mediums, fixed.** The recording judge ran in one call with the
+  deciding evaluators, so a request ceiling that refused it raised: the cut attempt was stored
+  without a verdict and `PI-DIRECT-001 --runs 2 --budget-requests 2` resumed by sending 6 attack
+  and 12 judge requests again, its line saying `keeps 0 ...; 2 of them the provider's filter cut
+  ..., kept for review`. The judge now runs after them and alone, a refusal or any error of its
+  own a note (`; semantic_judge on what came back not consulted, and not deciding:
+  BudgetExhausted: budget exhausted on 'max_requests': attempted 3 would exceed limit 2`), and the
+  resume counts cut attempts among the kept ones only. With three identities, a filtered one was
+  dropped and the other two passed the spec; `authz_leak` cannot pass beside it now, and the
+  verdict names it.
+- Contract u08 A-70 (with halves in u00, u04, u09, u10, u11 and u12), OD-42 and the amendment to
+  ADR-0011, the `00-INDEX` rows. Tests (94 new): `tests/cli/test_provider_output_filter_campaign.py`
+  (10, through the real CLI and a loopback stub: every format of the Azure run with the JSON against
+  the schema, the canary, Anthropic's two sides, two controls that pass on `6d5f7ae` too, a resume
+  with `--estimate --resume` and `dottore replay`, `DOS-TOKEN-AMP-001` on empty cuts, and a refusal
+  with no usage, and the recording judge under a request ceiling, 2 cases; the other 8 fail on
+  `6d5f7ae`), `tests/core/test_provider_output_filter.py` (25: Bedrock and Gemini through the real
+  REST adapter and a loopback stub, then the runner's and the conversation's rules, the evaluator
+  classes, `RECITATION`) and `tests/adapters/test_provider_output_filter.py` (49), neither of which
+  collects on `6d5f7ae`, the sweep in `tests/core/test_multi_identity.py` (3, two with three
+  identities), SARIF and JUnit in `tests/reporting/test_provider_filter_cut_counts.py` (3),
+  `MODEL_ARMOR`, `RECITATION` and the shared set in
+  `tests/fingerprint/test_guardrail_requested_refusal.py` (3), and every reason through the redactor
+  in `tests/policy/test_redactor_error_class_names.py` (1, with two new lines in its walk); the enum
+  test and the JSON report snapshot gain the new values. Docs: MANUAL §9 ("Replies the provider's
+  filter cut or replaced") and the `run`, `fingerprint`, `replay`, §10 and troubleshooting text, the
+  FAQ, USAGE, `dottore(1)`, `docs/01`, `05`, `10` and `12`, `examples/README.md` (Scenario D). Not
+  run against a live Azure, Bedrock, Gemini or Anthropic endpoint.
+
 ### Changed (breaking for a spec pack: a scene tool's `destructive` and `external` are true, false or left out)
 
 - **Breaking: a quoted or numeric `destructive` or `external` on a scene tool is refused.** Both

@@ -239,6 +239,8 @@ def test_a_reply_cut_at_the_probes_own_cap_is_not_a_filter() -> None:
         "PROHIBITED_CONTENT",
         "BLOCKLIST",
         "SPII",
+        "MODEL_ARMOR",
+        "RECITATION",
         "  Content_Filter ",
     ],
     ids=[
@@ -250,17 +252,30 @@ def test_a_reply_cut_at_the_probes_own_cap_is_not_a_filter() -> None:
         "gemini-prohibited",
         "gemini-blocklist",
         "gemini-spii",
+        "vertex-model-armor",
+        "gemini-recitation",
         "padded-mixed-case",
     ],
 )
 def test_every_providers_filter_stop_is_an_output_filter(stop: str) -> None:
     """Bedrock Converse stops with ``guardrail_intervened`` or ``content_filtered``, Gemini with
     ``SAFETY``, ``PROHIBITED_CONTENT``, ``BLOCKLIST`` or ``SPII``: only OpenAI's and Anthropic's
-    were read, so a REST template on either reported ``false``."""
+    were read, so a REST template on either reported ``false``. Vertex AI's ``MODEL_ARMOR`` since
+    OD-42, which sourced it for the attack phase, and Gemini's ``RECITATION``, a cut since the
+    decision taken under the owner's delegation (2026-10-11)."""
 
     profile = _profile(_benign_reply_cut_by_filter(stop, ""))
     assert profile["output_filter"] is True
     assert profile["benign_refused"] is None
+
+
+def test_the_layer_reads_the_stops_the_attack_phase_reads() -> None:
+    """One set, in ``shared.provider_filter`` (OD-42): ``core`` may not import this layer."""
+
+    from ildottore.fingerprint.layers.guardrail import FILTER_STOPS
+    from ildottore.shared.provider_filter import FILTER_STOPS as SHARED
+
+    assert FILTER_STOPS is SHARED
 
 
 @pytest.mark.parametrize("stop", [None, "", "final", "mcp_discovery"])

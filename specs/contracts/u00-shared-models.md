@@ -6,7 +6,8 @@
 > Pydantic models (Pydantic-first; only `attack-spec.schema.json` is hand-authored). `Verdict`
 > carries `inconclusive_reason: InconclusiveReason|None` (closed StrEnum:
 > `capability_unavailable | blocked_by_policy | judge_compromised`, extensible via ADR; ADR-0011
-> added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69).
+> added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69, and its amendment
+> `cut_by_provider_output_filter` and `provider_filter_side_unknown` on 2026-10-11, OD-42, A-70).
 > `ModelFingerprint.capability_guess` (not `.capabilities`): distinct from the `Capabilities`
 > enum. Canonical `TestPlan` shape is in ADR-0006 §3, without the per-spec
 > `baseline_resistance`, removed on 2026-10-11 (OD-17, ADR-0008 option B: no layer wrote it,
@@ -90,7 +91,12 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 ## §6 Data/wire shapes
 - `TokenLogprob = {token: str, logprob: float, top: list[tuple[str,float]] | None}` (ADR-0005).
 - `ModelResponse = {text: str, tool_calls: list[dict], logprobs: list[TokenLogprob] | None,
-  finish_reason: str | None, raw_ids: dict, usage: dict | None}`.
+  finish_reason: str | None, raw_ids: dict, usage: dict | None}`, and since OD-42 (u08 A-70)
+  `filter_side: "input" | "output" | "unknown" | None`: the side the provider's own trace says its
+  filter acted on, for a reply that filter stopped (`unknown`: a trace that names neither; only the
+  REST adapter sets it, from a Bedrock Converse guardrail trace, u04). It is the one field a dump
+  leaves out when it is `None` (a `model_serializer`), so every reply without it is stored, reported
+  and hashed byte for byte as before; `logprobs: null` is still dumped (ADR-0005).
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],
   evaluator_type: str, inconclusive_reason: InconclusiveReason | None}` (`docs/04 §1-§3`).
 - `AttackSpec` = every field/constraint in `schemas/attack-spec.schema.json` (`docs/03 §2`),
@@ -145,6 +151,8 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 - Whether `inconclusive_reason` is a closed `StrEnum` or an open `str`: propose closed enum
   seeded with `{capability_unavailable, blocked_by_policy, judge_compromised}`, extensible via ADR.
   (Built closed; ADR-0011 added `blocked_by_provider_filter`, 2026-10-10: a prompt the provider's
-  own input filter refused before the model saw it, OD-41.)
+  own input filter refused before the model saw it, OD-41; its amendment added
+  `cut_by_provider_output_filter` and `provider_filter_side_unknown`, 2026-10-11: a reply the
+  provider's filter cut or replaced, and one it stopped on a side it did not report, OD-42.)
 - Whether `ModelFingerprint` lives in `shared.models` (proposed, since u09 + u08 planner both
   consume it) or moves to `fingerprint/`: propose shared (it is a cross-unit wire shape).
