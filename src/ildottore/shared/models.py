@@ -530,7 +530,8 @@ class ModelResponse(_Frozen):
     ``logprobs is None`` when the target lacks the logprobs capability (ADR-0005). ``raw_ids``
     holds what a transport returns beyond these fields: scalars at the top (a request id, a model
     echo) and a transport's record under its own key, such as the WebSocket frame transcript in
-    ``raw_ids["websocket"]["frames"]`` (OD-34: no field of its own, decided 2026-10-11).
+    ``raw_ids["websocket"]["frames"]`` (OD-34: no field of its own, decided 2026-10-11), beside
+    the frame fields its target file declares as the protocol's, ``protocol_paths`` (A-77).
 
     ``filter_side`` is the side the provider's own trace says its filter acted on, for a reply
     stopped by that filter (OD-42, u00 and u08 A-70): ``input`` (the prompt was blocked),

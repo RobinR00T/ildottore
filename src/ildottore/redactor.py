@@ -1780,6 +1780,9 @@ _BYTES: Final = "bytes"
 TRANSCRIPT_FRAMES: Final = "frames"
 TRANSCRIPT_PROTOCOL_PATHS: Final = "protocol_paths"
 _RECEIVED: Final = "received"
+_FRAME: Final = "frame"
+#: The frame type's path when a transcript names no protocol paths (``type_path``'s default).
+_DEFAULT_PROTOCOL: Final = ("type",)
 
 #: Where a string sits inside one item of a list: the keys and indices that lead to it.
 _LeafPath = tuple[object, ...]
@@ -1845,14 +1848,22 @@ def _logprob_streams(items: Sequence[object]) -> list[_Stream]:
 
 
 def _protocol_paths(node: Mapping[object, object]) -> list[list[str]] | None:
-    """The declared protocol paths of a transcript, split into segments, or None if not one."""
+    """The protocol paths of a transcript, split into segments, or None if ``node`` is not one.
+
+    A transcript is an object whose ``frames`` are all ``{"direction", "frame"}`` records. One
+    that names no protocol paths (stored before they were recorded, or built by hand) is read with
+    the frame type at ``type``, the default of the target file's ``type_path``: its content is
+    joined rather than left in pieces.
+    """
 
     frames, declared = node.get(TRANSCRIPT_FRAMES), node.get(TRANSCRIPT_PROTOCOL_PATHS)
-    if not isinstance(frames, list) or not isinstance(declared, list):
+    if not isinstance(frames, list) or not frames:
         return None
-    if not all(isinstance(path, str) for path in declared):
+    if not all(isinstance(entry, Mapping) and _FRAME in entry for entry in frames):
         return None
-    return [path.split(".") for path in declared if isinstance(path, str)]
+    if isinstance(declared, list) and all(isinstance(path, str) for path in declared):
+        return [path.split(".") for path in declared if isinstance(path, str)]
+    return [list(_DEFAULT_PROTOCOL)]
 
 
 def _transcript_streams(frames: Sequence[object], protocol: list[list[str]]) -> list[_Stream]:
@@ -1862,7 +1873,7 @@ def _transcript_streams(frames: Sequence[object], protocol: list[list[str]]) -> 
     for index, entry in enumerate(frames):
         if not isinstance(entry, Mapping) or entry.get("direction") != _RECEIVED:
             continue
-        for path, text in _string_leaves(entry.get("frame"), ("frame",)):
+        for path, text in _string_leaves(entry.get(_FRAME), (_FRAME,)):
             segments = [str(step) for step in path[1:]]
             if any(segments[: len(declared)] == declared for declared in protocol):
                 continue

@@ -14,7 +14,9 @@ checked **before** the socket is dialled (an off-allowlist URL opens zero connec
 redirect at the upgrade is never followed (the scope authorized one URL), the credential is
 inserted in memory at send time and recorded in evidence as its placeholder (``{{token}}``),
 every frame sent and received is kept in ``raw_ids["websocket"]["frames"]`` so the evidence
-store files it redacted, and a turn is bounded in time, bytes and frames.
+store files it redacted, beside the fields the target file declares as the protocol's
+(``protocol_paths``), so the content of the frames received is masked as the text it makes
+(u01 A-77), and a turn is bounded in time, bytes and frames.
 
 One connection per conversation: a single-turn attempt opens, queries and closes; a multi-turn
 attempt keeps its connection across turns (the runner's ``conversation`` metadata names it) and

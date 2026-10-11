@@ -151,10 +151,21 @@ def test_a_list_of_records_is_no_stream() -> None:
     assert mask_split(redactor, pieces) is pieces
 
 
-def test_a_transcript_without_its_protocol_fields_is_no_stream() -> None:
+def test_a_transcript_that_names_no_protocol_fields_is_read_with_the_default_type() -> None:
+    """Stored before ``protocol_paths`` (or built by hand): the content is still joined."""
+
     transcript = _transcript("sk-proj-Qx7Lm", "2Vt9Rw4Zb8Nc", "3Kp6Hy1Js5Df0Ga")
     del transcript[TRANSCRIPT_PROTOCOL_PATHS]
-    assert mask_split(Redactor(salt="s"), transcript) is transcript
+    out = mask_split(Redactor(salt="s"), transcript)
+    assert "Qx7Lm2Vt9Rw4Zb8Nc3Kp6Hy1Js5Df0Ga" not in _deltas(out)
+    assert isinstance(out, dict)
+    assert [f["frame"]["type"] for f in out[TRANSCRIPT_FRAMES]] == [
+        f["frame"]["type"]
+        for f in transcript[TRANSCRIPT_FRAMES]  # type: ignore[attr-defined]
+    ]
+    # Frames that are not all {direction, frame} records are no transcript.
+    records = {TRANSCRIPT_FRAMES: [{"delta": "sk-proj-Qx7Lm"}, {"delta": "2Vt9Rw4Zb8Nc3Kp6Hy1J"}]}
+    assert mask_split(Redactor(salt="s"), records) is records
 
 
 def test_a_piece_keeps_its_text_outside_the_mask() -> None:
