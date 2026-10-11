@@ -186,3 +186,50 @@ def test_the_schema_export_is_json_the_rule_leaves_alone() -> None:
     assert result.exit_code == 0, result.output
     assert log_safe_json(result.stdout) == result.stdout
     json.loads(result.stdout)
+
+
+def test_text_with_no_double_hash_comes_back_as_it_is_without_a_pass_of_the_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pre-merge audit of 598f0858, LOW 5: the fast path. A report with no ``##`` is returned as
+    it is, and the rule's regex never runs over it (on 598f0858 it scanned every report)."""
+
+    from ildottore import redactor
+    from ildottore.redactor import log_safe_xml
+
+    class _Untouched:
+        def sub(self, *_args: object) -> str:
+            raise AssertionError("the rule ran over a text with no ##")
+
+    monkeypatch.setattr(redactor, "_LOG_COMMAND", _Untouched())
+    text = json.dumps({"v": "x # y [z]" * 10_000}, indent=2)
+    assert log_safe_json(text) is text
+    assert log_safe_xml(text) is text
+
+
+# --- JUnit XML (pre-merge audit of 598f0858, LOW 4) ------------------------------------------
+
+
+def test_the_junit_report_carries_no_command_and_parses_to_the_same_values(tmp_path: Path) -> None:
+    """The JUnit XML report is a machine output a CI runner may print as well: the same ``#`` is
+    written as ``&#35;``, the character reference every XML parser reads as ``#``."""
+
+    import xml.etree.ElementTree as ET
+
+    from ildottore.redactor import log_safe_xml
+
+    scope, target = _scope_and_target(tmp_path)
+    argv = [
+        *("run", "-t", str(target), "--scope", str(scope), "--spec", "PI-DIRECT-001"),
+        *("--runs", "1", "--evidence-root", str(tmp_path / "ev"), "--run-db"),
+        *(str(tmp_path / "r.sqlite"), "--no-color", "-q", "-oX", str(tmp_path / "r.xml")),
+    ]
+    result = CliRunner().invoke(app, argv)
+    assert result.exit_code == 0, result.output
+    text = (tmp_path / "r.xml").read_text(encoding="utf-8")
+    assert _RAW_PREFIX.search(text) is None, text
+    assert "#&#35;vso[" in text
+    root = ET.fromstring(text.split("\n", 1)[1])  # noqa: S314 - the tool's own report
+    values = [v for e in root.iter() for v in (*e.attrib.values(), e.text or "")]
+    assert any(_TARGET_ID in value for value in values)
+    assert log_safe_xml(text.replace("#&#35;", "##")) == text

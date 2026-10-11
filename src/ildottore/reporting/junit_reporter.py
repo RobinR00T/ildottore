@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from xml.etree import ElementTree as ET  # nosec B405
 
+from ildottore.redactor import log_safe_xml
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
 from ildottore.reporting.summary import RunSummary, finding_state
@@ -178,7 +179,8 @@ class JunitReporter(BaseReporter):
         root.set("errors", str(total_errors))
 
         ET.indent(root, space="  ")
-        body = ET.tostring(root, encoding="unicode")
+        # No CI log command in its bytes when printed (OD-20, as every JSON output).
+        body = log_safe_xml(ET.tostring(root, encoding="unicode"))
         return ('<?xml version="1.0" encoding="UTF-8"?>\n' + body + "\n").encode("utf-8")
 
 

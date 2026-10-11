@@ -317,10 +317,30 @@ def log_safe_json(text: str) -> str:
     never the character after an escaping backslash (``\\#`` is no JSON escape), so the rewrite
     cannot touch anything else. The ``::`` form needs the start of a line, which a value never
     gets in JSON (a newline in it is written ``\\n``). Decided under the owner's delegation (best
-    practice), revisable: the same ``#`` the text outputs write as ``\\x23``.
+    practice), revisable: the same ``#`` the text outputs write as ``\\x23``. A text with no
+    ``##`` is returned as it is, unscanned by the rule (pre-merge audit of 598f0858, LOW 5).
     """
 
+    if "##" not in text:
+        return text
     return _LOG_COMMAND.sub(r"\\u0023", text)
+
+
+def log_safe_xml(text: str) -> str:
+    """``text``, an XML document, with the second ``#`` of each ``##<letters>[`` as ``&#35;``.
+
+    The JUnit XML report is a machine output a CI runner may print too, so it follows the rule of
+    every JSON output (OD-20; pre-merge audit of 598f0858, LOW 4): ``&#35;`` is the character
+    reference every XML parser reads as ``#``. The report is written by ``ElementTree``, which
+    puts a ``#`` only in text or an attribute value (no CDATA section, no comment, and the one
+    character reference it writes, ``&#10;``, holds a single ``#``), where a reference is read.
+    The HTML report is not rewritten: it is a page for a browser, and inside a raw-text element
+    (``<script>``, ``<style>``) a character reference is not decoded.
+    """
+
+    if "##" not in text:
+        return text
+    return _LOG_COMMAND.sub("&#35;", text)
 
 
 #: The email shape; a ``skip`` match is a run of address characters with no address in it.
