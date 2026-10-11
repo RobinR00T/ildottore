@@ -57,9 +57,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   fixture `setup-tool-destructive-not-boolean.yaml` (fails on `6d5f7ae`). Docs: `docs/03`,
   `docs/04` §1, MANUAL §4.2, §5 and §8, FAQ, `dottore-scope(5)`, `examples/target.app.yaml`,
   CHANGELOG. `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 5135 tests
-  (5065 on `6d5f7ae`, 70 new), 97.80% coverage (`shared/tool_abuse.py` and
-  `evaluators/tool_call.py` 100%), 75 specs lint OK, four import contracts kept, self-scan,
-  bandit and pip-audit clean.
+  (5065 on `6d5f7ae`, 70 new), 97.79% to 97.80% coverage over two runs
+  (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean.
 - Left open, for the owner (not decided here, no OD opened): a tool a deployment grants under
   `seeded_setup.granted_tools` is in no scene, so a granted `transfer_to_<agent>` is still
   destructive by its name: an Agents SDK deployment that hands off during a seeded spec that
