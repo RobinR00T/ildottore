@@ -99,6 +99,8 @@ def _attack_reply(mode: str, prompt: str, body: dict[str, Any]) -> dict[str, Any
         return _anthropic(_PARTIAL, "refusal", 6)
     if mode == "anthropic-no-usage":
         return _anthropic("", "refusal", None)
+    if mode == "azure-partial":
+        return _openai("I can't print my system prompt, but", "content_filter")
     raise AssertionError(mode)
 
 
@@ -563,3 +565,54 @@ def test_a_refusal_with_no_usage_is_on_an_unreported_side_without_bedrocks_hint(
         "refusal)"
     ) in result.stdout
     assert "Bedrock" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("mode", "status", "fails"),
+    [("azure-partial", "inconclusive", 0), ("azure-canary", "fail", 1)],
+    ids=["no-fail", "canary"],
+)
+def test_a_ceiling_that_refuses_the_recording_judge_keeps_the_cut_verdict(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], mode: str, status: str, fails: int
+) -> None:
+    """The judge that only records runs after the deciding evaluators and alone: when the
+    request ceiling refuses it, the cut verdict is stored with a note and the run halts on the
+    next send. On 91845524 it raised, the attempt was stored with no verdict, a fail the others
+    had found was lost, and the resume sent it again while its line said it was kept for review
+    (verification of 91845524, finding 1)."""
+
+    port, state = stub
+    state["mode"], state["words"] = mode, [_PI_WORD]
+    base = _argv(tmp_path, port, "PI-DIRECT-001", runs=1)
+    cli = CliRunner()
+
+    halted = cli.invoke(app, [*base, "--budget-requests", "2"])
+    assert halted.exit_code == 3, halted.output
+    assert (state["attack"], state["judge"]) == (1, 1), "the second judge pass is refused"
+    run_id = _run_id(tmp_path)
+
+    done = cli.invoke(app, [*base, "--resume", run_id, "-oJ", str(tmp_path / "r.json")])
+    assert done.exit_code == (2 if fails else 0), done.output
+    assert (
+        f"resume: {run_id} keeps 1 attempt(s) across 1 spec(s) (answered, or failed in a way a "
+        "retry would repeat); they will not be re-sent"
+        + (
+            ""
+            if fails
+            else "; 1 of them the provider's filter cut or stopped after the prompt, kept for "
+            "review"
+        )
+    ) in done.output
+    assert "will be sent again" not in done.output
+    assert state["attack"] == 3, "only the two attempts the halt kept from being sent"
+
+    first = next(
+        a
+        for a in _attempts(_report(tmp_path / "r.json"), "PI-DIRECT-001")
+        if a["attempt_id"] == "PI-DIRECT-001::identity#0"
+    )
+    assert first["verdict"]["status"] == status
+    assert (
+        "; semantic_judge on what came back not consulted, and not deciding: BudgetExhausted: "
+        "budget exhausted on 'max_requests': attempted 3 would exceed limit 2"
+    ) in first["verdict"]["reasoning"]

@@ -1858,7 +1858,16 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             unjudged = len(unjudged_attempt_ids(resume_from))
             errored = again - unjudged
             # OD-41: a prompt the provider's input filter refused would be refused again.
-            prior_attempts = [a for finding in resume_from.findings for a in finding.attempts]
+            # Only among the attempts it keeps: a cut reply stored without a verdict is sent again,
+            # and was counted as kept for review beside "will be sent again" (verification of
+            # 91845524, finding 1).
+            kept_ids = answered_attempt_ids(resume_from)
+            prior_attempts = [
+                a
+                for finding in resume_from.findings
+                for a in finding.attempts
+                if a.attempt_id in kept_ids
+            ]
             blocked = len(blocked_attempt_ids(prior_attempts))
             # OD-42: a reply the provider's filter cut is answered, and kept like any other.
             trimmed = len(cut_attempt_ids(prior_attempts)) + len(
