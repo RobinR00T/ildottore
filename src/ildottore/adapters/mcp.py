@@ -115,9 +115,10 @@ class MCPAdapter:
     _cached: ModelResponse | None = field(default=None, init=False)
 
     def capabilities(self) -> Capabilities:
-        """An MCP server is a tool provider (so ``tools``-gated specs apply)."""
+        """An MCP server is a tool provider (so ``tools``-gated specs apply) and an MCP server
+        (so the ``mcp``-gated specs apply, OD-44)."""
 
-        return Capabilities(tools=True)
+        return Capabilities(tools=True, mcp=True)
 
     async def send(self, request: ModelRequest) -> ModelResponse:
         """Return the server's advertised catalogue (read-only discovery).

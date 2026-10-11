@@ -308,6 +308,12 @@ class Capabilities(_Frozen):
     # sent except to a model ``adapters.anthropic.MODELS_WITHOUT_SAMPLING`` lists; ``False`` sends
     # neither to any model, ``True`` sends them to a listed one too.
     sampling: bool | None = None
+    # Whether the target is an MCP server (OD-44, decided 2026-10-11 under the owner's
+    # delegation): true exactly when its ``provider`` is ``mcp``, which the target loader sets;
+    # an offline mock may declare it, a live target of another provider may not. A spec that
+    # reads the MCP adapter's rendering of a server's advertised surface requires it, so it is not
+    # sent to a chat model as a prompt.
+    mcp: bool = False
 
 
 class SeededSetup(_Frozen):

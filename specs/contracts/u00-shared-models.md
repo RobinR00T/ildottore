@@ -14,6 +14,12 @@
 > nothing read it; `PlanSelection` forbids unknown keys, so a plan JSON that still carries it is
 > refused, and no command reads one).
 >
+> **OD-44 (decided 2026-10-11 under the owner's delegation).** `Capabilities` gains `mcp: bool =
+> False` (the target is an MCP server: its provider is `mcp`, set by the target loader, u12), and
+> `Capability` and `RequiresCapability` gain `mcp`, as the spec schema's `requires` enum does.
+> `shared/digest.target_digest` leaves `capabilities.mcp` out when it is false or set by the
+> provider, as it leaves an undeclared `sampling` out, so a run stored before resumes.
+>
 > **OD-19 (decided 2026-10-11 under the owner's delegation, u06 §7 A-73).** `EvaluatorLogic`
 > gains `deterministic_first`, the name of the one combination rule, and
 > `DEPRECATED_EVALUATOR_LOGIC` holds the other three, which load and run it. The rule is

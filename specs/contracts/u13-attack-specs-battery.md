@@ -96,6 +96,11 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   `DOS-TOKEN-AMP-001` keys on 100 repetitions in a row and `MCP-TOOLPOISON-001` has a judge
   (`tests/battery/test_irrelevant_reply.py`; it was `inconclusive 73 · fail 1 · pass 1` on
   `6d5f7ae`).
+- An MCP spec runs against an MCP server only (OD-44, decided 2026-10-11 under the owner's
+  delegation): `MCP-TOOLPOISON-001` `requires: [mcp]`, the capability a target has exactly when
+  its provider is `mcp` (an offline mock may declare it), so a chat model is never sent its
+  discovery request as a prompt; the golden harness gives the mock the capability, as it does every
+  capability a spec requires.
 - No `src/**` diff from this unit; `lint-imports` unaffected (YAML-only change).
 
 ## §8 Out of scope / forbidden

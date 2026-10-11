@@ -131,9 +131,11 @@
           "logprobs",
           "multi_identity",
           "multimodal",
-          "audio"
+          "audio",
+          "mcp"
         ]
-      }
+      },
+      "description": "Capabilities the target must offer for the spec to run. mcp: the target is an MCP server (provider mcp), whose advertised surface the read-only MCP adapter renders (OD-44)."
     },
     "description": {
       "type": "string"

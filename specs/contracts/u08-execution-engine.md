@@ -578,6 +578,11 @@ fallback shapes and two stops that are no filter's). The 4 added after the verif
   budgets (tokens/requests/wall-clock): surfaced in `config.py` (u01), confirmed by human.
 - Concurrency degree (bounded semaphore default) vs provider rate-limit headers: propose adaptive
   from observed 429s, capped by config.
+- **OD-44** (2026-10-11): an MCP spec ran against any target. **Decided 2026-10-11 under the
+  owner's delegation (best practice, revisable):** `build_plan` maps the spec requirement `mcp`
+  to `Capabilities.mcp`, as it maps every other requirement, so a spec that reads an MCP server's
+  advertised surface is skipped (`capability_unavailable: target does not declare mcp`) on a
+  target that is not one; the target loader (u12) sets the capability from `provider: mcp`.
 - **OD-17** (2026-09-23, ADR-0008): `baseline_resistance` was dead at both ends of the plan.
   **Decided 2026-10-11 under the owner's delegation (best practice, revisable): B, drop it.**
   Removed from `PlanSelection` (u00), from `build_plan` (`_baseline_resistance`), from the

@@ -1434,6 +1434,38 @@ def load_target(path: Path) -> Target:
     return _target_from(path, _read_target_yaml(path))
 
 
+def _mcp_capability(
+    path: Path, raw: dict[str, Any], caps_raw: dict[str, Any], caps: Capabilities
+) -> Capabilities:
+    """``capabilities.mcp``: true exactly when the target is an MCP server (OD-44).
+
+    Its provider is ``mcp``: the read-only MCP adapter is the one route that renders a server's
+    advertised surface, which the ``mcp``-gated specs read, so the capability follows the provider
+    and is not declared. Declared ``false`` on an MCP target, or ``true`` on a live target of any
+    other provider, it says what the route does not do, and is refused (the file and the field,
+    never the value). An offline mock may declare it: it replays the specs' fixtures, an MCP
+    listing included. Decided 2026-10-11 under the owner's delegation; before, nothing gated the
+    MCP specs and the default battery sent the discovery request to a chat model as a prompt.
+    """
+
+    provider = raw.get("provider")
+    is_mcp = isinstance(provider, str) and provider.strip().lower() == "mcp"
+    declared = "mcp" in caps_raw
+    if is_mcp:
+        if declared and not caps.mcp:
+            raise ValueError(
+                f"target file {path} 'capabilities' declares mcp false for an MCP server "
+                "(provider mcp); leave it out: the provider sets it"
+            )
+        return caps.model_copy(update={"mcp": True})
+    if caps.mcp and not _uses_mock(raw):
+        raise ValueError(
+            f"target file {path} 'capabilities' declares mcp for a live target whose provider is "
+            "not mcp: only the MCP adapter reads an MCP server; leave it out, or set provider: mcp"
+        )
+    return caps
+
+
 def _target_from(path: Path, raw: dict[str, Any]) -> Target:
     """The :class:`Target` a parsed ``target.yaml`` declares (:func:`load_target`)."""
 
@@ -1499,6 +1531,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         raise ValueError(
             f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"
         ) from exc
+    caps = _mcp_capability(path, raw, caps_raw, caps)
     # Text or absent: `_read_target_yaml` refuses anything else, once read as absent (A-53).
     name = raw.get("name")
 

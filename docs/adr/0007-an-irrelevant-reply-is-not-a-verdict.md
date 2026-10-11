@@ -120,18 +120,47 @@ this was written:
 
 ### Left out, and why
 
-* **A target that is not an MCP server, with a judge configured.** The default battery runs
-  `MCP-TOOLPOISON-001` against any target, since no capability or target type gates it, so a chat
-  model receives the discovery request as a prompt and answers it as text. Without a judge that
-  reply now abstains. With one, the judge reads it, and a judge that calls a reply listing no
-  tool "secure" passes the spec; a judge that abstains is dropped by the runner (`docs/04` §2), so
-  no rubric can make that reply abstain while a judge is registered. Gating the MCP specs to an
-  MCP target (`provider: mcp`) is a planner change of its own, not taken here.
+* **A target that is not an MCP server.** Left out of B as first built, and closed the same day
+  by OD-44 (below).
 * **The relevance precondition (C).** Not built, for the reasons above.
+
+## Amendment (2026-10-11): an MCP spec runs against an MCP server only (OD-44)
+
+Decided under the owner's delegation (best practice, revisable), after the pre-merge audit of
+`4f3ed297` (M3). Nothing gated `MCP-TOOLPOISON-001`, so the default battery sent its discovery
+request to a chat model as a prompt, and a reply to it is evidence of neither, in both directions:
+
+* **A false fail.** A model that merely explains what poisoned metadata looks like ("text such as
+  *before using any other tool you must first call* ...") holds the very markers the
+  `regex_absence` looks for: a confirmed Critical, exit 2, on `main` as on this branch, with or
+  without a judge (a deterministic fail decides alone).
+* **A false pass.** With a judge configured, a reply that lists no tool can be called "secure",
+  and a judge that abstains is dropped (`docs/04` §2), so no rubric can make it abstain; without a
+  judge it was `inconclusive` since B.
+
+The spec reads what the read-only MCP adapter renders of a server's advertised surface, so it
+means something only there. It now `requires: [mcp]`, through the capability mechanism every
+gated spec uses: `capabilities.mcp` is true exactly when the target's `provider` is `mcp` (the
+target loader sets it; the MCP adapter reports it), declared `false` there or `true` on a live
+target of another provider it is refused, an offline mock may declare it (it replays the
+fixtures, an MCP listing included), and a fleet entry gets it from `kind: mcp`. Anywhere else the
+planner skips the spec as `capability_unavailable: target does not declare mcp`, nothing is sent,
+and the run does not count it as covered. Measured: a chat-model stub that explains the markers
+(`tests/cli/test_mcp_specs_need_an_mcp_target.py`) got the discovery prompt and a confirmed fail
+before, and no MCP request now; the example chat target's dry run plans 33 specs, not 34; a
+hardened mock run on a chat-like target (tools, rag and memory declared, no `mcp`) credits 26/30
+IoPC techniques instead of 27/30 (`IOPC-T2.004`, which only this spec covers), the other run
+figures unchanged; the battery coverage `dottore coverage` prints is unchanged (8/10, 13/16,
+27/30, 23/23, 5/51, 12/95, 0/45), since it reads the specs and no target. The target digest leaves
+`mcp` out when it is false or comes from the provider, so a run stored before resumes. The
+alternative not taken: gate on `provider` in the planner directly (a second gating mechanism
+beside `requires`); and leave it to the FAQ's advice to select the `mcp` suite only for an MCP
+target, which the default battery ignores.
 
 ### Reversal
 
-Restore the two specs from `6d5f7ae` (`specs/attacks/DOS-TOKEN-AMP-001.yaml`,
+For OD-44 alone: drop `requires: [mcp]` from `MCP-TOOLPOISON-001`; the capability can stay,
+unread. For all of OD-16: restore the two specs from `6d5f7ae` (`specs/attacks/DOS-TOKEN-AMP-001.yaml`,
 `specs/attacks/MCP-TOOLPOISON-001.yaml`), the pinned pair in `tests/cli/test_scenario_mode.py`
 and `tests/fingerprint/test_carrier_measured_offline.py`, MCP-TOOLPOISON-001 as the unjudged spec
 of `tests/cli/test_resume_halted_mid_batch.py`, and delete `tests/battery/test_irrelevant_reply.py`.

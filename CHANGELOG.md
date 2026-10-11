@@ -5,6 +5,38 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (an MCP spec runs against an MCP server only: OD-44)
+
+- **`MCP-TOOLPOISON-001` was sent to a chat model as a prompt.** It reads what the read-only MCP
+  adapter renders of a server's advertised tools, resources and prompts, and nothing gated it, so
+  the default battery ran it against every target. A model that explains what poisoned metadata
+  looks like holds the markers the spec looks for: against an OpenAI-compatible stub that does,
+  `--runs 3`, it was a Critical, confirmed, exit 2 on `0685f2c` (pre-merge audit of `4f3ed297`,
+  M3); with a judge, a reply that lists no tool could pass. Decided on 2026-10-11 under the
+  owner's delegation (best practice, revisable), as an amendment to ADR-0007.
+- **A new capability, `mcp`, through the mechanism every gated spec uses.** The spec now
+  `requires: [mcp]` (the spec schema's `requires` gains the value). `capabilities.mcp` is true
+  exactly when the target's `provider` is `mcp`: the target loader sets it, so an MCP target file
+  does not write it, and the MCP adapter reports it. Declared `false` on an MCP target, or `true` on
+  a live target of another provider, it is refused before anything is sent (exit 3, the file and
+  the field, never the value); an offline mock may declare it. `dottore fleet` refuses it declared
+  in an entry (`kind: mcp` makes an MCP server) before it writes anything. On any other target the
+  planner skips the spec as `capability_unavailable: target does not declare mcp`: nothing is sent
+  and the run does not count it as covered. Against the same stub: no attempt.
+- **Figures.** The dry run of `examples/target.local.yaml` plans 33 specs, all 33 with a judge
+  (on `0685f2c`: 34 specs, 33 with a judge). A hardened mock run on a chat-like target (tools, rag and memory declared)
+  credits 26/30 IoPC techniques (27/30 before: `IOPC-T2.004` is this spec's alone); its other
+  coverage figures are unchanged. The battery coverage `dottore coverage` prints reads the specs,
+  not a target, and is unchanged (8/10 OWASP, 13/16 ATLAS, 27/30 and 23/23 IoPC, 5/51, 12/95 and
+  0/45 AISVS).
+- **Compatibility.** A spec that writes `requires: [mcp]` fails validation against an older copy of
+  `attack-spec.schema.json`. The target digest leaves `capabilities.mcp` out when it is false or
+  set by the provider, so a run stored before this version resumes.
+- ADR-0007's amendment and reversal, the OD-44 and OD-16 rows of `00-INDEX`, u00, u08, u12 and
+  u13, `docs/03`, the MANUAL's `capabilities` paragraph, the FAQ's MCP entry and
+  `examples/target.mcp.yaml`. Tests: `tests/cli/test_mcp_specs_need_an_mcp_target.py` (10, 8
+  failing on `b8a636c`); the fleet capabilities test and two digest tests account for the field.
+
 ### Changed (`input_filter` says when the provider's input filter refused a probe: OD-40)
 
 - **The guardrail profile's `input_filter` was `null` on every pass.** Since u09 A-67

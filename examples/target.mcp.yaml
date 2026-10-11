@@ -7,5 +7,7 @@ capabilities:
 # sampling_defaults: accepted and never sent: MCP discovery carries no sampling (OD-39).
 #   sampling_defaults: { temperature: 0.0 }
 # The MCP adapter does initialize + tools/resources/prompts list and renders the advertised
-# metadata; it never calls a tool. Scan it with the `mcp` suite:
+# metadata; it never calls a tool. `provider: mcp` makes it an MCP server, which the `mcp`
+# capability says without being written (OD-44), so `MCP-TOOLPOISON-001` runs here and on no chat
+# model. Scan it with the `mcp` suite:
 #   dottore run --suite mcp -t examples/target.mcp.yaml --scope examples/scope.mcp.yaml

@@ -135,6 +135,9 @@ class Capability(StrEnum):
     MULTIMODAL = "multimodal"
     AUDIO = "audio"
     SAMPLING = "sampling"
+    #: The target is an MCP server: its provider is ``mcp`` (OD-44). Set by the target loader,
+    #: not declared, except by an offline mock.
+    MCP = "mcp"
 
 
 class RequiresCapability(StrEnum):
@@ -154,6 +157,9 @@ class RequiresCapability(StrEnum):
     MULTI_IDENTITY = "multi_identity"
     MULTIMODAL = "multimodal"
     AUDIO = "audio"
+    #: The spec reads what the read-only MCP adapter renders of a server's advertised surface, so
+    #: it means something only against an MCP server (OD-44, decided 2026-10-11).
+    MCP = "mcp"
 
 
 class ScanBand(StrEnum):

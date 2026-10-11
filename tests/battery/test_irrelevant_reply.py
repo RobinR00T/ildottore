@@ -70,6 +70,7 @@ def _all_capabilities_target(tmp_path: Path, scenario: str) -> Path:
             "multi_identity",
             "multimodal",
             "audio",
+            "mcp",  # an offline mock may declare it (OD-44)
         )
     )
     path.write_text(

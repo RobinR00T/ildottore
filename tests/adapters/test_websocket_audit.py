@@ -582,6 +582,8 @@ def test_the_digest_leaves_an_absent_block_out() -> None:
     }
     # `capabilities.sampling` came later (u12 A-68) and is left out the same way when not declared.
     before["capabilities"].pop("sampling")
+    # And `capabilities.mcp` (OD-44, 2026-10-11), left out when false.
+    before["capabilities"].pop("mcp")
     before["__route__"] = "live"
     assert target_digest(plain) == digest._sha(before)
     assert "websocket" not in json.dumps(before)
