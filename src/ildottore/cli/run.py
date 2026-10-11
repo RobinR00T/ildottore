@@ -118,6 +118,9 @@ __all__ = [
     "select_specs",
 ]
 
+#: How the loader says a spec path does not exist (``registry.loader``).
+_PATH_NOT_FOUND = "path not found: "
+
 #: Where a run keeps its evidence and its run store when ``--evidence-root`` / ``--run-db``
 #: are not given (``replay`` and ``fleet --run`` read the same defaults).
 DEFAULT_EVIDENCE_ROOT = Path(".dottore/evidence")
@@ -248,6 +251,9 @@ class RunOptions:
     evidence_root: Path | None = None
     run_db: Path | None = None
     seed: int | None = None
+    #: Other files the run reads that no report may overwrite, as ``(label, path)``: the
+    #: fleet file of ``fleet --run`` (u12 A-80).
+    extra_inputs: list[tuple[str, Path]] = field(default_factory=list)
 
 
 @dataclass
@@ -1436,12 +1442,13 @@ def _flag_figure(value: int) -> str:
     return f"a {'negative ' if value < 0 else ''}number of more than 21 digits"
 
 
-def _validate_options(opts: RunOptions) -> None:
+def _validate_options(opts: RunOptions, spec_paths: Sequence[Path] = ()) -> None:
     """Refuse an option the campaign would only trip over at the end, before anything is sent.
 
     ``--fail-on bogus`` and an unwritable ``-oA`` path were accepted, the whole campaign ran,
     and the run then failed with exit 3 on the way out; ``--timeout 0``, ``--concurrency -2``
-    and ``--top-tests -3`` were accepted outright (audit 2026-10-03, R9).
+    and ``--top-tests -3`` were accepted outright (audit 2026-10-03, R9). A report path that is
+    one of the run's inputs is refused too (:func:`_check_outputs_spare_inputs`).
     """
 
     fail_on_band(opts.fail_on)
@@ -1476,6 +1483,75 @@ def _validate_options(opts: RunOptions) -> None:
     duplicates = sorted({path for path in resolved if resolved.count(path) > 1})
     if duplicates:
         raise ValueError(f"two report formats would write the same file: {', '.join(duplicates)}")
+    _check_outputs_spare_inputs(opts, spec_paths)
+
+
+#: How each report format is named in a refusal.
+_REPORT_NAMES = {"json": "JSON", "html": "HTML", "sarif": "SARIF", "junit": "JUnit"}
+#: The files SQLite keeps beside a database: a report written over one corrupts the store.
+_STORE_SIBLINGS = ("", "-wal", "-shm", "-journal")
+
+
+def _folded_path(path: Path) -> str:
+    """``path`` resolved, NFC-normalized and case-folded, as the duplicate-report check compares."""
+
+    return unicodedata.normalize("NFC", os.path.realpath(path)).casefold()
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """Whether two existing paths are one file (a symlink, a hard link, another spelling)."""
+
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _check_outputs_spare_inputs(opts: RunOptions, spec_paths: Sequence[Path]) -> None:
+    """Refuse a report path that is an input of the run (u12 A-80).
+
+    ``-oJ scope.yaml -oH target.yaml`` overwrote the authorization record and the target file
+    with the reports, once the run had sent its traffic. An existing output is compared with
+    each existing input as a file (``samefile``: a symlink, a hard link, or another spelling on
+    a case-insensitive volume is the same file); the run store, which a fresh run creates, by
+    its resolved path and SQLite's ``-wal``, ``-shm`` and ``-journal`` beside it; a spec path,
+    by whether the output lies inside it. Another output is the duplicate check above.
+    """
+
+    named: list[tuple[str, Path]] = []
+    if opts.scope is not None:
+        named.append((f"the --scope file {opts.scope}", opts.scope))
+    named += [(f"a target file {path}", path) for path in opts.targets]
+    if opts.judge is not None:
+        named.append((f"the --judge file {opts.judge}", opts.judge))
+    named += [(f"{label} {path}", path) for label, path in opts.extra_inputs]
+    store = Path(opts.run_db or DEFAULT_RUN_DB)
+    stores = {_folded_path(Path(f"{store}{suffix}")) for suffix in _STORE_SIBLINGS}
+    roots = [Path(os.path.realpath(root)) for root in spec_paths]
+    for fmt, output in _report_outputs(opts).items():
+        report = f"the {_REPORT_NAMES.get(fmt, fmt)} report"
+        if _folded_path(Path(output)) in stores or (
+            store.exists() and Path(output).exists() and _same_file(Path(output), store)
+        ):
+            raise ValueError(
+                f"{report} would overwrite the run store (--run-db) {store}; "
+                "write the report elsewhere"
+            )
+        if not Path(output).exists():
+            continue  # every other input exists: a new file cannot be one of them
+        for label, path in named:
+            if Path(path).exists() and _same_file(Path(output), Path(path)):
+                raise ValueError(
+                    f"{report} would overwrite {label}; a report never replaces an input of "
+                    "the run, write it elsewhere"
+                )
+        real = Path(os.path.realpath(output))
+        for root, shown in zip(roots, spec_paths, strict=True):
+            if real == root or root in real.parents:
+                raise ValueError(
+                    f"{report} would overwrite a file of the spec path {shown} ({output}); "
+                    "write it elsewhere"
+                )
 
 
 def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
@@ -1650,7 +1726,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"--rate must be greater than 0 requests per second (got {opts.rate}); omit it to "
             "use the timing template's rate"
         )
-    _validate_options(opts)
+    _validate_options(opts, spec_paths)
     if opts.scope is None:
         raise ScopeRequiredError(
             "run requires --scope <scope.yaml>: the authorization record is mandatory "
@@ -1734,6 +1810,20 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # parsed, so a one-letter typo removed a spec from the battery and the run still printed
     # "Specs run: 1 of 1 planned" and `complete` (audit 2026-10-03, F-10).
     registry, load_errors = wiring.load_registry(spec_paths)
+    missing = [
+        e.message.removeprefix(_PATH_NOT_FOUND)
+        for e in load_errors
+        if e.message.startswith(_PATH_NOT_FOUND)
+    ]
+    if load_errors and len(missing) == len(load_errors):
+        # A spec path that does not exist is not a spec file that failed to load: it read
+        # "1 spec file(s) failed to load ...: ?: path not found: specs", run from anywhere but
+        # the repository root (u12 A-80).
+        raise SpecLoadError(
+            f"spec path not found: {', '.join(missing)}. Pass --spec-path <dir>; without it a "
+            "run reads specs/ in the working directory, else the battery beside the installed "
+            "package when that is a source checkout."
+        )
     if load_errors:
         # Counted by FILE: one bad file yields many findings (17 for one target example), and
         # the message said "17 spec file(s)" (review of PR #32).

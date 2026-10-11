@@ -212,6 +212,29 @@ def build_registry(spec_paths: list[Path]) -> Registry:
     return load_registry(spec_paths)[0]
 
 
+#: The battery of a source checkout or an editable install, ``<repo>/specs``, found from the
+#: package itself (``<repo>/src/ildottore/cli/wiring.py``), as ``registry.schema`` finds
+#: ``<repo>/schemas``. A wheel built from this repository ships neither.
+PACKAGED_SPEC_PATH = Path(__file__).resolve().parents[3] / "specs"
+
+
+def default_spec_paths() -> list[Path]:
+    """Where every command reads specs when it is given no spec path (u12 A-80).
+
+    ``specs/`` in the working directory when it is a directory (the repository root, or a
+    project that keeps its own pack there, as before), else the battery beside the installed
+    package, else ``specs/`` (whose absence the commands report). ``fleet --run`` had no
+    ``--spec-path`` and read ``specs/`` only, so it worked from the repository root only.
+    """
+
+    local = Path("specs")
+    if local.is_dir():
+        return [local]
+    if PACKAGED_SPEC_PATH.is_dir():
+        return [PACKAGED_SPEC_PATH]
+    return [local]
+
+
 def load_registry(spec_paths: list[Path]) -> tuple[Registry, list[LintError]]:
     """:func:`build_registry`, plus the load-time findings it would otherwise drop.
 

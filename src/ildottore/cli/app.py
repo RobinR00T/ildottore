@@ -59,8 +59,6 @@ from ildottore.redactor import (
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
-DEFAULT_SPEC_PATHS = [Path("specs")]
-
 #: Where a command records how verbose it was asked to be, for the guard below (``ctx.meta`` is
 #: shared by a command's context and its parents').
 _VERBOSE_KEY = "ildottore.verbose"
@@ -225,7 +223,9 @@ def _root(
 
 
 def _spec_paths(spec: list[Path] | None) -> list[Path]:
-    return list(spec) if spec else DEFAULT_SPEC_PATHS
+    """``--spec-path`` as given, else the default every command shares (u12 A-80)."""
+
+    return list(spec) if spec else wiring.default_spec_paths()
 
 
 # --- run -------------------------------------------------------------------------
@@ -635,7 +635,11 @@ def run(
     ] = None,
     run_db: Annotated[Path | None, typer.Option("--run-db", help="Run store SQLite path.")] = None,
     spec_path: Annotated[
-        list[Path] | None, typer.Option("--spec-path", help="Spec search path (default specs/).")
+        list[Path] | None,
+        typer.Option(
+            "--spec-path",
+            help="Spec search path (default specs/ here, else the battery beside the package).",
+        ),
     ] = None,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,
     quiet: Annotated[
@@ -781,6 +785,24 @@ def fleet(
     categories: Annotated[
         str | None, typer.Option("-p", "--categories", help="Comma-separated categories.")
     ] = None,
+    o_json: Annotated[Path | None, typer.Option("-oJ", help="Write JSON report.")] = None,
+    o_html: Annotated[Path | None, typer.Option("-oH", help="Write HTML report.")] = None,
+    o_sarif: Annotated[Path | None, typer.Option("-oS", help="Write SARIF report.")] = None,
+    o_junit: Annotated[Path | None, typer.Option("-oX", help="Write JUnit XML report.")] = None,
+    o_all: Annotated[
+        Path | None, typer.Option("-oA", help="Write all four formats to <prefix>.*")
+    ] = None,
+    evidence_root: Annotated[
+        Path | None, typer.Option("--evidence-root", help="Evidence store root dir.")
+    ] = None,
+    run_db: Annotated[Path | None, typer.Option("--run-db", help="Run store SQLite path.")] = None,
+    spec_path: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--spec-path",
+            help="Spec search path (default specs/ here, else the battery beside the package).",
+        ),
+    ] = None,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,
 ) -> None:
     """Expand a fleet.yaml into an authorization scope + one target file per model.
@@ -789,6 +811,9 @@ def fleet(
     reference, a local model, a raw URL, or an MCP server). Keys are never written, each
     entry references an env var. With ``--run`` it scans every expanded target right away.
     A judge is authorized only when the fleet file declares it in a ``judge:`` block.
+
+    ``--spec-path``, ``--evidence-root``, ``--run-db`` and ``-oJ/-oH/-oS/-oX/-oA`` mean what they
+    mean to ``run``; without ``--run`` they are carried into the printed ``dottore run`` line.
     """
 
     try:
@@ -809,13 +834,24 @@ def fleet(
         typer.echo(f"skipped: {target_id} ({reason})")
     judge_file = judge if judge is not None else materialized.judge_path
 
+    asked = (("json", o_json), ("html", o_html), ("sarif", o_sarif), ("junit", o_junit))
+    outputs = {fmt: path for fmt, path in asked if path is not None}
     if not run_now:
         joined = " ".join(f'"{p}"' for p in materialized.target_paths)
         # Carry the judge into the hint: the scope authorizes it, and an operator following a
-        # hint that omits it drops the judge from the run.
+        # hint that omits it drops the judge from the run. The run options too, for the same
+        # reason (a hint without them writes the reports and the stores somewhere else).
         judge_arg = f' --judge "{judge_file}"' if judge_file is not None else ""
+        flags = {"json": "-oJ", "html": "-oH", "sarif": "-oS", "junit": "-oX"}
+        carried = [f'--spec-path "{p}"' for p in spec_path or []]
+        carried += [f'--evidence-root "{evidence_root}"'] if evidence_root is not None else []
+        carried += [f'--run-db "{run_db}"'] if run_db is not None else []
+        carried += [f'{flags[fmt]} "{path}"' for fmt, path in outputs.items()]
+        carried += [f'-oA "{o_all}"'] if o_all is not None else []
+        tail = "".join(f" {arg}" for arg in carried)
         typer.echo(
             f'\nRun it:\n  dottore run {joined} --scope "{materialized.scope_path}"{judge_arg}'
+            f"{tail}"
         )
         raise typer.Exit(ExitCode.CLEAN)
 
@@ -826,9 +862,17 @@ def fleet(
         categories=[c.strip() for c in categories.split(",")] if categories else [],
         runs=runs,
         no_color=no_color,
+        outputs=outputs,
+        output_all_prefix=o_all,
+        evidence_root=evidence_root,
+        run_db=run_db,
+        extra_inputs=[("the fleet file", config)],
     )
     try:
-        outcome = run_mod.execute_run(opts, _spec_paths(None))
+        # The same default spec path as `run` (u12 A-80): it was `specs/` in the working
+        # directory with no option to change it, so `fleet --run` worked from the repository
+        # root only ("path not found: specs").
+        outcome = run_mod.execute_run(opts, _spec_paths(spec_path))
     # AdapterError included for the same reason `run` includes it (see that handler): it
     # derives from Exception, so `fleet --run` used to turn an HTTP 401 or an off-allowlist
     # endpoint into a traceback and exit **1**, which in this tool means "findings below the
@@ -949,7 +993,7 @@ def coverage(
         )
         raise typer.Exit(ExitCode.ERROR)
     try:
-        result = coverage_mod.battery_coverage(list(paths or DEFAULT_SPEC_PATHS), suite=suite)
+        result = coverage_mod.battery_coverage(_spec_paths(paths), suite=suite)
     except (OSError, ValueError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -970,7 +1014,7 @@ def lint(
 ) -> None:
     """Schema + policy + fixtures-prove-detection lint (u02 command body)."""
 
-    search = paths or DEFAULT_SPEC_PATHS
+    search = _spec_paths(paths)
     code, output = run_lint(search, as_json=as_json)
     typer.echo(output)
     raise typer.Exit(code)
