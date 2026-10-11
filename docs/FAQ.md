@@ -22,6 +22,14 @@ allowlist, default-deny), and plain http is allowed only to loopback. The scope'
 `checksum:` is an integrity check, verified when present, not a signature. See
 [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
+### Can the tool prove who approved a scope?
+
+No, by decision (OD-2): it verifies no signature, since that needs key management it does not
+have (trusted keys, who signs, revocation). Sign the scope with your own tooling, verify it
+before the run, and compare the report's `run.scope_sha256` with `shasum -a 256 scope.yaml`
+(equal for a file with LF line ends and no top-level `checksum:` line). The `ssh-keygen -Y`
+recipe, run for real, is in [`MANUAL.md`](MANUAL.md) §4.1.
+
 ### Do I need an API key?
 
 Not to explore (`registry ls`, `describe`, `lint`, `schema`) or to scan a **local** model

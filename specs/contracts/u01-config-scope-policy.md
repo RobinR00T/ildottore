@@ -17,7 +17,8 @@ Load and validate `scope.yaml` (the **authorization record**, S4): parse targets
 endpoint allowlist (host + path prefixes), ≥1 auth identity ref (`auth_ref`, never inline
 secrets), optional ≥2 identities (`multi_identity`). Verify file integrity by **checksum** and
 expose its hash so a run records it (S4). (As built: the checksum is optional, verified only when
-present, and unkeyed, so it is not a signature (OD-2). Since 2026-10-05,
+present, and unkeyed, so it is not a signature; signed off as integrity only on 2026-10-11, with
+authenticity a non-goal until key management exists (OD-2). Since 2026-10-05,
 `load_scope_with_digest()` returns the scope with the `scope_hash()` of the bytes it parsed, and
 `dottore run` records it in the run store and every report, audit D-17. Since 2026-10-06 a key
 written twice in one YAML mapping is refused with both positions, through `safe_yaml`, and two
@@ -51,8 +52,9 @@ reports (S6, DL2); it is import-cheap and dependency-free so every layer can cal
 - KEEP: `test_only` payloads never rendered raw without `--unsafe-render` (S5): u01 exposes the
   flag state; rendering is u11. (As built: `config.SafetyFlags.unsafe_render` exists, off; no
   CLI flag sets it.)
-- DECIDE (OD-2): scope.yaml signing: SHA-256 checksum now, sigstore later. (The checksum half is
-  built and optional; signing is still open.)
+- DECIDED (OD-2, 2026-10-11, under the owner's delegation, revisable): the optional SHA-256
+  checksum is integrity only; signing (authenticity) is a non-goal until key management exists,
+  and the operator signs out of band (§9).
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing, `--unsafe-render`
@@ -690,8 +692,29 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
 - Not its call: signing scheme (OD-2) · evidence at-rest encryption (OD-4).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
-- **OD-2** scope.yaml signing: SHA-256 checksum in MVP‑1, sigstore/cosign later? (propose
-  checksum now, pluggable verifier interface so sigstore drops in without a shape change).
+- **OD-2** scope.yaml signing. **Decided 2026-10-11 under the owner's delegation (best practice),
+  revisable: the checksum is signed off as integrity only, and authenticity is an explicit
+  non-goal until key management exists (`NON-GOALS.md`).** The optional top-level `checksum:`
+  (SHA-256 of the body, verified when present behind the `IntegrityVerifier` seam,
+  `load_scope(require_checksum=False)`) catches an accidental edit and an edit that forgot to
+  recompute it; it lives in the file it protects, so it cannot catch an editor who recomputes or
+  deletes it, and the docs say so wherever they name it. Why not more now: a signature the tool
+  verified would be only as good as the list of keys it trusts, and that list, who may sign and
+  how a key is revoked are key management the project does not have; a key or a list of keys
+  beside the scope proves nothing more than the checksum does. What an operator does instead,
+  documented in `docs/MANUAL.md` §4.1 and run for real: sign the scope with tooling whose keys
+  they already manage (`ssh-keygen -Y sign` with an `allowed_signers` file, `cosign sign-blob`,
+  a signed commit behind review), verify it before `dottore run`, and match the report's
+  `scope_sha256` (recorded since 2026-10-05, audit D-17) with the signed bytes: for a file with
+  LF line ends and no top-level `checksum:` line it is the file's plain SHA-256 (checked: an
+  `ssh-keygen -Y verify` that passed, a run, and `shasum -a 256` equal to `run.scope_sha256`;
+  one appended line made the verify exit 255). Alternatives not taken: (a) built-in verification
+  of a detached signature (an SSH signature against an `allowed_signers` file, or sigstore)
+  behind the existing seam, the smallest standard option, deferred until a trusted-keys list has
+  an owner, so the seam stays; (b) a keyed MAC with its key in an environment variable, a shared
+  secret that in practice sits beside the file in CI; (c) a flag requiring the checksum, which
+  adds a step and no assurance, since anyone who edits the file can recompute it.
+  `require_checksum=True` stays for a library caller; no CLI path passes it.
 - Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
   u06 `secret_shape` policy once that lands; interim global threshold, documented).
 - **OD-26** reading the operator's files. **Decided 2026-10-07 by the owner, built (A-43):** 1

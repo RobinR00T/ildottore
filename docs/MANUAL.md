@@ -324,9 +324,10 @@ See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPON
 Required for every scanning command. An optional top-level `checksum:` (sha256 of the body,
 the `checksum:` line itself excluded) is verified when present: a scope edited without
 updating it is refused (exit 3). It is an integrity check, not a signature: anyone who can edit
-the file can recompute it, and nothing requires one. Signing is not built; whether to add it is
-an open decision (OD-2). Every run records the scope's SHA-256 (in the run store and every
-report, see §10); it does not record who ran it.
+the file can recompute it, and nothing requires one. Proving who wrote or approved a scope is a
+non-goal of the tool until it has key management (OD-2, decided 2026-10-11): sign the file with
+your own tooling and verify it before the run (below). Every run records the scope's SHA-256
+(in the run store and every report, see §10); it does not record who ran it.
 
 ```yaml
 version: "1.0"
@@ -352,6 +353,29 @@ contain another (`ZZ-1`, `ZZ-1-b`): `authz_leak` does not count an occurrence th
 canary's occurrence covers. Avoid it all the same: A's `ZZ-1` leaking into B's reply right
 before `-b` reads as B's own canary. Plain `http` is allowed only to loopback hosts; everything
 else must be `https`. Template: [`../specs/scope.example.yaml`](../specs/scope.example.yaml).
+
+**Signing a scope (out of band).** The tool verifies no signature (OD-2): checking one would
+need a list of trusted keys, a rule for who signs and a way to revoke a key, which is key
+management it does not have. Sign the scope with tooling whose keys you already manage, verify it
+before `dottore run`, and match the report to the signed bytes: `run.scope_sha256` in the JSON
+report (the SARIF, JUnit and HTML reports carry it too, §10) is the SHA-256 of the file when it
+has LF line ends and no top-level `checksum:` line. With SSH signatures (OpenSSH 8.1 or later;
+`allowed_signers` lists the reviewers' public keys, one `<identity> <key>` per line):
+
+```bash
+ssh-keygen -Y sign -f reviewer_key -n dottore-scope scope.yaml             # writes scope.yaml.sig
+ssh-keygen -Y verify -f allowed_signers -I reviewer@example.test -n dottore-scope \
+  -s scope.yaml.sig < scope.yaml && dottore run -t target.yaml --scope scope.yaml -oJ report.json
+shasum -a 256 scope.yaml                     # equals run.scope_sha256 in report.json
+```
+
+Run as written on 2026-10-11 (OpenSSH 10.3p1) on an offline mock target
+(`mock_scenario: hardened`): the verify printed `Good "dottore-scope" signature for
+reviewer@example.test with ED25519 key SHA256:...`, the run exited 0 (`Specs run: 75 of 75
+planned`), and `shasum` printed `38529c5c...00c2d`, the `run.scope_sha256` of the report. With
+one line appended to the scope, the verify printed `Signature verification failed: incorrect
+signature` and exited 255, so the `&&` started no run. `cosign sign-blob` and `cosign
+verify-blob`, or a signed commit behind review, serve the same way.
 
 ### 4.2 `target.yaml`, what you are scanning
 
@@ -1809,7 +1833,8 @@ blocked by the provider's input filter before the model saw them`), and so does 
   record (after a fresh run's probes, before its attack traffic), appended whenever it differs
   from the last; `"unrecorded"` first for a run recorded before this): a resume under a different
   scope file is not refused, it is recorded and noted on stderr. The digest names the file; it
-  does not prove who wrote it (the scope is checksummed, not signed: OD-2).
+  does not prove who wrote it (the scope is checksummed, not signed: OD-2, signed out of band as
+  §4.1 shows).
 - **Several targets in one run.** The JSON report's `run` object lists every target, and its
   own `findings` and `summary` cover all of them, as the top-level `findings` and `summary` do.
   Its `run_id` is the last target's; each target's run id is in its findings' evidence

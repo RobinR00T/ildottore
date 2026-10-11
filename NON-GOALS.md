@@ -18,3 +18,10 @@ not gaps.
 - **Not a general agent runner or an MCP client.** MCP support is read-only discovery only; it never
   calls a tool (`tools/call`).
 - **Not tied to any one provider.** Adapters are thin and swappable; no SDK lock-in.
+- **Not a signing or key-management system (yet).** The scope's optional `checksum:` is an
+  integrity check: it catches an accidental edit, not an editor who recomputes it. Who wrote or
+  approved a scope is proved out of band, with a signature the operator's own tooling makes and
+  verifies before the run (SSH signatures, sigstore, a signed commit behind review), and every
+  report's `scope_sha256` ties the run to the signed bytes. Built-in verification waits for key
+  management: a list of trusted keys, who signs, and revocation (OD-2, decided 2026-10-11,
+  revisable).

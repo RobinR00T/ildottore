@@ -52,6 +52,17 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   the field added on a copy: 1 of 5,082 tests fails (the JSON report's golden snapshot) and every
   attempt and report written after it carries one more key. `ModelResponse`'s docstring and u00
   §6 now say what `raw_ids` holds.
+- **The scope checksum is integrity only, and proving who approved a scope is out of band (OD-2).**
+  Signed off as built: the optional `checksum:` catches an accidental edit, not an editor who
+  recomputes it, and built-in signing waits for key management (trusted keys, who signs,
+  revocation), now a stated non-goal in `NON-GOALS.md`. `docs/MANUAL.md` §4.1 gains "Signing a
+  scope (out of band)", run as written: `ssh-keygen -Y sign`, `ssh-keygen -Y verify ... &&
+  dottore run`, and `shasum -a 256 scope.yaml` equal to the report's `run.scope_sha256` (for LF
+  line ends and no top-level `checksum:` line); one appended line made the verify exit 255 and
+  started no run. The FAQ, the threat model (S4), `RESPONSIBLE-USE.md`, `dottore-scope(5)` and the
+  scope loader's docstrings say the same. Not taken: built-in verification of a detached
+  signature behind the existing verifier seam (kept for it), a keyed MAC, a flag requiring the
+  checksum.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 
