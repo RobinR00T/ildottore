@@ -243,10 +243,11 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   grants. Writing the declaration on the grant itself keeps one word for one rule (a tool marked
   `destructive: false`, in a scene or in a target file), cannot name a tool the file does not
   grant, and leaves every plain list of names reading, digesting and resuming as before. Checks:
-  `tests/evaluators/test_operator_not_destructive.py` (30 tests, 29 failing on `main` at
-  `e8f9d1f6`; the other checks that a refusal never quotes the value),
-  `tests/core/test_operator_declaration_runner.py` (6, all failing there, among them a reply the
-  provider's filter cut, A-70) and `tests/cli/test_operator_declaration_campaign.py` (12, all
+  `tests/evaluators/test_operator_not_destructive.py` (34 tests, 33 failing on `main` at
+  `a69dbd8c`; the other checks that a refusal never quotes the value),
+  `tests/core/test_operator_declaration_runner.py` (9, all failing there, among them a reply the
+  provider's filter cut, A-70, a conversation its input filter cut, A-69, and the counters read
+  from the record, not the text) and `tests/cli/test_operator_declaration_campaign.py` (16, all
   failing there).
 - **A-73 One rule combines a spec's evaluators, and a fail only the judge reported is never
   confirmed (added 2026-10-11, OD-19, decided under the owner's delegation, ADR-0010 option B

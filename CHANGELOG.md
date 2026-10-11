@@ -58,8 +58,11 @@ versioning: [SemVer](https://semver.org/).
   USAGE, `dottore(1)`, `dottore-scope(5)`, `docs/01`, `03`, `04`, `09`, `12`, `16`, ADR-0009,
   `examples/target.app.yaml` (now declaring the support agent's hand-off) and Scenario G's real
   output in `examples/README.md`; contracts u06 §7 A-72 and §9 OD-43, with halves in u00, u02,
-  u08, u10, u11 and u12, and the index rows. Tests: TESTS_LINE; the golden JSON report snapshot
-  gains the empty key.
+  u08, u10, u11 and u12, and the index rows. Tests:
+  `tests/evaluators/test_operator_not_destructive.py` (34, 33 fail on `main` at `a69dbd8c`),
+  `tests/core/test_operator_declaration_runner.py` (9, all fail there) and
+  `tests/cli/test_operator_declaration_campaign.py` (16, all fail there); the golden JSON report
+  snapshot gains the empty key.
 
 ### Changed (an MCP spec runs against an MCP server only: OD-44)
 

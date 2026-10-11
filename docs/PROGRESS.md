@@ -3,6 +3,38 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
+
+- No bypass found; one MEDIUM and seven LOWs, fixed one commit each on
+  `feat/operator-declared-tools`, then `main` merged in at `a69dbd8c` (#108). The auditor's probes
+  (`scratch/od43-audit/probes/test_probe_od43.py`) give, on the fixed branch: P1 (a conversation
+  the input filter cut after the declared hand-off) blocked with the note, P2 (a judge that echoes
+  the note on a cut reply, nothing declared) and P3 (a tool named like the note) counted by no
+  report, P4 (a case variant of a `destructive: true` scene tool, granted and declared) still a
+  pass, now flagged by the plan.
+- M1: the blocked verdict of a conversation the provider's input filter cut after a declared
+  hand-off said nothing of the declaration (on `main`, the same trace fails). It now carries the
+  note when its trace holds a call the declaration cleared.
+- L1: the counters matched the note's text, so a judge recorded beside a cut reply (OD-42) or a
+  tool named like the note counted with nothing declared. `Verdict.operator_cleared` is the record
+  every count reads (the summary, the finding's line, replay, diff), left out of a dump when
+  empty; the judge's words quote the marker. L6: the finding's line names the tools.
+- L2: `dottore diff` reads a FIXED the declaration may have made as `FIXED (operator declaration,
+  OD-43)`. L3: the plan flags a granted name that is a selected spec's scene tool but for case or
+  Unicode form (NFKC, case folded). L4: nothing declared leaves every report but the JSON
+  summary's empty key byte for byte as before (the HTML target line through whitespace control,
+  checked against `main`'s template; `seeded_setup.not_destructive` left out of a dump when
+  empty). L5: the report-1.0 note, the docs list, the index row. L7: the digest test pins the
+  literal `main` computes at `a69dbd8c` instead of a hand-built payload that drifted with OD-44's
+  `capabilities.mcp`.
+- Nits, read strictly under the owner's delegation: a `granted_tools` mapping without
+  `destructive` and a declared name with a space at either end are refused; `SeededSetup` refuses
+  a declared name it does not grant however it is built, and keeps the list sorted (sorted rather
+  than refused out of order, since a report's redactor can mask a name and move it).
+- Tests now: `tests/evaluators/test_operator_not_destructive.py` (34, 33 fail on `main` at
+  `a69dbd8c`), `tests/core/test_operator_declaration_runner.py` (9, all fail there),
+  `tests/cli/test_operator_declaration_campaign.py` (16, all fail there). GATES_LINE
+
 ## State, 2026-10-11 (later): a target file may declare one of its own granted tools not destructive (OD-43)
 
 - On `feat/operator-declared-tools`, branched from `fix/handoff-tools-and-lint-stub` (`f76f145`,
