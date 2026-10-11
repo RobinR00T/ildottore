@@ -188,8 +188,9 @@ too); the HTML summary prints a line under the counts for each. A
 spec with such an attempt and no fail is `inconclusive`, SARIF kind `open`, state `needs_review`;
 one whose only stops are on an unreported side is in `not_exercised`. With none, only the JSON
 report changes (the two keys, with 0 and `[]`), so the golden JSON snapshot gains them and the
-SARIF, JUnit and HTML ones do not move. Checked by `tests/cli/test_provider_output_filter_campaign.py`
-(every format of one run, the JSON against the schema).
+SARIF, JUnit and HTML ones do not move. Checked by
+`tests/cli/test_provider_output_filter_campaign.py` (every format of one run, the JSON against the
+schema).
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
