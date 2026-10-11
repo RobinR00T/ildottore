@@ -443,10 +443,13 @@ aggregate carried no reply. Not re-run against a live Azure endpoint.
   declared order; a resume with no flag was refused ("halted with adaptive planning on"). Made
   visible after the pre-merge audit of `be3f2e71`, which found that nothing recorded which order
   each part used (both read `"adaptive": true`, and the report has no planning field): the run store
-  keeps `context_json.mutator_orders`, one entry per invocation (`fingerprint` or `declared`, u10),
-  that resume prints one `note:` line on stderr, and the planning-mode refusal no longer says that
-  reordering makes the two halves another campaign (it says the mode changes the order, never which
-  attempts are sent). `tests/cli/test_resume_mutator_order.py` (8 tests, all failing on `be3f2e71`).
+  keeps `context_json.mutator_orders`, one entry per invocation (`fingerprint` when it planned
+  with a fingerprint, whether or not that moved a mutator, or `declared`, u10), a resume that
+  plans in declared order after a part that planned with a fingerprint prints one `note:` line on
+  stderr (only then: a `--deep` campaign resumed with `--deep` prints none, since the verification
+  of `877b2e2b`), and the planning-mode refusal no longer says that reordering makes the two halves
+  another campaign (it says the mode changes the order, never which attempts are sent).
+  `tests/cli/test_resume_mutator_order.py` (9 tests: 8 failing on `be3f2e71`, 1 on `877b2e2b`).
   Alternatives not taken: an `--adaptive`/`--no-adaptive` switch (a knob with no effect on a
   completed campaign's findings); `--deep` as timing only, adaptive only with a fingerprint (it
   would close that resume case and make the recorded mode say whether a fingerprint ordered the

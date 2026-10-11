@@ -293,12 +293,13 @@ class SqliteRunStore:
     def add_run_order(self, run_id: str, order: str, *, resumed: bool = False) -> list[str]:
         """Append the mutator order this invocation of ``run_id`` planned in; return the list.
 
-        ``mutator_orders`` holds one entry per invocation, in order: ``fingerprint`` when a
-        ``-sV`` fingerprint ordered the plan, ``declared`` when each spec's declared order
-        stands. Every invocation appends, so a ``-sV`` campaign resumed with ``--deep`` alone
-        reads ``["fingerprint", "declared"]`` (OD-5: same attempts, another order). A ``resumed``
-        run whose context has no list was recorded before it was kept: its list starts with
-        ``"unrecorded"``, as the scope list does. One immediate transaction, as for the scopes.
+        ``mutator_orders`` holds one entry per invocation, in order: ``fingerprint`` when it
+        planned with a ``-sV`` fingerprint (whether or not that moved a mutator), ``declared``
+        when it planned in each spec's declared order. Every invocation appends, so a ``-sV``
+        campaign resumed with ``--deep`` alone reads ``["fingerprint", "declared"]`` (OD-5: the
+        same attempts, perhaps in another order). A ``resumed`` run whose context has no list
+        was recorded before it was kept: its list starts with ``"unrecorded"``, as the scope
+        list does. One immediate transaction, as for the scopes.
         """
 
         self._ensure_run_row(run_id)

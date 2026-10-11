@@ -60,19 +60,19 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   the default serializer each new attempt and report would carry one more key, which a
   `None`-dropping serializer would avoid, so that cost does not decide it. `ModelResponse`'s
   docstring and u00 §6 now say what `raw_ids` holds.
-- **The scope checksum is integrity only, and proving who approved a scope is out of band (OD-2).**
-  Signed off as built: the optional `checksum:` catches an accidental edit, not an editor who
-  recomputes it, and built-in signing waits for key management (trusted keys, who signs,
-  revocation), now a stated non-goal in `NON-GOALS.md`. `docs/MANUAL.md` §4.1 gains "Signing a scope
-  (out of band)", run as written: the reviewer's `ssh-keygen -Y sign` on their own machine, then
-  `ssh-keygen -Y verify ... && dottore run` on one private copy against an `allowed_signers` the
-  scope's editors cannot write, and `shasum -a 256` of that copy equal to the report's
-  `run.scope_sha256` (for LF line ends and no top-level `checksum:` line); one appended line made
-  the verify exit 255 and started no run. The two custody rules a signature depends on (a key only
-  the reviewer holds, trusted keys out of the editors' reach) are stated with it. The FAQ, the
-  threat model (S4), `RESPONSIBLE-USE.md`, `dottore-scope(5)` and the scope loader's docstrings say
-  the same. Not taken: built-in verification of a detached signature behind the existing verifier
-  seam (kept for it), a keyed MAC, a flag requiring the checksum.
+- **The scope checksum is integrity only, and proving who approved a scope is out of band
+  (OD-2).** Signed off as built: the optional `checksum:` catches an accidental edit, not an
+  editor who recomputes it, and built-in signing waits for key management (trusted keys, who
+  signs, revocation), now a stated non-goal in `NON-GOALS.md`. `docs/MANUAL.md` §4.1 gains
+  "Signing a scope (out of band)", run as written: the reviewer's `ssh-keygen -Y sign` on their
+  own machine, then `ssh-keygen -Y verify ... && dottore run` on one private copy against an
+  `allowed_signers` the scope's editors cannot write, and `shasum -a 256` of that copy equal to
+  the report's `run.scope_sha256` (for LF line ends and no top-level `checksum:` line); one
+  appended line made the verify exit 255 and started no run. The two custody rules a signature
+  depends on (a key only the reviewer holds, trusted keys out of the editors' reach) are stated
+  with it. The FAQ, the threat model (S4), `RESPONSIBLE-USE.md`, `dottore-scope(5)` and the scope
+  loader's docstrings say the same. Not taken: built-in verification of a detached signature
+  behind the existing verifier seam (kept for it), a keyed MAC, a flag requiring the checksum.
 - **`DL-PII-ELICIT-001` stays off by default; its opt-in is two keys or none (OD-11).** The safe
   default stands: present, `test_only`, and not enableable from the CLI, which loads no policy
   pack and sets no run PII key. The opt-in, when it comes, is DL4's two keys in one change, a
@@ -88,12 +88,14 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   campaign halted on the mock (exit 3, 9 of 18 specs) and resumed with `--deep` alone keeps the
   recorded mode and completes (exit 2, 18 of 18) with the rest in declared order. That is now
   recorded and said: the run store keeps `context_json.mutator_orders`, one entry per invocation
-  (`fingerprint` or `declared`; `"unrecorded"` first for an older run), such a resume prints
-  `note: <run id> plans in each spec's declared mutator order: ... (mutator_orders: fingerprint,
-  declared)` on stderr, and the planning-mode refusal says the mode "changes the order in which a
-  spec's mutators go out, never which attempts are sent" (it said the two halves "would not be
-  the same campaign"). Not taken: an `--adaptive`/`--no-adaptive` switch; `--deep` as timing only,
-  which would need a compatibility path for halted `--deep` campaigns.
+  (`fingerprint` when it planned with a fingerprint, whether or not that moved a mutator, or
+  `declared`; `"unrecorded"` first for an older run), such a resume prints `note: <run id> plans
+  in each spec's declared mutator order: ... (mutator_orders: fingerprint, declared)` on stderr
+  (only after a part that planned with a fingerprint), and the planning-mode refusal says the mode
+  "changes the order in which a spec's mutators go out, never which attempts are sent" (it said
+  the two halves "would not be the same campaign"). Not taken: an `--adaptive`/`--no-adaptive`
+  switch; `--deep` as timing only, which would need a compatibility path for halted `--deep`
+  campaigns.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 

@@ -116,11 +116,13 @@ The mode is still recorded: the in-memory plan is marked adaptive (each selectio
 mode, so a `--resume` that changes it is refused. `-A` is the form that does both. Signed off as
 built on 2026-10-11 (OD-5): no `--adaptive` flag, since the ordering changes which attempt goes
 first and never which attempts are sent (an attempt is named by its spec, mutation and run), so it
-matters only to what a halt leaves stored. The mode alone does not say whether a fingerprint ordered
-the plan (`-sV`, `-A` and `--deep` all set it), so since 2026-10-11 the run store also keeps
-`context_json.mutator_orders`, one entry per invocation, `fingerprint` or `declared`; a `-sV`
-campaign resumed with `--deep` alone reads `["fingerprint", "declared"]`, and that resume prints a
-`note:` line on stderr saying it plans in each spec's declared order. Measured with `--dry-run` on
+matters only to what a halt leaves stored. The mode alone does not say whether a part planned with
+a fingerprint (`-sV`, `-A` and `--deep` all set it), so since 2026-10-11 the run store also keeps
+`context_json.mutator_orders`, one entry per invocation: `fingerprint` when it planned with a `-sV`
+fingerprint (whether or not that moved a mutator), `declared` otherwise. A `-sV` campaign resumed
+with `--deep` alone reads `["fingerprint", "declared"]`, and that resume prints a `note:` line on
+stderr saying it plans in each spec's declared order; a `--deep` campaign resumed with `--deep`
+reads `["declared", "declared"]` and prints none. Measured with `--dry-run` on
 `examples/target.local.yaml` (a chat model with no tools, RAG or memory): no flag, `--deep` and `-A`
 each select the same 34 specs and 550 requests; the pacing line reads 5.0 req/s with no flag and 2.0
 with `--deep` or `-A`, and `-A` adds `+18 probe(s) per target`.

@@ -69,8 +69,9 @@ the u00 protocols:
   probe pass, otherwise with the integrity record) whenever it differs from the last entry,
   `"unrecorded"` first for a run recorded before 2026-10-05, in an immediate transaction
   (`add_run_scope`) that a context rewrite preserves (audit D-17), and, since 2026-10-11, as
-  `mutator_orders`: the mutator order of each invocation (`fingerprint` when a `-sV`
-  fingerprint ordered the plan, `declared` otherwise), appended by every invocation,
+  `mutator_orders`: what each invocation planned with (`fingerprint` when it planned with a
+  `-sV` fingerprint, whether or not that moved a mutator, `declared` otherwise), appended by
+  every invocation,
   `"unrecorded"` first for a run recorded before it, in an immediate transaction
   (`add_run_order`) that a context rewrite preserves too (OD-5; pre-merge audit of
   `be3f2e71`). Schema v4 (2026-10-04) adds

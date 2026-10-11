@@ -111,6 +111,23 @@ def test_a_sv_resume_records_the_fingerprint_order_and_says_nothing(tmp_path: Pa
     assert _NOTE not in stderr
 
 
+def test_a_deep_campaign_resumed_with_deep_says_nothing(tmp_path: Path) -> None:
+    """Nothing changed: no invocation planned with a fingerprint, so there is nothing to note
+    (verification of 877b2e2b: the note printed here, with mutator_orders declared, declared)."""
+
+    _setup(tmp_path)
+    halted = _invoke(tmp_path, "--deep", "--budget-requests", str(HALT))
+    assert halted.exit_code == ExitCode.ERROR, halted.stderr
+    run_id = _run_id(tmp_path)
+    resumed = _invoke(tmp_path, "--resume", run_id, "--deep", "--budget-requests", "500")
+    stderr = resumed.stderr
+    assert resumed.exit_code != ExitCode.ERROR, stderr
+    context = _context(tmp_path, run_id)
+    assert context["mutator_orders"] == ["declared", "declared"]
+    assert context["adaptive"] is True
+    assert _NOTE not in stderr, stderr
+
+
 def test_a_declared_campaign_resumed_says_nothing(tmp_path: Path) -> None:
     _setup(tmp_path)
     halted = _invoke(tmp_path, "--budget-requests", str(HALT))

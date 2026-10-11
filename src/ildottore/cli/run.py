@@ -2236,8 +2236,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         _record_order(
             run_db,
             run_ids[target.id],
-            ordered=adaptive and fingerprints.get(target.id) is not None,
-            adaptive=adaptive,
+            with_fingerprint=adaptive and fingerprints.get(target.id) is not None,
             resumed=opts.resume is not None,
         )
         result = _run_one_target(
@@ -2727,32 +2726,33 @@ def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool
         )
 
 
-def _record_order(
-    run_db: Path, run_id: str, *, ordered: bool, adaptive: bool, resumed: bool
-) -> None:
-    """Record the mutator order this invocation plans in, and say so when a resume of an
-    adaptive campaign plans in the declared one.
+def _record_order(run_db: Path, run_id: str, *, with_fingerprint: bool, resumed: bool) -> None:
+    """Record whether this invocation planned with a fingerprint, and say so when a resume plans
+    in the declared order after an earlier part planned with one.
 
     ``-sV``, ``-A`` and ``--deep`` all record adaptive planning, so a ``-sV`` campaign resumed
     with ``--deep`` alone keeps its mode and takes no fingerprint: OD-5 accepts it (the same
-    attempts are sent and scored, only in another order), and this makes it visible. Nothing
-    recorded which order each part used before (pre-merge audit of be3f2e71).
+    attempts are sent and scored, only perhaps in another order), and this makes it visible.
+    ``fingerprint`` says a fingerprint was there to plan with, not that it moved a mutator: with
+    no ``effective_mutators`` hint the declared order stands. Nothing recorded which part used
+    what before (pre-merge audit of be3f2e71); the note printed even when no part had a
+    fingerprint until the verification of 877b2e2b.
     """
 
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
         orders = store.add_run_order(
-            run_id, "fingerprint" if ordered else "declared", resumed=resumed
+            run_id, "fingerprint" if with_fingerprint else "declared", resumed=resumed
         )
-    if resumed and adaptive and not ordered:
+    if resumed and not with_fingerprint and "fingerprint" in orders[:-1]:
         # Read back from the run store, which keeps any string: written out like every stored
         # text (`visible_controls`), as the scope note writes its digests.
         shown = ", ".join(visible_controls(order[:16]) for order in orders)
         print(
-            f"note: {run_id} plans in each spec's declared mutator order: the campaign planned "
-            "adaptively and this invocation has no fingerprint (no -sV or -A); which attempts "
-            f"are sent does not change, only the order may (mutator_orders: {shown})",
+            f"note: {run_id} plans in each spec's declared mutator order: an earlier part "
+            "planned with a fingerprint and this invocation has none (no -sV or -A); which "
+            f"attempts are sent does not change, only the order may (mutator_orders: {shown})",
             file=sys.stderr,
         )
 
