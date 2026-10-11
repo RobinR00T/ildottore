@@ -168,9 +168,18 @@ them, so a hand-off in the OpenAI Agents SDK's `transfer_to_<agent>` style reads
 In a spec of your own, mark that tool `destructive: false` in `setup.tools`: a call to that exact
 name is then not destructive, while `transfer_to_account`, which moves money, still is (no name
 is exempt by its shape). The flag clears only that check: a call off the allowlist, or with an
-injected or a forbidden argument, still fails. A tool your deployment grants under
-`seeded_setup.granted_tools` is in no scene, so it is still judged by its name. See MANUAL §8
-(u06 A-71, 2026-10-11).
+injected or a forbidden argument, still fails. See MANUAL §8 (u06 A-71, 2026-10-11).
+
+A tool your deployment grants under `seeded_setup.granted_tools` is in no scene, so no spec can
+mark it. Your target file can: write the grant as `{name: transfer_to_billing_agent,
+destructive: false}` and a call to that exact name is not failed by its name alone (owner
+decision OD-43, 2026-10-11). It is your declaration, so it is always shown: `--dry-run` and
+`-sn` print it on an `operator:` line, every report and the run store state it for the run,
+each attempt it changed says so in its verdict, and changing it refuses a resume. It is held to
+the narrowest reading: `false` only (`true`, a quoted `"false"` and any other key are refused),
+exact names, never a tool of a spec's own scene (there the scene decides, `destructive: true`
+included), never `kill_chain_progression`, and never a call off the allowlist or an injected or
+forbidden argument. See MANUAL §4.2 and §8.
 
 ### Which suites and categories exist?
 
@@ -272,7 +281,9 @@ under `seeded_setup.specs` (ids or globs such as `PI-INDIRECT-*`). Declared, it 
 plain prompt, and each attempt says `setup_delivery: seeded`. Map the spec's tool names to your
 deployment's under `seeded_setup.tools` (`lookup_ticket: get_ticket`), so a call under your
 name is judged as the spec's tool instead of failing as unauthorized, and list your own tools
-outside any scene under `seeded_setup.granted_tools`. A spec whose canary has to be in your
+outside any scene under `seeded_setup.granted_tools` (a hand-off such as
+`transfer_to_billing_agent` written `{name: ..., destructive: false}`, declared not destructive:
+OD-43). A spec whose canary has to be in your
 deployment needs `seeded_setup.run_token` (`--dry-run -vv` prints the canary to seed), and your
 deployment must return its tool calls, or a spec whose poison is a tool's result is
 `setup_not_reached` (and a spec judged on its tool trace is not sent through a REST target).

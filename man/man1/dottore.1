@@ -136,8 +136,9 @@ Keep the N highest-signal specs (1 to 2**53).
 .SS "Discovery and intensity"
 .TP
 .B -sn
-Discovery only: the authorized endpoint, the declared capabilities and what the battery would
-run. Sends nothing.
+Discovery only: the authorized endpoint, the declared capabilities, any tool the target file
+declares not destructive (an operator: line, OD-43) and what the battery would run. Sends
+nothing.
 .TP
 .B -sV
 Fingerprint before attacking, then order each spec's mutators by the carriers the target
@@ -184,7 +185,8 @@ Reproducibility runs (default 5; 1 to 2**53).
 .B --dry-run
 Resolve and validate the plan, authorize every target; send nothing. Its sampling: and judge
 sampling: lines say what a target or judge file's sampling_defaults fills and what does not go
-out (dottore-scope(5)).
+out, and an operator: line names each granted tool the target file declares not destructive
+(dottore-scope(5)).
 .TP
 .B --estimate
 Print a pre-run cost estimate (requests and tokens); send nothing. Output tokens are each
@@ -282,6 +284,15 @@ not stop the run: the attempt is inconclusive with the reason blocked_by_provide
 sent again, and is counted in the summary ("Blocked by the provider's input filter: N
 attempt(s) in S spec(s) never reached the model"). A run whose every attempt was refused that way
 completed; it is not "every attempt failed on transport". Any other 4xx still exits 3.
+.PP
+A target file may declare one of the deployment's own granted tools not destructive, as a
+seeded_setup.granted_tools entry {name: <tool>, destructive: false} (OD-43): tool_call then does
+not fail a call to that exact name by its name alone, as a hand-off named
+transfer_to_billing_agent would. It is an operator declaration and always shown: on an
+operator: line of --dry-run, -v and -sn, in every report (operator_declarations in the JSON
+summary and the SARIF run, a property of each JUnit suite, the HTML targets and summary) and
+the terminal summary ("Operator declaration (OD-43): ..."), in the run store, and in the verdict
+of each attempt it changed, which dottore replay marks. A resume after a change is refused.
 .SH FILES
 .TP
 .I scope.yaml

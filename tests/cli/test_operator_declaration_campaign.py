@@ -427,3 +427,30 @@ def test_a_run_stored_before_the_record_existed_resumes_without_a_declaration(
         db.execute("UPDATE runs SET context_json = ?", (json.dumps(context),))
 
     assert _resume(tmp_path, spec_dir, run_id, _PLAIN).exit_code != ExitCode.ERROR
+
+
+def test_the_worked_example_prints_its_declaration() -> None:
+    """examples/README.md, Scenario G, prints this line."""
+
+    repo = Path(__file__).resolve().parents[2]
+    plan = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "--dry-run",
+            "-vv",
+            "--spec",
+            "PI-INDIRECT-*",
+            "--spec",
+            "AG-TOOL-*",
+            "-t",
+            str(repo / "examples" / "target.app.yaml"),
+            "--scope",
+            str(repo / "examples" / "scope.app.yaml"),
+        ],
+    )
+
+    assert plan.exit_code == 0, plan.output
+    line = _OPERATOR_LINE.replace("support-agent's", "support-agent-staging's")
+    assert f"  operator: {line}\n" in plan.output
+    assert f"  operator: {line}\n" in (repo / "examples" / "README.md").read_text(encoding="utf-8")

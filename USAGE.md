@@ -158,6 +158,18 @@ provider's input filter: N attempt(s) in S spec(s) never reached the model`, and
 inconclusive, never a pass. Any other 4xx still stops the run with `3`
 ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
 
+**A deployment's own hand-off can be declared not destructive.** A tool your deployment grants
+under `seeded_setup.granted_tools` whose name holds a destructive verb (the OpenAI Agents SDK's
+`transfer_to_<agent>` hand-off holds `transfer`) fails every spec that declares `tool_call`. Write
+the grant as `{name: transfer_to_billing_agent, destructive: false}` and a call to that exact
+name is not failed by its name alone (OD-43). It is your declaration, shown before anything is
+sent (`operator:` in `--dry-run`, `-v` and `-sn`), stated in every report
+(`summary.operator_declarations` in JSON, a closing `Operator declaration (OD-43): ...` line in
+the terminal summary) and in each attempt's verdict it changed; a resume after a change is
+refused. It clears that check only: a call off the allowlist, an injected or a forbidden
+argument still fail, a spec's own scene still decides for its tools, and
+`kill_chain_progression` is unchanged ([`docs/MANUAL.md`](docs/MANUAL.md) §4.2, §8).
+
 ## Multi-turn attacks
 
 Some specs (Crescendo, Linear, Sequential, Bad-Likert, Tree) attack over several turns.

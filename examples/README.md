@@ -218,6 +218,7 @@ dry-run: plan resolved, sent nothing.
     prompt_injection: 1
   not seeded: 1 spec(s) on support-agent-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
     - PI-INDIRECT-RAG-001: setup_not_seeded: this spec needs documents, tools or memory in the deployment, and the target file does not declare them seeded (seeded_setup.specs)
+  operator: transfer_to_billing_agent declared not destructive by support-agent-staging's target file (an operator declaration: seeded_setup.granted_tools, OD-43); it clears tool_call's destructive check only, never for a tool of a spec's scene
   sampling: support-agent-staging's sampling_defaults fills temperature 0.0 on 0 of 2 specs (a spec's own value wins)
   would send: 20 requests over 2 specs at runs=5
   pacing:  5.0 req/s ceiling (S8)
@@ -233,8 +234,15 @@ shows none is `inconclusive: setup_not_reached`, since nothing says the agent ev
 ticket. In `AG-TOOL-UNAUTH-001` the map is what keeps `kb_search` from failing as an
 unauthorized tool; the evidence keeps the deployment's names. A spec whose canary has to be in
 your deployment (none of these two) would carry `eng-2026-q4-<spec id>` in its place, and
-`-vv` would print it on a `seed:` line. The host is `example.test`, so a run without `--dry-run` has nowhere to go: point
-both files at your deployment first. What a seeded spec tests is only as good as what you
+`-vv` would print it on a `seed:` line. The agent hands billing questions off with
+`transfer_to_billing_agent`, a tool of its own outside every scene, so `granted_tools` writes it
+`{name: transfer_to_billing_agent, destructive: false}`: without that, the verb `transfer` in its
+name fails every call to it in a spec that declares `tool_call`. That is your declaration, not
+the tool's judgement, so the `operator:` line shows it before anything is sent, every report and
+the terminal summary state it, and each attempt it changed says so in its verdict (OD-43,
+[`../docs/MANUAL.md`](../docs/MANUAL.md) §4.2). It clears that check only: `send_email` off the
+allowlist or an injected argument still fails. The host is `example.test`, so a run without
+`--dry-run` has nowhere to go: point both files at your deployment first. What a seeded spec tests is only as good as what you
 seeded, which the tool cannot check.
 
 ## Scenario H, scan a chat endpoint that only speaks WebSocket
