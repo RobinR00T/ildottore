@@ -350,6 +350,27 @@ def test_a_declared_tool_no_verb_matches_is_said_to_change_nothing(
     ) in plan.output
 
 
+def test_a_declared_tool_not_shaped_like_a_hand_off_is_flagged(
+    tmp_path: Path, agent: tuple[int, dict[str, int]]
+) -> None:
+    """As lint warns on a scene's ``destructive: false`` over a name not shaped like a hand-off
+    (A-71's audit), the plan says it of a target file's declaration: it may be a real
+    destructive tool declared harmless."""
+
+    port, _state = agent
+
+    plan = _run(tmp_path, port, "    - {name: purge_cache, destructive: false}\n", "--dry-run")
+    handoff = _run(tmp_path, port, _DECLARED, "--dry-run")
+
+    assert plan.exit_code == 0, plan.output
+    assert (
+        "  operator: purge_cache: declared not destructive over the destructive verb 'purge' in "
+        "its name and not named like a hand-off (transfer_to_<agent>): no call to it is judged "
+        "destructive, so make sure it destroys nothing\n"
+    ) in plan.output
+    assert "not named like a hand-off" not in handoff.output
+
+
 # --- the resume -------------------------------------------------------------------------------
 
 

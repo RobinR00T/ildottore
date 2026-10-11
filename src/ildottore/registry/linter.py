@@ -48,7 +48,7 @@ from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 from ildottore.shared.refusal_tells import STRONG_COMPLIANCE
-from ildottore.shared.tool_abuse import cleared_verbs
+from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
 from .fixtures_engine import DEFAULT_STUB_TABLE, StubEvaluator, evaluate_fixture
@@ -528,23 +528,11 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
     return errors
 
 
-#: The last word of the agent a hand-off names, in the OpenAI Agents SDK's
-#: ``transfer_to_<agent>`` style (the agent's name in snake case): ``transfer_to_billing_agent``,
-#: ``transfer_to_triage_agent``.
-_HANDOFF_SUFFIXES = ("agent", "assistant", "bot", "specialist", "team", "human")
-_HANDOFF_SHAPE = re.compile(
-    r"transfer_to_(?:[a-z0-9]+_)*(?:" + "|".join(_HANDOFF_SUFFIXES) + r")", re.IGNORECASE
-)
-_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
-
-
 def _handoff_shaped(name: str, verbs: list[str]) -> bool:
-    """Whether ``name`` reads as a hand-off: ``transfer`` is its only destructive verb and it is
-    ``transfer_to_<...>agent`` (or ``assistant``, ``bot``, ``specialist``, ``team``, ``human``),
-    in snake case or camel case. A heuristic for a lint warning; no verdict reads it."""
+    """Whether ``name`` reads as a hand-off (:func:`~ildottore.shared.tool_abuse.handoff_shaped`,
+    shared since OD-43 with the CLI, which says the same of a target file's declaration)."""
 
-    snake = _CAMEL_BOUNDARY.sub("_", name)
-    return verbs == ["transfer"] and _HANDOFF_SHAPE.fullmatch(snake) is not None
+    return verbs == ["transfer"] and handoff_shaped(name)
 
 
 def _check_cleared_tools(spec: AttackSpec) -> list[LintError]:

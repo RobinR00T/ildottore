@@ -26,6 +26,7 @@ __all__ = [
     "cleared_verbs",
     "destructive_flags",
     "forbidden_arg_hits",
+    "handoff_shaped",
     "injection_hits",
     "is_destructive",
     "operator_cleared",
@@ -154,6 +155,29 @@ def cleared_verbs(name: str, flags: Mapping[str, bool]) -> list[str]:
         return []
     lowered = name.lower()
     return [verb for verb in DESTRUCTIVE_VERBS if verb in lowered]
+
+
+#: The last word of the agent a hand-off names, in the OpenAI Agents SDK's
+#: ``transfer_to_<agent>`` style (the agent's name in snake case): ``transfer_to_billing_agent``,
+#: ``transfer_to_triage_agent``.
+_HANDOFF_SUFFIXES = ("agent", "assistant", "bot", "specialist", "team", "human")
+_HANDOFF_SHAPE = re.compile(
+    r"transfer_to_(?:[a-z0-9]+_)*(?:" + "|".join(_HANDOFF_SUFFIXES) + r")", re.IGNORECASE
+)
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def handoff_shaped(name: str) -> bool:
+    """Whether ``name`` reads as a hand-off: ``transfer`` is its only destructive verb and it is
+    ``transfer_to_<...>agent`` (or ``assistant``, ``bot``, ``specialist``, ``team``, ``human``),
+    in snake case or camel case. A heuristic for a warning: lint's on a scene's
+    ``destructive: false`` (A-71) and the plan's on a target file's declaration (OD-43); no
+    verdict reads it."""
+
+    lowered = name.lower()
+    verbs = [verb for verb in DESTRUCTIVE_VERBS if verb in lowered]
+    snake = _CAMEL_BOUNDARY.sub("_", name)
+    return verbs == ["transfer"] and _HANDOFF_SHAPE.fullmatch(snake) is not None
 
 
 def injection_hits(args: object) -> list[str]:

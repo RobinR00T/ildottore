@@ -89,7 +89,7 @@ from ildottore.shared.models import (
     TestRunSummary,
 )
 from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
-from ildottore.shared.tool_abuse import is_destructive
+from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped
 
 __all__ = [
     "CATEGORY_ALIASES",
@@ -1242,8 +1242,11 @@ def _declaration_lines(target: Target) -> list[str]:
     """What ``--dry-run``, ``-v`` and ``-sn`` say of the operator's declaration (OD-43, A-72).
 
     One line naming the tools and saying it is the operator's word and what it clears, and one
-    for each declared tool no destructive verb is in, for which the declaration changes nothing.
-    The names are the operator's text, written out as every such line is (u12 §6).
+    for each declared tool worth a second look, as lint says of a scene's ``destructive: false``
+    (A-71): one no destructive verb is in, for which the declaration changes nothing, and one a
+    verb is in that is not named like a hand-off (``transfer_to_<agent>``), which may be a real
+    destructive tool declared harmless. The names are the operator's text, written out as every
+    such line is (u12 §6).
     """
 
     names = _declared(target)
@@ -1256,10 +1259,18 @@ def _declaration_lines(target: Target) -> list[str]:
         "destructive check only, never for a tool of a spec's scene"
     ]
     for name in names:
-        if not is_destructive(name, {}):
+        verbs = cleared_verbs(name, {name: False})
+        if not verbs:
             lines.append(
                 f"{visible_controls(name)}: no destructive verb is in its name, so the "
                 "declaration changes nothing for it"
+            )
+        elif not handoff_shaped(name):
+            said = ", ".join(repr(verb) for verb in verbs)
+            lines.append(
+                f"{visible_controls(name)}: declared not destructive over the destructive verb "
+                f"{said} in its name and not named like a hand-off (transfer_to_<agent>): no "
+                "call to it is judged destructive, so make sure it destroys nothing"
             )
     return lines
 
