@@ -233,7 +233,23 @@ class RestAdapter(BaseAdapter):
             return None
         return "promptFeedback.blockReason", f"promptFeedback.blockReason {reason}"
 
+    @property
+    def reads_array_body(self) -> bool:
+        """A template whose ``text_path`` starts at an index reads a JSON array (Hugging Face's
+        Inference API answers ``[{"generated_text": ...}]``; pre-merge audit of 598f0858, LOW 2)."""
+
+        return self.template.text_path.split(".", 1)[0].lstrip("-").isdigit()
+
+    def _parse_array_response(self, payload: list[Any]) -> ModelResponse:
+        return self._parse_body(payload)
+
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
+        return self._parse_body(payload)
+
+    def _parse_body(self, payload: Any) -> ModelResponse:
+        """The reply read at the template's paths, from an object or, rooted at an index, an
+        array (``get_path`` indexes a list)."""
+
         finish_reason = None
         if self.template.finish_path is not None:
             candidate = get_path(payload, self.template.finish_path)

@@ -718,6 +718,34 @@ class BaseAdapter(ABC):
 
         return "check the target's endpoint and provider"
 
+    #: True for an adapter whose replies may be a JSON array (a REST template rooted at an index).
+    @property
+    def reads_array_body(self) -> bool:
+        return False
+
+    def _parse_array_response(self, payload: list[Any]) -> ModelResponse:
+        """Parse a success body that is a JSON array (only where :attr:`reads_array_body`)."""
+
+        raise ResponseMalformed(
+            f"{self.id}: success response JSON was not an object; not evaluated"
+        )
+
+    def _checked(self, parsed: ModelResponse, label: str) -> ModelResponse:
+        """``parsed``, its tool calls' JSON-text arguments measured for nesting.
+
+        OpenAI carries a call's arguments as a JSON string, which the reply's parse never opened:
+        the evaluators and the in-band tool loop do, so it is measured here.
+        """
+
+        for call in parsed.tool_calls:
+            try:
+                check_argument_nesting(call)
+            except NestedTooDeeply as exc:
+                raise ResponseTooDeep(
+                    f"{label} has a tool call whose arguments are {exc}; not evaluated"
+                ) from exc
+        return parsed
+
     def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
         """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
 
@@ -862,6 +890,14 @@ class BaseAdapter(ABC):
                 raise self._unreadable(
                     f"{self.id}: success response was not valid JSON: {exc}; not evaluated", raw
                 ) from exc
+            if isinstance(payload, list) and self.reads_array_body:
+                # A template rooted at an index (Hugging Face's `0.generated_text`) reads an array
+                # (pre-merge audit of 598f0858, LOW 2); no provider's prompt block is an array.
+                try:
+                    return self._checked(self._parse_array_response(payload), label)
+                except ResponseMalformed as exc:
+                    exc.with_reply(raw, self.redactor, self.unreadable_advice)
+                    raise
             if not isinstance(payload, Mapping):
                 raise self._unreadable(
                     f"{self.id}: success response JSON was not an object; not evaluated", raw
@@ -879,16 +915,7 @@ class BaseAdapter(ABC):
             except ResponseMalformed as exc:  # not the provider's shape: keep the body too
                 exc.with_reply(raw, self.redactor, self.unreadable_advice)
                 raise
-            # OpenAI carries a call's arguments as a JSON string, which the parse above never
-            # opened: the evaluators and the in-band tool loop do, so it is measured here.
-            for call in parsed.tool_calls:
-                try:
-                    check_argument_nesting(call)
-                except NestedTooDeeply as exc:
-                    raise ResponseTooDeep(
-                        f"{label} has a tool call whose arguments are {exc}; not evaluated"
-                    ) from exc
-            return parsed
+            return self._checked(parsed, label)
 
         # The provider's input filter refused the prompt (OD-41): the attempt is blocked, not a
         # defect. Read first: its 400 names the prompt, never a sampling parameter.
