@@ -108,6 +108,111 @@ The carryover ledger. Every agent session updates this so context survives even 
   only of declaring a tool not destructive, and making a tool destructive stays the spec's word);
   and a null `destructive` in the entry is refused, unlike a scene's.
 
+## State, 2026-10-11 (evening, later): the verification of `da16f219`, two LOWs
+
+- Merge-ready per the verification; two LOWs, fixed in a new commit. At the request ceiling the
+  benign check's debit raised inside the watch in place of the fifth unreadable reply, which was
+  never stored and kept its reservation: the watch's caller now raises `CeilingAtUnreadable`, which
+  `execute_attempt` turns into a `ReplyOverBudget` carrying that reply's result, refunded and stored
+  (`--budget-requests 5` against an all-HTML stub through the CLI: 5 requests, 5 attempts stored, 0
+  tokens, exit 3 `budget ceiling reached on 'max_requests'`; it stored 4 and recorded 629 tokens).
+  One test more in `tests/core/test_unreadable_replies.py` (16; it fails on `da16f219`). The
+  mid-run break's figure is written "26 to 27" (three runs gave 26, 26, 26 here, and 27, 26, 26
+  for the verifier: the replies in flight vary).
+
+## State, 2026-10-11 (evening): the verification of `07aa0b3a` (OD-21), fixed
+
+- Both false passes closed per the verification; one MEDIUM and two LOWs, fixed in new commits after
+  merging `main` (`e8f9d1f6`, #107) as `19ce3080` (conflicts only in CHANGELOG and PROGRESS, both
+  kept). `f6b1a792` LOW 1: the excerpt's read stops before a registered credential that crosses its
+  8 KiB cut, and before a short key-shaped token that does (the auditor's `probe_cut.py`: 0
+  fragments, where up to 15 leading characters survived). `b5a4e7e1` MEDIUM and LOW 2: before
+  either stop the watch sends one benign request (debited, paced, filed under `probes/`) and stops
+  only when that one cannot be read either; a resume of a run that read replies starts proven; the
+  reason names a filter's block page among the causes; ADR-0012 states the stop and its
+  consequences; a resume that keeps nothing says "keeps none of the N attempt(s) it stored".
+  Measured with the auditor's `probe_cli.py` on `b5a4e7e1`: the broad filter on attack words
+  finishes the default battery (160 of 550 blocked, 2 checks at `--concurrency 1`, exit 0; on
+  `07aa0b3a`, exit 3 at a run of 20 and every resume after 5); all HTML: 9 requests (6 at 1), 27
+  with `-sV` (24 at 1); two readable then HTML: 26 to 27, exit 3; 30% HTML at random: finishes, every
+  spec `inconclusive`. Tests: core 15 (6 fail on `07aa0b3a`), adapters 37 (3 fail there), CLI 11 (4
+  fail there). `eca90de1` names the resume note's clause apart (mypy). `make --no-print-directory
+  gates` green on `eca90de1` (2026-10-11, 18:34 to 18:41): ruff, format (405 files), mypy strict
+  (159 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs, 14
+  suites, 1 pack), 5,348 tests with 97.75% coverage, self-scan 0 high/critical, bandit, pip-audit
+  (no known vulnerabilities).
+- Noted, not part of this branch: the auditor's `probe_excerpt.py` shows an `sk-ant-api03-` key of
+  a repeated 8-character pattern readable in the excerpt, and the redactor leaves it readable
+  everywhere else too (its entropy rule; the excerpt only applies the redactor).
+
+## State, 2026-10-11 (afternoon, later): the pre-merge audit of `598f0858` (OD-21, OD-20), fixed
+
+- Not merge-ready per the audit: OD-21 opened two false passes the old rule did not have. Fixed in
+  new commits on the same branch, history kept. `6a301b8c` HIGH 2: a WebSocket turn's tool calls
+  and its filter stop are read before the turn is called unreadable. `37b9beeb` HIGH 1, MEDIUM 1
+  and 2, LOW 1 and 3: an unreadable reply is `inconclusive: unreadable_reply` (ADR-0012, u00
+  additive) and never lets its spec pass (the auditor's broken wrapper among two refusals passed
+  `PI-DIRECT-001 --runs 3`, exit 0; now inconclusive), keeps a 4 KiB redacted excerpt with the
+  body's size and the adapter's advice under `request.metadata.unreadable_reply`, and is counted in
+  the terminal summary (never silenced by `-q`), the JSON report, SARIF, JUnit, HTML and replay;
+  the stop's reply is stored and refunded (8 requests, 8 attempts, 0 tokens where 598f0858 stored 4
+  and recorded 2,455 tokens); the watch counts unreadable replies in a row, 5 before any reply was
+  read and 20 after (two readable replies then HTML: 25 requests and exit 3, where it sent 355 and
+  exited 0); a resume sends unreadable attempts again; the CLI reads the verdict's reason or the
+  error's mark, not the class name; the advice is per provider (a `provider: rest` target file is
+  not told to check a template). `7c2e18f7` LOW 2: a template rooted at an index reads a JSON array
+  (`0.generated_text`). `c97317c2` LOW 4 and 5: the JUnit report writes the log command's `#` as
+  `&#35;`; the rules return a text with no `##` unscanned (60 MB in 0.03 s).
+- Tests: `tests/adapters/test_malformed_replies.py` 34 (9 fail on `598f0858`),
+  `tests/adapters/test_rest_array_body.py` 1 (fails there), `tests/core/test_unreadable_replies.py`
+  12 (does not collect there), `tests/cli/test_malformed_reply_campaign.py` 10 (9 fail there),
+  `tests/test_json_log_commands.py` 20 (2 fail there). The auditor's probes (`probe_cli.py`,
+  `probe_adapters.py`, `probe_od20.py`) re-run on `c97317c2`: figures in u08 A-74 and the
+  CHANGELOG. `make --no-print-directory gates` green on `c97317c2` (5,306 tests, 97.79% coverage)
+  and again after the docs (below).
+- Left open: the `-sV` pass seeding the stop (a wrong endpoint under `-sV` pays its 18 probes);
+  a WebSocket filter stop written at a path the block does not declare as `final_path` is not
+  read, as OD-42 reads only that path.
+
+## State, 2026-10-11 (afternoon): five open decisions of robustness and output closed
+
+- On `feat/decide-robustness-and-output`, rebased on `0685f2ce` (OD-42). The owner delegated these
+  on 2026-10-11 at 10:09 ("arreglalo todo según mejores prácticas"); each is recorded in its
+  contract and its 00-INDEX row as decided under that delegation (best practice), revisable, with
+  the reasoning, the alternative not taken and where to reverse it. One commit per decision.
+- **OD-22, kept:** a spec regex that does not compile still refuses the run before anything is
+  sent; lint keeps `EVALUATOR_MISCONFIGURED`. Fail fast on configuration; `--exclude` runs the rest.
+- **OD-25, kept:** the name of a missing file stays masked in CLI errors (A-38): a key given where a
+  file belongs must not reach a CI log.
+- **OD-24, kept:** a logprob block with one impossible figure reads as none (A-39); a positive
+  figure counts as impossible; an absent entry is still skipped.
+- **OD-20, built:** every JSON output (`lint --json`, `coverage --json`, `dottore fingerprint`,
+  `schema export`, the JSON and SARIF reports) writes the second `#` of `##<letters>[` as `\u0023`
+  (`redactor.log_safe_json`). Before, a target id holding `##vso[...]` put 1 such line in the
+  fingerprint and 3 each in the JSON and SARIF reports. Property-tested: the parsed document is the
+  plain serializer's, and serialized again with the output's options it is the plain bytes.
+  `tests/test_json_log_commands.py` (18; does not collect on `6d5f7ae`).
+- **OD-21, built (u08 A-74, with u04's and u12's halves):** a 200 the adapters cannot read (not
+  JSON, not an object, not the provider's or the template's shape; a WebSocket frame or an MCP
+  reply of that kind) is `ResponseMalformed`, an environment failure with `retryable = False`: the
+  attempt is inconclusive, sent once, kept by a resume, re-derived by `replay`, and a `-sV` probe
+  that gets one fails alone. One watch per invocation stops a campaign whose first 5 replies all
+  cannot be read, with none that can (`aborted on UnreadableReplies`, exit 3, naming the endpoint,
+  provider and template to check); a shorter run that read nothing is `unreachable` with the same
+  advice. Measured against a loopback stub answering HTML to everything: 8 requests at
+  `--concurrency 4`, 5 at 1, 26 with `-sV` (23 at 1); on `6d5f7ae` 4 and 1. Tests: 24 in
+  `tests/adapters/test_malformed_replies.py`, 9 in `tests/core/test_unreadable_replies.py`, 8 in
+  `tests/cli/test_malformed_reply_campaign.py` (7 fail on `6d5f7ae`); 12 files that pinned the
+  old rule assert the new one, `tests/adapters/test_provider_output_filter.py` (OD-42's) included.
+- `make --no-print-directory gates` green (2026-10-11, 11:57 to 12:03, on `927d747b`): ruff, format
+  (400 files), mypy strict (158 source files), import-linter (4 kept), spec lint (0 errors, 0
+  warnings across 75 specs, 14 suites, 1 pack), 5,288 tests with 97.87% coverage, self-scan 0
+  high/critical, bandit, pip-audit (no known vulnerabilities).
+- Left open, not part of the decisions: the `-sV` pass seeding the stop (a wrong endpoint under
+  `-sV` costs its 18 probes first); a stop for a target that goes bad after a readable reply; the
+  evidence field saying a logprob block was unreadable rather than absent (u00); JUnit XML and
+  HTML are not JSON and OD-20 does not change them.
+
 ## State, 2026-10-11 (noon): the verification of `877b2e2b`, and `main` merged in
 
 - The verification of `877b2e2b` found the decisions branch merge-ready and asked for three

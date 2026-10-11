@@ -7,7 +7,8 @@
 > carries `inconclusive_reason: InconclusiveReason|None` (closed StrEnum:
 > `capability_unavailable | blocked_by_policy | judge_compromised`, extensible via ADR; ADR-0011
 > added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69, and its amendment
-> `cut_by_provider_output_filter` and `provider_filter_side_unknown` on 2026-10-11, OD-42, A-70).
+> `cut_by_provider_output_filter` and `provider_filter_side_unknown` on 2026-10-11, OD-42, A-70;
+> ADR-0012 added `unreadable_reply` the same day, OD-21, u08 A-74).
 > `ModelFingerprint.capability_guess` (not `.capabilities`): distinct from the `Capabilities`
 > enum. Canonical `TestPlan` shape is in ADR-0006 §3, without the per-spec
 > `baseline_resistance`, removed on 2026-10-11 (OD-17, ADR-0008 option B: no layer wrote it,
@@ -183,6 +184,10 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   (Built closed; ADR-0011 added `blocked_by_provider_filter`, 2026-10-10: a prompt the provider's
   own input filter refused before the model saw it, OD-41; its amendment added
   `cut_by_provider_output_filter` and `provider_filter_side_unknown`, 2026-10-11: a reply the
-  provider's filter cut or replaced, and one it stopped on a side it did not report, OD-42.)
+  provider's filter cut or replaced, and one it stopped on a side it did not report, OD-42; ADR-0012
+  added `unreadable_reply`, 2026-10-11: a success reply the adapter could not read as the
+  provider's, OD-21, u08 A-74, with `shared/unreadable.py`, which reads it from a stored attempt:
+  the verdict's reason, else the error's mark ` [unreadable_reply]`, and names the
+  `request.metadata` key `unreadable_reply` under which the attempt keeps a bounded excerpt.)
 - Whether `ModelFingerprint` lives in `shared.models` (proposed, since u09 + u08 planner both
   consume it) or moves to `fingerprint/`: propose shared (it is a cross-unit wire shape).

@@ -33,6 +33,13 @@ block above, recorded the same way with the reply kept for the evidence. A filte
 replaced what the model wrote, or one that does not say which it did, marks the result
 ``filter_cut`` with that side, and the runner never scores the reply as the model's answer.
 
+A success reply the adapter cannot read (``ResponseMalformed``: not JSON, not an object, not the
+provider's shape) is an environment failure that is not retried, so the attempt is inconclusive
+(OD-21, decided 2026-10-11 under the owner's delegation, revisable). It carries a
+``malformed_reply`` marker, read by :func:`is_unreadable_reply`, which the runner counts: a
+campaign whose first :data:`UNREADABLE_REPLIES_TO_STOP` replies all are unreadable, with none it
+could read, stops with :class:`UnreadableReplies` (u08 A-74), so a wrong endpoint is caught early.
+
 The clock/sleep is injected (``sleep``) so tests run without real delays and the
 backoff schedule is deterministic (contract §7).
 """
@@ -47,7 +54,7 @@ from dataclasses import dataclass, field
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetExhausted, BudgetLedger
 from ildottore.core.pacing import RateLimiter
 from ildottore.shared.amounts import is_count
-from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, Sampling
+from ildottore.shared.models import Attempt, JsonDict, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
 from ildottore.shared.provider_filter import (
     INPUT_FILTER_REFUSED,
@@ -56,15 +63,21 @@ from ildottore.shared.provider_filter import (
     describe_filter_stop,
     filter_side,
 )
+from ildottore.shared.unreadable import UNREADABLE_MARK, UNREADABLE_REPLY_KEY
 
 __all__ = [
     "NOT_RETRYABLE_MARK",
+    "UNREADABLE_REPLIES_TO_STOP",
+    "UNREADABLE_STREAK_TO_STOP",
     "AttemptResult",
+    "CeilingAtUnreadable",
     "ReplyOverBudget",
     "RetryPolicy",
+    "UnreadableReplies",
     "default_is_env_error",
     "execute_attempt",
     "is_provider_filter_block",
+    "is_unreadable_reply",
     "reserve_tokens",
 ]
 
@@ -117,6 +130,11 @@ class AttemptResult:
     errors: list[str] = field(default_factory=list)
     filter_cut: str | None = None
     cut_before_final: bool = False
+    #: The target answered with a reply the adapter could not read (OD-21, u08 A-74): no
+    #: response, ``env_error`` is ``True``, the error carries
+    #: :data:`~ildottore.shared.unreadable.UNREADABLE_MARK`, and the runner records it
+    #: ``inconclusive: unreadable_reply``, which keeps its spec from passing.
+    unreadable: bool = False
 
 
 class ReplyOverBudget(BudgetExhausted):
@@ -169,6 +187,123 @@ def is_provider_filter_block(exc: BaseException) -> bool:
     """
 
     return getattr(exc, "blocked_by_provider_filter", None) is True
+
+
+#: How many replies in a row the adapters could not read a campaign takes before it stops, while
+#: it has read none (OD-21, u08 A-74). Five, as a circuit breaker's run of consecutive failures: a
+#: wrong endpoint, provider or template answers every request alike and is caught for the price of
+#: five requests instead of the battery's hundreds, while a hostile target has to garble every one
+#: of the first five attacks to stop a scan.
+UNREADABLE_REPLIES_TO_STOP = 5
+
+#: The same run counted after the campaign has read a reply (u08 A-74): a target that breaks mid-
+#: run (an expired session behind a proxy that serves a login page with a 200) answers every later
+#: request alike, and sent the rest of the battery to be scored inconclusive (pre-merge audit of
+#: 598f0858, MEDIUM 2: 355 requests, 353 unreadable, exit 0). Twenty, four times the first figure:
+#: a proven endpoint earns more doubt, and an attack battery garbles in runs (a wrapper that
+#: breaks on a quote breaks on every variant of a jailbreak that works). Each reply read resets
+#: the run, so a garbled attack costs its attempt only.
+UNREADABLE_STREAK_TO_STOP = 20
+
+
+def is_unreadable_reply(exc: BaseException) -> bool:
+    """True when ``exc`` is a success reply the adapter could not read (OD-21).
+
+    Structural, as :func:`is_provider_filter_block` is: the adapters' ``ResponseMalformed`` sets
+    ``malformed_reply = True``. Only ``True`` counts.
+    """
+
+    return getattr(exc, "malformed_reply", None) is True
+
+
+class UnreadableReplies(Exception):
+    """A run of replies the campaign could not read: it stops (u08 A-74).
+
+    Raised by the runner's watch in place of the unreadable ``reply`` that ends the run (the
+    fifth before any reply was read, or the twentieth in a row after). Not an environment error
+    (``is_env_error = False``): it propagates out of :func:`execute_attempt` like a product
+    error, carrying the ``result`` that reply makes, its reservation released, which
+    ``reproduce`` and the conversation executor keep before the halt goes on, as they keep a
+    :class:`ReplyOverBudget`'s (pre-merge audit of 598f0858, MEDIUM 1). The runner halts the
+    campaign as ``aborted`` with this message as the reason. Named so the redactor keeps the name
+    (u01 A-63).
+    """
+
+    is_env_error = False
+
+    def __init__(self, message: str, *, reply: BaseException) -> None:
+        super().__init__(message)
+        self.reply = reply
+        self.result: AttemptResult | None = None
+
+
+class CeilingAtUnreadable(Exception):
+    """A ceiling that refused the watch's benign check, with the unreadable reply that called for
+    it (verification of da16f219, LOW 1).
+
+    Raised by the runner's watch in place of that reply. :func:`execute_attempt` turns it into a
+    :class:`ReplyOverBudget` carrying the reply's result, its reservation released, so the reply
+    is stored before the ceiling halts the campaign: raised as the plain ceiling, it replaced the
+    reply, which was never stored, and its tokens stayed reserved. Named so the redactor keeps the
+    name (u01 A-63).
+    """
+
+    is_env_error = False
+
+    def __init__(self, ceiling: BudgetExhausted, *, reply: BaseException) -> None:
+        super().__init__(str(ceiling))
+        self.ceiling = ceiling
+        self.reply = reply
+
+
+def _unreadable_result(
+    reply: BaseException,
+    *,
+    attempt_id: str,
+    spec_id: str,
+    mutation: str,
+    request: ModelRequest,
+    sampling: Sampling | None,
+    retries: int,
+    errors: list[str],
+) -> AttemptResult:
+    """The attempt a reply the adapter could not read makes (OD-21, u08 A-74).
+
+    No response; the error marked :data:`~ildottore.shared.unreadable.UNREADABLE_MARK` (a resume
+    sends it again, since the target may have been fixed); and what the adapter kept of the body,
+    its size and its advice, under ``request.metadata.unreadable_reply`` for review.
+    """
+
+    errors.append(f"{type(reply).__name__}: {reply}{UNREADABLE_MARK}")
+    kept = {
+        key: value
+        for key, value in (
+            ("excerpt", getattr(reply, "excerpt", None)),
+            ("bytes", getattr(reply, "size", None)),
+            ("advice", getattr(reply, "advice", None)),
+        )
+        if value is not None
+    }
+    recorded = request
+    if kept:
+        metadata: JsonDict = {**(request.metadata or {}), UNREADABLE_REPLY_KEY: kept}
+        recorded = request.model_copy(update={"metadata": metadata})
+    return AttemptResult(
+        attempt=_attempt(
+            attempt_id,
+            spec_id,
+            mutation,
+            recorded,
+            sampling,
+            response=None,
+            error=errors[-1],
+            latency_ms=None,
+        ),
+        env_error=True,
+        retries=retries,
+        errors=errors,
+        unreadable=True,
+    )
 
 
 async def execute_attempt(
@@ -255,6 +390,31 @@ async def execute_attempt(
                     retries=send_index,
                     errors=errors,
                 )
+            # A reply the adapter could not read (OD-21), and the one the campaign's watch stopped
+            # it on, which travels on the stop (pre-merge audit of 598f0858, MEDIUM 1: it was
+            # sent, debited and never stored, and its token reservation stayed spent).
+            halt = exc if isinstance(exc, UnreadableReplies) else None
+            refused = exc if isinstance(exc, CeilingAtUnreadable) else None
+            reply = halt.reply if halt is not None else refused.reply if refused else exc
+            if is_unreadable_reply(reply):
+                if reserved:
+                    ledger.refund_tokens(reserved)
+                unreadable = _unreadable_result(
+                    reply,
+                    attempt_id=attempt_id,
+                    spec_id=spec_id,
+                    mutation=mutation,
+                    request=request,
+                    sampling=sampling,
+                    retries=send_index,
+                    errors=errors,
+                )
+                if refused is not None:  # the ceiling's halt, the reply in hand (as a reply's own)
+                    raise ReplyOverBudget(refused.ceiling, unreadable) from exc
+                if halt is None:
+                    return unreadable
+                halt.result = unreadable
+                raise
             if not is_env_error(exc):
                 raise
             # No completion was billed for a send that failed: release its reservation (the

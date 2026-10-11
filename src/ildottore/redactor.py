@@ -305,6 +305,44 @@ def visible_controls(text: str) -> str:
     return _LOG_COMMAND.sub(r"\\x23", _TERMINAL_CONTROLS.sub(_visible_control, text))
 
 
+def log_safe_json(text: str) -> str:
+    """``text``, a JSON document, with the second ``#`` of each ``##<letters>[`` as ``\\u0023``.
+
+    The JSON outputs (``lint --json``, ``coverage --json``, ``dottore fingerprint``, ``schema
+    export``, the JSON and SARIF reports) keep every value as it is, so printed to a CI log a pack's
+    file name or a target id holding ``##[error ...]`` or ``##vso[...]`` was still a command to
+    the runner (OD-20, open until 2026-10-11). ``\\u0023`` is JSON's own escape for ``#`` (RFC 8259
+    §7), so every JSON reader parses the same value, and serializing it again with the same
+    options gives the plain bytes back. In a JSON text a ``#`` stands only inside a string and is
+    never the character after an escaping backslash (``\\#`` is no JSON escape), so the rewrite
+    cannot touch anything else. The ``::`` form needs the start of a line, which a value never
+    gets in JSON (a newline in it is written ``\\n``). Decided under the owner's delegation (best
+    practice), revisable: the same ``#`` the text outputs write as ``\\x23``. A text with no
+    ``##`` is returned as it is, unscanned by the rule (pre-merge audit of 598f0858, LOW 5).
+    """
+
+    if "##" not in text:
+        return text
+    return _LOG_COMMAND.sub(r"\\u0023", text)
+
+
+def log_safe_xml(text: str) -> str:
+    """``text``, an XML document, with the second ``#`` of each ``##<letters>[`` as ``&#35;``.
+
+    The JUnit XML report is a machine output a CI runner may print too, so it follows the rule of
+    every JSON output (OD-20; pre-merge audit of 598f0858, LOW 4): ``&#35;`` is the character
+    reference every XML parser reads as ``#``. The report is written by ``ElementTree``, which
+    puts a ``#`` only in text or an attribute value (no CDATA section, no comment, and the one
+    character reference it writes, ``&#10;``, holds a single ``#``), where a reference is read.
+    The HTML report is not rewritten: it is a page for a browser, and inside a raw-text element
+    (``<script>``, ``<style>``) a character reference is not decoded.
+    """
+
+    if "##" not in text:
+        return text
+    return _LOG_COMMAND.sub("&#35;", text)
+
+
 #: The email shape; a ``skip`` match is a run of address characters with no address in it.
 EMAIL: Final = re.compile(
     r"\b(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b|(?P<skip>[A-Za-z0-9._%+-]{64,}))"
@@ -624,6 +662,16 @@ def holds_known_secret_part(value: str, parts: frozenset[str]) -> bool:
     return any(
         value[i : i + _KNOWN_MIN_LEN] in parts for i in range(len(value) - _KNOWN_MIN_LEN + 1)
     )
+
+
+def registered_secrets() -> tuple[str, ...]:
+    """Every registered credential (and the forms a library quotes it in), longest first.
+
+    For a caller that must not cut one in two before redacting (the excerpt an unreadable reply
+    keeps, ``adapters.base.reply_excerpt``: a credential read in part is not recognised).
+    """
+
+    return tuple(_known_secrets())
 
 
 def _known_secrets() -> list[str]:

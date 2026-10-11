@@ -159,7 +159,7 @@
             "state",
             "complete"
           ],
-          "description": "Whether the run finished. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one. state is complete, budget_exhausted (a hard ceiling halted the campaign) or unreachable (every attempt failed on transport, so nothing was evaluated).",
+          "description": "Whether the run finished. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one. state is complete, budget_exhausted (a hard ceiling halted the campaign), aborted (an error stopped it: a non-retryable 4xx, or a run whose first replies could all not be read) or unreachable (every attempt failed on transport or got a reply that could not be read, so nothing was evaluated).",
           "properties": {
             "state": {
               "type": "string",
@@ -226,6 +226,27 @@
             "specs"
           ],
           "description": "The attempts whose reply the provider's filter stopped without saying whether it refused the prompt or cut the reply (OD-42): a Bedrock guardrail_intervened with no guardrail trace, Bedrock's content_filtered. Each is an inconclusive attempt with the reason provider_filter_side_unknown, needing review and never a pass. Optional in report-1.0; always emitted by this build.",
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "specs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "unreadable_reply": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "specs"
+          ],
+          "description": "The attempts whose reply the adapter could not read as the provider's (OD-21, ADR-0012, u08 A-74): a success body that is not JSON, not a JSON object or not the provider's or the template's shape, a WebSocket frame or an MCP reply of that kind. Each is an inconclusive attempt with the reason unreadable_reply, its spec never a pass: the reply that broke may be the one an attack changed; the attempt keeps a redacted excerpt of the body under request.metadata.unreadable_reply. specs lists the spec ids with at least one. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one.",
           "properties": {
             "attempts": {
               "type": "integer",

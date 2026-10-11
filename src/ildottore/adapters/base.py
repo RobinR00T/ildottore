@@ -10,10 +10,13 @@ Everything provider-agnostic lives here so each concrete adapter (``openai``,
 * **Retry / timeout / backoff** - transient statuses (429/502/503/504) and
   transport/timeout errors are retried with capped exponential backoff, then the
   attempt is *skipped* by re-raising as :class:`AdapterEnvError` (env, per
-  ``AGENTS.md §2``). A malformed 200 body is a **product defect** →
-  :class:`AdapterProductError` (never masked as a flake); one nested too deeply to evaluate
-  is :class:`ResponseTooDeep`, an environment failure that is not retried. A lone surrogate in
-  a body is read as U+FFFD where it is parsed (:mod:`ildottore.shared.wellformed`, A-47).
+  ``AGENTS.md §2``). A 200 body the adapter cannot read (not JSON, not an object, not the
+  provider's shape) is :class:`ResponseMalformed`, and one nested too deeply to evaluate
+  :class:`ResponseTooDeep`: environment failures of that attempt, not retried (OD-21; a
+  campaign none of whose first replies can be read still stops, u08 A-74). A non-retryable
+  4xx is a **product defect** (:class:`AdapterStatusError`, never masked as a flake). A lone
+  surrogate in a body is read as U+FFFD where it is parsed (:mod:`ildottore.shared.wellformed`,
+  A-47).
 * **Logprob mapping** - :func:`map_logprobs` folds a provider-neutral token list
   into :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005 / OD-1).
 * **Redaction** - raw request/response ids are redacted through u01's redactor
@@ -37,7 +40,7 @@ from typing import Any, ClassVar, cast
 import httpx
 
 from ildottore.policy import EndpointAllowlist
-from ildottore.redactor import Redactor
+from ildottore.redactor import Redactor, registered_secrets
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
@@ -53,6 +56,7 @@ from ildottore.shared.wellformed import well_formed_json
 __all__ = [
     "ACCEPT_ENCODING",
     "FILTER_REFUSED",
+    "UNREADABLE_EXCERPT_BYTES",
     "AdapterEnvError",
     "AdapterError",
     "AdapterProductError",
@@ -60,6 +64,7 @@ __all__ = [
     "BaseAdapter",
     "EndpointNotAllowed",
     "ProviderFilterBlock",
+    "ResponseMalformed",
     "ResponseTooDeep",
     "ResponseTooLarge",
     "ResponseUndecodable",
@@ -69,6 +74,7 @@ __all__ = [
     "map_logprobs",
     "read_capped",
     "redact_ids",
+    "reply_excerpt",
     "sampling_params_named",
 ]
 
@@ -139,15 +145,139 @@ class ResponseTooDeep(AdapterEnvError):
     of ``[``. A body it parses could abort it too: 300 levels (about 600 bytes) overflowed
     pydantic's serializer when the evidence was written (2026-10-07). Like a reply over the
     size cap, it is an environment failure of this attempt, which is inconclusive and is not
-    retried; a body that is not JSON at all is still a product defect.
+    retried; so, since OD-21, is a body that is not JSON at all (:class:`ResponseMalformed`).
     """
 
     is_env_error = True
     retryable = False
 
 
+class ResponseMalformed(AdapterEnvError):
+    """A success reply the adapter cannot read as one: not evaluated, and not retried (OD-21).
+
+    Not JSON (brackets that do not balance, an integer of more than 4,300 digits, bytes that are
+    not text included), not a JSON object, or not the shape the provider or the template
+    declares (OpenAI's ``choices[0].message.content``, Anthropic's ``content`` array, a REST
+    template's ``text_path``, a WebSocket frame that is binary, not JSON or not an object, or a
+    turn with no text, no tool call and no filter's stop, an MCP reply that is not JSON-RPC). It
+    was an :class:`AdapterProductError`, and the runner stopped the whole campaign on the first one:
+    one hostile ``<html>`` reply ended a scan after 1 request. Decided 2026-10-11 under the
+    owner's delegation (best practice), revisable, as #65 decided for a reply nested too deeply:
+    the attempt is inconclusive and the campaign goes on. A wrong endpoint answers every request
+    this way, so the runner reads ``malformed_reply`` and stops a campaign whose first replies
+    all are unreadable, or which reads none of 20 in a row later (``core.execute``, u08 A-74).
+
+    It carries what the attempt keeps for review (pre-merge audit of ``598f0858``, HIGH 1): an
+    ``excerpt`` of the body, at most :data:`UNREADABLE_EXCERPT_BYTES` of UTF-8 through the
+    adapter's redactor (:func:`reply_excerpt`), the body's ``size`` in bytes, and the adapter's
+    ``advice`` on what to check, worded for the adapter and for how it was built (a target file
+    declares no REST template, so it is not told to check one: LOW 2).
+    """
+
+    is_env_error = True
+    #: The same request gets the same reply: sent once within a run (a resume sends it again,
+    #: since the target may have been fixed: ``shared.unreadable.UNREADABLE_MARK``).
+    retryable = False
+    #: The structural marker the runner's stop reads (``core.execute.is_unreadable_reply``).
+    malformed_reply = True
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        excerpt: str | None = None,
+        size: int | None = None,
+        advice: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.excerpt = excerpt
+        self.size = size
+        self.advice = advice
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Rebuild with what it keeps (the default reduction passes the message alone)."""
+
+        rebuild = functools.partial(
+            type(self), excerpt=self.excerpt, size=self.size, advice=self.advice
+        )
+        return (rebuild, self.args)
+
+    def with_reply(
+        self, body: bytes | str, redactor: Redactor, advice: str | None
+    ) -> ResponseMalformed:
+        """This error, with the excerpt, the size and the advice it lacks filled in."""
+
+        if self.excerpt is None:
+            self.excerpt, self.size = reply_excerpt(body, redactor)
+        if self.advice is None:
+            self.advice = advice
+        return self
+
+
+#: The most of an unreadable reply an attempt keeps for review, in bytes of UTF-8 (4 KiB).
+UNREADABLE_EXCERPT_BYTES = 4096
+
+
+#: A character a token of the redactor's rules can be made of: a key shape that crosses the read
+#: cut is cut before rather than read in part, when what lies before the cut is this short.
+_TOKEN_CHAR = re.compile(r"[\w+/=.:@-]")
+_SHORT_TOKEN_HEAD = 256
+
+
+def _clean_cut(text: str, cut: int) -> int:
+    """Where to cut ``text``, at or before ``cut``, so nothing that could be a credential crosses.
+
+    A registered credential that crosses ``cut`` (whatever characters it holds) is left out
+    whole, and so is a token of key characters whose part before the cut is short: read in part,
+    neither is recognised, and up to 15 leading characters of a registered credential reached
+    the excerpt (verification of 07aa0b3a, LOW 1). A longer token's head is long enough for the
+    redactor's own rules.
+    """
+
+    if cut >= len(text):
+        return len(text)
+    start = cut
+    if _TOKEN_CHAR.match(text, cut):
+        head = cut
+        while head > 0 and _TOKEN_CHAR.match(text, head - 1):
+            head -= 1
+        if cut - head <= _SHORT_TOKEN_HEAD:
+            start = head
+    for secret in registered_secrets():
+        end = cut + len(secret) - 1
+        found = text.find(secret, max(0, cut - len(secret) + 1), end)
+        while found != -1 and found < cut:
+            start = min(start, found)
+            found = text.find(secret, found + 1, end)
+    return start
+
+
+def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
+    """``(excerpt, size)``: the start of ``body`` for review, redacted, and its size in bytes.
+
+    Read over twice what is kept, cut where no credential and no short key-shaped token crosses
+    (:func:`_clean_cut`), redacted, then cut to :data:`UNREADABLE_EXCERPT_BYTES`, so a credential
+    is masked whole before the last cut takes part of its mask; bytes that are not UTF-8 read as
+    U+FFFD, and no cut splits a character.
+    """
+
+    data = body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body)
+    cut = min(len(data), 2 * UNREADABLE_EXCERPT_BYTES)
+    while 0 < cut < len(data) and data[cut] & 0xC0 == 0x80:  # not inside a character
+        cut -= 1
+    longest = max((len(secret) for secret in registered_secrets()), default=0)
+    head = data[:cut].decode("utf-8", "replace")
+    window = head + data[cut : cut + 4 * max(longest, _SHORT_TOKEN_HEAD)].decode("utf-8", "replace")
+    kept = window[: _clean_cut(window, len(head))]
+    shown = redactor.redact_text(kept).encode("utf-8")[:UNREADABLE_EXCERPT_BYTES]
+    return shown.decode("utf-8", "ignore"), len(data)
+
+
 class AdapterProductError(AdapterError):
-    """A real product defect (e.g. a malformed / unparseable success response).
+    """A real product defect: the target refused the request in its own shape (a non-retryable
+    4xx, a JSON-RPC error, a handshake reply that does not satisfy ``expect``) or the
+    configuration cannot be sent (a placeholder with no value). A success body the adapter
+    cannot read is :class:`ResponseMalformed`, an environment failure, since OD-21.
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
@@ -620,8 +750,47 @@ class BaseAdapter(ABC):
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
         """Turn a parsed JSON success body into a :class:`ModelResponse`. Pure.
 
-        Raise :class:`AdapterProductError` on a malformed / unexpected shape.
+        Raise :class:`ResponseMalformed` on a malformed / unexpected shape (OD-21).
         """
+
+    @property
+    def unreadable_advice(self) -> str:
+        """What to check when this target's replies cannot be read (OD-21, u08 A-74)."""
+
+        return "check the target's endpoint and provider"
+
+    #: True for an adapter whose replies may be a JSON array (a REST template rooted at an index).
+    @property
+    def reads_array_body(self) -> bool:
+        return False
+
+    def _parse_array_response(self, payload: list[Any]) -> ModelResponse:
+        """Parse a success body that is a JSON array (only where :attr:`reads_array_body`)."""
+
+        raise ResponseMalformed(
+            f"{self.id}: success response JSON was not an object; not evaluated"
+        )
+
+    def _checked(self, parsed: ModelResponse, label: str) -> ModelResponse:
+        """``parsed``, its tool calls' JSON-text arguments measured for nesting.
+
+        OpenAI carries a call's arguments as a JSON string, which the reply's parse never opened:
+        the evaluators and the in-band tool loop do, so it is measured here.
+        """
+
+        for call in parsed.tool_calls:
+            try:
+                check_argument_nesting(call)
+            except NestedTooDeeply as exc:
+                raise ResponseTooDeep(
+                    f"{label} has a tool call whose arguments are {exc}; not evaluated"
+                ) from exc
+        return parsed
+
+    def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
+        """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
+
+        return ResponseMalformed(message).with_reply(body, self.redactor, self.unreadable_advice)
 
     def _prompt_blocked(self, payload: Mapping[str, Any]) -> tuple[str, str] | None:
         """``(code, detail)`` when a success body says the provider's filter refused the prompt.
@@ -662,7 +831,7 @@ class BaseAdapter(ABC):
         Order is load-bearing: the allowlist gate runs first, so a refused URL
         issues **zero** ``httpx`` calls (contract §7). Transient failures retry
         with backoff then surface as :class:`AdapterEnvError` (env → skip); a
-        malformed success body raises :class:`AdapterProductError` (defect).
+        success body it cannot read raises :class:`ResponseMalformed` (env, not retried).
         """
 
         url = self._full_url()
@@ -748,7 +917,7 @@ class BaseAdapter(ABC):
     def _handle_final_response(
         self, response: httpx.Response, raw: bytes, *, body: Mapping[str, Any] | None = None
     ) -> ModelResponse:
-        """Classify a non-retryable response: 2xx → parse, else product defect."""
+        """Classify a non-retryable response: 2xx → parse (unreadable: env), else product defect."""
 
         if response.is_success:
             label = f"{self.id}: response from {self._request_path}"
@@ -758,12 +927,22 @@ class BaseAdapter(ABC):
                 payload = well_formed_json(bounded_loads(raw))
             except NestedTooDeeply as exc:
                 raise ResponseTooDeep(f"{label} is {exc}; not evaluated") from exc
-            except ValueError as exc:  # non-JSON success body = malformed
-                raise AdapterProductError(
-                    f"{self.id}: success response was not valid JSON: {exc}"
+            except ValueError as exc:  # non-JSON success body = malformed (OD-21)
+                raise self._unreadable(
+                    f"{self.id}: success response was not valid JSON: {exc}; not evaluated", raw
                 ) from exc
+            if isinstance(payload, list) and self.reads_array_body:
+                # A template rooted at an index (Hugging Face's `0.generated_text`) reads an array
+                # (pre-merge audit of 598f0858, LOW 2); no provider's prompt block is an array.
+                try:
+                    return self._checked(self._parse_array_response(payload), label)
+                except ResponseMalformed as exc:
+                    exc.with_reply(raw, self.redactor, self.unreadable_advice)
+                    raise
             if not isinstance(payload, Mapping):
-                raise AdapterProductError(f"{self.id}: success response JSON was not an object")
+                raise self._unreadable(
+                    f"{self.id}: success response JSON was not an object; not evaluated", raw
+                )
             blocked = self._prompt_blocked(payload)
             if blocked is not None:
                 code, detail = blocked
@@ -772,17 +951,12 @@ class BaseAdapter(ABC):
                     status_code=response.status_code,
                     code=code,
                 )
-            parsed = self._parse_response(payload)
-            # OpenAI carries a call's arguments as a JSON string, which the parse above never
-            # opened: the evaluators and the in-band tool loop do, so it is measured here.
-            for call in parsed.tool_calls:
-                try:
-                    check_argument_nesting(call)
-                except NestedTooDeeply as exc:
-                    raise ResponseTooDeep(
-                        f"{label} has a tool call whose arguments are {exc}; not evaluated"
-                    ) from exc
-            return parsed
+            try:
+                parsed = self._parse_response(payload)
+            except ResponseMalformed as exc:  # not the provider's shape: keep the body too
+                exc.with_reply(raw, self.redactor, self.unreadable_advice)
+                raise
+            return self._checked(parsed, label)
 
         # The provider's input filter refused the prompt (OD-41): the attempt is blocked, not a
         # defect. Read first: its 400 names the prompt, never a sampling parameter.

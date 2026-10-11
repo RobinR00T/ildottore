@@ -127,6 +127,18 @@ attempt id, by the verdict's reason or, without a verdict, by the mark
 `dottore replay` writes `inconclusive (blocked_by_provider_filter)` on their line and a footer line
 with the count. Checked by `tests/cli/test_provider_filter_campaign.py`.
 
+**A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21) The evidence keeps what an
+unreadable reply was, and a replay re-derives it.** An attempt whose reply the adapter could not
+read is stored with no response, its error ending ` [unreadable_reply]`, its verdict `inconclusive:
+unreadable_reply`, and `request.metadata.unreadable_reply = {excerpt, bytes, advice}`: at most 4 KiB
+of the body through the adapter's redactor (and the store's, as everything it keeps), the body's
+size and what the adapter advises to check. `ReplayResult.unreadable_replies()` counts them, one per
+attempt id, by the verdict's reason or, without a verdict, by the error's mark
+(`shared.unreadable`); they stay in `N` and are never a success, and `dottore replay` writes
+`inconclusive (unreadable_reply)` on their line and a footer line for the count. A resume sends
+such an attempt again (the mark is not the not-retryable one). Checked by
+`tests/cli/test_malformed_reply_campaign.py` and `tests/core/test_unreadable_replies.py`.
+
 **A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The evidence keeps a cut reply as
 it came, and a replay re-derives it.** A reply the provider's filter cut or replaced is stored with
 its text (empty, partial or the guardrail's message), its `finish_reason` and, for a Bedrock

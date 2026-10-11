@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from ildottore.adapters import AdapterProductError, OpenAIAdapter, RetryConfig
+from ildottore.adapters import OpenAIAdapter, ResponseMalformed, RetryConfig
 from ildottore.policy import EndpointAllowlist
 from ildottore.shared.models import Capabilities, ModelRequest, Sampling, TokenLogprob
 from ildottore.shared.protocols import TargetAdapter
@@ -91,14 +91,14 @@ async def test_tool_call_parsed(openai_allowlist: EndpointAllowlist) -> None:
 
 
 @respx.mock
-async def test_malformed_no_choices_is_product_defect(
+async def test_malformed_no_choices_is_a_malformed_reply(
     openai_allowlist: EndpointAllowlist,
 ) -> None:
-    """A 200 with no choices is a schema defect → AdapterProductError."""
+    """A 200 with no choices is not the provider's shape: it fails its attempt (OD-21)."""
 
     respx.post(_URL).mock(return_value=_mock("malformed_no_choices"))
 
-    with pytest.raises(AdapterProductError):
+    with pytest.raises(ResponseMalformed):
         await _adapter(openai_allowlist).send(ModelRequest(prompt="x"))
 
 

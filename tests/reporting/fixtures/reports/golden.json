@@ -400,6 +400,10 @@
       "reason": null,
       "state": "complete"
     },
-    "total": 2
+    "total": 2,
+    "unreadable_reply": {
+      "attempts": 0,
+      "specs": []
+    }
   }
 }

@@ -28,6 +28,7 @@ from ildottore.core.execute import (
     AttemptResult,
     ReplyOverBudget,
     RetryPolicy,
+    UnreadableReplies,
     default_is_env_error,
     execute_attempt,
 )
@@ -182,6 +183,11 @@ async def reproduce(
             )
         except ReplyOverBudget as halt:
             results.append(halt.result)
+            raise
+        except UnreadableReplies as halt:
+            # The reply that stopped the campaign is stored like the others (u08 A-74).
+            if halt.result is not None:
+                results.append(halt.result)
             raise
         results.append(result)
     return results

@@ -89,7 +89,8 @@ and counted under the pooled rate; replies its filter cut or replaced as
 .B "inconclusive (cut_by_provider_output_filter)"
 or
 .BR "inconclusive (provider_filter_side_unknown)" ,
-counted the same way.
+counted the same way; replies that could not be read as
+.BR "inconclusive (unreadable_reply)" .
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
@@ -239,7 +240,11 @@ Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.json, .html, 
 that already ends in one of the four extensions drops it first (-oA report.json writes
 report.json, report.html, report.sarif, report.xml). A report directory that does not exist,
 or two formats writing the same file (compared case-insensitively and after Unicode
-normalization), is refused before anything is sent.
+normalization), is refused before anything is sent. The JSON and SARIF reports, like every JSON
+output (lint --json, coverage --json, fingerprint, schema export), write the second # of
+##<letters>[ as \eu0023, and the JUnit report as &#35;, so a CI runner reading a printed report
+finds no log command (GitHub's legacy ##[error], Azure's ##vso[...]); every JSON or XML reader
+parses it as #.
 .TP
 .B --fail-on \fIBAND\fR
 CI gate on confirmed findings: info|low|medium|high|critical (default high; info gates on
@@ -278,8 +283,10 @@ At least one gated finding at or above --fail-on.
 .TP
 .B 3
 Operational error (bad scope, unknown suite, I/O), a usage error (unknown option, bad value),
-or a run that did not finish (a hard budget ceiling halted it, or every attempt failed on
-transport). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
+or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
+transport or got a reply that could not be read, or an error stopped it: a non-retryable 4xx,
+or replies that could not be read, 5 in a row before any was read or 20 in a row after, aborted
+on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
 confirmed exploits, so read summary.status.reason before treating 3 as a retryable
 infrastructure error.
 .PP
@@ -320,6 +327,18 @@ summary and the SARIF run, a property of each JUnit suite, the HTML targets and 
 the terminal summary ("Operator declaration (OD-43): ..."), in the run store, and in the verdict
 of each attempt it changed (blocked and cut ones included), which dottore replay marks and
 dottore diff reads. A resume after a change is refused.
+
+.PP
+A success reply the adapter cannot read (not JSON, not an object, not the provider's or the
+template's shape, a WebSocket frame or an MCP reply included) fails its attempt, inconclusive
+with the reason unreadable_reply, and is not sent again in the run (a resume sends it again); the
+run goes on, but the spec it belongs to is never a pass, the attempt keeps an excerpt of the
+body under request.metadata.unreadable_reply, and the summary says how many ("Unreadable
+replies: N attempt(s) in S spec(s)"). At 5 such replies in a row before any reply was read, or 20
+in a row after (a target that broke mid-run), one benign request is sent first; only when that one
+cannot be read either does the run stop with exit 3, saying what to check for the target's
+provider. A content filter that answers attack prompts with a block page lets the check through,
+so the run goes on.
 .SH FILES
 .TP
 .I scope.yaml

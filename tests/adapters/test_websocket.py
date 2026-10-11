@@ -16,6 +16,7 @@ import pytest
 from ildottore.adapters import (
     AdapterProductError,
     EndpointNotAllowed,
+    ResponseMalformed,
     RetryConfig,
     WebSocketAdapter,
 )
@@ -29,7 +30,7 @@ from ildottore.adapters.websocket import (
     placeholders,
     render,
 )
-from ildottore.core.execute import default_is_env_error
+from ildottore.core.execute import default_is_env_error, is_unreadable_reply
 from ildottore.policy import EndpointAllowlist
 from ildottore.policy.scope import Endpoint
 from ildottore.shared.models import Attempt, Capabilities, ModelRequest, WebSocketSpec
@@ -429,13 +430,21 @@ async def test_an_oversized_frame_is_refused_unread_and_not_retried() -> None:
         ("no_text", "carried text"),
     ],
 )
-async def test_malformed_replies_are_product_defects(behaviour: str, match: str) -> None:
+async def test_malformed_replies_fail_their_attempt_not_the_campaign(
+    behaviour: str, match: str
+) -> None:
+    """OD-21 (decided 2026-10-11): a frame the adapter cannot read is a ``ResponseMalformed``,
+    an environment failure that is not retried; the runner stops only when a campaign's first
+    replies all are such (u08 A-74). It was a product error that stopped the campaign."""
+
     with (
         FakeChatServer(behaviour) as server,
-        pytest.raises(AdapterProductError, match=match) as info,
+        pytest.raises(ResponseMalformed, match=match) as info,
     ):
         await _adapter(server).send(ModelRequest(prompt="hi"))
-    assert default_is_env_error(info.value) is False
+    assert default_is_env_error(info.value) is True
+    assert info.value.retryable is False
+    assert is_unreadable_reply(info.value) is True
 
 
 async def test_a_bad_credential_fails_the_handshake_expect_without_retry() -> None:

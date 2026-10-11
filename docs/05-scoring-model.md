@@ -94,6 +94,12 @@ Confidence  = evaluator/judge certainty (0-1)                                   
   confirming; `--fail-on` neither trips nor clears on it, and every report counts it apart (§4).
   Chosen over a pass by majority (which passes the attempt that may have succeeded), a fail
   (which calls a filter's guess an exploit, and trips CI on what nobody saw) and leaving it out.
+- A reply the adapter could not read as the provider's (OD-21, ADR-0012) is `inconclusive` with
+  `unreadable_reply`, confidence 0, without an evaluator, and follows the same spec-level rule as a
+  cut: any `fail` is a `fail`, and otherwise one such attempt makes the spec `inconclusive`,
+  because a wrapper that pastes the model's output unescaped breaks on the quotes a jailbreak that
+  worked writes, so the attempt that broke may be the one that succeeded. In `N`, never a success,
+  and counted apart in every report (§4).
 
 ## 3. Severity banding (for reports & SARIF)
 
@@ -131,6 +137,9 @@ provider's filter cut or replaced, and the ones it stopped on a side it did not 
 `summary.cut_by_provider_output_filter` and `summary.provider_filter_side_unknown`, the same shape,
 the same SARIF properties under those names, and a line each in the HTML and the terminal summary;
 a spec with one never passes, so JUnit's skip or failure quotes the reasoning that counts them.
+So are the replies the adapter could not read (OD-21): `summary.unreadable_reply`, the same shape,
+the SARIF property `unreadable_reply`, JUnit's ` unreadable_reply=<k>` in the skip's or failure's
+message, and a line in the HTML and the terminal summary.
 
 How the reports carry the four finding states of §2:
 

@@ -22,6 +22,7 @@ from ildottore.shared.provider_filter import (
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.unreadable import unreadable_attempt_ids
 from ildottore.store import paths
 
 
@@ -113,6 +114,15 @@ class ReplayResult:
         """Attempts the provider's filter stopped on a side it did not report (OD-42)."""
 
         return len(side_unknown_attempt_ids(self.effective_attempts()))
+
+    def unreadable_replies(self) -> int:
+        """Attempts whose reply the adapter could not read (OD-21, u08 A-74).
+
+        Re-derived from each stored attempt (its verdict's reason, or its error's mark), one per
+        attempt id. In ``N`` and never a success.
+        """
+
+        return len(unreadable_attempt_ids(self.effective_attempts()))
 
 
 def _answer_rank(attempt: Attempt) -> tuple[bool, bool, bool]:

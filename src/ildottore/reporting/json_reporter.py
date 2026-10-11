@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ildottore.redactor import log_safe_json
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
 from ildottore.reporting.summary import Coverage, ModelComparison, RunSummary
@@ -142,6 +143,12 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
             "attempts": summary.operator_declarations.attempts,
             "specs": list(summary.operator_declarations.specs),
         },
+        # The replies the adapter could not read (OD-21, u08 A-74): always emitted, optional in
+        # report-1.0 so an older report still validates.
+        "unreadable_reply": {
+            "attempts": summary.unreadable.attempts,
+            "specs": list(summary.unreadable.specs),
+        },
     }
     if summary.model_comparison is not None:
         wire["model_comparison"] = _comparison_to_wire(summary.model_comparison)
@@ -167,7 +174,8 @@ class JsonReporter(BaseReporter):
             indent=2,
             separators=(",", ": "),
         )
-        return (text + "\n").encode("utf-8")
+        # The same document, with no CI log command in its bytes when printed (OD-20).
+        return (log_safe_json(text) + "\n").encode("utf-8")
 
 
 register_reporter(ReportFormat.JSON, JsonReporter)

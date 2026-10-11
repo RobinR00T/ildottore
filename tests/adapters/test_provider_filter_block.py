@@ -37,6 +37,7 @@ from ildottore.adapters import (
     MCPAdapter,
     OpenAIAdapter,
     ProviderFilterBlock,
+    ResponseMalformed,
     RestAdapter,
     RestTemplate,
     RetryConfig,
@@ -273,13 +274,16 @@ async def test_a_gemini_prompt_block_is_a_provider_filter_block(reason: str) -> 
         3,
     ],
 )
-async def test_any_other_gemini_body_without_text_stays_the_product_error_it_was(
+async def test_any_other_gemini_body_without_text_is_a_malformed_reply_not_a_block(
     reason: object,
 ) -> None:
+    """Not a block: a body with no text at the template's path, which since OD-21 (decided
+    2026-10-11) fails its attempt as a ``ResponseMalformed`` instead of stopping the campaign."""
+
     body = {"promptFeedback": {"blockReason": reason}}
-    with pytest.raises(AdapterProductError) as raised:
+    with pytest.raises(ResponseMalformed) as raised:
         await _send(lambda: _rest(_GEMINI_TEXT), _GEMINI_URL, 200, body)
-    assert type(raised.value) is AdapterProductError
+    assert type(raised.value) is ResponseMalformed
     assert "response missing text" in str(raised.value)
 
 
@@ -290,9 +294,9 @@ async def test_a_template_that_does_not_read_a_gemini_body_does_not_read_its_blo
     """Only a ``text_path`` rooted at ``candidates.`` reads a Gemini body (L3 of the audit)."""
 
     body = {"promptFeedback": {"blockReason": "SAFETY"}}
-    with pytest.raises(AdapterProductError) as raised:
+    with pytest.raises(ResponseMalformed) as raised:
         await _send(lambda: _rest(text_path), _GEMINI_URL, 200, body)
-    assert type(raised.value) is AdapterProductError
+    assert type(raised.value) is ResponseMalformed
 
 
 async def test_a_body_with_text_is_a_reply_whatever_else_it_holds() -> None:
@@ -312,7 +316,7 @@ async def test_the_openai_adapter_does_not_read_gemini_shape() -> None:
         respx.post("https://x.openai.azure.com/v1/chat/completions").mock(
             return_value=httpx.Response(200, json=body)
         )
-        with pytest.raises(AdapterProductError) as raised:
+        with pytest.raises(ResponseMalformed) as raised:
             await _openai().send(ModelRequest(prompt="p"))
     assert not isinstance(raised.value, ProviderFilterBlock)
 

@@ -313,6 +313,33 @@ pipeline that should stop reads `summary.cut_by_provider_output_filter.attempts`
 report ([`MANUAL.md`](MANUAL.md) §9, the amendment in
 [`adr/0011`](adr/0011-a-prompt-the-provider-filter-refused-is-not-a-verdict.md)).
 
+### My target answered an attack with an HTML page. Does the scan stop?
+
+Not for one reply, since 2026-10-11 (OD-21). A success reply the adapter cannot read (not JSON, not
+an object, or not the provider's or the template's shape, a WebSocket frame or an MCP reply
+included) fails its attempt as `inconclusive: unreadable_reply`; it is not retried, it counts
+against `--budget-requests`, and a resume sends it again (the target may have been fixed). Before,
+the first one stopped the run (`aborted on AdapterProductError: ... success response was not valid
+JSON`, exit 3 after one request).
+
+The spec it belongs to never passes: a wrapper that pastes the model's output into its JSON breaks
+on the quotes a jailbreak that worked writes, so the reply that broke may be the exploit. The
+attempt keeps a redacted excerpt of what came back under `request.metadata.unreadable_reply`, and
+the summary says how many (`Unreadable replies: 1 attempt(s) in 1 spec(s) (...)`, never silenced by
+`-q`; `summary.unreadable_reply` in the JSON report, and SARIF, JUnit and HTML). A spec with one and
+no fail is `inconclusive`, so it does not trip `--fail-on`; a pipeline that should stop on one reads
+`summary.unreadable_reply.attempts`.
+
+A target that answers **every** request that way is a wrong endpoint or provider, and one that
+stops answering as it did mid-run is often an expired session behind a proxy that serves a login
+page with HTTP 200. The run counts such replies in a row, each reply it reads starting the count
+again. At 5 in a row before any reply was read, or 20 in a row after, it sends one benign request
+first: a content filter that answers attack prompts with a block page lets it through, and the run
+goes on. Only when that one cannot be read either does the run stop early (exit 3, `aborted on
+UnreadableReplies: ...`, with what to check for that provider); a resume of a run that read replies
+starts with the endpoint proven, and a shorter run that read nothing is `unreachable`. A 4xx is not this: it still stops the run ([`MANUAL.md`](MANUAL.md) §3, a
+reply the adapter cannot read; [`adr/0012`](adr/0012-a-reply-the-adapter-cannot-read-is-not-a-verdict.md)).
+
 ### If my system passes Il Dottore, does it meet OWASP AISVS?
 
 No, and the tool never says so. AISVS lists *controls* ("verify that a classifier screens every

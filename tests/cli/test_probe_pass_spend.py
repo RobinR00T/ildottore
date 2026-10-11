@@ -196,9 +196,10 @@ def no_delay(monkeypatch: pytest.MonkeyPatch) -> None:
     [
         (_unavailable, 3, "HTTP 503"),
         (_unauthorized, 1, "HTTP 401"),
-        (_not_json, 1, "not valid JSON"),
     ],
-    ids=["no-answer-503", "product-401", "product-not-json"],
+    # A reply that is not JSON stopped the pass here too, until OD-21 (decided 2026-10-11): it
+    # fails only its probe now, below with the other refused replies.
+    ids=["no-answer-503", "product-401"],
 )
 @pytest.mark.parametrize("probe", [1, 6])
 def test_a_resumed_probe_pass_stopped_by_an_error_records_what_it_sent(
@@ -400,15 +401,21 @@ def test_a_resume_whose_probe_pass_succeeds_counts_each_probe_once(
 
 
 @pytest.mark.usefixtures("no_delay")
+@pytest.mark.parametrize(
+    ("reply", "error"),
+    [(_too_deep, "ResponseTooDeep"), (_not_json, "ResponseMalformed")],
+    ids=["too-deep", "not-json"],
+)
 def test_a_resumed_probe_pass_with_a_refused_reply_goes_on_and_records_it(
-    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+    tmp_path: Path, stub: tuple[int, dict[str, Any]], reply: Callable[[], _Reply], error: str
 ) -> None:
     """A refused probe reply fails only that probe (u09 A-35), so the pass ends as one that
-    succeeded and the send it cost is recorded with the others, each once (u12 A-46)."""
+    succeeded and the send it cost is recorded with the others, each once (u12 A-46). A reply
+    that is not JSON is one since OD-21 (decided 2026-10-11): it stopped the pass before."""
 
     port, state = stub
     run_id = _halted_run(tmp_path, port, state)
-    state["script"] = {_HALT_AT + 1: _too_deep}
+    state["script"] = {_HALT_AT + 1: reply}
 
     resumed = CliRunner().invoke(
         app, _argv(tmp_path, port, "--budget-requests", "200", "--resume", run_id)
@@ -416,8 +423,7 @@ def test_a_resumed_probe_pass_with_a_refused_reply_goes_on_and_records_it(
 
     assert resumed.exit_code in {0, 1, 2}, resumed.output
     assert (
-        f"1 of {fingerprint_probe_count()} probe(s) got no usable reply "
-        "(metadata/self_id: ResponseTooDeep)"
+        f"1 of {fingerprint_probe_count()} probe(s) got no usable reply (metadata/self_id: {error})"
     ) in resumed.stderr
     assert "resume: the -sV probe pass" not in resumed.stderr
     assert state["served"] > _HALT_AT + fingerprint_probe_count(), "the attack went out"

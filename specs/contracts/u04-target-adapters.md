@@ -87,7 +87,12 @@ reads as U+FFFD, since httpx decodes the stream as text.
   raises `RecursionError`, not a `ValueError`, so one 400 KB reply of `[` escaped the malformed-body
   handler and the runner aborted the campaign; and a reply the parser accepts aborted it too,
   300 levels (about 600 bytes) overflowing pydantic's serializer when the evidence was written.
-  A body that is not JSON keeps the product-defect rule of §7 (open decision OD-21). A refused
+  A success body the adapter cannot read (not JSON, brackets that do not balance and an integer
+  of more than 4,300 digits included; not an object; not the provider's or the template's shape)
+  is `ResponseMalformed` since OD-21 (decided 2026-10-11 under the owner's delegation, revisable):
+  an environment failure with `retryable = False` and the marker `malformed_reply = True`, so the
+  attempt is inconclusive and the campaign goes on, until its first five replies all are such
+  (u08 A-74). A refused
   reply during the `-sV`/`-A` probe pass fails only that probe and the run goes on (u09 §7
   A-35, OD-23), and so does each WebSocket refusal above, a 1007 or 1009 close the server starts
   included, since each is an environment failure with `retryable = False`
@@ -185,14 +190,15 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `tests/shared/test_logprobs.py`.
 - **Capabilities:** each adapter reports every bool flag (nine as built); parametrized snapshot per provider.
 - **Error classification:** 429/503/timeout cassettes ⇒ retry-then-skip (env); a malformed-schema
-  200 ⇒ raise (product defect). No defect masked as flake. A 200 whose brackets balance and nest
+  200 ⇒ `ResponseMalformed` (env, sent once, since OD-21: see below); a non-retryable 4xx ⇒ raise
+  (product defect). No defect masked as flake. A 200 whose brackets balance and nest
   deeper than `MAX_DEPTH` (past the parser's stack included), in the body or in a tool call's
   string arguments, ⇒ `ResponseTooDeep` (env, sent once), for every adapter, the MCP transports
   and a WebSocket frame (`WebSocketFrameTooDeep`, a `ResponseTooDeep`, from 64 levels on the
   parsed frame; `tests/adapters/test_websocket_premerge.py`)
-  (a body whose brackets do not balance follows the product-defect rule, OD-21, except over MCP
-  stdio, where the line is skipped as stray output; tool-call arguments that do not balance read
-  as no arguments)
+  (a body whose brackets do not balance is a reply that cannot be read, `ResponseMalformed`,
+  OD-21, except over MCP stdio, where the line is skipped as stray output; tool-call arguments
+  that do not balance read as no arguments)
   (`tests/adapters/test_deep_replies.py`); through the CLI, one such reply fails its attempt
   and every other spec runs (`tests/cli/test_hostile_nesting.py`).
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/adapters` clean; `lint-imports` green
@@ -246,8 +252,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
   credentials (PR #57, merged after this clause) reads U+FFFD as a splitter (u01 A-32), as the owner
   approved on 2026-10-07 for whichever of the two landed second (OD-28); invalid UTF-8 that is not
   an encoded surrogate (one `FF` byte, a
-  multibyte character cut short) is still a body that is not JSON and stops the campaign on the base
-  adapter and the MCP JSON body, while over an MCP SSE stream it reads as U+FFFD and on an MCP stdio
+  multibyte character cut short) is still a body that is not JSON, which fails its attempt on the
+  base adapter and the MCP JSON body (`ResponseMalformed`, OD-21; it stopped the campaign before),
+  while over an MCP SSE stream it reads as U+FFFD and on an MCP stdio
   line the line is skipped and the call times out; the walks visit the whole parsed reply: on 4 MiB
   bodies, one with no surrogate costs about main's peak memory (1.00 to 1.02 times) and 1 to 14
   times its parse in CPU, and a hostile one up to about 42 times its parse in CPU, and most shapes
@@ -301,6 +308,48 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `tests/adapters/test_provider_filter_block.py` (52 tests; it does not collect on `92c7b11`);
   `tests/adapters/test_status_error.py` now sends a plain bad request, since the Azure body it
   sent at 400 is a block.
+- **A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21) A success reply the adapter
+  cannot read is a `ResponseMalformed`, never a product error.** `adapters.base.ResponseMalformed`
+  is an `AdapterEnvError` with `is_env_error = True`, `retryable = False` and `malformed_reply =
+  True` (the marker `core.execute.is_unreadable_reply` reads), every message ending `; not
+  evaluated`, and it survives copy and pickle. Raised for: a 2xx body that is not JSON, through
+  `bounded_loads` (brackets that do not balance, an integer of more than 4,300 digits, bytes that
+  are not text, an empty body), or whose JSON is not an object (`BaseAdapter`, so openai,
+  anthropic and rest); OpenAI's no `choices`, a choice that is not an object, no `message` object,
+  `content` that is not a string; Anthropic's no `content` array; a REST template's nothing at
+  `text_path` or a text that is not a string (after the Gemini block check, OD-41); a WebSocket
+  frame that is binary, not JSON or not an object, and a turn with no text, no tool call and no
+  filter's stop at `final_path` (the conversation is dropped, as on every error, and a frame in
+  the handshake phase is not re-dialled; a turn with a tool call or a filter's stop and no text is
+  a reply with empty text, read after them: raised first, an agent's destructive call was never
+  evaluated and a filter's cut was not OD-42's, pre-merge audit of `598f0858`, HIGH 2); an MCP body or SSE event that is not JSON, an SSE stream with no `data:` event, and
+  an `initialize` with no result object, over HTTP or stdio. What stays a product error: a
+  non-retryable 4xx (`AdapterStatusError`, `SamplingRefused`; a `ProviderFilterBlock` is OD-41's
+  blocked attempt), a
+  JSON-RPC `error` an MCP server answers, a WebSocket handshake reply that does not satisfy
+  `expect`, a refused upgrade, and configuration the adapter cannot send. Since the `-sV` probe
+  pass isolates every refused reply by the same marker (u09 A-35), such a probe fails alone, as
+  `layer/probe: ResponseMalformed`. The error carries what the attempt keeps for review (pre-merge
+  audit of `598f0858`, HIGH 1): `excerpt`, at most 4 KiB (`UNREADABLE_EXCERPT_BYTES`) of the body's
+  UTF-8 through the adapter's redactor, read over twice that, cut before a registered credential
+  that crosses that cut (`redactor.registered_secrets`) and before a key-shaped token that does
+  when its part before the cut is 256 characters or fewer (read in part, neither is recognised:
+  up to 15 leading characters of a registered credential survived, verification of `07aa0b3a`,
+  LOW 1), redacted, then cut to 4 KiB (`reply_excerpt`, `_clean_cut`); `size`, the body's bytes; `advice`, the adapter's
+  `unreadable_advice`, worded for it (openai: an OpenAI chat completions URL and `provider: openai`;
+  anthropic: the Messages API; websocket: the block's `text_path`, `tool_calls_path` and
+  `final_path`; mcp: an MCP server; a REST template built in Python: its `text_path`; a target
+  file's `provider: rest` target, built by `cli.wiring`, the generic template's `text` and that a
+  template is the Python API's, never "check the response template", which a target file cannot
+  declare: LOW 2). A shape error raised inside `_parse_response` gets the body in
+  `_handle_final_response`. A REST template whose `text_path` starts at an index
+  (`reads_array_body`, Hugging Face's `0.generated_text`) reads a body that is a JSON array; every
+  other adapter and template still refuses one as not an object (LOW 2). Checked by
+  `tests/adapters/test_malformed_replies.py` (it does not collect on `6d5f7ae`),
+  `tests/adapters/test_rest_array_body.py` and the tests that pinned the old rule, now asserting
+  this one (`test_base.py`, `test_openai.py`, `test_anthropic.py`, `test_rest.py`,
+  `test_deep_replies.py`, `test_websocket.py`, `test_websocket_premerge.py`,
+  `test_provider_filter_block.py`).
 
 - **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
   Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop
@@ -314,8 +363,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
     candidate stopped with `SAFETY` can come without its text; Vertex AI's reference on
     `FinishReason` `SAFETY`, read 2026-10-11); it was a product error that stopped the campaign.
     `RECITATION` too, since it joined the stops (decided 2026-10-11 under the owner's delegation).
-    Any other body with no text stays one. A template with no `finish_path` reads no stop, as
-    before;
+    Any other body with no text stays one until OD-21 (decided 2026-10-11): a
+    `ResponseMalformed` now, which fails its attempt (A-74). A template with no `finish_path` reads
+    no stop, as before;
   - for a template whose `finish_path` is the Converse root `stopReason`, and a stop of
     `guardrail_intervened`, the adapter reads `trace.guardrail` (present with
     `guardrailConfig.trace: enabled`; the Converse API reference and the user guide, "Include a
@@ -353,38 +403,50 @@ reads as U+FFFD, since httpx decodes the stream as text.
 - **OD-1** (ADR-0005 Accepted): Anthropic logprob availability/shape: if the provider exposes no
   usable per-token logprobs in MVP-1, `anthropic.py` reports `logprobs=False` and returns `None`;
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
-- **OD-24** (open, built reversibly 2026-10-07, A-39): what a logprob block with one figure no
-  model produces reads as. Built: when the figure is a token's own, the whole block is `None`, as
-  if the reply carried none, so nothing is scored from it; when it is an alternative's, only that
-  token's alternatives are dropped (no alternative is scored). The other choice for a token
-  figure, dropping only the bad entries as a null one is dropped, scores the rest as if it were
-  the reply: four confident tokens with one positive figure among them then read "likely
-  memorized". Also decided here, and the owner's to confirm: a positive figure counts as
-  impossible (`log p` is never above 0, and a gateway that writes probabilities into the field
-  is caught). Not measured: whether a provider sends rounding-level positive figures (`2e-07`);
-  if one does in a token's own figure, its membership spec is inconclusive, with nothing in the
-  evidence saying why (in an alternative it costs only that token's alternatives). Also the
-  owner's: an entry that is not an object (a list such as `["a", 0.9]`, a string, a number) or
-  that carries no figure is skipped and the rest is scored, as before this change, though the
-  whole-block reasoning applies to it too (pre-merge audit). Open: whether the evidence should
-  say a block was unreadable rather than absent, which needs an additive field on
+- **OD-24** (built 2026-10-07, A-39; **decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: kept as built**): what a logprob block with one figure no model produces
+  reads as. When the figure is a token's own, the whole block is `None`, as if the reply carried
+  none, so nothing is scored from it; when it is an alternative's, only that token's alternatives
+  are dropped (no alternative is scored). Why: one impossible figure is evidence the block is not a
+  model's (a gateway writing probabilities into the field, a forged reply), and a verdict read from
+  the rest would be one the reply never had; a tool should not raise a finding from data it has
+  caught being wrong, and the cost is an inconclusive membership spec. Not taken: dropping only the
+  bad entries, as a null one is dropped, which scores the rest as if it were the reply: four
+  confident tokens with one positive figure among them then read "likely memorized". Also decided
+  under the same delegation: a positive figure counts as impossible (`log p` is never above 0, and
+  a gateway that writes probabilities into the field is caught). Not measured: whether a provider
+  sends rounding-level positive figures (`2e-07`); if one does in a token's own figure, its
+  membership spec is inconclusive, never a false "memorized", with nothing in the evidence saying
+  why (in an alternative it costs only that token's alternatives). And an entry that is not an
+  object (a list such as `["a", 0.9]`, a string, a number) or that carries no figure is still
+  skipped and the rest is scored, as before A-39: absence is not a contradiction, and voiding the
+  block on it would protect nothing, since a target can send confident figures a model could
+  produce and is believed (A-39, "Not claimed"). Not taken: void the block on such an entry too
+  (the pre-merge audit's reading). Reversing the main rule is one line, the `except
+  _UnreadableLogprob` in `map_logprobs`, which would skip the entry instead of returning `None`;
+  `tests/cli/test_logprob_figures.py` pins it. Left open, not part of the decision: whether the
+  evidence should say a block was unreadable rather than absent, which needs an additive field on
   `ModelResponse` (u00).
 - REST auth-injection surface (header vs query vs body-templated token): propose header-only default
   in MVP-1 to shrink the secret-leak surface: needs sign-off.
-- **OD-21** (open, 2026-10-07): a 200 whose body is not JSON (brackets that do not balance
-  included; or not the provider's shape; or JSON with an integer of more than 4,300 digits,
-  which Python refuses to read) is
-  `AdapterProductError`, and the runner aborts the campaign on it (F5), so one hostile reply of
-  `<html>` still stops a scan, where a reply nested too deeply now fails only its attempt.
-  Measured with `dottore run` against a local stub: exit 3, "aborted on AdapterProductError", 1
-  request sent. Decide whether a malformed success body fails its attempt (inconclusive, as
-  `ResponseTooDeep`) or keeps stopping the campaign (a misconfigured endpoint is then caught at
-  the first request instead of after the whole battery). A non-retryable 4xx is not in question.
-  The same rule covers a WebSocket frame that is not JSON, is not an object, or is binary (as
-  built in PR #87: `run` exits 3 with "aborted on AdapterProductError: ... a frame was not valid
-  JSON", measured against the loopback chat server on 2026-10-09), so the decision covers both;
-  a text frame that is not UTF-8 is not in it, since the library refuses that one before the
-  adapter reads it (`WebSocketUndecodable`, inconclusive and not retried, §4).
+- **OD-21** (2026-10-07; **decided 2026-10-11 under the owner's delegation (best practice),
+  revisable: the attempt fails, the campaign goes on, and a campaign whose first five replies all
+  cannot be read stops early; built, §7 A-74 and u08 A-74**): a 200 whose body is not JSON
+  (brackets that do not balance included; or not the provider's shape; or JSON with an integer of
+  more than 4,300 digits, which Python refuses to read) was `AdapterProductError`, and the runner
+  aborted the campaign on it (F5), so one hostile reply of `<html>` stopped a scan, where a reply
+  nested too deeply failed only its attempt. Measured with `dottore run` against a local stub:
+  exit 3, "aborted on AdapterProductError", 1 request sent. The same rule covered a WebSocket frame
+  that is not JSON, is not an object, or is binary (PR #87, exit 3 against the loopback chat
+  server on 2026-10-09), and the decision covers both; a text frame that is not UTF-8 was never in
+  it, since the library refuses that one before the adapter reads it (`WebSocketUndecodable`,
+  inconclusive and not retried, §4). Why: a target's reply is untrusted input, and a scanner whose
+  battery a single hostile reply can end lets the target decide what is measured; #65, #68 and
+  OD-41 had already moved neighbouring cases to "fail the attempt, not the campaign". What the old
+  rule bought, a misconfigured endpoint caught at the first request, is kept by the early stop for
+  5 requests. Not taken: keep stopping the campaign; fail the attempt with no early stop (a wrong
+  endpoint then sends the whole battery and ends `unreachable`); retry such a reply. A
+  non-retryable 4xx is not in question and still stops the campaign.
 - **OD-28** (decided 2026-10-07, A-47): what a reply that holds a lone surrogate becomes. The owner
   left the choice to the build on 2026-10-07, and it is U+FFFD where the reply is parsed, the
   attempt evaluated as usual, as built. Why: it is what most of the target's consumers end up with

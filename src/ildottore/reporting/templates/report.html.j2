@@ -94,6 +94,17 @@
       They are inconclusive and need review, never a pass.
     </p>
     {% endif %}
+    {# OD-21 (u08 A-74): optional in report-1.0 too. #}
+    {% if summary.unreadable_reply and summary.unreadable_reply.attempts %}
+    <p class="provider-filter">
+      Unreadable replies:
+      <strong>{{ summary.unreadable_reply.attempts }}</strong> attempt(s) in
+      {{ summary.unreadable_reply.specs | length }} spec(s)
+      ({{ summary.unreadable_reply.specs | join(', ') }}) got a reply that could not be read as
+      the provider's. They are inconclusive and keep their spec from passing: the reply that
+      broke may be the one an attack changed. Each keeps an excerpt for review.
+    </p>
+    {% endif %}
     {# OD-43: optional in report-1.0, so an older document renders exactly as before. #}
     {% if summary.operator_declarations and summary.operator_declarations.not_destructive_tools %}
     <p class="operator-declaration">

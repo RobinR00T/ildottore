@@ -445,11 +445,19 @@ provider shape, on every shipped fixture trace under every shipped spec that dec
   record manifest in MVP-1, enforce signatures in MVP-2.
 - Whether suite/pack Pydantic models live in `shared/` (u00) or locally in `registry/` if u00
   omits them: propose local until promoted to shared by an ADR.
-- **OD-22, a spec regex that does not compile (A-33, 2026-10-07).** Built, reversible, for the
-  owner to confirm: (a) `dottore run` refuses the whole run when a selected spec has one, as it
-  refuses a spec file that fails to load (F-10); the alternative is to skip only that spec,
-  `inconclusive` with nothing sent and kept out of coverage, as `setup_not_seeded` does (OD-18 B),
-  so one bad third-party spec does not stop a battery. (b) Lint reports it as
-  `EVALUATOR_MISCONFIGURED`, which the linter's own comment had already named; the alternative
-  is a code of its own (`INVALID_PATTERN`), which `--json` consumers could filter on and which
-  §6's enum would gain.
+- **OD-22, a spec regex that does not compile (A-33, 2026-10-07). Decided 2026-10-11 under the
+  owner's delegation (best practice), revisable: both halves kept as built.** (a) `dottore run`
+  refuses the whole run when a selected spec has one, before anything is sent, as it refuses a
+  spec file that fails to load (F-10). A pattern that does not compile is a configuration error
+  found before any traffic, and a tool whose exit code gates CI fails fast on configuration: a
+  skipped spec leaves the battery smaller than the one the operator asked for while the run
+  exits 0 or 2, the false green F-10 refused for a file that fails to load. The cost, one bad
+  third-party spec stopping a battery, has a one-flag answer the refusal already gives
+  (`--exclude <id>`, A-48). Not taken: skip only that spec, `inconclusive` with nothing sent and
+  kept out of coverage, as `setup_not_seeded` does (OD-18 B). (b) Lint keeps
+  `EVALUATOR_MISCONFIGURED`, which the linter's own comment had already named: the pattern is an
+  evaluator's configuration, and the finding names the field, the pattern and the engine's
+  reason. Not taken: a code of its own (`INVALID_PATTERN`), which `--json` consumers could filter
+  on and which §6's enum would gain. Reversing (a) moves the refusal in `cli/run.py`
+  (`_execute_run`, the `uncompilable_patterns` step) into a per-spec inconclusive finding;
+  reversing (b) is one `LintCode` value and the string in `registry/linter.py`.

@@ -119,9 +119,15 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   as their `repr`, the `-vv` plan's reasons for a refused spec (a pack's `requires_policy`; a
   skipped or not seeded one's too, defensively) and the scope digests the resume note reads back
   from the run store. The JSON outputs escape every control character (`fingerprint` escapes DEL
-  and non-ASCII inside pydantic's own output) and keep every value as it is, so printed to a CI
-  log they can still carry such a command (OD-20). This does not cover the operator's own values
-  in the plan lines.)
+  and non-ASCII inside pydantic's own output) and keep every value as it is; since OD-20 (decided
+  2026-10-11 under the owner's delegation, revisable) each of them, `lint --json`, `coverage
+  --json`, `dottore fingerprint`, `schema export`, the JSON report and the SARIF report, writes
+  that same `#` as `\u0023` (`redactor.log_safe_json`), JSON's own escape for it, and the JUnit XML
+  report as `&#35;` (`redactor.log_safe_xml`, since the pre-merge audit of `598f0858`, LOW 4), so a
+  reader parses the same value and a CI log carries no command from it
+  (`tests/test_json_log_commands.py`: the parsed document is the plain serializer's, and
+  serialized again with the output's options it is the plain bytes). This does not cover the
+  operator's own values in the plan lines.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces
@@ -338,7 +344,8 @@ resume that completes still records its own invocation's spend as the run's, whi
 clause and is not changed by it.
 
 Checked through the real CLI against a counting stub by `tests/cli/test_probe_pass_spend.py`: a
-503, a 401 and a 200 that is not JSON on the first and on the sixth probe; SIGINT and SIGTERM sent
+503 and a 401 on the first and on the sixth probe (a 200 that is not JSON stopped the pass too
+until OD-21, 2026-10-11; it fails only its probe now, checked beside a reply nested too deeply); SIGINT and SIGTERM sent
 to a subprocess with a probe on the wire (its Ctrl-C handler restored, since a shell that starts
 pytest with `&` passes SIGINT on ignored); an interruption at the write after a pass that
 succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases
@@ -1067,8 +1074,9 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 
 **A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) The CLI says what the provider's
 input filter refused, and does not call it a dead target.** A run whose every attempt the filter
-refused completed: the provider answered every request, so it is not `unreachable` (which still
-means every attempt failed on transport) and exits by the findings, 0 when none is a gated `fail`.
+refused completed: the provider answered every request, so it is not `unreachable` (which
+means every attempt failed on transport or, since A-74, got a reply that could not be read) and
+exits by the findings, 0 when none is a gated `fail`.
 The terminal summary, under the coverage block (never silenced by `-q`), prints `Blocked by the
 provider's input filter: <k> attempt(s) in <s> spec(s) never reached the model (<spec ids>); they
 are inconclusive, not refusals by the model and not exploits` when `k` is not 0, and the `Not
@@ -1148,6 +1156,32 @@ or the two reports' summaries declare different tools not destructive (L2). Chec
 `tests/cli/test_operator_declaration_campaign.py` and the loader tests of
 `tests/evaluators/test_operator_not_destructive.py`.
 
+**A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21; amended after the pre-merge audit
+of `598f0858`) The CLI says how many replies it could not read, and a run that read nothing says
+what to check.** The terminal summary, under the coverage block (never silenced by `-q`), prints
+`Unreadable replies: <k> attempt(s) in <s> spec(s) (<spec ids>) got a reply that could not be read
+as the provider's; inconclusive, never a pass: each keeps an excerpt for review under
+request.metadata.unreadable_reply, and a resume sends them again` when `k` is not 0, and the `Not
+exercised` line names such a reply among its causes. A run halted by the runner's stop prints
+`error: run on <id> did not complete: aborted on UnreadableReplies: ...` through `for_terminal`, the
+advice in it the adapter's own (an OpenAI chat completions URL and `provider: openai`; the Messages
+API; the websocket block's paths; for a `provider: rest` target file, the generic template's `text`
+and that a template is the Python API's, `cli.wiring.REST_TARGET_FILE_ADVICE`: it was told to check
+a response template it cannot declare, LOW 2), and every report carries the state `aborted` with
+that reason (exit 3). A run of fewer attempts that read nothing is `unreachable`
+(`_unreachable_reason`): an attempt counts as unreadable by its verdict's reason or, without a
+verdict, by the error's mark ` [unreadable_reply]` (`shared.unreadable`; it read the class name,
+LOW 3); when every failed attempt is one, the reason reads `every one of the <n> attempt(s) got a
+reply that could not be read as the provider's, so nothing was evaluated: <advice>. The first:
+<error>`, the advice read from the attempt's `request.metadata.unreadable_reply`; with transport
+failures among them, `failed on transport or (<k> of them) with a reply that could not be read as
+the provider's`; with transport failures only, the reason is as before. A resume says how many it
+sends again because they could not be read (`; <k> that could not be read will be sent again`,
+LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it stored across <s>
+spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
+attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
+Checked by `tests/cli/test_malformed_reply_campaign.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -1178,18 +1212,42 @@ or the two reports' summaries declare different tools not destructive (L2). Chec
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
 - **OD-25** the name of a file that does not exist in a CLI error (a mistyped report named after a
-  commit SHA): print it, or keep it masked. Built reversibly (2026-10-07, A-38): masked, as on main,
-  its existing directories printed up to the first whitespace, a quote, a bracket, a comma or a
-  semicolon. Printing the name an `OSError` carries when it looks like a file's (an extension, a
-  directory that exists) printed an `sk-ant-` key given as `<key>.json` and an Azure connection
-  string in the pre-commit audit. Alternatives: print the directory and the extension and mask the
-  stem unless it is a 40- or 64-hex run (a hex key typed as a path would then print); or print a
-  name only when it is the command line's own argument.
+  commit SHA): print it, or keep it masked. **Decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: kept masked, as built (2026-10-07, A-38)**, its existing directories printed
+  up to the first whitespace, a quote, a bracket, a comma or a semicolon. An error line reaches a
+  terminal and a CI log, and a name given where a file belongs can be a secret pasted in the wrong
+  argument: the redactor fails closed on a token it cannot tell from a key, and printing the name an
+  `OSError` carries when it looks like a file's (an extension, a directory that exists) printed an
+  `sk-ant-` key given as `<key>.json` and an Azure connection string in the pre-commit audit. The
+  name is on the operator's own command line, so masking it costs them little. Not taken: print the
+  directory and the extension and mask the stem unless it is a 40- or 64-hex run (a hex key typed as
+  a path would then print); or print a name only when it is the command line's own argument (where a
+  misplaced key sits). Reversing it widens `_whole_path_spans` in `cli/app.py` to a missing path's
+  name; `tests/cli/test_masked_paths.py` pins the masking.
 
-- **OD-20** (open, 2026-10-07): a JSON output printed to a CI log can still carry a runner's
-  log command (`##[cmd]`, `##vso[`), because JSON keeps every value as it is (§6). A = leave
-  it, documented; B = write the `[` of `##<letters>[` as `\u005b` in every JSON output, which
-  leaves each parsed value identical (proposed). See `00-INDEX.md`.
+- **OD-20** (2026-10-07; **decided 2026-10-11 under the owner's delegation (best practice),
+  revisable: escape it, built**): a JSON output printed to a CI log could still carry a runner's
+  log command (`##[cmd]`, `##vso[`), because JSON keeps every value as it is (§6). Built: every
+  JSON output writes the second `#` of `##<letters>[` as `\u0023` (`redactor.log_safe_json`,
+  after `json.dumps` or pydantic's serializer): `lint --json`, `coverage --json`, `dottore
+  fingerprint`, `schema export`, and the JSON and SARIF reports (`reporting/json_reporter.py`,
+  `reporting/sarif_reporter.py`). Why: RFC 8259 §7 lets any character be written as `\u` and four
+  hex digits, so every JSON reader parses the same value, and the output is safe wherever it is
+  printed, which is the rule the text outputs already follow (the same `#`, written there as
+  `\x23`); in a JSON text a `#` stands only inside a string and never right after an escaping
+  backslash, so the rewrite touches nothing else. The cost: the bytes change where a value holds
+  such a sequence (none of the shipped specs does), so a consumer that compares bytes rather than
+  parsed values sees the escape. Not taken: A, leave it and tell the operator to write JSON to a
+  file; B as first proposed, the `[` written as `\u005b`, equally lossless, but a second shape
+  for one rule. Amended after the pre-merge audit of `598f0858`: the JUnit XML report follows the
+  same rule (LOW 4), its `#` written `&#35;`, the character reference every XML parser reads as `#`
+  (`ElementTree` writes a `#` only in text or an attribute value, where a reference is read), and a
+  text with no `##` is returned as it is, unscanned (LOW 5). Not covered: the evidence store and the
+  run store, the tool's own storage read back by `replay` and `--resume`, whose bytes are
+  content-addressed and are not an output; the HTML report, a page for a browser, where a
+  reference is not decoded inside a raw-text element (`<script>`, `<style>`). Reversal: drop the
+  `log_safe_json` calls (seven, in `cli/app.py`, `cli/lint.py`, `cli/coverage.py` and the two
+  reporters) and the `log_safe_xml` one (`reporting/junit_reporter.py`).
 - **OD-23** (shared with u09, 2026-10-07): what `run -sV` / `-A` and `dottore fingerprint` do
   when one probe's reply comes back refused. Built reversibly as option A: the probe fails, a
   `warning:` line on stderr names it (never silenced by `-q`), the fingerprint line ends

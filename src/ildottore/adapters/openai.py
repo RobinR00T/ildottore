@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from ildottore.adapters.base import AdapterProductError, BaseAdapter, map_logprobs
+from ildottore.adapters.base import BaseAdapter, ResponseMalformed, map_logprobs
 from ildottore.shared.media import render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
@@ -66,6 +66,15 @@ class OpenAIAdapter(BaseAdapter):
     sampling_enabled: bool = True
     #: A 400 that names a sampling parameter is refused in words that name the capability.
     sends_sampling: ClassVar[bool] = True
+
+    @property
+    def unreadable_advice(self) -> str:
+        """What to check when no reply reads as OpenAI's (OD-21, u08 A-74)."""
+
+        return (
+            "check that the target file's endpoint is an OpenAI chat completions URL (or a server "
+            "that speaks that API) and its provider is openai"
+        )
 
     @property
     def _endpoint_path(self) -> str:
@@ -223,14 +232,14 @@ class OpenAIAdapter(BaseAdapter):
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices:
-            raise AdapterProductError(f"{self.id}: response has no choices")
+            raise ResponseMalformed(f"{self.id}: response has no choices; not evaluated")
         first = choices[0]
         if not isinstance(first, Mapping):
-            raise AdapterProductError(f"{self.id}: choice is not an object")
+            raise ResponseMalformed(f"{self.id}: choice is not an object; not evaluated")
 
         message = first.get("message")
         if not isinstance(message, Mapping):
-            raise AdapterProductError(f"{self.id}: choice has no message object")
+            raise ResponseMalformed(f"{self.id}: choice has no message object; not evaluated")
         text = message.get("content")
         if text is None:
             # A reply Azure OpenAI's output filter withheld comes back with no content and
@@ -239,7 +248,7 @@ class OpenAIAdapter(BaseAdapter):
             # never as the model's refusal. An empty reply used to pass a spec.
             text = ""
         if not isinstance(text, str):
-            raise AdapterProductError(f"{self.id}: message content is not a string")
+            raise ResponseMalformed(f"{self.id}: message content is not a string; not evaluated")
 
         tool_calls: list[dict[str, Any]] = []
         raw_tool_calls = message.get("tool_calls")

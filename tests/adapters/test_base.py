@@ -17,6 +17,7 @@ from ildottore.adapters import (
     AdapterProductError,
     EndpointNotAllowed,
     OpenAIAdapter,
+    ResponseMalformed,
     RetryConfig,
     map_logprobs,
 )
@@ -147,28 +148,30 @@ async def test_non_retryable_4xx_is_product_defect(openai_allowlist: EndpointAll
 
 
 @respx.mock
-async def test_non_json_success_is_product_defect(openai_allowlist: EndpointAllowlist) -> None:
-    """A 200 with a non-JSON body is a malformed response → product defect."""
+async def test_non_json_success_is_a_malformed_reply(openai_allowlist: EndpointAllowlist) -> None:
+    """A 200 with a non-JSON body is a malformed response: it fails its attempt (OD-21)."""
 
     respx.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(200, text="not json at all")
     )
     adapter = _adapter(openai_allowlist)
 
-    with pytest.raises(AdapterProductError):
+    with pytest.raises(ResponseMalformed):
         await adapter.send(ModelRequest(prompt="hi"))
 
 
 @respx.mock
-async def test_json_array_success_is_product_defect(openai_allowlist: EndpointAllowlist) -> None:
-    """A 200 whose JSON is an array (not an object) is a product defect."""
+async def test_json_array_success_is_a_malformed_reply(
+    openai_allowlist: EndpointAllowlist,
+) -> None:
+    """A 200 whose JSON is an array (not an object) fails its attempt (OD-21)."""
 
     respx.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(200, json=[1, 2, 3])
     )
     adapter = _adapter(openai_allowlist)
 
-    with pytest.raises(AdapterProductError):
+    with pytest.raises(ResponseMalformed):
         await adapter.send(ModelRequest(prompt="hi"))
 
 

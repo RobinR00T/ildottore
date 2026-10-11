@@ -38,6 +38,7 @@ from ildottore.adapters.base import (
     AdapterProductError,
     AdapterStatusError,
     EndpointNotAllowed,
+    ResponseMalformed,
     ResponseTooDeep,
     ResponseTooLarge,
     RetryConfig,
@@ -120,6 +121,20 @@ class MCPAdapter:
 
         return Capabilities(tools=True, mcp=True)
 
+    @property
+    def unreadable_advice(self) -> str:
+        """What to check when no reply reads as MCP's JSON-RPC (OD-21, u08 A-74)."""
+
+        return (
+            "check that the target file's endpoint (or command) is an MCP server speaking "
+            "JSON-RPC over Streamable HTTP or stdio"
+        )
+
+    def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
+        """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
+
+        return ResponseMalformed(message).with_reply(body, self.redactor, self.unreadable_advice)
+
     async def send(self, request: ModelRequest) -> ModelResponse:
         """Return the server's advertised catalogue (read-only discovery).
 
@@ -175,7 +190,10 @@ class MCPAdapter:
             session_id=None,
         )
         if not isinstance(result, dict):
-            raise AdapterProductError(f"{self.id}: initialize returned no result object")
+            raise self._unreadable(
+                f"{self.id}: initialize returned no result object; not evaluated",
+                response.content,
+            )
         raw_info = result.get("serverInfo")
         server_info: dict[str, Any] = dict(raw_info) if isinstance(raw_info, dict) else {}
         protocol = result.get("protocolVersion")
@@ -329,11 +347,13 @@ class MCPAdapter:
             for line in response.text.splitlines():
                 if line.startswith("data:"):
                     return self._parse(line[len("data:") :].strip(), f"MCP {method} SSE data")
-            raise AdapterProductError(f"{self.id}: MCP {method} SSE carried no data event")
+            raise self._unreadable(
+                f"{self.id}: MCP {method} SSE carried no data event; not evaluated", response.text
+            )
         return self._parse(response.content, f"MCP {method} response")
 
     def _parse(self, text: str | bytes, what: str) -> Any:
-        """Parse a reply: not JSON is a product defect, nested too deeply is not evaluated.
+        """Parse a reply: not JSON or nested too deeply, it is not evaluated (OD-21, #65).
 
         ``json.loads`` raised ``RecursionError`` on a reply nested past its stack, which the
         ``except ValueError`` here let through, and the runner aborted the campaign (2026-10-07).
@@ -345,7 +365,9 @@ class MCPAdapter:
         except NestedTooDeeply as exc:
             raise ResponseTooDeep(f"{self.id}: {what} is {exc}; not evaluated") from exc
         except ValueError as exc:
-            raise AdapterProductError(f"{self.id}: {what} was not valid JSON: {exc}") from exc
+            raise self._unreadable(
+                f"{self.id}: {what} was not valid JSON: {exc}; not evaluated", text
+            ) from exc
 
     # --- stdio transport (local subprocess, newline-delimited JSON-RPC) --------
 
@@ -387,7 +409,10 @@ class MCPAdapter:
                 },
             )
             if not isinstance(init, dict):
-                raise AdapterProductError(f"{self.id}: stdio initialize returned no result")
+                raise self._unreadable(
+                    f"{self.id}: stdio initialize returned no result; not evaluated",
+                    json.dumps(init, default=str),
+                )
             raw_info = init.get("serverInfo")
             server_info: dict[str, Any] = dict(raw_info) if isinstance(raw_info, dict) else {}
             protocol = init.get("protocolVersion")
