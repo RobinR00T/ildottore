@@ -286,7 +286,7 @@ async def test_a_call_a_name_map_renames_is_never_cleared_by_the_declaration() -
         SeededSetup(
             specs=["*"],
             tools={_HANDOFF: "account_purge"},
-            granted_tools=["escalate_to_human"],
+            granted_tools=["escalate_to_human", _HANDOFF],
             not_destructive=[_HANDOFF],
         )
     )

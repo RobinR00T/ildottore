@@ -311,7 +311,7 @@ def test_a_granted_tools_entry_may_declare_the_tool_not_destructive(tmp_path: Pa
         "    - escalate_to_human\n"
         f"    - {{name: {_HANDOFF}, destructive: false}}\n"
         "    - {name: transfer_to_support_agent, destructive: false}\n"
-        "    - {name: lookup_order}\n",
+        "    - lookup_order\n",
     )
 
     assert target.seeded_setup is not None
@@ -353,6 +353,11 @@ def test_a_plain_list_of_names_loads_as_before(tmp_path: Path) -> None:
         ("{name: '', destructive: false}", "name must be the deployment's tool name"),
         ("{name: 5, destructive: false}", "name must be the deployment's tool name"),
         ("5", r"'seeded_setup.granted_tools\[0\]' is not a tool name"),
+        # A mapping only grants nothing more than a bare name does, and is refused (audit nit).
+        (f"{{name: {_HANDOFF}}}", r"'seeded_setup.granted_tools\[0\]' has no 'destructive'"),
+        # A padded name declares a tool nobody calls: names are compared exactly.
+        (f"{{name: ' {_HANDOFF}', destructive: false}}", "has a space at one end"),
+        (f"{{name: '{_HANDOFF} ', destructive: false}}", "has a space at one end"),
         ("''", r"'seeded_setup.granted_tools\[0\]' is not a tool name"),
     ],
 )
@@ -392,6 +397,21 @@ def test_a_declared_name_granted_twice_is_refused(tmp_path: Path) -> None:
         )
 
 
+def test_the_model_holds_a_declaration_to_its_grants_however_it_is_built() -> None:
+    """The loader refuses a declared name it does not grant; a setup built in code is held to
+    it too, its declared names kept sorted and once each, and an empty one left out of a dump
+    (pre-merge audit of `ed381359`, nits and L4)."""
+
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="names a tool not in granted_tools: other"):
+        SeededSetup(granted_tools=[_HANDOFF], not_destructive=["other"])
+    built = SeededSetup(granted_tools=["b", "a"], not_destructive=["b", "a", "b"])
+    assert built.not_destructive == ["a", "b"]
+    assert built.model_dump(mode="json")["not_destructive"] == ["a", "b"]
+    assert "not_destructive" not in SeededSetup(granted_tools=["a"]).model_dump(mode="json")
+
+
 # --- the target digest ----------------------------------------------------------------------------
 
 
@@ -414,7 +434,7 @@ def test_the_declaration_is_part_of_the_target_digest_and_absent_when_empty() ->
         for k, v in _target(granted).model_dump(mode="json").items()
         if k not in digest._TARGET_COSMETIC and k != "websocket"
     }
-    before["seeded_setup"].pop("not_destructive")
+    assert "not_destructive" not in before["seeded_setup"]
     before["capabilities"].pop("sampling")
     before["__route__"] = "live"
     assert target_digest(_target(granted)) == digest._sha(before)

@@ -292,10 +292,15 @@ def test_without_the_declaration_the_same_hand_off_fails_and_no_report_mentions_
         "attempts": 0,
         "specs": [],
     }
+    # Nothing declared, the target's dump is what it was before the field (audit L4).
+    assert "not_destructive" not in report["run"]["targets"][0]["seeded_setup"]
     sarif = json.loads((tmp_path / "r.sarif").read_text(encoding="utf-8"))
     assert "operator_declarations" not in sarif["runs"][0]["properties"]
     assert "operator_declaration" not in (tmp_path / "r.xml").read_text(encoding="utf-8")
-    assert "operator-declaration" not in (tmp_path / "r.html").read_text(encoding="utf-8")
+    html = (tmp_path / "r.html").read_text(encoding="utf-8")
+    assert "operator-declaration" not in html
+    # The target's line is the one before OD-43, byte for byte (audit L4).
+    assert "<li><code>support-agent</code> - agent</li>\n" in html
     assert "Operator declaration" not in result.output
     with closing(sqlite3.connect(tmp_path / "runs.sqlite")) as db:
         (context,) = db.execute("SELECT context_json FROM runs").fetchone()

@@ -18,6 +18,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     field_validator,
     model_serializer,
+    model_validator,
 )
 
 from ildottore.shared.enums import (
@@ -325,9 +326,11 @@ class SeededSetup(_Frozen):
     ``not_destructive`` names the granted tools the operator's file declares not destructive,
     each written there as a ``granted_tools`` entry ``{name: <tool>, destructive: false}``
     (owner decision OD-43, u06 A-72): a hand-off such as ``transfer_to_billing_agent`` is then
-    not failed by its name alone. Always a subset of ``granted_tools``, sorted, by exact name;
-    it clears only ``tool_call``'s destructive check, never for a tool of a spec's own scene, and
-    every report and the run store say it was declared.
+    not failed by its name alone. Always a subset of ``granted_tools`` (refused otherwise,
+    however the setup is built), kept sorted and once each, by exact name; it clears only
+    ``tool_call``'s destructive check, never for a tool of a spec's own scene, and every report
+    and the run store say it was declared. Empty, it is left out of a dump, so a report of a
+    target that declares nothing is byte for byte what it was before the field existed.
     """
 
     specs: list[str] = Field(default_factory=list)
@@ -335,6 +338,34 @@ class SeededSetup(_Frozen):
     granted_tools: list[str] = Field(default_factory=list)
     run_token: str | None = None
     not_destructive: list[str] = Field(default_factory=list)
+
+    @field_validator("not_destructive")
+    @classmethod
+    def _sorted_once(cls, names: list[str]) -> list[str]:
+        # Sorted here rather than refused out of order: a report's redactor masks a name that
+        # reads as a secret, which can change where it sorts in the masked copy it validates.
+        return sorted(set(names))
+
+    @model_validator(mode="after")
+    def _declared_are_granted(self) -> SeededSetup:
+        stray = sorted(set(self.not_destructive) - set(self.granted_tools))
+        if stray:
+            raise ValueError(
+                "seeded_setup.not_destructive names a tool not in granted_tools: "
+                f"{', '.join(stray)}; only a granted tool may be declared not destructive"
+            )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _without_an_empty_declaration(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """The dump as before OD-43 when the file declares no tool not destructive."""
+
+        dumped: dict[str, Any] = handler(self)
+        if not dumped.get("not_destructive"):
+            dumped.pop("not_destructive", None)
+        return dumped
 
 
 class WebSocketExpect(_Frozen):

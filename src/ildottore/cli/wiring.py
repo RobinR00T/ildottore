@@ -1650,11 +1650,13 @@ def _granted_tools(path: Path, raw: object) -> tuple[list[str], list[str]]:
     Each entry is a tool name, as before, or a mapping ``{name: <tool>, destructive: false}``
     that grants the tool and declares it not destructive (owner decision OD-43, u06 A-72): a
     hand-off such as ``transfer_to_billing_agent`` is then not failed by its name alone. The
-    mapping holds ``name`` (text) and, if anything else, ``destructive``, a boolean; ``true`` is
-    refused, since what a target file may say about its own tool is that it destroys nothing,
-    and the spec's scene is where a tool is made destructive whatever its name. A declared name
-    granted twice is refused, since the two entries would say two things. Every refusal names
-    the file and the entry, never a value (A-53).
+    mapping holds ``name`` (text, with no space at either end: the evaluators compare names
+    exactly, so a padded one would declare a tool nobody calls) and ``destructive``, the boolean
+    ``false``; ``true`` is refused, since what a target file may say about its own tool is that
+    it destroys nothing, and the spec's scene is where a tool is made destructive whatever its
+    name; and a mapping without ``destructive`` is refused, a bare name being how a tool is only
+    granted. A declared name granted twice is refused, since the two entries would say two
+    things. Every refusal names the file and the entry, never a value (A-53).
     """
 
     if not isinstance(raw, list):
@@ -1687,9 +1689,18 @@ def _granted_tools(path: Path, raw: object) -> tuple[list[str], list[str]]:
         name = entry.get("name")
         if not (isinstance(name, str) and name):
             raise ValueError(f"target file {path} {where}.name must be the deployment's tool name")
-        granted.append(name)
+        if name != name.strip():
+            raise ValueError(
+                f"target file {path} {where}.name has a space at one end; tool names are "
+                "compared exactly, so write the name as the deployment calls it (OD-43)"
+            )
         if "destructive" not in entry:
-            continue
+            raise ValueError(
+                f"target file {path} {where} has no 'destructive'; write a tool that is only "
+                "granted as its bare name, and one declared not destructive as "
+                "{name: <tool>, destructive: false} (OD-43)"
+            )
+        granted.append(name)
         flag = entry["destructive"]
         if not isinstance(flag, bool):
             kind = "null" if flag is None else type(flag).__name__

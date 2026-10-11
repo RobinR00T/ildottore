@@ -44,16 +44,15 @@
   <section class="targets">
     <h2>Targets</h2>
     <ul>
+      {# OD-43: the operator's word on its own tools, stated for every run that makes one. The
+         line is the one before OD-43 when the file declares nothing (whitespace control). #}
       {% for t in targets %}
-      <li><code>{{ t.id }}</code> - {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}
-        {# OD-43: the operator's word on its own tools, stated for every run that makes one. #}
-        {% if t.not_destructive %}
+      <li><code>{{ t.id }}</code> - {{ t.type }}{% if t.name %} ({{ t.name }}){% endif %}{% if t.not_destructive %}
         <br><span class="operator-declaration">Operator declaration: its target file declares
         {% for name in t.not_destructive %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
         not destructive (seeded_setup.granted_tools, OD-43), so <code>tool_call</code> does not
         fail a call to {{ 'it' if t.not_destructive | length == 1 else 'them' }} by the name alone.</span>
-        {% endif %}
-      </li>
+      {%- endif %}</li>
       {% endfor %}
     </ul>
   </section>
