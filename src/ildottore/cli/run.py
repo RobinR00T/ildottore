@@ -1858,10 +1858,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             unjudged = len(unjudged_attempt_ids(resume_from))
             errored = again - unjudged
             # OD-41: a prompt the provider's input filter refused would be refused again.
-            stored = [a for finding in resume_from.findings for a in finding.attempts]
-            blocked = len(blocked_attempt_ids(stored))
+            prior_attempts = [a for finding in resume_from.findings for a in finding.attempts]
+            blocked = len(blocked_attempt_ids(prior_attempts))
             # OD-42: a reply the provider's filter cut is answered, and kept like any other.
-            cut = len(cut_attempt_ids(stored)) + len(side_unknown_attempt_ids(stored))
+            trimmed = len(cut_attempt_ids(prior_attempts)) + len(
+                side_unknown_attempt_ids(prior_attempts)
+            )
             print(
                 f"resume: {opts.resume} keeps {done} attempt(s) across "
                 f"{len(resume_from.findings)} spec(s) (answered, or failed in a way a retry "
@@ -1872,9 +1874,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                     else ""
                 )
                 + (
-                    f"; {cut} of them the provider's filter cut or stopped after the prompt, "
-                    "kept for review"
-                    if cut
+                    f"; {trimmed} of them the provider's filter cut or stopped after the "
+                    "prompt, kept for review"
+                    if trimmed
                     else ""
                 )
                 + (
