@@ -31,7 +31,9 @@ versioning: [SemVer](https://semver.org/).
   0/45 AISVS).
 - **Compatibility.** A spec that writes `requires: [mcp]` fails validation against an older copy of
   `attack-spec.schema.json`. The target digest leaves `capabilities.mcp` out when it is false or
-  set by the provider, so a run stored before this version resumes.
+  set by the provider, so it is unchanged: a run halted before this version resumes against the
+  specs it ran (`--spec-path`); with this version's battery the resume is refused as a battery
+  change, since every spec file changed with the OD-19 rename.
 - ADR-0007's amendment and reversal, the OD-44 and OD-16 rows of `00-INDEX`, u00, u08, u12 and
   u13, `docs/03`, the MANUAL's `capabilities` paragraph, the FAQ's MCP entry and
   `examples/target.mcp.yaml`. Tests: `tests/cli/test_mcp_specs_need_an_mcp_target.py` (10, 8
