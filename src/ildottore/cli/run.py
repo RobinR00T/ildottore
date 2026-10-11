@@ -1891,7 +1891,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             )
             # It keeps none when every stored attempt is sent again: "keeps 0 attempt(s) across 4
             # spec(s)" read as a resume with nothing to do (verification of 07aa0b3a, LOW 2).
-            kept = (
+            keeps = (
                 f"keeps {done} attempt(s) across {len(resume_from.findings)} spec(s) (answered, "
                 "or failed in a way a retry would repeat); they will not be re-sent"
                 if done
@@ -1900,7 +1900,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 "retry would repeat)"
             )
             print(
-                f"resume: {opts.resume} {kept}"
+                f"resume: {opts.resume} {keeps}"
                 + (
                     f"; {blocked} of them the provider's input filter refused, kept as blocked"
                     if blocked
