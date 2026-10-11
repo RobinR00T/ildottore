@@ -231,7 +231,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   redactor cannot mask by value; nothing was sent`, exit 3; for a judge's key, the judge's id, and
   for an identity of the scope's sweep, `<target id>, identity '<name>'`); an endpoint's password is
   checked as written and percent-decoded, and an empty one (`https://<token>:@host`) is no
-  credential. Until A-78 only the WebSocket adapter refused one; the others sent it, and a target
+  credential; an offline mock and a stdio MCP server, which are sent no key, are not checked. Until A-78 only the WebSocket adapter refused one; the others sent it, and a target
   that echoed it put it in every report. A registered credential is also
   found when the text splits it with a newline, a tab or another control character, with an
   invisible format character (a zero-width space, a soft hyphen, a word joiner, a byte order

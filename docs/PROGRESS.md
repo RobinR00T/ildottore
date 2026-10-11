@@ -3,6 +3,45 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (night): key formats, hex runs and UUIDs masked whatever their entropy; short credentials refused everywhere (u01 A-78)
+
+- Fixes MEDIUM 4 and LOW 6 of the pre-merge security audit of 2026-10-11, on
+  `fix/redactor-key-formats` from `de122e26`. New clause u01 A-78, with halves in u04, u10, u11
+  and u12 and the index row.
+- MEDIUM 4: the documented key formats of 11 providers (OpenAI, Anthropic, GitHub, GitLab, AWS,
+  Google, Hugging Face, Slack, Stripe, npm, PyPI), a JWT after `_` and the UUID shape are late
+  patterns (`redactor._late_patterns`, each sourced), started with `(?<![A-Za-z0-9])`, hashed,
+  run after the labelled rule, the entropy rule and the URL rule as written, so they only add
+  masks; a run of 32 hex digits or more is the entropy rule's (`hex_token`); a token masked whole
+  is typed by the format it holds; the number rules leave a UUID whole (`_number_mask`) and the
+  entropy rule masks with it the pieces it would have masked (`_uuid_spans`). A first version
+  ran them as ordinary patterns and the differential fuzz against main showed text main masks in
+  5,120 of 20,000 texts: it was redesigned before any review.
+- Figures, auditor's generators: 32-hex 74.7% to 0%, 40-hex 47.5% to 0%, 64-hex 5.5% to 0%, UUID
+  v4 46.8% to 0%; every prefix 0 of 200 after `_`, `=` and `-` padding. Differential fuzz, five
+  draws of 300,000 texts: 2 texts show 8 characters of a planted secret main hides and 24 a
+  stretch of glue, all holding U+0000 or U+0001 (the `redact_text` retry, pre-existing, flipped
+  more often); none without.
+- The tool's own values: the hex rule belongs to the entropy rule, so the CLI's carried digests,
+  evidence names, existing paths and model names keep out of it; the reports now restore
+  `media_sha256` (main masked 24 of 28) and each evidence reference's attempt id. A full offline
+  run of the battery with the salt and run id pinned writes every output byte for byte as main
+  but those 24 digests; no tool-own value masked anywhere.
+- A run halted before A-78 resumes against its own target (`redactor.identity_masks`), and the
+  store keeps one row a finding.
+- LOW 6: `refuse_short_credential` (`CredentialTooShort`, the WebSocket adapter's message) in
+  every adapter, `build_real_adapter`, the identity sweep and the pre-flight (`--dry-run`, `-sn`,
+  `--estimate` exit 3); the judge raises it; an offline mock and a stdio MCP server are not
+  checked.
+- Open, for the owner: the `redact_text` retry with U+0000/U+0001 (masks depend on whether
+  anything else in the text is masked, on main too); a key glued to a letter or a digit stays the
+  entropy rule's; the `secret_shape` evaluator still detects only `sk-`, `gh*_`, `AKIA`, `xox`,
+  JWT and PEM; a credential written as an endpoint URL's user is not registered.
+- Tests: `tests/test_redactor_key_formats.py` (589, 415 fail on `de122e26`),
+  `tests/reporting/test_own_values_readable.py` (9, 2), `tests/store/test_identity_masks_before_a78.py`
+  (12, 3 without the compatibility code), `tests/adapters/test_short_credentials.py` (39, 19),
+  `tests/cli/test_short_credential_cli.py` (10, 7). `make gates` green on `09b1b0a2` (with `PYTHONPATH` set to the worktree's `src`): 6135 tests (5476 on `main` at `de122e26`, 659 new), 97.83% coverage (`redactor.py` 99%), 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on

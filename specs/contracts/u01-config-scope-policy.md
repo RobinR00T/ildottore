@@ -763,7 +763,7 @@ redactor cannot mask by value; nothing was sent`, `CredentialTooShort`): in the 
 what the run would), when an adapter is built, for each identity of the sweep (named), and in each
 adapter before its first request; the judge raises it rather than abstain. A password as written and
 as it reads percent-decoded is checked; an empty one is no credential (`https://<token>:@host` sends a
-user only); a stdio MCP server is sent no key.
+user only); a stdio MCP server and an offline mock are sent no key and are not checked.
 
 *Measured.* The differential fuzz against `de122e26`'s redactor, a grammar of the new shapes glued
 to padding, words, labels, emails, phones, URLs and masks, five draws of 300,000 texts: in each,

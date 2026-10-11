@@ -48,7 +48,8 @@ Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
   in every report). Now each refuses it before its first request, with the WebSocket adapter's
   message, and so do the pre-flight (`--dry-run`, `-sn` and `--estimate` exit 3 as the run would),
   the identity sweep (naming the identity) and the judge, which used to abstain on every spec and
-  exit 0. A password in the endpoint is checked as written and percent-decoded; an empty one passes.
+  exit 0. A password in the endpoint is checked as written and percent-decoded; an empty one passes,
+  and an offline mock or a stdio MCP server, sent no key, is not checked.
 - Cost: 4 MB of prose 1.10 s (0.98 s before), of base64 tokens 3.34 s (2.65 s), of UUIDs 2.75 s
   (4.70 s), of UUIDs whose groups are all digits 6.04 s (2.86 s). Not covered: a key glued to a
   letter or a digit, and a random token with no prefix the entropy rule passes, as before.
