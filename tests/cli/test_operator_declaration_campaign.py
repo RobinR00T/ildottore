@@ -330,9 +330,13 @@ def test_discovery_shows_the_declaration_and_sends_nothing(
     port, state = agent
 
     discovery = _run(tmp_path, port, _DECLARED, "-sn")
+    quiet = _run(tmp_path, port, _DECLARED, "-sn", "-q")
 
     assert discovery.exit_code == 0, discovery.output
     assert f"    operator:  {_OPERATOR_LINE}\n" in discovery.output
+    assert quiet.output.strip() == (
+        "discovery: 1 target(s), sent nothing, 1 tool(s) declared not destructive"
+    )
     assert state == {"attack": 0, "judge": 0}
 
 
