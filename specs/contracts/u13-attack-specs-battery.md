@@ -8,7 +8,8 @@ exemplars `specs/attacks/PI-INDIRECT-RAG-001.yaml`, `specs/attacks/DoS-TOKEN-AMP
 ## §1 Scope & ownership
 - **OWNS:** `specs/attacks/*.yaml` (the ~18 T0 specs of `docs/08 §3`), `specs/suites/*.yaml`
   (`owasp-llm-top10.yaml` + `quick.yaml`), and each spec's golden fixtures (`fixtures.vulnerable`
-  / `fixtures.hardened`, inline or under `tests/fixtures/specs/<id>/`).
+  / `fixtures.hardened`, inline in the spec: there is no sidecar location, OD-7;
+  `tests/fixtures/specs/` holds the schema-parity corpus, not fixtures).
 - **MUST NOT touch:** any `src/ildottore/**` Python, `schemas/attack-spec.schema.json` (consumes,
   never edits: a schema change is an OD to u02), `docs/`, other units' owned files.
 
@@ -102,5 +103,7 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 - `quick.yaml` as a distinct suite file vs a subset alias of `owasp:llm` (propose distinct file).
 - Whether `DL-PII-ELICIT-001` ships at all in MVP-1 or is deferred pending the layer-B legal
   gate / policy-pack wiring (`docs/11 §5` DL4/DL5): flag for human sign-off.
-- Fixture location convention: inline in the spec vs `tests/fixtures/specs/<id>/` (propose inline
-  for T0 simplicity; revisit if fixtures grow multi-turn).
+- Fixture location convention: inline in the spec vs `tests/fixtures/specs/<id>/`. **Decided
+  2026-10-11 under the owner's delegation (best practice), revisable: inline only, as built
+  (OD-7, reasoning in u03 §9).** Revisit if a fixture outgrows its spec file (a long multi-turn
+  transcript).

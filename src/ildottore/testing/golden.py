@@ -205,10 +205,10 @@ def _scenario_from_case(spec: AttackSpec, case: FixtureCase) -> MockScenario:
 def load_fixtures(spec: AttackSpec) -> FixturePair:
     """Resolve a spec's ``fixtures`` block into a pair of replayable scenarios.
 
-    OD-u03-a / OD-7 (00-INDEX): fixtures are inline only. The schema's ``fixtures``
-    takes ``vulnerable`` and ``hardened`` with no path field, so there are no sidecar
-    files; the u00 :class:`AttackSpec` carries the inline block and this consumes it
-    directly. Sidecar resolution is a future seam (contract §9), not built.
+    OD-u03-a / OD-7 (00-INDEX, decided 2026-10-11): fixtures are inline only. The schema's
+    ``fixtures`` takes ``vulnerable`` and ``hardened`` with no path field, so there are no
+    sidecar files; the u00 :class:`AttackSpec` carries the inline block and this consumes it
+    directly. Inline keeps the proof inside the spec's digest; a sidecar is not planned.
     """
 
     return FixturePair(

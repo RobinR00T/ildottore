@@ -36,6 +36,14 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   keeps no per-connection state, and on one that keeps it the re-dialled turn would be scored
   without the context the attack built. Not taken: a `session.stateless: true` declaration under
   which the runner re-dials, debited, and resends the whole history.
+- **Golden fixtures live inline in each spec, and only there (OD-7).** Signed off as built: the
+  schema's `fixtures` takes `vulnerable` and `hardened` with no path field, so there is no sidecar
+  fixture file, and the u03 and u13 contracts that said "schema supports both" (and "inline or
+  under `tests/fixtures/specs/<id>/`") now say what is built. Inline keeps the proof inside the
+  spec's digest, so the lint proof, the resume binding and a reviewer's diff cover it with the
+  spec; the 75 specs carry 223 to 835 bytes of fixture JSON each. Not taken: an optional path
+  resolved next to the spec inside its pack and hashed into its digest.
+  `tests/golden/test_fixture_location.py` pins it (6 tests).
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 
