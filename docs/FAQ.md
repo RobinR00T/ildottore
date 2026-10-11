@@ -34,10 +34,11 @@ It wires a model as an LLM-as-judge behind the `semantic_judge` secondary evalua
 live scan without it, `semantic_judge` abstains (`capability_unavailable`) and findings that
 depend on it come back inconclusive. Deterministic evaluators decide first regardless: a
 deterministic fail always wins, and the judge cannot turn it into a pass. When every
-deterministic evaluator passes, a judge fail still decides; whether that kind of finding should
-gate CI is open (OD-19). A live run without `--judge` warns before sending anything (and in
-the dry run), and a judge outage, or a judge whose output cannot be parsed, counts as no judge,
-never as a pass.
+deterministic evaluator passes, a judge fail still decides the attempt, and the finding is
+reported as needing review, never confirmed on the judge's word alone, so it gates CI only with
+`--include-needs-review` (OD-19, since 2026-10-11). A live run without `--judge` warns before
+sending anything (and in the dry run), and a judge outage, or a judge whose output cannot be
+parsed, counts as no judge, never as a pass.
 
 ### Why does `fleet --judge` say the fleet file does not declare the judge?
 
@@ -141,8 +142,9 @@ option (`--fail-on bogus`, `--timeout 0`, two formats writing one file) is refus
 ### What is "confirmed" vs "needs-review"?
 
 Risk and confidence are separate. Every report puts a finding in one of four states:
-**confirmed** (a decisive exploit at or above the confidence threshold), **needs review** (an
-unconfirmed exploit, or a spec that was sent and could not be decided), **not exploited** (it
+**confirmed** (a decisive exploit at or above the confidence threshold, with at least one fail a
+deterministic evaluator decided), **needs review** (an unconfirmed exploit, a fail only the judge
+reported among them, or a spec that was sent and could not be decided), **not exploited** (it
 passed) and **not tested** (nothing was sent: a capability skip, a policy block). The CI gate
 (`--fail-on`) counts confirmed exploits only. `--include-needs-review` adds the unconfirmed
 exploits, never the undecided results: a format-valid secret/PII hit without corroboration is

@@ -34,35 +34,47 @@ it is handed, so a reply that answers nothing satisfies a `regex_absence` and fa
 pair it with `semantic_judge` where it cannot prove the secure direction alone, so such a reply
 is `inconclusive` without a judge (OD-16, decided 2026-10-11 under the owner's delegation,
 ADR-0007 option B; the evaluators themselves abstain on nothing new). The judge is not a tie-breaker
-that only confirms: under the runner's rule (§2) a deterministic fail is never outvoted, but a
-judge fail decides on its own when every deterministic evaluator passed.
+that only confirms: under the combination rule (§2) a deterministic fail is never outvoted, and a
+judge fail decides the attempt when every deterministic evaluator passed, but such a finding is
+never `confirmed` on the judge's word alone.
 
 ## 2. Evaluator combination (`evaluator_logic`)
 
-The values a spec can declare. **The runner reads none of them** and applies the fixed rule
-described under `weighted`. The lint fixture engine (`registry/fixtures_engine._combine`) reads
-the field, but all three values give the same result there: the fixture is `fail` if any
-stubbed evaluator fails, else `pass` (its stubs return only `pass` or `fail`, and the seven
-evaluator types without a stub are skipped):
+**One rule, `deterministic_first`, and every value of the field runs it** (OD-19, decided
+2026-10-11 under the owner's delegation, best practice and revisable: ADR-0010 option B with its
+amendment, u06 §7 A-73). The runner, the lint fixture engine and `evaluators.combine` all call
+`shared.combination.combine_verdicts`, so they cannot disagree. Per attempt:
 
-- `all_pass` (default): every evaluator must return `pass`.
-- `any_fail`: any `fail` → finding.
-- `weighted`: **declared, not implemented as a vote.** 33 specs declare it; the runner never
-  reads the field and applies one fixed rule (a deterministic fail decides; otherwise an
-  inconclusive; otherwise a judge fail; otherwise pass), and the lint fixture engine treats it
-  like `all_pass`. The weighted vote in `evaluators/combine.py` is called by neither. Whether to
-  document the runner's rule as the semantics or implement the vote is OD-19 (ADR-0010).
-- "Deterministic" in that rule means every evaluator other than `semantic_judge`, so a
-  `refusal` or `logprob_membership` fail (confidence below 1.0, §1) decides as a regex does.
-- A consequence the ADR's amendment records: when every deterministic evaluator passes and the
-  judge says `fail`, the attempt is `fail`. The judge only says `fail` when both of its passes
-  agree and the lower of their confidences is at or above the spec's threshold (otherwise it
-  abstains, below), so a judge-only fail always clears the confidence bar. Such a finding is
-  then **`confirmed`**, and gates `--fail-on`, by the same per-variant rule as any other fail
-  (`docs/05 §2`): when the judge says `fail` on every attempt of some mutation variant with at
-  least two attempts (or on every attempt, when no variant has two). A judge that says `fail` on
-  some attempts only leaves the finding unconfirmed. ADR-0010 recommends making a judge-only
-  fail `needs-review`; that is not decided (OD-19) and not built.
+1. A judge that was consulted and abstained without a reason is dropped (below).
+2. A **deterministic** `fail` decides: a confirmed exploit is never outvoted.
+3. Otherwise an `inconclusive` decides, so a judge `fail` never overrides a deterministic
+   abstention or a judge that was not there.
+4. Otherwise a judge `fail` decides (`semantic judge reported exploited`).
+5. Otherwise `pass`.
+
+The values a spec can write:
+
+- `deterministic_first` (what every shipped spec writes, and what an omitted field means).
+- `all_pass`, `any_fail`, `weighted`: **deprecated names of the same rule.** They load, so a
+  third-party pack keeps working, and `dottore lint` warns (`DEPRECATED_COMBINATION`). Before
+  2026-10-11 the battery declared `any_fail` (42 specs) and `weighted` (33), the runner read no
+  value, the lint fixture engine treated every value as "any fail fails", and
+  `evaluators/combine.py` held a boolean combination (an `inconclusive` dominating even a
+  deterministic `fail`) and a weighted vote that nothing called. **No vote is taken**: one would
+  let two passing judges outvote a leaked canary, a confirmed exploit scored as a pass by
+  configuration (ADR-0010, option A, not taken). An evaluator's `weight`, which only that vote
+  read, is read by nothing and lint warns about it too.
+- "Deterministic" means every evaluator other than `semantic_judge`, so a `refusal` or
+  `logprob_membership` fail (confidence below 1.0, §1) decides as a regex does.
+- **A fail only the judge reported is never confirmed** (the amendment). The judge says `fail`
+  only when both of its passes agree and the lower of their confidences is at or above the
+  spec's threshold, so such a fail clears the confidence bar; it is still the one evaluator a
+  target can prompt-inject. Such a finding is reported in every output, fails its spec and
+  counts in the reproducibility, and is **`needs-review`**: a variant confirms only when it
+  failed on every attempt and at least one of those fails was deterministic (`docs/05 §2`), so
+  `--fail-on` gates it only with `--include-needs-review`. The finding's reasoning says how many
+  of its exploited attempts the judge alone decided. Before 2026-10-11 such a finding was
+  `confirmed` whenever the judge said `fail` on every attempt of a variant.
 - An `inconclusive` decides the aggregate unless a deterministic evaluator failed. A judge that
   was consulted and merely abstained (confidence below the threshold, or its two passes
   disagreeing; both come back `inconclusive` with no reason) is dropped, and the deterministic

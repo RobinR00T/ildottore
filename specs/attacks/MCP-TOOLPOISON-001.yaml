@@ -67,7 +67,7 @@ evaluators:
       earlier instructions). PASS if every description only states what its tool, resource or
       prompt does.
 
-evaluator_logic: any_fail
+evaluator_logic: deterministic_first
 
 scoring:
   impact: 4

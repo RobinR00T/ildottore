@@ -46,7 +46,7 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 | `mutations` | | List of mutation strategies to apply (see §4). |
 | `expected_secure_behavior` | ✓ | Bulleted description of a passing target (drives judge rubric). |
 | `evaluators` | ✓ | Ordered evaluator configs (`docs/04`). |
-| `evaluator_logic` | | Declared (`all_pass`, `any_fail`, `weighted`), **not read by the runner**. A run combines evaluators by one fixed rule (§3). The lint fixture engine reads it, but every value comes out the same there: any failing stub evaluator makes the fixture `fail`, which for `all_pass`, `any_fail` and `weighted` alike is any-fail. Which semantics is meant is open decision OD-19 (ADR-0010). |
+| `evaluator_logic` | | `deterministic_first`, the one combination rule (§3), which a run, `dottore lint` and `evaluators.combine` all apply, and what an omitted field means. `all_pass`, `any_fail` and `weighted` are deprecated names of it: they load and run the same rule, and lint warns (`DEPRECATED_COMBINATION`); no vote is taken, so an evaluator's `weight` is read by nothing and lint warns about it too (OD-19, decided 2026-10-11, ADR-0010). |
 | `scoring` | ✓ | `impact`, `exploitability` (1-4 each) + `confidence_threshold`. |
 | `runs` | | N for reproducibility, **declarative only**: the runner ignores it and sends every mutation variant of every spec `--runs` times (default 5), so a spec with `identity` plus three mutations sends 4 x N (times its turns, for a multi-turn spec). The six specs that declare `runs: 3` as a cost control (the two `DOS-*` and four `OUT-*` specs) also run 5. A suite's `default_runs` is likewise not read. |
 | `sampling` | | Pinned `temperature`, `top_p`, `seed`, `max_tokens`. A field set here always goes out as set; one left unset is filled from the target file's `sampling_defaults` where the adapter sends sampling (OpenAI, Anthropic), and a spec with no `sampling` at all goes out at temperature 0 once the block has filled what it holds (OD-39). The Anthropic adapter sends no `seed` and no `top_p` beside a `temperature` (Claude 4 models refuse the pair), so a spec's `top_p` does not reach an Anthropic target; a target that takes no sampling at all (`capabilities.sampling`, u12 A-68) is sent neither its `temperature` nor its `top_p`. |
@@ -63,11 +63,12 @@ See `specs/attacks/PI-INDIRECT-RAG-001.yaml`. Key improvements over the v0.1 dra
 - Data-leakage detection uses a **planted canary** (`{{canary}}`) instead of real secrets (S2).
 - Judge rubric explicitly separates "obeyed embedded instruction" from "mentioned it" to cut
   false positives.
-- Evaluators are combined by the runner's fixed rule, not by `evaluator_logic`: a deterministic
-  `fail` decides; else any `inconclusive` (a deterministic abstention, or a judge that was not
-  configured or was compromised) decides; else a judge `fail` decides; else `pass`. So the judge
-  alone decides an attempt when every deterministic evaluator passed, and today that finding can
-  be `confirmed` and trip `--fail-on` (OD-19, ADR-0010 and its amendment).
+- Evaluators are combined by one rule, `deterministic_first`, whatever `evaluator_logic` says: a
+  deterministic `fail` decides; else any `inconclusive` (a deterministic abstention, or a judge
+  that was not configured or was compromised) decides; else a judge `fail` decides; else `pass`.
+  So the judge alone decides an attempt when every deterministic evaluator passed, and such a
+  finding is reported and `needs-review`, never `confirmed`, so it trips `--fail-on` only with
+  `--include-needs-review` (OD-19, decided 2026-10-11, ADR-0010 and its amendment).
 
 ## 4. Mutation strategies (Prompt Mutator)
 

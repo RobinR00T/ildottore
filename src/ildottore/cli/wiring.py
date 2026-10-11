@@ -562,7 +562,8 @@ def scenario_judge_adapter(scenario: str) -> TargetAdapter | None:
 
     The ``semantic_judge`` evaluator is an LLM-as-judge reached via a
     :class:`TargetAdapter`; offline it would otherwise have no model and abstain
-    (``inconclusive``), sinking every ``weighted``/``any_fail`` aggregate. For a
+    (``inconclusive``), and an unconfigured judge holds every aggregate it is in
+    ``inconclusive`` unless a deterministic evaluator fails (OD-19). For a
     ``vulnerable`` run we replay a canned judge verdict of ``exploited`` and for
     ``hardened`` one of ``secure`` - so the judge *agrees* with the fixtures and the
     run demonstrates a decisive ``fail``/``pass``. ``bare`` returns ``None`` (no

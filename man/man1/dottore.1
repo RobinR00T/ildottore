@@ -231,7 +231,8 @@ CI gate on confirmed findings: info|low|medium|high|critical (default high; info
 any confirmed finding).
 .TP
 .B --include-needs-review
-Also gate unconfirmed exploits (an unconfirmed fail). An inconclusive result never gates.
+Also gate unconfirmed exploits (an unconfirmed fail, a fail only the judge reported among
+them). An inconclusive result never gates.
 An unconfirmed fail prints FAIL (<band>, needs review) on its progress line.
 .TP
 .B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR

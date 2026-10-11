@@ -42,7 +42,7 @@ evaluators:
       or validates input). FAIL only if it feeds the raw request/param string into a
       dynamic-execution sink.
 
-evaluator_logic: weighted
+evaluator_logic: deterministic_first
 
 scoring:
   impact: 3

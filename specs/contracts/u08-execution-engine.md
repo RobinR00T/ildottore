@@ -38,8 +38,9 @@ resumes, never restarts from zero (`AGENTS.md §5`). Reproducibility is the prod
 Depends on u00,u01,u02,u04,u05,u06,u07: all via `shared.protocols` / `shared.models`, never
 concretes:
 - `TargetAdapter` (u04): `send(ModelRequest)->ModelResponse`, `capabilities()->Capabilities`.
-- `Evaluator` (u06) pipeline + `combine` (spec `evaluator_logic`; as built the runner applies its
-  own fixed rule and does not read the field, OD-19); `Mutator` (u05); `RiskScorer`
+- `Evaluator` (u06) pipeline + the one combination rule every value of `evaluator_logic` names
+  (`shared.combination.combine_verdicts`, OD-19, u06 §7 A-73), which `core` calls from `shared`
+  because it may not import `evaluators.combine`; `Mutator` (u05); `RiskScorer`
   (u07); `EvidenceStore.put` + `RunStore.save_run/save_finding` (u10).
 - Policy Engine (u01): scope/allowlist/policy-pack gate + `redactor`. Spec Registry (u02):
   suite resolution + loaded `AttackSpec`s. Fingerprint (u09) supplies `ModelFingerprint` for
@@ -416,6 +417,17 @@ two files do not collect on `92c7b11` (no `ProviderFilterBlock`); in the third, 
 key it reads. The two cut-conversation tests with a tool call fail on `3d739f3`, where the
 aggregate carried no reply. Not re-run against a live Azure endpoint.
 
+- **A-73, this unit's half (added 2026-10-11, OD-19; the clause is u06 §7 A-73).** The runner
+  combines an attempt's verdicts by `shared.combination.combine_verdicts` (`_combine_verdicts`
+  keeps only its `authz_leak` set-aside around it; `_combine_decisive` and the local
+  `_shared_inconclusive_reason` and `_union_matched` moved to `shared`), and `_is_confirmed`
+  requires, in the confirming variant, at least one fail a deterministic evaluator decided: a
+  variant whose every fail reads `semantic judge reported exploited` does not confirm, alone or
+  pooled below `MIN_VARIANT_ATTEMPTS`. The finding's reasoning adds `; <j>/<k> decided by the
+  judge alone, which never confirms a finding on its own` when the judge alone decided any of
+  its `k` exploited attempts. Scoring is unchanged: a judge-only fail is a success in `k / N`
+  and fails the spec. Checks: `tests/evaluators/test_one_combination_rule.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
@@ -434,6 +446,9 @@ aggregate carried no reply. Not re-run against a live Azure endpoint.
   budgets (tokens/requests/wall-clock): surfaced in `config.py` (u01), confirmed by human.
 - Concurrency degree (bounded semaphore default) vs provider rate-limit headers: propose adaptive
   from observed 429s, capped by config.
+- **OD-19** (2026-10-03, ADR-0010): `evaluator_logic` was read by no run path and a judge-only
+  fail was confirmed. **Decided 2026-10-11 under the owner's delegation (best practice,
+  revisable):** option B with the amendment, built as u06 §7 A-73 (this unit's half above).
 - **OD-41** (2026-10-10): a provider's input filter that refuses an attack prompt before the
   model sees it (Azure OpenAI's HTTP 400 `content_filter`) stopped the whole campaign, exit 3 after
   one request. **Decided by the owner, 2026-10-10 17:33:** the attempt is recorded as blocked by

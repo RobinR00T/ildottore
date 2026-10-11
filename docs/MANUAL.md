@@ -896,7 +896,7 @@ required.
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
 | `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
 | `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding) |
-| `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt or its mean confidence is below the spec's `confidence_threshold` (§9). Undecided (`inconclusive`) results never gate, with or without it |
+| `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt, its mean confidence is below the spec's `confidence_threshold`, or only the judge reported its fails (§9). Undecided (`inconclusive`) results never gate, with or without it |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`) |
 | `--run-db PATH` | run store SQLite path |
 | `--spec-path PATH` | spec search path (default `specs/`) |
@@ -1564,9 +1564,11 @@ Each spec names one or more evaluators. The design is **deterministic-first**:
   and so on) decide the verdict with no model in the loop. They are the primary word.
 - **`semantic_judge`** is an optional LLM-as-judge, wired with `--judge`. It is a
   **secondary**: a deterministic `fail` always wins and the judge cannot turn it into a pass.
-  When every deterministic evaluator passes, a judge `fail` still decides the attempt, and
-  today such a finding can be confirmed and gate CI; whether a judge-only fail should be
-  `needs-review` instead is open (OD-19, ADR-0010). Without a judge it abstains
+  When every deterministic evaluator passes, a judge `fail` still decides the attempt: the
+  finding fails its spec and is in every report, but it is `needs-review`, never confirmed on
+  the judge's word alone, so it gates CI only with `--include-needs-review`, and its reasoning
+  says how many attempts the judge alone decided (OD-19, decided 2026-10-11, ADR-0010; such a
+  finding was confirmed until then). Without a judge it abstains
   (`capability_unavailable`) and a finding that depends on it comes back inconclusive; a live
   run without `--judge` says so before sending anything (the `-sV` probes included) and in
   the dry run. A judge that errors (an outage, a rate limit, its own provider's input filter
@@ -1730,9 +1732,11 @@ Risk and confidence are **separate axes**:
   multiplier on risk.
 - **Confidence** gates an exploited finding as `confirmed` or not: confirmed needs some
   mutation variant that failed on every one of its attempts, with a mean confidence at or above
-  the spec's `confidence_threshold` (with `--runs 1` the attempts are pooled instead). A
-  format-valid secret/PII hit without corroboration is never a confirmed leak: its verdict is
-  `inconclusive` by design (`docs/11 §4`).
+  the spec's `confidence_threshold` (with `--runs 1` the attempts are pooled instead), and at
+  least one of those fails decided by a deterministic evaluator: a fail the judge alone
+  reported is never confirmed (OD-19, since 2026-10-11, §8). A format-valid secret/PII hit
+  without corroboration is never a confirmed leak: its verdict is `inconclusive` by design
+  (`docs/11 §4`).
 
 Every report puts each finding in one of four **states** (the HTML report's sections, the
 `state` property of a SARIF result, the summary's `confirmed_count` and `needs_review_count`):

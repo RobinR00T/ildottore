@@ -5,6 +5,50 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (one rule combines a spec's evaluators, and a judge-only fail needs review: OD-19)
+
+- **`evaluator_logic` named three behaviours and every path ran a different one.** 33 specs
+  declared `weighted` and 42 `any_fail`. The runner read no value and applied its own rule (a
+  deterministic fail decides, else an inconclusive, else a judge fail, else pass); the lint
+  fixture engine treated every value as "any fail fails"; `evaluators.combine` held a boolean
+  combination, in which an `inconclusive` beat even a deterministic fail (a canary leak beside an
+  unconfigured judge was `inconclusive` there and `fail` in a run), and a weighted vote over
+  `config.weight`, in which two passing judges outvoted a leak, and nothing called either.
+  Decided on 2026-10-11 under the owner's delegation (best practice, revisable): ADR-0010 option
+  B with its amendment, u06 A-73.
+- **One rule, `deterministic_first`, in one function.** `shared.combination.combine_verdicts`
+  is the runner's rule, unchanged, and the runner, the lint fixture engine and
+  `evaluators.combine` all call it whatever the field says; a Hypothesis property checks that the
+  three agree. No verdict a run produces changes. The schema gains `deterministic_first`, which
+  all 75 shipped specs now declare. `all_pass`, `any_fail` and `weighted` still load and run the
+  same rule, and `dottore lint` warns about each (`DEPRECATED_COMBINATION`; for `weighted` it says
+  no vote is taken), and about an evaluator `weight`, which nothing reads now. For a program that
+  calls it directly: `evaluators.combine.combine` takes no `configs` argument any more, and its
+  `logic` argument changes nothing.
+- **A fail only the judge reported is never confirmed.** When every deterministic evaluator
+  passed and the judge said `fail`, the attempt failed, and the finding was `confirmed`, and
+  tripped `--fail-on`, whenever the judge said `fail` on every attempt of a variant. The judge is
+  the one evaluator a target can prompt-inject, so a variant now confirms only when at least one
+  of its fails was deterministic. Such a finding still fails its spec, counts in the
+  reproducibility and is in every report as needing review, its reasoning adding `; 3/3 decided by
+  the judge alone, which never confirms a finding on its own`; `--include-needs-review` gates it.
+  Measured with a spec whose only failing evaluator is the judge, against the vulnerable mock with
+  `--runs 3`: Critical, confirmed, exit 2 on `6d5f7ae`; Critical, needs review, exit 0 now (exit 2
+  with `--include-needs-review`). A stored attempt is read the same way on a resume: the
+  reasoning that marks it has not changed since 2026-09-03.
+- **No shipped fixture changed.** Against the vulnerable mock (every capability declared,
+  `--runs 2`) the battery has 224 failing attempts and none decided by the judge alone, so its 67
+  confirmed fails stay confirmed; bare and hardened are unchanged spec by spec; lint reports
+  `0 error(s), 0 warning(s)` over the 75 specs.
+- ADR-0010 accepted (with its reversal), u06 §2, §5, §7 A-73 and §9, halves in u08, u02 and u00,
+  the OD-19 row and the A-73 row of `00-INDEX`, `docs/01`, `docs/03`, `docs/04` §1-§2, `docs/05`,
+  `docs/07`, `docs/12`, `docs/14`, the playbook's lesson 7, the MANUAL (§8, §9, the
+  `--include-needs-review` row), the FAQ, the README, USAGE and `dottore(1)`. Tests:
+  `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
+  (17 of their tests fail on `530fb30`); `tests/evaluators/test_combine.py` rewritten for the one
+  rule; the two helper tests moved to `shared.combination`; three test fixtures and the
+  `requires_policy` test of `tests/test_terminal_log_commands.py` write `deterministic_first`.
+
 ### Changed (a reply that answers nothing decides no spec: OD-16)
 
 - **Two shipped specs scored a reply that answers nothing, in opposite directions.** Against a

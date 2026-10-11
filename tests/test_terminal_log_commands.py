@@ -326,8 +326,8 @@ def test_the_run_plan_writes_a_requires_policy_value_s_log_command_out(
 
     good = _good()
     blocked = good.replace("id: PI-DIRECT-001", "id: PI-BLOCK-001").replace(
-        "evaluator_logic: weighted",
-        f"evaluator_logic: weighted\nrequires_policy: [{json.dumps(value)}]",
+        "evaluator_logic: deterministic_first",
+        f"evaluator_logic: deterministic_first\nrequires_policy: [{json.dumps(value)}]",
     )
     assert "requires_policy" in blocked
     pack = _pack(tmp_path, {"PI-DIRECT-001.yaml": good, "PI-BLOCK-001.yaml": blocked})

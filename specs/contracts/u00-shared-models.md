@@ -9,6 +9,15 @@
 > added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69).
 > `ModelFingerprint.capability_guess` (not `.capabilities`): distinct from the `Capabilities`
 > enum. Canonical `TestPlan` shape is in ADR-0006 §3.
+>
+> **OD-19 (decided 2026-10-11 under the owner's delegation, u06 §7 A-73).** `EvaluatorLogic`
+> gains `deterministic_first`, the name of the one combination rule, and
+> `DEPRECATED_EVALUATOR_LOGIC` holds the other three, which load and run it. The rule is
+> `shared/combination.py` (`combine_verdicts`, `decided_by_judge_alone`, `JUDGE_ONLY_FAIL`): a
+> pure function over `Verdict`s, here by exception to §8 for the same reason as
+> `shared/patterns.py` and `shared/provider_filter.py`, since the three units that must apply it
+> one way cannot import each other (`core` imports only `shared`, `registry` may not import
+> `evaluators`).
 
 Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + `docs/01 §3`
 + `docs/03-05` + `docs/10` + `schemas/attack-spec.schema.json` + ADR-0005 before implementing.

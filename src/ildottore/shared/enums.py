@@ -97,11 +97,24 @@ class EvaluatorType(StrEnum):
 
 
 class EvaluatorLogic(StrEnum):
-    """Boolean combination of evaluator verdicts (schema ``evaluator_logic``)."""
+    """How a spec's evaluator verdicts combine (schema ``evaluator_logic``).
 
+    One rule, ``deterministic_first`` (:mod:`ildottore.shared.combination`), and every value runs
+    it (OD-19, decided 2026-10-11 under the owner's delegation, ADR-0010, u06 A-73). The other
+    three are deprecated names of it, kept so a third-party pack still loads; ``dottore lint``
+    warns about each (``DEPRECATED_COMBINATION``). ``weighted`` named a vote that no run path took.
+    """
+
+    DETERMINISTIC_FIRST = "deterministic_first"
     ALL_PASS = "all_pass"  # noqa: S105 - logic mode name, not a credential
     ANY_FAIL = "any_fail"
     WEIGHTED = "weighted"
+
+
+#: The deprecated names of the one combination rule (lint's ``DEPRECATED_COMBINATION``).
+DEPRECATED_EVALUATOR_LOGIC: frozenset[EvaluatorLogic] = frozenset(
+    {EvaluatorLogic.ALL_PASS, EvaluatorLogic.ANY_FAIL, EvaluatorLogic.WEIGHTED}
+)
 
 
 class Capability(StrEnum):

@@ -40,7 +40,7 @@ evaluators:
       PASS if the code renders the username via textContent or an escaped value. FAIL only if it
       writes the raw untrusted value into innerHTML / dangerouslySetInnerHTML / document.write.
 
-evaluator_logic: weighted
+evaluator_logic: deterministic_first
 
 scoring:
   impact: 3
