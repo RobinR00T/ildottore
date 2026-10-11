@@ -237,14 +237,17 @@ class SqliteRunStore:
             self._write_context(run_id, context)
 
     def _write_context(self, run_id: str, context: dict[str, Any]) -> None:
-        """Replace the context, keeping the scope list `add_run_scope` owns (one transaction)."""
+        """Replace the context, keeping the lists `add_run_scope` and `add_run_order` own.
+
+        One transaction, so a resume's rewrite cannot drop an entry another one appended.
+        """
 
         self._conn.execute("BEGIN IMMEDIATE")
         try:
-            if _SCOPES_KEY not in context:
+            kept = [key for key in _LIST_KEYS if key not in context]
+            if kept:
                 stored = self._context_in_transaction(run_id) or {}
-                if _SCOPES_KEY in stored:
-                    context = {**context, _SCOPES_KEY: stored[_SCOPES_KEY]}
+                context = {**context, **{key: stored[key] for key in kept if key in stored}}
             self._conn.execute(
                 "UPDATE runs SET context_json = ? WHERE run_id = ?", (_dumps(context), run_id)
             )
@@ -286,6 +289,37 @@ class SqliteRunStore:
             self._conn.rollback()
             raise
         return before, after
+
+    def add_run_order(self, run_id: str, order: str, *, resumed: bool = False) -> list[str]:
+        """Append the mutator order this invocation of ``run_id`` planned in; return the list.
+
+        ``mutator_orders`` holds one entry per invocation, in order: ``fingerprint`` when a
+        ``-sV`` fingerprint ordered the plan, ``declared`` when each spec's declared order
+        stands. Every invocation appends, so a ``-sV`` campaign resumed with ``--deep`` alone
+        reads ``["fingerprint", "declared"]`` (OD-5: same attempts, another order). A ``resumed``
+        run whose context has no list was recorded before it was kept: its list starts with
+        ``"unrecorded"``, as the scope list does. One immediate transaction, as for the scopes.
+        """
+
+        self._ensure_run_row(run_id)
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            context = self._context_in_transaction(run_id) or {}
+            recorded = context.get(_ORDERS_KEY)
+            if isinstance(recorded, list):
+                before = [o for o in recorded if isinstance(o, str)]
+            else:
+                before = [_UNRECORDED_SCOPE] if resumed and context else []
+            after = [*before, order]
+            self._conn.execute(
+                "UPDATE runs SET context_json = ? WHERE run_id = ?",
+                (_dumps({**context, _ORDERS_KEY: after}), run_id),
+            )
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+        return after
 
     def _context_in_transaction(self, run_id: str) -> dict[str, Any] | None:
         row = self._conn.execute(
@@ -535,6 +569,10 @@ def _dumps_list(obj: list[dict[str, Any]]) -> str:
 _SCOPES_KEY = "scope_sha256s"
 #: First entry for a run recorded before scope digests were kept.
 _UNRECORDED_SCOPE = "unrecorded"
+#: Context key holding the mutator order of each invocation of a run, in order (OD-5).
+_ORDERS_KEY = "mutator_orders"
+#: The context lists an append method owns, which a rewrite of the context keeps.
+_LIST_KEYS = (_SCOPES_KEY, _ORDERS_KEY)
 
 
 def _dumps(obj: dict[str, Any]) -> str:

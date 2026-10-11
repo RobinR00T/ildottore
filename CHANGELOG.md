@@ -82,9 +82,14 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   ordering changes which attempt goes first, never which attempts are sent, since an attempt is
   named by its spec, mutation and run and no spec stops early. Measured and documented: a `-sV`
   campaign halted on the mock (exit 3, 9 of 18 specs) and resumed with `--deep` alone keeps the
-  recorded mode and completes (exit 2, 18 of 18) with the rest in declared order. Not taken: an
-  `--adaptive`/`--no-adaptive` switch; `--deep` as timing only, which would need a compatibility
-  path for halted `--deep` campaigns.
+  recorded mode and completes (exit 2, 18 of 18) with the rest in declared order. That is now
+  recorded and said: the run store keeps `context_json.mutator_orders`, one entry per invocation
+  (`fingerprint` or `declared`; `"unrecorded"` first for an older run), such a resume prints
+  `note: <run id> plans in each spec's declared mutator order: ... (mutator_orders: fingerprint,
+  declared)` on stderr, and the planning-mode refusal says the mode "changes the order in which a
+  spec's mutators go out, never which attempts are sent" (it said the two halves "would not be
+  the same campaign"). Not taken: an `--adaptive`/`--no-adaptive` switch; `--deep` as timing only,
+  which would need a compatibility path for halted `--deep` campaigns.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 
