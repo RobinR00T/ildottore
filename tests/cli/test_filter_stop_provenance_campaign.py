@@ -546,3 +546,75 @@ def test_a_hand_built_anthropic_target_may_declare_none() -> None:
     assert "filter_stops" in target.model_dump()
     plain = Target(id="t", type=TargetType.CHATBOT, provider="anthropic")
     assert "filter_stops" not in plain.model_dump(), "an undeclared file dumps as before"
+
+
+# --- the rule's edges, without a stub -----------------------------------------------------------
+
+
+def _stored(attempt_id: str, reason: str | None, *, status: str = "inconclusive", **kw: Any) -> Any:
+    from ildottore.shared.enums import InconclusiveReason, VerdictStatus
+    from ildottore.shared.models import Attempt, ModelRequest, Verdict
+
+    verdict = Verdict(
+        status=VerdictStatus(status),
+        confidence=0.0 if status == "inconclusive" else 0.9,
+        reasoning="r",
+        evaluator_type="aggregate",
+        inconclusive_reason=InconclusiveReason(reason) if reason else None,
+    )
+    request = ModelRequest(prompt="p", metadata=kw.pop("metadata", None))
+    return Attempt(attempt_id=attempt_id, spec_id="S", request=request, verdict=verdict, **kw)
+
+
+def test_a_filtered_runs_advice_for_unreadable_replies_is_the_adapters() -> None:
+    from ildottore.cli.run import _unread_advice
+    from ildottore.shared.unreadable import UNREADABLE_REPLY_KEY
+
+    kept = {UNREADABLE_REPLY_KEY: {"excerpt": "<html>", "bytes": 6, "advice": "check the URL"}}
+    attempts = [
+        _stored("a", "blocked_by_provider_filter", error="x [blocked_by_provider_filter]"),
+        _stored("b", "unreadable_reply", error="ResponseMalformed: m", metadata=kept),
+    ]
+    assert _unread_advice(attempts) == (
+        ". The other 1 got a reply that could not be read as the provider's: check the URL. "
+        "The first: ResponseMalformed: m"
+    )
+    mixed = [*attempts, _stored("c", None, error="AdapterEnvError: down")]
+    assert _unread_advice(mixed).startswith(
+        ". The other 2 failed on transport or (1 of them) with a reply that could not be read"
+    )
+
+
+def test_a_run_with_a_fail_beside_filtered_attempts_is_not_filtered() -> None:
+    from ildottore.shared.provider_filter import filtered_run
+
+    blocked = _stored("a", "blocked_by_provider_filter", error="x [blocked_by_provider_filter]")
+    assert filtered_run([blocked])
+    assert not filtered_run([blocked, _stored("b", None, status="fail")])
+    assert not filtered_run([_stored("c", None, error="AdapterEnvError: down")])
+
+
+def test_the_plan_shows_a_websocket_or_a_non_empty_declaration() -> None:
+    from ildottore.cli.run import _filter_stops_line
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+    from tests.adapters.test_websocket import _spec
+
+    ws = Target(
+        id="w",
+        type=TargetType.CHATBOT,
+        provider="websocket",
+        websocket=_spec(response={"final_value": None, "filter_stops": ["SAFETY"]}),
+    )
+    assert _filter_stops_line(ws) == (
+        "w's target file declares websocket.response.filter_stops: [safety], the only stops "
+        "read as a provider's filter"
+    )
+    own = Target(
+        id="o", type=TargetType.CHATBOT, provider="openai", filter_stops=["content_filter"]
+    )
+    assert _filter_stops_line(own) == (
+        "o's target file declares filter_stops: [content_filter], the only stops read as a "
+        "provider's filter"
+    )
+    assert _filter_stops_line(Target(id="n", type=TargetType.CHATBOT, provider="openai")) is None
