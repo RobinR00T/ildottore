@@ -121,6 +121,21 @@ attempt id, by the verdict's reason or, without a verdict, by the mark
 `dottore replay` writes `inconclusive (blocked_by_provider_filter)` on their line and a footer line
 with the count. Checked by `tests/cli/test_provider_filter_campaign.py`.
 
+**A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The evidence keeps a cut reply as
+it came, and a replay re-derives it.** A reply the provider's filter cut or replaced is stored with
+its text (empty, partial or the guardrail's message), its `finish_reason` and, for a Bedrock
+guardrail trace, `response.filter_side`, beside the verdict `inconclusive:
+cut_by_provider_output_filter` or `provider_filter_side_unknown`; an input-side block read from a
+reply keeps the reply and an error ending in ` [blocked_by_provider_filter]` (A-69). A reply without
+a filter stop is stored byte for byte as before (`filter_side` is left out of a dump when unset, so
+content hashes do not move). `ReplayResult.cut_by_provider_output_filter()` and
+`provider_filter_side_unknown()` count them, one per attempt id, by the verdict's reason or, on a
+reply stored without a verdict, by its stop reason (`shared.provider_filter`); they stay in `N` and
+are never a success. `dottore replay` writes `inconclusive (cut_by_provider_output_filter)` or
+`inconclusive (provider_filter_side_unknown)` on their line and a footer line for each count.
+Checked by `tests/cli/test_provider_output_filter_campaign.py` and
+`tests/core/test_provider_output_filter.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.

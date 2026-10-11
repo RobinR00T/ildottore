@@ -1078,6 +1078,22 @@ not send them again; `--estimate --resume` counts them as done. The composition 
 probe's failure is named `guardrail/guardrail_benign: ProviderFilterBlock`. Checked by
 `tests/cli/test_provider_filter_campaign.py` and `tests/cli/test_input_filter_probe.py`.
 
+**A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The CLI never lets a reply the
+provider's filter cut pass silently.** The terminal summary, under the coverage block (never
+silenced by `-q`), prints `Cut by the provider's output filter: <k> attempt(s) in <s> spec(s) came
+back cut or replaced (<spec ids>); the model may have written what the filter hid, so they are
+inconclusive and need review, never a pass` and `Stopped by the provider's filter on a side it did
+not report: <k> attempt(s) in <s> spec(s) (<spec ids>); inconclusive and need review, never a pass
+(a Bedrock guardrail reports the side when guardrailConfig.trace is enabled)` when `k` is not 0,
+and the `Not exercised` line names a stop on an unreported side among its causes. The exit code is
+the findings', unchanged: `--fail-on` gates a `fail` only, and a spec with a cut attempt and no
+fail is `inconclusive` (0 when nothing else trips the gate); a team that wants CI to stop on one
+reads `summary.cut_by_provider_output_filter.attempts` from the JSON report. A resume says how many
+of the attempts it keeps the filter cut or stopped (`; <k> of them the provider's filter cut or
+stopped after the prompt, kept for review`) and does not send them again; `--estimate --resume`
+counts them as done. `dottore replay` lists and counts them (u10). Checked by
+`tests/cli/test_provider_output_filter_campaign.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

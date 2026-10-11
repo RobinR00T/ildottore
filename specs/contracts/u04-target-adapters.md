@@ -302,6 +302,34 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `tests/adapters/test_status_error.py` now sends a plain bad request, since the Azure body it
   sent at 400 is a block.
 
+- **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
+  Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop
+  reason is read by `shared.provider_filter` (u08), which the adapters do not duplicate:
+  - the OpenAI adapter makes Azure OpenAI's withheld reply (`content: null`, `finish_reason`
+    `content_filter`) an empty text with that stop reason, as before; the Anthropic adapter
+    passes `stop_reason` `refusal` and its `usage` through, as before (the side is read from
+    them, u08);
+  - the REST adapter reads the stop at `finish_path` first, and a body with no text at
+    `text_path` whose stop is a filter's is a reply with no text and that stop (a Gemini
+    candidate stopped with `SAFETY` can come without its text; Vertex AI's reference on
+    `FinishReason` `SAFETY`, read 2026-10-11); it was a product error that stopped the campaign.
+    Any other body with no text stays one. A template with no `finish_path` reads no stop, as
+    before;
+  - for a template whose `finish_path` is the Converse root `stopReason`, and a stop of
+    `guardrail_intervened`, the adapter reads `trace.guardrail` (present with
+    `guardrailConfig.trace: enabled`; the Converse API reference and the user guide, "Include a
+    guardrail with the Converse API", read 2026-10-11) into `ModelResponse.filter_side` (u00):
+    `output` when an entry of an `outputAssessments` assessment's policies has `action`
+    `BLOCKED` or `ANONYMIZED`, else `input` when one of an `inputAssessment` assessment has
+    `BLOCKED`, else nothing. The policies read are `contentPolicy.filters`, `topicPolicy.topics`,
+    `wordPolicy.customWords` and `managedWordLists`, `sensitiveInformationPolicy.piiEntities` and
+    `regexes`, and `contextualGroundingPolicy.filters`, whose action values the API reference
+    lists (`BLOCKED | NONE`, and `ANONYMIZED` for the two sensitive-information ones); a value of
+    another type is not read. A masked prompt is not a blocked one. The guardrail's message stays
+    the reply's text.
+  Checked by `tests/adapters/test_provider_output_filter.py` (41 tests; it does not collect on
+  `6d5f7ae`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
 - MUST NOT use LiteLLM as the core abstraction (optional wrapped adapter is MVP-2+, not here).
