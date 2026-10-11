@@ -93,5 +93,6 @@ because:
 ### Reversal
 
 Restore the field (`baseline_resistance: float | None = None`), `_baseline_resistance` and its
-call, the golden key and the three tests from `522817d`, and delete
+call, the golden key and the three tests from `main` at `0685f2c` (before this change), and
+delete
 `tests/core/test_no_baseline_resistance.py`.

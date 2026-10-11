@@ -130,7 +130,8 @@ built as u06 §7 A-73 (halves in u08, u02 and u00). Why, against today's code (`
   one fail was not the judge's alone (`decided_by_judge_alone`, which reads the reasoning above,
   stored since 2026-09-03). The finding's reasoning adds `; <j>/<k> decided by the judge alone,
   which never confirms a finding on its own`. Status, reproducibility, risk and band are
-  unchanged.
+  unchanged. `scoring.confidence.gate_state`, which no production path calls, agrees (u07's half,
+  after the pre-merge audit of `4f3ed297`, L2).
 * **Measured.** The vulnerable mock over the battery, every capability declared, `--runs 2`: 224
   failing attempts, none decided by the judge alone, so the 67 confirmed fails stay confirmed; the
   bare and hardened mocks are unchanged spec by spec; lint `0 error(s), 0 warning(s)` over 75
@@ -148,9 +149,10 @@ built as u06 §7 A-73 (halves in u08, u02 and u00). Why, against today's code (`
 
 ### Reversal
 
-To make a judge-only fail confirm again, drop the `corroborated` test in `_is_confirmed` and the
-judge count in `_finding_reasoning`. To restore the three paths, revert `shared/combination.py`,
-`evaluators/combine.py`, `registry/fixtures_engine._combine` and the runner's `_combine_decisive`
-from `feb148f`, the schema enum, the `DEPRECATED_COMBINATION` lint code and the 75 spec lines,
+To make a judge-only fail confirm again, drop the `corroborated` test in `_is_confirmed`, the
+judge-only check in `scoring.confidence.gate_state` and the judge count in `_finding_reasoning`.
+To restore the three paths, take `evaluators/combine.py`, `registry/fixtures_engine._combine`, the
+runner's `_combine_decisive`, the schema enum and the 75 spec lines from `main` at `0685f2c`
+(before this change), delete `shared/combination.py` and the `DEPRECATED_COMBINATION` lint code,
 and delete `tests/evaluators/test_one_combination_rule.py` and
 `tests/registry/test_deprecated_combination.py`.

@@ -204,7 +204,7 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   fails on `6d5f7ae`).
 - **A-73 One rule combines a spec's evaluators, and a fail only the judge reported is never
   confirmed (added 2026-10-11, OD-19, decided under the owner's delegation, ADR-0010 option B
-  with its amendment; halves in u08, u02 and u00).** 33 specs declared `evaluator_logic:
+  with its amendment; halves in u08, u07, u02 and u00).** 33 specs declared `evaluator_logic:
   weighted` and 42 `any_fail`; the runner read no value and applied its own deterministic-first
   rule, the lint fixture engine treated every value as "any fail fails", and `combine` held a
   boolean combination (an `inconclusive` dominating even a deterministic fail: a canary leak
@@ -225,7 +225,9 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   the stored reasoning, unchanged since 2026-09-03, so a resume reads older attempts alike); such a
   finding still fails its spec, counts in the reproducibility and appears in every report, its
   reasoning saying how many attempts the judge alone decided, and `--fail-on` gates it only with
-  `--include-needs-review`. No verdict and no confirmation of a shipped fixture changed (the
+  `--include-needs-review`; `scoring.confidence.gate_state`, which no production path calls,
+  agrees (u07's half: all the verdicts judge-only fails is `needs-review`), and
+  `reporting/summary.finding_state` says so. No verdict and no confirmation of a shipped fixture changed (the
   vulnerable mock, every capability declared, `--runs 2`: 224 failing attempts, none decided by
   the judge alone; 67 confirmed fails before and after). Checks:
   `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`

@@ -64,8 +64,11 @@ The values a spec can write:
   let two passing judges outvote a leaked canary, a confirmed exploit scored as a pass by
   configuration (ADR-0010, option A, not taken). An evaluator's `weight`, which only that vote
   read, is read by nothing and lint warns about it too.
-- "Deterministic" means every evaluator other than `semantic_judge`, so a `refusal` or
-  `logprob_membership` fail (confidence below 1.0, §1) decides as a regex does.
+- "Deterministic" means every evaluator other than `semantic_judge`, read from the verdict's
+  evaluator type, not from how the evaluator works: the heuristic `refusal` evaluator (a phrase
+  list, confidence 0.95 to 0.7) and `logprob_membership` (0.55 to 0.9, §1) decide as a regex
+  does, and so does anything a program registers under a built-in type with `replace=True`, an
+  LLM call included (an entry-point plugin that reuses a built-in type is refused at load).
 - **A fail only the judge reported is never confirmed** (the amendment). The judge says `fail`
   only when both of its passes agree and the lower of their confidences is at or above the
   spec's threshold, so such a fail clears the confidence bar; it is still the one evaluator a

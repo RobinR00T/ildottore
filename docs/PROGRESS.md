@@ -158,8 +158,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   fail 1 · pass 1` (exit 1) on `6d5f7ae` and on `ee202bf`, `inconclusive 75` (exit 0) now;
   vulnerable (67 confirmed fails, 8 inconclusive) and hardened (64 passes, 11 inconclusive)
   unchanged spec by spec. No fixture verdict changed. The no-judge dry-run warning on
-  `examples/target.local.yaml` now reads 34 of the 34 specs (was 33): every shipped spec declares
-  a judge. Left out: `MCP-TOOLPOISON-001` against a non-MCP target with a judge configured is
+  `examples/target.local.yaml` read 34 of the 34 specs (was 33 of 34): every shipped spec declares
+  a judge; since OD-44 (below) it reads 33 of the 33. Left out: `MCP-TOOLPOISON-001` against a non-MCP target with a judge configured is
   what the judge makes of a reply that lists no tool (gating MCP specs to `provider: mcp` is a
   planner change of its own).
 - **OD-19 (ADR-0010 B with the amendment, accepted, u06 A-73):** one rule, `deterministic_first`,

@@ -300,3 +300,14 @@ def test_a_cut_reply_is_decided_by_the_same_rule_and_never_by_the_judge_alone() 
         assert not decided_by_judge_alone(combined)
         attempts = [_attempt(combined, n) for n in range(2)]
         assert R._is_confirmed(_FAIL, attempts, spec) is True
+
+
+def test_the_scoring_gate_agrees_that_a_judge_only_fail_needs_review() -> None:
+    """``scoring.gate_state`` (no production caller; the runner decides ``confirmed``) agrees."""
+
+    from ildottore.scoring import FindingState, gate_state
+
+    judged = _aggregate([_v(_PASS), _v(_FAIL, _JUDGE, confidence=0.95)])
+    leaked = _aggregate([_v(_FAIL), _v(_FAIL, _JUDGE, confidence=0.95)])
+    assert gate_state([judged, judged], 0.95) is FindingState.NEEDS_REVIEW
+    assert gate_state([leaked, judged], 0.97) is FindingState.CONFIRMED

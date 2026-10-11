@@ -23,8 +23,12 @@ a not-reproduced finding (0) ⇒ score 0 ⇒ Info. Also produce `TestRun.summary
 confidence) and nothing else on the run path. `Finding.confirmed` is decided by the runner
 (`core/runner._is_confirmed`): the status is `fail` and some mutation variant with at least
 `MIN_VARIANT_ATTEMPTS` (2) verdicts failed on every one of them with mean confidence at or above
-the spec's threshold, or, when no variant has two, every verdict failed. `confidence.gate_state`
-and `DefaultRiskScorer.state` implement the gate described above and have no production caller.
+the spec's threshold, or, when no variant has two, every verdict failed, and (since 2026-10-11,
+OD-19, u06 §7 A-73, this unit's half) at least one of those fails was decided by a deterministic
+evaluator: a fail the judge alone reported is never confirmed. `confidence.gate_state` and
+`DefaultRiskScorer.state` implement the gate described above, the judge-only rule included (all
+the verdicts judge-only fails ⇒ `needs-review`), and have no production caller; a test holds them
+to the runner's answer for a judge-only fail.
 Judge disagreement does not reach this gate: a judge whose two passes disagree returns an
 inconclusive with no reason, which the runner drops (`docs/04 §2`). The state a report prints
 is derived in `reporting/summary.finding_state` (confirmed / needs_review / not_exploited /

@@ -118,7 +118,8 @@ versioning: [SemVer](https://semver.org/).
   `AC-BFLA-001` and `OUT-SQLI-001` go from exit 2 to exit 0 (2 with `--include-needs-review`). So
   a CI gate that was red only on judge-only fails turns green unless it passes the flag, which
   also gates the intermittent fails (a variant that did not fail on every attempt). `dottore diff`
-  reads statuses, not confirmation, so it still counts a judge-only fail as `NEW_FAIL`. A stored
+  reads statuses, not confirmation, so it still counts a judge-only fail as `NEW_FAIL`.
+  `scoring.gate_state`, which no production path calls, agrees with the runner. A stored
   attempt is read the same way on a resume: the reasoning that marks it has not changed since
   2026-09-03.
 - **No shipped fixture changed.** Against the vulnerable mock (every capability declared,
