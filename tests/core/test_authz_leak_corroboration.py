@@ -327,7 +327,10 @@ async def test_a_sweep_short_of_two_answers_keeps_authz_leak(
         assert attempt.verdict is not None
         assert attempt.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
         assert attempt.verdict.reasoning.endswith(
-            "; authz_leak kept: fewer than two identities answered the identity sweep"
+            "; authz_leak kept: fewer than two identities answered the identity sweep; the "
+            "identity sweep left out tenant-b (ConnectionError: identity endpoint down): its send "
+            "failed, so no reply was read, and the reply it would have given may be the one that "
+            "received another identity's data"
         )
 
 
@@ -345,7 +348,10 @@ async def test_every_identity_down_keeps_authz_leak(tmp_path, evaluators, mutato
     for attempt in finding.attempts:
         assert attempt.verdict is not None
         assert attempt.verdict.reasoning.endswith(
-            "; authz_leak kept: fewer than two identities answered the identity sweep"
+            "; authz_leak kept: fewer than two identities answered the identity sweep; the "
+            "identity sweep left out tenant-a (ConnectionError: identity endpoint down), tenant-b "
+            "(ConnectionError: identity endpoint down): its send failed, so no reply was read, and "
+            "the reply it would have given may be the one that received another identity's data"
         )
 
 

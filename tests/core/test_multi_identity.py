@@ -7,6 +7,8 @@ path is proven in CI without a live multi-tenant target (contract §5/§7).
 
 from __future__ import annotations
 
+import pytest
+
 from ildottore.adapters.mock import MockScenario, MockTarget
 from ildottore.core.runner import CampaignRunner, IdentityProbe
 from ildottore.shared.enums import (
@@ -228,4 +230,134 @@ async def test_with_three_identities_a_crossing_among_the_others_is_still_a_fail
     assert finding.status is VerdictStatus.FAIL
     assert all(
         "left out tenant-a" in (a.verdict.reasoning if a.verdict else "") for a in finding.attempts
+    )
+
+
+# --- an identity whose sweep reply could not be read, or whose send failed (audit, MEDIUM) ------
+
+
+class _Unreadable:
+    """An identity whose reply the adapter could not read (OD-21): an HTML page, say."""
+
+    id = "tenant-a"
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        from ildottore.adapters import ResponseMalformed
+
+        raise ResponseMalformed(
+            "tenant-a: success response was not valid JSON: Expecting value: line 1 column 1 "
+            "(char 0); not evaluated",
+            excerpt="<html>",
+            size=6,
+            advice="check the endpoint",
+        )
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(multi_identity=True)
+
+
+class _Down:
+    """An identity whose send failed on the network."""
+
+    id = "tenant-a"
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        raise ConnectionError("identity endpoint down")
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(multi_identity=True)
+
+
+_LEFT_OUT = {
+    "unreadable": (
+        "; the identity sweep left out tenant-a (ResponseMalformed: tenant-a: success response "
+        "was not valid JSON: Expecting value: line 1 column 1 (char 0); not evaluated): that "
+        "reply could not be read as the provider's, and it may be the one that received another "
+        "identity's data"
+    ),
+    "down": (
+        "; the identity sweep left out tenant-a (ConnectionError: identity endpoint down): its "
+        "send failed, so no reply was read, and the reply it would have given may be the one that "
+        "received another identity's data"
+    ),
+}
+
+
+def _three_with(first: object, c_reply: str) -> list[IdentityProbe]:
+    b = MockTarget(MockScenario(response=f"my own record {_CANARY}"), id="tenant-b")
+    c = MockTarget(MockScenario(response=c_reply), id="tenant-c")
+    return [
+        IdentityProbe(identity_id="tenant-a", adapter=first, canary=None),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_CANARY),
+        IdentityProbe(identity_id="tenant-c", adapter=c, canary=None),
+    ]
+
+
+@pytest.mark.parametrize("kind", ["unreadable", "down"])
+async def test_an_identity_not_heard_from_keeps_authz_leak_from_passing_and_is_named(
+    evaluators, mutators, scorer, stores, kind: str
+) -> None:
+    """Two identities answered and showed no crossing, and the one whose reply was never read
+    may be the one that received B's data: ``repro_sweep_unreadable.py`` passed the spec, with
+    the unreadable identity dropped and named nowhere (audit of the scoring, 2026-10-11, MEDIUM).
+    """
+
+    first = _Unreadable() if kind == "unreadable" else _Down()
+    probes = _three_with(first, "only tenant C data")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE, finding.reasoning
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert attempt.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+        assert attempt.verdict.reasoning.endswith(_LEFT_OUT[kind])
+
+
+@pytest.mark.parametrize("kind", ["unreadable", "down"])
+async def test_a_crossing_beside_an_identity_not_heard_from_is_still_a_fail(
+    evaluators, mutators, scorer, stores, kind: str
+) -> None:
+    first = _Unreadable() if kind == "unreadable" else _Down()
+    probes = _three_with(first, f"here is tenant B data: {_CANARY}")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.FAIL
+    assert all(
+        (a.verdict.reasoning if a.verdict else "").endswith(_LEFT_OUT[kind])
+        for a in finding.attempts
+    )
+
+
+async def test_identities_left_out_for_different_reasons_are_named_by_reason(
+    evaluators, mutators, scorer, stores
+) -> None:
+    b = MockTarget(MockScenario(response=f"my own record {_CANARY}"), id="tenant-b")
+    c = MockTarget(MockScenario(response="only tenant C data"), id="tenant-c")
+    probes = [
+        IdentityProbe(identity_id="tenant-a", adapter=_Filtered(), canary=None),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_CANARY),
+        IdentityProbe(identity_id="tenant-c", adapter=c, canary=None),
+        IdentityProbe(identity_id="tenant-d", adapter=_Down(), canary=None),  # type: ignore[arg-type]
+    ]
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    attempt = result.findings[0].attempts[0]
+    assert attempt.verdict is not None
+    assert attempt.verdict.reasoning.endswith(
+        "; the identity sweep left out tenant-a (stop reason content_filter): the provider's "
+        "filter stopped that reply, which may be the one that received another identity's data; "
+        "the identity sweep left out tenant-d (ConnectionError: identity endpoint down): its send "
+        "failed, so no reply was read, and the reply it would have given may be the one that "
+        "received another identity's data"
     )
