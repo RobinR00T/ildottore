@@ -230,13 +230,16 @@ def seeding_gap(spec: AttackSpec, target: Target) -> str | None:
 
     The runner and the plan both ask this, so what the dry run counts as "not seeded" is what
     the run reports; both exempt the offline mock, which answers from the spec, not from a
-    deployment. Four reasons: the spec is not declared; its scene carries the per-run canary
+    deployment. Five reasons: the spec is not declared; its scene carries the per-run canary
     and no ``run_token`` replaces it (the operator seeds before the run, so the canary the
     evaluators look for could never be in the deployment, and ``secret_leakage`` would be
     blind; pre-commit audit of B); two of its scene tools map to one deployment name; or one of
     them maps to the name of another (``{transfer_to_billing_agent: delete_account}`` on a scene
     that also has ``delete_account`` judged a real delete as the hand-off, which its scene may
-    have cleared with ``destructive: false``; pre-merge audit of u06 A-71).
+    have cleared with ``destructive: false``; pre-merge audit of u06 A-71). And one more: one of
+    them maps to a granted tool the target file declares not destructive (OD-43, u06 A-72), so
+    the file says two things of one name, a spec's scene tool and the deployment's own harmless
+    one; the loader refuses that map, and this refuses a setup built another way.
     """
 
     if not needs_seeding(spec, target):
@@ -265,6 +268,14 @@ def seeding_gap(spec: AttackSpec, target: Target) -> str | None:
         return (
             f"setup_not_seeded: seeded_setup.tools maps {pairs}, the name of another tool of "
             "this spec's scene, so a call to that tool would be judged as the one mapped to it"
+        )
+    onto_declared = _onto_declared(spec, seeded.tools, seeded.not_destructive)
+    if onto_declared:
+        pairs = ", ".join(f"{spec_name} to {deployment}" for spec_name, deployment in onto_declared)
+        return (
+            f"setup_not_seeded: seeded_setup.tools maps {pairs}, a granted tool the target file "
+            "declares not destructive (OD-43), so one name would be both this spec's scene tool "
+            "and the deployment's own"
         )
     return None
 
@@ -410,6 +421,20 @@ def _crossed_names(spec: AttackSpec, tools: dict[str, str]) -> list[tuple[str, s
         (spec_name, deployment)
         for spec_name, deployment in tools.items()
         if spec_name in scene and deployment in scene and deployment != spec_name
+    )
+
+
+def _onto_declared(
+    spec: AttackSpec, tools: dict[str, str], declared: list[str]
+) -> list[tuple[str, str]]:
+    """Each scene tool ``seeded_setup.tools`` maps to a name the file declares not destructive."""
+
+    scene = scene_tool_names(spec)
+    named = set(declared)
+    return sorted(
+        (spec_name, deployment)
+        for spec_name, deployment in tools.items()
+        if spec_name in scene and deployment in named
     )
 
 
