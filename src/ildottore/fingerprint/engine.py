@@ -25,7 +25,11 @@ from ildottore.fingerprint.combine import SPOOF_FLAG, CombinedFingerprint, combi
 from ildottore.fingerprint.layers import default_layers
 from ildottore.fingerprint.layers.behavioral import SELF_REPORT_DETAIL
 from ildottore.fingerprint.layers.capability import capability_guess
-from ildottore.fingerprint.layers.carrier import CARRIER_PROBE_DETAIL, effective_mutators
+from ildottore.fingerprint.layers.carrier import (
+    CARRIER_PROBE_DETAIL,
+    CARRIER_PROBE_PREFIX,
+    effective_mutators,
+)
 from ildottore.fingerprint.layers.guardrail import GUARDRAIL_PROFILE_DETAIL, PROFILE_ONLY_PROBES
 from ildottore.fingerprint.signatures import SignaturePack, load_pack
 from ildottore.shared.models import (
@@ -73,6 +77,17 @@ class FingerprintEngine:
     credential and route, so the refusal is about that prompt, and the profile reads it as
     unknown. On any other probe the same error stops the pass, as before. ``None`` isolates
     nothing more.
+
+    ``is_prompt_filtered`` decides which errors of a **carrier** probe are a failed probe: the
+    provider's own input filter refused it (the composition root's predicate: the adapters'
+    ``blocked_by_provider_filter`` marker, OD-41). A carrier sends an instruction through an
+    encoding (base64, rot13, leetspeak, homoglyphs), which Microsoft's Prompt Shields classes as a
+    user prompt attack, "Encoding attacks" (Microsoft Learn, "Prompt Shields in Azure AI Content
+    Safety", read 2026-10-10), so Azure's filter can refuse it after every other probe was
+    answered; the carrier layer leaves an unanswered carrier unmeasured (pre-merge audit of
+    ``3d739f3``, L6). Any other
+    error of a carrier, a 4xx the filter did not send included, stops the pass, as before.
+    ``None`` isolates nothing more.
     """
 
     def __init__(
@@ -82,11 +97,13 @@ class FingerprintEngine:
         pack: SignaturePack | None = None,
         is_env_error: Callable[[BaseException], bool] | None = None,
         is_request_refused: Callable[[BaseException], bool] | None = None,
+        is_prompt_filtered: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self._layers = layers if layers is not None else default_layers()
         self._pack = pack if pack is not None else load_pack()
         self._is_env_error = is_env_error
         self._is_request_refused = is_request_refused
+        self._is_prompt_filtered = is_prompt_filtered
 
     @property
     def layers(self) -> list[FingerprintLayer]:
@@ -116,6 +133,7 @@ class FingerprintEngine:
             self._is_env_error,
             is_request_refused=self._is_request_refused,
             profile_only=PROFILE_ONLY_PROBES,
+            is_prompt_filtered=self._is_prompt_filtered,
         )
         # The carrier layer's probes are left out of the check: a target can answer carriers
         # differently (that is what comprehension measures) and every attributing probe alike.
@@ -333,11 +351,13 @@ class _ProbeIsolation:
         *,
         is_request_refused: Callable[[BaseException], bool] | None = None,
         profile_only: frozenset[str] = frozenset(),
+        is_prompt_filtered: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self._inner = inner
         self._is_env_error = is_env_error
         self._is_request_refused = is_request_refused
         self._profile_only = profile_only
+        self._is_prompt_filtered = is_prompt_filtered
         self.id = inner.id
         #: The layer probing now, set by the engine before each layer runs.
         self.layer = ""
@@ -348,7 +368,11 @@ class _ProbeIsolation:
             return await self._inner.send(request)
         except Exception as exc:
             probe = str((request.metadata or {}).get("probe", "probe"))
-            if not (self._refused(exc) or self._refused_request(probe, exc)):
+            if not (
+                self._refused(exc)
+                or self._refused_request(probe, exc)
+                or self._filtered_carrier(probe, exc)
+            ):
                 raise
             failed = ProbeFailed(probe, exc)
             self.failures.append(f"{self.layer}/{failed}")
@@ -371,6 +395,15 @@ class _ProbeIsolation:
             probe in self._profile_only
             and self._is_request_refused is not None
             and self._is_request_refused(exc)
+        )
+
+    def _filtered_carrier(self, probe: str, exc: Exception) -> bool:
+        """A carrier the provider's input filter refused (OD-41): that carrier is unmeasured."""
+
+        return (
+            probe.startswith(CARRIER_PROBE_PREFIX)
+            and self._is_prompt_filtered is not None
+            and self._is_prompt_filtered(exc)
         )
 
 

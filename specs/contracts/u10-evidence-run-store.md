@@ -112,6 +112,15 @@ reproducibility denominator, the resume skip set and the replay count, all publi
 A send that fails is stored with its error, because "we sent this and got nothing back" is also
 evidence. Checked by `tests/cli/test_probe_evidence.py`.
 
+**A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) A replay re-derives a blocked
+attempt from what it stored.** An attempt the provider's input filter refused is stored with no
+response, the verdict `inconclusive: blocked_by_provider_filter` and an error ending in
+` [blocked_by_provider_filter]`. `ReplayResult.blocked_by_provider_filter()` counts those, one per
+attempt id, by the verdict's reason or, without a verdict, by the mark
+(`shared.provider_filter`); they stay in `N` and are never a success, as the runner scores them.
+`dottore replay` writes `inconclusive (blocked_by_provider_filter)` on their line and a footer line
+with the count. Checked by `tests/cli/test_provider_filter_campaign.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.

@@ -5,7 +5,8 @@
 > `shared/schema_export.py` that generates the `suite`/`pack`/`test-plan` JSON schemas from the
 > Pydantic models (Pydantic-first; only `attack-spec.schema.json` is hand-authored). `Verdict`
 > carries `inconclusive_reason: InconclusiveReason|None` (closed StrEnum:
-> `capability_unavailable | blocked_by_policy | judge_compromised`, extensible via ADR).
+> `capability_unavailable | blocked_by_policy | judge_compromised`, extensible via ADR; ADR-0011
+> added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69).
 > `ModelFingerprint.capability_guess` (not `.capabilities`): distinct from the `Capabilities`
 > enum. Canonical `TestPlan` shape is in ADR-0006 §3.
 
@@ -119,5 +120,7 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   only if u04 finds a provider needing byte offsets / richer top-k.
 - Whether `inconclusive_reason` is a closed `StrEnum` or an open `str`: propose closed enum
   seeded with `{capability_unavailable, blocked_by_policy, judge_compromised}`, extensible via ADR.
+  (Built closed; ADR-0011 added `blocked_by_provider_filter`, 2026-10-10: a prompt the provider's
+  own input filter refused before the model saw it, OD-41.)
 - Whether `ModelFingerprint` lives in `shared.models` (proposed, since u09 + u08 planner both
   consume it) or moves to `fingerprint/`: propose shared (it is a cross-unit wire shape).

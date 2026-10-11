@@ -50,6 +50,7 @@ from ildottore.shared.iopc import (
     IOPC_TECHNIQUES,
 )
 from ildottore.shared.models import AttackSpec, Attempt, Finding
+from ildottore.shared.provider_filter import blocked_attempt_ids, blocked_by_provider_filter
 
 __all__ = [
     "ATLAS_MATRIX_RELEASE",
@@ -62,6 +63,7 @@ __all__ = [
     "AxisCoverage",
     "BatteryCoverage",
     "Coverage",
+    "FilterBlocks",
     "FrameworkCounts",
     "MatrixCell",
     "ModelComparison",
@@ -177,10 +179,25 @@ class Coverage:
     off_universe: tuple[tuple[str, str, str], ...] = ()
     #: Specs that produced a finding but no reply that could be scored: nothing sent
     #: (policy-blocked, or skipped for a capability the target does not declare), or every send
-    #: ended in an environment error. They are reported, and they do NOT count as covered
-    #: surface: crediting them told the reader a tactic had been exercised when the spec for it
-    #: never got an answer.
+    #: ended in an environment error or was refused by the provider's input filter (OD-41). They
+    #: are reported, and they do NOT count as covered surface: crediting them told the reader a
+    #: tactic had been exercised when the spec for it never got an answer.
     not_exercised: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class FilterBlocks:
+    """The attempts the provider's own input filter refused before the model saw them (OD-41).
+
+    Counted apart because they are neither the model's refusals nor exploits: each is an
+    ``inconclusive: blocked_by_provider_filter`` attempt, and a spec whose every attempt was
+    blocked is ``inconclusive`` (and not exercised), never a pass of the model.
+    """
+
+    #: Blocked attempts, one per attempt id, over every finding.
+    attempts: int = 0
+    #: Spec ids with at least one blocked attempt, sorted.
+    specs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -219,6 +236,7 @@ class RunSummary:
     coverage: Coverage
     model_comparison: ModelComparison | None = None
     run_status: RunStatus = field(default_factory=RunStatus)
+    provider_filter: FilterBlocks = field(default_factory=FilterBlocks)
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -278,9 +296,14 @@ _UNSENT: tuple[str, ...] = ("setup_not_seeded", "setup_not_delivered")
 
 
 def _exercised(attempt: Attempt) -> bool:
-    """True when the attempt reached the target and its scene reached the model."""
+    """True when the attempt reached the target and its scene reached the model.
 
-    if attempt.response is None:
+    A conversation the provider's input filter cut carries a reply when the model had called a
+    tool, and is not exercised unless that trace failed it (OD-41): the turn the spec is about
+    never reached the model.
+    """
+
+    if attempt.response is None or blocked_by_provider_filter(attempt):
         return False
     verdict = attempt.verdict
     return verdict is None or not verdict.reasoning.startswith(SETUP_NOT_REACHED)
@@ -448,8 +471,14 @@ def build_run_summary(
     confirmed = 0
     needs_review = 0
     targets: set[str] = set()
+    blocked = 0
+    blocked_specs: set[str] = set()
 
     for finding in findings:
+        filtered = len(blocked_attempt_ids(finding.attempts))
+        if filtered:
+            blocked += filtered
+            blocked_specs.add(finding.spec_id)
         by_status[finding.status.value] += 1
         by_band[finding.risk.band.value] += 1
         # A spec nothing was sent for (a capability skip, a policy block) measured nothing, so
@@ -492,6 +521,7 @@ def build_run_summary(
         coverage=_build_coverage(findings, spec_map, planned_specs=planned_specs),
         model_comparison=comparison,
         run_status=run_status if run_status is not None else RunStatus(),
+        provider_filter=FilterBlocks(attempts=blocked, specs=tuple(sorted(blocked_specs))),
     )
 
 

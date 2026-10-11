@@ -255,6 +255,10 @@
   },
   "schema_version": "1.0",
   "summary": {
+    "blocked_by_provider_filter": {
+      "attempts": 0,
+      "specs": []
+    },
     "by_band": {
       "critical": 1,
       "medium": 1

@@ -116,6 +116,12 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
             "complete": summary.run_status.complete,
             "reason": summary.run_status.reason,
         },
+        # The attempts the provider's input filter refused before the model saw them (OD-41):
+        # always emitted, optional in report-1.0 so an older report still validates.
+        "blocked_by_provider_filter": {
+            "attempts": summary.provider_filter.attempts,
+            "specs": list(summary.provider_filter.specs),
+        },
     }
     if summary.model_comparison is not None:
         wire["model_comparison"] = _comparison_to_wire(summary.model_comparison)

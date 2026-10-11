@@ -24,6 +24,7 @@ from ildottore.reporting.summary import RunSummary, finding_state
 from ildottore.shared.enums import ReportFormat, VerdictStatus
 from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import Finding
+from ildottore.shared.provider_filter import blocked_attempt_ids
 
 __all__ = ["JunitReporter"]
 
@@ -53,6 +54,11 @@ class JunitReporter(BaseReporter):
             f"confidence={finding.risk.confidence:g} "
             f"state={finding_state(finding)}"
         )
+        # Attempts the provider's input filter refused (OD-41): the reasoning a failure or a
+        # skip quotes says so, and a passing case's detail counts them, when there are any.
+        blocked = len(blocked_attempt_ids(finding.attempts))
+        if blocked:
+            detail += f" blocked_by_provider_filter={blocked}"
         if finding.status is VerdictStatus.FAIL:
             failure = ET.SubElement(
                 case,

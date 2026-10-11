@@ -28,6 +28,7 @@ from ildottore.reporting.summary import RunSummary, finding_state
 from ildottore.shared.enums import ReportFormat, ScanBand
 from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import AttackSpec, Finding
+from ildottore.shared.provider_filter import blocked_attempt_ids
 
 __all__ = ["SARIF_SCHEMA_VERSION", "SarifReporter", "band_to_level", "load_sarif_schema"]
 
@@ -115,6 +116,14 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
         f"{finding.spec_id} against {finding.target_id}: {finding.status.value} "
         f"(band={risk.band.value}, risk={risk.risk:g}, state={state})"
     )
+    # Attempts the provider's input filter refused never reached the model (OD-41): said in the
+    # message a dashboard shows, and counted in the properties, only when there are any.
+    blocked = len(blocked_attempt_ids(finding.attempts))
+    if blocked:
+        message += (
+            f"; {blocked} of {len({a.attempt_id for a in finding.attempts})} attempt(s) blocked "
+            "by the provider's input filter before the model saw them"
+        )
     result: dict[str, Any] = {
         "ruleId": finding.spec_id,
         "ruleIndex": rule_index,
@@ -138,9 +147,17 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
             "state": state,
             "status": finding.status.value,
             "target_id": finding.target_id,
+            **({"blocked_by_provider_filter": blocked} if blocked else {}),
         },
     }
     return result
+
+
+def _blocked_property(findings: list[Finding]) -> dict[str, int]:
+    """``{"blocked_by_provider_filter": n}`` for the run's blocked attempts, or ``{}`` for none."""
+
+    blocked = sum(len(blocked_attempt_ids(f.attempts)) for f in findings)
+    return {"blocked_by_provider_filter": blocked} if blocked else {}
 
 
 class SarifReporter(BaseReporter):
@@ -187,6 +204,8 @@ class SarifReporter(BaseReporter):
                     "properties": {
                         "run_id": ctx.run.run_id,
                         "run_status": self._run_status.state,
+                        # Attempts the provider's input filter refused (OD-41), when any were.
+                        **_blocked_property(ctx.findings),
                         # The editions the rule tags refer to (A-14, audit R12).
                         "framework_editions": framework_editions(),
                         # The authorization record the run went out under (S4, audit D-17).

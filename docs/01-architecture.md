@@ -88,7 +88,9 @@ class Evaluator(Protocol):
     #   Verdict = {status: pass|fail|inconclusive, confidence: float, reasoning: str,
     #              matched: list[str], evaluator_type: str,
     #              inconclusive_reason: capability_unavailable|blocked_by_policy|
-    #                                   judge_compromised|None}
+    #                                   judge_compromised|blocked_by_provider_filter|None}
+    #   blocked_by_provider_filter (ADR-0011, OD-41): the provider's own input filter refused the
+    #   prompt before the model saw it; the runner sets it, no evaluator does.
 
 class Mutator(Protocol):
     name: str

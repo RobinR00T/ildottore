@@ -22,6 +22,21 @@ from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 
 __all__ = ["RestAdapter", "RestTemplate", "get_path"]
 
+#: The ``PromptFeedback.blockReason`` values both references say blocked the prompt (OD-41):
+#: ``SAFETY``, ``OTHER``, ``BLOCKLIST`` and ``PROHIBITED_CONTENT`` in the Gemini API reference
+#: (ai.google.dev/api/generate-content, read 2026-10-10) and in Vertex AI's, whose
+#: ``BlockedReason`` adds ``MODEL_ARMOR`` ("The prompt was blocked by Model Armor") and
+#: ``JAILBREAK`` ("The prompt was blocked as a jailbreak attempt")
+#: (docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/GenerateContentResponse,
+#: read 2026-10-10). Not ``IMAGE_SAFETY``: Vertex calls it a prompt unsafe for image generation,
+#: the Gemini API "Candidates blocked due to unsafe image generation content", and the two do not
+#: agree that the prompt was refused; nor either spelling of the unspecified value.
+_GEMINI_PROMPT_BLOCKS: frozenset[str] = frozenset(
+    {"SAFETY", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT", "MODEL_ARMOR", "JAILBREAK"}
+)
+#: Where every Gemini text path starts: ``GenerateContentResponse.candidates`` (both references).
+_GEMINI_TEXT_ROOT = "candidates."
+
 
 def get_path(payload: Any, path: str) -> Any:
     """Resolve a dotted path (``a.b.0.c``) into a nested JSON payload.
@@ -140,6 +155,36 @@ class RestAdapter(BaseAdapter):
         if self.api_key is not None:
             headers["authorization"] = f"Bearer {self.api_key}"
         return body, headers
+
+    def _prompt_blocked(self, payload: Mapping[str, Any]) -> tuple[str, str] | None:
+        """Gemini's prompt block, when a Gemini template's text path finds no text (OD-41).
+
+        The shape, sourced: the Gemini API reference, ``GenerateContentResponse``
+        (ai.google.dev/api/generate-content, read 2026-10-10): ``promptFeedback`` "Returns the
+        prompt's feedback related to the content filters", and ``PromptFeedback.blockReason``
+        "If set, the prompt was blocked and no candidates are returned"; Vertex AI's reference
+        says the same of its ``promptFeedback``: it is sent only in the first stream chunk, and
+        only when no candidates were generated because of content violations. A blocked prompt is
+        a success body with no candidate, so the text path a Gemini template points at
+        (``candidates.0.content.parts.0.text``) is absent and the reply was a product error that
+        stopped the campaign.
+
+        Recognised: a template whose ``text_path`` starts at ``candidates.``, where both
+        references put the text (any other template is not reading a Gemini body, and a
+        ``promptFeedback`` key in its reply is not Gemini's, pre-merge audit of ``3d739f3``, L3);
+        no text at that path; and a ``blockReason`` in :data:`_GEMINI_PROMPT_BLOCKS`. Anything
+        else stays the product error it was. A body with text is a reply whatever else it holds.
+        """
+
+        if not self.template.text_path.startswith(_GEMINI_TEXT_ROOT):
+            return None
+        if get_path(payload, self.template.text_path) is not None:
+            return None
+        reason = get_path(payload, "promptFeedback.blockReason")
+        # A string first: the body is the target's, and a list there is unhashable.
+        if not isinstance(reason, str) or reason not in _GEMINI_PROMPT_BLOCKS:
+            return None
+        return "promptFeedback.blockReason", f"promptFeedback.blockReason {reason}"
 
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
         text = get_path(payload, self.template.text_path)

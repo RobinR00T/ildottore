@@ -25,6 +25,7 @@ from ildottore.adapters.base import (
     AdapterStatusError,
     BaseAdapter,
     EndpointNotAllowed,
+    ProviderFilterBlock,
     RetryConfig,
     map_logprobs,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "EndpointNotAllowed",
     "MCPAdapter",
     "OpenAIAdapter",
+    "ProviderFilterBlock",
     "RestAdapter",
     "RestTemplate",
     "RetryConfig",

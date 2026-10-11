@@ -149,6 +149,15 @@ one. Read `summary.status.reason` before you treat it as a flake;
 [`docs/MANUAL.md`](docs/MANUAL.md) explains why. Only an **exploited** (`fail`) finding trips
 the gate; `pass`/`inconclusive` never do.
 
+**A provider's input filter does not stop the scan.** An attack prompt the deployment's own filter
+refuses before the model sees it (Azure OpenAI's HTTP 400 `content_filter`, Gemini's
+`promptFeedback.blockReason`) is recorded as a blocked attempt, `inconclusive:
+blocked_by_provider_filter`, and the campaign goes on; the summary counts them (`Blocked by the
+provider's input filter: N attempt(s) in S spec(s) never reached the model`, and
+`summary.blocked_by_provider_filter` in JSON). A spec whose every attempt was blocked is
+inconclusive, never a pass. Any other 4xx still stops the run with `3`
+([`docs/MANUAL.md`](docs/MANUAL.md) §9).
+
 ## Multi-turn attacks
 
 Some specs (Crescendo, Linear, Sequential, Bad-Likert, Tree) attack over several turns.

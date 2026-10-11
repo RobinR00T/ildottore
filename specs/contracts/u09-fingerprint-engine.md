@@ -276,7 +276,19 @@ first build, each reproduced, and added to the criterion:
   `cli.wiring.refused_request` (a 4xx),
   and the engine makes it a failed probe for the profile-only probes alone: `benign_refused`
   `null`, `probes_failed` with `guardrail/guardrail_benign: AdapterStatusError`, the pass and the
-  run go on. On any other probe it stops the pass, as before;
+  run go on. On any other probe it stops the pass, as before. (Since OD-41, 2026-10-10, u08 A-69:
+  the adapters raise Azure's `content_filter` 400 and Gemini's prompt block as
+  `ProviderFilterBlock`, which `refused_request` reads at any status, so that line names
+  `ProviderFilterBlock`; any other 4xx is still an `AdapterStatusError`. The same refusal of a
+  carrier probe is a failed probe too, since the pre-merge audit of `3d739f3` (L6): a carrier is
+  an instruction sent through an encoding, which Microsoft's Prompt Shields classes as a user
+  prompt attack ("Encoding attacks"), so Azure's filter could refuse one after every other probe
+  was answered and stop `-sV`. The engine's `is_prompt_filtered` (the composition root injects
+  `core.execute.is_provider_filter_block`) isolates a `carrier_*` probe the filter refused; the
+  carrier layer leaves it unmeasured. Any other error of a carrier, and the same refusal of an
+  attributing probe, stop the pass. Checked by `tests/fingerprint/test_carrier_filter_block.py`
+  (6 tests) and the base64 carrier through the real CLI in `tests/cli/test_input_filter_probe.py`,
+  exit 3 on `92c7b11`.);
 - `output_filter` is `null` unless a reply carries a stop reason from the provider: not a REST
   template with no finish path, nor the `final` the WebSocket adapter writes, nor MCP's
   `mcp_discovery`, nor the offline mocks;
@@ -344,5 +356,6 @@ both).
   free-shaped, but `docs/10` and §6 name the key), or to set it from the one input-filter signal
   the pass can see: a 4xx to the benign request alone (Azure OpenAI's 400 `content_filter`),
   which since the pre-merge audit is a failed probe with `benign_refused: null` and is not read
-  as an input filter. The attack phase still stops a campaign on such a 4xx, as before (a
-  product error, F5; OD-21 leaves non-retryable 4xx out of its question). Owner: human.
+  as an input filter. The attack phase stopped a campaign on such a 4xx (a product error, F5;
+  OD-21 leaves non-retryable 4xx out of its question) until OD-41 (decided 2026-10-10): it now
+  records an attack prompt the filter refused as blocked and goes on (u08 A-69). Owner: human.

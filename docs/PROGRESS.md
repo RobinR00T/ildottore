@@ -3,6 +3,52 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-10 (night): the pre-merge audit of `3d739f3` (OD-41), six lows closed
+
+- Merge-ready per the audit; closed on the same branch. L1: the resume test checks `--estimate
+  --resume` (5 done, ~3 to send). L2: a conversation the filter cut carried no reply, so a
+  forbidden tool called on an earlier turn was never scored; the aggregate keeps the model's last
+  reply with the trace whenever there is a call, the runner reads it with the trace evaluators
+  only, a fail decides (error moved to `request.metadata.provider_filter_cut`), anything else
+  stays blocked and not exercised. L3: the Gemini block needs a `candidates.` text path. L4:
+  Vertex AI's `MODEL_ARMOR` and `JAILBREAK` (its REST reference, read 2026-10-10), not
+  `IMAGE_SAFETY`, on which the references disagree. L5: report-1.0 grows additively, as before, so
+  the CHANGELOG says a new report fails an older copy of the schema. L6: a carrier probe the
+  filter refused stopped `-sV`; the engine's `is_prompt_filtered` (wired to
+  `core.execute.is_provider_filter_block`) makes it a failed probe, as Prompt Shields classes an
+  encoded instruction as an encoding attack. The FAQ line of 152 characters is rewrapped. Not
+  started, at the conductor's request: the Bedrock guardrail and Azure output-filter gap. 17
+  tests more (52 adapter, 13 core, 7 CLI, 6 fingerprint and the base64 carrier through the CLI).
+  `make gates` green (2026-10-10, 21:25): ruff, format (387 files), mypy strict (156 source
+  files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs), 4,971 tests
+  with 97.63% coverage, self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
+
+## State, 2026-10-10 (evening): a provider's input-filter refusal is a blocked attempt (OD-41)
+
+- On `feat/provider-filter-blocked-attempt`, from `main` at `92c7b11`: the owner decided
+  (2026-10-10, 17:33) that an attack prompt the provider's own input filter refuses before the
+  model sees it no longer aborts the campaign (exit 3 after 1 request, measured on `92c7b11`
+  against a loopback stub answering Azure OpenAI's 400 `content_filter`). Built (u08 A-69,
+  ADR-0011, OD-41 closed): `adapters.base.ProviderFilterBlock` for Azure's 400 `content_filter`
+  (every `BaseAdapter`) and Gemini's `promptFeedback.blockReason` in a success body with no text
+  (REST), each shape cited in the code; every other 4xx unchanged. `execute_attempt` reads the
+  `blocked_by_provider_filter` marker: one send, debited, tokens released, the error marked
+  `[blocked_by_provider_filter]`; the runner's verdict is `inconclusive:
+  blocked_by_provider_filter` (a new `InconclusiveReason`), scored as an attempt without a reply
+  (a spec all blocked is inconclusive and not exercised, never a pass); a resume keeps it,
+  `dottore replay` re-derives it, and the JSON summary (`blocked_by_provider_filter`), SARIF,
+  JUnit, HTML and the terminal count it. A run all blocked is complete, not unreachable. The judge
+  path is unchanged (`capability_unavailable`). The `-sV` benign probe's failure reads
+  `ProviderFilterBlock`. With the stub and a judge: exit 0, 14 attack requests, 8 blocked, 12
+  judge requests. Tests: 7 CLI (4 fail on `92c7b11`), 45 adapter and 10 core (not collected on
+  `92c7b11`). Left open: Bedrock's guardrail intervention (an HTTP 200 read as a reply), OpenAI's
+  `invalid_prompt` 400 and Gemini's OpenAI-compatible endpoint (no documented shape); the `-sV`
+  pass still stops on such a refusal of an attributing probe (the benign one and, since the
+  audit, the carriers are failed probes). Not run against a live Azure or Gemini endpoint. `make gates` green (2026-10-10, 20:49): ruff, format (386 files),
+  mypy strict (156 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75
+  specs, 14 suites, 1 pack), 4,954 tests with 97.63% coverage, self-scan 0 high/critical, bandit,
+  pip-audit (no known vulnerabilities).
+
 ## State, 2026-10-10: URL passwords behind a credential holding a URL separator (#96)
 
 - On `fix/redactor-issue-96`, from `origin/main` at `f12ba83`: the two regressions accepted with #56

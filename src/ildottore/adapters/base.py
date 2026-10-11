@@ -51,17 +51,20 @@ from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
     "ACCEPT_ENCODING",
+    "FILTER_REFUSED",
     "AdapterEnvError",
     "AdapterError",
     "AdapterProductError",
     "AdapterStatusError",
     "BaseAdapter",
     "EndpointNotAllowed",
+    "ProviderFilterBlock",
     "ResponseTooDeep",
     "ResponseTooLarge",
     "ResponseUndecodable",
     "RetryConfig",
     "SamplingRefused",
+    "azure_prompt_filter",
     "map_logprobs",
     "read_capped",
     "redact_ids",
@@ -169,6 +172,99 @@ class AdapterStatusError(AdapterProductError):
         ``copy.copy`` and ``pickle.loads`` raised ``TypeError`` on the keyword it lacked."""
 
         return (functools.partial(type(self), status_code=self.status_code), self.args)
+
+
+class ProviderFilterBlock(AdapterProductError):
+    """The provider's own input filter refused the prompt before the model saw it (OD-41).
+
+    Recognised only in the shapes a provider documents (:func:`azure_prompt_filter`, and
+    Gemini's ``promptFeedback.blockReason`` in ``adapters.rest``), never from any 4xx: every
+    other refusal stays an :class:`AdapterStatusError`. ``status_code`` is the status the refusal
+    came with (400 for Azure's, 200 for Gemini's body), ``code`` the provider's own code for it.
+
+    Still an :class:`AdapterProductError`, so whatever is not taught about it treats it as
+    before: the fingerprint pass stops on it, except on the guardrail layer's benign probe
+    (``cli.wiring.refused_request``, u09 A-67), and the judge evaluator reads it as an unusable
+    judge. The attack phase reads the ``blocked_by_provider_filter`` marker instead: the attempt
+    is recorded as blocked, not sent again, and the campaign goes on (``core.execute``, u08
+    A-69). Before OD-41 it stopped the campaign at the first one, exit 3 after one request.
+    """
+
+    #: The structural marker ``core.execute`` reads, as it reads ``is_env_error``.
+    blocked_by_provider_filter = True
+    #: The same prompt is refused the same way.
+    retryable = False
+
+    def __init__(self, message: str, *, status_code: int, code: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Rebuild with the status and the code (as :class:`AdapterStatusError` does)."""
+
+        rebuild = functools.partial(type(self), status_code=self.status_code, code=self.code)
+        return (rebuild, self.args)
+
+
+#: Azure OpenAI's error code for a prompt its content filter refused.
+_AZURE_FILTER_CODE = "content_filter"
+#: A filter category name as Azure writes one (``hate``, ``jailbreak``, ``self_harm``): a key
+#: of another shape is not written into the attempt, and at most eight are.
+_CATEGORY = re.compile(r"[a-z][a-z_]{0,39}")
+_MAX_CATEGORIES = 8
+
+
+def azure_prompt_filter(status_code: int, raw: bytes) -> str | None:
+    """What Azure OpenAI's prompt filter says it refused, or ``None`` for any other reply.
+
+    The shape, sourced (OD-41): Microsoft Learn, "Content filtering for Microsoft Foundry Models
+    (classic)", section "Content filtering scenarios" (learn.microsoft.com/en-us/azure/
+    foundry-classic/foundry-models/concepts/content-filter, read 2026-10-10): "Prompts that are
+    classified at a filtered category and severity level return an HTTP 400 error", and
+    "Scenario 3: Inappropriate input prompt" gives the body ``{"error": {"message": ..., "type":
+    null, "param": "prompt", "code": "content_filter", "status": 400}}``. The "Guardrail
+    annotations" page reads ``error.innererror`` beside that code; the Azure OpenAI REST
+    reference (2024-10-21) names its code, ``innerErrorCode``: ``ResponsibleAIPolicyViolation``,
+    "The prompt violated one of more content filter rules". The body Azure sends, with
+    ``innererror.content_filter_result`` per category, is the one in
+    ``tests/cli/test_input_filter_probe.py`` (pre-merge audit of ``cd413c0``).
+
+    Recognised: status 400 and ``error.code`` exactly ``content_filter``; ``innererror`` is
+    optional, as in Scenario 3. Returned: the categories ``innererror.content_filter_result``
+    (or ``content_filter_results``) marks ``filtered: true``. ``innererror.code`` is read and
+    not written: the redactor's entropy rule masks ``ResponsibleAIPolicyViolation``, and the
+    attempt would read ``«REDACTED:high_entropy:...»`` as if a secret had been in it. Nothing of
+    the provider's own message is written either.
+    """
+
+    if status_code != 400:
+        return None
+    try:
+        payload = bounded_loads(raw)
+    except ValueError:
+        return None
+    error = payload.get("error") if isinstance(payload, Mapping) else None
+    if not isinstance(error, Mapping) or error.get("code") != _AZURE_FILTER_CODE:
+        return None
+    inner = error.get("innererror")
+    results: object = None
+    if isinstance(inner, Mapping):
+        results = inner.get("content_filter_result", inner.get("content_filter_results"))
+    filtered = sorted(
+        str(name)
+        for name, verdict in (results.items() if isinstance(results, Mapping) else ())
+        if isinstance(name, str)
+        and _CATEGORY.fullmatch(name)
+        and isinstance(verdict, Mapping)
+        and verdict.get("filtered") is True
+    )[:_MAX_CATEGORIES]
+    detail = f"error code {_AZURE_FILTER_CODE}"
+    return detail + (f"; filtered: {', '.join(filtered)}" if filtered else "")
+
+
+#: What every :class:`ProviderFilterBlock` message says, after where the refusal came from.
+FILTER_REFUSED = "the provider's input filter refused the prompt before the model saw it"
 
 
 class SamplingRefused(AdapterProductError):
@@ -525,6 +621,15 @@ class BaseAdapter(ABC):
         Raise :class:`AdapterProductError` on a malformed / unexpected shape.
         """
 
+    def _prompt_blocked(self, payload: Mapping[str, Any]) -> tuple[str, str] | None:
+        """``(code, detail)`` when a success body says the provider's filter refused the prompt.
+
+        ``None`` here: an OpenAI or Anthropic success body is a reply. The REST adapter reads
+        Gemini's prompt block (OD-41), which comes back as a success body with no candidate.
+        """
+
+        return None
+
     # --- wire mechanics --------------------------------------------------------
 
     @property
@@ -657,6 +762,14 @@ class BaseAdapter(ABC):
                 ) from exc
             if not isinstance(payload, Mapping):
                 raise AdapterProductError(f"{self.id}: success response JSON was not an object")
+            blocked = self._prompt_blocked(payload)
+            if blocked is not None:
+                code, detail = blocked
+                raise ProviderFilterBlock(
+                    f"{label}: {FILTER_REFUSED} ({detail})",
+                    status_code=response.status_code,
+                    code=code,
+                )
             parsed = self._parse_response(payload)
             # OpenAI carries a call's arguments as a JSON string, which the parse above never
             # opened: the evaluators and the in-band tool loop do, so it is measured here.
@@ -669,6 +782,16 @@ class BaseAdapter(ABC):
                     ) from exc
             return parsed
 
+        # The provider's input filter refused the prompt (OD-41): the attempt is blocked, not a
+        # defect. Read first: its 400 names the prompt, never a sampling parameter.
+        filtered = azure_prompt_filter(response.status_code, raw)
+        if filtered is not None:
+            raise ProviderFilterBlock(
+                f"{self.id}: non-retryable HTTP {response.status_code} from "
+                f"{self._request_path}: {FILTER_REFUSED} ({filtered})",
+                status_code=response.status_code,
+                code=_AZURE_FILTER_CODE,
+            )
         # A non-retryable 4xx (auth, bad request) is a product/config defect -
         # not something a retry will fix, and not to be masked as a flake.
         # Only a parameter the request sent: an error naming top_k, which no adapter sends, or a

@@ -175,6 +175,27 @@
               ]
             }
           }
+        },
+        "blocked_by_provider_filter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "specs"
+          ],
+          "description": "The attempts the provider's own input filter refused before the model saw them (OD-41, ADR-0011): Azure OpenAI's HTTP 400 content_filter, Gemini's promptFeedback.blockReason. Each is an inconclusive attempt with the reason blocked_by_provider_filter, neither the model's refusal nor an exploit; specs lists the spec ids with at least one. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one.",
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "specs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },
@@ -274,7 +295,7 @@
         },
         "not_exercised": {
           "type": "array",
-          "description": "Spec ids that produced a finding but no reply that could be scored: nothing sent (policy-blocked, or skipped for an undeclared capability), or every send ended in an environment error. Their framework codes are excluded from every numerator. Optional in report-1.0.",
+          "description": "Spec ids that produced a finding but no reply that could be scored: nothing sent (policy-blocked, or skipped for an undeclared capability), or every send ended in an environment error or was refused by the provider's input filter (OD-41). Their framework codes are excluded from every numerator. Optional in report-1.0.",
           "items": {
             "type": "string"
           }
