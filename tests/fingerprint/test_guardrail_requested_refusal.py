@@ -240,6 +240,7 @@ def test_a_reply_cut_at_the_probes_own_cap_is_not_a_filter() -> None:
         "BLOCKLIST",
         "SPII",
         "MODEL_ARMOR",
+        "RECITATION",
         "  Content_Filter ",
     ],
     ids=[
@@ -252,6 +253,7 @@ def test_a_reply_cut_at_the_probes_own_cap_is_not_a_filter() -> None:
         "gemini-blocklist",
         "gemini-spii",
         "vertex-model-armor",
+        "gemini-recitation",
         "padded-mixed-case",
     ],
 )
@@ -259,7 +261,8 @@ def test_every_providers_filter_stop_is_an_output_filter(stop: str) -> None:
     """Bedrock Converse stops with ``guardrail_intervened`` or ``content_filtered``, Gemini with
     ``SAFETY``, ``PROHIBITED_CONTENT``, ``BLOCKLIST`` or ``SPII``: only OpenAI's and Anthropic's
     were read, so a REST template on either reported ``false``. Vertex AI's ``MODEL_ARMOR`` since
-    OD-42, which sourced it for the attack phase."""
+    OD-42, which sourced it for the attack phase, and Gemini's ``RECITATION``, a cut since the
+    decision taken under the owner's delegation (2026-10-11)."""
 
     profile = _profile(_benign_reply_cut_by_filter(stop, ""))
     assert profile["output_filter"] is True

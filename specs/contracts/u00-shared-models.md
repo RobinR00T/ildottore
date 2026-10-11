@@ -80,9 +80,9 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 - `TokenLogprob = {token: str, logprob: float, top: list[tuple[str,float]] | None}` (ADR-0005).
 - `ModelResponse = {text: str, tool_calls: list[dict], logprobs: list[TokenLogprob] | None,
   finish_reason: str | None, raw_ids: dict, usage: dict | None}`, and since OD-42 (u08 A-70)
-  `filter_side: "input" | "output" | None`: the side the provider's own trace says its filter
-  acted on, for a reply that filter stopped (only the REST adapter sets it, from a Bedrock
-  Converse guardrail trace, u04). It is the one field a dump leaves out when it is `None` (a
+  `filter_side: "input" | "output" | "unknown" | None`: the side the provider's own trace says its
+  filter acted on, for a reply that filter stopped (`unknown`: a trace that names neither; only
+  the REST adapter sets it, from a Bedrock Converse guardrail trace, u04). It is the one field a dump leaves out when it is `None` (a
   `model_serializer`), so every reply without it is stored, reported and hashed byte for byte as
   before; `logprobs: null` is still dumped (ADR-0005).
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],

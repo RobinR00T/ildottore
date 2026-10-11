@@ -313,6 +313,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `text_path` whose stop is a filter's is a reply with no text and that stop (a Gemini
     candidate stopped with `SAFETY` can come without its text; Vertex AI's reference on
     `FinishReason` `SAFETY`, read 2026-10-11); it was a product error that stopped the campaign.
+    `RECITATION` too, since it joined the stops (decided 2026-10-11 under the owner's delegation).
     Any other body with no text stays one. A template with no `finish_path` reads no stop, as
     before;
   - for a template whose `finish_path` is the Converse root `stopReason`, and a stop of
@@ -325,9 +326,19 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `wordPolicy.customWords` and `managedWordLists`, `sensitiveInformationPolicy.piiEntities` and
     `regexes`, and `contextualGroundingPolicy.filters`, whose action values the API reference
     lists (`BLOCKED | NONE`, and `ANONYMIZED` for the two sensitive-information ones); a value of
-    another type is not read. A masked prompt is not a blocked one. The guardrail's message stays
-    the reply's text.
-  Checked by `tests/adapters/test_provider_output_filter.py` (41 tests; it does not collect on
+    another type is not read. A masked prompt is not a blocked one: a trace that names neither
+    side is `filter_side: unknown`, so the evidence tells it from no trace at all (pre-merge audit
+    of `a55e953`, L3). The guardrail's message stays the reply's text.
+  - **These REST shapes are library-only.** From `dottore`, a target file's `provider: rest` is
+    built as `RestTemplate(path=...)`, with the text at `text`, no `finish_path` and no
+    `static_body`, and `Target` has no template field: a Bedrock trace, a Gemini `SAFETY`,
+    `RECITATION` or `MODEL_ARMOR` stop, and OD-41's Gemini prompt block are read only by a
+    `RestTemplate` built in Python (pre-merge audit, M3). A target file's openai, anthropic and
+    websocket providers carry their stops as before.
+  - The stop words are generic, so they are read whichever adapter carries them: a WebSocket
+    target's final frame that holds `content_filter`, `refusal` or `safety` at its finish path is
+    read as that filter's stop too, as the fingerprint already read it (L7).
+  Checked by `tests/adapters/test_provider_output_filter.py` (49 tests; it does not collect on
   `6d5f7ae`).
 
 ## §8 Out of scope / forbidden

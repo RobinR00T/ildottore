@@ -3,6 +3,27 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (late morning): the pre-merge audit of `a55e953` (OD-42), fixed
+
+- Not merge-ready per the audit, no HIGH; fixed on the same branch in new commits. M1: a cut reply
+  was read by every evaluator but the judge, `regex_presence` among them, which fails when its
+  secure marker is absent: an empty reply Azure withheld made `DOS-TOKEN-AMP-001` a confirmed fail,
+  exit 2. Now `core.runner.CUT_DECIDING_EVALUATORS` (the presence-based ones) read it, a test holds
+  every `EvaluatorType` classified, and only a fail on what is present stands. M2: the identity
+  sweep kept a filtered identity's empty reply, so `authz_leak` read it as no crossing; it is
+  skipped as a failed send is. M3: Bedrock and Gemini are library-only (a target file's REST target
+  has no template), said so in the docs; the side-unknown terminal line names its stop reasons and
+  prints the Bedrock hint only beside `guardrail_intervened`. L1 `usage.iterations` read after a
+  fallback; L2 ADR wording; L3 a trace naming no side is `filter_side: unknown`; L4 JUnit counts in
+  the skip or failure `message`, and a SARIF side-unknown test; L5 the serializer typed; L6 the
+  versioning note; L7 WebSocket stop words; L8 the judge's verdict on a partial reply recorded, not
+  deciding, and the `refusal` heuristic said to count as deterministic. Gemini's `RECITATION` is an
+  output-side cut, decided under the owner's delegation (revisable); a `RECITATION` candidate with
+  no text is a reply. Left for the OD-43 branch (M4): thread the operator's declared tools into
+  `_cut_verdict` when it lands. 18 tests more (12 fail on `a55e953`), 90 in all for OD-42. With
+  the stubs: `DOS-TOKEN-AMP-001` on empty cuts is inconclusive, exit 0; the canary run makes 12
+  judge requests, the Anthropic run 16 (the partial replies recorded).
+
 ## State, 2026-10-11: a reply the provider's filter cut or replaced is never a pass (OD-42)
 
 - On `fix/provider-output-filter-not-a-pass`, from `origin/main` at `6d5f7ae`: the owner decided

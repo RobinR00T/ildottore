@@ -1084,15 +1084,20 @@ silenced by `-q`), prints `Cut by the provider's output filter: <k> attempt(s) i
 back cut or replaced (<spec ids>); the model may have written what the filter hid, so they are
 inconclusive and need review, never a pass` and `Stopped by the provider's filter on a side it did
 not report: <k> attempt(s) in <s> spec(s) (<spec ids>); inconclusive and need review, never a pass
-(a Bedrock guardrail reports the side when guardrailConfig.trace is enabled)` when `k` is not 0,
+(stop reason(s): <stops>)` when `k` is not 0, with `; a Bedrock guardrail reports the side when
+guardrailConfig.trace is enabled` inside the bracket only when `guardrail_intervened` is among the
+stops (it was printed for an Anthropic `refusal` with no usage too: pre-merge audit of `a55e953`,
+M3),
 and the `Not exercised` line names a stop on an unreported side among its causes. The exit code is
 the findings', unchanged: `--fail-on` gates a `fail` only, and a spec with a cut attempt and no
 fail is `inconclusive` (0 when nothing else trips the gate); a team that wants CI to stop on one
 reads `summary.cut_by_provider_output_filter.attempts` from the JSON report. A resume says how many
 of the attempts it keeps the filter cut or stopped (`; <k> of them the provider's filter cut or
 stopped after the prompt, kept for review`) and does not send them again; `--estimate --resume`
-counts them as done. `dottore replay` lists and counts them (u10). Checked by
-`tests/cli/test_provider_output_filter_campaign.py`.
+counts them as done. `dottore replay` lists and counts them (u10). From a target file, the
+providers whose stops are read are openai (Azure), anthropic and websocket: a `provider: rest`
+target is the generic template, so Bedrock's and Gemini's shapes are library-only (u04). Checked
+by `tests/cli/test_provider_output_filter_campaign.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

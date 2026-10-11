@@ -281,19 +281,21 @@ second Ctrl-C it can leave the run waiting for a third. An ignored SIGHUP stays 
 
 .PP
 An attack prompt the provider's own input filter refuses before the model sees it (Azure
-OpenAI's HTTP 400 with the error code content_filter, Gemini's promptFeedback.blockReason) does
+OpenAI's HTTP 400 with the error code content_filter; Gemini's promptFeedback.blockReason, read
+only through a RestTemplate built in Python) does
 not stop the run: the attempt is inconclusive with the reason blocked_by_provider_filter, is not
 sent again, and is counted in the summary ("Blocked by the provider's input filter: N
 attempt(s) in S spec(s) never reached the model"). A run whose every attempt was refused that way
 completed; it is not "every attempt failed on transport". Any other 4xx still exits 3.
 .PP
 A reply the provider's filter cut or replaced (an HTTP 200 with its own stop reason: Azure
-OpenAI's content_filter, a Bedrock guardrail's guardrail_intervened, Gemini's SAFETY, Anthropic's
-refusal) is never scored as the model resisting. Read from a side that refused the prompt, it is
+OpenAI's content_filter, Anthropic's refusal; through a RestTemplate built in Python, a Bedrock
+guardrail's guardrail_intervened and Gemini's SAFETY or RECITATION) is never scored as the model
+resisting. Read from a side that refused the prompt, it is
 blocked as above; from one that cut what the model wrote, the attempt is inconclusive with the
 reason cut_by_provider_output_filter and needs review; from a side the provider does not report,
 provider_filter_side_unknown. A spec with such an attempt and no fail is inconclusive, never a
-pass; a deterministic fail on what came back stands. The summary counts them ("Cut by the
+pass; a fail that rests on something present in what came back stands. The summary counts them ("Cut by the
 provider's output filter: N attempt(s) in S spec(s) came back cut or replaced"); they do not trip
 .BR --fail-on .
 .SH FILES
