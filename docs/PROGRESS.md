@@ -3,6 +3,48 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (night): the audit of the scoring, fixed
+
+- On `fix/scoring-audit-2026-10-11`, from `main` at `de122e26` (#110): every finding of the
+  correctness audit of the scoring, two HIGH, one MEDIUM and five LOW, fixed by best practice
+  under the owner's delegation, each reproduction script of the auditor
+  (`_ildottore-tren/scratch/audit-score/`) turned into a test. No OD opened; the clauses amended
+  are u08 A-69, A-70, A-73's half and A-74, their u10, u11 and u12 halves, and u06 A-73 (A-75 and
+  A-76 stay free).
+- HIGH 1: which artifact of a re-sent attempt id is the attempt is one rule in `shared.resend`,
+  read by the runner and the replay (each had a copy that kept the first artifact at a tie, the
+  runner's prior ones in content-hash order). Rank, then an outcome that never lets its spec pass
+  over an environment error or a block whichever came first, then the later send by a
+  `send_number` stamped in `request.metadata` of every stored attempt, then the first. The fix the
+  audit proposed put the later send at the second step; the never-a-pass step comes first because
+  the later send alone turns an unreadable reply into a pass whenever the resume meets a network
+  failure (the same false pass, in the other order). Revisable: swap two fields of
+  `shared.resend._rank`. `cli_resume_unreadable.py`: PASS with 0 unreadable on `de122e26` (the
+  replay said 1), now `inconclusive` with 1 in the report and the replay; `repro_resume_reverse.py`:
+  replay 0 unreadable on `de122e26`, now 1, matching the report.
+- HIGH 2: a conversation (or an in-band scene's tool rounds) that a later send's environment error
+  or unreadable reply ended keeps the trace so far beside the attempt (`AttemptResult.trace_so_far`);
+  the trace evaluators read it first, a fail is stored as any fail with the error under
+  `request.metadata.conversation_error`, anything else as before. `repro_mt_env.py`: turn 2 env
+  PASS and unreadable inconclusive on `de122e26`, block fail; now all three fail, exit 2.
+- MEDIUM: the identity sweep names every identity it did not hear from (unreadable reply, failed
+  send, a prompt its filter refused), beside OD-42's filter stops, and `authz_leak` cannot pass
+  beside it. An environment error counts too (a gate fails closed); the cost, a transient failure
+  of one identity keeps the spec from passing, is in docs/12's F11 row. `repro_sweep_unreadable.py`:
+  pass on `de122e26`, now `inconclusive`, the identity named.
+- LOW 1 the resume note names each id once (was `-1 that ended in an environment error`); LOW 2
+  `setup_not_reached` is asked of a judge-only fail too; LOW 3 the `--include-needs-review` help;
+  LOW 4 a SARIF fail that needs review is at most `warning`; LOW 5 a Bedrock guardrail's
+  replacement is read on its trace only.
+- Tests: 44 new, 28 of them failing on `de122e26` (the tie test fails there in one of its two file
+  orders for each of its six cases), 3 changed expectations (two sweep verdicts that now name the
+  identity, one in-band metadata that now carries `send_number`).
+  `make gates` green on `b6fe3609` (with `PYTHONPATH` set to the worktree's `src`): 5520 tests
+  (5476 on `main` at `de122e26`, 44 new), 97.85% coverage (`shared/resend.py`, `store/replay.py`
+  and `reporting/sarif_reporter.py` 100%, `core/runner.py` 97%), ruff, format, mypy strict on 161
+  files, four import contracts kept, 75 specs lint OK, self-scan 0 high/critical, bandit and
+  pip-audit clean.
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on
