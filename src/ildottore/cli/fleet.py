@@ -61,7 +61,7 @@ from pydantic import (
 )
 
 from ildottore import safe_yaml
-from ildottore.cli.wiring import shown_auth_ref
+from ildottore.cli.wiring import TARGET_PROVIDERS, shown_auth_ref
 from ildottore.shared.config_errors import (
     quoted,
     shown_endpoint,
@@ -94,6 +94,21 @@ def _variable_name(value: str | None) -> str | None:
         raise ValueError(
             f"is not an environment variable's name ({ENV_NAME_RULE}; the value is not shown): "
             "write the variable's name (api_key_env: OPENAI_API_KEY), never the key"
+        )
+    return value
+
+
+def _known_provider(value: str | None) -> str | None:
+    """``provider`` is one a target file may give, or left out to be inferred (u12 A-82, M5).
+
+    The target file ``fleet`` writes carries it as written, and ``run`` refuses an unknown one;
+    refused here, nothing is written. ``websocket`` passes, to the refusal of OD-37 that says why.
+    """
+
+    if value is not None and value.strip().lower() not in TARGET_PROVIDERS:
+        raise ValueError(
+            f"is not a provider this tool has; expected one of {', '.join(TARGET_PROVIDERS)}, or "
+            "leave it out to infer it from the endpoint"
         )
     return value
 
@@ -138,6 +153,7 @@ class FleetTarget(BaseModel):
 
     _api_key_env_is_a_name = field_validator("api_key_env")(_variable_name)
     _endpoint_has_no_userinfo = field_validator("endpoint")(_no_userinfo)
+    _provider_is_known = field_validator("provider")(_known_provider)
 
     @model_validator(mode="after")
     def _mcp_is_the_kind(self) -> FleetTarget:
@@ -173,6 +189,7 @@ class FleetJudge(BaseModel):
 
     _api_key_env_is_a_name = field_validator("api_key_env")(_variable_name)
     _endpoint_has_no_userinfo = field_validator("endpoint")(_no_userinfo)
+    _provider_is_known = field_validator("provider")(_known_provider)
 
 
 class FleetConfig(BaseModel):

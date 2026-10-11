@@ -123,6 +123,8 @@ from ildottore.store import FsEvidenceStore, SqliteRunStore
 __all__ = [
     "MOCK_SCENARIOS",
     "PROBE_SPEC_ID",
+    "TARGET_PROVIDERS",
+    "TARGET_TRANSPORTS",
     "BuiltRunner",
     "ProbeCeilingHit",
     "ProbePass",
@@ -844,6 +846,13 @@ def build_real_adapter(
             path_override=declared_path,
             sampling_enabled=takes,
         )
+    if provider not in ("", "rest"):
+        # The loader refuses such a file (u12 A-82); a target built in code is refused here
+        # rather than sent the REST adapter's `{"prompt": ...}` body, as `provider: skynet` was.
+        raise ValueError(
+            f"target {target.id!r} has unknown provider {quoted(target.provider)}; expected one "
+            f"of {', '.join(TARGET_PROVIDERS)}"
+        )
     template = RestTemplate(path=parts.path or "/")
     return RestAdapter(
         id=target.id,
@@ -857,6 +866,13 @@ def build_real_adapter(
         advice=REST_TARGET_FILE_ADVICE,
         **extra,
     )
+
+
+#: The ``provider`` values a target file may give (read stripped and case-folded). Absent, a live
+#: endpoint routes to the generic REST adapter, as ``rest`` does (u12 A-82, CLI audit M5).
+TARGET_PROVIDERS: tuple[str, ...] = ("anthropic", "mcp", "openai", "rest", "websocket")
+#: The ``transport`` values: ``http`` (the default) and ``stdio``, a local MCP server.
+TARGET_TRANSPORTS: tuple[str, ...] = ("http", "stdio")
 
 
 #: What a target file's ``provider: rest`` target is told to check when no reply can be read.
@@ -1639,6 +1655,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
             ) from exc
 
     transport = raw.get("transport")
+    _check_provider_and_transport(path, provider, transport)
     command_raw = raw.get("command")
     command: list[str] | None = None
     if command_raw is not None:
@@ -1664,6 +1681,37 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         seeded_setup=seeded,
         websocket=websocket,
     )
+
+
+def _check_provider_and_transport(path: Path, provider: object, transport: object) -> None:
+    """Refuse a ``provider`` or a ``transport`` this tool does not have (u12 A-82, CLI audit M5).
+
+    A-53 closed a misspelled key and left a misspelled value open: ``provider: skynet`` sent an
+    OpenAI endpoint the REST adapter's ``{"prompt": ...}`` bodies, ``transport: carrier-pigeon``
+    read as ``http``, and a stdio MCP target with ``transport: stido`` or ``provider: mpc`` ran
+    on the offline mock and passed. Read as the routing reads them, stripped and case-folded;
+    both are text or absent here (``_read_target_yaml``). ``stdio`` launches a local MCP server,
+    so another provider with it is refused too: nothing else would read it.
+    """
+
+    name = provider.strip().lower() if isinstance(provider, str) else None
+    if name is not None and name not in TARGET_PROVIDERS:
+        raise ValueError(
+            f"target file {path} has invalid provider {quoted(provider)}; expected one of "
+            f"{', '.join(TARGET_PROVIDERS)} (leave it out for the generic REST adapter)"
+        )
+    if not isinstance(transport, str):
+        return
+    if transport.strip().lower() not in TARGET_TRANSPORTS:
+        raise ValueError(
+            f"target file {path} has invalid transport {quoted(transport)}; expected http or "
+            "stdio (stdio launches a local MCP server, with provider: mcp and a command)"
+        )
+    if transport.strip().lower() == "stdio" and name != "mcp":
+        raise ValueError(
+            f"target file {path}: transport stdio is for provider mcp (a local MCP server "
+            "launched from its command); leave transport out for this provider"
+        )
 
 
 def _check_env_reference(path: Path, field: str, value: object) -> None:
