@@ -99,11 +99,27 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   a text frame that is not UTF-8 is refused as undecodable (§4.2). During a
   `-sV` or `-A` probe pass, a 2xx reply or a WebSocket frame refused on any of these grounds (its
   size, its encoding or its nesting) fails that one probe and the run goes on (see `-sV` under
-  `dottore run`). A success reply that is not JSON (brackets that do not balance included), or
-  holds an integer of more than 4,300 digits (which Python refuses to read), still stops the run
-  (exit 3), and so does a WebSocket frame that is not a JSON object;
-  over MCP stdio such a line is skipped as stray output, so a server that writes nothing else
-  times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
+  `dottore run`).
+- **A reply the adapter cannot read.** A success reply that is not JSON (brackets that do not
+  balance, an integer of more than 4,300 digits, which Python refuses to read, bytes that are not
+  text), not a JSON object, or not the shape the provider or the template declares (an OpenAI
+  reply with no `choices`, an Anthropic one with no `content` array, a REST reply with nothing at
+  `text_path`), a WebSocket frame that is binary, not JSON or not an object, a turn none of whose
+  frames carries text, and an MCP reply that is not JSON-RPC, fails its attempt since 2026-10-11
+  (OD-21): `ResponseMalformed`, inconclusive, not retried, debited, kept by a resume and
+  re-derived by `dottore replay`, and the scan goes on; during a `-sV` probe pass that one probe
+  fails. It used to stop the run (exit 3) at the first one, so one hostile `<html>` reply ended
+  a scan. A wrong endpoint, provider or template answers every request that way, so a run whose
+  first 5 replies all cannot be read, with none that can, stops (exit 3): `error: run on api did
+  not complete: aborted on UnreadableReplies: the target's first 5 replies in this run could not
+  be read as replies (the last: ResponseMalformed: ...), and none could: check the target file's
+  endpoint, provider and response template ...`. One reply that is read (or a provider's filter
+  block, §9) proves the endpoint for the rest of the run; a transport failure neither counts nor
+  proves. With concurrent specs, each one already sending stops at its own next unreadable reply,
+  so the stop costs at most 5 requests plus one per other spec in flight. A run of fewer than 5
+  attempts that read nothing is `unreachable` (exit 3, below). A non-retryable 4xx is not this:
+  it still stops the run. Over MCP stdio a line that is not JSON is skipped as stray output, so a
+  server that writes nothing else times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
   stray lines and its reply together.
 - **Half a character in a reply.** JSON can escape a lone surrogate (half of a UTF-16 pair),
   which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
@@ -117,9 +133,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `secret_leakage`, while a registered credential split that way is still masked whole, as one
   split by a zero-width space is (redact-at-rest, below). A body that is not valid UTF-8 in any
   other way
-  (one `FF` byte) is still not JSON: it stops the campaign, except over MCP SSE (U+FFFD), an
-  MCP stdio line (skipped, so the call times out) and a WebSocket text frame that is not UTF-8,
-  the raw bytes of half a character included (inconclusive and not retried, §4.2).
+  (one `FF` byte) is still not JSON: a reply the adapter cannot read, which fails its attempt
+  (above), except over MCP SSE (U+FFFD), an MCP stdio line (skipped, so the call times out) and
+  a WebSocket text frame that is not UTF-8, the raw bytes of half a character included
+  (inconclusive and not retried, §4.2).
 - **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
   limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
   from the command line). A larger regular file is refused before any of it is read; anything
@@ -749,13 +766,13 @@ the adapter dials inside one send where it has retries of its own, never more th
 open was dialled again inside each send, uncounted: `max_attempts: 1` made 8 dials for 4 debited
 requests.
 
-**Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a
-product defect, as a malformed HTTP reply is). A frame whose `type_path` value is in
+**Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a reply
+the adapter cannot read, which fails its attempt, as a malformed HTTP reply does: §3, OD-21). A frame whose `type_path` value is in
 `ignore_types` is discarded; one with `error_path` present ends the attempt as `inconclusive`
 (an environment error, retried by the runner's policy and debited each time); every string at
 `text_path` is appended; the frame satisfying `final_path`/`final_value` ends the turn; its
 `usage_path` mapping, if any, trues up the token ledger (without one the pre-send estimate
-stands, as for a REST target). A turn with no text at all is a product defect. No final frame
+stands, as for a REST target). A turn with no text at all is a reply that cannot be read too. No final frame
 within `timeout_seconds` (counted from the query send, which is inside it), or a connection
 closed mid-turn, is an environment error: inconclusive, and the runner's `--timeout` still
 bounds the whole send. The handshake and session phase runs under the same timeout and caps. A
@@ -870,7 +887,7 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-sn` | discovery only: reports the authorized endpoint, the target's declared capabilities (and, for a target that takes no sampling, a `sampling:` line, §4.2) and what the battery *would* run, then stops. **Sends nothing.** Reachability here is authorization-level (scope + allowlist), not a live probe, because probing would mean sending |
-| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 18 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +18 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). A probe whose reply comes back **refused** (over 4 MiB, in an encoding the adapters do not decode, or nested more than 100 levels deep, and from a WebSocket target a frame refused as §4.2 says or a 1007 or 1009 close the server starts: what makes an attack attempt inconclusive without a retry) is a failed probe: its layer gives no evidence from it, the fingerprint is built from the replies that came back, a `warning: -sV on <target>: N of 18 probe(s) got no usable reply (...)` line on stderr names each one as `layer/probe: ErrorClass` (never silenced by `-q`), the fingerprint line ends `[N of 18 probes got no usable reply]`, and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a timeout, a refused connection, after its retries) still stops the run before any attack with its cause (exit 3): the target is not answering. So do a refusal by the scope and a 200 that is not JSON. Before, one refused probe reply stopped the run before any attack too (OD-23). The run's `started_at` is stamped before the probe pass |
+| `-sV` | fingerprint the target first (a live target through its allowlisted endpoint, an offline one through the deterministic mock), print it (with a `no text signal` note when every attributing probe got the same answer, see `dottore fingerprint`), and **order each spec's mutators by what this target demonstrably still understands**: the carrier layer sends one benign instruction through every mutator and the planner runs the ones it recovered first. That is carrier comprehension, not guardrail evasion (see `docs/10 §2`). Costs 18 probes per target, paced by the same `--rate` ceiling, printed in the resolved plan (`fingerprint: +18 probe(s) per target`), and **not** sent under `--dry-run`, `--estimate` or `-sn`. A probe that fails on the network is retried like an attack send: each retry is paced, recorded in `probes/` and charged to `--budget-requests`, and a probe pass that reaches that ceiling stops the run before any attack traffic (exit 3, naming the `probes/` directory; a resumed run records that spend first). A probe whose reply comes back **refused** (over 4 MiB, in an encoding the adapters do not decode, or nested more than 100 levels deep, and from a WebSocket target a frame refused as §4.2 says or a 1007 or 1009 close the server starts: what makes an attack attempt inconclusive without a retry) is a failed probe: its layer gives no evidence from it, the fingerprint is built from the replies that came back, a `warning: -sV on <target>: N of 18 probe(s) got no usable reply (...)` line on stderr names each one as `layer/probe: ErrorClass` (never silenced by `-q`), the fingerprint line ends `[N of 18 probes got no usable reply]`, and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a timeout, a refused connection, after its retries) still stops the run before any attack with its cause (exit 3): the target is not answering. So does a refusal by the scope. A 200 that is not JSON (or not the provider's shape) is a refused reply since 2026-10-11 (OD-21): that probe fails and the pass goes on. Before, one refused probe reply stopped the run before any attack too (OD-23). The run's `started_at` is stamped before the probe pass |
 | `-A` | aggressive: implies `-sV` and `--deep`, so it fingerprints first and runs at `-T2` unless you pass `-T`. There is no separate `--adaptive` flag: mutator ordering is adaptive only when a fingerprint exists, that is with `-sV` or `-A` |
 
 **Judge and execution**
@@ -968,9 +985,12 @@ for an older one to resume: it would keep a reply stored without a verdict and s
 without it.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
-authorized but answered nothing at all (every attempt failed on transport; a prompt the provider's
-input filter refused was answered, so a run whose every attempt it refused is complete, §9). That
-code is
+authorized but answered nothing at all (every attempt failed on transport, or got a reply that
+could not be read: then the reason says to check the target file's endpoint, provider and
+response template; a prompt the provider's input filter refused was answered, so a run whose
+every attempt it refused is complete, §9), or an error stopped it (`aborted on <class>: ...`: a
+non-retryable 4xx, or a run whose first 5 replies could not be read, `UnreadableReplies`, §3).
+That code is
 deliberately chosen over `2` even when the partial run found confirmed exploits, because the
 scan itself is not a measurement you can act on: the specs that never ran are the ones you
 know nothing about. The findings are still written to every report. If your pipeline treats
@@ -986,7 +1006,7 @@ reads larger than the limit.
 
 A resume with `-sV` records what its probe pass sent as soon as the pass ends, whether it
 finished, reached the request ceiling, stopped on an error (a probe with no answer after its
-retries, a 401, a reply that is not JSON) or was stopped by Ctrl-C or SIGTERM, so the next
+retries, a 401) or was stopped by Ctrl-C or SIGTERM, so the next
 resume's ceiling counts those requests too. They are counted as the request ceiling counts them,
 every send attempted, retries included, a send to a target that refused the connection too. When
 an error or a signal stops the pass, stderr gives that count even under `-q`: `resume: the -sV
@@ -2020,7 +2040,8 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | `Stopped by the provider's filter on a side it did not report` | The bracket names the stop reason. `guardrail_intervened`: a Bedrock guardrail (through a `RestTemplate` built in Python) answered without its trace, so the scan cannot tell a blocked prompt from a blocked reply (§9); send the trace with the requests (`guardrailConfig` with `"trace": "enabled"` in the template's `static_body`) to learn the side. `content_filtered`: Bedrock does not document a side. `refusal`: an Anthropic refusal with no text and no usage, which says nothing of whether any output came first. |
 | A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all. Selected alone they end in `nothing would be sent` (exit 3), whose message says so: "A spec blocked by policy needs a policy pack that enables it, and the CLI cannot load one today (open decision), so it cannot run from `dottore`." |
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
-| `warning: -sV on <target>: N of 18 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep; from a WebSocket target, a frame refused as §4.2 says or a 1007 or 1009 close the server starts), or the provider's input filter refused the benign guardrail probe or a carrier probe (`ProviderFilterBlock`). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
+| `warning: -sV on <target>: N of 18 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep, not JSON or not the provider's shape (`ResponseMalformed`, since OD-21); from a WebSocket target, a frame refused as §4.2 says or a 1007 or 1009 close the server starts), or the provider's input filter refused the benign guardrail probe or a carrier probe (`ProviderFilterBlock`). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
+| `aborted on UnreadableReplies: the target's first 5 replies in this run could not be read ...` (exit 3) | Every reply so far was one the adapter cannot read as the provider's: an HTML page, a body that is not JSON, JSON without `choices` (OpenAI) or a `content` array (Anthropic), nothing at a REST template's `text_path`. The endpoint is usually wrong (it serves a portal or a proxy's page), or the `provider` or the template does not match what it serves. Check them against one `curl` of the endpoint; the stored attempts are under the run's evidence directory. A run of fewer than 5 attempts says `every one of the N attempt(s) got a reply that could not be read as the provider's` and is `unreachable` instead. Since OD-21 (2026-10-11): one such reply after a readable one fails only its attempt. |
 | Run validates but sends nothing | `--dry-run` is set. Drop it. |
 | MCP scan returns the same catalogue for every spec | The MCP adapter does read-only discovery (it is not chat), so it renders the server's advertised metadata regardless of prompt. Use the `mcp` suite for meaningful checks. |
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. The same for `ws://`: use `wss://` off loopback. |

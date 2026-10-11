@@ -155,16 +155,17 @@ def test_a_frame_too_deep_is_the_too_deep_failure_of_every_adapter() -> None:
 
 
 async def test_unbalanced_brackets_past_the_bound_are_not_json() -> None:
-    """As on every adapter: brackets that do not balance are a malformed reply (OD-21)."""
+    """As on every adapter: brackets that do not balance are a malformed reply, which fails its
+    attempt since OD-21 (decided 2026-10-11)."""
 
-    from ildottore.adapters import AdapterProductError
+    from ildottore.adapters import ResponseMalformed
 
     async def on_query(connection: ServerConnection, _message: dict[str, Any]) -> None:
         await connection.send('{"x":' + "[" * (MAX_DEPTH + 5))
 
     with (
         _query_server(on_query) as server,
-        pytest.raises(AdapterProductError, match="not valid JSON"),
+        pytest.raises(ResponseMalformed, match="not valid JSON"),
     ):
         await _adapter(server).send(ModelRequest(prompt="hi"))
 

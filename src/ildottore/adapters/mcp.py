@@ -38,6 +38,7 @@ from ildottore.adapters.base import (
     AdapterProductError,
     AdapterStatusError,
     EndpointNotAllowed,
+    ResponseMalformed,
     ResponseTooDeep,
     ResponseTooLarge,
     RetryConfig,
@@ -174,7 +175,9 @@ class MCPAdapter:
             session_id=None,
         )
         if not isinstance(result, dict):
-            raise AdapterProductError(f"{self.id}: initialize returned no result object")
+            raise ResponseMalformed(
+                f"{self.id}: initialize returned no result object; not evaluated"
+            )
         raw_info = result.get("serverInfo")
         server_info: dict[str, Any] = dict(raw_info) if isinstance(raw_info, dict) else {}
         protocol = result.get("protocolVersion")
@@ -328,11 +331,13 @@ class MCPAdapter:
             for line in response.text.splitlines():
                 if line.startswith("data:"):
                     return self._parse(line[len("data:") :].strip(), f"MCP {method} SSE data")
-            raise AdapterProductError(f"{self.id}: MCP {method} SSE carried no data event")
+            raise ResponseMalformed(
+                f"{self.id}: MCP {method} SSE carried no data event; not evaluated"
+            )
         return self._parse(response.content, f"MCP {method} response")
 
     def _parse(self, text: str | bytes, what: str) -> Any:
-        """Parse a reply: not JSON is a product defect, nested too deeply is not evaluated.
+        """Parse a reply: not JSON or nested too deeply, it is not evaluated (OD-21, #65).
 
         ``json.loads`` raised ``RecursionError`` on a reply nested past its stack, which the
         ``except ValueError`` here let through, and the runner aborted the campaign (2026-10-07).
@@ -344,7 +349,9 @@ class MCPAdapter:
         except NestedTooDeeply as exc:
             raise ResponseTooDeep(f"{self.id}: {what} is {exc}; not evaluated") from exc
         except ValueError as exc:
-            raise AdapterProductError(f"{self.id}: {what} was not valid JSON: {exc}") from exc
+            raise ResponseMalformed(
+                f"{self.id}: {what} was not valid JSON: {exc}; not evaluated"
+            ) from exc
 
     # --- stdio transport (local subprocess, newline-delimited JSON-RPC) --------
 
@@ -386,7 +393,9 @@ class MCPAdapter:
                 },
             )
             if not isinstance(init, dict):
-                raise AdapterProductError(f"{self.id}: stdio initialize returned no result")
+                raise ResponseMalformed(
+                    f"{self.id}: stdio initialize returned no result; not evaluated"
+                )
             raw_info = init.get("serverInfo")
             server_info: dict[str, Any] = dict(raw_info) if isinstance(raw_info, dict) else {}
             protocol = init.get("protocolVersion")

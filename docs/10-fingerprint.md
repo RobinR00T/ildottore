@@ -272,7 +272,8 @@ partial):
   reply), `run -sV` warns on stderr and ends the fingerprint line with "[N of 18 probes got no
   usable reply]", and the run goes on. A probe that gets **no answer at all** (a 503, a 429, a
   timeout, a refused connection, after the retries) still stops the pass with its cause, as
-  every other error does (a refusal by the scope, a 200 that is not JSON, the request ceiling):
+  every other error does (a refusal by the scope, the request ceiling; a 200 that is not JSON
+  or not the provider's shape is a refused reply since OD-21, 2026-10-11, so it fails its probe):
   the target is not answering, and isolating that too made a target that never replies cost
   25.5 minutes of probing (three 30 s timeouts per probe) before an attack that failed the
   same way. Before PR #68, one

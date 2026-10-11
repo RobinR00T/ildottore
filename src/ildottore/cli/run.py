@@ -40,6 +40,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
+from ildottore.adapters import ResponseMalformed
 from ildottore.cli import interrupts, wiring
 from ildottore.cli import resume as resume_mod
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
@@ -720,6 +721,9 @@ def resolve_target_plans(
 
 #: Why a field of a target file's ``sampling_defaults`` does not go out (OD-39, u12 A-66).
 _ANTHROPIC_TOP_P = "anthropic takes no top_p beside a temperature, and every request carries one"
+#: How an attempt's error starts when its reply could not be read (``core.execute`` writes
+#: ``<class>: <message>``; OD-21).
+_UNREADABLE_PREFIX = f"{ResponseMalformed.__name__}: "
 _SAMPLING_PROVIDERS = ("openai", "anthropic")
 
 
@@ -2372,6 +2376,10 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     A prompt the provider's input filter refused is not a transport failure (OD-41): the
     provider answered it. A run whose every attempt it refused is complete, its specs
     inconclusive, and the summary counts the blocked attempts; it is not "unreachable".
+
+    A reply the adapter could not read (``ResponseMalformed``, OD-21) fails its attempt; a run
+    of fewer attempts than the runner's stop (u08 A-74) that got only such replies, or such
+    replies and transport failures, evaluated nothing either, and the reason says which.
     """
 
     attempts = [a for finding in result.findings for a in finding.attempts]
@@ -2382,6 +2390,19 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
         for a in attempts
     ):
         return None
+    unreadable = [a.error for a in attempts if (a.error or "").startswith(_UNREADABLE_PREFIX)]
+    if unreadable:
+        what = (
+            "got a reply that could not be read as the provider's"
+            if len(unreadable) == len(attempts)
+            else f"failed on transport or ({len(unreadable)} of them) with a reply that could "
+            "not be read as the provider's"
+        )
+        return (
+            f"every one of the {len(attempts)} attempt(s) {what}, so nothing was evaluated: "
+            f"check the target file's endpoint, provider and response template. The first: "
+            f"{unreadable[0]}"
+        )
     first = next((a.error for a in attempts if a.error), "no response")
     return (
         f"every one of the {len(attempts)} attempt(s) failed on transport, so nothing was "

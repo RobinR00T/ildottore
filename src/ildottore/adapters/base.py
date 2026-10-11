@@ -10,10 +10,13 @@ Everything provider-agnostic lives here so each concrete adapter (``openai``,
 * **Retry / timeout / backoff** - transient statuses (429/502/503/504) and
   transport/timeout errors are retried with capped exponential backoff, then the
   attempt is *skipped* by re-raising as :class:`AdapterEnvError` (env, per
-  ``AGENTS.md §2``). A malformed 200 body is a **product defect** →
-  :class:`AdapterProductError` (never masked as a flake); one nested too deeply to evaluate
-  is :class:`ResponseTooDeep`, an environment failure that is not retried. A lone surrogate in
-  a body is read as U+FFFD where it is parsed (:mod:`ildottore.shared.wellformed`, A-47).
+  ``AGENTS.md §2``). A 200 body the adapter cannot read (not JSON, not an object, not the
+  provider's shape) is :class:`ResponseMalformed`, and one nested too deeply to evaluate
+  :class:`ResponseTooDeep`: environment failures of that attempt, not retried (OD-21; a
+  campaign none of whose first replies can be read still stops, u08 A-74). A non-retryable
+  4xx is a **product defect** (:class:`AdapterStatusError`, never masked as a flake). A lone
+  surrogate in a body is read as U+FFFD where it is parsed (:mod:`ildottore.shared.wellformed`,
+  A-47).
 * **Logprob mapping** - :func:`map_logprobs` folds a provider-neutral token list
   into :class:`~ildottore.shared.models.TokenLogprob` (ADR-0005 / OD-1).
 * **Redaction** - raw request/response ids are redacted through u01's redactor
@@ -60,6 +63,7 @@ __all__ = [
     "BaseAdapter",
     "EndpointNotAllowed",
     "ProviderFilterBlock",
+    "ResponseMalformed",
     "ResponseTooDeep",
     "ResponseTooLarge",
     "ResponseUndecodable",
@@ -139,15 +143,41 @@ class ResponseTooDeep(AdapterEnvError):
     of ``[``. A body it parses could abort it too: 300 levels (about 600 bytes) overflowed
     pydantic's serializer when the evidence was written (2026-10-07). Like a reply over the
     size cap, it is an environment failure of this attempt, which is inconclusive and is not
-    retried; a body that is not JSON at all is still a product defect.
+    retried; so, since OD-21, is a body that is not JSON at all (:class:`ResponseMalformed`).
     """
 
     is_env_error = True
     retryable = False
 
 
+class ResponseMalformed(AdapterEnvError):
+    """A success reply the adapter cannot read as one: not evaluated, and not retried (OD-21).
+
+    Not JSON (brackets that do not balance, an integer of more than 4,300 digits, bytes that are
+    not text included), not a JSON object, or not the shape the provider or the template
+    declares (OpenAI's ``choices[0].message.content``, Anthropic's ``content`` array, a REST
+    template's ``text_path``, a WebSocket frame that is binary, not JSON or not an object, or a
+    turn none of whose frames carries text, an MCP reply that is not JSON-RPC). It was an
+    :class:`AdapterProductError`, and the runner stopped the whole campaign on the first one:
+    one hostile ``<html>`` reply ended a scan after 1 request. Decided 2026-10-11 under the
+    owner's delegation (best practice), revisable, as #65 decided for a reply nested too deeply:
+    the attempt is inconclusive and the campaign goes on. A wrong endpoint answers every request
+    this way, so the runner reads ``malformed_reply`` and stops a campaign whose first replies
+    all are unreadable (``core.execute.UNREADABLE_REPLIES_TO_STOP``, u08 A-74).
+    """
+
+    is_env_error = True
+    #: The same request gets the same reply: sent once, and kept by a resume.
+    retryable = False
+    #: The structural marker the runner's stop reads (``core.execute.is_unreadable_reply``).
+    malformed_reply = True
+
+
 class AdapterProductError(AdapterError):
-    """A real product defect (e.g. a malformed / unparseable success response).
+    """A real product defect: the target refused the request in its own shape (a non-retryable
+    4xx, a JSON-RPC error, a handshake reply that does not satisfy ``expect``) or the
+    configuration cannot be sent (a placeholder with no value). A success body the adapter
+    cannot read is :class:`ResponseMalformed`, an environment failure, since OD-21.
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
@@ -620,7 +650,7 @@ class BaseAdapter(ABC):
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
         """Turn a parsed JSON success body into a :class:`ModelResponse`. Pure.
 
-        Raise :class:`AdapterProductError` on a malformed / unexpected shape.
+        Raise :class:`ResponseMalformed` on a malformed / unexpected shape (OD-21).
         """
 
     def _prompt_blocked(self, payload: Mapping[str, Any]) -> tuple[str, str] | None:
@@ -662,7 +692,7 @@ class BaseAdapter(ABC):
         Order is load-bearing: the allowlist gate runs first, so a refused URL
         issues **zero** ``httpx`` calls (contract §7). Transient failures retry
         with backoff then surface as :class:`AdapterEnvError` (env → skip); a
-        malformed success body raises :class:`AdapterProductError` (defect).
+        success body it cannot read raises :class:`ResponseMalformed` (env, not retried).
         """
 
         url = self._full_url()
@@ -748,7 +778,7 @@ class BaseAdapter(ABC):
     def _handle_final_response(
         self, response: httpx.Response, raw: bytes, *, body: Mapping[str, Any] | None = None
     ) -> ModelResponse:
-        """Classify a non-retryable response: 2xx → parse, else product defect."""
+        """Classify a non-retryable response: 2xx → parse (unreadable: env), else product defect."""
 
         if response.is_success:
             label = f"{self.id}: response from {self._request_path}"
@@ -758,12 +788,14 @@ class BaseAdapter(ABC):
                 payload = well_formed_json(bounded_loads(raw))
             except NestedTooDeeply as exc:
                 raise ResponseTooDeep(f"{label} is {exc}; not evaluated") from exc
-            except ValueError as exc:  # non-JSON success body = malformed
-                raise AdapterProductError(
-                    f"{self.id}: success response was not valid JSON: {exc}"
+            except ValueError as exc:  # non-JSON success body = malformed (OD-21)
+                raise ResponseMalformed(
+                    f"{self.id}: success response was not valid JSON: {exc}; not evaluated"
                 ) from exc
             if not isinstance(payload, Mapping):
-                raise AdapterProductError(f"{self.id}: success response JSON was not an object")
+                raise ResponseMalformed(
+                    f"{self.id}: success response JSON was not an object; not evaluated"
+                )
             blocked = self._prompt_blocked(payload)
             if blocked is not None:
                 code, detail = blocked

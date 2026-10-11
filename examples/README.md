@@ -167,6 +167,16 @@ and `reports/openai.json` carries `summary.cut_by_provider_output_filter`. Befor
 specs passed. A planted canary in a partial reply the filter cut is still a confirmed fail; a
 secure marker a spec wants present (`DOS-TOKEN-AMP-001`'s) is not held against an empty one.
 
+A 200 that is not the provider's reply (an HTML page, JSON without `choices`) fails only its
+attempt (OD-21). An `endpoint` that answers every request that way is wrong, and the run stops at
+its fifth such reply. Against a loopback stub answering every request with an HTML page, the full
+battery (`dottore run` with no selector, target id `api`) sent 8 requests (5, then one per other
+spec in flight at the default `--concurrency 4`) and ended, exit 3, with
+
+```
+error: run on api did not complete: aborted on UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the last: ResponseMalformed: api: success response was not valid JSON: Expecting value: line 1 column 1 (char 0); not evaluated), and none could: check the target file's endpoint, provider and response template. The run stopped rather than send the rest of the battery to be scored inconclusive; the replies stored before the stop are inconclusive attempts, kept by a resume; 35 of 75 specs never ran or did not finish
+```
+
 ## Scenario E, scan a fleet
 
 Declare every target in one file, expand it into a scope plus one target file per model,

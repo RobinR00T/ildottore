@@ -45,15 +45,19 @@ import contextlib
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol, runtime_checkable
 
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.conversation import reproduce_conversation
 from ildottore.core.execute import (
     NOT_RETRYABLE_MARK,
+    UNREADABLE_REPLIES_TO_STOP,
     AttemptResult,
     RetryPolicy,
+    UnreadableReplies,
     default_is_env_error,
+    is_provider_filter_block,
+    is_unreadable_reply,
 )
 from ildottore.core.metering import SendMeter
 from ildottore.core.pacing import RateLimiter
@@ -260,6 +264,83 @@ class IdentityProbe:
     identity_id: str
     adapter: TargetAdapter
     canary: str | None = None
+
+
+class _ReplyWatch:
+    """Whether one invocation of a campaign has had a reply it could read (OD-21, u08 A-74).
+
+    A reply the adapters cannot read (``malformed_reply``) fails its attempt, but a wrong
+    endpoint, provider or template answers every request that way, and the campaign would send
+    the whole battery to score it inconclusive. So the first :data:`UNREADABLE_REPLIES_TO_STOP`
+    unreadable replies with none readable stop it; one reply that is read (or a provider's filter
+    block, the provider answering in its own documented shape) proves the endpoint, and the watch
+    stops counting. Once it has stopped the campaign, every later unreadable reply stops the
+    spec it came to, with the same message, so a spec already sending does not finish its batch.
+    Shared by every spec of the invocation: the specs run concurrently on one event loop, so the
+    counts need no lock.
+    """
+
+    def __init__(self, limit: int = UNREADABLE_REPLIES_TO_STOP) -> None:
+        self._limit = limit
+        self._unreadable = 0
+        self._proven = False
+        self._halt: str | None = None
+
+    def read(self) -> None:
+        """A reply the adapter read: the endpoint speaks the provider's shape."""
+
+        self._proven = True
+
+    def unreadable(self, exc: BaseException) -> UnreadableReplies | None:
+        """Count an unreadable reply; the error that stops the campaign, or ``None``."""
+
+        if self._halt is None:
+            if self._proven:
+                return None
+            self._unreadable += 1
+            if self._unreadable < self._limit:
+                return None
+            self._halt = (
+                f"the target's first {self._unreadable} replies in this run could not be read "
+                f"as replies (the last: {type(exc).__name__}: {exc}), and none could: check the "
+                "target file's endpoint, provider and response template. The run stopped rather "
+                "than send the rest of the battery to be scored inconclusive; the replies stored "
+                "before the stop are inconclusive attempts, kept by a resume"
+            )
+        return UnreadableReplies(self._halt)
+
+
+class _WatchedAdapter:
+    """The campaign's adapter, its replies counted by a :class:`_ReplyWatch` (u08 A-74).
+
+    Every other attribute is the wrapped adapter's (the runner reads ``offline_mock``,
+    ``returns_tool_calls`` and the setup-delivery flags with ``getattr``).
+    """
+
+    def __init__(self, inner: TargetAdapter, watch: _ReplyWatch) -> None:
+        self._inner = inner
+        self._watch = watch
+        self.id = inner.id
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def capabilities(self) -> Capabilities:
+        return self._inner.capabilities()
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        try:
+            response = await self._inner.send(request)
+        except Exception as exc:
+            if is_unreadable_reply(exc):
+                halt = self._watch.unreadable(exc)
+                if halt is not None:
+                    raise halt from exc
+            elif is_provider_filter_block(exc):
+                self._watch.read()
+            raise
+        self._watch.read()
+        return response
 
 
 class CampaignRunner:
@@ -534,6 +615,9 @@ class CampaignRunner:
     ) -> tuple[list[Finding], str | None, str | None]:
         """Run every selected spec concurrently (bounded); report a halt and why.
 
+        Every spec's adapter shares one :class:`_ReplyWatch`, so a campaign whose first replies
+        all are unreadable stops as ``aborted`` on :class:`UnreadableReplies` (u08 A-74).
+
         Returns ``(findings, halt_reason, halt_state)``. A :class:`BudgetExhausted` from any
         spec halts as ``budget_exhausted``; any other exception halts as ``aborted``. Either
         way the specs that finished are kept and the reason names the cause, so nothing is
@@ -550,6 +634,7 @@ class CampaignRunner:
         breach: str | None = None
         error: str | None = None
         abort = asyncio.Event()
+        watch = _ReplyWatch()
 
         async def _one(spec: AttackSpec) -> Finding | None:
             async with semaphore:
@@ -566,6 +651,7 @@ class CampaignRunner:
                         prior=prior_by_spec.get(spec.id),
                         seeding=(seeding or {}).get(spec.id),
                         abort=abort,
+                        watch=watch,
                     )
                 except BudgetExhausted:
                     raise
@@ -687,6 +773,7 @@ class CampaignRunner:
         prior: Finding | None = None,
         seeding: str | None = None,
         abort: asyncio.Event | None = None,
+        watch: _ReplyWatch | None = None,
     ) -> Finding | None:
         """Policy-gate then mutate → reproduce → evaluate → score → persist one spec.
 
@@ -731,6 +818,8 @@ class CampaignRunner:
             )
 
         adapter = self._adapter_factory(target, spec)
+        if watch is not None:  # the campaign's count of replies it could not read (A-74)
+            adapter = _WatchedAdapter(adapter, watch)
         multi_turn = _is_multi_turn(spec)
         base_prompt = _base_prompt(spec)
         # OD-18 option B: a deployed application gets a spec's scene only from its operator. An

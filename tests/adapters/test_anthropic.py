@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from ildottore.adapters import AdapterProductError, AnthropicAdapter, RetryConfig
+from ildottore.adapters import AnthropicAdapter, ResponseMalformed, RetryConfig
 from ildottore.policy import EndpointAllowlist
 from ildottore.shared.models import Capabilities, ModelRequest, Sampling
 from ildottore.shared.protocols import TargetAdapter
@@ -77,12 +77,12 @@ async def test_tool_use_parsed(anthropic_allowlist: EndpointAllowlist) -> None:
 
 
 @respx.mock
-async def test_malformed_no_content_is_product_defect(
+async def test_malformed_no_content_is_a_malformed_reply(
     anthropic_allowlist: EndpointAllowlist,
 ) -> None:
     respx.post(_URL).mock(return_value=_mock("malformed_no_content"))
 
-    with pytest.raises(AdapterProductError):
+    with pytest.raises(ResponseMalformed):
         await _adapter(anthropic_allowlist).send(ModelRequest(prompt="x"))
 
 

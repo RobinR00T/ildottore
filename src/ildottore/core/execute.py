@@ -33,6 +33,13 @@ block above, recorded the same way with the reply kept for the evidence. A filte
 replaced what the model wrote, or one that does not say which it did, marks the result
 ``filter_cut`` with that side, and the runner never scores the reply as the model's answer.
 
+A success reply the adapter cannot read (``ResponseMalformed``: not JSON, not an object, not the
+provider's shape) is an environment failure that is not retried, so the attempt is inconclusive
+(OD-21, decided 2026-10-11 under the owner's delegation, revisable). It carries a
+``malformed_reply`` marker, read by :func:`is_unreadable_reply`, which the runner counts: a
+campaign whose first :data:`UNREADABLE_REPLIES_TO_STOP` replies all are unreadable, with none it
+could read, stops with :class:`UnreadableReplies` (u08 A-74), so a wrong endpoint is caught early.
+
 The clock/sleep is injected (``sleep``) so tests run without real delays and the
 backoff schedule is deterministic (contract §7).
 """
@@ -59,12 +66,15 @@ from ildottore.shared.provider_filter import (
 
 __all__ = [
     "NOT_RETRYABLE_MARK",
+    "UNREADABLE_REPLIES_TO_STOP",
     "AttemptResult",
     "ReplyOverBudget",
     "RetryPolicy",
+    "UnreadableReplies",
     "default_is_env_error",
     "execute_attempt",
     "is_provider_filter_block",
+    "is_unreadable_reply",
     "reserve_tokens",
 ]
 
@@ -169,6 +179,36 @@ def is_provider_filter_block(exc: BaseException) -> bool:
     """
 
     return getattr(exc, "blocked_by_provider_filter", None) is True
+
+
+#: How many replies the adapters could not read a campaign takes, with none it could read before
+#: them, before it stops (OD-21, u08 A-74). Five, as a circuit breaker's run of consecutive
+#: failures: a wrong endpoint, provider or template answers every request alike and is caught for
+#: the price of five requests instead of the battery's hundreds, while a hostile target has to
+#: garble every one of the first five attacks to stop a scan, and garbling a later one costs only
+#: that attempt. One readable reply proves the endpoint for the rest of the invocation.
+UNREADABLE_REPLIES_TO_STOP = 5
+
+
+def is_unreadable_reply(exc: BaseException) -> bool:
+    """True when ``exc`` is a success reply the adapter could not read (OD-21).
+
+    Structural, as :func:`is_provider_filter_block` is: the adapters' ``ResponseMalformed`` sets
+    ``malformed_reply = True``. Only ``True`` counts.
+    """
+
+    return getattr(exc, "malformed_reply", None) is True
+
+
+class UnreadableReplies(Exception):
+    """The campaign's first replies could all not be read, and none could: it stops (u08 A-74).
+
+    Not an environment error (``is_env_error = False``): it propagates out of
+    :func:`execute_attempt` like a product error, and the runner halts the campaign as
+    ``aborted`` with this message as the reason. Named so the redactor keeps the name (u01 A-63).
+    """
+
+    is_env_error = False
 
 
 async def execute_attempt(

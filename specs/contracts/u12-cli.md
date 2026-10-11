@@ -1071,8 +1071,9 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 
 **A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) The CLI says what the provider's
 input filter refused, and does not call it a dead target.** A run whose every attempt the filter
-refused completed: the provider answered every request, so it is not `unreachable` (which still
-means every attempt failed on transport) and exits by the findings, 0 when none is a gated `fail`.
+refused completed: the provider answered every request, so it is not `unreachable` (which
+means every attempt failed on transport or, since A-74, got a reply that could not be read) and
+exits by the findings, 0 when none is a gated `fail`.
 The terminal summary, under the coverage block (never silenced by `-q`), prints `Blocked by the
 provider's input filter: <k> attempt(s) in <s> spec(s) never reached the model (<spec ids>); they
 are inconclusive, not refusals by the model and not exploits` when `k` is not 0, and the `Not
@@ -1105,6 +1106,20 @@ counts them as done. `dottore replay` lists and counts them (u10). From a target
 providers whose stops are read are openai (Azure), anthropic and websocket: a `provider: rest`
 target is the generic template, so Bedrock's and Gemini's shapes are library-only (u04). Checked
 by `tests/cli/test_provider_output_filter_campaign.py`.
+
+**A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21) A run that read nothing says
+to check the target file.** A run halted by the runner's stop prints `error: run on <id> did not
+complete: aborted on UnreadableReplies: the target's first 5 replies in this run could not be read
+as replies (the last: ResponseMalformed: ...), and none could: check the target file's endpoint,
+provider and response template. ...` through `for_terminal`, and every report carries the state
+`aborted` with that reason (exit 3). A run of fewer attempts that read nothing is `unreachable`
+(`_unreachable_reason`): when every attempt's error starts with `ResponseMalformed: ` the reason
+reads `every one of the <n> attempt(s) got a reply that could not be read as the provider's, so
+nothing was evaluated: check the target file's endpoint, provider and response template. The
+first: <error>`; with transport failures among them, `failed on transport or (<k> of them) with a
+reply that could not be read as the provider's`; with transport failures only, the reason is as
+before. The report schema's `status` description names `aborted` and the new meaning of
+`unreachable`. Checked by `tests/cli/test_malformed_reply_campaign.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

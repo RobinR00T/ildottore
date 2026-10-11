@@ -5,6 +5,47 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (a reply the adapters cannot read fails its attempt, not the campaign, OD-21)
+
+- **One hostile reply no longer ends a scan.** A 200 whose body is not JSON (brackets that do not
+  balance, an integer of more than 4,300 digits, bytes that are not text), not a JSON object, or
+  not the shape the provider or the template declares (OpenAI's `choices`, Anthropic's `content`
+  array, a REST template's `text_path`), a WebSocket frame that is binary, not JSON or not an
+  object, a turn none of whose frames carries text, and an MCP reply that is not JSON-RPC, was an
+  `AdapterProductError`, and the runner stopped the campaign on the first one: through the CLI
+  against a loopback stub on `6d5f7ae`, one `<html>` reply among ordinary ones made `run` exit 3
+  at that reply, the fourth request here ("aborted on AdapterProductError: hostile: success
+  response was not valid JSON: Expecting value: line 1 column 1 (char 0); 1 of 2 specs never ran
+  or did not finish"), the first when it answered the first. Each is a
+  `ResponseMalformed` now, an environment failure with `retryable = False`: the attempt is
+  `inconclusive` (`ResponseMalformed: ...; not evaluated [not retryable]`), sent once, debited with
+  its token reservation released, kept by a resume and re-derived by `dottore replay`, and the
+  campaign goes on; during a `-sV` probe pass that probe fails alone (u09 A-35). A non-retryable
+  4xx, a JSON-RPC error and a handshake reply that does not satisfy `expect` still stop the run.
+- **A target that answers nothing readable still stops early.** A wrong endpoint, provider or
+  template answers every request that way, so every spec's adapter goes through one watch per
+  invocation: a reply read, or a provider's filter block, proves the endpoint; until one does, the
+  fifth unreadable reply stops the campaign (exit 3): `error: run on api did not complete: aborted on
+  UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the
+  last: ResponseMalformed: ...), and none could: check the target file's endpoint, provider and
+  response template. ...`. A spec already sending stops at its own next unreadable reply. Measured
+  against a stub answering every request with an HTML page: 8 requests at the default
+  `--concurrency 4` (5 at 1), 26 with `-sV` (18 probes, then 8); on `6d5f7ae`, 4 and 1. A shorter
+  run that read nothing is `unreachable`, and its reason now says the replies could not be read and
+  what to check (it said "failed on transport"). The report schema's `status` description names
+  `aborted` and the wider `unreachable`.
+- Decided under the owner's delegation (best practice), revisable: OD-21 in u04 and u08 §9 and its
+  00-INDEX row, the new clause A-74 (u08, with u04's and u12's halves), u09 A-35 (a 200 that is not
+  JSON was out of it), the MANUAL (§3 "A reply the adapter cannot read", `-sV`, the exit codes, the
+  WebSocket turn, troubleshooting), the FAQ, USAGE, `dottore(1)`, `docs/02-threat-model.md`,
+  `docs/10-fingerprint.md`. Tests: `tests/adapters/test_malformed_replies.py` (24),
+  `tests/core/test_unreadable_replies.py` (9), `tests/cli/test_malformed_reply_campaign.py` (8; 7
+  fail on `6d5f7ae`, the first two files do not collect there); the tests that pinned the old rule
+  assert this one (`tests/adapters/test_base.py`, `test_openai.py`, `test_anthropic.py`,
+  `test_rest.py`, `test_deep_replies.py`, `test_websocket.py`, `test_websocket_premerge.py`,
+  `test_provider_filter_block.py`, `tests/cli/test_probe_pass_spend.py`,
+  `tests/fingerprint/test_probe_failures.py`, `tests/cli/test_input_filter_probe.py`).
+
 ### Changed (a JSON output carries no CI log command, OD-20)
 
 - **Every JSON output writes the second `#` of `##<letters>[` as `\u0023`.** A GitHub Actions
@@ -32,6 +73,9 @@ todo según mejores prácticas". Each is recorded in its contract and its 00-IND
 under that delegation (best practice), revisable, with the reasoning, the alternative not taken and
 where to reverse it.
 
+- **OD-21, a 200 the adapters cannot read: fail the attempt, stop early on a target that answers
+  nothing readable (u08 A-74).** Above, under Changed.
+- **OD-20, a CI log command in a JSON output: written as `\u0023`.** Above, under Changed.
 - **OD-22, a spec regex that does not compile: kept as built (A-33).** `dottore run` still refuses
   the run before anything is sent (exit 3), as it refuses a spec file that fails to load (F-10): a
   configuration error is caught before any traffic, and a skipped spec would leave a smaller

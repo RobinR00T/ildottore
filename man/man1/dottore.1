@@ -269,8 +269,10 @@ At least one gated finding at or above --fail-on.
 .TP
 .B 3
 Operational error (bad scope, unknown suite, I/O), a usage error (unknown option, bad value),
-or a run that did not finish (a hard budget ceiling halted it, or every attempt failed on
-transport). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
+or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
+transport or got a reply that could not be read, or an error stopped it: a non-retryable 4xx,
+or a run whose first 5 replies all could not be read, aborted on UnreadableReplies). 3 takes
+precedence over 2: a run that did not finish exits 3 even when it found
 confirmed exploits, so read summary.status.reason before treating 3 as a retryable
 infrastructure error.
 .PP
@@ -301,6 +303,12 @@ fail is inconclusive, never a pass; a fail that rests on something present in wh
 The summary counts them ("Cut by the provider's output filter: N attempt(s) in S spec(s) came back
 cut or replaced"); they do not trip
 .BR --fail-on .
+.PP
+A success reply the adapter cannot read (not JSON, not an object, not the provider's or the
+template's shape, a WebSocket frame or an MCP reply included) fails its attempt, inconclusive
+with the error ResponseMalformed, and is not sent again; the run goes on. A run whose first 5
+replies all cannot be read, with none that can, stops with exit 3 and says to check the target
+file's endpoint, provider and response template.
 .SH FILES
 .TP
 .I scope.yaml

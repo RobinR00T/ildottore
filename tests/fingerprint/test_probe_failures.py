@@ -29,6 +29,7 @@ from ildottore.adapters.base import (
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
+    ResponseMalformed,
     ResponseTooDeep,
     ResponseTooLarge,
     ResponseUndecodable,
@@ -248,11 +249,17 @@ def test_every_probe_refused_gives_an_empty_fingerprint_and_says_so() -> None:
 
 @pytest.mark.parametrize(
     "error",
-    [ResponseTooLarge("x"), ResponseUndecodable("x"), ResponseTooDeep("x")],
-    ids=["too-large", "undecodable", "too-deep"],
+    [
+        ResponseTooLarge("x"),
+        ResponseUndecodable("x"),
+        ResponseTooDeep("x"),
+        ResponseMalformed("x"),
+    ],
+    ids=["too-large", "undecodable", "too-deep", "malformed"],
 )
 def test_every_kind_of_refused_reply_is_a_failed_probe(error: BaseException) -> None:
-    """The marker is structural, so a refusal added later is covered with no change here."""
+    """The marker is structural, so a refusal added later is covered with no change here: a
+    reply that is not JSON or not the provider's shape is one since OD-21 (decided 2026-10-11)."""
 
     fp = _run(_Target({0: error}))
     assert failed_probes(fp) == [f"metadata/self_id: {type(error).__name__}"]
@@ -313,7 +320,7 @@ class _Interrupted(BaseException):
 @pytest.mark.parametrize(
     "error",
     [
-        AdapterProductError("success response was not valid JSON"),
+        AdapterProductError("MCP initialize error: {'code': -32600}"),
         EndpointNotAllowed("http://elsewhere.example/v1"),
         PermissionError("refused"),
         _Interrupted(),

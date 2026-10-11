@@ -17,7 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from ildottore.adapters.base import AdapterProductError, BaseAdapter
+from ildottore.adapters.base import BaseAdapter, ResponseMalformed
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 from ildottore.shared.provider_filter import INPUT_SIDE, OUTPUT_SIDE, UNKNOWN_SIDE, is_filter_stop
 
@@ -205,7 +205,8 @@ class RestAdapter(BaseAdapter):
         references put the text (any other template is not reading a Gemini body, and a
         ``promptFeedback`` key in its reply is not Gemini's, pre-merge audit of ``3d739f3``, L3);
         no text at that path; and a ``blockReason`` in :data:`_GEMINI_PROMPT_BLOCKS`. Anything
-        else stays the product error it was. A body with text is a reply whatever else it holds.
+        else is a body with no text at the path, a :class:`ResponseMalformed` (it was a product
+        error until OD-21). A body with text is a reply whatever else it holds.
         """
 
         if not self.template.text_path.startswith(_GEMINI_TEXT_ROOT):
@@ -235,11 +236,12 @@ class RestAdapter(BaseAdapter):
             # runner never reads as the model's answer. Read at ``finish_path`` only, as before.
             text = ""
         if text is None:
-            raise AdapterProductError(
-                f"{self.id}: response missing text at path {self.template.text_path!r}"
+            raise ResponseMalformed(
+                f"{self.id}: response missing text at path {self.template.text_path!r}; "
+                "not evaluated"
             )
         if not isinstance(text, str):
-            raise AdapterProductError(f"{self.id}: response text is not a string")
+            raise ResponseMalformed(f"{self.id}: response text is not a string; not evaluated")
 
         ids: dict[str, Any] = {}
         if self.template.id_path is not None:

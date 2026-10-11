@@ -277,6 +277,19 @@ pipeline that should stop reads `summary.cut_by_provider_output_filter.attempts`
 report ([`MANUAL.md`](MANUAL.md) §9, the amendment in
 [`adr/0011`](adr/0011-a-prompt-the-provider-filter-refused-is-not-a-verdict.md)).
 
+### My target answered an attack with an HTML page. Does the scan stop?
+
+Not for one reply, since 2026-10-11 (OD-21). A success reply the adapter cannot read (not JSON, not
+an object, or not the provider's or the template's shape, a WebSocket frame or an MCP reply
+included) fails its attempt as `inconclusive`, its error `ResponseMalformed: ...`; it is not sent
+again, on a retry or a resume, and it counts against `--budget-requests`. Before, the first one
+stopped the run (`aborted on AdapterProductError: ... success response was not valid JSON`, exit 3
+after one request). A target that answers **every** request that way is a wrong endpoint, provider
+or template, so a run whose first 5 replies all cannot be read, with none that can, still stops
+early (exit 3, `aborted on UnreadableReplies: ...`, which tells you to check the target file), and a
+shorter run that read nothing is `unreachable`. A 4xx is not this: it still stops the run
+([`MANUAL.md`](MANUAL.md) §3, a reply the adapter cannot read).
+
 ### If my system passes Il Dottore, does it meet OWASP AISVS?
 
 No, and the tool never says so. AISVS lists *controls* ("verify that a classifier screens every

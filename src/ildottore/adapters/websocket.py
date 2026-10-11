@@ -58,6 +58,7 @@ from ildottore.adapters.base import (
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
+    ResponseMalformed,
     ResponseTooDeep,
     ResponseTooLarge,
     ResponseUndecodable,
@@ -484,8 +485,9 @@ class WebSocketAdapter:
         paces, debits and retries. Re-dialled here, a socket that failed to open was dialled up
         to ``max_attempts + 1`` times per debited request: 8 dials for 4 debits with
         ``max_attempts: 1`` under the runner's retries (pre-merge audit of PR #87). A refused
-        upgrade (any other 4xx, a redirect), a handshake reply that does not satisfy ``expect``
-        and a malformed frame are product defects and are not retried. Once a query is on the
+        upgrade (any other 4xx, a redirect) and a handshake reply that does not satisfy ``expect``
+        are product defects and are not retried; a malformed frame is a ``ResponseMalformed``
+        (OD-21), not retried either and not re-dialled. Once a query is on the
         wire nothing here resends it: a close mid-turn is an environment error the runner
         retries, debited like every send. The handshake and session phase (sends and replies)
         runs under ``response.timeout_seconds``, as a turn does, and under the turn's byte and
@@ -699,8 +701,9 @@ class WebSocketAdapter:
             ) from exc
 
         if not parts:
-            raise AdapterProductError(
-                f"{self.id}: no frame of the turn carried text at path {quoted(reading.text_path)}"
+            raise ResponseMalformed(
+                f"{self.id}: no frame of the turn carried text at path "
+                f"{quoted(reading.text_path)}; not evaluated"
             )
         finish = get_path(final, reading.final_path) if final is not None else None
         recorded = frames if whole else frames[start:]
@@ -746,8 +749,9 @@ class WebSocketAdapter:
         except ConnectionClosed as exc:
             raise self._closed(exc, "mid-turn") from exc
         if isinstance(raw, bytes):
-            raise AdapterProductError(
-                f"{self.id}: received a binary frame; this adapter reads JSON text frames"
+            raise ResponseMalformed(
+                f"{self.id}: received a binary frame; this adapter reads JSON text frames; "
+                "not evaluated"
             )
         too_deep = WebSocketFrameTooDeep(
             f"{self.id}: a frame is nested deeper than {MAX_FRAME_DEPTH} levels; not evaluated"
@@ -761,11 +765,11 @@ class WebSocketAdapter:
         except NestedTooDeeply as exc:
             raise too_deep from exc
         except ValueError as exc:
-            raise AdapterProductError(
-                f"{self.id}: a frame was not valid JSON: {self._safe(str(exc))}"
+            raise ResponseMalformed(
+                f"{self.id}: a frame was not valid JSON: {self._safe(str(exc))}; not evaluated"
             ) from exc
         if not isinstance(frame, dict):
-            raise AdapterProductError(f"{self.id}: a frame was not a JSON object")
+            raise ResponseMalformed(f"{self.id}: a frame was not a JSON object; not evaluated")
         if _depth(frame) > MAX_FRAME_DEPTH:
             raise too_deep
         frames.append({"direction": "received", "frame": _scrub(frame, self.api_key)})

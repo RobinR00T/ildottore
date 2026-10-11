@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from ildottore.adapters import AdapterProductError, RestAdapter, RestTemplate, RetryConfig
+from ildottore.adapters import ResponseMalformed, RestAdapter, RestTemplate, RetryConfig
 from ildottore.adapters.rest import get_path
 from ildottore.policy import EndpointAllowlist
 from ildottore.shared.models import Capabilities, ModelRequest
@@ -68,12 +68,13 @@ async def test_generic_ok(rest_allowlist: EndpointAllowlist) -> None:
 
 
 @respx.mock
-async def test_missing_text_is_product_defect(rest_allowlist: EndpointAllowlist) -> None:
-    """A response missing the text path is a schema defect → product error."""
+async def test_missing_text_is_a_malformed_reply(rest_allowlist: EndpointAllowlist) -> None:
+    """A response missing the text path is not the template's shape: it fails its attempt
+    (OD-21)."""
 
     respx.post(_URL).mock(return_value=_mock("missing_text"))
 
-    with pytest.raises(AdapterProductError):
+    with pytest.raises(ResponseMalformed):
         await _adapter(rest_allowlist).send(ModelRequest(prompt="x"))
 
 

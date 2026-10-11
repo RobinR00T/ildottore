@@ -221,8 +221,18 @@ while without `-sV` the same reply failed one attempt and every spec ran (pre-co
   a result).
 Checked by `tests/fingerprint/test_probe_failures.py` (each of the 18 probes refused in turn,
 against a pass with evidence in every layer) and `tests/cli/test_probe_env_error.py` (a local
-stub through the real CLI). Out of this clause: a 200 that is not JSON (`AdapterProductError`)
-still stops the pass, as it stops the campaign; that is OD-21.
+stub through the real CLI). A 200 that is not JSON, not an object or not the provider's shape
+was out of this clause, an `AdapterProductError` that stopped the pass as it stopped the campaign,
+until OD-21 (decided 2026-10-11 under the owner's delegation, revisable): it is a
+`ResponseMalformed` now, an environment failure with `retryable = False`, so this clause covers it
+with no change to the engine, its probe failing as `layer/probe: ResponseMalformed`
+(`tests/fingerprint/test_probe_failures.py`, `tests/cli/test_probe_pass_spend.py`). A target that
+answers every probe that way gives an empty fingerprint (`dottore fingerprint` exits 3; `run -sV`
+warns and the attack phase stops after its first 5 unreadable replies, u08 A-74), so a wrong
+endpoint under `run -sV` costs the 18 probes and 5 attack requests (`--concurrency 1`; 8 at the
+default 4) where it cost 1 request (measured against a loopback stub answering every request
+with an HTML page, 2026-10-11). Not built: the probe pass seeding that stop, which would end such
+a run after the probes.
 
 **A-36 (owned by u08) covers the guardrail layer's latency too (2026-10-07).**
 `moderation_latency_ms` is the target's own figure, so it is read through

@@ -21,7 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Final
 
-from ildottore.adapters.base import AdapterProductError, BaseAdapter
+from ildottore.adapters.base import BaseAdapter, ResponseMalformed
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
@@ -334,7 +334,7 @@ class AnthropicAdapter(BaseAdapter):
     def _parse_response(self, payload: Mapping[str, Any]) -> ModelResponse:
         content = payload.get("content")
         if not isinstance(content, list):
-            raise AdapterProductError(f"{self.id}: response has no content array")
+            raise ResponseMalformed(f"{self.id}: response has no content array; not evaluated")
 
         text_parts: list[str] = []
         tool_calls: list[dict[str, Any]] = []
