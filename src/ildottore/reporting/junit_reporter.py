@@ -63,26 +63,32 @@ class JunitReporter(BaseReporter):
         blocked = len(blocked_attempt_ids(finding.attempts))
         if blocked:
             detail += f" blocked_by_provider_filter={blocked}"
-        # And the replies the provider's filter cut, or stopped on an unsaid side (OD-42). A
-        # spec with one is inconclusive or failed, so the count rides in its reasoning too.
+        # And the replies the provider's filter cut, or stopped on an unsaid side (OD-42). A spec
+        # with one never passes, so they are counted in the failure's or the skip's message,
+        # which a CI dashboard shows, besides the reasoning its text quotes (pre-merge audit of
+        # ``a55e953``, L4: in a passing case's detail they could never appear).
+        counts = ""
         cut = len(cut_attempt_ids(finding.attempts))
         if cut:
-            detail += f" cut_by_provider_output_filter={cut}"
+            counts += f" cut_by_provider_output_filter={cut}"
         unsaid = len(side_unknown_attempt_ids(finding.attempts))
         if unsaid:
-            detail += f" provider_filter_side_unknown={unsaid}"
+            counts += f" provider_filter_side_unknown={unsaid}"
         if finding.status is VerdictStatus.FAIL:
             failure = ET.SubElement(
                 case,
                 "failure",
-                {"message": f"exploited: {finding.spec_id}", "type": finding.risk.band.value},
+                {
+                    "message": f"exploited: {finding.spec_id}{counts}",
+                    "type": finding.risk.band.value,
+                },
             )
-            failure.text = (finding.reasoning or detail)[:4096]
+            failure.text = (finding.reasoning or detail + counts)[:4096]
         elif finding.status is VerdictStatus.INCONCLUSIVE:
             skipped = ET.SubElement(
-                case, "skipped", {"message": f"inconclusive: {finding.spec_id}"}
+                case, "skipped", {"message": f"inconclusive: {finding.spec_id}{counts}"}
             )
-            skipped.text = (finding.reasoning or detail)[:4096]
+            skipped.text = (finding.reasoning or detail + counts)[:4096]
         else:  # pass - secure
             system_out = ET.SubElement(case, "system-out")
             system_out.text = detail

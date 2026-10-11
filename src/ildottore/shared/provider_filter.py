@@ -55,6 +55,7 @@ __all__ = [
     "filter_side_unknown",
     "filter_stop",
     "is_filter_stop",
+    "partial_reply",
     "side_unknown_attempt_ids",
 ]
 
@@ -112,13 +113,19 @@ _OUTPUT_STOPS: Final = frozenset(
         # docs/reference/rest/v1/GenerateContentResponse): MODEL_ARMOR "The model response was
         # blocked by Model Armor".
         "model_armor",
+        # Gemini's RECITATION, "The response candidate content was flagged for recitation
+        # reasons" (Gemini API reference), "the content may be a recitation from a source"
+        # (Vertex AI's). Not a safety filter but a filter on what the model generated, and a
+        # training-data extraction spec is about exactly such a reply, so it is a cut like the
+        # others: decided under the owner's delegation on 2026-10-11 (OD-42), revisable. A cut,
+        # not a fail: ``verbatim_overlap`` still fails when enough of the text came back.
+        "recitation",
     }
 )
-# Not read, for want of a source that makes them a filter on either side: Gemini's RECITATION
-# ("flagged for recitation reasons", a copyright check, not a safety filter), LANGUAGE, OTHER
-# ("Unknown reason"), the IMAGE_* values (image generation, which no spec asks for), ESCALATION
-# ("Request was filtered by an escalation rule", with no word on what was filtered) and
-# PUP_LIMITED_DISABLED (the account, not the content).
+# Not read, for want of a source that makes them a filter on either side: Gemini's LANGUAGE,
+# OTHER ("Unknown reason"), the IMAGE_* values (image generation, which no spec asks for),
+# ESCALATION ("Request was filtered by an escalation rule", with no word on what was filtered)
+# and PUP_LIMITED_DISABLED (the account, not the content).
 #
 # Anthropic's ``refusal``: "Refusals and fallback" (platform.claude.com/docs/en/build-with-claude/
 # refusals-and-fallback): "A refusal is a successful HTTP 200 response with stop_reason:
@@ -129,7 +136,10 @@ _OUTPUT_STOPS: Final = frozenset(
 # "refusal stop reason": the classifiers run "on incoming requests" and "can fire before any
 # output ... or mid-stream after partial output"). So the side is read from the reply: any text or
 # tool call, or any output token, is the output side; no output at all, the input side; neither
-# said (no usage), unknown.
+# said (no usage), unknown. With a server-side fallback the top-level ``usage`` covers only the
+# attempt that produced the returned message, and ``usage.iterations`` records every attempt
+# ("The usage.iterations array records every attempt", the same page): an output token in any of
+# them is the output side too.
 _REFUSAL: Final = "refusal"
 # Amazon Bedrock Converse: the API reference (docs.aws.amazon.com/bedrock/latest/APIReference/
 # API_runtime_Converse.html) lists ``guardrail_intervened`` and ``content_filtered`` among the
@@ -138,9 +148,10 @@ _REFUSAL: Final = "refusal"
 # guardrail that "detects blocked content" sets ``stopReason`` to ``guardrail_intervened`` and
 # returns "The blocked content text that you have configured in the guardrail" as the output,
 # whether it blocked the prompt or the reply. Only the optional trace (``guardrailConfig.trace:
-# enabled``) says which: ``adapters.rest`` reads it into ``ModelResponse.filter_side``. Without it
-# the side is unknown. ``content_filtered`` is listed and not described anywhere AWS publishes
-# that this change found, so its side is unknown too.
+# enabled``) says which: ``adapters.rest`` reads it into ``ModelResponse.filter_side`` (``unknown``
+# when a trace is there and names neither a blocked prompt nor a blocked or masked reply, a masked
+# prompt alone, say). Without it the side is unknown too. ``content_filtered`` is listed and not
+# described anywhere AWS publishes that this change found, so its side is unknown as well.
 _UNSAID_SIDE_STOPS: Final = frozenset({"guardrail_intervened", "content_filtered"})
 
 #: Every stop reason a provider sets when its own filter declined, cut or replaced the reply.
@@ -182,15 +193,49 @@ def filter_side(response: ModelResponse) -> str | None:
     return UNKNOWN_SIDE
 
 
+#: Stops whose reply text, when there is any, is the model's own up to the cut: every output-side
+#: stop and Anthropic's ``refusal``. A Bedrock guardrail's text is the message configured for it
+#: (or the model's reply with its PII masked), so it is not a partial reply of the model's.
+_PARTIAL_STOPS: Final = frozenset({*_OUTPUT_STOPS, _REFUSAL})
+
+
+def partial_reply(response: ModelResponse) -> bool:
+    """True when the reply holds text the model wrote before its provider's filter cut it."""
+
+    return (
+        bool(response.text.strip())
+        and filter_stop(response) in _PARTIAL_STOPS
+        and response.filter_side is None
+    )
+
+
 def _refusal_side(response: ModelResponse) -> str:
     """Anthropic's ``refusal``: before any output, the input side; after some, the output side."""
 
     if response.text or response.tool_calls:
         return OUTPUT_SIDE
-    output = (response.usage or {}).get("output_tokens")
-    if is_count(output):
-        return INPUT_SIDE if output == 0 else OUTPUT_SIDE
-    return UNKNOWN_SIDE
+    counts = [count for count in _output_tokens(response.usage) if is_count(count)]
+    if not counts:
+        return UNKNOWN_SIDE
+    return OUTPUT_SIDE if any(counts) else INPUT_SIDE
+
+
+def _output_tokens(usage: object) -> list[object]:
+    """``output_tokens`` at the top of ``usage`` and in each of its ``iterations`` (a fallback)."""
+
+    if not isinstance(usage, dict):
+        return []
+    found: list[object] = []
+    if "output_tokens" in usage:
+        found.append(usage["output_tokens"])
+    iterations = usage.get("iterations")
+    if isinstance(iterations, list):
+        found.extend(
+            entry["output_tokens"]
+            for entry in iterations
+            if isinstance(entry, dict) and "output_tokens" in entry
+        )
+    return found
 
 
 def describe_filter_stop(response: ModelResponse) -> str:
@@ -202,9 +247,13 @@ def describe_filter_stop(response: ModelResponse) -> str:
         return f"{detail}; trace.guardrail.inputAssessment"
     if response.filter_side == OUTPUT_SIDE:
         return f"{detail}; trace.guardrail.outputAssessments"
+    if response.filter_side == UNKNOWN_SIDE:
+        return (
+            f"{detail}; the guardrail trace names no blocked prompt and no blocked or masked reply"
+        )
     normalized = stop.lower()
     if normalized == "guardrail_intervened":
-        return f"{detail}; no guardrail trace says which side"
+        return f"{detail}; no guardrail trace in the reply"
     if normalized == _REFUSAL:
         side = _refusal_side(response)
         if side == INPUT_SIDE:

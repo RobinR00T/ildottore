@@ -69,16 +69,18 @@ def _openai(text: str | None, finish: str) -> dict[str, Any]:
     }
 
 
-def _anthropic(text: str, stop: str, output_tokens: int) -> dict[str, Any]:
-    return {
+def _anthropic(text: str, stop: str, output_tokens: int | None) -> dict[str, Any]:
+    body: dict[str, Any] = {
         "id": "msg_stub",
         "type": "message",
         "role": "assistant",
         "model": "claude-stub",
         "content": [{"type": "text", "text": text}] if text else [],
         "stop_reason": stop,
-        "usage": {"input_tokens": 20, "output_tokens": output_tokens},
     }
+    if output_tokens is not None:
+        body["usage"] = {"input_tokens": 20, "output_tokens": output_tokens}
+    return body
 
 
 def _attack_reply(mode: str, prompt: str, body: dict[str, Any]) -> dict[str, Any] | None:
@@ -95,6 +97,8 @@ def _attack_reply(mode: str, prompt: str, body: dict[str, Any]) -> dict[str, Any
         if _PI_WORD in prompt:
             return _anthropic("", "refusal", 0)
         return _anthropic(_PARTIAL, "refusal", 6)
+    if mode == "anthropic-no-usage":
+        return _anthropic("", "refusal", None)
     raise AssertionError(mode)
 
 
@@ -340,7 +344,8 @@ def test_a_canary_in_what_the_output_filter_let_through_is_still_a_fail(
     result = CliRunner().invoke(app, argv)
 
     assert result.exit_code == 2, result.output
-    assert (state["attack"], state["filtered"], state["judge"]) == (6, 6, 0)
+    # The judge reads each partial reply twice, recorded and not deciding (L8 of the audit).
+    assert (state["attack"], state["filtered"], state["judge"]) == (6, 6, 12)
     report = _report(tmp_path / "r.json")
     finding = report["findings"][0]
     assert finding["status"] == "fail"
@@ -349,7 +354,8 @@ def test_a_canary_in_what_the_output_filter_let_through_is_still_a_fail(
         assert attempt["verdict"]["status"] == "fail"
         assert attempt["verdict"]["reasoning"] == (
             "1 deterministic evaluator(s) reported exploited; the provider's output filter then "
-            "cut the reply (stop reason content_filter)"
+            "cut the reply (stop reason content_filter); semantic_judge on what came back, "
+            "recorded and not deciding: pass (0.95): The target refused."
         )
     assert report["summary"]["cut_by_provider_output_filter"] == {"attempts": 0, "specs": []}
 
@@ -369,9 +375,10 @@ def test_anthropics_refusal_is_a_block_before_any_output_and_a_cut_after_some(
     ]
     result = CliRunner().invoke(app, argv)
 
-    # main: two passes, exit 0.
+    # main: two passes, exit 0. The judge reads the six whole replies and the two partial ones
+    # (the latter recorded, not deciding), twice each.
     assert result.exit_code == 0, result.output
-    assert (state["attack"], state["filtered"], state["judge"]) == (14, 8, 12)
+    assert (state["attack"], state["filtered"], state["judge"]) == (14, 8, 16)
     report = _report(tmp_path / "r.json")
 
     pi = _attempts(report, "PI-DIRECT-001")
@@ -388,7 +395,10 @@ def test_anthropics_refusal_is_a_block_before_any_output_and_a_cut_after_some(
     cut = [a for a in guard if _reason(a) == "cut_by_provider_output_filter"]
     assert len(cut) == 2
     assert all(a["response"]["text"] == _PARTIAL for a in cut)
-    assert cut[0]["verdict"]["reasoning"] == _CUT_REASONING.format(stop="refusal")
+    assert cut[0]["verdict"]["reasoning"] == _CUT_REASONING.format(stop="refusal") + (
+        "; semantic_judge on what came back, recorded and not deciding: pass (0.95): The target "
+        "refused."
+    )
 
     findings = {f["spec_id"]: f for f in report["findings"]}
     assert findings["PI-DIRECT-001"]["status"] == "inconclusive"
@@ -501,3 +511,55 @@ def test_a_resume_keeps_the_cut_attempts_and_a_replay_re_derives_them(
         "(cut_by_provider_output_filter): counted in N and never a success; the model may have "
         "written what the filter hid, so review them"
     ) in lines
+
+
+def test_an_empty_cut_reply_is_no_exploit_for_a_spec_whose_marker_must_be_present(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """``DOS-TOKEN-AMP-001``'s deterministic evaluator is ``regex_presence``, which fails when its
+    secure marker is absent: on a55e953 an empty reply Azure's filter withheld made it a
+    confirmed fail, exit 2, on text the model never wrote (pre-merge audit, M1). Only a fail that
+    rests on something present in what came back stands."""
+
+    port, state = stub
+    state["words"] = [""]
+    argv = [*_argv(tmp_path, port, "DOS-TOKEN-AMP-001"), "-oJ", str(tmp_path / "r.json")]
+    result = CliRunner().invoke(app, argv)
+
+    assert result.exit_code == 0, result.output
+    assert (state["attack"], state["filtered"], state["judge"]) == (4, 4, 0)
+    finding = _report(tmp_path / "r.json")["findings"][0]
+    assert finding["status"] == "inconclusive"
+    assert finding["confirmed"] is False
+    assert all(_reason(a) == "cut_by_provider_output_filter" for a in finding["attempts"])
+
+
+def test_a_refusal_with_no_usage_is_on_an_unreported_side_without_bedrocks_hint(
+    tmp_path: Path, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """An Anthropic ``refusal`` with no text and no usage says nothing about which side it came
+    from. The summary names its stop reason, and the Bedrock trace hint is printed only beside
+    Bedrock's stop (pre-merge audit of a55e953, M3)."""
+
+    port, state = stub
+    state["mode"], state["words"] = "anthropic-no-usage", [""]
+    argv = [
+        *_argv(tmp_path, port, "DOS-TOKEN-AMP-001", provider="anthropic"),
+        "-oJ",
+        str(tmp_path / "r.json"),
+    ]
+    result = CliRunner().invoke(app, argv)
+
+    assert result.exit_code == 0, result.output
+    report = _report(tmp_path / "r.json")
+    assert report["findings"][0]["status"] == "inconclusive"
+    assert report["summary"]["provider_filter_side_unknown"] == {
+        "attempts": 4,
+        "specs": ["DOS-TOKEN-AMP-001"],
+    }
+    assert (
+        "Stopped by the provider's filter on a side it did not report: 4 attempt(s) in 1 spec(s) "
+        "(DOS-TOKEN-AMP-001); inconclusive and need review, never a pass (stop reason(s): "
+        "refusal)"
+    ) in result.stdout
+    assert "Bedrock" not in result.stdout

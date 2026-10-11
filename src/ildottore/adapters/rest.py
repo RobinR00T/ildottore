@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from ildottore.adapters.base import AdapterProductError, BaseAdapter
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
-from ildottore.shared.provider_filter import INPUT_SIDE, OUTPUT_SIDE, is_filter_stop
+from ildottore.shared.provider_filter import INPUT_SIDE, OUTPUT_SIDE, UNKNOWN_SIDE, is_filter_stop
 
 __all__ = ["RestAdapter", "RestTemplate", "get_path"]
 
@@ -266,7 +266,7 @@ class RestAdapter(BaseAdapter):
 
     def _guardrail_side(
         self, payload: Mapping[str, Any], finish_reason: str | None
-    ) -> Literal["input", "output"] | None:
+    ) -> Literal["input", "output", "unknown"] | None:
         """The side a Bedrock guardrail trace says it blocked, or ``None`` (OD-42, u04 A-70).
 
         Bedrock Converse answers a guardrail's intervention with HTTP 200, ``stopReason``
@@ -277,8 +277,9 @@ class RestAdapter(BaseAdapter):
         ``outputAssessments`` (guardrail id to a list of them). An output assessment that
         blocked or masked something is the output side, whatever the input one says: the model
         wrote a reply. Otherwise an input assessment that blocked something is the input side.
-        Anything else, a trace absent or one that names no such action, is ``None``, and the
-        runner reads the stop as a side the provider did not report.
+        A trace that names neither (a masked prompt alone, say) is ``unknown``, and no trace is
+        ``None``: the runner reads both as a side the provider did not report, and the evidence
+        says which of the two it was (pre-merge audit of ``a55e953``, L3).
 
         Read only for a template whose ``finish_path`` is the Converse root ``stopReason``.
         """
@@ -303,7 +304,7 @@ class RestAdapter(BaseAdapter):
             _acted(assessment, _INPUT_ACTIONS) for assessment in inputs.values()
         ):
             return INPUT_SIDE
-        return None
+        return UNKNOWN_SIDE
 
 
 def _acted(assessment: object, actions: frozenset[str]) -> bool:

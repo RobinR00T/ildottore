@@ -464,11 +464,12 @@ class ModelResponse(_Frozen):
     ``logprobs is None`` when the target lacks the logprobs capability (ADR-0005).
 
     ``filter_side`` is the side the provider's own trace says its filter acted on, for a reply
-    stopped by that filter (OD-42, u00 and u08 A-70): ``input`` (the prompt was blocked) or
-    ``output`` (the model's reply was). Only the REST adapter sets it, from a Bedrock Converse
-    guardrail trace; every other reply leaves it ``None`` and ``shared.provider_filter`` reads
-    the side from the stop reason. A ``None`` is left out of a dump, so a reply without one is
-    stored, reported and hashed byte for byte as before the field existed.
+    stopped by that filter (OD-42, u00 and u08 A-70): ``input`` (the prompt was blocked),
+    ``output`` (the model's reply was), or ``unknown`` (a trace that names neither). Only the
+    REST adapter sets it, from a Bedrock Converse guardrail trace; every other reply leaves it
+    ``None`` and ``shared.provider_filter`` reads the side from the stop reason. A ``None`` is
+    left out of a dump, so a reply without one is stored, reported and hashed byte for byte as
+    before the field existed.
     """
 
     text: str
@@ -477,14 +478,14 @@ class ModelResponse(_Frozen):
     finish_reason: str | None = None
     raw_ids: JsonDict = Field(default_factory=dict)
     usage: JsonDict | None = None
-    filter_side: Literal["input", "output"] | None = None
+    filter_side: Literal["input", "output", "unknown"] | None = None
 
     @model_serializer(mode="wrap")
-    def _without_unset_filter_side(self, handler: SerializerFunctionWrapHandler) -> Any:
+    def _without_unset_filter_side(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         """The dump as before OD-42 when no trace said which side a filter acted on."""
 
-        dumped = handler(self)
-        if isinstance(dumped, dict) and dumped.get("filter_side") is None:
+        dumped: dict[str, Any] = handler(self)
+        if dumped.get("filter_side") is None:
             dumped.pop("filter_side", None)
         return dumped
 

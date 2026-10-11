@@ -136,3 +136,44 @@ async def test_single_identity_is_capability_unavailable(
         and a.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
         for a in finding.attempts
     )
+
+
+class _Filtered:
+    """An identity whose reply the provider's output filter withheld (OD-42): Azure's shape."""
+
+    id = "tenant-a"
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        from ildottore.shared.models import ModelResponse
+
+        return ModelResponse(text="", finish_reason="content_filter")
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(multi_identity=True)
+
+
+async def test_an_identity_whose_reply_the_filter_cut_is_skipped_so_authz_leak_abstains(
+    evaluators, mutators, scorer, stores
+) -> None:
+    """The cut reply is empty, so it holds no canary: read as an identity's answer it made the
+    sweep "no crossing" and the spec passed, when the filter hid exactly the reply that could
+    have crossed (pre-merge audit of a55e953, M2). It is skipped as an identity whose send failed
+    is, so with one identity left authz_leak abstains."""
+
+    b = MockTarget(MockScenario(response=f"my own record {_CANARY}"), id="tenant-b")
+    probes = [
+        IdentityProbe(identity_id="tenant-a", adapter=_Filtered(), canary=None),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_CANARY),
+    ]
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    assert all(
+        a.verdict is not None
+        and a.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+        for a in finding.attempts
+    )

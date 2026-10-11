@@ -156,10 +156,11 @@ def test_anthropics_refusal_is_read_by_whether_any_output_came_first(
 
 
 @pytest.mark.parametrize(
-    "stop", ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "MODEL_ARMOR"]
+    "stop", ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "MODEL_ARMOR", "RECITATION"]
 )
 def test_a_gemini_candidate_stopped_by_its_filter_without_text_is_a_reply(stop: str) -> None:
-    """On main a candidate with no text was a product error, which stopped the campaign."""
+    """On main a candidate with no text was a product error, which stopped the campaign.
+    ``RECITATION`` too, since the owner's delegated decision of 2026-10-11 (OD-42)."""
 
     response = _send(
         _rest(_GEMINI), "https://llm.example.com/x", {"candidates": [{"finishReason": stop}]}
@@ -169,7 +170,7 @@ def test_a_gemini_candidate_stopped_by_its_filter_without_text_is_a_reply(stop: 
 
 
 def test_a_gemini_candidate_without_text_and_another_stop_is_still_a_product_error() -> None:
-    for stop in ("STOP", "RECITATION", "MAX_TOKENS"):
+    for stop in ("STOP", "LANGUAGE", "OTHER", "MAX_TOKENS"):
         with pytest.raises(AdapterProductError, match="response missing text"):
             _send(
                 _rest(_GEMINI),
@@ -289,6 +290,11 @@ def test_a_bedrock_guardrail_trace_says_which_side_it_blocked(trace: object, sid
     )
     assert (response.text, response.finish_reason) == ("Blocked.", "guardrail_intervened")
     assert filter_side(response) == side
+    # The reply says whether a trace was there (L3 of the pre-merge audit of a55e953).
+    if isinstance(trace, dict):
+        assert response.filter_side == side
+    else:
+        assert response.filter_side is None
 
 
 def test_the_guardrail_trace_is_read_only_beside_bedrocks_stop_reason() -> None:
@@ -335,6 +341,7 @@ def test_the_filter_stops_are_the_sourced_ones() -> None:
                 "blocklist",
                 "spii",
                 "model_armor",
+                "recitation",
             }
         )
         == FILTER_STOPS
@@ -342,7 +349,8 @@ def test_the_filter_stops_are_the_sourced_ones() -> None:
 
 
 @pytest.mark.parametrize(
-    "stop", [None, "", "stop", "end_turn", "length", "max_tokens", "STOP", "RECITATION", "final"]
+    "stop",
+    [None, "", "stop", "end_turn", "length", "max_tokens", "STOP", "LANGUAGE", "OTHER", "final"],
 )
 def test_a_stop_that_is_no_filters_is_none(stop: str | None) -> None:
     response = ModelResponse(text="", finish_reason=stop)
@@ -363,4 +371,56 @@ def test_a_side_on_the_reply_is_only_read_beside_a_filter_stop() -> None:
 
     assert (
         filter_side(ModelResponse(text="x", finish_reason="end_turn", filter_side="output")) is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("usage", "side"),
+    [
+        ({"output_tokens": 0, "iterations": [{"type": "message", "output_tokens": 0}]}, "input"),
+        (
+            {
+                "output_tokens": 0,
+                "iterations": [
+                    {"type": "message", "input_tokens": 412, "output_tokens": 37},
+                    {"type": "fallback_message", "input_tokens": 412, "output_tokens": 0},
+                ],
+            },
+            "output",
+        ),
+        ({"iterations": [{"type": "message", "output_tokens": 0}]}, "input"),
+        ({"iterations": [{"type": "message", "output_tokens": "many"}]}, "unknown"),
+        ({"output_tokens": 0, "iterations": "not a list"}, "input"),
+    ],
+    ids=["all-before-output", "an-earlier-attempt-wrote", "iterations-only", "unreadable", "bad"],
+)
+def test_a_refusal_after_a_server_side_fallback_reads_every_attempts_output(
+    usage: dict[str, Any], side: str
+) -> None:
+    """With ``fallbacks``, the top-level usage is the last attempt's and ``usage.iterations``
+    records each (Anthropic, "Refusals and fallback"): an earlier attempt that wrote output and
+    was declined is the output side (pre-merge audit of a55e953, L1)."""
+
+    response = ModelResponse(text="", finish_reason="refusal", usage=usage)
+    assert filter_side(response) == side
+
+
+def test_the_evidence_says_whether_a_guardrail_trace_was_there() -> None:
+    masked = {
+        "inputAssessment": {
+            "g": _assessment("sensitiveInformationPolicy", "piiEntities", "ANONYMIZED")
+        }
+    }
+    with_trace = _send(
+        _rest(_CONVERSE), "https://llm.example.com/x", _converse("guardrail_intervened", masked)
+    )
+    without = _send(
+        _rest(_CONVERSE), "https://llm.example.com/x", _converse("guardrail_intervened")
+    )
+    assert describe_filter_stop(with_trace) == (
+        "stop reason guardrail_intervened; the guardrail trace names no blocked prompt and no "
+        "blocked or masked reply"
+    )
+    assert describe_filter_stop(without) == (
+        "stop reason guardrail_intervened; no guardrail trace in the reply"
     )
