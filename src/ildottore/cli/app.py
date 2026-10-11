@@ -311,8 +311,15 @@ def _masked(exc: BaseException) -> str:
     # included; the entropy fallback, which cannot tell a sha256 or a random directory name from
     # a key, runs only on what is not kept below. Keeping a path raw skipped the email and
     # key-shape rules too (an existing `GoogleDrive-<email>` directory printed the address).
-    plain = Redactor(entropy_threshold=math.inf)
-    entropy = Redactor(patterns=[])
+    # The late patterns (the key formats, the JWT and the UUID, u01 A-78) run last, on the whole
+    # message as shown, as they run last in the redactor: run by `plain`, before the entropy
+    # pass, a key glued to a word took less than the pass took of its token (`x_<key>` printed
+    # `x_`); and neither redactor here has them, so each keeps as a mask only the types it had
+    # (one written in the error, `«REDACTED:jwt:...»` in a labelled value, is read as text by
+    # `entropy`, which then masks the value, as it did).
+    plain = Redactor(entropy_threshold=math.inf, late=False)
+    entropy = Redactor(patterns=[], late=False)
+    late = Redactor(patterns=[], entropy_threshold=math.inf)
     # A bare digest stays readable only when the error itself carries it as one this tool
     # computed (`digests` on ScopeChecksumError and TamperError): the redactor cannot tell a
     # sha256 from a 64-hex key, so keeping every bare 64-hex printed a raw key pasted as an
@@ -384,7 +391,7 @@ def _masked(exc: BaseException) -> str:
         shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
         done = end
     shown.append(_entropy_masked(entropy, text[done:]))
-    return visible_controls("".join(shown))
+    return visible_controls(late.redact_late("".join(shown)))
 
 
 @app.command()

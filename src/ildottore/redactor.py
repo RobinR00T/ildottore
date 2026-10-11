@@ -771,16 +771,17 @@ _HEX_EXEMPTION_MIN_LEN: Final = 16
 # threshold left most random hex keys readable: 74.7% of 32-digit ones (the shape of an Azure
 # key), 47.5% of 40-digit ones, 5.5% of 64-digit ones and 47.7% of v4 UUIDs (pre-merge security
 # audit of 2026-10-11, MEDIUM 4, 2,000 draws each). A run of 32 or more hex digits (a `0x` in
-# front included) is masked by the entropy fallback whatever its entropy: inside any token the
+# front included) is masked by the entropy fallback whatever its entropy, inside any token the
 # rule does not mask whole, a separator-structured one too, so it only adds to what the rule
-# masked before, and whatever keeps a value out of that rule keeps it out of this one (the CLI
-# keeps the digests it computed, the evidence names and an existing path; a model name keeps
-# its form). Nothing cuts such a run before the rule reads it: every earlier pattern starts and
-# ends where a run of letters and digits does. The UUID shape (8-4-4-4-12 hex digits, any
-# version) is a pattern instead, run before the PII ones: the phone rule read its digit-only
-# groups (`-6819-4748-`) as a number and left the rest of it readable. The tool writes no UUID of
-# its own; what it computes in hex (an evidence or media sha256, the scope digest) is put back,
-# or kept out of the rule, where the tool writes it (A-78 lists each place).
+# masked before; and whatever keeps a value out of that rule keeps it out of this one (the CLI
+# keeps the digests it computed, the evidence names and an existing path out of it; a model
+# name keeps its form). Nothing cuts such a run before the rule reads it: every earlier pattern
+# starts and ends where a run of letters and digits does. The UUID shape (8-4-4-4-12 hex digits,
+# any version) is one of the late patterns (``_late_patterns``), and the phone and card rules
+# leave one whole (``Redactor._number_mask``): they read its digit-only groups
+# (`-6819-4748-`) as a number and the rest of it stayed readable. The tool writes no UUID of its
+# own; what it computes in hex (an evidence or media sha256, the scope digest) is put back, or
+# kept out of the rule, where the tool writes it (A-78 lists each place).
 _HEX_RUN: Final = re.compile(r"(?<![A-Za-z0-9])(?:0[xX])?[0-9A-Fa-f]{32,}+(?![A-Za-z0-9])")
 #: Either shape is 32 characters or more: a shorter token holds neither.
 _SHAPE_MIN_LEN: Final = 32
@@ -788,6 +789,33 @@ _UUID: Final = re.compile(
     r"(?<![A-Za-z0-9])[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
     r"(?![A-Za-z0-9])"
 )
+#: A UUID's length: one holding a match starts at most this much before it.
+_UUID_LEN: Final = 36
+#: For each UUID a number rule left whole, the stretches of it the rule read as a number.
+_Cuts = dict[str, set[tuple[int, int]]]
+
+
+def _matches(pattern: Pattern, text: str) -> bool:
+    """True if ``pattern`` finds a match in ``text`` (a ``skip`` match is none)."""
+
+    return any(not skipped(m) for m in pattern.regex.finditer(text))
+
+
+def _uuids_overlapping(text: str, start: int, end: int) -> list[tuple[int, int]]:
+    """Each UUID-shaped run of ``text`` that ``text[start:end]`` overlaps, in order (A-78).
+
+    Searched only within 36 characters of the stretch, so a text of numbers costs a bounded search
+    each; the window ends one character past the last a UUID can end at, so its lookahead reads
+    the text's own next character (the lookbehind reads before the window as it is).
+    """
+
+    window_end = min(len(text), end + _UUID_LEN + 1)
+    return [
+        m.span()
+        for m in _UUID.finditer(text, max(0, start - _UUID_LEN), window_end)
+        if m.start() < end and start < m.end()
+    ]
+
 
 # --- date-shape exemption for the ``phone`` and ``card`` detectors ---------------------
 # The phone pattern accepts ``-``/``.``/space as group separators, which is exactly how a
@@ -892,6 +920,8 @@ def _luhn_ok(digits: str) -> bool:
 _KEY_START: Final = r"(?<![A-Za-z0-9])"
 #: What the entropy fallback writes for a hex run (A-78), hashed as a key pattern's mask is.
 _HEX_TOKEN: Final = Pattern("hex_token", _HEX_RUN, hashed=True)
+#: The UUID shape, a late pattern, whose mask the fallback writes too (``_uuid_spans``).
+_UUID_PATTERN: Final = Pattern("uuid", _UUID, hashed=True)
 
 
 def _key(body: str) -> re.Pattern[str]:
@@ -900,8 +930,17 @@ def _key(body: str) -> re.Pattern[str]:
     return re.compile(_KEY_START + body)
 
 
-def _key_patterns() -> list[Pattern]:
-    """The documented key formats, each masked whatever the entropy of its body (u01 A-78).
+def _late_patterns() -> list[Pattern]:
+    """The documented key formats, the JWT and the UUID, masked whatever their entropy (A-78).
+
+    They run after the labelled and the entropy rules (``Redactor._redact_late``), on what those
+    left readable, so each only adds a mask: run before them, a key glued to a word, a label or
+    padding took less than the entropy rule took of its token (`x_<key>` showed `x_`, `-x-api key
+    : <secret>` lost the label to a greedy body and showed the secret), and a UUID in an address
+    cut it (pre-commit differential fuzz of this clause, against main's redactor). A token the
+    entropy rule masks whole is typed by the format inside it (``_entropy_spans``). The four rules
+    the redactor had (``sk-``, ``ghp_``, ``AKIA``, ``xox``) still run where they ran, as they
+    were; here they are started with ``_KEY_START`` and cover every documented form.
 
     Every body is a run the pattern takes greedily, so a key followed by more characters of its
     own alphabet is masked with them rather than cut, and each start fails or matches in one
@@ -964,9 +1003,25 @@ def _key_patterns() -> list[Pattern]:
         ),
         Pattern("npm_token", _key(r"npm_[A-Za-z0-9]{36,}"), hashed=True),
         Pattern("pypi_token", _key(r"pypi-[A-Za-z0-9_-]{50,}"), hashed=True),
-        # Before the PII rules, which cut a UUID at its digit-only groups (see `_HEX_RUN`).
-        Pattern("uuid", _UUID, hashed=True),
+        Pattern(
+            "jwt",
+            # Started as the key formats are: after `_` a JWT is still one, as in GitHub's
+            # `ghs_<app id>_<JWT>` installation tokens (the rule above starts at `\b`).
+            _key(
+                r"(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
+                r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
+            ),
+            hashed=True,
+        ),
+        _UUID_PATTERN,
     ]
+
+
+_CARD: Final = Pattern("card", re.compile(r"\b(?:\d[ -]?){13,19}\b"))
+_PHONE: Final = Pattern(
+    "phone",
+    re.compile(r"(?<![\w.])(?:\+?\d[\d\s().-]{7,}\d(?![\w.])|(?P<skip>\+?\d[\d\s().-]{63,}))"),
+)
 
 
 def _default_patterns() -> list[Pattern]:
@@ -992,32 +1047,30 @@ def _default_patterns() -> list[Pattern]:
         ),
         Pattern(
             "jwt",
-            # Started as the key formats are (`_KEY_START`): after `_` a JWT is still one, as in
-            # GitHub's `ghs_<app id>_<JWT>` installation tokens.
-            _key(
-                r"(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
+            re.compile(
+                r"\b(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
                 r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
             ),
             hashed=True,
         ),
-        *_key_patterns(),
+        # The four key rules as they were; every documented format is a late pattern (A-78).
+        Pattern("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), hashed=True),
+        Pattern("github_token", re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"), hashed=True),
+        Pattern("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), hashed=True),
+        # Slack bot + user + app tokens (the user/app forms were previously uncovered).
+        Pattern("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), hashed=True),
         # --- PII ---
         # With a `skip` branch (SKIP): every start of a long run with no `@` was tried and
         # scanned to its end (100 KB of `1-` took about 7 s, in text the target controls).
         Pattern("email", EMAIL),
         Pattern("iban", re.compile(r"\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b")),
-        Pattern("card", re.compile(r"\b(?:\d[ -]?){13,19}\b")),
+        _CARD,
         Pattern("national_id", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
         Pattern(
             "ipv4",
             re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"),
         ),
-        Pattern(
-            "phone",
-            re.compile(
-                r"(?<![\w.])(?:\+?\d[\d\s().-]{7,}\d(?![\w.])|(?P<skip>\+?\d[\d\s().-]{63,}))"
-            ),
-        ),
+        _PHONE,
     ]
 
 
@@ -1038,7 +1091,10 @@ class Redactor:
 
     ``salt`` keys the corroboration hash (an env-sourced value in production so
     hashes are not correlatable across engagements). ``entropy_threshold`` /
-    ``entropy_min_len`` govern the interim global high-entropy fallback (OD-15).
+    ``entropy_min_len`` govern the interim global high-entropy fallback (OD-15). ``late``
+    runs the documented key formats, the JWT and the UUID after the labelled and the entropy
+    rules (``_late_patterns``, u01 A-78); the CLI turns it off on the redactor it runs before
+    its own entropy pass, and runs it after that pass.
     """
 
     _HIGH_ENTROPY_TOKEN: Final = re.compile(r"[A-Za-z0-9+/_=-]{16,}")
@@ -1050,13 +1106,20 @@ class Redactor:
         patterns: Sequence[Pattern] | None = None,
         entropy_threshold: float = 3.7,
         entropy_min_len: int = 16,
+        late: bool = True,
     ) -> None:
         self._salt = (_PROCESS_SALT if salt is None else salt).encode("utf-8")
         self._patterns: list[Pattern] = (
             list(patterns) if patterns is not None else _default_patterns()
         )
+        self._late: list[Pattern] = _late_patterns() if late else []
         # The mask types kept as written (`_redact_once`), kept in step with `register`.
-        self._mask_types = _OWN_MASK_TYPES | {pattern.type for pattern in self._patterns}
+        self._mask_types = _OWN_MASK_TYPES | {
+            pattern.type for pattern in (*self._patterns, *self._late)
+        }
+        # The phone and card rules leave alone a number inside a UUID (A-78), which a late
+        # pattern masks whole; off only for the identity masks a run store wrote before A-78.
+        self._uuid_whole = True
         self._entropy_threshold = entropy_threshold
         self._entropy_min_len = entropy_min_len
         # The hex run is part of the entropy fallback (A-78): a redactor built without it
@@ -1083,6 +1146,7 @@ class Redactor:
             patterns=self._patterns,
             entropy_threshold=math.inf,
             entropy_min_len=self._entropy_min_len,
+            late=bool(self._late),
         )
         twin._salt = self._salt
         return twin
@@ -1245,25 +1309,27 @@ class Redactor:
 
         working = _URL_USERINFO.sub(_url_password, working)
 
+        # Where the number rules read a number inside a UUID they left whole (`_number_mask`).
+        cuts: _Cuts = {}
         for pattern in self._patterns:
             # A labelled number first, whole: the plain pattern would take its unglued tail and
             # leave the head (`fax.0034-` before a masked `600-123456`).
             if pattern.type == "card":
-                working = self._redact_labelled_number(pattern, LABELLED_CARD, working)
-                working = self._redact_cards(pattern, working)
+                working = self._redact_labelled_number(pattern, LABELLED_CARD, working, cuts)
+                working = self._redact_cards(pattern, working, cuts)
             elif pattern.type == "pem_private_key":
                 working = self._redact_pem(pattern, working, _as_written)
             elif pattern.type == "phone":
-                working = self._redact_labelled_number(pattern, LABELLED_PHONE, working)
-                working = self._redact_phones(pattern, working)
+                working = self._redact_labelled_number(pattern, LABELLED_PHONE, working, cuts)
+                working = self._redact_phones(pattern, working, cuts)
             else:
                 working = pattern.regex.sub(self._make_sub(pattern, _as_written), working)
 
         if heads:
-            working = self._redact_labelled_after_urls(working, heads)
+            working = self._redact_labelled_after_urls(working, heads, cuts)
         else:
             working = self._redact_labeled(working)
-            working = self._redact_high_entropy(working)
+            working = self._redact_high_entropy(working, cuts)
         held = set("".join(written[index] for index in credentials))
         if _EMAIL_MASK in working:  # an address the email rule took holds an `@`
             held.add("@")
@@ -1271,6 +1337,9 @@ class Redactor:
             working = self._url_passwords_as_written(
                 working, _keep, _as_written, written, credentials
             )
+        # Last, after the URL rule as written too, which reads a mask's `:` as a userinfo's and
+        # takes the URL for one its rule read (u01 A-78; pre-commit differential fuzz).
+        working = self.redact_late(working, _as_written)
 
         # One pass: a `str.replace` per kept mask was quadratic with thousands of them.
         return _STASH_TOKEN.sub(lambda m: preserved[int(m.group(1))], working)
@@ -1433,6 +1502,21 @@ class Redactor:
 
         return _sub
 
+    def redact_late(self, text: str, as_written: Callable[[str], str] | None = None) -> str:
+        """Mask the late patterns (:func:`_late_patterns`, A-78) in what ``text`` shows.
+
+        The last rule of a pass, after the labelled and the entropy rules, so each only adds a
+        mask. No late pattern matches inside a mask (none starts with a letter of one, or holds
+        a ``«``, a ``:`` or a ``»``). ``as_written`` writes out a stash token a match holds (the
+        pass's own); the CLI calls it on its own on the parts of an error it kept from its
+        entropy pass, after that pass.
+        """
+
+        written = as_written or (lambda stretch: stretch)
+        for pattern in self._late:
+            text = pattern.regex.sub(self._make_sub(pattern, written), text)
+        return text
+
     def _redact_pem(self, pattern: Pattern, text: str, as_written: Callable[[str], str]) -> str:
         """Mask PEM private keys, skipping the scan entirely when no END marker exists.
 
@@ -1461,7 +1545,9 @@ class Redactor:
 
         return _LABELED_SECRET.sub(_sub, text)
 
-    def _redact_labelled_after_urls(self, text: str, heads: Mapping[int, str]) -> str:
+    def _redact_labelled_after_urls(
+        self, text: str, heads: Mapping[int, str], cuts: _Cuts | None = None
+    ) -> str:
         """The labelled and the entropy rules, and the rest of the labelled values whose head a URL
         mask took (``heads``, #96).
 
@@ -1520,7 +1606,7 @@ class Redactor:
         del parts
         entropy: list[tuple[int, int, str]] = []
         for m in self._HIGH_ENTROPY_TOKEN.finditer(written):
-            spans = self._entropy_spans(m.group(0))
+            spans = self._entropy_spans(m.group(0), cuts)
             if not spans:
                 continue
             # A token lies between two labelled masks (none holds a token character), so one
@@ -1683,7 +1769,7 @@ class Redactor:
         return "".join(out)
 
     def _redact_labelled_number(
-        self, pattern: Pattern, labelled: re.Pattern[str], text: str
+        self, pattern: Pattern, labelled: re.Pattern[str], text: str, cuts: _Cuts | None = None
     ) -> str:
         """Mask the number glued to a phone or card label (the number only, not the label).
 
@@ -1701,27 +1787,66 @@ class Redactor:
                 return m.group(0)
             start, end = m.start(1) - m.start(0), m.end(1) - m.start(0)
             whole = m.group(0)
-            return whole[:start] + self._mask_token(pattern, number) + whole[end:]
+            mask = self._number_mask(pattern, text, m.start(1), m.end(1), cuts)
+            return whole[:start] + mask + whole[end:]
 
         return labelled.sub(_sub, text)
 
-    def _redact_cards(self, pattern: Pattern, text: str) -> str:
+    def _number_mask(
+        self, pattern: Pattern, text: str, start: int, end: int, cuts: _Cuts | None = None
+    ) -> str:
+        """The mask of the number at ``text[start:end]``, a UUID it runs into left whole (A-78).
+
+        The card and phone rules read a UUID's digit-only groups as a number, and a number
+        written before or after a UUID could run into it (`tel +34 600 123 456` and a line break
+        before a UUID starting with a digit): masked, the rest of the UUID was readable, and so
+        was a number another rule had left whole inside it, the UUID being whole when that rule
+        ran. Every number rule leaves a UUID alone, so it is whole when the late pattern masks
+        it; what of the number lies outside it is masked as before.
+        """
+
+        if not self._uuid_whole:
+            return self._mask_token(pattern, text[start:end])
+        uuids = _uuids_overlapping(text, start, end)
+        if not uuids:
+            return self._mask_token(pattern, text[start:end])
+        out: list[str] = []
+        cursor = start
+        for begin, finish in uuids:
+            first, last = max(begin, start), min(finish, end)
+            if cursor < first:
+                out.append(self._mask_token(pattern, text[cursor:first]))
+            out.append(text[first:last])
+            if cuts is not None:  # where the rule would have cut it, for `_uuid_spans`
+                cuts.setdefault(text[begin:finish], set()).add((first - begin, last - begin))
+            cursor = last
+        if cursor < end:
+            out.append(self._mask_token(pattern, text[cursor:end]))
+        return "".join(out)
+
+    def _redact_cards(self, pattern: Pattern, text: str, cuts: _Cuts | None = None) -> str:
         """Card matcher with a Luhn guard to cut valid-shape false positives."""
 
         def _sub(m: re.Match[str]) -> str:
-            digits = re.sub(r"\D", "", m.group(0))
-            # A date-time stamp (`2026-07-09-13-20-01`, 14 digits) passes Luhn for 6 seconds in
-            # 60; the date shape exempts it here as it does from the phone rule.
-            # The match can take a trailing - or space; a version prefix only behind an id.
-            if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
+            if not self._is_card(m, text):
                 return m.group(0)
-            if 13 <= len(digits) <= 19 and _luhn_ok(digits):
-                return self._mask_token(pattern, m.group(0))
-            return m.group(0)
+            return self._number_mask(pattern, text, m.start(), m.end(), cuts)
 
         return pattern.regex.sub(_sub, text)
 
-    def _redact_phones(self, pattern: Pattern, text: str) -> str:
+    @staticmethod
+    def _is_card(m: re.Match[str], text: str) -> bool:
+        """True if the card rule masks its match ``m`` of ``text``."""
+
+        digits = re.sub(r"\D", "", m.group(0))
+        # A date-time stamp (`2026-07-09-13-20-01`, 14 digits) passes Luhn for 6 seconds in
+        # 60; the date shape exempts it here as it does from the phone rule.
+        # The match can take a trailing - or space; a version prefix only behind an id.
+        if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
+            return False
+        return 13 <= len(digits) <= 19 and _luhn_ok(digits)
+
+    def _redact_phones(self, pattern: Pattern, text: str, cuts: _Cuts | None = None) -> str:
         """Phone matcher with a date-shape guard to cut dated-identifier false positives.
 
         A match that is entirely a date / dated version suffix / run id (:func:`is_date_stamp`)
@@ -1729,13 +1854,50 @@ class Redactor:
         """
 
         def _sub(m: re.Match[str]) -> str:
-            if skipped(m):
+            if not self._is_phone(m, text):
                 return m.group(0)
-            if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
-                return m.group(0)
-            return self._mask_token(pattern, m.group(0))
+            return self._number_mask(pattern, text, m.start(), m.end(), cuts)
 
         return pattern.regex.sub(_sub, text)
+
+    @staticmethod
+    def _is_phone(m: re.Match[str], text: str) -> bool:
+        """True if the phone rule masks its match ``m`` of ``text``."""
+
+        if skipped(m):
+            return False
+        return not is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start()))
+
+    def _uuid_spans(self, token: str, cuts: _Cuts | None) -> list[tuple[int, int]]:
+        """Where, in ``token``, a UUID a number rule left whole is masked (A-78).
+
+        The UUID, and with it each stretch of the token the entropy rule would have masked
+        whole had the rule cut the UUID where it read a number (``cuts``, recorded by
+        :meth:`_number_mask`), as it did before A-78: the rule then read the token in pieces,
+        and a piece holding the UUID's tail and what is glued after it (`<uuid>_<secret>`) was
+        masked whole, which a mask of the UUID alone left readable (pre-commit differential
+        fuzz: 439 of 20,000 texts gluing a secret to such a UUID showed it). A UUID no number
+        rule read is the late pattern's.
+        """
+
+        spans: list[tuple[int, int]] = []
+        for found in _UUID.finditer(token):
+            inside = cuts.get(found.group()) if cuts else None
+            if not inside:
+                continue
+            first, last = found.span()
+            begin, finish = first, last
+            pieces: list[tuple[int, int]] = []
+            cursor = 0
+            for start, end in sorted((first + a, first + b) for a, b in inside):
+                pieces.append((cursor, start))
+                cursor = max(cursor, end)
+            pieces.append((cursor, len(token)))
+            for start, end in pieces:
+                if start < end and self._masks_whole(token[start:end]):
+                    begin, finish = min(begin, start), max(finish, end)
+            spans.append((begin, finish))
+        return spans
 
     def _is_structured(self, token: str) -> bool:
         """True when ``token`` is a structured identifier/path rather than an opaque blob.
@@ -1759,29 +1921,52 @@ class Redactor:
             and all(_HEX_SEGMENT.fullmatch(segment) for segment in segments)
         )
 
-    def _entropy_spans(self, token: str) -> list[tuple[int, int, str]]:
-        """What the entropy fallback masks of ``token``, as ``(start, end, mask)`` in it.
+    def _masks_whole(self, token: str) -> bool:
+        """True if the entropy rule masks ``token`` whole (not structured, long, high entropy)."""
 
-        The whole token when it is not a structured identifier (:meth:`_is_structured`) and it
-        clears both the length and the bits/char threshold; otherwise each run of
-        :data:`_HEX_RUN` inside it (A-78), when the fallback is on; else nothing.
-        """
-
-        if (
+        return (
             not self._is_structured(token)
             and len(token) >= self._entropy_min_len
             and _shannon_entropy(token) >= self._entropy_threshold
-        ):
-            mask = _MASK_TEMPLATE_HASHED.format(type="high_entropy", digest=self._digest(token))
+        )
+
+    def _entropy_spans(self, token: str, cuts: _Cuts | None = None) -> list[tuple[int, int, str]]:
+        """What the entropy fallback masks of ``token``, as ``(start, end, mask)`` in it.
+
+        The whole token when the rule masks it whole (:meth:`_masks_whole`), typed by the first
+        late pattern it holds (A-78: the same mask, named better). Otherwise, when the fallback
+        is on: each UUID the card and phone rules left alone, with what the rule would have
+        masked around it had they cut it (:meth:`_uuid_spans`), and each run of
+        :data:`_HEX_RUN` outside those and outside a late pattern's match, which the late pass
+        masks with its type (masked here, `sk-proj-` and `a` written 156 times read
+        `sk-proj-«REDACTED:hex_token»`). ``cuts`` are the pass's (:meth:`_uuid_spans`).
+        """
+
+        if self._masks_whole(token):
+            kind = next((late.type for late in self._late if _matches(late, token)), "high_entropy")
+            mask = _MASK_TEMPLATE_HASHED.format(type=kind, digest=self._digest(token))
             return [(0, len(token), mask)]
         if not self._hex_runs or len(token) < _SHAPE_MIN_LEN:
             return []
-        return [
-            (m.start(), m.end(), self._mask_token(_HEX_TOKEN, m[0]))
-            for m in _HEX_RUN.finditer(token)
+        uuids = self._uuid_spans(token, cuts) if self._uuid_whole else []
+        runs = list(_HEX_RUN.finditer(token))
+        keys = (
+            [m.span() for late in self._late for m in late.regex.finditer(token) if not skipped(m)]
+            if runs
+            else []
+        )
+        taken = [*uuids, *keys]
+        spans = [
+            (start, end, self._mask_token(_UUID_PATTERN, token[start:end])) for start, end in uuids
         ]
+        spans += [
+            (m.start(), m.end(), self._mask_token(_HEX_TOKEN, m[0]))
+            for m in runs
+            if not any(start < m.end() and m.start() < end for start, end in taken)
+        ]
+        return sorted(spans)
 
-    def _redact_high_entropy(self, text: str) -> str:
+    def _redact_high_entropy(self, text: str, cuts: _Cuts | None = None) -> str:
         """Interim global entropy fallback for unknown-shape secrets (OD-15).
 
         Structured identifiers/paths are skipped (:meth:`_is_structured`); everything else
@@ -1791,7 +1976,7 @@ class Redactor:
 
         def _sub(m: re.Match[str]) -> str:
             token = m.group(0)
-            spans = self._entropy_spans(token)
+            spans = self._entropy_spans(token, cuts)
             if not spans:
                 return token
             out: list[str] = []
@@ -1848,32 +2033,10 @@ def redact(obj: object) -> object:
 _IDENTITY = Redactor(salt="ildottore:identity:v1")
 
 
-def _patterns_before_a78() -> list[Pattern]:
-    """The built-in patterns as they were before u01 A-78: the four key rules started with ``\b``,
-    no other key format, no UUID. Read only to recognise an identity mask a run store wrote then
-    (:func:`identity_masks`)."""
-
-    legacy = [
-        Pattern(
-            "jwt",
-            re.compile(
-                r"\b(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
-                r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
-            ),
-            hashed=True,
-        ),
-        Pattern("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), hashed=True),
-        Pattern("github_token", re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"), hashed=True),
-        Pattern("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), hashed=True),
-        Pattern("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), hashed=True),
-    ]
-    added = {pattern.type for pattern in _key_patterns()} | {"jwt"}
-    current = [pattern for pattern in _default_patterns() if pattern.type not in added]
-    return [current[0], *legacy, *current[1:]]  # the private key first, as it was
-
-
-_IDENTITY_BEFORE_A78 = Redactor(salt="ildottore:identity:v1", patterns=_patterns_before_a78())
-_IDENTITY_BEFORE_A78._hex_runs = False
+#: The identity masks as the redactor before u01 A-78 wrote them (:func:`identity_masks`): the
+#: same patterns, no late pass, no hex rule, numbers inside a UUID read as numbers.
+_IDENTITY_BEFORE_A78 = Redactor(salt="ildottore:identity:v1", late=False)
+_IDENTITY_BEFORE_A78._hex_runs = _IDENTITY_BEFORE_A78._uuid_whole = False
 
 
 _SHA256_HEX_RE: Final = re.compile(r"[0-9a-f]{64}")

@@ -125,9 +125,13 @@ def test_a_documented_key_is_masked_with_its_type_in_every_context(
         private = body()
         out = redactor.redact_text(CONTEXTS[context].format(s=prefix + private))
         assert not _leaks(out, private), out
-        # After a label the labelled rule masks the value again, mask and all, as on main.
-        typed = ("labeled_secret", kind) if context in LABELLED else (kind,)
-        assert any(f"«REDACTED:{t}:" in out for t in typed), out
+        # Its own type: the late pattern's, or the entropy rule's mask of its token, typed by it.
+        # After a label, the labelled rule's, as on main; a Slack body's digit groups are a phone
+        # number to that rule, which runs first, as on main.
+        typed = {kind} | ({"labeled_secret"} if context in LABELLED else set())
+        if prefix.startswith("xoxb-"):
+            typed |= {"phone", "high_entropy"}
+        assert any(f"«REDACTED:{t}" in out for t in typed), out
         assert redactor.redact_text(out) == out
 
 
@@ -358,3 +362,44 @@ def test_a_hex_run_and_a_uuid_after_a_labelled_url_are_masked() -> None:
     assert "3f2a1b4c" not in out
     assert "Value99xyz" not in out
     assert "«REDACTED:hex_token:" in out and "«REDACTED:uuid:" in out
+
+
+# --- the late pass only adds to what the rules before it masked ----------------------------
+# Run before the labelled and the entropy rules, the key formats and the UUID left readable what
+# those rules had masked (pre-commit differential fuzz against main's redactor, 20,000 texts:
+# 5,120 showed text main masks, 1,662 of them 8 characters or more of a planted secret).
+
+
+def test_a_key_glued_to_a_word_is_masked_with_its_token_and_typed() -> None:
+    """``x_<key>`` was the entropy rule's whole token on main; the key alone left ``x_``."""
+
+    key = _p("sk", "-proj-") + _rnd(_URLSAFE, 156)
+    out = Redactor(salt="s").redact_text(f"see x_{key}-tail here")
+    assert out.startswith("see «REDACTED:openai_key:") and out.endswith("» here"), out
+
+
+def test_a_label_glued_after_a_greedy_key_still_masks_its_value() -> None:
+    """``AIza`` takes `-` in its body: run first, it took `-api` and the label was lost."""
+
+    key = _p("AI", "za") + "Sy" + _rnd(_URLSAFE, 33)
+    out = Redactor(salt="s").redact_text(f"{key}-x-api key : Zq8w@Secret_value end")
+    assert "Zq8w" not in out and "Secret_value" not in out, out
+
+
+def test_a_uuid_as_the_user_of_an_address_is_masked_with_the_address() -> None:
+    out = Redactor(salt="s").redact_text("mail 3f2a1b4c-5d6e-4f80-9a1b-2c3d4e5f6071@example.com ok")
+    assert out == "mail «REDACTED:email» ok"
+
+
+@pytest.mark.parametrize("glue", ["_", "-", "=", "/", "_id_"])
+@pytest.mark.parametrize("after", [True, False])
+def test_a_secret_glued_to_a_uuid_with_number_groups_stays_masked(glue: str, after: bool) -> None:
+    """Main cut such a UUID at its numbers and masked the piece holding the secret whole."""
+
+    redactor = Redactor(salt="s")
+    for _ in range(200):
+        value = f"{_hex(8)}-{_hex(4)}-{_rnd(string.digits, 4)}-{_rnd(string.digits, 4)}-{_hex(12)}"
+        secret = _rnd(_ALNUM, 20)
+        text = f"x {value}{glue}{secret} y" if after else f"x {secret}{glue}{value} y"
+        out = redactor.redact_text(text)
+        assert value not in out and secret[:8] not in out and secret[-8:] not in out, out
