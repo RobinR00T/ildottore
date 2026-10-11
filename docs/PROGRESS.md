@@ -3,6 +3,46 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11: eight open decisions closed under the owner's delegation
+
+- On `feat/decide-signoffs-and-websocket` (from `main` at `6d5f7ae`). The owner delegated the open
+  decisions on 2026-10-11 at 10:09 ("arreglalo todo según mejores prácticas"); each one below is
+  recorded as decided under that delegation, by best practice and revisable, in its `00-INDEX` row
+  and its unit's §9, with the reasoning, the alternative not taken and the reversal. One commit
+  per decision. No A-clause was needed (A-75 stays free).
+- **OD-37, built** (`0bdb6ee`, `82cacc6`): `dottore fleet` refuses a `ws://` or `wss://` endpoint
+  and `provider: websocket`, in a target or the `judge:` block, before it writes anything (exit
+  3), pointing to `examples/target.websocket.yaml`; it used to write a `provider: rest` file that
+  `run` refused. `tests/cli/test_fleet_websocket.py`: 17 tests, 16 failing on `6d5f7ae`.
+- **OD-35** (`6862347`): one query per connection, by design; the loader's refusal of
+  `one_query_in_flight: false` now says so (one test changed first, failing on the old message).
+- **OD-36** (`4036d7f`): no reconnect mid-conversation, by design, `{{messages}}` included; docs
+  only.
+- **OD-7** (`106ed51`): fixtures inline only; the u03 and u13 contracts that claimed a sidecar
+  location are corrected; `tests/golden/test_fixture_location.py` (6 tests) pins schema, model and
+  digest.
+- **OD-34** (`8e33d40`): the frame transcript stays in `raw_ids["websocket"]["frames"]`. Measured
+  on a copy of `0bdb6ee` with an optional `transcript` field added: 1 of 5,082 tests fails (the
+  JSON report's golden snapshot), 323 s.
+- **OD-2** (`c0fde17`): the checksum is integrity only; authenticity a non-goal until key
+  management (`NON-GOALS.md`); MANUAL §4.1 "Signing a scope (out of band)", run as written with
+  OpenSSH 10.3p1 on the mock: verify, run (exit 0), `shasum -a 256` equal to `run.scope_sha256`
+  (`38529c5c...00c2d`); one appended line made the verify exit 255.
+- **OD-11** (`e379fd0`): the PII spec stays off; its opt-in is DL4's two keys in one change (a
+  pack-loading flag and `--allow-pii-elicitation`), never the run flag alone; the policy-pack
+  flag stays open (it also gates the seven `agentic-extortion` specs). Not built.
+- **OD-5** (`f84a2ee`): signed off as built, no `--adaptive` flag. Measured on the mock: a `-sV`
+  campaign halted (`--quick --runs 2 -sV --budget-requests 25`, exit 3, 9 of 18 specs) and
+  resumed with `--deep` alone completes (exit 2, 18 of 18) in declared order, since both flags
+  set the recorded mode; accepted (the same attempts are sent and scored) and documented.
+- `PYTHONPATH=<wt>/src:<wt> make --no-print-directory gates` green on `f84a2ee` (10:35 to 10:41
+  CEST): 5,088 tests, 97.70% coverage (every new line of `cli/fleet.py` covered), ruff and the
+  format check clean (391 files), mypy clean (157 source files), four import contracts kept, 75
+  specs lint OK (14 suites, 1 pack), self-scan 0 high/critical, bandit and pip-audit clean.
+- Open after this: the policy-pack flag (unnumbered, `docs/12`), which OD-11's opt-in waits on;
+  `--deep` as timing only (OD-5's alternative) if the owner wants the recorded mode to say whether
+  a fingerprint ordered the plan.
+
 ## State, 2026-10-10 (night): the verification audit's three LOWs
 
 - The verification audit of `5bd7c45` found it merge-ready, with three LOWs, closed one commit each.
