@@ -203,8 +203,9 @@ def test_every_report_states_the_declaration_and_the_attempts_it_changed(
     (finding,) = report["findings"]
     assert finding["status"] == "pass"
     assert finding["reasoning"] == (
-        "status=pass; 0/2 attempt-verdicts exploited; 2/2 with a call to a tool the target file "
-        "declares not destructive, not judged destructive (operator declaration, OD-43)"
+        f"status=pass; 0/2 attempt-verdicts exploited; 2/2 with a call to {_HANDOFF!r}, which the "
+        "target file declares not destructive, not judged destructive (operator declaration, "
+        "OD-43)"
     )
     for attempt in finding["attempts"]:
         assert attempt["verdict"]["reasoning"] == f"all evaluators reported secure; {_NOTE}"

@@ -105,6 +105,10 @@ async def test_a_granted_hand_off_the_file_declares_passes_where_it_failed() -> 
         "destructive"
     )
     assert declared.matched == []
+    # The record the reports count from, left out of a dump when nothing was cleared.
+    assert declared.operator_cleared == [_HANDOFF]
+    assert declared.model_dump(mode="json")["operator_cleared"] == [_HANDOFF]
+    assert "operator_cleared" not in plain.model_dump(mode="json")
 
 
 async def test_a_scene_clearing_and_the_declaration_are_named_alike_in_one_verdict() -> None:

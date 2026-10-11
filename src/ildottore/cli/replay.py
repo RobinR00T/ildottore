@@ -19,7 +19,6 @@ from ildottore.shared.provider_filter import (
     cut_by_output_filter,
     filter_side_unknown,
 )
-from ildottore.shared.tool_abuse import OPERATOR_DECLARATION
 from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
 
 __all__ = ["render_replay", "replay", "replay_checked"]
@@ -164,7 +163,7 @@ def render_replay(result: ReplayResult) -> str:
 def _declared(attempt: Attempt) -> bool:
     """True when ``attempt``'s verdict says the operator's declaration changed it (OD-43)."""
 
-    return attempt.verdict is not None and OPERATOR_DECLARATION in attempt.verdict.reasoning
+    return attempt.verdict is not None and bool(attempt.verdict.operator_cleared)
 
 
 def _no_temperature(attempt: Attempt) -> bool:

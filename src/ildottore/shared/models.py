@@ -526,6 +526,12 @@ class Verdict(_Frozen):
     """Evaluator output (``docs/04 §1-§3``, contract §6).
 
     ``inconclusive_reason`` is set only when ``status == inconclusive``.
+
+    ``operator_cleared`` names the called tools only the target file's declaration kept from
+    being judged destructive (OD-43, u06 A-72): ``tool_call`` sets it on its verdict and the
+    runner on the attempt's aggregate, beside the note in ``reasoning``, and the reports count
+    from it, never from the text, which a judge or a tool's name can echo. Empty, it is left out
+    of a dump, so every other verdict is stored, reported and hashed byte for byte as before.
     """
 
     status: VerdictStatus
@@ -534,6 +540,16 @@ class Verdict(_Frozen):
     matched: list[str] = Field(default_factory=list)
     evaluator_type: str
     inconclusive_reason: InconclusiveReason | None = None
+    operator_cleared: list[str] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _without_an_empty_clearing(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The dump as before OD-43 when the operator's declaration cleared nothing."""
+
+        dumped: dict[str, Any] = handler(self)
+        if not dumped.get("operator_cleared"):
+            dumped.pop("operator_cleared", None)
+        return dumped
 
     def model_post_init(self, _context: object) -> None:
         if self.status is VerdictStatus.INCONCLUSIVE and self.inconclusive_reason is None:

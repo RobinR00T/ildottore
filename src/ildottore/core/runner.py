@@ -1151,7 +1151,7 @@ class CampaignRunner:
             )
             if traced is not None:
                 return traced
-            return Verdict(
+            blocked = Verdict(
                 status=VerdictStatus.INCONCLUSIVE,
                 confidence=0.0,
                 reasoning=(
@@ -1162,6 +1162,22 @@ class CampaignRunner:
                 evaluator_type="aggregate",
                 inconclusive_reason=InconclusiveReason.BLOCKED_BY_PROVIDER_FILTER,
             )
+            # The trace the filter cut short was judged with the operator's declaration, and a
+            # declared hand-off in it is what kept this from a fail: said, as every verdict the
+            # declaration changed says it (pre-merge audit of `ed381359`, M1).
+            if attempt.response is not None and attempt.response.tool_calls:
+                traced_spec = spec.model_copy(
+                    update={
+                        "evaluators": [c for c in spec.evaluators if c.type in TRACE_EVALUATORS]
+                    }
+                )
+                response = (
+                    canonical_tool_calls(attempt.response, target, spec)
+                    if target is not None
+                    else attempt.response
+                )
+                blocked = _note_operator_declaration(blocked, traced_spec, response, target)
+            return blocked
         if env_error or attempt.response is None:
             return Verdict(
                 status=VerdictStatus.INCONCLUSIVE,
@@ -2091,8 +2107,13 @@ def _note_operator_declaration(
     cleared = operator_cleared_calls(names, declared, granted, tools)
     if not cleared:
         return verdict
+    # The note a reader sees, and the record the reports count from: never the text, which a
+    # judge's words or a tool's name can echo (pre-merge audit of `ed381359`, L1).
     return verdict.model_copy(
-        update={"reasoning": f"{verdict.reasoning}; {operator_note(cleared)}"}
+        update={
+            "reasoning": f"{verdict.reasoning}; {operator_note(cleared)}",
+            "operator_cleared": sorted({*verdict.operator_cleared, *cleared}),
+        }
     )
 
 
@@ -2168,7 +2189,11 @@ def _judge_record(verdict: Verdict) -> str:
     report's redactor masks them as it masks every reasoning.
     """
 
-    words = " ".join(verdict.reasoning.split())
+    # The judge's words never read as the operator's note (OD-43): nothing counts from that text
+    # now, and a reader should not take a judge's echo of it for one (audit of `ed381359`, L1).
+    words = " ".join(verdict.reasoning.split()).replace(
+        OPERATOR_DECLARATION, "[the judge wrote: operator declaration]"
+    )
     if len(words) > _JUDGE_NOTE_CHARS:
         words = words[: _JUDGE_NOTE_CHARS - 3] + "..."
     return (
@@ -2327,13 +2352,16 @@ def _finding_reasoning(
         )
     if unsaid:
         line += f"; {unsaid}/{total} stopped by the provider's filter on a side it did not report"
-    # The attempts whose verdict the operator's target file changed (OD-43): the line SARIF,
-    # JUnit and the HTML show for a finding says how many, and each attempt's verdict says which.
-    declared = sum(1 for v in verdicts if OPERATOR_DECLARATION in v.reasoning)
+    # The attempts whose verdict the operator's target file changed (OD-43), counted from their
+    # record and naming the tools, so the line SARIF, JUnit, the HTML and the terminal show for a
+    # finding says which (pre-merge audit of `ed381359`, L6).
+    declared = [v for v in verdicts if v.operator_cleared]
     if declared:
+        names = sorted({name for v in declared for name in v.operator_cleared})
         line += (
-            f"; {declared}/{total} with a call to a tool the target file declares not "
-            "destructive, not judged destructive (operator declaration, OD-43)"
+            f"; {len(declared)}/{total} with a call to {', '.join(repr(n) for n in names)}, which "
+            "the target file declares not destructive, not judged destructive (operator "
+            "declaration, OD-43)"
         )
     return line
 

@@ -57,7 +57,6 @@ from ildottore.shared.provider_filter import (
     filter_side_unknown,
     side_unknown_attempt_ids,
 )
-from ildottore.shared.tool_abuse import OPERATOR_DECLARATION
 
 __all__ = [
     "ATLAS_MATRIX_RELEASE",
@@ -256,7 +255,7 @@ def declared_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:
     return {
         attempt.attempt_id
         for attempt in attempts
-        if attempt.verdict is not None and OPERATOR_DECLARATION in attempt.verdict.reasoning
+        if attempt.verdict is not None and attempt.verdict.operator_cleared
     }
 
 
