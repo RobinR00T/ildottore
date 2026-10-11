@@ -19,6 +19,11 @@ where to reverse it.
   runs the rest. Lint keeps `EVALUATOR_MISCONFIGURED` rather than a code of its own. No behaviour
   change.
 
+- **OD-25, the name of a file that does not exist in a CLI error: kept masked (A-38).** The
+  existing directories still print; the missing name is judged as text, so a key typed where a file
+  belongs (`<key>.json`, a connection string) stays masked in a terminal and a CI log. No behaviour
+  change.
+
 ### Changed (a reply the provider's filter cut or replaced is never a pass: OD-42)
 
 - **An empty or canned reply from the provider's filter passed the spec.** A provider's output

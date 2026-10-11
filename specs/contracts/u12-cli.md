@@ -1119,13 +1119,18 @@ by `tests/cli/test_provider_output_filter_campaign.py`.
   As built: both ship.
 - `--compare` matrix output format for the terminal (propose compact table; JSON via `-oJ`).
 - **OD-25** the name of a file that does not exist in a CLI error (a mistyped report named after a
-  commit SHA): print it, or keep it masked. Built reversibly (2026-10-07, A-38): masked, as on main,
-  its existing directories printed up to the first whitespace, a quote, a bracket, a comma or a
-  semicolon. Printing the name an `OSError` carries when it looks like a file's (an extension, a
-  directory that exists) printed an `sk-ant-` key given as `<key>.json` and an Azure connection
-  string in the pre-commit audit. Alternatives: print the directory and the extension and mask the
-  stem unless it is a 40- or 64-hex run (a hex key typed as a path would then print); or print a
-  name only when it is the command line's own argument.
+  commit SHA): print it, or keep it masked. **Decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: kept masked, as built (2026-10-07, A-38)**, its existing directories printed
+  up to the first whitespace, a quote, a bracket, a comma or a semicolon. An error line reaches a
+  terminal and a CI log, and a name given where a file belongs can be a secret pasted in the wrong
+  argument: the redactor fails closed on a token it cannot tell from a key, and printing the name an
+  `OSError` carries when it looks like a file's (an extension, a directory that exists) printed an
+  `sk-ant-` key given as `<key>.json` and an Azure connection string in the pre-commit audit. The
+  name is on the operator's own command line, so masking it costs them little. Not taken: print the
+  directory and the extension and mask the stem unless it is a 40- or 64-hex run (a hex key typed as
+  a path would then print); or print a name only when it is the command line's own argument (where a
+  misplaced key sits). Reversing it widens `_whole_path_spans` in `cli/app.py` to a missing path's
+  name; `tests/cli/test_masked_paths.py` pins the masking.
 
 - **OD-20** (open, 2026-10-07): a JSON output printed to a CI log can still carry a runner's
   log command (`##[cmd]`, `##vso[`), because JSON keeps every value as it is (§6). A = leave
