@@ -261,6 +261,7 @@ def _load_pack_dir(pack_dir: Path, display_root: Path) -> LoadResult:
         return result
 
     specs: list[AttackSpec] = []
+    spec_files: list[str] = []
     attacks_dir = pack_dir / "attacks"
     if attacks_dir.is_dir():
         for f in _yaml_files(attacks_dir):
@@ -269,6 +270,7 @@ def _load_pack_dir(pack_dir: Path, display_root: Path) -> LoadResult:
             result.errors.extend(errs)
             if spec is not None:
                 specs.append(spec)
+                spec_files.append(str(f))
 
     suites: list[Suite] = []
     suites_dir = pack_dir / "suites"
@@ -280,7 +282,11 @@ def _load_pack_dir(pack_dir: Path, display_root: Path) -> LoadResult:
             if suite is not None:
                 suites.append(suite)
 
-    result.packs.append(LoadedPack(manifest=manifest, root=pack_dir, specs=specs, suites=suites))
+    result.packs.append(
+        LoadedPack(
+            manifest=manifest, root=pack_dir, specs=specs, suites=suites, spec_files=spec_files
+        )
+    )
     return result
 
 
@@ -290,6 +296,7 @@ def _load_loose_tree(root: Path, display_root: Path) -> LoadResult:
     files = [root] if root.is_file() else _yaml_files(root)
     result.files = len(files)
     specs: list[AttackSpec] = []
+    spec_files: list[str] = []
     for f in files:
         # A file named on the command line is the operator's choice; one found in a directory
         # must resolve inside it, like a pack's.
@@ -297,6 +304,7 @@ def _load_loose_tree(root: Path, display_root: Path) -> LoadResult:
         result.errors.extend(errs)
         if spec is not None:
             specs.append(spec)
+            spec_files.append(str(f))
     if specs or not result.errors:
         manifest = Pack(
             id=_SYNTHETIC_PACK_ID,
@@ -304,7 +312,9 @@ def _load_loose_tree(root: Path, display_root: Path) -> LoadResult:
             name="Loose specs (no pack.yaml)",
             specs=[s.id for s in specs],
         )
-        result.packs.append(LoadedPack(manifest=manifest, root=root, specs=specs))
+        result.packs.append(
+            LoadedPack(manifest=manifest, root=root, specs=specs, spec_files=spec_files)
+        )
     return result
 
 

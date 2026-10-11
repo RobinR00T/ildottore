@@ -175,6 +175,7 @@ __all__ = [
     "scope_endpoint_of",
     "sent_sampling_for",
     "shown_auth_ref",
+    "spec_id_collisions",
     "takes_sampling",
     "target_uses_mock",
     "unset_credentials",
@@ -245,6 +246,37 @@ def load_registry(spec_paths: list[Path]) -> tuple[Registry, list[LintError]]:
     # A warning (``FILES_NOT_READ``) is lint's to print: it refuses nothing here.
     errors = [e for e in result.errors if e.severity is LintSeverity.ERROR]
     return Registry.from_packs(result.packs), errors
+
+
+def spec_id_collisions(registry: Registry) -> dict[str, list[str]]:
+    """Each spec id more than one loaded file declares, with those files in load order.
+
+    ``lint`` reports such a collision (``ID_COLLISION``); a run took the first file and dropped
+    the rest without a word, a ``--spec-path`` pack that redeclared a shipped id included (u12
+    A-82, CLI audit L2). A file the loader did not record (a pack built in code) reads
+    ``<pack id>``.
+    """
+
+    files: dict[str, list[str]] = {}
+    for pack in registry.packs():
+        for index, spec in enumerate(pack.specs):
+            files.setdefault(spec.id, []).append(pack.spec_file(index) or f"<pack {pack.id}>")
+    # One file read twice (a spec path given twice, or `specs` and `specs/attacks`) declares
+    # nothing twice: the same bytes, whichever is taken.
+    return {
+        spec_id: found
+        for spec_id, found in files.items()
+        if len({_real(name) for name in found}) > 1
+    }
+
+
+def _real(name: str) -> str:
+    """``name`` resolved, to tell one file read twice from two files; as given if it cannot be."""
+
+    try:
+        return str(Path(name).resolve())
+    except (OSError, RuntimeError, ValueError):
+        return name
 
 
 def refuse_spec_paths_that_hold_nothing(load_errors: list[LintError], *, to: str) -> None:

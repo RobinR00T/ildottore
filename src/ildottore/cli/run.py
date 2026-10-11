@@ -1686,6 +1686,25 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first.",
             spec_files=_spec_files_on_disk(spec_paths, [e.path for e in load_errors[:5] if e.path]),
         )
+    # A spec id two files declare: the first loaded won without a word (u12 A-82, CLI audit
+    # L2). Refused whatever the selection, as a broken file is: which spec an id names is the
+    # battery's question, and lint already calls it an error.
+    collisions = wiring.spec_id_collisions(registry)
+    if collisions:
+        shown = "; ".join(
+            f"spec id {spec_id!r} is declared twice: by {' and by '.join(files)}"
+            for spec_id, files in list(collisions.items())[:5]
+        )
+        more = f" (and {len(collisions) - 5} more id(s))" if len(collisions) > 5 else ""
+        raise SpecLoadError(
+            f"{shown}{more}; a run would take the first file and drop the other without a "
+            "word. Give one of them another id, or leave one spec path out (`dottore lint` "
+            "lists every collision).",
+            spec_files=_spec_files_on_disk(
+                spec_paths,
+                [name for files in collisions.values() for name in files],
+            ),
+        )
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
 

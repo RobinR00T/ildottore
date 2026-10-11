@@ -670,7 +670,7 @@ def _report(path: Path, spec_id: str) -> Path:
                         "evidence": [],
                         "reasoning": "x",
                     }
-                ]
+                ],
             }
         )
     )

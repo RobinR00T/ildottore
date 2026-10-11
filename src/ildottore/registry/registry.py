@@ -35,6 +35,7 @@ class Registry:
         self._packs: list[LoadedPack] = []
         self._specs: dict[str, AttackSpec] = {}
         self._spec_pack: dict[str, str] = {}  # spec id → owning pack id
+        self._spec_file: dict[str, str | None] = {}  # spec id → the file it was read from
         self._suites: dict[str, Suite] = {}
         self._collisions: list[LintError] = []
 
@@ -48,15 +49,24 @@ class Registry:
 
     def _add_pack(self, pack: LoadedPack) -> None:
         self._packs.append(pack)
-        for spec in pack.specs:
+        for index, spec in enumerate(pack.specs):
+            file = pack.spec_file(index)
             if spec.id in self._specs:
+                first = self._spec_file[spec.id]
+                # Both files, when the loader recorded them: two files of one directory share a
+                # pack, and the pack's name said nothing about which two (u12 A-82).
+                where = (
+                    f"declared by {first} (pack {self._spec_pack[spec.id]!r}); {file} (pack "
+                    f"{pack.id!r}) re-declares it"
+                    if first is not None and file is not None
+                    else f"declared by pack {self._spec_pack[spec.id]!r}; pack {pack.id!r} "
+                    "re-declares it"
+                )
                 self._collisions.append(
                     LintError(
                         code=LintCode.ID_COLLISION,
                         message=(
-                            f"spec id {spec.id!r} already declared by pack "
-                            f"{self._spec_pack[spec.id]!r}; pack {pack.id!r} re-declares it "
-                            f"without an explicit 'extends'"
+                            f"spec id {spec.id!r} already {where} without an explicit 'extends'"
                         ),
                         spec_id=spec.id,
                         path=str(pack.root),
@@ -65,6 +75,7 @@ class Registry:
                 continue  # first declaration wins; do not silently override
             self._specs[spec.id] = spec
             self._spec_pack[spec.id] = pack.id
+            self._spec_file[spec.id] = file
         for suite in pack.suites:
             # Later packs may add suites; a suite-id clash is not a spec collision but we
             # keep the first to preserve reproducibility.
@@ -76,6 +87,11 @@ class Registry:
     def collisions(self) -> list[LintError]:
         """The ``ID_COLLISION`` findings recorded while merging (read-only)."""
         return list(self._collisions)
+
+    def spec_file(self, spec_id: str) -> str | None:
+        """The file the registered spec ``spec_id`` was read from, when the loader recorded it."""
+
+        return self._spec_file.get(spec_id)
 
     # --- API (contract §3) -----------------------------------------------------------
 
