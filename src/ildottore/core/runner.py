@@ -1113,15 +1113,8 @@ class CampaignRunner:
             if target is not None
             else attempt.response
         )
-        granted, declared = _granted_and_declared(target)
         per_evaluator = await self._run_evaluators(
-            spec,
-            attempt.request,
-            response,
-            identities,
-            canary_owners,
-            granted_tools=granted,
-            not_destructive_tools=declared,
+            spec, attempt.request, response, identities, canary_owners, target=target
         )
         combined = _combine_verdicts(per_evaluator, spec, swept=identities is not None)
         # Only a verdict that is not a fail is in doubt: a reply that leaks without the tool
@@ -1151,11 +1144,10 @@ class CampaignRunner:
                 ),
                 spec,
                 response,
-                granted,
-                declared,
+                target,
             )
         return _note_operator_declaration(
-            _note_not_consulted(combined, per_evaluator), spec, response, granted, declared
+            _note_not_consulted(combined, per_evaluator), spec, response, target
         )
 
     async def _trace_before_block(
@@ -1186,15 +1178,13 @@ class CampaignRunner:
             if target is not None
             else attempt.response
         )
-        granted, declared = _granted_and_declared(target)
         verdicts = await self._run_evaluators(
             spec.model_copy(update={"evaluators": evaluators}),
             attempt.request,
             response,
             identities,
             canary_owners,
-            granted_tools=granted,
-            not_destructive_tools=declared,
+            target=target,
         )
         fails = [v for v in verdicts if v.status is VerdictStatus.FAIL]
         if not fails:
@@ -1212,8 +1202,7 @@ class CampaignRunner:
             ),
             spec,
             response,
-            granted,
-            declared,
+            target,
         )
 
     async def _run_evaluators(
@@ -1224,10 +1213,14 @@ class CampaignRunner:
         identities: dict[str, ModelResponse] | None = None,
         canary_owners: dict[str, str] | None = None,
         *,
-        granted_tools: list[str] | None = None,
-        not_destructive_tools: list[str] | None = None,
+        target: Target | None = None,
     ) -> list[Verdict]:
         """Evaluate one response with each of the spec's configured evaluators.
+
+        ``target`` gives every evaluator's context what a seeded deployment's file says of its
+        own tools: the ones it grants beyond the spec's scene (OD-18 B) and the ones it declares
+        not destructive (OD-43). Every path that judges a reply comes through here with it, so
+        none can judge a tool call without the operator's declaration.
 
         A configured evaluator type absent from the registry yields an
         ``inconclusive`` verdict for that entry (never a silent skip - the linter
@@ -1244,6 +1237,7 @@ class CampaignRunner:
         """
 
         canaries = list(spec.setup.canaries or []) if spec.setup is not None else []
+        granted, declared = _granted_and_declared(target)
         verdicts: list[Verdict] = []
         refused: BudgetExhausted | None = None
         for config in spec.evaluators:
@@ -1272,8 +1266,8 @@ class CampaignRunner:
                 canaries=canaries,
                 identities=identities,
                 canary_owners=canary_owners or {},
-                granted_tools=list(granted_tools or []),
-                not_destructive_tools=list(not_destructive_tools or []),
+                granted_tools=list(granted),
+                not_destructive_tools=list(declared),
             )
             try:
                 verdicts.append(await evaluator.evaluate(ctx))
@@ -1829,11 +1823,7 @@ def _granted_and_declared(target: Target | None) -> tuple[list[str], list[str]]:
 
 
 def _note_operator_declaration(
-    verdict: Verdict,
-    spec: AttackSpec,
-    response: ModelResponse,
-    granted: list[str],
-    declared: list[str],
+    verdict: Verdict, spec: AttackSpec, response: ModelResponse, target: Target | None
 ) -> Verdict:
     """The attempt's verdict, saying which tool the operator's declaration kept from being
     judged destructive (OD-43, u06 A-72).
@@ -1844,6 +1834,7 @@ def _note_operator_declaration(
     ``kill_chain_progression`` keeps its stage map whatever the file declares.
     """
 
+    granted, declared = _granted_and_declared(target)
     if not declared or not any(c.type is EvaluatorType.TOOL_CALL for c in spec.evaluators):
         return verdict
     names = [call_name(call) for call in response.tool_calls if isinstance(call, Mapping)]

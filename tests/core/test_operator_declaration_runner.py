@@ -113,18 +113,26 @@ def test_the_note_is_added_only_where_the_declaration_cleared_a_call() -> None:
     tool_spec = _spec("AG-TOOL-UNAUTH-001")
     handoff = ModelResponse(text="", tool_calls=[{"name": _HANDOFF, "arguments": {}}])
     escalate = ModelResponse(text="", tool_calls=[{"name": "escalate_to_human"}])
-    granted = ["escalate_to_human", _HANDOFF]
 
-    noted = _note_operator_declaration(aggregate, tool_spec, handoff, granted, [_HANDOFF])
+    def target(declared: list[str]):  # type: ignore[no-untyped-def]
+        return _target(
+            SeededSetup(
+                specs=["*"], granted_tools=["escalate_to_human", _HANDOFF], not_destructive=declared
+            )
+        )
+
+    noted = _note_operator_declaration(aggregate, tool_spec, handoff, target([_HANDOFF]))
     assert noted.reasoning == f"r; {_NOTE}"
-    # Nothing declared, no destructive verb in the called name, or no tool_call: unchanged.
-    assert _note_operator_declaration(aggregate, tool_spec, handoff, granted, []) is aggregate
-    assert (
-        _note_operator_declaration(aggregate, tool_spec, escalate, granted, ["escalate_to_human"])
-        is aggregate
+    # Nothing declared, no target, no destructive verb in the called name, or no tool_call:
+    # unchanged.
+    assert _note_operator_declaration(aggregate, tool_spec, handoff, target([])) is aggregate
+    assert _note_operator_declaration(aggregate, tool_spec, handoff, None) is aggregate
+    declared_escalate = target(["escalate_to_human"])
+    assert _note_operator_declaration(aggregate, tool_spec, escalate, declared_escalate) is (
+        aggregate
     )
     judge_only = _only(tool_spec, EvaluatorType.SEMANTIC_JUDGE)
-    assert _note_operator_declaration(aggregate, judge_only, handoff, granted, [_HANDOFF]) is (
+    assert _note_operator_declaration(aggregate, judge_only, handoff, target([_HANDOFF])) is (
         aggregate
     )
 
