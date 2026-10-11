@@ -42,6 +42,7 @@ from ildottore.adapters import (
 )
 from ildottore.adapters.anthropic import sent_sampling as anthropic_sent_sampling
 from ildottore.adapters.anthropic import takes_no_sampling
+from ildottore.adapters.base import CredentialTooShort, refuse_short_credential
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.adapters.openai import sent_sampling as openai_sent_sampling
@@ -770,6 +771,7 @@ def build_real_adapter(
             )
         # MCP posts JSON-RPC to the endpoint PATH itself (e.g. /mcp), so the adapter keeps the
         # full URL as base_url (unlike openai/anthropic, whose path is a fixed _endpoint_path).
+        refuse_short_credential(target.id, api_key, target.endpoint)
         return MCPAdapter(
             id=target.id,
             base_url=target.endpoint or origin,
@@ -778,6 +780,9 @@ def build_real_adapter(
             model=target.model,
             **extra,
         )
+    # Refused before anything is built, so a run sends nothing to the target when the judge's is
+    # the short one (u04 A-78); each adapter refuses it again before its own first request.
+    refuse_short_credential(target.id, api_key, target.endpoint)
     if provider == "websocket":
         if target.websocket is None:  # load_target refuses the file; a hand-built Target
             raise ValueError(
@@ -883,7 +888,14 @@ def check_target_credential(scope: Scope, target: Target) -> None:
     dead in the other.
     """
 
-    _authorized_api_key(scope, target)
+    api_key = _authorized_api_key(scope, target)
+    # A credential the redactor could not mask by value is refused here too, so `--dry-run`, `-sn`
+    # and `--estimate` answer what the run would (u04 A-78); a stdio MCP server is sent no key.
+    if (target.transport or "").strip().lower() != "stdio":
+        try:
+            refuse_short_credential(target.id, api_key, target.endpoint)
+        except CredentialTooShort as exc:
+            raise ValueError(str(exc)) from None
 
 
 @dataclass
@@ -1314,10 +1326,15 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
     commands = tuple(scope_target.commands)
     probes: list[IdentityProbe] = []
     for ident in scope_target.identities:
+        api_key = resolve_auth_ref(ident.auth_ref)
+        if (target.transport or "").strip().lower() != "stdio":
+            # Named with its identity: the target's own id alone did not say whose key it was.
+            identity = f"{target.id}, identity {quoted(ident.name)}"
+            refuse_short_credential(identity, api_key, target.endpoint)  # u04 A-78
         adapter = build_real_adapter(
             target,
             allowlist,
-            api_key=resolve_auth_ref(ident.auth_ref),
+            api_key=api_key,
             authorized_commands=commands,
             retry=NO_ADAPTER_RETRIES,
         )

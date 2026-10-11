@@ -64,6 +64,7 @@ __all__ = [
     "AdapterProductError",
     "AdapterStatusError",
     "BaseAdapter",
+    "CredentialTooShort",
     "EndpointNotAllowed",
     "ProviderFilterBlock",
     "ResponseMalformed",
@@ -293,6 +294,15 @@ class AdapterProductError(AdapterError):
     """
 
 
+class CredentialTooShort(AdapterProductError):
+    """A credential the redactor could not mask by value, refused before any request (u04 A-78).
+
+    Its own class so the judge does not read it as an outage: it refuses every request alike, and
+    read as one it made every judged spec inconclusive and the run exited 0 without a word, as a
+    sampling refusal did before u12 A-68. The judge raises it, and the run stops naming it.
+    """
+
+
 def refuse_short_credential(adapter_id: str, api_key: str | None, url: str | None = None) -> None:
     """Refuse, before any request, a credential the redactor could not mask by value.
 
@@ -311,7 +321,7 @@ def refuse_short_credential(adapter_id: str, api_key: str | None, url: str | Non
         if password:
             credentials += (password, unquote(password))
     if any(len(credential) < MIN_CREDENTIAL_LEN for credential in credentials):
-        raise AdapterProductError(
+        raise CredentialTooShort(
             f"{adapter_id}: the credential is shorter than {MIN_CREDENTIAL_LEN} characters, "
             "which the redactor cannot mask by value; nothing was sent"
         )
