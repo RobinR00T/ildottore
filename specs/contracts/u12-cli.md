@@ -76,7 +76,11 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
 - Exit code is a pure function of `(findings, --fail-on, --include-needs-review, error_state)`
   in `exit_codes.py`: no side effects, table-tested.
 - All terminal output honors the central redactor; secrets/PII never printed (`AGENTS.md §2`).
-  (As built, for errors, `cli/app._masked`: URL passwords are masked first, on the whole text.
+  (As built, for errors, `cli/app._masked`: the redactor runs on the whole text, URL passwords
+  included (until #96 the URL rule ran on its own first, on the raw text, and cut a registered
+  credential holding an `@` or a `:`), and an endpoint an error cuts comes without its userinfo
+  before it is cut (u01 A-51, #96); one quoted whole (`EndpointNotAllowed`, a WebSocket close) is
+  the redactor's to mask.
   Besides the existing part of an absolute path, a path that exists, written whole, is kept
   out of the entropy rule (A-38); the name of a file that does not exist is not (OD-25).
   Outside one, a 64-hex value is kept readable in exactly two cases: an evidence file name

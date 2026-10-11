@@ -33,7 +33,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ildottore import redactor as redactor_mod
-from ildottore.redactor import Pattern, Redactor, mask_url_passwords, register_known_secret
+from ildottore.redactor import Pattern, Redactor, register_known_secret
 
 _SALT = "s"
 _USER = "svc-account-7"  # registered by the tests that use it
@@ -212,13 +212,6 @@ def test_a_registered_url_password_keeps_its_own_mask() -> None:
         mask = f"«REDACTED:credential:{_hmac8(_PASSWORD)}»"
         assert out == f"https://{mask if user == _PASSWORD else user}:{mask}@localhost/"
         assert redactor.redact_text(out) == out
-
-
-def test_mask_url_passwords_is_unchanged_on_text_with_no_mask() -> None:
-    url = f"https://{_USER}:{_PASSWORD}@localhost:8080/v1 and https://a:b@h"
-    assert mask_url_passwords(url) == (
-        f"https://{_USER}:{_URL_MASK}@localhost:8080/v1 and https://a:{_URL_MASK}@h"
-    )
 
 
 _URL_CHARS = st.text(
