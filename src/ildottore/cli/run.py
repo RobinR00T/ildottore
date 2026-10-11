@@ -94,7 +94,7 @@ from ildottore.shared.provider_filter import (
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
-from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped
+from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, scene_tool_names
 
 __all__ = [
     "CATEGORY_ALIASES",
@@ -1194,7 +1194,7 @@ def _print_dry_run_plan(
                 for spec_id, reason in plan.not_seeded:
                     print(f"    - {spec_id}: {visible_controls(reason)}")
         # What the operator's file says of its own tools, before anything is sent (OD-43).
-        for line in _declaration_lines(plan.target):
+        for line in _declaration_lines(plan.target, plan.selected):
             print(f"  operator: {line}")
         # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
         # temperature reaches none of the shipped battery), and what never goes out (OD-39).
@@ -1243,20 +1243,57 @@ def _declared(target: Target) -> list[str]:
     return list(target.seeded_setup.not_destructive) if target.seeded_setup is not None else []
 
 
-def _declaration_lines(target: Target) -> list[str]:
+def _folded(name: str) -> str:
+    """``name`` as a reader takes it: Unicode compatibility form, case folded."""
+
+    return unicodedata.normalize("NFKC", name).casefold()
+
+
+def _near_scene_lines(target: Target, specs: Sequence[AttackSpec]) -> list[str]:
+    """A line for each granted name that is a selected spec's scene tool but for case or Unicode
+    form (pre-merge audit of `ed381359`, L3). Names are compared exactly, so such a grant, and a
+    declaration on it, is the deployment's own tool there, and the scene's word on the tool it
+    resembles (``destructive: true`` included) does not reach a call under it."""
+
+    seeded = target.seeded_setup
+    if seeded is None or not seeded.granted_tools:
+        return []
+    declared = set(seeded.not_destructive)
+    lines: list[str] = []
+    for name in sorted(set(seeded.granted_tools)):
+        alike: dict[str, list[str]] = {}
+        for spec in specs:
+            for scene in scene_tool_names(spec.setup.tools if spec.setup is not None else None):
+                if scene != name and _folded(scene) == _folded(name):
+                    alike.setdefault(scene, []).append(spec.id)
+        for scene, ids in sorted(alike.items()):
+            what = "granted and declared not destructive" if name in declared else "granted"
+            lines.append(
+                f"{visible_controls(name)}: {what}, and the scene tool {visible_controls(scene)!r}"
+                f" of {', '.join(sorted(ids))} differs from it only in case or Unicode form; "
+                "names are compared exactly, so a call under this name is the deployment's own "
+                "tool there and that scene's word on its tool does not reach it: make sure the "
+                "two are not one tool"
+            )
+    return lines
+
+
+def _declaration_lines(target: Target, specs: Sequence[AttackSpec] = ()) -> list[str]:
     """What ``--dry-run``, ``-v`` and ``-sn`` say of the operator's declaration (OD-43, A-72).
 
     One line naming the tools and saying it is the operator's word and what it clears, and one
     for each declared tool worth a second look, as lint says of a scene's ``destructive: false``
     (A-71): one no destructive verb is in, for which the declaration changes nothing, and one a
     verb is in that is not named like a hand-off (``transfer_to_<agent>``), which may be a real
-    destructive tool declared harmless. The names are the operator's text, written out as every
-    such line is (u12 §6).
+    destructive tool declared harmless. Then one for each granted name that is one of ``specs``'
+    scene tools but for case or Unicode form (:func:`_near_scene_lines`). The names are the
+    operator's text, written out as every such line is (u12 §6).
     """
 
     names = _declared(target)
+    near = _near_scene_lines(target, specs)
     if not names:
-        return []
+        return near
     listed = ", ".join(visible_controls(name) for name in names)
     lines = [
         f"{listed} declared not destructive by {visible_controls(target.id)}'s target file (an "
@@ -1277,7 +1314,7 @@ def _declaration_lines(target: Target) -> list[str]:
                 f"{said} in its name and not named like a hand-off (transfer_to_<agent>): no "
                 "call to it is judged destructive, so make sure it destroys nothing"
             )
-    return lines
+    return [*lines, *near]
 
 
 def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
@@ -1309,7 +1346,7 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
         print(f"    declares:  {', '.join(caps) if caps else 'no optional capabilities'}")
         if plan.no_sampling is not None:
             print(f"    sampling:  {visible_controls(plan.no_sampling)}")
-        for line in _declaration_lines(plan.target):
+        for line in _declaration_lines(plan.target, plan.selected):
             print(f"    operator:  {line}")
         print(
             f"    battery:   {len(plan.selected)} spec(s) would run, "

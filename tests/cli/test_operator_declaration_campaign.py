@@ -406,6 +406,40 @@ def test_a_declared_tool_not_shaped_like_a_hand_off_is_flagged(
     assert "not named like a hand-off" not in handoff.output
 
 
+@pytest.mark.parametrize(
+    ("grant", "name", "what"),
+    [
+        ("    - Delete_Account\n", "Delete_Account", "granted"),
+        (
+            "    - {name: DELETE_ACCOUNT, destructive: false}\n",
+            "DELETE_ACCOUNT",
+            "granted and declared not destructive",
+        ),
+        # Fullwidth letters, the same name to a reader once NFKC-normalized.
+        ("    - \uff44elete_account\n", "\uff44elete_account", "granted"),
+    ],
+)
+def test_a_grant_that_is_a_scene_tool_but_for_case_or_form_is_flagged(
+    tmp_path: Path, agent: tuple[int, dict[str, int]], grant: str, name: str, what: str
+) -> None:
+    """Names are compared exactly, so a grant (or a declaration) of ``Delete_Account`` is the
+    deployment's own tool where the spec's scene has ``delete_account``, and the scene's word on
+    its tool does not reach a call under it: the plan says so (pre-merge audit of `ed381359`,
+    L3)."""
+
+    port, _state = agent
+
+    plan = _run(tmp_path, port, grant, "--dry-run")
+
+    assert plan.exit_code == 0, plan.output
+    assert (
+        f"  operator: {name}: {what}, and the scene tool 'delete_account' of {_SPEC} differs "
+        "from it only in case or Unicode form; names are compared exactly, so a call under this "
+        "name is the deployment's own tool there and that scene's word on its tool does not "
+        "reach it: make sure the two are not one tool\n"
+    ) in plan.output
+
+
 # --- the resume -------------------------------------------------------------------------------
 
 
