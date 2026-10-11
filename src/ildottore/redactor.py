@@ -1780,6 +1780,7 @@ _BYTES: Final = "bytes"
 TRANSCRIPT_FRAMES: Final = "frames"
 TRANSCRIPT_PROTOCOL_PATHS: Final = "protocol_paths"
 _RECEIVED: Final = "received"
+_DIRECTION: Final = "direction"
 _FRAME: Final = "frame"
 #: The frame type's path when a transcript names no protocol paths (``type_path``'s default).
 _DEFAULT_PROTOCOL: Final = ("type",)
@@ -1859,7 +1860,9 @@ def _protocol_paths(node: Mapping[object, object]) -> list[list[str]] | None:
     frames, declared = node.get(TRANSCRIPT_FRAMES), node.get(TRANSCRIPT_PROTOCOL_PATHS)
     if not isinstance(frames, list) or not frames:
         return None
-    if not all(isinstance(entry, Mapping) and _FRAME in entry for entry in frames):
+    if not all(
+        isinstance(entry, Mapping) and _DIRECTION in entry and _FRAME in entry for entry in frames
+    ):
         return None
     if isinstance(declared, list) and all(isinstance(path, str) for path in declared):
         return [path.split(".") for path in declared if isinstance(path, str)]
@@ -1871,7 +1874,7 @@ def _transcript_streams(frames: Sequence[object], protocol: list[list[str]]) -> 
 
     streams: dict[_LeafPath, _Stream] = {}
     for index, entry in enumerate(frames):
-        if not isinstance(entry, Mapping) or entry.get("direction") != _RECEIVED:
+        if not isinstance(entry, Mapping) or entry.get(_DIRECTION) != _RECEIVED:
             continue
         for path, text in _string_leaves(entry.get(_FRAME), (_FRAME,)):
             segments = [str(step) for step in path[1:]]
