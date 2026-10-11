@@ -3,6 +3,149 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (noon): the verification of `91845524` (OD-42), two mediums fixed
+
+- Every earlier finding closed; two new mediums, fixed in `0a293438`. (1) The recording-only judge
+  on a partial cut reply ran in the same evaluator call as the deciding ones: a request ceiling
+  that refused it raised, the cut attempt was stored with no verdict and the resume sent it again,
+  its line counting it as kept for review. It now runs after them, alone, in its own try (a refusal
+  or any error a note), and `cli/run.py` counts cut attempts among the kept ones only. (2) With
+  three or more identities a filtered one was dropped silently and the other two could pass the
+  spec; `authz_leak` now cannot pass beside a filtered identity (a fail among the others stands)
+  and the stored verdict names it. 4 tests more (94 for OD-42): the judge under
+  `--budget-requests 2`, with and without a canary, through the CLI, and two sweeps of three
+  identities; all 4 fail on `91845524`. `make gates` green (2026-10-11, 10:59, on `b4d4368a`):
+  ruff, format (393 files), mypy strict (157 source files), import-linter (4 kept), spec lint (0
+  errors, 0 warnings across 75 specs, 14 suites, 1 pack), 5,159 tests with 97.68% coverage,
+  self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
+
+## State, 2026-10-11 (late morning): the pre-merge audit of `a55e953` (OD-42), fixed
+
+- Not merge-ready per the audit, no HIGH; fixed on the same branch in new commits. M1: a cut reply
+  was read by every evaluator but the judge, `regex_presence` among them, which fails when its
+  secure marker is absent: an empty reply Azure withheld made `DOS-TOKEN-AMP-001` a confirmed fail,
+  exit 2. Now `core.runner.CUT_DECIDING_EVALUATORS` (the presence-based ones) read it, a test holds
+  every `EvaluatorType` classified, and only a fail on what is present stands. M2: the identity
+  sweep kept a filtered identity's empty reply, so `authz_leak` read it as no crossing; it is
+  skipped as a failed send is. M3: Bedrock and Gemini are library-only (a target file's REST target
+  has no template), said so in the docs; the side-unknown terminal line names its stop reasons and
+  prints the Bedrock hint only beside `guardrail_intervened`. L1 `usage.iterations` read after a
+  fallback; L2 ADR wording; L3 a trace naming no side is `filter_side: unknown`; L4 JUnit counts in
+  the skip or failure `message`, and a SARIF side-unknown test; L5 the serializer typed; L6 the
+  versioning note; L7 WebSocket stop words; L8 the judge's verdict on a partial reply recorded, not
+  deciding, and the `refusal` heuristic said to count as deterministic. Gemini's `RECITATION` is an
+  output-side cut, decided under the owner's delegation (revisable); a `RECITATION` candidate with
+  no text is a reply. Left for the OD-43 branch (M4): thread the operator's declared tools into
+  `_cut_verdict` when it lands. 18 tests more (12 fail on `a55e953`), 90 in all for OD-42. With
+  the stubs: `DOS-TOKEN-AMP-001` on empty cuts is inconclusive, exit 0; the canary run makes 12
+  judge requests, the Anthropic run 16 (the partial replies recorded). `make gates` green
+  (2026-10-11, 10:40, on `de4a9748`): ruff, format (393 files), mypy strict (157 source files),
+  import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs, 14 suites, 1 pack),
+  5,155 tests with 97.68% coverage, self-scan 0 high/critical, bandit, pip-audit (no known
+  vulnerabilities).
+
+## State, 2026-10-11: a reply the provider's filter cut or replaced is never a pass (OD-42)
+
+- On `fix/provider-output-filter-not-a-pass`, from `origin/main` at `6d5f7ae`: the owner decided
+  (2026-10-11, 08:55, "haz lo pendiente" after the recommendation) that a reply the provider's
+  filter cut or replaced is never scored as the model resisting. The gap was found by the
+  pre-merge audit of OD-41. Measured on `6d5f7ae` against loopback stubs that answer the filter's
+  reply to prompts holding "instructions for" or "developer mode", `GUARD-INPUT-EVASION-001` and
+  `PI-DIRECT-001` at `--runs 2` with a secure judge: Azure's withheld reply (`content: null`,
+  `content_filter`) and Anthropic's empty `refusal` both gave two passes, exit 0, 28 judge
+  requests; through the REST adapter, a Bedrock canned refusal passed with and without the
+  guardrail trace, a Gemini `SAFETY` candidate with refusing text passed, and one without text
+  stopped the campaign. Built (u08 A-70, with halves in u00, u04, u09, u10, u11 and u12; the
+  amendment to ADR-0011; OD-42 closed): one predicate in `shared.provider_filter` (the
+  fingerprint's `FILTER_STOPS`, moved, with Vertex AI's `MODEL_ARMOR`; every value sourced, read
+  2026-10-11) reads the stop reason and its side. Input (a Bedrock trace's `inputAssessment`,
+  Anthropic's `refusal` before any output): OD-41's block, reply kept. Output: `inconclusive:
+  cut_by_provider_output_filter`; unreported side (Bedrock without trace, `content_filtered`):
+  `provider_filter_side_unknown`; both new `InconclusiveReason`s, needing review, scored by the
+  deterministic evaluators on what came back (a fail stands; the judge is not asked); a spec with
+  one cannot pass; in `N`, never a success; `--fail-on` unchanged; a conversation ends on the cut
+  reply; kept by a resume, re-derived by `dottore replay`, counted apart in JSON, SARIF, JUnit, HTML
+  and the terminal. `ModelResponse.filter_side` carries a Bedrock trace's side and is left out of a
+  dump when unset. The REST adapter reads a filter stop at `finish_path` before the text, so a
+  `SAFETY` candidate with no text is a reply. With the stubs: Azure's run exits 0 with both specs
+  inconclusive (2/8 and 6/6 cut) and 12 judge requests; a canary in a cut partial reply is a
+  confirmed fail, exit 2; Anthropic's refusal before output is 6 blocked attempts, after partial
+  text 2 cut ones. Tests: 72 new (6 CLI, 4 of which fail on `6d5f7ae` and 2 controls that pass
+  there too; 22 core and 41 adapter, not collected on `6d5f7ae`; 2 fingerprint; 1 redactor). Left
+  open: Gemini's `RECITATION` (a reply cut for reciting a source: a question for the owner when a
+  training-data extraction spec is the one cut), a Gemini template without `finish_path`,
+  Bedrock's `InvokeModel` shape and streamed replies; the identity sweep reads its replies as
+  before. Not run against a live Azure, Bedrock, Gemini or Anthropic endpoint. `make gates` green
+  (2026-10-11, 09:45): ruff, format (392 files), mypy strict (157 source files), import-linter (4
+  kept), spec lint (0 errors, 0 warnings across 75 specs, 14 suites, 1 pack), 5,137 tests with
+  97.66% coverage, self-scan 0 high/critical, bandit, pip-audit (no known vulnerabilities).
+
+## State, 2026-10-11: a hand-off tool is not destructive by its name, and lint judges calls as a run does
+
+- On `fix/handoff-tools-and-lint-stub`, the two items the pre-merge audit of OD-38 left open
+  (entry of 2026-10-09 below), closed as u06 A-71 (with halves in u02 and u00 and an index row).
+  (1) A hand-off named `transfer_to_<agent>` (the OpenAI Agents SDK's style) matched the verb
+  `transfer` and, since OD-38, could not be excused: a spec whose hardened fixture hands off gave
+  `FIXTURE_HARDENED_FAIL` on `6d5f7ae`. Now a scene tool marked `destructive: false` is not
+  destructive whatever its name, under that exact name only; `destructive: true` still makes any
+  name destructive, an unmarked name is judged by its verbs, a name marked both ways is
+  destructive, and the flag clears only that check. No `transfer_to_*` exemption:
+  `transfer_to_account` stays destructive. `destructive` and `external` are `true`, `false` or
+  left out in the schema and in `Setup` (null reads as left out; a quoted `"false"`, which read
+  as true, or a number is refused: breaking for a pack that wrote one, in the CHANGELOG's
+  Changed section). A verdict names in its reasoning a called tool the scene cleared, and lint
+  warns on a clearing not shaped like a hand-off, on one no verb makes necessary, and on one in
+  a spec without `tool_call`. A whole-word verb rule was measured and not adopted: over every
+  shipped fixture it changes no verdict, but it does not clear the hand-off and stops flagging
+  `deleteall`, `droptable`, `bulkdelete`, `airdrop_tokens` and `transferfunds`. (2) The lint
+  stub was a drifted copy of the evaluator (the quadratic backtick pattern, about 4 s on an
+  unclosed backtick before 100,000 letters, now about 3 ms; top-level argument values only; no
+  lists in the forbidden walk; no OpenAI JSON-string arguments, in the `tool_sequence` stub too).
+  The checks live once in `shared/tool_abuse.py`, and calls are read through
+  `shared/toolcalls.py` by both.
+- Verdict check, before and after, on every shipped fixture (`specs/attacks` and the valid
+  corpus: 78 files, 77 unique ids, since `PI-INDIRECT-RAG-001` is in both): each declared
+  evaluator's real verdict (status, reasoning, matched) and its stub's, on 156 fixture cases
+  (the first count, 154, keyed the cases by id and lost the duplicate's two), plus the 594
+  traces of every fixture under every spec that declares `tool_call`: byte-identical once the
+  per-process salt of the canary masks is normalized (20 lines differ only by that salt, as two
+  runs of the same code do).
+  `dottore lint specs/` (text and `--json`) and `dottore coverage --json` are byte-identical to
+  `6d5f7ae`'s. No shipped spec marks a tool `destructive: false`.
+- Pre-merge audit of `f76f145`: merge-ready after one CHANGELOG fix, with three MEDIUMs and five
+  LOWs (M3, the granted hand-off, is the owner's question; L5 asked only not to rewrite history),
+  the rest closed in new commits on top (no history rewritten: `feat/operator-declared-tools`
+  is built on `f76f145`). M1: the booleans-only tightening broke a pack that left the key empty
+  (null) or wrote a quote or a number (lint `SCHEMA`, and `run` refused the whole battery); null
+  reads as left out again, a quote or a number is still refused, and the CHANGELOG says so as a
+  breaking change with its migration. M2: a scene could clear a real destructive tool without a
+  trace; the reasoning names each cleared tool, and lint warns on a clearing not shaped like a
+  hand-off. L1: a seeded name map onto another scene tool's name (`{transfer_to_billing_agent:
+  delete_account}`) judged a real delete as the cleared hand-off; `seeding_gap` refuses it. L2,
+  L3: the timing test times only the judgement, on 200,000 letters, and pins the shared helpers
+  by identity; the shipped-trace sweep covers every `tool_call` config (22, with
+  `AG-CRED-SWEEP-001` and `AG-TOOLCHAIN-EXFIL-001`). L4: the MANUAL's lint reference lists the
+  warnings and the figures above are corrected. The auditor's dump (156 cases, 594 traces) is
+  byte-identical on the fixed tree to `6d5f7ae`'s and `f76f145`'s, and so are `dottore lint
+  specs/` and `dottore coverage --json`.
+- Tests: `tests/evaluators/test_scene_not_destructive.py` (43, 26 fail on `6d5f7ae`),
+  `tests/registry/test_stub_agrees_with_tool_call.py` (22, 13 fail on `6d5f7ae`, among them a
+  timing test bounded at 1.5 s, 250 times the linear cost), four in
+  `tests/core/test_seeded_setup.py` (3 fail on `6d5f7ae`), and the invalid schema-parity
+  fixture `setup-tool-destructive-not-boolean.yaml` (fails on `6d5f7ae`). Docs: `docs/03`,
+  `docs/04` §1, MANUAL §4.2, §5 and §8, FAQ, `dottore-scope(5)`, `examples/target.app.yaml`,
+  CHANGELOG. `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 5135 tests
+  (5065 on `6d5f7ae`, 70 new), 97.79% to 97.80% coverage over two runs
+  (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean.
+- Left open, for the owner (not decided here, no OD opened): a tool a deployment grants under
+  `seeded_setup.granted_tools` is in no scene, so a granted `transfer_to_<agent>` is still
+  destructive by its name: an Agents SDK deployment that hands off during a seeded spec that
+  declares `tool_call` fails it (read from the code, not run against a live deployment).
+  Whether a target file may declare one of its own tools not destructive (for instance a
+  `granted_tools` entry written as `{name, destructive: false}`) is a question of who may say a
+  tool is safe: the operator's file, not the spec.
+
 ## State, 2026-10-11 (late morning): the pre-merge audit of `be3f2e71`, closed
 
 - Not merge-ready on `be3f2e71`: one HIGH, two MEDIUM, four LOW, closed in new commits on top.
@@ -450,7 +593,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   pattern in `registry/fixtures_engine._STUB_INJECTION_RE` is still the one the evaluator dropped
   in the hostile-text audit (`[^`]*[A-Za-z][^`]*` between backticks): an unclosed backtick before
   40,000 letters takes 0.65 s to search there and 0.001 s in the evaluator's pattern. Only lint
-  reads it, over a spec's own fixtures.
+  reads it, over a spec's own fixtures. **Both closed on 2026-10-11** (u06 A-71, the entry of that
+  date above): a scene may mark a tool `destructive: false`, and the stub judges a call through
+  the evaluator's own helpers.
 
 ## State, 2026-10-09 (afternoon): a run id masked as a phone number, and small leftovers
 

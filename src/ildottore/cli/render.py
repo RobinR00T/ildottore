@@ -30,6 +30,7 @@ from ildottore.reporting.summary import (
 from ildottore.shared.enums import ScanBand
 from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
 from ildottore.shared.models import AttackSpec, Finding
+from ildottore.shared.provider_filter import filter_side_unknown, filter_stop
 
 __all__ = [
     "ProgressPrinter",
@@ -146,6 +147,8 @@ def coverage_lines(
     summary = build_run_summary(findings, specs or {}, planned_specs=planned_specs)
     cov = summary.coverage
     blocked = summary.provider_filter
+    cut = summary.output_filter
+    unsaid = summary.filter_side_unknown
     return [
         (
             f"Coverage - OWASP LLM Top 10 ({OWASP_LLM_EDITION}): "
@@ -182,7 +185,8 @@ def coverage_lines(
                 "every send ended in an environment error, such as a network "
                 "failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could "
                 "not be decoded or one nested too deeply, or was refused by the provider's input "
-                "filter), so their framework codes are NOT counted as covered"
+                "filter, or stopped by its filter on a side it did not report), so their "
+                "framework codes are NOT counted as covered"
             ]
             if cov.not_exercised
             else []
@@ -196,6 +200,30 @@ def coverage_lines(
                 + "); they are inconclusive, not refusals by the model and not exploits"
             ]
             if blocked.attempts
+            else []
+        ),
+        # OD-42: never a pass, so never silent either; the model may have written what was hid.
+        *(
+            [
+                f"Cut by the provider's output filter: {cut.attempts} attempt(s) in "
+                f"{len(cut.specs)} spec(s) came back cut or replaced ("
+                + ", ".join(cut.specs)
+                + "); the model may have written what the filter hid, so they are inconclusive "
+                "and need review, never a pass"
+            ]
+            if cut.attempts
+            else []
+        ),
+        *(
+            [
+                f"Stopped by the provider's filter on a side it did not report: "
+                f"{unsaid.attempts} attempt(s) in {len(unsaid.specs)} spec(s) ("
+                + ", ".join(unsaid.specs)
+                + "); inconclusive and need review, never a pass ("
+                + _unsaid_stops_note(findings)
+                + ")"
+            ]
+            if unsaid.attempts
             else []
         ),
         *(
@@ -315,3 +343,26 @@ class ProgressPrinter:
         # Plain and unwrapped, like `error`: the off-universe line quotes a pack's values.
         for line in coverage_lines(findings, specs, planned_specs=planned_specs):
             self._console.print(line, markup=False, emoji=False, soft_wrap=True)
+
+
+def _unsaid_stops_note(findings: list[Finding]) -> str:
+    """The stop reasons of the attempts stopped on an unreported side, and what would tell it.
+
+    The Bedrock hint is printed only beside Bedrock's stop: for an Anthropic ``refusal`` with no
+    text and no usage it said nothing true (pre-merge audit of ``a55e953``, M3).
+    """
+
+    stops = sorted(
+        {
+            stop
+            for finding in findings
+            for attempt in finding.attempts
+            if filter_side_unknown(attempt)
+            and attempt.response is not None
+            and (stop := filter_stop(attempt.response)) is not None
+        }
+    )
+    note = f"stop reason(s): {', '.join(stops)}" if stops else "stop reason not stored"
+    if "guardrail_intervened" in stops:
+        note += "; a Bedrock guardrail reports the side when guardrailConfig.trace is enabled"
+    return note

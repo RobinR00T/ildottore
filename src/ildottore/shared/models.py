@@ -9,9 +9,16 @@ schema ``additionalProperties: false`` (contract §4 KEEP).
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+)
 
 from ildottore.shared.enums import (
     Category,
@@ -108,6 +115,13 @@ class IoPC(_SchemaMirror):
     impacts: list[Annotated[str, Field(pattern=_IOPC_IMPACT_PATTERN)]] | None = None
 
 
+#: The flags of a scene tool the evaluators read, each a boolean or null when present: a quoted
+#: ``"false"`` is truthy, so it read as ``true``, and ``0`` or ``1`` say nothing a boolean does
+#: not (u06 A-71). Null (a key left empty) reads as absent, as it always did. Mirrors the
+#: schema's ``setup.tools.items.properties``.
+_TOOL_FLAGS: tuple[str, ...] = ("destructive", "external")
+
+
 class Setup(_SchemaMirror):
     """Declarative ``setup`` block (all fields optional per schema)."""
 
@@ -116,6 +130,19 @@ class Setup(_SchemaMirror):
     memory_seed: list[JsonDict] | None = None
     system_prompt: str | None = None
     canaries: list[str] | None = None
+
+    @field_validator("tools")
+    @classmethod
+    def _tool_flags_are_booleans(cls, tools: list[JsonDict] | None) -> list[JsonDict] | None:
+        for index, tool in enumerate(tools or []):
+            for flag in _TOOL_FLAGS:
+                value = tool.get(flag)
+                if value is not None and not isinstance(value, bool):
+                    raise ValueError(
+                        f"setup.tools[{index}].{flag} must be true or false (or left out), "
+                        f"not {type(value).__name__}"
+                    )
+        return tools
 
 
 class Attack(_SchemaMirror):
@@ -459,6 +486,14 @@ class ModelResponse(_Frozen):
     holds what a transport returns beyond these fields: scalars at the top (a request id, a model
     echo) and a transport's record under its own key, such as the WebSocket frame transcript in
     ``raw_ids["websocket"]["frames"]`` (OD-34: no field of its own, decided 2026-10-11).
+
+    ``filter_side`` is the side the provider's own trace says its filter acted on, for a reply
+    stopped by that filter (OD-42, u00 and u08 A-70): ``input`` (the prompt was blocked),
+    ``output`` (the model's reply was), or ``unknown`` (a trace that names neither). Only the
+    REST adapter sets it, from a Bedrock Converse guardrail trace; every other reply leaves it
+    ``None`` and ``shared.provider_filter`` reads the side from the stop reason. A ``None`` is
+    left out of a dump, so a reply without one is stored, reported and hashed byte for byte as
+    before the field existed.
     """
 
     text: str
@@ -467,6 +502,16 @@ class ModelResponse(_Frozen):
     finish_reason: str | None = None
     raw_ids: JsonDict = Field(default_factory=dict)
     usage: JsonDict | None = None
+    filter_side: Literal["input", "output", "unknown"] | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_unset_filter_side(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The dump as before OD-42 when no trace said which side a filter acted on."""
+
+        dumped: dict[str, Any] = handler(self)
+        if dumped.get("filter_side") is None:
+            dumped.pop("filter_side", None)
+        return dumped
 
 
 class Verdict(_Frozen):

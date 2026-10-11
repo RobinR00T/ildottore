@@ -6,7 +6,8 @@
 > Pydantic models (Pydantic-first; only `attack-spec.schema.json` is hand-authored). `Verdict`
 > carries `inconclusive_reason: InconclusiveReason|None` (closed StrEnum:
 > `capability_unavailable | blocked_by_policy | judge_compromised`, extensible via ADR; ADR-0011
-> added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69).
+> added `blocked_by_provider_filter` on 2026-10-10, OD-41, u08 A-69, and its amendment
+> `cut_by_provider_output_filter` and `provider_filter_side_unknown` on 2026-10-11, OD-42, A-70).
 > `ModelFingerprint.capability_guess` (not `.capabilities`): distinct from the `Capabilities`
 > enum. Canonical `TestPlan` shape is in ADR-0006 §3.
 
@@ -78,12 +79,17 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 ## §6 Data/wire shapes
 - `TokenLogprob = {token: str, logprob: float, top: list[tuple[str,float]] | None}` (ADR-0005).
 - `ModelResponse = {text: str, tool_calls: list[dict], logprobs: list[TokenLogprob] | None,
-  finish_reason: str | None, raw_ids: dict, usage: dict | None}`. `raw_ids` holds what a
-  transport returns beyond those fields, scalars at the top (a provider's request id, its model
-  echo) and a transport's record under its own key: the WebSocket adapter's frame transcript is
-  `raw_ids["websocket"]["frames"]`, not a field of its own (OD-34, decided 2026-10-11 under the
-  owner's delegation, revisable; reasoning in u04 §9). A reader of the scalars skips a nested
-  value (the fingerprint's envelope layer does).
+  finish_reason: str | None, raw_ids: dict, usage: dict | None}`, and since OD-42 (u08 A-70)
+  `filter_side: "input" | "output" | "unknown" | None`: the side the provider's own trace says its
+  filter acted on, for a reply that filter stopped (`unknown`: a trace that names neither; only the
+  REST adapter sets it, from a Bedrock Converse guardrail trace, u04). It is the one field a dump
+  leaves out when it is `None` (a `model_serializer`), so every reply without it is stored, reported
+  and hashed byte for byte as before; `logprobs: null` is still dumped (ADR-0005). `raw_ids` holds
+  what a transport returns beyond those fields, scalars at the top (a provider's request id, its
+  model echo) and a transport's record under its own key: the WebSocket adapter's frame transcript
+  is `raw_ids["websocket"]["frames"]`, not a field of its own (OD-34, decided 2026-10-11 under the
+  owner's delegation, revisable; reasoning in u04 §9). A reader of the scalars skips a nested value
+  (the fingerprint's envelope layer does).
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],
   evaluator_type: str, inconclusive_reason: InconclusiveReason | None}` (`docs/04 §1-§3`).
 - `AttackSpec` = every field/constraint in `schemas/attack-spec.schema.json` (`docs/03 §2`),
@@ -111,6 +117,18 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 - `ruff check src/ildottore/shared tests/shared` + `ruff format --check` clean; `mypy
   src/ildottore/shared` clean (strict); `lint-imports` green: **`shared` imports nothing
   in-repo** (import-linter independence contract).
+- **A-71 (u06's clause; this unit's half, added 2026-10-11):** `Setup.tools` refuses a tool
+  whose `destructive` or `external` is a string or a number, as the schema's
+  `setup.tools.items.properties` now does (`type: [boolean, null]`; a quoted `"false"` is truthy,
+  so it read as true; `tests/fixtures/specs/invalid/setup-tool-destructive-not-boolean.yaml`).
+  Null reads as left out: refusing it too broke a pack that left the key empty (pre-merge audit
+  of `f76f145`, M1). `shared/tool_abuse.py`
+  holds what `tool_call` judges in one call (the allowlist a scene resolves to, the destructive
+  verbs and the scene's `destructive` flags, the injection markers and their walk, the
+  forbidden-argument walk), because the evaluator and the linter's stub must give one verdict and
+  may not import each other; stdlib only, like `shared/patterns.py` (A-33) and
+  `shared/refusal_tells.py` (A-27) before it. The verdict stays with u06 and u02: these are the
+  predicates both apply, the one kind of behaviour this unit holds despite §8, as with A-33 and A-27.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
@@ -126,6 +144,8 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 - Whether `inconclusive_reason` is a closed `StrEnum` or an open `str`: propose closed enum
   seeded with `{capability_unavailable, blocked_by_policy, judge_compromised}`, extensible via ADR.
   (Built closed; ADR-0011 added `blocked_by_provider_filter`, 2026-10-10: a prompt the provider's
-  own input filter refused before the model saw it, OD-41.)
+  own input filter refused before the model saw it, OD-41; its amendment added
+  `cut_by_provider_output_filter` and `provider_filter_side_unknown`, 2026-10-11: a reply the
+  provider's filter cut or replaced, and one it stopped on a side it did not report, OD-42.)
 - Whether `ModelFingerprint` lives in `shared.models` (proposed, since u09 + u08 planner both
   consume it) or moves to `fingerprint/`: propose shared (it is a cross-unit wire shape).

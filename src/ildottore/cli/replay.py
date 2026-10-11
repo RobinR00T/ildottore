@@ -14,7 +14,11 @@ from pathlib import Path
 from ildottore.core.runner import SAMPLING_NOT_SENT
 from ildottore.redactor import visible_controls
 from ildottore.shared.models import Attempt
-from ildottore.shared.provider_filter import blocked_by_provider_filter
+from ildottore.shared.provider_filter import (
+    blocked_by_provider_filter,
+    cut_by_output_filter,
+    filter_side_unknown,
+)
 from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
 
 __all__ = ["render_replay", "replay", "replay_checked"]
@@ -83,6 +87,10 @@ def render_replay(result: ReplayResult) -> str:
         status = attempt.verdict.status.value if attempt.verdict is not None else "?"
         if blocked_by_provider_filter(attempt):  # OD-41: not the model's answer, nor its refusal
             status = f"{status} (blocked_by_provider_filter)"
+        elif cut_by_output_filter(attempt):  # OD-42: the filter's text, never the model resisting
+            status = f"{status} (cut_by_provider_output_filter)"
+        elif filter_side_unknown(attempt):
+            status = f"{status} (provider_filter_side_unknown)"
         # Read back from the evidence tree, written out as every other stored text is.
         fields = visible_controls(f"{attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}")
         lines.append(f"  {fields}  {status}")
@@ -115,6 +123,20 @@ def render_replay(result: ReplayResult) -> str:
             f"  {blocked} of {result.n} attempt(s) the provider's input filter refused before the "
             "model saw them (blocked_by_provider_filter): counted in N and never a success; "
             "neither a refusal by the model nor an exploit"
+        )
+    cut = result.cut_by_provider_output_filter()
+    if cut:
+        lines.append(
+            f"  {cut} of {result.n} attempt(s) the provider's output filter cut or replaced "
+            "(cut_by_provider_output_filter): counted in N and never a success; the model may "
+            "have written what the filter hid, so review them"
+        )
+    unsaid = result.provider_filter_side_unknown()
+    if unsaid:
+        lines.append(
+            f"  {unsaid} of {result.n} attempt(s) the provider's filter stopped on a side it did "
+            "not report (provider_filter_side_unknown): counted in N and never a success; "
+            "review them"
         )
     # A model that takes no sampling was sent no temperature (u12 A-68): what each attempt
     # recorded says so, and the rate above is then over the model's own default sampling.

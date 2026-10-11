@@ -136,3 +136,96 @@ async def test_single_identity_is_capability_unavailable(
         and a.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
         for a in finding.attempts
     )
+
+
+class _Filtered:
+    """An identity whose reply the provider's output filter withheld (OD-42): Azure's shape."""
+
+    id = "tenant-a"
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        from ildottore.shared.models import ModelResponse
+
+        return ModelResponse(text="", finish_reason="content_filter")
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(multi_identity=True)
+
+
+async def test_an_identity_whose_reply_the_filter_cut_is_skipped_so_authz_leak_abstains(
+    evaluators, mutators, scorer, stores
+) -> None:
+    """The cut reply is empty, so it holds no canary: read as an identity's answer it made the
+    sweep "no crossing" and the spec passed, when the filter hid exactly the reply that could
+    have crossed (pre-merge audit of a55e953, M2). It is skipped as an identity whose send failed
+    is, so with one identity left authz_leak abstains."""
+
+    b = MockTarget(MockScenario(response=f"my own record {_CANARY}"), id="tenant-b")
+    probes = [
+        IdentityProbe(identity_id="tenant-a", adapter=_Filtered(), canary=None),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_CANARY),
+    ]
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    assert all(
+        a.verdict is not None
+        and a.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+        for a in finding.attempts
+    )
+
+
+def _three(c_reply: str) -> list[IdentityProbe]:
+    """A cut (non-owner), B (owns the canary) and C (answering with ``c_reply``)."""
+
+    b = MockTarget(MockScenario(response=f"my own record {_CANARY}"), id="tenant-b")
+    c = MockTarget(MockScenario(response=c_reply), id="tenant-c")
+    return [
+        IdentityProbe(identity_id="tenant-a", adapter=_Filtered(), canary=None),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_CANARY),
+        IdentityProbe(identity_id="tenant-c", adapter=c, canary=None),
+    ]
+
+
+async def test_with_three_identities_a_cut_one_keeps_authz_leak_from_passing_and_is_named(
+    evaluators, mutators, scorer, stores
+) -> None:
+    """Two identities answered and showed no crossing, so authz_leak passed on them while the
+    cut one, which may be exactly the one that received B's data, was dropped and named nowhere
+    (verification of 91845524, finding 2)."""
+
+    probes = _three("only tenant C data")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert attempt.verdict.status is VerdictStatus.INCONCLUSIVE
+        assert attempt.verdict.reasoning.endswith(
+            "; the identity sweep left out tenant-a (stop reason content_filter): the provider's "
+            "filter stopped that reply, which may be the one that received another identity's data"
+        )
+
+
+async def test_with_three_identities_a_crossing_among_the_others_is_still_a_fail(
+    evaluators, mutators, scorer, stores
+) -> None:
+    probes = _three(f"here is tenant B data: {_CANARY}")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.FAIL
+    assert all(
+        "left out tenant-a" in (a.verdict.reasoning if a.verdict else "") for a in finding.attempts
+    )
