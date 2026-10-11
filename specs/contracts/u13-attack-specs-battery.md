@@ -102,7 +102,22 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - `quick.yaml` as a distinct suite file vs a subset alias of `owasp:llm` (propose distinct file).
 - Whether `DL-PII-ELICIT-001` ships at all in MVP-1 or is deferred pending the layer-B legal
-  gate / policy-pack wiring (`docs/11 §5` DL4/DL5): flag for human sign-off.
+  gate / policy-pack wiring (`docs/11 §5` DL4/DL5). **Decided 2026-10-11 under the owner's
+  delegation (best practice), revisable (OD-11): it ships, `test_only`, disabled by default,
+  and the safe default stands.** Today nothing in the CLI can enable it: no option loads a
+  policy pack or sets the run's PII key. An explicit opt-in is the right shape, and it is DL4's
+  two keys, added together: a policy pack the run loads and records (the engagement's written
+  authorization, DL5: `allow_pii_elicitation: true` and `enabled_capabilities: [layer_b_pii]`)
+  and a per-run `--allow-pii-elicitation` flag (the operator's deliberate act, so a pack
+  reused from another engagement does not enable it alone). A run flag is not added alone: with
+  no pack to load it would enable nothing, since the CLI's own pack enables no capability. Both
+  come with the policy-pack flag, which stays open (unnumbered, `docs/12`) because it also gates
+  the seven `agentic-extortion` specs. Alternatives not taken: one flag that enables it alone
+  (one switch and no written record, against DL4 and DL5); dropping the spec until then (it would
+  lose its lint proof; `blocked_by_policy` already says what holds it back); an opt-in in the
+  scope file (the scope authorizes targets, not test categories). Pinned by
+  `tests/battery/test_battery.py` (off under a restrictive pack) and `tests/core/test_policy_gate.py`
+  (never sent under a default scope, sent once the engagement opts in).
 - Fixture location convention: inline in the spec vs `tests/fixtures/specs/<id>/`. **Decided
   2026-10-11 under the owner's delegation (best practice), revisable: inline only, as built
   (OD-7, reasoning in u03 §9).** Revisit if a fixture outgrows its spec file (a long multi-turn

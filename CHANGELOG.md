@@ -63,6 +63,14 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   scope loader's docstrings say the same. Not taken: built-in verification of a detached
   signature behind the existing verifier seam (kept for it), a keyed MAC, a flag requiring the
   checksum.
+- **`DL-PII-ELICIT-001` stays off by default; its opt-in is two keys or none (OD-11).** The safe
+  default stands: present, `test_only`, and not enableable from the CLI, which loads no policy
+  pack and sets no run PII key. The opt-in, when it comes, is DL4's two keys in one change, a
+  flag that loads the engagement's policy pack (the written authorization DL5 asks for) and a
+  per-run `--allow-pii-elicitation`; never the run flag alone, which with the CLI's own pack
+  would enable nothing. The policy-pack flag itself stays open, since it also gates the seven
+  `agentic-extortion` specs. Not taken: one flag that enables it alone, dropping the spec, an
+  opt-in in the scope file.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 

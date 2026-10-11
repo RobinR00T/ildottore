@@ -60,7 +60,8 @@ reports (S6, DL2); it is import-cheap and dependency-free so every layer can cal
 1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing, `--unsafe-render`
    and `--allow-pii-elicitation` flag surface. (As built: the typed `SafetyFlags` carry both
    values, default off; neither is a CLI flag, so the DL4 run key cannot be turned on from
-   `dottore`.)
+   `dottore`. OD-11, decided 2026-10-11: the run flag is added only together with a flag that
+   loads a policy pack, never alone, since alone it would enable nothing.)
 2. `redactor.py`: pattern registry (key prefixes `sk-`/`ghp_`/`AKIA`/`xoxb-`/JWT/PEM + PII:
    email/phone/card/IBAN/national-id/IP), masking with type-tag, structural walk over dict/list.
 3. `scope.py`: schema-validated loader + SHA-256 integrity + hash accessor.

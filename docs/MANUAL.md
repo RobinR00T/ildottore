@@ -173,7 +173,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
 - **PII elicitation needs two more keys.** `DL-PII-ELICIT-001` runs only when the policy pack
   sets `allow_pii_elicitation` **and** the run's safety flag of the same name is on (DL4), on top
   of the `layer_b_pii` capability. The CLI sets neither the pack nor the run key today, so the
-  spec cannot be enabled from the command line at all. The gate recognises the spec by its
+  spec cannot be enabled from the command line at all. That is the decided default (OD-11,
+  2026-10-11): when an opt-in comes, it is both keys from the CLI in one change, a flag loading
+  the engagement's pack and `--allow-pii-elicitation`, never the run flag alone. The gate recognises the spec by its
   `pii-elicitation` tag regardless of case and of `-` or `_` (`pii_elicitation`,
   `PII-Elicitation`; not `pii elicitation`) or by the
   `layer_b_pii` capability alone.

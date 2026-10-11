@@ -77,7 +77,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 
 These are not coverage gaps a new spec closes; they change what a built row proves on a live
 target, and each is waiting on a decision: OD-18 and OD-19 are rows of
-`specs/contracts/00-INDEX.md`; the policy-pack flag has no OD number yet (OD-11 notes it as open).
+`specs/contracts/00-INDEX.md`; the policy-pack flag has no OD number yet (OD-11, decided 2026-10-11, says the PII opt-in comes with it: the pack and `--allow-pii-elicitation` together, never the run flag alone).
 
 | Decision | What it limits today |
 |---|---|
