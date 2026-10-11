@@ -29,7 +29,12 @@ The authorization record. No scanning command runs without it. Default-deny: any
 path not under a target's endpoints is never contacted. An optional top-level checksum
 (sha256 of the body, the checksum line excluded) is verified when present, so a scope edited
 without updating it is refused. It is an integrity check, not a signature: anyone who can edit
-the file can recompute it. A line starting with checksum: that belongs to another value is
+the file can recompute it. Who wrote or approved a scope is proved out of band (OD-2): sign it
+with your own tooling (ssh-keygen -Y sign, cosign sign-blob), the reviewer on their own machine
+with a key only they hold, and verify a private copy before the run against trusted keys the
+scope's editors cannot write, then run that copy; the
+scope_sha256 a report records is the file's SHA-256 when it has LF line ends and no top-level
+checksum line. A line starting with checksum: that belongs to another value is
 refused. Every run records the same sha256 in its run store and in every report, so a report
 names the authorization record it ran under.
 .PP
@@ -199,8 +204,11 @@ dottore run does not use, since its runner retries a socket that fails to open, 
 debited request); headers (on the upgrade) and vars (plain values the templates use as
 {{name}}, never secrets). A key that is not text (on, ~, 5) or a value JSON cannot hold (an
 unquoted date, a set, binary data, NaN, half a character) anywhere in the block is refused when
-the file is loaded, and so is a ws:// or wss:// endpoint on any other provider. One connection
-per conversation; every frame is kept in the evidence with the credential as its placeholder.
+the file is loaded, and so is a ws:// or wss:// endpoint on any other provider, and
+session.one_query_in_flight false (OD-35: one query at a time per connection, by design). One
+connection per conversation, never re-dialled in the middle of one (a later turn whose
+connection is gone is inconclusive, OD-36); every frame is kept in the evidence with the
+credential as its placeholder.
 Worked file:
 examples/target.websocket.yaml; reference in docs/MANUAL.md section 4.2.
 .SH "FLEET FILE"
@@ -221,7 +229,12 @@ targets:
 .PP
 .B provider
 is inferred from the endpoint when omitted: /chat/completions maps to openai, /messages to
-anthropic, otherwise rest.
+anthropic, otherwise rest. A ws:// or wss:// endpoint, and provider websocket, are refused in a
+target before anything is written (exit 3): that target file needs a websocket block, which a
+fleet entry cannot carry, so it is written by hand (OD-37). In the judge block they are
+accepted only when dottore fleet --judge names the hand-written file, matching the block (id,
+endpoint, credential); no judge.yaml is written for it, and without --judge the block is
+refused.
 .B api_key_env
 names an environment variable, never the key itself. Each entry becomes a chatbot target (an
 mcp one an api target) with no seeded_setup, so a spec that needs documents, tools or memory is

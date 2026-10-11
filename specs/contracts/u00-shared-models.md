@@ -84,7 +84,12 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   filter acted on, for a reply that filter stopped (`unknown`: a trace that names neither; only the
   REST adapter sets it, from a Bedrock Converse guardrail trace, u04). It is the one field a dump
   leaves out when it is `None` (a `model_serializer`), so every reply without it is stored, reported
-  and hashed byte for byte as before; `logprobs: null` is still dumped (ADR-0005).
+  and hashed byte for byte as before; `logprobs: null` is still dumped (ADR-0005). `raw_ids` holds
+  what a transport returns beyond those fields, scalars at the top (a provider's request id, its
+  model echo) and a transport's record under its own key: the WebSocket adapter's frame transcript
+  is `raw_ids["websocket"]["frames"]`, not a field of its own (OD-34, decided 2026-10-11 under the
+  owner's delegation, revisable; reasoning in u04 §9). A reader of the scalars skips a nested value
+  (the fingerprint's envelope layer does).
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],
   evaluator_type: str, inconclusive_reason: InconclusiveReason | None}` (`docs/04 §1-§3`).
 - `AttackSpec` = every field/constraint in `schemas/attack-spec.schema.json` (`docs/03 §2`),

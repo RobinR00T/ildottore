@@ -127,7 +127,7 @@ dottore calibrate report.json labels.yaml
 | `--runs N` | reproducibility runs (default 5; 1 to 9,007,199,254,740,992, `2**53`, as for `--top-tests`, `--concurrency` and the `--budget-*` flags, which take 0 too) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep`/`-A` imply 2; an explicit `-T` wins); higher is faster/louder |
 | `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 and, on a live target, at least one request per wall-clock ceiling, as a `-T` template's pace must be (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
-| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling, and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes; a run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them (stderr says so) |
+| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling (with `--deep` alone such a resume plans in declared order, says so on stderr when an earlier part planned with a fingerprint, and the run store's `mutator_orders` records what each invocation planned with), and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes; a run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them (stderr says so) |
 | `--dry-run` | resolve + validate, send nothing; a `sampling:` line says what the target file's `sampling_defaults` fills, or that it is not sent |
 | `--estimate` | print a pre-run cost estimate (requests + tokens); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512 |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
@@ -199,10 +199,15 @@ ports (an offline `mock://` entry sends nothing and keeps a bare host).
 
 Keys are never written to the file: each entry names an env var (`api_key_env`), resolved
 only at send time. `provider` is inferred from the endpoint (`/chat/completions` -> openai,
-`/messages` -> anthropic, else `rest`). A `kind: mcp` entry routes to the read-only MCP
-adapter, which discovers a Model Context Protocol server's advertised tool/resource/prompt
-metadata (it never calls a tool); point the `mcp` suite at it. See
-[`specs/fleet.example.yaml`](specs/fleet.example.yaml).
+`/messages` -> anthropic, else `rest`). A WebSocket target is not a fleet entry: a `ws://` or
+`wss://` endpoint, or `provider: websocket`, is refused before anything is written (exit 3),
+since its target file needs a `websocket:` block; write it by hand from
+[`examples/target.websocket.yaml`](examples/target.websocket.yaml) (OD-37). A WebSocket judge
+is accepted only with `--judge` naming that hand-written file, matching the `judge:` block,
+and no `judge.yaml` is written for it. A `kind: mcp`
+entry routes to the read-only MCP adapter, which discovers a Model Context Protocol server's
+advertised tool/resource/prompt metadata (it never calls a tool); point the `mcp` suite at it.
+See [`specs/fleet.example.yaml`](specs/fleet.example.yaml).
 
 An MCP server reachable over the wire uses `provider: mcp` with an `endpoint`; a local one
 uses `transport: stdio` + `command` and is launched as a subprocess only if the scope target's

@@ -187,7 +187,9 @@ scientifically weak. Therefore:
   and again at the adapter layer. The file may carry an optional SHA-256 `checksum`, verified
   when present. That is not a signature: the checksum lives in the file it protects, so it
   catches accidental change, not an editor who recomputes or deletes it, and nothing requires
-  it. Real signing is open decision OD-2. Every run records the SHA-256 of the scope body that
+  it. It is integrity only, by decision (OD-2, 2026-10-11): who wrote or approved a scope is
+  proved by a signature made and verified out of band until the tool has key management. Every
+  run records the SHA-256 of the scope body that
   authorized it, in the run store and in every report (since 2026-10-05).
 - Policy packs declare which attack categories/specs are permitted for a given engagement
   (e.g. "no DoS category against prod"). Data-leak layer-B specs and PII elicitation are

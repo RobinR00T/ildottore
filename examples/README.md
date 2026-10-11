@@ -260,7 +260,9 @@ so `target.websocket.yaml` declares it: the handshake frame (`{{token}}` is the 
 (`text_path`, the `final_path`/`final_value` that ends a turn, the `ignore_types` to discard,
 `error_path`, `timeout_seconds`), a session-start frame and the reconnect cap. The adapter
 knows nothing else. `scope.websocket.yaml` authorizes `wss://` as it would `https://`
-(cleartext `ws://` only to loopback), and a redirect at the upgrade is never followed:
+(cleartext `ws://` only to loopback), and a redirect at the upgrade is never followed. Both
+files are written by hand: a fleet entry carries no `websocket:` block, so `dottore fleet`
+refuses a `ws://` or `wss://` endpoint (exit 3, nothing written) and points here (OD-37):
 
 ```bash
 dottore run --dry-run --quick \
