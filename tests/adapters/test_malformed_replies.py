@@ -232,3 +232,56 @@ async def test_a_json_rpc_error_the_server_answers_stays_a_product_error() -> No
     with pytest.raises(AdapterProductError, match="MCP initialize error") as raised:
         await _mcp(answer).send(ModelRequest(prompt="hi"))
     assert not isinstance(raised.value, ResponseMalformed)
+
+
+# --- WebSocket: a turn with no text is a reply when it carries calls or a filter's stop -------
+# (pre-merge audit of 598f0858, HIGH 2: "no frame carried text" was raised before the turn's tool
+# calls and the final frame's stop were read, so a destructive call was never evaluated and a
+# filter's cut was not OD-42's.)
+
+
+async def _ws_turn(frames: list[dict[str, Any]], **response: object) -> Any:
+    from websockets.asyncio.server import ServerConnection
+
+    from tests.adapters.test_websocket import _adapter, _spec
+    from tests.ws_raw_servers import HandlerServer, Log, auth_then, send_json
+
+    async def on_query(connection: ServerConnection, _message: dict[str, Any]) -> None:
+        for frame in frames:
+            await send_json(connection, frame)
+
+    async def handler(connection: ServerConnection, log: Log) -> None:
+        await auth_then(connection, log, on_query)
+
+    with HandlerServer(handler) as server:
+        adapter = _adapter(server, _spec(response=response))  # type: ignore[arg-type]
+        return await adapter.send(ModelRequest(prompt="hi"))
+
+
+async def test_a_websocket_turn_with_a_tool_call_and_no_text_is_a_reply() -> None:
+    call = {"name": "drop_database", "arguments": {"name": "prod"}}
+    response = await _ws_turn(
+        [{"type": "done", "tool_calls": [call]}], tool_calls_path="tool_calls"
+    )
+    assert response.text == ""
+    assert [c["name"] for c in response.tool_calls] == ["drop_database"]
+
+
+async def test_a_websocket_turn_its_filter_stopped_with_no_text_is_a_reply() -> None:
+    from ildottore.shared.provider_filter import filter_side
+
+    response = await _ws_turn(
+        [{"type": "end", "finish_reason": "content_filter"}],
+        final_path="finish_reason",
+        final_value=None,
+    )
+    assert (response.text, response.finish_reason) == ("", "content_filter")
+    assert filter_side(response) == "output"
+
+
+async def test_a_websocket_turn_with_neither_text_nor_calls_nor_a_filter_stop_is_unreadable() -> (
+    None
+):
+    with pytest.raises(ResponseMalformed, match="carried text") as raised:
+        await _ws_turn([{"type": "done", "other": 1}], tool_calls_path="tool_calls")
+    _is_one_attempt_failure(raised.value)

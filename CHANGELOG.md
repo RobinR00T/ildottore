@@ -11,7 +11,7 @@ versioning: [SemVer](https://semver.org/).
   balance, an integer of more than 4,300 digits, bytes that are not text), not a JSON object, or
   not the shape the provider or the template declares (OpenAI's `choices`, Anthropic's `content`
   array, a REST template's `text_path`), a WebSocket frame that is binary, not JSON or not an
-  object, a turn none of whose frames carries text, and an MCP reply that is not JSON-RPC, was an
+  object, a turn with no text, no tool call and no filter's stop, and an MCP reply that is not JSON-RPC, was an
   `AdapterProductError`, and the runner stopped the campaign on the first one: through the CLI
   against a loopback stub on `6d5f7ae`, one `<html>` reply among ordinary ones made `run` exit 3
   at that reply, the fourth request here ("aborted on AdapterProductError: hostile: success

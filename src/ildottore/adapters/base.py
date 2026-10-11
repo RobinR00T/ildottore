@@ -157,8 +157,8 @@ class ResponseMalformed(AdapterEnvError):
     not text included), not a JSON object, or not the shape the provider or the template
     declares (OpenAI's ``choices[0].message.content``, Anthropic's ``content`` array, a REST
     template's ``text_path``, a WebSocket frame that is binary, not JSON or not an object, or a
-    turn none of whose frames carries text, an MCP reply that is not JSON-RPC). It was an
-    :class:`AdapterProductError`, and the runner stopped the whole campaign on the first one:
+    turn with no text, no tool call and no filter's stop, an MCP reply that is not JSON-RPC). It
+    was an :class:`AdapterProductError`, and the runner stopped the whole campaign on the first one:
     one hostile ``<html>`` reply ended a scan after 1 request. Decided 2026-10-11 under the
     owner's delegation (best practice), revisable, as #65 decided for a reply nested too deeply:
     the attempt is inconclusive and the campaign goes on. A wrong endpoint answers every request

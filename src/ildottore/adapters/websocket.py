@@ -78,6 +78,7 @@ from ildottore.shared.models import (
     WebSocketSpec,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.provider_filter import is_filter_stop
 from ildottore.shared.toolcalls import check_argument_nesting
 from ildottore.shared.wellformed import well_formed_json
 
@@ -700,12 +701,19 @@ class WebSocketAdapter:
                 f"{reading.timeout_seconds}s"
             ) from exc
 
-        if not parts:
+        finish = get_path(final, reading.final_path) if final is not None else None
+        # A turn with no text is still a reply when it carries tool calls (an agent that only
+        # acts) or a stop the provider's filter writes (OD-42 reads it as the filter's cut). Read
+        # first: raised before them, the call was never evaluated (pre-merge audit of 598f0858).
+        if (
+            not parts
+            and not calls
+            and not is_filter_stop(finish if isinstance(finish, str) else None)
+        ):
             raise ResponseMalformed(
                 f"{self.id}: no frame of the turn carried text at path "
-                f"{quoted(reading.text_path)}; not evaluated"
+                f"{quoted(reading.text_path)}, a tool call or a filter's stop; not evaluated"
             )
-        finish = get_path(final, reading.final_path) if final is not None else None
         recorded = frames if whole else frames[start:]
         conversation.reported = len(frames)
         ids["websocket"] = {"frames": [dict(f) for f in recorded]}

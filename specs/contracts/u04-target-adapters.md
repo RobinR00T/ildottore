@@ -318,9 +318,11 @@ reads as U+FFFD, since httpx decodes the stream as text.
   anthropic and rest); OpenAI's no `choices`, a choice that is not an object, no `message` object,
   `content` that is not a string; Anthropic's no `content` array; a REST template's nothing at
   `text_path` or a text that is not a string (after the Gemini block check, OD-41); a WebSocket
-  frame that is binary, not JSON or not an object, and a turn none of whose frames carries text
-  (the conversation is dropped, as on every error, and a frame in the handshake phase is not
-  re-dialled); an MCP body or SSE event that is not JSON, an SSE stream with no `data:` event, and
+  frame that is binary, not JSON or not an object, and a turn with no text, no tool call and no
+  filter's stop at `final_path` (the conversation is dropped, as on every error, and a frame in
+  the handshake phase is not re-dialled; a turn with a tool call or a filter's stop and no text is
+  a reply with empty text, read after them: raised first, an agent's destructive call was never
+  evaluated and a filter's cut was not OD-42's, pre-merge audit of `598f0858`, HIGH 2); an MCP body or SSE event that is not JSON, an SSE stream with no `data:` event, and
   an `initialize` with no result object, over HTTP or stdio. What stays a product error: a
   non-retryable 4xx (`AdapterStatusError`, `SamplingRefused`; a `ProviderFilterBlock` is OD-41's
   blocked attempt), a

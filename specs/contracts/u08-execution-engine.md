@@ -550,7 +550,8 @@ fallback shapes and two stops that are no filter's). The 4 added after the verif
 its first five replies stops (added 2026-10-11, OD-21; the adapters' half is u04).** A 200 whose
 body is not JSON (brackets that do not balance, an integer of more than 4,300 digits, bytes that
 are not text), not a JSON object or not the provider's or the template's shape, a WebSocket frame
-that is binary, not JSON or not an object (or a turn none of whose frames carries text), and an MCP
+that is binary, not JSON or not an object (or a turn with no text, no tool call and no filter's
+stop), and an MCP
 reply that is not JSON-RPC, was an `AdapterProductError`, and the runner aborted the campaign on the
 first one (F5): through the CLI against a loopback stub on `6d5f7ae`, one `<html>` reply among
 ordinary ones made `run` exit 3 ("aborted on AdapterProductError: hostile: success response was not

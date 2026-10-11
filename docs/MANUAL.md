@@ -104,8 +104,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   balance, an integer of more than 4,300 digits, which Python refuses to read, bytes that are not
   text), not a JSON object, or not the shape the provider or the template declares (an OpenAI
   reply with no `choices`, an Anthropic one with no `content` array, a REST reply with nothing at
-  `text_path`), a WebSocket frame that is binary, not JSON or not an object, a turn none of whose
-  frames carries text, and an MCP reply that is not JSON-RPC, fails its attempt since 2026-10-11
+  `text_path`), a WebSocket frame that is binary, not JSON or not an object, a turn with no text, no tool call and no filter's stop, and an MCP reply that is not JSON-RPC, fails its attempt since 2026-10-11
   (OD-21): `ResponseMalformed`, inconclusive, not retried, debited, kept by a resume and
   re-derived by `dottore replay`, and the scan goes on; during a `-sV` probe pass that one probe
   fails. It used to stop the run (exit 3) at the first one, so one hostile `<html>` reply ended
@@ -772,7 +771,9 @@ the adapter cannot read, which fails its attempt, as a malformed HTTP reply does
 (an environment error, retried by the runner's policy and debited each time); every string at
 `text_path` is appended; the frame satisfying `final_path`/`final_value` ends the turn; its
 `usage_path` mapping, if any, trues up the token ledger (without one the pre-send estimate
-stands, as for a REST target). A turn with no text at all is a reply that cannot be read too. No final frame
+stands, as for a REST target). A turn with no text is still a reply when it carries a tool call
+(read at `tool_calls_path`) or ends with a filter's stop at `final_path` (OD-42 reads it as the
+filter's cut); one with none of the three is a reply that cannot be read too. No final frame
 within `timeout_seconds` (counted from the query send, which is inside it), or a connection
 closed mid-turn, is an environment error: inconclusive, and the runner's `--timeout` still
 bounds the whole send. The handshake and session phase runs under the same timeout and caps. A
