@@ -80,7 +80,11 @@ replays by that name. Attempts that went out with no temperature (a target that 
 sampling, dottore-scope(5)) are counted under the pooled rate: they are not temperature-0
 deterministic. Attempts the provider's input filter refused are listed as
 .B "inconclusive (blocked_by_provider_filter)"
-and counted under the pooled rate.
+and counted under the pooled rate; replies its filter cut or replaced as
+.B "inconclusive (cut_by_provider_output_filter)"
+or
+.BR "inconclusive (provider_filter_side_unknown)" ,
+counted the same way.
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
@@ -282,6 +286,16 @@ not stop the run: the attempt is inconclusive with the reason blocked_by_provide
 sent again, and is counted in the summary ("Blocked by the provider's input filter: N
 attempt(s) in S spec(s) never reached the model"). A run whose every attempt was refused that way
 completed; it is not "every attempt failed on transport". Any other 4xx still exits 3.
+.PP
+A reply the provider's filter cut or replaced (an HTTP 200 with its own stop reason: Azure
+OpenAI's content_filter, a Bedrock guardrail's guardrail_intervened, Gemini's SAFETY, Anthropic's
+refusal) is never scored as the model resisting. Read from a side that refused the prompt, it is
+blocked as above; from one that cut what the model wrote, the attempt is inconclusive with the
+reason cut_by_provider_output_filter and needs review; from a side the provider does not report,
+provider_filter_side_unknown. A spec with such an attempt and no fail is inconclusive, never a
+pass; a deterministic fail on what came back stands. The summary counts them ("Cut by the
+provider's output filter: N attempt(s) in S spec(s) came back cut or replaced"); they do not trip
+.BR --fail-on .
 .SH FILES
 .TP
 .I scope.yaml

@@ -158,6 +158,17 @@ provider's input filter: N attempt(s) in S spec(s) never reached the model`, and
 inconclusive, never a pass. Any other 4xx still stops the run with `3`
 ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
 
+**A reply the provider's filter cut is never a pass.** A deployment's output filter answers
+HTTP 200 with an empty or canned reply and its own stop reason (Azure OpenAI's `content_filter`, a
+Bedrock guardrail's `guardrail_intervened`, Gemini's `SAFETY`, Anthropic's `refusal`). The model may
+have written what the filter hid, so such an attempt is `inconclusive:
+cut_by_provider_output_filter` (or `provider_filter_side_unknown` when the provider does not say
+whether it blocked the prompt or the reply), needs review, and keeps its spec from passing; a
+deterministic evaluator's fail on what came back still stands. The summary counts them (`Cut by
+the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced`, and
+`summary.cut_by_provider_output_filter` in JSON). `--fail-on` does not trip on them: read that key
+if your pipeline should ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
+
 ## Multi-turn attacks
 
 Some specs (Crescendo, Linear, Sequential, Bad-Likert, Tree) attack over several turns.
