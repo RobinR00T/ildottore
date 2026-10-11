@@ -3,6 +3,22 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-11 (noon): the verification of `877b2e2b`, and `main` merged in
+
+- The verification of `877b2e2b` found the decisions branch merge-ready and asked for three
+  things, done on top. `1d9f268`: the declared-order `note:` printed for a `--deep` campaign
+  resumed with `--deep` too (`mutator_orders` declared, declared), where nothing changed; it now
+  prints only when an earlier entry is `fingerprint`, and the value is described as "planned with a
+  fingerprint" (whether or not that moved a mutator), not "ordered"; one test, failing on
+  `877b2e2b`; `CHANGELOG.md:66` and `docs/MANUAL.md:362` rewrapped (100 characters, 101 bytes with
+  §). `edb6d58`: `origin/main` at `0685f2c` (#105 hand-off tools, #106 OD-42) merged in, both sides
+  kept (CHANGELOG, PROGRESS, u00 §6 and the `ModelResponse` docstring, where OD-42's `filter_side`
+  and OD-34's `raw_ids` note now sit together).
+- `make --no-print-directory gates` green on the merged tree `edb6d58` (11:47 to 11:53 CEST):
+  5,264 tests, 97.75% coverage, ruff and the format check clean (399 files), mypy clean (158
+  source files), four import contracts kept, 75 specs lint OK, self-scan 0 high/critical, bandit
+  and pip-audit clean.
+
 ## State, 2026-10-11 (noon): the verification of `91845524` (OD-42), two mediums fixed
 
 - Every earlier finding closed; two new mediums, fixed in `0a293438`. (1) The recording-only judge
