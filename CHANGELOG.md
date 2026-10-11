@@ -30,6 +30,12 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   connection of its own)" (it said "is not built"). One frame misattributed would put one
   attempt's reply into another's verdict, which nothing downstream can detect. Not taken: a
   correlation id in `message.send` and a `response.correlation_path` read from every frame.
+- **No WebSocket reconnect in the middle of a conversation, by design (OD-36).** Unchanged
+  behaviour, now decided: a later turn whose connection is gone is inconclusive, never a silent
+  new session, even with `{{messages}}` in the template, since the tool cannot tell that a server
+  keeps no per-connection state, and on one that keeps it the re-dialled turn would be scored
+  without the context the attack built. Not taken: a `session.stateless: true` declaration under
+  which the runner re-dials, debited, and resends the whole history.
 
 ### Fixed (one SIGTERM or SIGHUP stops a run with Ctrl-C ignored too)
 

@@ -390,15 +390,29 @@ reads as U+FFFD, since httpx decodes the stream as text.
   refused as a product error. Revisit when a deployment caps connections per client and has to be
   scanned faster than one conversation at a time. Reversal: drop the `one_query_in_flight` check
   in `cli/wiring._websocket_spec` and build the alternative in `adapters/websocket.py`.
-- **OD-36** (open, 2026-10-07, PR #87): a WebSocket reconnect is attempted only before a query is
-  on the wire, and never more often than the adapter's own retry allowance: under `run` (and
-  `-sV`, the identity sweep and a metered judge) every live adapter retries nothing itself, so a
-  socket that fails to open is retried by the runner, one debited and paced send per dial (since
-  the pre-merge audit of 2026-10-09: `max_attempts: 1` made 8 dials for 4 debits). A connection
-  closed mid-turn is an environment error the runner retries and debits; the adapter never
-  resends a query on its own, so no send escapes the ledger. A later turn of a multi-turn attempt
-  whose connection is gone is inconclusive, never a silent new session. Whether a stateless
-  server (`{{messages}}` in the template) should be allowed to reconnect mid-conversation is open.
+- **OD-36** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: no reconnect mid-conversation, as built**): a WebSocket reconnect is
+  attempted only before a query is on the wire, and never more often than the adapter's own retry
+  allowance: under `run` (and `-sV`, the identity sweep and a metered judge) every live adapter
+  retries nothing itself, so a socket that fails to open is retried by the runner, one debited
+  and paced send per dial (since the pre-merge audit of 2026-10-09: `max_attempts: 1` made 8
+  dials for 4 debits). A connection closed mid-turn is an environment error the runner retries
+  and debits; the adapter never resends a query on its own, so no send escapes the ledger. A
+  later turn of a multi-turn attempt whose connection is gone is inconclusive (`WebSocketLost`,
+  not retried), never a silent new session, and that holds for a stateless server too
+  (`{{messages}}` in the template). Why: `{{messages}}` shows that the client resends the
+  history, not that the server ignores its own per-connection state, and the tool cannot check
+  which; on a server that keeps state, a re-dialled turn (a new handshake and `session.start`)
+  is answered in a fresh conversation, and a multi-turn attack's later turn is scored without the
+  context its earlier turns built, a pass of a model that was never asked the question in
+  context. Inconclusive says what happened; a silent new session would not, and it is the
+  conservative reading where the evidence is at stake. Alternative not taken: an operator
+  declaration (`session.stateless: true`, accepted only with `{{messages}}` in `message.send`)
+  under which a lost connection is dialled again through the runner (each dial a debited, paced
+  send), the handshake and session start sent again, the whole history sent in one frame, and the
+  reconnect marked in the frame transcript. Revisit when a live target loses conversations to
+  idle timeouts often enough to show in its inconclusive count. Reversal: build the alternative
+  in `adapters/websocket.py` (the `WebSocketLost` branch of `send`).
 - **OD-37** (opened 2026-10-07, PR #87; **decided 2026-10-11 under the owner's delegation (best
   practice), revisable: a fleet refuses a WebSocket entry; built, u12 §9**): `dottore fleet`
   refuses a `ws://` or `wss://` endpoint (read as `run` reads it, stripped and case-folded,

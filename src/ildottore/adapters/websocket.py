@@ -413,7 +413,8 @@ class WebSocketAdapter:
         A request with no ``conversation`` in its metadata is a single-turn attempt: it opens
         its own connection and closes it. A multi-turn request keeps one connection for the
         conversation (opened on turn 0, closed after the last turn); a later turn whose
-        connection is gone is an environment error, not a silent restart of the session.
+        connection is gone is an environment error, not a silent restart of the session, even
+        for a template that resends the history (``{{messages}}``): OD-36, by design.
         """
 
         self._check_allowlist()  # BEFORE any socket is opened: unbypassable.

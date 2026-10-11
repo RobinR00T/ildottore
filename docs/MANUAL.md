@@ -727,7 +727,10 @@ masks a credential by value only from that length.
 session start, sends its query, reads the turn and closes. A multi-turn attempt keeps one
 connection across its turns and closes it after the last; a later turn whose connection is gone
 (the turn before it failed) is an environment error (`inconclusive`, not retried), never a
-silent restart of the session. A live conversation is never evicted: past 256 open at once, a
+silent restart of the session, even for a server that keeps no state (`{{messages}}` in the
+template): the tool cannot tell that a server keeps none, and on one that does, a re-dialled turn
+would be answered in a fresh conversation without the context the earlier turns built (by
+design, OD-36, decided 2026-10-11). A live conversation is never evicted: past 256 open at once, a
 new one is refused (`inconclusive`, not retried) and the open ones keep working. Concurrent
 specs therefore never interleave on one socket, and one query is in flight per connection. The
 `-sV` probes are single-turn attempts: one connection each. One request in the budget is one
@@ -799,7 +802,7 @@ carries no `websocket:` block, so `dottore fleet` refuses a `ws://` or `wss://` 
 `provider: websocket`, exit 3 and nothing written, and points here: write the target and its
 scope entry by hand, as `examples/target.websocket.yaml` and `examples/scope.websocket.yaml` do;
 until 2026-10-11 it wrote a `provider: rest` file `run` refused, OD-37); a session that must
-survive a reconnect.
+survive a reconnect (by design, OD-36, above).
 
 ### 4.3 `fleet.yaml`, many targets in one file
 

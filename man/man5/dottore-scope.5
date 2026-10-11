@@ -200,8 +200,9 @@ debited request); headers (on the upgrade) and vars (plain values the templates 
 unquoted date, a set, binary data, NaN, half a character) anywhere in the block is refused when
 the file is loaded, and so is a ws:// or wss:// endpoint on any other provider, and
 session.one_query_in_flight false (OD-35: one query at a time per connection, by design). One
-connection per conversation; every frame is kept in the evidence with the credential as its
-placeholder.
+connection per conversation, never re-dialled in the middle of one (a later turn whose
+connection is gone is inconclusive, OD-36); every frame is kept in the evidence with the
+credential as its placeholder.
 Worked file:
 examples/target.websocket.yaml; reference in docs/MANUAL.md section 4.2.
 .SH "FLEET FILE"
