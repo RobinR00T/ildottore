@@ -16,7 +16,7 @@ import pytest
 
 from ildottore.core.runner import CampaignRunner
 from ildottore.shared.enums import EvaluatorType, VerdictStatus
-from ildottore.shared.models import AttackSpec, ModelResponse, SeededSetup, Verdict
+from ildottore.shared.models import AttackSpec, ModelRequest, ModelResponse, SeededSetup, Verdict
 
 from .conftest import AllowAllPolicy, no_sleep
 from .test_seeded_setup import Recording, _spec, _target
@@ -48,9 +48,22 @@ def _only(spec: AttackSpec, kind: EvaluatorType) -> AttackSpec:
     return spec.model_copy(update={"evaluators": [c for c in spec.evaluators if c.type is kind]})
 
 
-async def _finding(fixtures: Any, spec: AttackSpec, seeded: SeededSetup):
+class _Cut(Recording):
+    """A deployment that hands off, and whose output filter then cuts the reply (OD-42)."""
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        self.requests.append(request)
+        return ModelResponse(
+            text="",
+            tool_calls=[{"id": "a", "name": _HANDOFF, "arguments": {"reason": "billing"}}],
+            finish_reason="content_filter",
+        )
+
+
+async def _finding(fixtures: Any, spec: AttackSpec, seeded: SeededSetup, *, cut: bool = False):
     evaluators, mutators, scorer, (evidence, runs) = fixtures
-    adapter = Recording([{"id": "a", "name": _HANDOFF, "arguments": {"reason": "billing"}}])
+    calls = [{"id": "a", "name": _HANDOFF, "arguments": {"reason": "billing"}}]
+    adapter = _Cut(calls) if cut else Recording(calls)
     runner = CampaignRunner(
         policy=AllowAllPolicy(),
         mutators=mutators,
@@ -89,6 +102,31 @@ async def test_the_attempt_verdict_says_which_tool_the_declaration_cleared(fixtu
         "status=pass; 0/1 attempt-verdicts exploited; 1/1 with a call to a tool the target file "
         "declares not destructive, not judged destructive (operator declaration, OD-43)"
     )
+
+
+async def test_a_cut_reply_does_not_fail_a_tool_the_operator_declared(fixtures) -> None:
+    """A reply the provider's filter cut is read by the evaluators whose fail rests on what came
+    back (OD-42's ``_cut_verdict``), ``tool_call`` among them, and it reads the operator's
+    declaration as every other path does: the hand-off it holds is no fail, the attempt stays a
+    cut needing review, and its verdict says the declaration was read."""
+
+    from ildottore.shared.enums import InconclusiveReason
+
+    spec = _only(_spec("AG-TOOL-UNAUTH-001"), EvaluatorType.TOOL_CALL)
+
+    plain = await _finding(fixtures, spec, _seeded(spec.id, declared=False), cut=True)
+    declared = await _finding(fixtures, spec, _seeded(spec.id, declared=True), cut=True)
+
+    # Without the declaration, the hand-off in what came back is a fail that stands.
+    assert plain.status is VerdictStatus.FAIL
+    assert plain.attempts[0].verdict is not None
+    assert "the provider's output filter then cut the reply" in plain.attempts[0].verdict.reasoning
+    # With it, no fail: a cut, inconclusive and needing review, never a pass, and it says why.
+    assert declared.status is VerdictStatus.INCONCLUSIVE
+    verdict = declared.attempts[0].verdict
+    assert verdict is not None
+    assert verdict.inconclusive_reason is InconclusiveReason.CUT_BY_PROVIDER_OUTPUT_FILTER
+    assert verdict.reasoning.endswith(f"; {_NOTE}")
 
 
 async def test_a_spec_judged_by_kill_chain_alone_is_not_changed(fixtures) -> None:
