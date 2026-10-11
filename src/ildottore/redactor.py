@@ -305,6 +305,24 @@ def visible_controls(text: str) -> str:
     return _LOG_COMMAND.sub(r"\\x23", _TERMINAL_CONTROLS.sub(_visible_control, text))
 
 
+def log_safe_json(text: str) -> str:
+    """``text``, a JSON document, with the second ``#`` of each ``##<letters>[`` as ``\\u0023``.
+
+    The JSON outputs (``lint --json``, ``coverage --json``, ``dottore fingerprint``, ``schema
+    export``, the JSON and SARIF reports) keep every value as it is, so printed to a CI log a pack's
+    file name or a target id holding ``##[error ...]`` or ``##vso[...]`` was still a command to
+    the runner (OD-20, open until 2026-10-11). ``\\u0023`` is JSON's own escape for ``#`` (RFC 8259
+    §7), so every JSON reader parses the same value, and serializing it again with the same
+    options gives the plain bytes back. In a JSON text a ``#`` stands only inside a string and is
+    never the character after an escaping backslash (``\\#`` is no JSON escape), so the rewrite
+    cannot touch anything else. The ``::`` form needs the start of a line, which a value never
+    gets in JSON (a newline in it is written ``\\n``). Decided under the owner's delegation (best
+    practice), revisable: the same ``#`` the text outputs write as ``\\x23``.
+    """
+
+    return _LOG_COMMAND.sub(r"\\u0023", text)
+
+
 #: The email shape; a ``skip`` match is a run of address characters with no address in it.
 EMAIL: Final = re.compile(
     r"\b(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b|(?P<skip>[A-Za-z0-9._%+-]{64,}))"

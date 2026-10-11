@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ildottore.redactor import visible_controls
+from ildottore.redactor import log_safe_json, visible_controls
 from ildottore.registry import LintCode, LintError, LintReport, Severity
 from ildottore.registry import lint as _lint
 
@@ -57,8 +57,8 @@ def lint(paths: list[Path]) -> LintReport:
 
 
 def render_json(report: LintReport) -> str:
-    """Machine-parseable rendering (contract §6)."""
-    return json.dumps(report.model_dump_report(), indent=2, sort_keys=True)
+    """Machine-parseable rendering (contract §6), with no CI log command in its bytes (OD-20)."""
+    return log_safe_json(json.dumps(report.model_dump_report(), indent=2, sort_keys=True))
 
 
 def render_text(report: LintReport) -> str:

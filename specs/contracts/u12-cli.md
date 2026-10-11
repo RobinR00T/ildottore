@@ -118,9 +118,14 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
   as their `repr`, the `-vv` plan's reasons for a refused spec (a pack's `requires_policy`; a
   skipped or not seeded one's too, defensively) and the scope digests the resume note reads back
   from the run store. The JSON outputs escape every control character (`fingerprint` escapes DEL
-  and non-ASCII inside pydantic's own output) and keep every value as it is, so printed to a CI
-  log they can still carry such a command (OD-20). This does not cover the operator's own values
-  in the plan lines.)
+  and non-ASCII inside pydantic's own output) and keep every value as it is; since OD-20 (decided
+  2026-10-11 under the owner's delegation, revisable) each of them, `lint --json`, `coverage
+  --json`, `dottore fingerprint`, `schema export`, the JSON report and the SARIF report, writes
+  that same `#` as `\u0023` (`redactor.log_safe_json`), JSON's own escape for it, so a JSON
+  reader parses the same value and a CI log carries no command from it
+  (`tests/test_json_log_commands.py`: the parsed document is the plain serializer's, and
+  serialized again with the output's options it is the plain bytes). This does not cover the
+  operator's own values in the plan lines.)
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/cli -q` green; coverage ≥ 85% for `src/ildottore/cli`. (As built CI enforces
@@ -1132,10 +1137,24 @@ by `tests/cli/test_provider_output_filter_campaign.py`.
   misplaced key sits). Reversing it widens `_whole_path_spans` in `cli/app.py` to a missing path's
   name; `tests/cli/test_masked_paths.py` pins the masking.
 
-- **OD-20** (open, 2026-10-07): a JSON output printed to a CI log can still carry a runner's
-  log command (`##[cmd]`, `##vso[`), because JSON keeps every value as it is (§6). A = leave
-  it, documented; B = write the `[` of `##<letters>[` as `\u005b` in every JSON output, which
-  leaves each parsed value identical (proposed). See `00-INDEX.md`.
+- **OD-20** (2026-10-07; **decided 2026-10-11 under the owner's delegation (best practice),
+  revisable: escape it, built**): a JSON output printed to a CI log could still carry a runner's
+  log command (`##[cmd]`, `##vso[`), because JSON keeps every value as it is (§6). Built: every
+  JSON output writes the second `#` of `##<letters>[` as `\u0023` (`redactor.log_safe_json`,
+  after `json.dumps` or pydantic's serializer): `lint --json`, `coverage --json`, `dottore
+  fingerprint`, `schema export`, and the JSON and SARIF reports (`reporting/json_reporter.py`,
+  `reporting/sarif_reporter.py`). Why: RFC 8259 §7 lets any character be written as `\u` and four
+  hex digits, so every JSON reader parses the same value, and the output is safe wherever it is
+  printed, which is the rule the text outputs already follow (the same `#`, written there as
+  `\x23`); in a JSON text a `#` stands only inside a string and never right after an escaping
+  backslash, so the rewrite touches nothing else. The cost: the bytes change where a value holds
+  such a sequence (none of the shipped specs does), so a consumer that compares bytes rather than
+  parsed values sees the escape. Not taken: A, leave it and tell the operator to write JSON to a
+  file; B as first proposed, the `[` written as `\u005b`, equally lossless, but a second shape
+  for one rule. Not covered: the evidence store and the run store, the tool's own storage read
+  back by `replay` and `--resume`, whose bytes are content-addressed and are not an output; the
+  JUnit XML and HTML reports, which are not JSON. Reversal: drop the `log_safe_json` calls (seven,
+  in `cli/app.py`, `cli/lint.py`, `cli/coverage.py` and the two reporters).
 - **OD-23** (shared with u09, 2026-10-07): what `run -sV` / `-A` and `dottore fingerprint` do
   when one probe's reply comes back refused. Built reversibly as option A: the probe fails, a
   `warning:` line on stderr names it (never silenced by `-q`), the fingerprint line ends

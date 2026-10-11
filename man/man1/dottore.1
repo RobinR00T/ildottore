@@ -228,7 +228,10 @@ Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.json, .html, 
 that already ends in one of the four extensions drops it first (-oA report.json writes
 report.json, report.html, report.sarif, report.xml). A report directory that does not exist,
 or two formats writing the same file (compared case-insensitively and after Unicode
-normalization), is refused before anything is sent.
+normalization), is refused before anything is sent. The JSON and SARIF reports, like every JSON
+output (lint --json, coverage --json, fingerprint, schema export), write the second # of
+##<letters>[ as \eu0023, so a CI runner reading a printed report finds no log command
+(GitHub's legacy ##[error], Azure's ##vso[...]); every JSON reader parses it as #.
 .TP
 .B --fail-on \fIBAND\fR
 CI gate on confirmed findings: info|low|medium|high|critical (default high; info gates on

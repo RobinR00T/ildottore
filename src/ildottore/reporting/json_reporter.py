@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ildottore.redactor import log_safe_json
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
 from ildottore.reporting.summary import Coverage, ModelComparison, RunSummary
@@ -157,7 +158,8 @@ class JsonReporter(BaseReporter):
             indent=2,
             separators=(",", ": "),
         )
-        return (text + "\n").encode("utf-8")
+        # The same document, with no CI log command in its bytes when printed (OD-20).
+        return (log_safe_json(text) + "\n").encode("utf-8")
 
 
 register_reporter(ReportFormat.JSON, JsonReporter)

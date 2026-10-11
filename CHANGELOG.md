@@ -5,6 +5,26 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (a JSON output carries no CI log command, OD-20)
+
+- **Every JSON output writes the second `#` of `##<letters>[` as `\u0023`.** A GitHub Actions
+  runner reads the legacy `##[error]` form, and the Azure Pipelines agent `##vso[...]`, anywhere in
+  a line; the text outputs already wrote that `#` as `\x23`, and the JSON outputs kept it, so a pack
+  file named `x ##[error file=a.py,line=1]pwned.yaml` put a command in `lint --json` and `coverage
+  --json`, and a target id holding `##vso[task.setvariable ...]` put one in `dottore fingerprint`
+  (1 line) and in the JSON and SARIF reports (3 lines each). `lint --json`, `coverage --json`,
+  `dottore fingerprint`, `schema export` and the JSON and SARIF reports now pass through
+  `redactor.log_safe_json`. `\u0023` is JSON's own escape for `#` (RFC 8259 §7): every JSON reader
+  parses the same value, and the document serialized again with the output's options is the plain
+  bytes. A program that compares bytes rather than parsed values sees the escape; none of the
+  shipped specs holds such a sequence. Not changed: the evidence and run stores, JUnit XML and HTML.
+- Decided under the owner's delegation (best practice), revisable: OD-20 in u12 §6 and §9 and its
+  00-INDEX row, the MANUAL and `docs/02-threat-model.md` S6; `tests/test_json_log_commands.py`
+  (18 tests: the rewrite, a 400-example property that the parsed data and its re-serialization are
+  byte for byte the plain serializer's, and each JSON output through the CLI; it does not collect
+  on `6d5f7ae`), and `tests/test_terminal_log_commands.py`'s JSON test now asserts the escape (it
+  pinned the raw prefix as an open decision).
+
 ### Decided (five open decisions closed under the owner's delegation, 2026-10-11)
 
 On 2026-10-11 at 10:09 the owner delegated the open decisions of robustness and output: "arreglalo

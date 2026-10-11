@@ -48,6 +48,7 @@ from ildottore.redactor import (
     Redactor,
     holds_known_secret_part,
     known_secret_parts,
+    log_safe_json,
     visible_controls,
 )
 from ildottore.shared.schema_export import export_schemas
@@ -797,7 +798,8 @@ def fingerprint(
         shown = _ascii_json(fp.model_dump_json(indent=2))
     except ValueError:  # a lone surrogate (a target id written `"t\ud800"`), not JSON to pydantic
         shown = json.dumps(fp.model_dump(mode="json"), indent=2)
-    typer.echo(shown)
+    # A target id holding `##[error]` was a command to a CI runner reading the log (OD-20).
+    typer.echo(log_safe_json(shown))
     raise typer.Exit(ExitCode.CLEAN)
 
 
@@ -1066,6 +1068,6 @@ def schema_export(
                 err=True,
             )
             raise typer.Exit(ExitCode.ERROR)
-        typer.echo(json.dumps(schemas[name], indent=2, sort_keys=True))
+        typer.echo(log_safe_json(json.dumps(schemas[name], indent=2, sort_keys=True)))
         return
-    typer.echo(json.dumps(schemas, indent=2, sort_keys=True))
+    typer.echo(log_safe_json(json.dumps(schemas, indent=2, sort_keys=True)))
