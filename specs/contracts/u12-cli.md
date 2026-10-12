@@ -1334,3 +1334,8 @@ Checked by `tests/cli/test_malformed_reply_campaign.py`.
 - **OD-33** (shared with u01, A-56; decided 2026-10-07 by the conductor, confirmed by the owner).
   This unit's half: `dottore fleet` refuses two ids that differ only by case on every file
   system, so it never writes one `target-<id>.yaml` over another (u01 §9).
+- **OD-46** (shared with u01; numbered 2026-10-12; open, owner to decide): a flag that loads a
+  policy pack. No command calls `policy.packs.load_pack`, so the 8 specs that declare
+  `requires_policy` never send from `dottore`, and OD-11 ties `--allow-pii-elicitation` to this
+  flag. Recommended: one `run` option that loads a pack through that loader, printed in the plan
+  and recorded with the run, landing with OD-11's flag (`00-INDEX.md`, `docs/12`).

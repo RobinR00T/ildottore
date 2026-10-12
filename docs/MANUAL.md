@@ -201,7 +201,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   with **zero** sends (otherwise the capability filter skips them first). They cannot be
   enabled from the command line today. A pack loader exists in the code
   (`policy.packs.load_pack`) but no command calls it. Whether the CLI should accept a policy
-  pack is an open decision.
+  pack is an open decision (OD-46).
 - **`test_only` marks a spec; it does not switch it off.** A marked spec runs. What the gate
   refuses is an **unmarked** spec in a flagged family (`jailbreak`, `data_leakage`,
   `agent_tool_abuse`, `availability_cost`, `safety_content`): the one `dottore lint` reports as
@@ -1926,7 +1926,7 @@ makes the attempt inconclusive; otherwise a judge `fail` decides; otherwise `pas
 that was consulted and merely abstained (confidence below the spec's threshold, or its two
 passes disagreeing) is dropped; an unparseable answer counts like an outage and is kept
 (`capability_unavailable`). Whether a disagreement should be dropped or keep the attempt
-inconclusive is an open question for the maintainer (`docs/04 §2`). Per
+inconclusive is an open decision for the owner (OD-45, `docs/04 §2`). Per
 spec, across attempts: any exploited attempt makes it `fail`; a compromised judge on any
 attempt makes it inconclusive; and `pass` needs a strict majority of passing attempts (one
 pass over four errors is inconclusive, not secure). See

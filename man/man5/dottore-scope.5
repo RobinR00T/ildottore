@@ -87,7 +87,7 @@ Policy-gated specs (the 8 declaring requires_policy: the agentic-extortion suite
 elicitation) are gated by the run's policy pack, not the scope. The CLI always applies its own
 default pack, which enables no capabilities, and has no option to load another, so these specs
 cannot be enabled from the command line and never send (blocked_by_policy with zero sends).
-Whether the CLI should accept a pack is an open decision.
+Whether the CLI should accept a pack is an open decision (OD-46).
 .SH "TARGET FILE"
 .nf
 id: my-chatbot          # must match a target id in the scope's targets

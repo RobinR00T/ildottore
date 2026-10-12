@@ -56,7 +56,7 @@ combination and a vote nothing called, and a judge-only fail was `confirmed` whe
    returns `inconclusive` with no reason; the runner drops a reasonless judge abstention, so the
    deterministic evaluators decide the attempt. `docs/02 §4` says a disagreement makes the
    result `inconclusive`: which of the two is intended is an open question for the owner,
-   `docs/04 §2`. An outage or an unparseable answer carries `capability_unavailable` and a
+   OD-45, `docs/04 §2`. An outage or an unparseable answer carries `capability_unavailable` and a
    tripwire hit `judge_compromised`; both are kept.)
 5. `combine.py` (evaluator_logic). Since OD-19 (2026-10-11) a thin entry to
    `shared.combination.combine_verdicts`; its boolean modes and weighted vote are gone (A-73).
@@ -310,6 +310,12 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   a judge. The alternative not taken: C, a relevance precondition in both regex evaluators, a
   heuristic over 30 specs whose own wrong abstentions (a short genuine refusal reads like a
   non-answer) would need a new `InconclusiveReason`.
+- **OD-45** (numbered 2026-10-12; open, owner to decide): a judge whose self-consistency passes
+  disagree. As built (§2 item 4) the judge returns `inconclusive` with no reason and the runner
+  drops it, so the deterministic evaluators decide the attempt; `docs/02 §4` says the attempt
+  stays `inconclusive`. OD-19 left it out (ADR-0010). Recommended: keep the attempt
+  `inconclusive` with a reason of its own, as a judge outage already is, at the cost of more
+  inconclusive results from a noisy judge (`00-INDEX.md`).
 - **OD-15** (shared with u01) whether `secret_shape`'s entropy threshold is global or
   per-key-type. **Resolved (`00-INDEX.md`): per key type, landed in `secret_shape`;** the
   redactor still uses its own global threshold, so u01's reuse half is pending (audit F-25).

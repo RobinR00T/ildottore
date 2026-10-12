@@ -250,7 +250,7 @@ tried on `run --quick --dry-run` and answered "No such option" (exit 3):
   and `--budget-wall`; without them each ceiling is derived from the resolved plan.
 - `--allow-pii-elicitation` and any flag that loads a policy pack. The gated specs
   (`requires_policy`) therefore cannot be enabled from `dottore` today; whether to add a
-  policy-pack flag is an open decision. For `DL-PII-ELICIT-001` it is decided (OD-11,
+  policy-pack flag is an open decision (OD-46). For `DL-PII-ELICIT-001` it is decided (OD-11,
   2026-10-11): `--allow-pii-elicitation` comes only together with that flag, the two keys of
   DL4, never alone.
 - A positional URL or model id (`dottore run https://...`): the positional is read as a file.
