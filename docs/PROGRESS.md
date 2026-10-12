@@ -23,7 +23,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 - LOW 5: A-77's not-covered list names every excerpt shape the audit's `reader_attacks.py` still
   rebuilds (10 of 26 on both trees; the set changed: the block case is masked now, and JSON lines
   in another shape than Ollama's or OpenAI's chunks, the one with a raw U+2028, are records).
-- Tests: 101 new against `main` (5476 there, 5577 here), 3 of them since `74ace451`. GATES_LINE
+- Tests: 102 new against `main` (5476 there, 5578 here), 4 of them since `74ace451`. `make gates` green on `06caf3c3` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` at the system default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5578 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
 
 ## State, 2026-10-12 (morning): the second pre-merge audit, of `ea13562f` (A-77), fixed
 
