@@ -27,7 +27,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   alternatives of clean replies, the test counts, and the stale docstrings and docs.
 - Merge prep with `fix/redactor-key-formats`: the judge-note test's filler is ordinary words
   (its 230 letters were a hex run to A-78).
-- Tests: 98 new against `main` (5476 there, 5574 here), 27 of them since `ea13562f`. GATES_LINE
+- Tests: 98 new against `main` (5476 there, 5574 here), 27 of them since `ea13562f`. `make gates` green on `3714473b` (with `PYTHONPATH` set to the worktree's `src` and `TMPDIR` at the system default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5574 tests, 97.83% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
 
 ## State, 2026-10-12 (night, later): the pre-merge audit of `c4bd2012` (A-77), fixed
 
