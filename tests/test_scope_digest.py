@@ -100,7 +100,9 @@ def test_a_run_recorded_before_scopes_were_kept_says_so(
 
     db = tmp_path / "runs.sqlite"
     with SqliteRunStore(db) as store:
-        store.save_run_context("run-abc123def456", context={"target_digest": "t", "runs": 1})
+        # A digest of the shape the tool writes: the store refuses another (L6).
+        context = {"target_digest": "sha256:v2:" + "0" * 64, "runs": 1}
+        store.save_run_context("run-abc123def456", context=context)
     _record_scope(db, "run-abc123def456", "c" * 64, resumed=True)
     assert _scopes(db) == ["unrecorded", "c" * 64]
     assert "before scope digests were recorded" in capsys.readouterr().err

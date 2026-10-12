@@ -710,7 +710,9 @@ _SELECTION_KEYS: Final = frozenset({"suite", "quick", "categories", "spec", "exc
 #: null is a value that lost its meaning, not an absent one. A key not listed is a later version's
 #: and left alone. ``runs`` is checked by :meth:`SqliteRunStore.get_run_context` itself.
 _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
-    "target_digest": (False, _is_digest, "a sha256 digest this tool writes"),
+    # Null reads as absent here, as it always has: the resume then refuses a run that records no
+    # target, which no flag waives (u12 A-24), rather than calling the record corrupt.
+    "target_digest": (True, _is_digest, "a sha256 digest this tool writes"),
     "judge_digest": (True, _is_digest, "null or a sha256 digest this tool writes"),
     "adaptive": (False, _is_bool, "true or false"),
     "sampling_defaults_applied": (True, _is_bool, "true or false"),

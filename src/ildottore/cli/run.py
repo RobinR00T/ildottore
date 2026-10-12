@@ -2897,9 +2897,10 @@ def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool
     with SqliteRunStore(Path(run_db)) as store:
         before, _after = store.add_run_scope(run_id, scope_sha256, resumed=resumed)
     if before and before[-1] != scope_sha256:
-        # Read back from the run store, which keeps any string there: a restored or edited
+        # Read back from the run store, which kept any string there: a restored or edited
         # store printed `##[error]...` or a newline and `::error` (delta audit of the log
-        # commands block). Written out like every stored text (`visible_controls`).
+        # commands block). The store refuses an entry that is not a digest now (L6); written
+        # out like every stored text anyway (`visible_controls`).
         first = (
             "before scope digests were recorded"
             if before[0] == "unrecorded"
