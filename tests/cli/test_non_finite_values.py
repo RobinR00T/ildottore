@@ -149,3 +149,18 @@ def test_a_signature_pack_holds_finite_numbers(tmp_path: Path, entry: str) -> No
 
 def test_the_shipped_signature_pack_still_loads() -> None:
     assert load_pack().entries
+
+
+def test_the_exported_schemas_carry_no_reason_of_this_change() -> None:
+    """A model's docstring is its exported schema's description: the reason stays in a comment
+    (pre-merge audit of A-82, LOW h)."""
+
+    import json
+
+    from ildottore.shared.schema_export import export_schemas
+
+    schemas = export_schemas()
+    assert schemas["attack-spec"]["$defs"]["Sampling"]["description"] == (
+        "Pinned sampling params (``sampling``)."
+    )
+    assert "A-82" not in json.dumps(schemas)

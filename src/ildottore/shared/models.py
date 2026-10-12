@@ -202,13 +202,12 @@ MAX_SAMPLING_TOKENS = 200_000
 
 
 class Sampling(_SchemaMirror):
-    """Pinned sampling params (``sampling``), and a target file's ``sampling_defaults``.
+    """Pinned sampling params (``sampling``)."""
 
-    A value that is not finite is refused however the model is built (u12 A-82, CLI audit M6):
-    a spec's schema check refused ``.nan`` and ``.inf`` first (A-54), a target file's block
-    did not, and they reached the JSON report as bare ``NaN`` and ``Infinity`` and the wire.
-    """
-
+    # The docstring is the exported schema's description, so the reason stays here: a value that
+    # is not finite is refused however the model is built (u12 A-82, CLI audit M6). A spec's
+    # schema check refused `.nan` and `.inf` first (A-54); a target file's `sampling_defaults`
+    # did not, and they reached the JSON report as bare `NaN` and `Infinity`, and the wire.
     model_config = ConfigDict(allow_inf_nan=False)
 
     temperature: float | None = None
