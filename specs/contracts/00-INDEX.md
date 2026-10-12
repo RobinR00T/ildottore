@@ -173,7 +173,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-36 | u08 (and u09) | a figure the target reports (token usage, moderation latency) is checked where it is read, and nothing the tool writes takes the ledger past what a float converts |
 | A-47 | u04 | a reply that holds half a character (a lone surrogate) is read as U+FFFD where it is parsed, in a tool call's arguments too, and judged: one such reply no longer aborts the campaign, and a leak with a half before, after or between its words still fails |
 | A-48 | u12 | a refusal's advice is advice the tool would accept; a resume is checked for being the same campaign before money |
-| A-62, A-64, A-75 | none | reserved, unused: no unit defines a clause with these numbers (checked on 2026-10-12), and they are not reassigned, so no other number moves |
+| A-62, A-64 | none | reserved, unused: no unit defines a clause with these numbers (checked on 2026-10-12), and they are not reassigned, so no other number moves. A-75 is the next free number, not a gap (`docs/PROGRESS.md`, 2026-10-11: "A-75 stays free") |
 
 The pattern under most of them, worth stating once: **something counted or omitted what did
 not belong to it**, and the count was computed correctly and then dropped exactly where a human

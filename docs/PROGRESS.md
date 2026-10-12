@@ -24,8 +24,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   140 and 350 replay attempts on the vulnerable mock; `dottore fingerprint` exits 0 on a 200
   that is not JSON (OD-21); the Bedrock item closed by OD-42; the scope checksum is integrity
   only (OD-2).
-- Ledger and contracts: CHANGELOG "breaking for <whom>" labels (12 more headings, 14 in all),
-  the A-37 row, A-62, A-64 and A-75 reserved, OD rows in order, unit owners, ODs cited in each
+- Ledger and contracts: CHANGELOG "breaking for <whom>" labels (15 more headings, 17 in all),
+  the A-37 row, A-62 and A-64 reserved (A-75 stays free), OD rows in order, unit owners, ODs cited in each
   §9, and three open decisions numbered for the owner: OD-45 (a judge's self-consistency
   disagreement), OD-46 (a policy-pack flag), OD-47 (F9, `leetspeak` over `JB-ENCODING-001`'s
   Base64).

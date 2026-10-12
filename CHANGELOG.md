@@ -27,8 +27,8 @@ the file, schema copy, build or pipeline it names.
   in the OD-41 rows, a duplicate OD-41 row in `docs/12`; the scope checksum is "an integrity
   check, not a signature (OD-2)" in `specs/scope.example.yaml`.
 - **The ledger.** CHANGELOG headings whose body states a break say "breaking for <whom>", and
-  the file's header says when; `00-INDEX.md` gains the A-37 row, records A-62, A-64 and A-75 as
-  reserved and unused, reads OD-1 to OD-47 in order, names each unit's files (u04's `mcp.py`,
+  the file's header says when; `00-INDEX.md` gains the A-37 row, records A-62 and A-64 as
+  reserved and unused (A-75 stays the next free number), reads OD-1 to OD-47 in order, names each unit's files (u04's `mcp.py`,
   `websocket.py`, `comprehending.py`; u01's `safe_yaml.py`; the u06 file `unit-06-evaluators.md`);
   each unit's §9 cites its ODs by number with the index's decision; OD-45 (a judge's
   self-consistency disagreement), OD-46 (a policy-pack flag) and OD-47 (F9, `leetspeak` over
