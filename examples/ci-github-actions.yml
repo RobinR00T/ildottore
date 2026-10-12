@@ -22,9 +22,10 @@ jobs:
       # Not on PyPI (`pip install ildottore` 404s), and not installable as a wheel either: a wheel
       # (`pip install "git+https://...@<ref>"`, or `pip install` without `-e`) ships neither
       # specs/ nor schemas/, so outside a checkout it cannot load the battery. Measured on
-      # 2026-10-12 with the wheel pyproject.toml selects, from a directory outside the repo:
-      # `dottore lint` fails with FileNotFoundError on schemas/attack-spec.schema.json, and
-      # `dottore run --dry-run` exits 3, with --spec-path pointing at a checkout or without it.
+      # 2026-10-12 with the wheel pyproject.toml selects, from a directory outside the repo: a
+      # bare `dottore lint` exits 1 with "path not found: specs", `dottore lint <checkout>/specs`
+      # exits 1 with a traceback (FileNotFoundError on schemas/attack-spec.schema.json), and
+      # `dottore run --dry-run` exits 3 with --spec-path pointing at a checkout or without it.
       # So check Il Dottore out next to your code, install that checkout editable, and pass
       # --spec-path to it.
       - name: Check out Il Dottore at a pinned commit

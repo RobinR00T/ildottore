@@ -13,11 +13,12 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   practice) are recorded as such in each commit.
 - HIGH: `examples/ci-github-actions.yml` installed `@v0.1.0` by `pip install "git+https://..."`.
   A wheel built with the selection `pyproject.toml` declares ships neither `specs/` nor
-  `schemas/` (measured with that selection assembled offline, hatchling being absent: `dottore
-  lint` stops on `schemas/attack-spec.schema.json`, `run --dry-run` exits 3, with or without
-  `--spec-path`), so the example now checks out a pinned SHA of `main` and installs it editable,
-  with `--spec-path`; the v0.1.0 gate differences are listed beside the pin. Packaging is left
-  for its own change.
+  `schemas/` (measured with that selection assembled offline, hatchling being absent: a bare
+  `dottore lint` says `path not found: specs`, `lint <checkout>/specs` exits 1 with a traceback
+  on `schemas/attack-spec.schema.json`, `run --dry-run` exits 3, with or without `--spec-path`),
+  so the example now checks out a pinned SHA of `main` and installs it editable, with
+  `--spec-path`; the v0.1.0 gate differences are listed beside the pin. Packaging is left for its
+  own change, recorded in `docs/12` P1 and ROADMAP.
 - MEDIUM, re-measured: 33 specs and 545 requests on `examples/target.local.yaml`; "34 of 75
   specs never ran" against an HTML stub (9 requests, 8 attempts, 0 tokens); the `docs/16` §3
   table (33/545, 58/1,255, 40/580, 61/735, 66/775; two identities 582, 737, 779; judge +700);
