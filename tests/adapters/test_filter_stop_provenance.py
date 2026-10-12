@@ -51,6 +51,12 @@ def _send(adapter: TargetAdapter, url: str, body: dict[str, Any]) -> ModelRespon
     return asyncio.run(go())
 
 
+def _declared(declared: frozenset[str] | None) -> dict[str, Any]:
+    """The adapter's ``declared_filter_stops``, passed only when set: the controls run on main."""
+
+    return {} if declared is None else {"declared_filter_stops": declared}
+
+
 def _openai(declared: frozenset[str] | None = None) -> OpenAIAdapter:
     return OpenAIAdapter(
         id="openai",
@@ -58,7 +64,7 @@ def _openai(declared: frozenset[str] | None = None) -> OpenAIAdapter:
         allowlist=EndpointAllowlist([Endpoint(host="gw.example.com", path_prefixes=["/v1"])]),
         model="m",
         retry=_FAST,
-        declared_filter_stops=declared,
+        **_declared(declared),
     )
 
 
@@ -69,7 +75,7 @@ def _anthropic(declared: frozenset[str] | None = None) -> AnthropicAdapter:
         allowlist=EndpointAllowlist([Endpoint(host="api.anthropic.com", path_prefixes=["/v1"])]),
         model="claude-stub",
         retry=_FAST,
-        declared_filter_stops=declared,
+        **_declared(declared),
     )
 
 
