@@ -259,6 +259,33 @@ left: a run row whose context column was absent still accepted `--resume-unverif
 which flips the offline replay, so one half's criticals were published as the other's. A context
 row that merely lacked the digest key skipped the check silently, with no flag and no notice.
 
+**A refusal says what changed and the flag that restores it (amended 2026-10-12, CLI audit of
+2026-10-11, M1 and L6).** Three refusals said neither: a spec edit read "restore the specs as they
+were", a different `--spec` with no file changed read the same ("71 no longer selected"), and
+`--resume --hardened` over an unchanged target file read "Restore the target as it was". The run
+context records, when a run starts, the selection flags (`selection`: suite, `--quick`, `-p`,
+`--spec`, `--exclude`, `--top-tests`, each string masked with the store's fixed identity salt, and
+kept by every resume), an 8-hex digest of each field of each spec's digest projection
+(`spec_fields`, about 40 KB for the 75 shipped specs) and of the target's digest payload
+(`target_fields`, `__route__` included), and the route (`route`: the offline scenario, or `live`).
+The digests themselves are unchanged. So the battery refusal names the field (`1 changed
+(PI-DIRECT-001), in attack`; `in evaluator_logic (75)`) and says to point `--spec-path` at the
+specs the run was made with; a selection that differs is named both ways (`the run was made with
+--spec PI-DIRECT-001 --spec SP-LEAK-001 and this invocation selects with no selection flag. Resume
+with ...`); the same selection over another spec tree points at `--spec-path`; the target refusal
+names the fields that differ (`its capabilities differ`), and a change of the route alone says so
+and names its flag (`was made on the offline 'vulnerable' replay and this invocation resolves the
+offline 'hardened' replay (--hardened forces it). The target file is otherwise unchanged ...
+Resume without --hardened`; `Resume with --hardened`; `Restore the target file's mock_scenario`).
+A run that recorded none of it gets the earlier wording; a run halted before 2026-10-12 is refused
+for its rules first (A-81), so the `--spec-path` advice is given only where it is safe. Every
+field the context holds is checked where it is read (u10 §6): a value of the wrong shape is refused
+with exit 3, naming the field and never quoting the value, where `adaptive: "x"` read as on,
+`scope_sha256s: 7` as a run older than scope digests (the record then overwritten), a
+`mutator_orders` that was not a list was overwritten, and `started_at: not-a-date` reached every
+report of the resume. Checked by `tests/cli/test_resume_refusal_advice.py` (9, all failing before)
+and `tests/cli/test_resume_corrupt_context.py` (31, 28 failing before).
+
 **The integrity record is written before the campaign sends, the spend after it returns.** Both
 halves used to be written when the campaign returned, so a run killed mid-flight left evidence
 on disk and no row, and its resume was refused outright because the target could not be
@@ -1181,6 +1208,70 @@ LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it st
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
 attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
 Checked by `tests/cli/test_malformed_reply_campaign.py`.
+
+**A-81 A resume is bound to the rules that judged its halted half (added 2026-10-12, CLI audit of
+2026-10-11, H2).** A resume keeps the attempts the halted half stored with the verdicts that half
+gave them, and judges only what it sends. Nothing recorded which rules had judged the kept ones:
+the check bound the spec, target and judge digests, the planning mode and `--runs`, and
+`--version` printed `0.1.0` on every commit. Measured on `de122e26`: a run halted on `f12ba83`
+(`--spec PI-DIRECT-001 --spec SP-LEAK-001 --runs 2 --concurrency 1 --budget-requests 14 --judge
+...`, against a stub that answers every request with `finish_reason: content_filter` and a refusal
+text, and a judge that says `secure`) and resumed with `--spec-path` at `f12ba83`'s specs kept 4
+attempts judged `pass` by `f12ba83`'s rules beside 2 judged `cut_by_provider_output_filter` by
+OD-42's, and the summary and `replay` said "6 of 10 attempts cut ... never a pass" although all
+10 were cut. OD-16, OD-19, OD-21 and OD-41 are the same class.
+
+* **A version of the rules.** `shared.judging_rules.JUDGING_RULES_VERSION` (an integer, `1` from
+  2026-10-12: the rules of `de122e26`) is bumped whenever a change can alter the verdict stored for
+  an attempt: an evaluator, the combination rule (`shared.combination`), how a provider's filter
+  stop, an unreadable reply or an environment error is read, what the runner's `_evaluate` and the
+  helpers it calls decide and note. A rule applied when a finding is scored from stored verdicts
+  (the risk score, the band, confirmation, which copy of an attempt counts) needs no bump: a
+  resume applies it to both halves alike. Neither does anything the other checks of A-24 bind (a
+  spec's evaluator config is in its digest).
+* **A tripwire that forces the bump.** `JUDGING_SOURCES` lists the code that decides a stored
+  verdict (the evaluators package, walked, so a new evaluator is covered; eight `shared` modules;
+  three functions of `core/execute.py` and seventeen of `core/runner.py`), and
+  `tests/shared/test_judging_rules.py` pins a SHA-256 of it, comments, docstrings and blank lines
+  left out (by `tokenize` and `ast` positions rather than an `ast.dump`, whose text differs
+  between Python versions; the digest was checked equal on 3.12 and 3.14, and CI runs 3.11), to
+  each version. A change to that code fails the test until the
+  version is bumped and the new digest pinned under it; the pins are a history, never edited,
+  and the test checks that they run from 1 to the current version with no two the same. A
+  tripwire, not a proof: code outside the list can still change a verdict, and the rule above is
+  what review holds a change to.
+* **Recorded when a run starts.** `context_json.judging_rules` and `tool_version` (the package that
+  started the run; its resumes keep it). `dottore --version` prints `dottore <version> (judging
+  rules <n>)`.
+* **A resume under other rules is refused before anything is sent** (exit 3), older or newer,
+  naming both versions, why and what to do: finish it with the version that started it, or start
+  a fresh run. **A run that records no rules** was made by a version before the record and is
+  refused the same way, a run halted on `de122e26` included (same rules, but nothing recorded
+  them). No flag waives it, `--resume-unverified` included, as for the target (A-24): what the
+  report would publish is wrong, not unverified. `--dry-run --resume` and `--estimate --resume`
+  refuse too. Checked after the target id and the presence of the target digest, before the
+  target digest's value, the judge, the planning mode, `--runs` and the battery: under other rules
+  nothing the operator can restore makes the two halves one campaign.
+* **Why not judge the kept replies again.** Checked first, as the better remedy: the stored replies
+  are the redacted ones (DL2). Against the vulnerable mock, `SP-LEAK-001`'s failing reply is stored
+  as `... Internal note (never disclose): «REDACTED:canary:…»_run-...` and
+  `DL-SECRET-CANARY-001`'s as `... the stored API key: «REDACTED:labeled_secret:…»`: an evaluator
+  that looks for the raw canary would pass both; no logprob is stored; and the judge would have to
+  be asked again, which is traffic the resume did not plan. A re-judged report would be wrong in
+  the direction that costs.
+* **Limits, said.** A version before this one does not read the record: it resumes a run this
+  version started (mixing as before), and its rewrite of the context drops the record, so this
+  version then refuses that run as an older one's. The package version is recorded, not compared:
+  it said `0.1.0` across five changes of the rules, and a release that changes no rule must still
+  resume.
+
+Checked by `tests/cli/test_resume_judging_rules.py` (8 tests, all failing before the fix: the
+record, `tool_version` kept by a resume, older and newer rules refused naming both with nothing
+written, a run with no record refused with and without `--resume-unverified`, exit 3 through the
+CLI for a resume, `--dry-run` and `--estimate`, with no part of the message masked by the
+redactor, which read `1 (2026-10-12` as a phone number in the first version, and `--version`) and
+`tests/shared/test_judging_rules.py` (7: the pin, the history, the sources resolve, the
+normalization keeps code and drops comments and docstrings).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

@@ -5,6 +5,99 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking for a halted run: a resume is bound to the rules that judged it, u12 A-81)
+
+- **A run halted on an older version resumed into a report that contradicted itself.** A resume
+  keeps the attempts its halted half stored, with the verdicts that half gave them, and judges
+  only what it sends; nothing recorded which rules had judged the kept ones. Measured on
+  `de122e26` (CLI audit of 2026-10-11, H2): halted on `f12ba83` with `--spec PI-DIRECT-001 --spec
+  SP-LEAK-001 --runs 2 --concurrency 1 --budget-requests 14 --judge <judge>` against a stub that
+  answers every request with `finish_reason: content_filter` and a refusal, then resumed with
+  `--spec-path` at `f12ba83`'s specs (the route the OD-44 note below recommended): `PI-DIRECT-001`
+  kept 4 attempts `f12ba83` had judged `pass` beside 2 judged `cut_by_provider_output_filter`, and
+  the summary and `dottore replay` said `6 of 10 attempt(s) ... cut or replaced ... never a pass`
+  although all 10 were cut, exit 0. OD-16, OD-19, OD-21 and OD-41 changed verdicts the same way the
+  same week, and `--version` printed `0.1.0` on all three commits.
+- **The rules have a version.** `shared.judging_rules.JUDGING_RULES_VERSION` (`1`: the rules of
+  `de122e26`) is bumped whenever a change can alter the verdict stored for an attempt: an
+  evaluator, the combination rule, how a provider's filter stop or an unreadable reply is read,
+  what the runner's `_evaluate` decides. A rule applied when a finding is scored from stored
+  verdicts (risk, band, confirmation, which copy of an attempt counts) is applied to both halves
+  alike and needs no bump. `tests/shared/test_judging_rules.py` pins a digest of the code that
+  decides a stored verdict (`JUDGING_SOURCES`: the evaluators package, eight `shared` modules and
+  the runner's verdict functions, with comments, docstrings and blank lines left out, the same
+  digest on Python 3.12 and 3.14) to each version, so a change to that code fails until the
+  version is bumped and the new digest pinned under it; a pin is never edited. `dottore --version`
+  prints `dottore 0.1.0 (judging rules 1)`.
+- **Recorded when a run starts, and checked before a resume sends anything.** `context_json`
+  holds `judging_rules` and `tool_version` (the package that started the run, which its resumes
+  keep). A resume under other rules, older or newer, is refused (exit 3) with both versions named,
+  why, and what to do: `run '<id>' was judged by the rules of an older Il Dottore (judging rules 1,
+  started by Il Dottore 0.1.0), and this is Il Dottore 0.1.0, judging rules 2. ... the stored
+  replies are redacted, so they cannot be judged again. There is no flag for this: finish it with
+  the version that started it (`dottore --version` names its judging rules), or start a fresh
+  run.` A run that records no rules was made by an older version and is refused the same way
+  (`records no judging rules (the record exists since 2026-10-12), so it was made by an Il Dottore
+  older than this one ...`). Judging the kept replies again was checked first and is not possible:
+  the evidence is redacted at rest (DL2), so a leaked canary is stored as `«REDACTED:canary:…»`
+  (`SP-LEAK-001` against the vulnerable mock) and a secret as its mask, where the evaluators look
+  for the raw value, no logprob is kept, and the judge would have to be asked again. No flag waives
+  the refusal (`--resume-unverified` included), and `--dry-run` and `--estimate` refuse too.
+  Against the H2 run above: exit 3, 0 requests sent, nothing written.
+- **Breaking.** Every run halted before this version is refused by its resume, one halted on
+  `de122e26` included (its rules are the same, but nothing recorded them): finish it with the
+  version that started it, or start a fresh run. A version before this one does not read the
+  record, so it can resume a run this version started; its rewrite of the context drops the
+  record, and this version then refuses that run as an older one's.
+
+### Fixed (a refused resume says what changed and the flag that restores it; a corrupt run-context value is refused, naming it)
+
+- **Three refusals said neither why nor what to do** (CLI audit of 2026-10-11, M1). A spec edit
+  read `1 changed (PI-DIRECT-001) ... restore the specs as they were`; a different `--spec`, with no
+  file changed, `73 new (...) ... restore the specs as they were`; `--resume --hardened`, over an
+  unchanged target file, `Restore the target as it was`. The run context now records the
+  selection flags (`selection`, each string masked with the store's fixed identity salt), a short
+  digest of each field of each spec (`spec_fields`) and of the target (`target_fields`), and the
+  route (`route`). Measured against the vulnerable mock with the shipped specs:
+  `1 changed (PI-DIRECT-001), in attack. ... Point --spec-path at the specs the run was made with
+  (a copy of them, or the specs/ of the version that started it), or start a fresh run.`; a field
+  changed in each of three specs reads `in severity (3)` (in the tests); `73 new (...). ... The selection differs and no
+  spec it ran changed: the run was made with --spec PI-DIRECT-001 --spec SP-LEAK-001 and this
+  invocation selects with no selection flag. Resume with --spec PI-DIRECT-001 --spec SP-LEAK-001,
+  or start a fresh run.`; the same selection over another spec tree points at `--spec-path`;
+  `run '<id>' was made on the offline 'vulnerable' replay and this invocation resolves the offline
+  'hardened' replay (--hardened forces it). The target file is otherwise unchanged ... Resume
+  without --hardened, or start a fresh run.`; a run made with `--hardened` is told to resume with
+  it, an edited `mock_scenario` is named, and a changed field of the target file is named (`its
+  capabilities differ`). A run halted before this version is refused for its rules first (above),
+  so the `--spec-path` advice is only given where it is safe.
+- **A corrupt run-context value was read as something else** (L6, on `de122e26`): `adaptive: "x"`
+  as adaptive planning on, and the resume refused for a mode the run never recorded;
+  `scope_sha256s: 7` as a run older than scope digests, and the record overwritten; a
+  `mutator_orders` that was not a list overwritten, the record lost; `started_at: not-a-date`
+  published as the run's start in every report of the resume. Every field the context holds is
+  now checked where the store reads it (`run_sqlite._check_context`: the two digests, `adaptive`,
+  the three sampling booleans, `not_destructive_tools`, `scope_sha256s`, `mutator_orders` and the
+  six new fields; `runs` and `spend_json` were already), and `runs.started_at` where the resume
+  reads it (`YYYY-MM-DDTHH:MM:SSZ`, as the tool writes it since 2026-10-04). A value of the wrong
+  shape is refused with exit 3 before anything is sent or written, naming the field and never
+  quoting the value (`context_json holds an adaptive value that is not true or false ...
+  refusing rather than continuing.`), and the appends (`add_run_scope`, `add_run_order`) refuse
+  rather than overwrite. A key this version does not know is a later version's and is left alone.
+  `takes_sampling` and `judge_takes_sampling` are named apart (the message named both); a corrupt
+  `not_destructive_tools` is refused as corrupt where it fell back to the target refusal.
+- **Compatibility.** The context of a run of the whole battery grows by about 40 KB (the field
+  digests: 8 hex digits per field). An older version ignores the new keys and drops them on its
+  rewrite. The spec and target digests are unchanged, byte for byte.
+- Docs: MANUAL (`--resume` row, §10, troubleshooting), FAQ, USAGE, `dottore(1)`, `docs/09`,
+  PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the index row. Tests:
+  `tests/shared/test_judging_rules.py` (7), `tests/cli/test_resume_judging_rules.py` (8, all failing
+  before the fix), `tests/cli/test_resume_refusal_advice.py` (9, all failing before) and
+  `tests/cli/test_resume_corrupt_context.py` (31, 28 failing before: the three that pass are the
+  `sampling_defaults_applied` refusal, which existed, an unknown key and a well-formed start); four
+  tests updated for the messages named above (`--version`, the route refusal, the per-field
+  sampling message, the corrupt declaration record).
+
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
 - **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a
@@ -259,9 +352,13 @@ where to reverse it.
   0/45 AISVS).
 - **Compatibility.** A spec that writes `requires: [mcp]` fails validation against an older copy of
   `attack-spec.schema.json`. The target digest leaves `capabilities.mcp` out when it is false or
-  set by the provider, so it is unchanged: a run halted before this version resumes against the
-  specs it ran (`--spec-path`); with this version's battery the resume is refused as a battery
-  change, since every spec file changed with the OD-19 rename.
+  set by the provider, so it is unchanged. (Corrected 2026-10-12, CLI audit H2: this note said a
+  run halted before this version resumes against the specs it ran, with `--spec-path`. It did, and
+  the report then judged one kind of reply two ways, since OD-16, OD-19, OD-21, OD-41 and OD-42
+  changed the rules between the two halves. Such a run is refused now, `--spec-path` or not
+  (u12 A-81, the entry above): finish it with the version that started it, or start a fresh run.
+  With this version's battery it was refused as a battery change, since every spec file changed
+  with the OD-19 rename; it is now refused for its rules first.)
 - ADR-0007's amendment and reversal, the OD-44 and OD-16 rows of `00-INDEX`, u00, u08, u12 and
   u13, `docs/03`, the MANUAL's `capabilities` paragraph, the FAQ's MCP entry and
   `examples/target.mcp.yaml`. Tests: `tests/cli/test_mcp_specs_need_an_mcp_target.py` (10, 8

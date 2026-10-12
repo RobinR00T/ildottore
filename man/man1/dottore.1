@@ -18,6 +18,11 @@ dottore \- spec-driven security scanner for LLMs and AI applications (nmap-for-A
 .I "lint | describe | registry | coverage | new-spec | replay | diff | calibrate | render-media | schema"
 [\fIARGS\fR]
 .PP
+.B dottore --version
+prints the package version and the version of the rules that judge a reply, which a resume is
+bound to:
+.BR "dottore 0.1.0 (judging rules 1)" .
+.PP
 There is no default command: always type the subcommand.
 .SH DESCRIPTION
 .B dottore
@@ -223,6 +228,13 @@ probe pass is refused: raise --budget-requests, or drop -sV only if the campaign
 adaptively and the ceiling holds the rest of it without the probes.
 A run an older version started sent none of its target files' sampling_defaults, and resumes
 without them; stderr says so (dottore-scope(5)).
+A run judged by other rules than this version's, or one that records none (halted before
+2026-10-12), is refused before anything is sent, with no flag to waive it: its kept attempts
+carry that version's verdicts and the stored replies are redacted, so they cannot be judged
+again. Finish it with the version that started it (--version names its judging rules), or
+start a fresh run. A refusal names what changed and the flag that restores it: the spec field
+and --spec-path, the selection flags the run was made with, or the route (--hardened); a
+corrupt run-store value is refused naming its field.
 .TP
 .B --resume-unverified
 Resume a run whose integrity record is missing (its ceiling then covers this invocation only).
