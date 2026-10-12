@@ -3,6 +3,32 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (late morning): the pre-merge audit of `f9dbed49` (A-82), fixed
+
+- Three MEDIUM and eight LOW, one commit each on `fix/cli-input-validation`. MEDIUM 1: the exported
+  `app` runs `main()` when called, so the console script an older install generated masks too
+  (the audit's fuzz: 60 leaking usage errors there, 0 now). MEDIUM 2: the CHANGELOG marks each
+  breaking change with its own `### Changed (breaking for ...)` heading. MEDIUM 3 (pre-existing):
+  a fleet endpoint whose query or fragment carries a credential, or that `urlsplit` reads with no
+  host, is refused before anything is written. LOWs: `lint`, `describe` and `schema export` mask
+  what they echo (a); the registry reads one file read twice as one declaration (b); docs/06's
+  provider sentence (c); the report schema and the manual say "since `f12ba833`" (d, a v0.1.0
+  report does not validate, as before); a name too long to open is described by its length,
+  `--scope` included (e); the version refusals reworded (f); the masking tests no longer depend on
+  the launcher's program name (g); `Sampling`'s exported description is as before (h). The
+  environment is read in the CLI wiring and passed to `unset_variable`.
+- The rerun of the audit's M7 fuzz found two more in `new-spec`, fixed: `--stdout` did not check
+  `--id`, and `--family <key>` printed the key into the scaffold.
+- Reruns: the audit's M7 fuzz (687 cases) 0 leaks through `main()` and `app()`, 63 on
+  `de122e26`; its M4 live checks send nothing on each refusal; its query-key check writes no key;
+  the original audit's `fuzz.py`, `fuzz2.py` and `fuzz3.py` flag only the run-store tracebacks
+  (fixcli1's H1); `scratch/fixcli3/repro.sh` exits 3 with the field named on every case. `make
+  gates` green on `ff6568ed` with `PYTHONPATH` set to the worktree's `src`: 5711 tests (5476 on
+  `main` at `de122e26`, 235 new, 182 of which fail there), 97.85% coverage, 75 specs lint OK, four
+  import contracts kept, self-scan, bandit and pip-audit clean. One gates run before that
+  (`253967d4`) failed `test_a_fifo_report_path_is_written_in_place` once, a timing test this
+  branch does not touch; it passed alone five times and in the next full run.
+
 ## State, 2026-10-12 (morning): CLI input validation, from the full CLI audit of `de122e26` (u12 A-82)
 
 - On `fix/cli-input-validation` (worktree `wt/fixcli3`, from `main` at `de122e26`), one commit per
