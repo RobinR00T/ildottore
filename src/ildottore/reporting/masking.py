@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from ildottore.redactor import Redactor as _DefaultRedactorImpl
-from ildottore.redactor import redact_evidence_ref
+from ildottore.redactor import redact_evidence_ref, report_identity
 from ildottore.shared.models import Finding, TestRun
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -70,6 +70,9 @@ def mask_run(run: TestRun, redactor: Redactor) -> TestRun:
         _restore_tool_fields(masked_finding, finding, redactor)
         for masked_finding, finding in zip(masked.get("findings") or [], run.findings, strict=True)
     ]
+    # Each target is named as its findings name it (`report_identity`).
+    for masked_target, target in zip(masked.get("targets") or [], run.targets, strict=True):
+        masked_target["id"] = report_identity(target.id)
     # The scope digest is the tool's own SHA-256 of the authorization record; the entropy rule
     # cannot tell it from a key, and masked it says nothing. Kept only in the shape it has.
     if run.scope_sha256 is not None and _SHA256.fullmatch(run.scope_sha256):
@@ -84,11 +87,17 @@ def _restore_tool_fields(masked: object, finding: Finding, redactor: Redactor) -
     target text: masking a custom one (``ACME-SYSPROMPT2-DOS-003``) with the per-process salt
     gave it a different digest in every run, so ``dottore diff`` saw two unrelated specs and
     reported no regression, and the SARIF rule id changed between runs (review of PR #32).
+
+    The target id is the operator's and is masked, but as reports masked it before u01 A-78 and
+    with the fixed identity salt (:func:`~ildottore.redactor.report_identity`): masked with the
+    per-process salt, an id holding a UUID had another mask in every run, and ``dottore diff``
+    refused two reports of one target (pre-merge audit of A-78, H1).
     """
 
     if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
         raise TypeError("redactor changed the shape of a finding dump")
     masked["spec_id"] = finding.spec_id
+    masked["target_id"] = report_identity(finding.target_id)
     masked["evidence"] = [
         # The attempt a reference points at is named as the attempts below are, as written: a
         # hex-shaped id is masked by the hex rule now (u01 A-78), and the reference would no

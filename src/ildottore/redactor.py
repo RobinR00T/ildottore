@@ -2405,6 +2405,21 @@ def redact_identity(value: str) -> str:
     return _IDENTITY.redact_text(value)
 
 
+def report_identity(value: str) -> str:
+    """How a report names a target: by the rules before u01 A-78, with the fixed identity salt.
+
+    A report masks what the operator wrote, the target id included (a tenant-shaped id can read
+    as a key), and masked it with the process-random salt, so a high-entropy id had another mask
+    in every run and ``dottore diff`` refused two reports of one target as two targets. A-78
+    extended that to every id holding a UUID, a hex run or a key shape (`tenant-<uuid>`), which
+    the reports before it showed as written (pre-merge audit of A-78, H1). The id is now masked
+    by the rules before A-78 (:data:`_IDENTITY_BEFORE_A78`): the text a report written before
+    A-78 holds, where that one held no digest, and the same text in every run where it held one.
+    """
+
+    return _IDENTITY_BEFORE_A78.redact_text(value)
+
+
 def identity_masks(value: str) -> tuple[str, ...]:
     """Every mask a run store may hold for ``value``: :func:`redact_identity`'s, then the one it
     wrote before u01 A-78, when they differ.
