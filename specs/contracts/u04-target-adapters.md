@@ -403,9 +403,16 @@ reads as U+FFFD, since httpx decodes the stream as text.
   8 characters, which the redactor cannot mask by value; nothing was sent`. A password is checked as
   written and as it reads percent-decoded; an empty one is no credential and passes
   (`https://<token>:@host` sends a user only); a stdio MCP server, which is sent no key, is not
-  checked. `MIN_CREDENTIAL_LEN` is `redactor.KNOWN_SECRET_MIN_LEN`, re-exported by the WebSocket
-  module. The CLI refuses it earlier too (u12). Checked by `tests/adapters/test_short_credentials.py`
-  (39 tests, 19 fail on `de122e26`; the test adapters that used the key `k` use one of 10).
+  checked (only the MCP adapter honours `transport: stdio`: on any other provider the field is
+  ignored, the key goes over the wire, and the CLI checks it, pre-merge audit of A-78, L4).
+  `MIN_CREDENTIAL_LEN` is `redactor.KNOWN_SECRET_MIN_LEN`, re-exported by the WebSocket module. The
+  CLI refuses it earlier too (u12). Checked by `tests/adapters/test_short_credentials.py` (39 tests;
+  on `de122e26` the file stops at collection, which lacks `MIN_CREDENTIAL_LEN` and
+  `refuse_short_credential`, and 19 fail with the two given stand-ins in a copy of the file; the test
+  adapters that used the key `k` use one of 10). The no-entropy twin a model name goes through
+  (`redact_ids`, `Redactor.without_entropy`) drops the UUID pattern with the entropy rule, so a
+  deployment's model name holding one reads as before A-78 for the fingerprint's metadata layer
+  (u01's clause, L5).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).

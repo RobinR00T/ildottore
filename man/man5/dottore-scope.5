@@ -77,7 +77,9 @@ to the tenant-scoped marker it owns; authz_leak flags that canary reaching anoth
 The runner sends the attack once as each identity for a spec that requires multi_identity and,
 when the target declares multi_identity, for one that declares authz_leak (never over a scene
 sent in-band to a type: model target); the estimate counts those sends.
-Two identities of one target with the same name, or the same canary, are refused.
+Two identities of one target with the same name, or the same canary, are refused. When the run
+would sweep, each identity's credential is held to the floor auth_ref gives below, by --dry-run,
+-sn and --estimate too.
 .TP
 .B commands
 Authorized stdio MCP command lines (exact match). Default-deny: a stdio MCP server is launched
@@ -156,7 +158,14 @@ and judge were sent a temperature, and a resume that keeps attempts continues as
 accepts only env://NAME; any other scheme (vault:// included: no vault resolver is built) is
 refused before anything is sent, --dry-run included. A literal key pasted as the auth_ref is
 refused too, and the error prints "a literal value (not shown)" instead of quoting it. The
-secret is read at send time and never stored. A provider other than openai, anthropic, mcp or
+secret is read at send time and never stored. A credential shorter than 8 characters (the
+auth_ref's value, or a password written in the endpoint URL, as written and percent-decoded) is
+refused before anything is sent, with "<id>: the credential is shorter than 8 characters, which
+the redactor cannot mask by value; nothing was sent" (exit 3), by every adapter and by --dry-run,
+-sn and --estimate too: the redactor masks a credential by its value only from 8 characters. A
+judge's key is named by the judge's id, a scope identity's of the identity sweep by
+"<target id>, identity '<name>'". An empty password is no credential; an offline mock and a stdio
+MCP target (provider mcp, transport stdio), which are sent no key, are not checked. A provider other than openai, anthropic, mcp or
 websocket routes to the generic REST adapter. An MCP target sets provider "mcp"; over the wire
 it gives an endpoint, or as a local subprocess it sets transport "stdio" and a command argv
 (authorized via scope commands).

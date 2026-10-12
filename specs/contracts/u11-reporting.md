@@ -247,8 +247,17 @@ attempt's `request.metadata.media_sha256` when it is a list of 64 lowercase hex 
 runner writes (anything else is masked as any value), and each evidence reference's `attempt_id` as
 written, as the attempts' own ids are, in both copies of a finding the JSON report carries. On
 `de122e26` the JSON report of a multimodal battery at `--runs 2` masked 24 of its 28 media digests
-(`high_entropy`); every other output of the run is byte for byte as before. Checked by
-`tests/reporting/test_own_values_readable.py` (2 of its 9 tests fail on `de122e26`).
+(`high_entropy`). Every report names the target as reports named it before A-78, with the fixed
+identity salt: `_restore_tool_fields` sets each finding's `target_id`, and `mask_run` each
+`run.targets[].id`, to `redactor.report_identity(id)`, the rules before A-78 (no late patterns, no
+hex rule, numbers read inside a UUID) under the identity salt. With the per-process salt, an id
+holding a UUID (`tenant-<uuid>`) had another mask in every run once A-78 masked UUIDs, and
+`dottore diff` refused two reports of one target, exit 3 (pre-merge audit of A-78, H1; `de122e26`
+fails the same way for a high-entropy id, which now masks to one text in every process). A baseline
+written by `de122e26` compares with a run of this change (exit 0). The rest of a run's outputs are
+byte for byte as before, timestamps aside. Checked by `tests/reporting/test_own_values_readable.py`
+(2 of its 9 tests fail on `de122e26`) and `tests/cli/test_report_target_id.py` (5; 4 fail on
+`de122e26`, where only the end-to-end case passes, and 5 on `0b4b1f14`).
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.

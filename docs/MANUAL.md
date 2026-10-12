@@ -231,7 +231,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   redactor cannot mask by value; nothing was sent`, exit 3; for a judge's key, the judge's id, and
   for an identity of the scope's sweep, `<target id>, identity '<name>'`); an endpoint's password is
   checked as written and percent-decoded, and an empty one (`https://<token>:@host`) is no
-  credential; an offline mock and a stdio MCP server, which are sent no key, are not checked. Until A-78 only the WebSocket adapter refused one; the others sent it, and a target
+  credential; an offline mock and a stdio MCP target (`provider: mcp`, `transport: stdio`), which
+  are sent no key, are not checked (another provider ignores `transport` and sends its key, so it
+  is checked). Until A-78 only the WebSocket adapter refused one; the others sent it, and a target
   that echoed it put it in every report. A registered credential is also
   found when the text splits it with a newline, a tab or another control character, with an
   invisible format character (a zero-width space, a soft hyphen, a word joiner, a byte order
@@ -288,12 +290,21 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   digest). A key is recognised after `_`, `=`, `-` and any other character that is not a letter or
   a digit: written after a run of `_` it was printed, its padding diluting the entropy rule; glued
   to a letter or a digit (`0000...0<key>`) it is the middle of a word, and the entropy rule decides,
-  as before. These rules run last, after the labelled and the entropy rules, so they only add
-  masks: a key the entropy rule masks with the word glued to it is still masked whole, and named
-  (`x_<sk-proj- key>` reads `«REDACTED:openai_key:<digest>»`). A UUID is masked whole even when
-  its groups are all digits, which the phone and card rules used to take as numbers, leaving the
-  rest of it readable. Each costs some time on a text full of them (4 MB of UUIDs whose groups are
-  all digits: 6.0 s, 2.9 s before, which left most of each readable).
+  as before. These rules run last, after the labelled and the entropy rules, and add masks
+  without taking any away (a text holding U+0000 or U+0001 aside, whose redaction depends on
+  whether anything else in it is masked, as before A-78): a key the entropy rule masks with the
+  word glued to it is still masked whole, and named (`x_<sk-proj- key>` reads
+  `«REDACTED:openai_key:<digest>»`). A UUID is masked whole even when its groups are all digits,
+  which the phone and card rules take as numbers: what they read of it is held in stand-ins that
+  every later rule reads as their mask, so the text around it is judged as it was before. A mask
+  of one of these types that a target writes (`password: «REDACTED:uuid»<secret>`) is read as
+  text, not kept: only the masks of them this process wrote are. A report names its target by the
+  rules before A-78, with a fixed salt, so a target named `tenant-<uuid>` reads as written in
+  every report and `dottore diff` compares two runs of it; in a CLI error a UUID inside an
+  existing path stays readable, and one the phone or card rule reads a number in shows as before
+  A-78 (the number masked); a provider's model name keeps its UUID. Each costs some time on a
+  text full of them (4 MB of UUIDs whose groups are all digits: 6.9 s, 2.8 s before, which left
+  most of each readable; glued into one token by `_`: 2.8 s, 2.1 s before).
   What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
   id, and since A-78 the SHA-256 of each media part a request records, `media_sha256`) is left
   readable in every report, in both copies of a finding the JSON report carries, so

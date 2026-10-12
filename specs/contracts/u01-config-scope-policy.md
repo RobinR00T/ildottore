@@ -687,17 +687,20 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
 (`PydanticSchemaGenerationError` among them); nor a plugin's own.
 
 **A-78 The documented key formats, every run of 32 hex digits and the UUID shape are masked whatever
-their entropy, only adding to what the redactor masked before; what the tool computes in those shapes
-stays readable where it writes it; and every adapter refuses a credential under 8 characters (added
-2026-10-11, pre-merge security audit, MEDIUM 4 and LOW 6).** Only `sk-`, `ghp_`, `AKIA` and `xox`
-had a rule: `sk-ant-`, `sk-proj-` (whose `-` cut the `sk-` rule), `github_pat_`, `AIza`, `glpat-`
-and `hf_` rested on the entropy rule, so a body of low entropy (a repeated pattern) was printed, and
-`\b` refused a key after `_`, a word character, so a key glued to padding was diluted below the
-threshold: 30 `_` before printed 155 of 200 `ghp_` tokens and every `AKIA`, `glpat-` and `hf_` one,
-20 `=` on either side every `AIza`, `glpat-` and `hf_` one, 20 `-` before every `glpat-` one. Hex caps
-at 4 bits a character and a short draw seldom shows all 16 digits, so the threshold printed 74.7% of
-random 32-hex keys (an Azure key), 47.5% of 40-hex, 5.5% of 64-hex and 47.7% of v4 UUIDs (the
-auditor's generators, 2,000 draws each; 46.8% for UUIDs in the rerun on `de122e26`).
+their entropy, adding masks to what the redactor masked before and taking none away (a text holding
+U+0000 or U+0001 aside, under *Not covered*); what the tool computes in those shapes stays readable
+where it writes it, and a report names its target as before; and every adapter refuses a credential
+under 8 characters (added 2026-10-11, pre-merge security audit, MEDIUM 4 and LOW 6; revised
+2026-10-12 after the pre-merge audit of this clause, H1, H2, M1, M2 and L1 to L5).** Only `sk-`,
+`ghp_`, `AKIA` and `xox` had a rule: `sk-ant-`, `sk-proj-` (whose `-` cut the `sk-` rule),
+`github_pat_`, `AIza`, `glpat-` and `hf_` rested on the entropy rule, so a body of low entropy (a
+repeated pattern) was printed, and `\b` refused a key after `_`, a word character, so a key glued
+to padding was diluted below the threshold: 30 `_` before printed 155 of 200 `ghp_` tokens and
+every `AKIA`, `glpat-` and `hf_` one, 20 `=` on either side every `AIza`, `glpat-` and `hf_` one, 20
+`-` before every `glpat-` one. Hex caps at 4 bits a character and a short draw seldom shows all 16
+digits, so the threshold printed 74.7% of random 32-hex keys (an Azure key), 47.5% of 40-hex, 5.5%
+of 64-hex and 47.7% of v4 UUIDs (the auditor's generators, 2,000 draws each; 46.8% for UUIDs in the
+rerun on `de122e26`).
 
 *The rule.* `redactor._late_patterns` holds the documented formats, each sourced in its docstring
 (OpenAI `sk-`, `sk-proj-`, `sk-svcacct-`, `sk-admin-`, `sk-None-`; Anthropic `sk-ant-`; GitHub
@@ -707,22 +710,58 @@ auditor's generators, 2,000 draws each; 46.8% for UUIDs in the rerun on `de122e2
 `whsec_`; npm `npm_`; PyPI `pypi-`), a JWT, and the UUID (8-4-4-4-12 hex digits, any version). Each
 starts where no letter or digit precedes it (`(?<![A-Za-z0-9])`, not `\b`), takes its body
 greedily, and is hashed. They run last in each pass, after the labelled rule, the entropy rule and
-the URL rule as written, so each only adds a mask to main's: run before them, a key glued to a word
-took less than the entropy rule took of its token (`x_<key>` showed `x_`, `ghs_<app id>_<JWT>` the
-app id), a greedy body took the label glued after it (`<AIza key>-x-api key : <secret>` showed the
-secret), and a mask's `:` made the URL rule as written take a URL for one its rule had read (the
-pre-commit differential fuzz of this clause against main: 5,120 of 20,000 texts showed text main
-masks, 1,662 of them 8 characters of a planted secret). The four rules the redactor had run where
-they ran, as they were. A token the entropy rule masks whole is typed by the format it holds
-(`OPENAI_API_KEY=sk-proj-...` reads `«REDACTED:openai_key:...»`, the same mask as before, named). A
-run of 32 or more hex digits (a `0x` in front included) is the entropy rule's, masked as `hex_token`
-inside any token the rule does not mask whole, a separator-structured one too; one inside a late
-pattern's match is left to it. The card and phone rules, and the labelled ones, leave a UUID whole
-(`Redactor._number_mask`): what of a number lies outside it is masked, and where it read one inside
-is recorded, so the entropy rule masks with the UUID each piece of its token it would have masked
-had the number rules cut the UUID, as they did (`Redactor._uuid_spans`): masked alone, a UUID with
-digit-only groups left a secret glued to it readable (439 of 20,000 such texts). Each late pattern
-carries the literals a match holds (`Pattern.hints`): a text or a token holding none is not searched.
+the URL rule as written: run before them, a key glued to a word took less than the entropy rule took
+of its token (`x_<key>` showed `x_`, `ghs_<app id>_<JWT>` the app id), a greedy body took the label
+glued after it (`<AIza key>-x-api key : <secret>` showed the secret), and a mask's `:` made the URL
+rule as written take a URL for one its rule had read (the pre-commit differential fuzz of this
+clause against main: 5,120 of 20,000 texts showed text main masks, 1,662 of them 8 characters of a
+planted secret). The four rules the redactor had run where they ran, as they were. A token the
+entropy rule masks whole is typed by the format it holds (`OPENAI_API_KEY=sk-proj-...` reads
+`«REDACTED:openai_key:...»`, the same mask as before, named). A run of 32 or more hex digits (a `0x`
+in front included) is the entropy rule's, masked as `hex_token` inside any token the rule does not
+mask whole, a separator-structured one too; one inside a late pattern's match is left to it. Each
+late pattern carries the literals a match holds (`Pattern.hints`): a text or a token holding none is
+not searched.
+
+*A number read inside a UUID.* The card and phone rules, and the labelled ones, read a UUID's
+digit-only groups as a number: main masked it where it read it, and the UUID was cut, what of it
+lay between the masks readable. What of such a number lies inside a UUID is written instead in
+stand-ins of the same length, from a block of the Private Use Area the text does not use
+(`redactor._Cuts`); outside the UUID it is masked as before. Every rule after it reads a stand-in as
+it read main's mask: a later number rule stops at it, a labelled value runs through it, the entropy
+rule's token ends at it. So the cuts are main's, occurrence by occurrence, and the entropy rule
+judges each piece main judged, once each (`Redactor._cut_spans`, linear), and masks each cut UUID
+whole together with the pieces that overlap it. The late patterns read the stand-ins back, so the
+UUID is matched whole at the same place; a stand-in no mask took becomes the number's mask, as main
+wrote it; with no free block (a text holding a character of each) the number is masked as main
+masked it; a labelled value's digest is that of the value as written. A redactor without the UUID
+pattern (the CLI's first pass, the model-name twin below) masks the number as main did. The first
+version of this clause left the UUID whole and recorded the cuts by the UUID's text
+(`_uuid_spans`): with two cut UUIDs in one token the pieces it judged were not main's, so a value
+glued between them was readable (160 of 200,000 such tokens in the audit, up to 38 characters,
+M1); each piece it judged ran to an end of the token, so a token of glued UUIDs took quadratic time
+(32.8 s at 160 KB, about 5.7 h at the 4 MiB reply cap, H2); and a phone rule read across a card's
+cut that main's mask had stopped it at, which joined two lines for the labelled rule and showed the
+secret of the next label (L1).
+
+*Masks a target writes.* A mask is kept as written when its type is one the tool writes, so a second
+pass, the evidence store's check and a report leave the tool's own masks alone; one of the nine
+types A-78 added (`hex_token`, `uuid`, `anthropic_key`, `gitlab_token`, `google_api_key`,
+`huggingface_token`, `stripe_key`, `npm_token`, `pypi_token`: `redactor._LATE_MASK_TYPES`) is kept
+only when this process wrote it (`_EMITTED`, one integer a mask, in two generations of 262,144),
+and any other is read as text, as the redactor before A-78 read it. Kept by type alone, as in the
+first version, `password: «REDACTED:uuid»Summer2026x` in a reply ended the labelled value and showed
+the password, which main masked (83 of the 93 regressions of the audit's mixed fuzz, L3). The class
+predates A-78 for the older types (`password: «REDACTED:high_entropy»<secret>`) and stays as it was.
+
+*A URL the URL rule read.* The URL rule as written (#96) leaves alone a URL the URL rule read in the
+pass, and told one by matching the URL rule's pattern on the text at its `://`, where a mask laid
+after the URL rule could supply the `:` the URL lacked: the rule then took the URL for one it had
+read, and its password stayed readable. A phone or entropy mask did it on main
+(`postgres://<credential>Part1xyz-0000000a-...@db` with `admin:Pa55word` registered printed
+`Part1xyz`); the hex-run and UUID masks added triggers (L2). The check reads the URL with every mask
+of the pass one neutral character (`_AsWritten.in_view`), as the URL rule saw the URL it read, its
+password mask included.
 
 *What the tool computes.* The hex rule belongs to the entropy rule: a redactor built without it
 (`without_entropy`, an infinite threshold) masks no hex run, so what keeps a value out of that rule
@@ -735,17 +774,44 @@ a multimodal battery at `--runs 2` masked 24 of its 28 on `de122e26`) and each e
 attempt id, as written, as the attempts' own ids are (u11's half). The evidence store keeps the media
 digests as before, and the run store writes the spec, target and judge digests and the scope digests
 unredacted (u10). A run id is 12 hex digits, under the floor, and the tool writes no UUID of its own.
-A full offline run of the battery through the CLI (75 specs, `--runs 2`, `-sV`, `-oA`, the evidence
-store, the run store, `replay`, `diff` and `diff --json`, `fingerprint --offline`, `--dry-run`) with
-the salt and the run id pinned writes every output byte for byte as `de122e26` does, timestamps aside,
-but the 24 media digests, now readable; no value the tool computed (the 222 artifact digests, 18
-probe digests, 7 media digests, 75 spec digests, the target and scope digests, the run id) is masked
-anywhere, each searched for by the digest its mask would carry.
 
-*The CLI.* `cli.app._masked` runs the late patterns last, on the message as shown, kept parts
-included; its two redactors run without them (`late=False`), so each keeps as a mask only the types
-it had, and one written in the error (`«REDACTED:jwt:...»` inside a labelled value) is read as text
-by its entropy pass, which then masks the value, as before.
+*The target a report names.* A report masks the target id, which the operator wrote, and masked it
+with the process-random salt: once A-78 masked UUIDs, an id holding one (`tenant-<uuid>`, a common
+naming scheme) had another mask in every run, in the JSON, SARIF, JUnit and HTML reports, and
+`dottore diff` refused two reports of one target as two targets, exit 3 (H1; main fails the same
+way for a high-entropy id). Each finding's `target_id` and each `run.targets[].id` are now masked by
+the rules before A-78 with the fixed identity salt (`redactor.report_identity`, u11's half): such an
+id reads as main's reports show it, so a baseline written by `de122e26` compares with a run of this
+change (exit 0), and a high-entropy id masks to the same text in every process. The run store keeps
+the identity mask by the current rules, as since the first version of this clause (u10).
+
+*Checked end to end.* A full offline run through the CLI (the 75 specs, `--runs 2`, `-sV`, `-vv`,
+`-oA`, the evidence store under a UUID directory, the run store, `replay`, `diff`,
+`fingerprint --offline`, `--dry-run`, `--estimate`, `-sn`, a `replay` refused for an unknown run,
+and a second target whose id holds a UUID, run with `--quick` and diffed), with the salt and the run
+id pinned, on `de122e26` and on this change from one working directory: the 240 evidence files,
+every terminal output, the SARIF and the JUnit reports are byte for byte equal; the JSON reports
+differ in the 24 media digests, now readable, and the timestamps, the HTML in the timestamps, and
+the run store of the first target in its wall time. Only the run store of the UUID-named target
+differs otherwise: it keeps the target's identity mask (`tenant-«REDACTED:uuid:...»`), which a
+resume accepts with main's (below). `dottore diff` has no `--json` option (the first version of
+this clause listed one; on `de122e26` and here it prints `No such option: --json`). Searched for by the digest its mask would carry, no value the tool computed (222 artifact
+digests, 18 probe digests, 7 media digests, 75 spec digests, the target and scope digests, the run
+id) is masked in any output of the same run.
+
+*The CLI.* `cli.app._masked` runs the late patterns on each stretch of the message its entropy pass
+reads, after that pass; what it keeps (a carried digest, an existing path, a spec file name) is kept
+from them too: run over the whole message, as in the first version, they masked the UUID directory
+of an existing evidence root, which main printed as written (L5). Its two redactors run without
+them (`late=False`), so each keeps as a mask only the types it had, and one written in the error
+(`«REDACTED:jwt:...»` inside a labelled value) is read as text by its entropy pass, which then masks
+the value, as before; and its first redactor, without the UUID pattern, masks a number inside a UUID
+as main did, so the paths it leaves to keep are main's. A provider's model name goes through the
+no-entropy twin (`Redactor.without_entropy`), which drops the UUID pattern with the entropy rule, a
+shape rather than a documented format: a deployment's model name holding one (`my-deploy-<uuid>`, a
+Bedrock custom-model ARN) reads as before A-78 for the fingerprint's metadata layer (L5); the key
+formats and the JWT stay. The evidence store, the run store and the reports apply their own full
+redactor to everything they keep, the model name included.
 
 *A run halted before A-78.* The identity mask the run store keeps for a target id, a finding and a
 declared tool changed for a value holding one of these shapes: `redactor.identity_masks` returns the
@@ -758,24 +824,49 @@ from 8 characters (`KNOWN_SECRET_MIN_LEN`): the WebSocket adapter refused a shor
 dial, while the OpenAI, Anthropic, REST and MCP-over-HTTP adapters sent it, the `auth_ref` key and a
 password in the endpoint URL alike (u04's half). `adapters.base.refuse_short_credential` refuses it
 with the WebSocket adapter's message (`<id>: the credential is shorter than 8 characters, which the
-redactor cannot mask by value; nothing was sent`, `CredentialTooShort`): in the pre-flight
-(`check_target_credential`, for the target and the judge, so `--dry-run`, `-sn` and `--estimate` say
-what the run would), when an adapter is built, for each identity of the sweep (named), and in each
-adapter before its first request; the judge raises it rather than abstain. A password as written and
-as it reads percent-decoded is checked; an empty one is no credential (`https://<token>:@host` sends a
-user only); a stdio MCP server and an offline mock are sent no key and are not checked.
+redactor cannot mask by value; nothing was sent`, `CredentialTooShort`): in the pre-flight, for the
+target and the judge (`check_target_credential`) and for each scope identity of a plan that sweeps
+identities (`check_identity_credentials`), so `--dry-run`, `-sn` and `--estimate` say what the run
+would; when an adapter is built; for each identity of the sweep (named); and in each adapter before
+its first request; the judge raises it rather than abstain. The first version checked the sweep's
+identities only at the send, so the three pre-flight modes exited 0 for a scope whose run then
+stopped at exit 3 (L4). A password as written and as it reads percent-decoded is checked; an empty
+one is no credential (`https://<token>:@host` sends a user only); a stdio MCP target
+(`provider: mcp`, `transport: stdio`) and an offline mock are sent no key and are not checked; any
+other provider sends its key over the wire whatever its `transport` says, and is checked (the first
+version exempted it, L4).
 
 *Measured.* The differential fuzz against `de122e26`'s redactor, a grammar of the new shapes glued
 to padding, words, labels, emails, phones, URLs and masks, five draws of 300,000 texts: in each,
-about 76,000 texts show 8 characters of a planted secret on main and not here; 2 texts of the
-1,500,000 show 8 characters of one here and not on main, and 24 a stretch of text main masks (glue
-or padding), every one of them holding U+0000 or U+0001 (the retry under *Not covered*), none
-without; the #96 re-audit's grammar, 300,000 texts: no text readable that main masks;
-`cli.app._masked`, 20,000 messages: no planted-secret window. The auditor's suites: every prefix at
-0 of 200 after `_`, `=` and `-` padding; the hex and UUID shapes at 0%; the registered-credential
-suite equal or better in every cell; the sinks identical. 4 MB texts: prose 1.10 s (main 0.98 s),
-base64 tokens 3.34 s (2.65 s), UUIDs 2.75 s (4.70 s), UUIDs with digit-only groups 6.04 s (2.86 s,
-which left most of each readable), 4 MB of `0x` and 80 hex digits 2.53 s (0.96 s, which masked none).
+about 76,000 texts show 8 characters of a planted secret on main and not here; 19 texts of the 1,500,000 show a stretch of
+text main masks, 3 of them 8 characters of a planted secret main hides and the rest glue or padding,
+every one of them holding U+0000 or U+0001 (*Not covered*), none without (the first version: 24 and 2, every
+one holding one too); the #96 re-audit's grammar, 300,000 texts: no text readable that main masks;
+`cli.app._masked`, 20,000 messages: no stretch main masks and no planted-secret window readable. The
+auditor's fuzzers (its own grammar and generators, a regression being a readable stretch of this
+change's output inside no readable stretch of main's, a mask copied from the input counted as
+text): its mixed grammar (masks of every type in the input, U+0000 and U+0001 among the glue),
+20,000 texts: 7 (95 on `0b4b1f14` from the same seed, 88 of them with a mask of an A-78 type in the
+input, L3), every one holding U+0000 or U+0001; its grammar without either and without masks of the
+A-78 types, 8 draws of 60,000: none (36 at the audit); the same without the entropy rule, with
+registered credentials and through the identity mask, 4 draws of 40,000 each: none, 2 and none (5,
+11 and 11 at the audit; the 2 are the harness's: a `url_password` mask laid here where main left the
+password's tail readable is the same text as an unhashed mask the input holds, which it counts as
+copied); those three modes on the mixed grammar, 40,000 each: 116, 3 and 11 (326, 867 and 196 on
+`0b4b1f14`), every one holding U+0000 or U+0001. A value of 8 to 40 characters glued between two or
+three UUIDs, 100,000 and 200,000 tokens: no value main masks readable (157 of the 200,000 on
+`0b4b1f14`; 76 and 160 at the audit). Idempotency, 8 draws of 30,000 mixed texts: every output a fixed point, here as on main. The share left unmasked, the auditor's generators: 32-hex 73.4% to 0%,
+40-hex 48.8% to 0%, 64-hex 5.6% to 0%, UUID v4 40.3% to 0%.
+Every prefix 0 of 200 after `_`, `=` and `-` padding; the registered-credential suite equal or
+better in every cell; the sinks identical (first version, unchanged by the revision). Time, with
+main's in brackets: UUIDs whose groups are all digits glued by `_` into one token, 80 KB
+0.06 s (0.04 s), 160 KB 0.11 s (0.08 s), 4 MB 2.79 s (2.12 s), and glued by `/` 0.07 s, 0.13 s and
+3.26 s (0.03 s, 0.07 s, 1.68 s), where the first version took 8.36 s and 32.80 s at 80 and 160 KB,
+about 5.7 h at 4 MB; 4 MB texts: prose 1.18 s (1.02 s), base64 tokens 3.50 s (2.71 s), UUIDs 3.41 s
+(4.61 s), space-separated UUIDs whose groups are all digits 6.91 s (2.80 s, which left most of each
+readable), UUIDs after phone numbers 7.65 s (3.61 s), `0x` and 80 hex digits 2.24 s (0.95 s, which
+masked none); the best of two or three runs, the sides alternated, on a machine shared with other
+jobs.
 
 *Not covered.* A key glued to a letter or a digit (40 `0` or 40 `A` before it) is the middle of a
 longer word to the late patterns and stays the entropy rule's, which the padding dilutes, as on main;
@@ -784,14 +875,31 @@ URL-safe characters and 20.6% of 20 upper-case letters and digits print, as befo
 U+0000 or U+0001 is redacted with them dropped when that masks anything, and with them shown
 otherwise (`redact_text`), so a secret one of them splits and that is glued to padding, or a mask of
 a type the tool writes with one inside it, is masked or not depending on the rest of the text, on
-main as here (an address anywhere in it flips it); masking more, A-78 flips it more often (the 2 and
-the 24 texts above). The
-`secret_shape` evaluator keeps its own rules (`sk-`, `gh[pousr]_`, `AKIA`, `xox`, JWT, PEM), so a
-verdict is unchanged. Checks: `tests/test_redactor_key_formats.py` (every format in 12 contexts and
-with low-entropy bodies, the shapes, the guards above; 415 of its 589 fail on `de122e26`, and 8
-of the guards on this clause's first version), `tests/reporting/test_own_values_readable.py`,
-`tests/store/test_identity_masks_before_a78.py`, `tests/adapters/test_short_credentials.py` and
-`tests/cli/test_short_credential_cli.py`.
+main as here (an address anywhere in it flips it); masking more, A-78 flips it more often: every
+text the fuzzers above find where this change shows what main masks holds one of them, and none
+without. In a CLI error, a UUID the number rules read a number in is masked as main masked it (the
+number masked, the rest as the other rules leave it); one they read none in is masked whole. A mask
+of one of the nine types written by another process (a stored report or evidence read again) is
+read as text, as main reads it: the rules leave such text as it is, but for the URL rule, which
+takes the tail of one written as a URL's user (`ws://«REDACTED:uuid:...»@h` reads
+`ws://«REDACTED:«REDACTED:url_password»@h`). The `secret_shape` evaluator keeps its own rules
+(`sk-`, `gh[pousr]_`, `AKIA`, `xox`, JWT, PEM), so a verdict is unchanged.
+
+*Checks.* `tests/test_redactor_key_formats.py` (every format in 12 contexts and with low-entropy
+bodies, the shapes, the guards above; 590 tests, 414 fail on `de122e26`, and 1 on `0b4b1f14`, the
+model-name twin's UUID), `tests/reporting/test_own_values_readable.py` (9; 2 fail on `de122e26`),
+`tests/store/test_identity_masks_before_a78.py` (12; on `de122e26` it stops at collection, which
+has no `identity_masks`, and with the compatibility code taken out, `identity_masks` returning the
+current mask only, 9 fail; the first version gave 3, without saying how it was counted),
+`tests/adapters/test_short_credentials.py` (39; on `de122e26` it stops at collection, which has
+neither `MIN_CREDENTIAL_LEN` nor `refuse_short_credential`; the first version's 19 was counted with
+the two given stand-ins in a copy of the file), `tests/cli/test_short_credential_cli.py` (17; 14
+fail on `de122e26`, 6 on `0b4b1f14`); and, from the revision, `tests/test_redactor_number_cuts.py`
+(14; 8 fail on `de122e26` and 10 on `0b4b1f14`), `tests/test_redactor_url_read_check.py` (4; 2 and
+3), `tests/test_redactor_own_late_masks.py` (26; 4 and 20), `tests/cli/test_report_target_id.py`
+(5: two runs of a UUID-named target in two processes with the random salt, then `diff`; 4 and 5, the
+end-to-end case passing on `de122e26`) and `tests/cli/test_uuid_identifiers_readable.py` (4; 2 and
+2). A test that imports a name the older tree lacks counts as failing there.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

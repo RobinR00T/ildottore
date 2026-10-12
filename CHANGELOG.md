@@ -26,33 +26,56 @@ Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
   The threshold printed 74.7% of random 32-hex keys (an Azure key), 47.5% of 40-hex, 5.5% of
   64-hex and 47.7% of v4 UUIDs; now 0%. A hex run is `«REDACTED:hex_token:<digest>»` (a `0x` in
   front included), a UUID `«REDACTED:uuid:<digest>»`, whole even when its groups are all digits,
-  which the phone and card rules used to take as numbers, leaving the rest readable.
-- **They only add masks.** They run after every other rule, and a token the entropy rule masks
-  with a word glued to a key is still masked whole, now named by the key's type. A first version
-  that ran them before the labelled and entropy rules left readable what those rules had masked
-  (`x_` before a key, a label glued after a greedy body and its secret, the rest of an address
-  holding a UUID); a differential fuzz against the redactor before A-78 (five draws of 300,000
-  texts) finds no planted secret this one shows and that one hid, but in 2 texts that hold U+0000
-  or U+0001, whose redaction depends on whether anything else in them is masked, before A-78 too.
+  which the phone and card rules take as numbers: what they read of it is held in stand-ins of the
+  same length, which every later rule reads as their mask, so the text around a UUID is judged as
+  before, piece by piece, in linear time.
+- **They add masks and take none away, but in a text holding U+0000 or U+0001.** They run after
+  every other rule, and a token the entropy rule masks with a word glued to a key is still masked
+  whole, now named by the key's type. A first version that ran them before the labelled and
+  entropy rules left readable what those rules had masked (`x_` before a key, a label glued after
+  a greedy body and its secret, the rest of an address holding a UUID). The pre-merge audit of the
+  second version found four more ways it showed what the redactor before A-78 masked: a value
+  glued between two UUIDs the number rules cut, a line joined by a phone mask so that a labelled
+  value took the next label, a URL password behind a mask's `:`, and a target writing
+  `password: «REDACTED:uuid»<secret>`, a mask of a new type that was kept as the tool's own; and a
+  token of glued UUIDs took quadratic time (32.8 s at 160 KB). All fixed: a mask of a new type is
+  kept only when this process wrote it, and the URL rule as written tells a URL its rule read with
+  every mask one neutral character. Differential fuzz against the redactor before A-78, five draws
+  of 300,000 texts and the auditor's 1,100,000 texts and 300,000 tokens: what it hid and this one
+  shows appears only in texts holding U+0000 or U+0001 (19 of the 1,500,000, 3 of them with 8 characters of a planted secret), whose redaction
+  depends on whether anything else in them is masked, before A-78 too; none in any other text.
 - **What the tool computes stays readable.** The hex rule belongs to the entropy rule, so the
   CLI's carried digests and evidence file names, an existing path and a model name keep out of it
   as before; the reports now restore the SHA-256 of each media part a request records (the JSON
   report of a multimodal battery masked 24 of its 28) and each evidence reference's attempt id. A
   full offline run of the battery writes every report, the evidence and the run store byte for byte
-  as before, timestamps aside, but those 24 digests.
+  as before, timestamps aside, but those 24 digests (and, in the run store, the identity mask of a
+  target whose id holds a UUID).
+- **A report names its target as before, the same way in every run.** Every report masked the
+  target id with the per-process salt, so a target named `tenant-<uuid>` had another mask in every
+  run once UUIDs were masked, and `dottore diff` refused two reports of it (exit 3; a high-entropy
+  id did the same before). Reports now mask it by the rules before A-78 with the fixed identity
+  salt: such an id reads as written, a baseline written before this change still compares, and a
+  high-entropy id masks to the same text in every run.
+- **A UUID in an existing path a CLI error names, or in a provider's model name, stays readable**,
+  as before: the CLI runs the new rules only on what it does not keep, and a model name skips the
+  UUID shape with the entropy rule (the key formats still apply).
 - **A run halted before this change resumes against its own target**, though the identity mask of
   an id holding a UUID, a hex run or a key format changed, and keeps one row a finding.
 - **A credential shorter than 8 characters is refused by every adapter, and before the run.** The
   redactor masks a credential by value only from 8 characters; the WebSocket adapter refused a
   shorter one, the OpenAI, Anthropic, REST and MCP adapters sent it (a target that echoed it put it
   in every report). Now each refuses it before its first request, with the WebSocket adapter's
-  message, and so do the pre-flight (`--dry-run`, `-sn` and `--estimate` exit 3 as the run would),
-  the identity sweep (naming the identity) and the judge, which used to abstain on every spec and
-  exit 0. A password in the endpoint is checked as written and percent-decoded; an empty one passes,
-  and an offline mock or a stdio MCP server, sent no key, is not checked.
-- Cost: 4 MB of prose 1.10 s (0.98 s before), of base64 tokens 3.34 s (2.65 s), of UUIDs 2.75 s
-  (4.70 s), of UUIDs whose groups are all digits 6.04 s (2.86 s). Not covered: a key glued to a
-  letter or a digit, and a random token with no prefix the entropy rule passes, as before.
+  message, and so do the pre-flight (`--dry-run`, `-sn` and `--estimate` exit 3 as the run would,
+  for the target, the judge and each identity a sweep would send as), the identity sweep (naming
+  the identity) and the judge, which used to abstain on every spec and exit 0. A password in the
+  endpoint is checked as written and percent-decoded; an empty one passes, and an offline mock or a
+  stdio MCP target (`provider: mcp`), sent no key, is not checked.
+- Cost: 4 MB of prose 1.18 s (1.02 s before), of base64 tokens 3.50 s (2.71 s), of UUIDs 3.41 s
+  (4.61 s), of UUIDs whose groups are all digits 6.91 s (2.80 s), the same glued into one token by
+  `_` 2.79 s (2.12 s). Not covered: a key glued to a letter or a digit, a random token with no
+  prefix the entropy rule passes, and a UUID in a CLI error that the number rules read a number
+  in, masked as before.
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 

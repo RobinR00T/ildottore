@@ -176,8 +176,11 @@ by the redactor before A-78. `_upsert_finding` writes a finding under the curren
 row under the mask `redactor.identity_masks` gives for before A-78, when they differ, so a resume
 across the change keeps one row a finding (it kept two). The spec, target and judge digests and the
 scope digests stay unredacted, and the evidence store keeps `request.metadata.media_sha256` as
-written, as before: the hex rule reads none of them. Checked by
-`tests/store/test_identity_masks_before_a78.py`.
+written, as before: the hex rule reads none of them. The reports name a target by the rules
+before A-78 (u11), while the store keeps its identity mask by the current ones, which the resume
+checks read. Checked by `tests/store/test_identity_masks_before_a78.py` (12 tests; on `de122e26` the
+file stops at collection, which has no `identity_masks`, and 9 fail with the compatibility code
+taken out).
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -

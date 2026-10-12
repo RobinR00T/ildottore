@@ -3,6 +3,42 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (morning): the pre-merge audit of A-78 (`0b4b1f14`), fixed
+
+- The audit found the branch NOT READY: H1, H2, M1, M2 and L1 to L5. Fixed on
+  `fix/redactor-key-formats`, one commit a finding, no amend; u01 A-78 revised in place, with its
+  halves in u04, u10, u11 and u12 and the index row; no new clause or OD.
+- H2, M1, L1: a number the card or phone rule reads inside a UUID is written in same-length
+  stand-ins from a free block of the Private Use Area (`redactor._Cuts`), which every later rule
+  reads as main's mask; the entropy rule judges main's pieces once each (`_cut_spans`), the late
+  patterns read the stand-ins back, and a stand-in no mask took becomes main's number mask. Glued
+  digit UUIDs: 160 KB 32.80 s on `0b4b1f14`, 0.11 s now (main 0.08 s); 4 MB 2.79 s (main 2.12 s).
+  A value glued between two cut UUIDs: 157 of 200,000 tokens readable on `0b4b1f14`, 0 now.
+- L2: the URL rule as written tells a URL its rule read with every mask one neutral character
+  (`_AsWritten.in_view`). L3: a mask of the nine A-78 types is kept only when this process wrote it
+  (`_LATE_MASK_TYPES`, `_EMITTED`). H1: reports name the target by the rules before A-78 with the
+  identity salt (`redactor.report_identity`); a baseline written by `de122e26` diffs against a run
+  of the branch (exit 0). L4: the pre-flight checks the sweep identities' credentials
+  (`check_identity_credentials`), and the stdio exemption needs `provider: mcp`. L5: the CLI runs the
+  late patterns only on what it does not keep, and the model-name twin drops the UUID pattern.
+- M2: the docs, the PR body and A-78 now say what the reruns show: no regression against main in
+  any text without U+0000 or U+0001 (the auditor's fuzzers and the author's, 1,100,000 and
+  1,500,000 texts), 19 in texts holding one (the `redact_text` retry, pre-existing); `diff --json`
+  does not exist; the two test files that stop at collection on `de122e26` are said to (the
+  adapter one: 19 of 39 fail with stand-ins for its two imports; the store one: 9 of 12 with the
+  compatibility code taken out, not 3).
+- Merge note for `fix/no-secret-in-fragments`: its
+  `tests/core/test_judge_note_redaction.py::test_a_cut_moves_before_a_token_rather_than_through_it`
+  needs `reasoning = "q" * (_JUDGE_NOTE_CHARS - 10) + " ZYNAP_CANARY_run-4c397602a2e0 end"`
+  (`"a"` is a hex digit, masked as `hex_token` here); checked on the auditor's union-merged tree.
+- Open, for the owner: the `redact_text` retry with U+0000/U+0001; a UUID in a CLI error that the
+  number rules read a number in is masked as before A-78; a mask of an A-78 type written by another
+  process is read as text (a URL user one gets a `url_password` mask on its tail in a later report).
+- Tests: 6196 (61 more than `0b4b1f14`); new files `test_redactor_number_cuts.py` (14),
+  `test_redactor_url_read_check.py` (4), `test_redactor_own_late_masks.py` (26),
+  `cli/test_report_target_id.py` (5), `cli/test_uuid_identifiers_readable.py` (4); gates: see the
+  PR body.
+
 ## State, 2026-10-12 (night): key formats, hex runs and UUIDs masked whatever their entropy; short credentials refused everywhere (u01 A-78)
 
 - Fixes MEDIUM 4 and LOW 6 of the pre-merge security audit of 2026-10-11, on
@@ -41,6 +77,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   `tests/reporting/test_own_values_readable.py` (9, 2), `tests/store/test_identity_masks_before_a78.py`
   (12, 3 without the compatibility code), `tests/adapters/test_short_credentials.py` (39, 19),
   `tests/cli/test_short_credential_cli.py` (10, 7). `make gates` green on `09b1b0a2` (with `PYTHONPATH` set to the worktree's `src`): 6135 tests (5476 on `main` at `de122e26`, 659 new), 97.83% coverage (`redactor.py` 99%), 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+- Corrected by the pre-merge audit of `0b4b1f14` (the entry above): "they only add masks" and
+  "none without U+0000/U+0001" did not hold (a value between two cut UUIDs, a line joined by a
+  phone mask, a URL password behind a mask's `:`, a target-written mask of a new type), the
+  identity masks file fails 9 of 12 without the compatibility code, not 3, and it and the adapter
+  file stop at collection on `de122e26`; `diff --json` is no option.
 
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
