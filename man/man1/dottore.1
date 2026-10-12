@@ -111,7 +111,7 @@ Render a multimodal spec's carriers to disk for inspection (a PNG for an image p
 pinned WAV for an audio part) and print each path, media type, size and SHA-256; no target.
 .TP
 .B schema export
-Print the JSON Schemas that validate every spec.
+Print the JSON Schemas generated from the models: attack-spec, pack, suite and test-plan.
 .SH "RUN OPTIONS"
 The full list, as
 .B dottore run --help
@@ -270,6 +270,112 @@ Suppress the per-spec progress lines.
 .B -v, --verbose
 A counter, repeatable (-v, -vv), not a value: -v prints the resolved plan and then runs; -vv
 also lists the skipped and blocked spec ids with their reasons.
+.SH "GLOBAL OPTIONS"
+.TP
+.B --version
+Print the version (dottore 0.1.0) and exit.
+.TP
+.B --help
+Show the help of dottore or of the command it follows, and exit.
+.SH "OPTIONS OF THE OTHER COMMANDS"
+As each
+.B dottore \fICOMMAND\fR --help
+prints them. A
+.B --spec-path
+that is left out searches specs/ under the current directory.
+.SS "fleet \fIfleet.yaml\fR"
+.TP
+.B --out \fIPATH\fR
+Directory for the generated scope.yaml, target files and judge.yaml (default .dottore/fleet).
+.TP
+.B --run
+Scan every expanded target right away, with the specs under specs/ of the current directory.
+.TP
+.B --judge \fIPATH\fR
+Judge target.yaml; it must match the fleet file's judge: block, which is used on its own when
+this is omitted.
+.TP
+.B --runs \fIN\fR, -p, --categories \fITEXT\fR, --no-color
+With
+.BR --run :
+the reproducibility runs (default 5), a comma-separated category selection and no colour, as
+for run.
+.SS "fingerprint \fITARGET\fR"
+.TP
+.B --scope \fIPATH\fR
+REQUIRED authorization record, with
+.B --offline
+too (exit 3 without it).
+.TP
+.B --offline
+Probe the deterministic mock instead of the live endpoint: nothing is sent.
+.SS "coverage [\fIPATHS\fR...]"
+.TP
+.B --framework \fITEXT\fR
+all (default), owasp, atlas, iopc or aisvs; any other value is refused (exit 3).
+.TP
+.B --suite \fITEXT\fR
+Measure one suite (id or alias) instead of the whole battery.
+.TP
+.B --gaps, --no-gaps
+List the codes not covered, in their three groups (the default), or print the figures alone;
+with
+.B --json
+the lists are left out of each axis.
+.TP
+.B --json
+Machine-readable output.
+.SS "lint [\fIPATHS\fR...]"
+.TP
+.B --json
+Machine-readable output: the counts, the errors, the warnings and ok. The exit status is 0 when
+lint passes and 1 when it finds an error.
+.SS "describe \fISPEC_ID\fR"
+.TP
+.B --spec-path \fIPATH\fR
+Spec search path.
+.SS "registry ls"
+.TP
+.B --category \fITEXT\fR, --owasp \fITEXT\fR, --tag \fITEXT\fR, --suite \fITEXT\fR
+Keep the specs of that category, OWASP LLM code, tag or suite.
+.TP
+.B --spec-path \fIPATH\fR
+Spec search path.
+.SS "render-media \fISPEC_ID\fR"
+.TP
+.B --out \fIPATH\fR
+Output directory (default the current one).
+.TP
+.B --spec-path \fIPATH\fR
+Spec search path.
+.SS "new-spec"
+.TP
+.B --id \fITEXT\fR, --family \fITEXT\fR
+REQUIRED: the new spec's id (PI-NEW-001) and its family tag.
+.TP
+.B --category \fITEXT\fR
+Category (default prompt_injection).
+.TP
+.B --out \fIPATH\fR
+Output directory (default the current one); an existing file of that id is not overwritten
+(exit 3).
+.TP
+.B --stdout
+Print the scaffold instead of writing it.
+.SS "replay \fIRUN_ID\fR"
+.TP
+.B --evidence-root \fIPATH\fR
+Evidence store root (default .dottore/evidence).
+.TP
+.B --run-db \fIPATH\fR
+Run store whose findings are the evidence manifest (default .dottore/runs.sqlite).
+.SS "schema export"
+.TP
+.B --name \fITEXT\fR
+Print one schema: attack-spec, pack, suite or test-plan; any other name is refused (exit 3)
+with that list. Without it, one JSON object holds all four.
+.SS "diff \fIBASELINE CURRENT\fR, calibrate \fIREPORT LABELS\fR"
+Arguments only: two JSON run reports, or a report and an operator labels file.
 .SH "EXIT STATUS"
 .TP
 .B 0

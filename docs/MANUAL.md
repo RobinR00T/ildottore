@@ -995,6 +995,8 @@ written (exit 3).
 
 `dottore` is the command; `dott` is a shorter alias. There is no default subcommand: always
 type it (`dottore run ...`). `dottore target.yaml --scope scope.yaml` is a usage error (exit 3).
+`dottore --version` prints the version (`dottore 0.1.0`) and exits; `--help` after `dottore` or
+after any command prints its options, the list `dottore(1)` gives per command.
 
 ### `dottore run`, run a campaign
 
@@ -1510,10 +1512,14 @@ undefined precision or recall as `n/a` and floors its percentages (99.6% is show
 ### `dottore schema export`, the JSON Schemas
 
 ```
-dottore schema export
+dottore schema export [--name NAME]
 ```
 
-Prints the generated JSON Schemas that machine-validate every spec.
+Prints the JSON Schemas generated from the models, as one JSON object keyed `attack-spec`,
+`pack`, `suite` and `test-plan`. `--name` prints one of them; any other name is refused (exit 3)
+with that list (`error: unknown schema 'nope'; available: attack-spec, pack, suite, test-plan`).
+The linter validates a spec against the hand-authored `schemas/attack-spec.schema.json`, not
+against this export.
 
 ### `dottore coverage`
 
@@ -1527,7 +1533,12 @@ dottore coverage --framework iopc     # one framework
 dottore coverage --framework aisvs    # OWASP AISVS, one line per level
 dottore coverage --suite nova-iopc    # what a single suite covers
 dottore coverage --json               # for a dashboard or a report generator
+dottore coverage --no-gaps            # the figures alone, no list of uncovered codes
 ```
+
+`--gaps`, the default, lists the codes not covered in the three groups below; `--no-gaps` prints
+only the figures (the block that follows, without the lists), and with `--json` leaves each
+axis's `missing`, `out_of_reach` and `not_tested_by_design` lists out.
 
 ```
 Battery coverage (75 specs, no scan performed)
