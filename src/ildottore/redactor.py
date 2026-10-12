@@ -581,6 +581,14 @@ class _AsWritten:
             return None
         return first - self._before(index)
 
+    def in_view(self, at: int) -> int | None:
+        """Where text position ``at`` is in the view, if no mask holds it; else None."""
+
+        index = bisect.bisect_right(self.text_starts, at)  # the masks starting by `at`
+        if index and self.text_ends[index - 1] > at:
+            return None
+        return at + self._before(index)
+
     def readable(self, first: int, after: int) -> tuple[int, int] | None:
         """Where, in the text, the password at ``view[first:after]`` is masked.
 
@@ -1944,12 +1952,16 @@ class Redactor:
             for url in _URL_AS_WRITTEN.finditer(later.view)
             if (at := later.in_text(url.start(1) - 1, url.start(1))) is not None
         ]
-        del later
         out: list[str] = []
         done = 0
         for url in _URL_AS_WRITTEN.finditer(read.view):
+            # The URL rule read this one: its password is a mask of this pass, and the URL reads
+            # with every mask one neutral character. Read on the text, a mask laid after that
+            # rule gave it the `:` it lacked, and the password stayed readable: a phone mask's
+            # before A-78, a hex run's or a UUID's since (pre-merge audit of A-78, L2).
             at = read.in_text(url.start(), url.start() + 3)
-            if at is not None and _URL_USERINFO.match(text, at):  # the URL rule read this one
+            seen = None if at is None else later.in_view(at)
+            if seen is not None and _URL_USERINFO.match(later.view, seen):
                 continue
             stretch = read.readable(*url.span(1))
             if stretch is None:
